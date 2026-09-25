@@ -363,6 +363,69 @@ describe('POST /sync/pull', () => {
     expect(response.body.data.hasMore).toBe(false);
   });
 
+  /**
+   * The Phase 3 exit criterion: a list written on one device while offline
+   * arrives on another exactly once, in order.
+   *
+   * The interesting part is "exactly once". The phone queues its writes with no
+   * connection, so the batch is replayed when it lands, and a replayed
+   * operationId must not produce a second row. A second device with its own
+   * cursor is what makes the ordering visible.
+   */
+  it('delivers an offline list once and in order on another device', async () => {
+    const phone = await createVerifiedUser(api);
+    const laptop = await api.post('/auth/login', {
+      email: phone.email,
+      password: phone.password,
+      device: { label: 'Portátil', platform: 'web' },
+    });
+    const laptopToken = laptop.body.data.session.accessToken;
+
+    const workspace = await createWorkspace(phone, 'Avión');
+    const listId = randomUUID();
+
+    // The phone is offline: the batch sits in its outbox and goes out later.
+    const queued = [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: listId,
+        payload: { workspaceId: workspace.id, title: 'Pendiente en el avión', kind: 'tasks' },
+      }),
+      ...['Primero', 'Segundo', 'Tercero'].map((title, index) =>
+        operation({
+          entity: 'list_item',
+          kind: 'create',
+          entityId: randomUUID(),
+          payload: { listId, title, position: index },
+        }),
+      ),
+    ];
+
+    // Sent twice, as a client that reconnects and retries would.
+    await push(phone, queued);
+    const replay = await push(phone, queued);
+    expect(replay.body.data.results.every((r: { status: string }) => r.status === 'duplicate')).toBe(
+      true,
+    );
+
+    const fromLaptop = await api.post('/sync/pull', { cursor: null, limit: 100 }, laptopToken);
+    const changes = fromLaptop.body.data.changes as {
+      entity: string;
+      record: { id: string; listId?: string; title: string; position: number };
+    }[];
+
+    const lists = changes.filter((change) => change.entity === 'list' && change.record.id === listId);
+    expect(lists).toHaveLength(1);
+
+    const items = changes
+      .filter((change) => change.entity === 'list_item' && change.record.listId === listId)
+      .sort((a, b) => a.record.position - b.record.position);
+
+    expect(items.map((item) => item.record.title)).toEqual(['Primero', 'Segundo', 'Tercero']);
+    expect(items.map((item) => item.record.position)).toEqual([0, 1, 2]);
+  });
+
   it('carries the role and member count a workspace list needs', async () => {
     // The client cache is the app's only read model, including offline, so the
     // workspace projection has to include the view fields. Without them the

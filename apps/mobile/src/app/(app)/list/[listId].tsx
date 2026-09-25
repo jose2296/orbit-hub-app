@@ -23,19 +23,57 @@ const PRIORITY_TONE = {
   high: 'danger',
 } as const;
 
+/** One arrow of the reorder control. Hidden at the edge rather than disabled. */
+function ReorderButton({
+  icon,
+  label,
+  disabled,
+  onPress,
+}: {
+  icon: 'chevron-up' | 'chevron-down';
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={6}
+      // Kept in the tree and only made invisible, so the row does not change
+      // width as the list is edited.
+      style={disabled ? styles.hidden : undefined}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Ionicons name={icon} size={16} color={theme.colors.textMuted} />
+    </Pressable>
+  );
+}
+
 export default function ListScreen() {
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, deleteList, toggleFavorite } = useLists({});
+  const { lists, deleteList, duplicateList, toggleFavorite } = useLists({});
   const list = useMemo(() => lists.find((item) => item.id === listId) ?? null, [lists, listId]);
-  const { items, isLoading, showCompleted, setShowCompleted, addItem, toggleCompleted, removeItem } =
-    useListItems(listId);
+  const {
+    items,
+    isLoading,
+    showCompleted,
+    setShowCompleted,
+    addItem,
+    toggleCompleted,
+    moveItem,
+    removeItem,
+  } = useListItems(listId);
 
   const [title, setTitle] = useState('');
   const [adding, setAdding] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   async function onAdd() {
     const trimmed = title.trim();
@@ -171,6 +209,32 @@ export default function ListScreen() {
                   <Badge label={t(`items.priority.${item.priority}`)} tone={PRIORITY_TONE[item.priority]} />
                 ) : null}
 
+                {/*
+                  Arrows rather than dragging. A drag needs a gesture library and
+                  a custom list that takes over the row, which on web means
+                  reimplementing native drag and giving up the plain rows the rest
+                  of the app uses. Two buttons work everywhere, are reachable with
+                  a screen reader and from the keyboard, and cannot half-cancel
+                  mid-drag. The edges are hidden rather than disabled so the row
+                  does not change width as the list is edited.
+                */}
+                {items.length > 1 ? (
+                  <View style={styles.reorder}>
+                    <ReorderButton
+                      icon="chevron-up"
+                      label={t('items.moveUp')}
+                      disabled={index === 0}
+                      onPress={() => void moveItem(item.id, -1)}
+                    />
+                    <ReorderButton
+                      icon="chevron-down"
+                      label={t('items.moveDown')}
+                      disabled={index === items.length - 1}
+                      onPress={() => void moveItem(item.id, 1)}
+                    />
+                  </View>
+                ) : null}
+
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={t('items.remove')}
@@ -217,15 +281,33 @@ export default function ListScreen() {
       </Card>
 
       {list ? (
-        <Button
-          label={t('lists.delete')}
-          variant="danger"
-          icon="trash-outline"
-          onPress={() => {
-            void deleteList(list);
-            router.back();
-          }}
-        />
+        <View style={{ gap: theme.spacing.sm }}>
+          <Button
+            label={t('lists.duplicate')}
+            variant="secondary"
+            icon="copy-outline"
+            loading={duplicating}
+            onPress={() => {
+              setDuplicating(true);
+              void duplicateList(list)
+                .then((newId) => {
+                  // Straight into the copy: the point of duplicating is to work
+                  // on it, not to go looking for it.
+                  router.replace(`/(app)/list/${newId}`);
+                })
+                .finally(() => setDuplicating(false));
+            }}
+          />
+          <Button
+            label={t('lists.delete')}
+            variant="danger"
+            icon="trash-outline"
+            onPress={() => {
+              void deleteList(list);
+              router.back();
+            }}
+          />
+        </View>
       ) : null}
     </Screen>
   );
@@ -243,6 +325,14 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  reorder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  hidden: {
+    // Kept in the layout so the row does not change width as it is edited.
+    opacity: 0,
   },
   flex: {
     flex: 1,

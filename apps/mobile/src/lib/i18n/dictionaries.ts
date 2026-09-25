@@ -128,6 +128,11 @@ const es = {
 
   'items.viewDetails': 'Ver detalle',
 
+  'lists.duplicate': 'Duplicar lista',
+
+  'items.moveUp': 'Subir',
+  'items.moveDown': 'Bajar',
+
   'tabs.home': 'Inicio',
   'tabs.search': 'Buscar',
   'tabs.settings': 'Ajustes',
@@ -434,6 +439,11 @@ const en: Record<TranslationKey, string> = {
   'itemDetails.generic': 'The detail could not be loaded.',
 
   'items.viewDetails': 'View details',
+
+  'lists.duplicate': 'Duplicate list',
+
+  'items.moveUp': 'Move up',
+  'items.moveDown': 'Move down',
 
   'tabs.home': 'Home',
   'tabs.search': 'Search',

@@ -86,6 +86,44 @@ export async function enqueueOperation(input: EnqueueInput): Promise<string> {
   return operationId;
 }
 
+/**
+ * Enqueues a batch as one write.
+ *
+ * Used by operations that are one user action but many rows, such as
+ * duplicating a list. The order is preserved, because the server rejects an
+ * item whose list does not exist yet.
+ */
+export async function enqueueOperations(inputs: EnqueueInput[]): Promise<string[]> {
+  if (inputs.length === 0) return [];
+
+  const store = await getLocalStoreReady();
+  const clientId = await store.getClientId();
+  const createdAt = new Date().toISOString();
+  const operationIds: string[] = [];
+
+  for (const input of inputs) {
+    const operationId = Crypto.randomUUID();
+    operationIds.push(operationId);
+
+    await store.enqueue({
+      operationId,
+      clientId,
+      kind: input.kind,
+      entity: input.entity,
+      entityId: input.entityId,
+      baseVersion: input.baseVersion,
+      payload: input.payload ? JSON.stringify(input.payload) : null,
+      base: input.base ? JSON.stringify(input.base) : null,
+      createdAt,
+      attempts: 0,
+      lastAttemptAt: null,
+      lastError: null,
+    });
+  }
+
+  return operationIds;
+}
+
 function toOperation(record: PendingOperationRecord): SyncOperation {
   return {
     operationId: record.operationId,

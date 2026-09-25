@@ -5,6 +5,7 @@ export {
 export type { CachedEntity, LocalStore, PendingOperationRecord } from './local-store';
 export {
   enqueueOperation,
+  enqueueOperations,
   fetchRemoteConflicts,
   flushOutbox,
   localUpdate,

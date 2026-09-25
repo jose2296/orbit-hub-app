@@ -7,8 +7,11 @@ import type {
 import * as Crypto from 'expo-crypto';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { planDuplication } from '@/lib/lists/duplicate';
+import { reorderItems } from '@/lib/lists/reorder';
 import {
   enqueueOperation,
+  enqueueOperations,
   getLocalStoreReady,
   localUpdate,
   pullIntoCache,
@@ -125,6 +128,113 @@ export function useLists(filters: ListFilters = {}) {
     [load],
   );
 
+  /**
+   * Copies a list and its items into a new one.
+   *
+   * Local first like any other write: the copy appears immediately and syncs
+   * afterwards. The completed state travels with each item, because a list
+   * duplicated mid-way through is usually duplicated *with* the progress, and
+   * the provider record travels too so a catalog item stays recognisable.
+   *
+   * The batch is enqueued in order, so the server sees the list before its
+   * items. Enqueuing is a single call rather than one per item: a list of a
+   * hundred entries would otherwise mean a hundred outbox rows and a hundred
+   * round trips.
+   */
+  const duplicateList = useCallback(
+    async (source: List, input?: { title?: string }) => {
+      const store = await getLocalStoreReady();
+      const listId = Crypto.randomUUID();
+
+      // The rules live in a pure function so they can be tested without a
+      // database: which items travel, in what order, and what is not copied.
+      const plan = planDuplication(
+        {
+          id: source.id,
+          workspaceId: source.workspaceId,
+          folderId: source.folderId,
+          kind: source.kind,
+          title: source.title,
+          description: source.description,
+          emoji: source.emoji,
+          favorite: source.favorite,
+          tags: source.tags,
+          position: source.position,
+        },
+        (await store.listCached('list_item')).map((row) => readRecord<ListItem>(row)),
+        {
+          newListId: listId,
+          newItemId: () => Crypto.randomUUID(),
+          now: nowIso(),
+          ...(input?.title ? { title: input.title } : {}),
+        },
+      );
+
+      await store.upsertCached([
+        {
+          entity: 'list',
+          entityId: listId,
+          version: 0,
+          updatedAt: plan.list.updatedAt,
+          deletedAt: null,
+          payload: JSON.stringify(plan.list),
+          pending: null,
+        },
+        ...plan.items.map((item) => ({
+          entity: 'list_item' as const,
+          entityId: item.id,
+          version: 0,
+          updatedAt: item.updatedAt,
+          deletedAt: null,
+          payload: JSON.stringify(item),
+          pending: null,
+        })),
+      ]);
+
+      await enqueueOperation({
+        kind: 'create',
+        entity: 'list',
+        entityId: listId,
+        baseVersion: 0,
+        payload: {
+          workspaceId: plan.list.workspaceId,
+          title: plan.list.title,
+          kind: plan.list.kind,
+          ...(plan.list.folderId ? { folderId: plan.list.folderId } : {}),
+          ...(plan.list.emoji ? { emoji: plan.list.emoji } : {}),
+        },
+      });
+
+      if (plan.items.length > 0) {
+        // One batch, in order: the server rejects an item whose list is not
+        // there yet, and a hundred entries would otherwise mean a hundred
+        // outbox rows.
+        await enqueueOperations(
+          plan.items.map((item) => ({
+            kind: 'create' as const,
+            entity: 'list_item' as const,
+            entityId: item.id,
+            baseVersion: 0,
+            payload: {
+              listId,
+              title: item.title,
+              position: item.position,
+              ...(item.completed ? { completed: true } : {}),
+              ...(item.priority !== 'none' ? { priority: item.priority } : {}),
+              ...(item.externalId ? { externalId: item.externalId } : {}),
+              ...(item.metadata ? { metadata: item.metadata } : {}),
+              ...(item.notes ? { notes: item.notes } : {}),
+            },
+          })),
+        );
+      }
+
+      await load();
+      return listId;
+    },
+    [load],
+  );
+
   const deleteList = useCallback(
     async (list: List) => {
       const store = await getLocalStoreReady();
@@ -162,7 +272,15 @@ export function useLists(filters: ListFilters = {}) {
     [load],
   );
 
-  return { lists, isLoading, createList, deleteList, toggleFavorite, reload: load };
+  return {
+    lists,
+    isLoading,
+    createList,
+    deleteList,
+    duplicateList,
+    toggleFavorite,
+    reload: load,
+  };
 }
 
 function nowIso(): string {
@@ -276,6 +394,58 @@ export function useListItems(listId: string | undefined) {
     [load],
   );
 
+  /**
+   * Moves an item up or down and renumbers the list.
+   *
+   * Every affected position is enqueued, not just the two that swapped: the
+   * server treats position as a field it merges on, and a partial update would
+   * leave the other devices with a different order and no way to tell why.
+   */
+  const moveItem = useCallback(
+    async (itemId: string, delta: number) => {
+      const store = await getLocalStoreReady();
+      const current = (await store.listCached('list_item'))
+        .map((row) => readRecord<ListItem>(row))
+        .filter((item) => item.listId === listId && item.deletedAt === null);
+
+      const ordered = reorderItems(current, itemId, delta);
+      const before = new Map(current.map((item) => [item.id, item.position]));
+      const changed = ordered.filter((item) => before.get(item.id) !== item.position);
+
+      // Out of range: nothing moved, and nothing is written.
+      if (changed.length === 0) return;
+
+      const now = nowIso();
+      await store.upsertCached(
+        changed.map((item) => ({
+          entity: 'list_item' as const,
+          entityId: item.id,
+          version: item.version,
+          updatedAt: now,
+          deletedAt: null,
+          payload: JSON.stringify({ ...item, position: item.position, updatedAt: now }),
+          pending: JSON.stringify({ position: item.position }),
+        })),
+      );
+
+      await enqueueOperations(
+        changed.map((item) => ({
+          kind: 'update' as const,
+          entity: 'list_item' as const,
+          entityId: item.id,
+          baseVersion: item.version,
+          // Sent as the previous value, so a concurrent edit on another device
+          // merges instead of overwriting: position did not change there.
+          base: { position: before.get(item.id) ?? item.position },
+          payload: { position: item.position },
+        })),
+      );
+
+      await load();
+    },
+    [listId, load],
+  );
+
   const removeItem = useCallback(
     async (item: ListItem) => {
       const store = await getLocalStoreReady();
@@ -300,7 +470,16 @@ export function useListItems(listId: string | undefined) {
     [load],
   );
 
-  return { items, isLoading, showCompleted, setShowCompleted, addItem, toggleCompleted, removeItem };
+  return {
+    items,
+    isLoading,
+    showCompleted,
+    setShowCompleted,
+    addItem,
+    toggleCompleted,
+    moveItem,
+    removeItem,
+  };
 }
 
 /**

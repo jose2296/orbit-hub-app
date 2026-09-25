@@ -132,21 +132,26 @@ que llegan con la fase de colaboración.
 - [x] Integraciones reales con TheMovieDB y Google Books detrás de la API
 - [x] Detalle de película, serie y libro: póster, sinopsis, año, duración, géneros,
       puntuación, reparto, temporada/editorial e ISBN
+- [x] Duplicar una lista con sus elementos, su estado y su registro de proveedor
+- [x] Reordenar elementos
 - [ ] Fechas límite y recurrencia (descartadas en alcance, vuelve en revisión)
-- [ ] Plantillas y duplicar
-- [ ] Reordenar elementos arrastrando
+- [ ] Plantillas
 
 **Criterio de salida:** una lista creada en un avión aparece una sola vez, y en orden, en otro
-dispositivo al aterrizar.
+dispositivo al aterrizar. ✅ Cubierto por un test de integración que reproduce el caso: un
+dispositivo encola la lista y sus tres elementos sin conexión, el lote sale **dos veces** como haría
+un cliente que reconecta y reintenta, y el segundo dispositivo la recibe **una sola vez y en
+orden**.
 
-**Estado:** catálogos integrated y verificados con datos reales: `GET /catalog/search` con TheMovieDB
-(películas y series) y Google Books, las claves solo en la API, caché de 10 minutos para no
-quemar cuota, y una pantalla en la app que añade el título con su `externalId` y su `metadata` al
-mismo outbox que un título escrito a mano. Verificado de punta a punta en el navegador: buscar,
-elegir, sincronizar solo y encontrarlo en el servidor.
+**Estado:** fase completa. Catálogos reales detrás de la API con detalle de película, serie y libro;
+duplicado que conserva el estado de completado y el registro del proveedor, y que no roba la
+favorita del original; reordenado con posiciones siempre contiguas desde cero.
 
-La búsqueda en catálogo es la única parte de construir una lista que necesita red, y la pantalla lo
-dice: sin conexión se escribe a mano.
+**Reordenar con flechas, no arrastrando.** Un arrastre necesita una librería de gestos y una lista
+que se lleve la fila por delante, que en web significa reimplementar el arrastre nativo y renunciar
+a las filas simples que usa el resto de la app. Dos botones funcionan en las tres plataformas, son
+alcanzables con lector de pantalla y teclado, y no se pueden cancelar a medias. Queda anotado como
+decisión, no como descuido.
 
 ---
 
