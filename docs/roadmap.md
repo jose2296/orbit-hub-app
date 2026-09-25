@@ -100,24 +100,24 @@ dispositivos, los ve en Ajustes, revoca uno y cierra sesión en todos, con tests
 - [x] Escrituras optimistas: se ve al instante, se encolan y se sincronizan
 - [x] Pantallas de workspaces y carpetas, con árbol e indentación
 - [x] Home conectada a los workspaces reales
-- [ ] Dashboard: editor visual de widgets (la lectura ya está)
-- [ ] Mover y reordenar carpetas con arrastrar
+- [x] Dashboard: editor de widgets con layout validado y autorreparado
+- [ ] Mover y reordenar carpetas con arrastrar (ahora hay subir/bajar en el panel)
 - [ ] Renombrar en línea y hoja de acciones por carpeta
 - [ ] Invitaciones y transferencia de propiedad (fase de colaboración)
 
 **Criterio de salida:** crear, renombrar, mover y borrar un workspace y una carpeta desde dos
 dispositivos, online y offline, sin duplicados ni sobrescrituras silenciosas.
 
-**Estado:** sincronización, lectura y escritura local funcionando y probadas (89 tests en
-total). Los escrituras van siempre por el outbox, también estando online: hay un único camino de
-escritura, con versión, permisos y conflictos.
+**Estado:** sincronización, lectura, escritura local y editor del dashboard funcionando y
+probados (106 tests). Las escrituras van siempre por el outbox, también estando online: hay un
+único camino de escritura, con versión, permisos y conflictos.
 
-**Pendiente para cerrar la fase:** editor visual del dashboard, arrastrar para mover carpetas y
-las invitaciones, que llegan con la fase de colaboración.
+**Pendiente:** arrastrar para mover carpetas (hoy se ordenan con botones) y las invitaciones,
+que llegan con la fase de colaboración.
 
 ---
 
-## Fase 3 — Listas y búsqueda
+## Fase 3 — Listas y búsqueda ⬜
 
 - [ ] Listas (tareas, películas, libros) e items
 - [ ] Posición, completada, prioridad, etiquetas, favoritos
