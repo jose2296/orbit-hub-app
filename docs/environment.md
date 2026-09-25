@@ -74,15 +74,20 @@ Ver [auth.md](architecture/auth.md#one-google-client-per-platform).
 | `EMAIL_FROM` | no | `no-reply@orbithub.app` | Must be a sender on a domain verified in Resend |
 | `WEB_ORIGIN` | no | `https://app.orbithub.com` | Base for the verification and reset links |
 
-### `WEB_ORIGIN` en desarrollo
+### `WEB_ORIGIN` es la app, no la API ni el remitente
 
-`WEB_ORIGIN` decide dónde apuntan los enlaces de los correos, así que tiene que ser el origen
-**desde el que se abre la app**:
+`WEB_ORIGIN` es la base de los enlaces de verificación y de reset, así que tiene que ser el
+origen **desde el que se abre la app**. No es la API (`:4000`, que no tiene interfaz) ni el
+dominio de envío de Resend:
 
 | Entorno | Valor |
 | --- | --- |
 | Desarrollo local | `http://localhost:8081` |
 | Producción | `https://jrz-labs.com` (o el subdominio que se despliegue) |
+
+Con el valor equivocado el correo llega, pero el enlace cae en un 404. Si tras un reinicio la API
+no coje la variable, el proceso arranca con el valor por defecto del `.env`; `make env-check` lo
+enseña y `apps/api/test/email-templates.test.ts` lo fija con tests.
 
 Con el valor de producción en local, el enlace del correo lleva a un dominio que todavía no
 sirve la app. En desarrollo, con el transporte `console`, el enlace se lee directamente del log
