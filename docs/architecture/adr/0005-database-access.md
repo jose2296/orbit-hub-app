@@ -1,6 +1,9 @@
 # ADR 0005 — Defer the ORM decision
 
-**Status:** Accepted (provisional)
+**Status:** Superseded by [0006 — Drizzle ORM with a dual driver](0006-drizzle-orm.md)
+
+> Kept for history. The decision to defer was correct at the time; this record explains why the
+> ORM was not chosen in the foundation and what it was waiting for.
 
 ## Context
 
