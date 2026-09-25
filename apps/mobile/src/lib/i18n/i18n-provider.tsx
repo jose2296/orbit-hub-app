@@ -65,7 +65,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     () => ({
       locale,
       setLocale,
-      t: (key, values) => formatTranslation(dictionaries[locale][key], values),
+      // A key built from data (a role, a status) can miss the dictionary. That
+      // is a missing label, not a reason to blank the screen, so the raw key is
+      // shown and the mismatch stays obvious.
+      t: (key, values) => {
+        const template = dictionaries[locale][key];
+        return template === undefined
+          ? key
+          : formatTranslation(template, values);
+      },
     }),
     [locale, setLocale],
   );

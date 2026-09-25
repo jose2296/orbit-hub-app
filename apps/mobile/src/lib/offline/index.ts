@@ -14,3 +14,4 @@ export {
   readCachedWorkspaces,
 } from './sync-service';
 export type { EnqueueInput, FlushResult, PullResult } from './sync-service';
+export { startSyncEngine, stopSyncEngine, syncNow } from './sync-engine';

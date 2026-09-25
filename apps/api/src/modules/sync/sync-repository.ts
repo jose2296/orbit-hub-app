@@ -1,5 +1,5 @@
 import type { SyncChange } from '@orbit-hub/contracts';
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
@@ -214,15 +214,39 @@ export class SyncRepository {
 
     if (memberWorkspaceIds.length > 0) {
       const workspaceChanges = await db
-        .select()
+        .select({
+          row: workspaces,
+          role: memberships.role,
+          memberCount: sql<number>`(
+            select count(*)::int from ${memberships} as m
+            where m.workspace_id = ${workspaces.id}
+          )`,
+        })
         .from(workspaces)
-        .where(and(inArray(workspaces.id, memberWorkspaceIds), gt(workspaces.updatedAt, after)))
+        .innerJoin(memberships, eq(memberships.workspaceId, workspaces.id))
+        .where(
+          and(
+            inArray(workspaces.id, memberWorkspaceIds),
+            eq(memberships.userId, input.userId),
+            gt(workspaces.updatedAt, after),
+          ),
+        )
         .orderBy(asc(workspaces.updatedAt))
         .limit(input.limit);
 
-      for (const row of workspaceChanges) {
-        changes.push({ entity: 'workspace', record: row as Record<string, unknown> });
-        remember(row.updatedAt);
+      for (const entry of workspaceChanges) {
+        // The cache is the app's read model, including offline, so a workspace
+        // has to carry the fields the list screen renders. Without these the
+        // client sees a workspace with no role and no member count.
+        changes.push({
+          entity: 'workspace',
+          record: {
+            ...(entry.row as Record<string, unknown>),
+            role: entry.role,
+            memberCount: entry.memberCount,
+          },
+        });
+        remember(entry.row.updatedAt);
       }
     }
 
@@ -248,8 +272,40 @@ export class SyncRepository {
         .orderBy(asc(lists.updatedAt))
         .limit(input.limit - changes.length);
 
+      // itemCount is derived, not stored, so the projection has to count. It is
+      // a separate grouped query on purpose: inside a correlated subquery
+      // Drizzle emits an unqualified "id" when the outer query has no join,
+      // which silently compares list_items.list_id with list_items.id and always
+      // counts zero. The client then renders the raw `{count}` placeholder.
+      const itemCounts = new Map<string, number>();
+      if (listChanges.length > 0) {
+        const counted = await db
+          .select({ listId: listItems.listId, total: sql<number>`count(*)::int` })
+          .from(listItems)
+          .where(
+            and(
+              inArray(
+                listItems.listId,
+                listChanges.map((row) => row.id),
+              ),
+              isNull(listItems.deletedAt),
+            ),
+          )
+          .groupBy(listItems.listId);
+
+        for (const row of counted) {
+          itemCounts.set(row.listId, row.total);
+        }
+      }
+
       for (const row of listChanges) {
-        changes.push({ entity: 'list', record: row as Record<string, unknown> });
+        changes.push({
+          entity: 'list',
+          record: {
+            ...(row as Record<string, unknown>),
+            itemCount: itemCounts.get(row.id) ?? 0,
+          },
+        });
         remember(row.updatedAt);
       }
     }

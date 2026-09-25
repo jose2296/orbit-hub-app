@@ -15,9 +15,28 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// expo-sqlite compiles to WebAssembly on the web target.
-if (!config.resolver.assetExts.includes('wasm')) {
-  config.resolver.assetExts.push('wasm');
-}
+/**
+ * The web target keeps its local cache in Web Storage, never in SQLite.
+ *
+ * The real package ships a WebAssembly worker that Metro cannot emit as a web
+ * chunk, so it is replaced by a stub on web instead of being bundled and never
+ * called. Native keeps the real module, typechecked against its typings.
+ */
+const sqliteStub = path.resolve(projectRoot, 'src/lib/offline/expo-sqlite.web-stub.ts');
+const defaultResolveRequest = config.resolver.resolveRequest;
+
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web' && (moduleName === 'expo-sqlite' || moduleName.startsWith('expo-sqlite/'))) {
+    return { type: 'sourceFile', filePath: sqliteStub };
+  }
+
+  if (platform === 'web' && (moduleName === 'wa-sqlite' || moduleName.startsWith('wa-sqlite/'))) {
+    return { type: 'empty' };
+  }
+
+  return defaultResolveRequest
+    ? defaultResolveRequest(context, moduleName, platform)
+    : context.resolveRequest(context, moduleName, platform);
+};
 
 module.exports = config;

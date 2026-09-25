@@ -3,7 +3,7 @@ import type { SyncConflict, SyncState, SyncStatus } from '@orbit-hub/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
 import { STORAGE_KEYS } from '@/constants';
-import { flushOutbox, getLocalStoreReady, subscribeToLocalStore } from '@/lib/offline';
+import { getLocalStoreReady, subscribeToLocalStore, syncNow as runSyncNow } from '@/lib/offline';
 import type { PendingOperationRecord } from '@/lib/offline';
 
 import { useNetworkStatus } from './use-network-status';
@@ -79,18 +79,24 @@ export function useSyncStatus(): SyncCentre {
     setIsSyncing(true);
     setLastMessage(null);
     try {
-      const result = await flushOutbox();
+      // The same serialised path the engine uses, so a manual sync can never
+      // race an automatic one over the same operations.
+      const result = await runSyncNow();
       if (result.error) {
         setLastMessage(result.error);
         setStatus((current) => ({ ...current, lastError: result.error }));
-      } else {
-        const timestamp = new Date().toISOString();
-        await AsyncStorage.setItem(STORAGE_KEYS.lastSyncedAt, timestamp).catch(() => {
-          // Losing the timestamp only affects the "last synced" label.
-        });
-        setStatus((current) => ({ ...current, lastSyncedAt: timestamp, lastError: null }));
-        setLastMessage('success');
+        return;
       }
+      const timestamp = new Date().toISOString();
+      await AsyncStorage.setItem(STORAGE_KEYS.lastSyncedAt, timestamp).catch(() => {
+        // Losing the timestamp only affects the "last synced" label.
+      });
+      setStatus((current) => ({ ...current, lastSyncedAt: timestamp, lastError: null }));
+      setLastMessage('success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'sync failed';
+      setLastMessage(message);
+      setStatus((current) => ({ ...current, lastError: message }));
     } finally {
       setIsSyncing(false);
       await refresh();

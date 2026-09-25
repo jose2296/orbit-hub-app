@@ -69,6 +69,31 @@ re-applies the migrations.
 | `EMAIL_FROM` | no | `no-reply@orbithub.app` | Must be a sender on a domain verified in Resend |
 | `WEB_ORIGIN` | no | `https://app.orbithub.com` | Base for the verification and reset links |
 
+### `WEB_ORIGIN` en desarrollo
+
+`WEB_ORIGIN` decide dónde apuntan los enlaces de los correos, así que tiene que ser el origen
+**desde el que se abre la app**:
+
+| Entorno | Valor |
+| --- | --- |
+| Desarrollo local | `http://localhost:8081` |
+| Producción | `https://jrz-labs.com` (o el subdominio que se despliegue) |
+
+Con el valor de producción en local, el enlace del correo lleva a un dominio que todavía no
+sirve la app. En desarrollo, con el transporte `console`, el enlace se lee directamente del log
+de la API:
+
+```bash
+grep 'token=' /tmp/orbit-api-dev.log | tail -1
+# o, con la API en primer plano, en la salida del terminal
+```
+
+Después se abre en `http://localhost:8081/verify-email?token=…`. El token es de un solo uso: si
+el enlace falla, pide uno nuevo con "Reenviar correo".
+
+En producción, `WEB_ORIGIN` también es la **redirect URI** que hay que registrar en el cliente
+OAuth de Google: `https://jrz-labs.com/auth/google`.
+
 The API refuses to boot when `EMAIL_TRANSPORT=resend` and the key is missing, and refuses to
 boot in production with `EMAIL_TRANSPORT=console`, so nobody ships an app that silently logs
 password resets.

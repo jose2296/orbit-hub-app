@@ -257,23 +257,36 @@ export function createTheme(scheme: ColorSchemeName, accent: Accent): Theme {
     spacing: SPACING,
     radius: RADIUS,
     typography: TYPE_SCALE,
+    // `boxShadow` rather than the `shadow*` family: React Native Web dropped
+    // the old props, and the new architecture understands the CSS form on
+    // native too, so one token covers all three targets.
     shadow: {
       card: {
-        shadowColor: neutral.shadow,
-        shadowOpacity: scheme === 'light' ? 0.08 : 0.4,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 6 },
+        boxShadow: `0px 6px 16px ${withAlpha(neutral.shadow, scheme === 'light' ? 0.08 : 0.4)}`,
         elevation: 2,
       },
       floating: {
-        shadowColor: neutral.shadow,
-        shadowOpacity: scheme === 'light' ? 0.16 : 0.55,
-        shadowRadius: 24,
-        shadowOffset: { width: 0, height: 12 },
+        boxShadow: `0px 12px 24px ${withAlpha(neutral.shadow, scheme === 'light' ? 0.16 : 0.55)}`,
         elevation: 8,
       },
     },
   };
+}
+
+/** `#RRGGBB` plus an alpha, as an 8 digit hex colour. */
+function withAlpha(hex: string, alpha: number): string {
+  const value = hex.replace('#', '');
+  const full =
+    value.length === 3
+      ? value
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : value;
+  const channel = Math.round(Math.min(Math.max(alpha, 0), 1) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `#${full}${channel}`;
 }
 
 export const ACCENT_NAMES = Object.keys(ACCENTS) as Accent[];

@@ -1,8 +1,22 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 import type { PropsWithChildren } from 'react';
 
+/**
+ * Service worker bootstrap.
+ *
+ * The worker itself is Phase 7 work: the static export does not ship one yet,
+ * so registering it unconditionally only produced a 404 in development and a
+ * silent failure in production. The flag keeps the wiring honest — when the
+ * worker lands, the build already looks for it in the right place.
+ *
+ * This script is injected into the document verbatim, so it cannot read
+ * `process.env` at runtime. The flag is resolved here, where the bundler does
+ * substitute it, and written into the script as a literal.
+ */
+const registerServiceWorker = process.env.NODE_ENV === 'production';
+
 const SERVICE_WORKER_BOOTSTRAP = `
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && ${registerServiceWorker}) {
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('/service-worker.js').catch(function () {
       // Offline support is progressive enhancement: ignore registration errors.
@@ -44,6 +58,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1020" />
         <meta name="description" content="OrbitHub — tus listas, tus notas y tus tareas en un solo sitio." />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="OrbitHub" />
         <link rel="manifest" href="/manifest.webmanifest" />

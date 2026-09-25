@@ -177,6 +177,10 @@ class AuthClient {
     return result.email;
   }
 
+  async resetPassword(token: string, password: string): Promise<void> {
+    await api.post('/auth/password/reset', { token, password }, { anonymous: true });
+  }
+
   async listDevices(): Promise<Device[]> {
     return api.get<Device[]>('/auth/devices');
   }

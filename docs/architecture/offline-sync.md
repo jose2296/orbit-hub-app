@@ -43,6 +43,30 @@ Every operation carries:
 tombstones (`deletedAt` set) so a delete on another device propagates. Records carry a
 monotonic `version`; the client applies anything with a higher version than the local copy.
 
+## Projection contract
+
+The pulled record is not a raw table row: **it is the app's read model**, because screens read
+from the local cache and must work with no connectivity. A projection therefore has to include
+the fields the screens render, including the ones that are derived rather than stored:
+
+| Entity | Derived fields the projection must add |
+| --- | --- |
+| `workspace` | `role` of the requesting user, `memberCount` |
+| `list` | `itemCount` (non deleted items) |
+| `folder`, `list_item`, `dashboard` | nothing: the table already holds everything |
+
+A projection that omits one of these does not fail loudly. The screen renders a blank role or a
+literal `{count}` placeholder, which is why each of these fields is covered by a test in
+`apps/api/test/sync.test.ts`.
+
+Two traps worth remembering when writing these queries with Drizzle:
+
+- A correlated subquery that references the outer table through `${table.column}` renders an
+  **unqualified** column (`"id"`) when the outer query has no join, and Postgres resolves it
+  against the subquery's own table. Grouping the count in a separate query avoids the ambiguity.
+- Enriching a record does not change `updatedAt`, so devices that already pulled it will not
+  receive the corrected shape. A projection change needs a one-off cache reset.
+
 ## Conflict strategy (hybrid)
 
 Decided per field, not per record:
@@ -72,8 +96,13 @@ version and a normal audit entry.
   exponential backoff plus jitter, capped by `SYNC_DEFAULTS.maxAttempts` (8).
 - A `rejected` result is a permanent failure for that operation: it is recorded with the reason
   and dropped from the outbox so it cannot block the queue forever.
-- The outbox is flushed on app start, on reconnect, on foreground, and every
-  `SYNC_DEFAULTS.intervalMs` (30 s) while online.
+- The engine in `apps/mobile/src/lib/offline/sync-engine.ts` owns the schedule. It flushes when
+  a write is enqueued (debounced 1.5 s, so a burst becomes one batch), when the session becomes
+  authenticated, when connectivity returns, and every 120 s as a safety net.
+- Push and pull are serialised. A manual "sync now" joins the batch already in flight instead of
+  racing it, so the same operation can never be pushed twice in parallel.
+- A failed push skips the pull and grows a backoff up to 60 s, so a server that is down is not
+  hammered, and nothing is reported as synced when it is not.
 - Operations are sent oldest first, so the server replays them in the order the user made them.
 
 ## Sync state machine

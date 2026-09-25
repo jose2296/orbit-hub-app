@@ -178,7 +178,23 @@ sincronización). Solo dos cosas son urgentes de verdad:
 1. **Identidad de Git** → dime nombre y correo.
 2. **La clave de Resend y el dominio verificado** → la integración está hecha, solo falta la clave.
 
-El resto (Google, Postgres, dominio, stores) puede llegar más adelante, con avisos.
+El resto (Postgres de producción, stores) puede llegar más adelante, con avisos.
+
+---
+
+## 8. Dominio `jrz-labs.com` ✅ (puesto, falta alojaje)
+
+Ya está configurado como origen de los correos. Para que funcione de verdad falta:
+
+| Qué | Para qué |
+| --- | --- |
+| Apuntar el dominio (o `app.jrz-labs.com`) al hosting de la web | Para que la PWA se sirva y los enlaces de los correos abran la app |
+| Registros DNS de Resend (DKIM + SPF) en `jrz-labs.com` | Para que los correos no acaben en spam |
+| `https://<dominio>/auth/google` en el cliente OAuth de Google | Redirect URI del login con Google |
+| `AASA` (iOS) y `Asset Links` (Android) | Deep links y universal links, Fase 7 |
+
+Para probar en local, `WEB_ORIGIN=http://localhost:8081` y se leen los enlaces del log. Está
+explicado en [environment.md](environment.md#web_origin-en-desarrollo).
 
 
 ---

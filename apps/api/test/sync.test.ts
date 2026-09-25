@@ -348,8 +348,7 @@ describe('POST /sync/push', () => {
 });
 
 describe('POST /sync/pull', () => {
-  it('returns everything the user can see, ordered by updatedAt', async () => {
-    const user = await createVerifiedUser(api);
+  it('returns everything the user can see, ordered by updatedAt', async () => {    const user = await createVerifiedUser(api);
     await createWorkspace(user, 'Primero');
     await createWorkspace(user, 'Segundo');
 
@@ -362,6 +361,74 @@ describe('POST /sync/pull', () => {
     const timestamps = changes.map((change) => new Date(change.record.updatedAt).getTime());
     expect([...timestamps].sort((a, b) => a - b)).toEqual(timestamps);
     expect(response.body.data.hasMore).toBe(false);
+  });
+
+  it('carries the role and member count a workspace list needs', async () => {
+    // The client cache is the app's only read model, including offline, so the
+    // workspace projection has to include the view fields. Without them the
+    // list renders a workspace with no role and no member count.
+    const owner = await createVerifiedUser(api);
+    const workspace = await createWorkspace(owner, 'Con rol');
+
+    const response = await pull(owner);
+    const change = (response.body.data.changes as { entity: string; record: Record<string, unknown> }[]).find(
+      (item) => item.entity === 'workspace' && item.record.id === workspace.id,
+    );
+
+    expect(change).toBeDefined();
+    expect(change?.record.role).toBe('owner');
+    expect(change?.record.memberCount).toBe(1);
+  });
+
+  it('counts the items of a list in the projection', async () => {
+    // itemCount is derived, not stored, so the projection has to compute it.
+    // A list arriving without it renders the literal `{count}` placeholder.
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Con items');
+    const listId = randomUUID();
+
+    const created = await push(user, [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: listId,
+        payload: { workspaceId: workspace.id, title: 'Películas', kind: 'movies' },
+      }),
+    ]);
+    expect(created.body.data.results[0].status).toBe('applied');
+
+    const empty = await pull(user);
+    const before = (empty.body.data.changes as { record: Record<string, unknown> }[]).find(
+      (change) => change.record.id === listId,
+    );
+    expect(before?.record.itemCount).toBe(0);
+
+    const withItem = await push(user, [
+      operation({
+        entity: 'list_item',
+        kind: 'create',
+        entityId: randomUUID(),
+        payload: { listId, title: 'Arrival' },
+      }),
+    ]);
+    expect(withItem.body.data.results[0].status).toBe('applied');
+
+    await push(user, [
+      // Touch the list so it falls inside a fresh pull window.
+      operation({
+        entity: 'list',
+        kind: 'update',
+        entityId: listId,
+        baseVersion: created.body.data.results[0].version as number,
+        payload: { title: 'Películas 2026' },
+      }),
+    ]);
+
+    const after = await pull(user, null);
+    const withItems = (after.body.data.changes as { record: Record<string, unknown> }[]).find(
+      (change) => change.record.id === listId && change.record.title === 'Películas 2026',
+    );
+    expect(withItems?.record.itemCount).toBe(1);
   });
 
   it('never leaks another user data', async () => {

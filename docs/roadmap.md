@@ -60,12 +60,14 @@ dispositivos, revocar uno y cerrar sesión en todos.
 
 ### 1.5 Email ✅
 - [x] Abstracción `EmailSender` con transporte de consola en desarrollo
+- [x] Transporte real de Resend con reintentos, timeout y sin romper el registro si falla
 - [x] Plantillas de verificación y recuperación en español e inglés
-- [ ] Proveedor de email real (pendiente de decidir)
+- [ ] Dominio de envío verificado en Resend (falta la clave y el DNS)
 
 ### 1.6 App ✅
 - [x] Registro y login reales conectados a la API
-- [x] Pantalla de verificación de email con reenvío
+- [x] Pantalla de verificación de email con reenvío **y consumo del token del enlace**
+- [x] Pantalla de reset de contraseña (el endpoint existía, la ruta no)
 - [x] Ajustes → Dispositivos: listar, revocar y cerrar sesión en todos
 - [x] Mensajes de error del API por código, no por texto
 - [x] Tests del cliente HTTP (envelope, refresh, reintento, errores, timeout)

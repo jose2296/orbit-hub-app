@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 
 import { authClient, EmailVerificationRequiredError } from '@/lib/auth';
+import { startSyncEngine, stopSyncEngine } from '@/lib/offline';
 
 type SessionStatus = 'loading' | 'authenticated' | 'anonymous';
 
@@ -54,6 +55,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       unsubscribe();
     };
   }, []);
+
+  // Syncing follows the session, not any one screen: a write made on the home
+  // tab and one made on a workspace screen reach the server the same way.
+  useEffect(() => {
+    if (status === 'authenticated') {
+      startSyncEngine();
+      return stopSyncEngine;
+    }
+    if (status === 'anonymous') {
+      stopSyncEngine();
+    }
+    return undefined;
+  }, [status]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     try {
