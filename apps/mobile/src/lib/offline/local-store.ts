@@ -56,6 +56,14 @@ export interface LocalStore {
 
   upsertCached(entities: CachedEntity[]): Promise<void>;
   listCached(entity: SyncEntity, options?: { includeDeleted?: boolean }): Promise<CachedEntity[]>;
+  /**
+   * The items of one list, ordered by position, without loading every cached
+   * item in the app. This is the query a long list makes on every open.
+   */
+  listCachedItems(
+    listId: string,
+    options?: { includeCompleted?: boolean; limit?: number },
+  ): Promise<CachedEntity[]>;
   getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null>;
   putCached(entity: SyncEntity, entityId: string, values: Record<string, unknown>): Promise<void>;
   clearCache(): Promise<void>;
@@ -124,6 +132,11 @@ CREATE TABLE IF NOT EXISTS cached_entities (
   PRIMARY KEY (entity, entity_id)
 );
 CREATE INDEX IF NOT EXISTS cached_entities_updated_at ON cached_entities (updated_at);
+-- The item list of one list, which is the query every long list makes on open.
+-- Without it, reading a list of five hundred items scans every cached item in
+-- the app and parses all of them.
+CREATE INDEX IF NOT EXISTS cached_entities_list_id
+  ON cached_entities (entity, json_extract(payload, '$.listId'));
 
 CREATE TABLE IF NOT EXISTS app_state (
   key TEXT PRIMARY KEY NOT NULL,
@@ -287,6 +300,32 @@ class ExpoSqliteStore implements NativeStore {
     return rows.map(toCachedEntity);
   }
 
+  async listCachedItems(
+    listId: string,
+    options: { includeCompleted?: boolean; limit?: number } = {},
+  ): Promise<CachedEntity[]> {
+    const clauses = [
+      `entity = 'list_item'`,
+      `deleted_at IS NULL`,
+      `json_extract(payload, '$.listId') = ?`,
+    ];
+    if (options.includeCompleted === false) {
+      clauses.push(`COALESCE(json_extract(payload, '$.completed'), 0) = 0`);
+    }
+
+    // The order lives in the payload, so it is the position that has to be read
+    // from there. The index narrows to one list; this sorts only that list.
+    const limit = options.limit ? `LIMIT ${Math.max(1, Math.floor(options.limit))}` : '';
+    const rows = await this.db().getAllAsync<CachedEntityRow>(
+      `SELECT * FROM cached_entities
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY COALESCE(json_extract(payload, '$.position'), 0) ASC
+       ${limit}`,
+      listId,
+    );
+    return rows.map(toCachedEntity);
+  }
+
   async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {
     const row = await this.db().getFirstAsync<CachedEntityRow>(
       'SELECT * FROM cached_entities WHERE entity = ? AND entity_id = ?',
@@ -400,6 +439,24 @@ interface CachedEntityRow {
   deleted_at: string | null;
   payload: string;
   pending: string | null;
+}
+
+/** Reads the payload of a cached row, tolerating a corrupt one. */
+function readCachedPayload<T>(row: CachedEntity): T {
+  try {
+    return JSON.parse(row.payload) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
+function positionOf(row: CachedEntity): number {
+  const position = readCachedPayload<{ position?: unknown }>(row).position;
+  return typeof position === 'number' && Number.isFinite(position) ? position : 0;
+}
+
+function isCompleted(row: CachedEntity): boolean {
+  return readCachedPayload<{ completed?: unknown }>(row).completed === true;
 }
 
 function toCachedEntity(row: CachedEntityRow): CachedEntity {
@@ -563,6 +620,28 @@ class WebStorageStore implements LocalStore {
       .filter((item) => item.entity === entity)
       .filter((item) => options.includeDeleted || item.deletedAt === null)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async listCachedItems(
+    listId: string,
+    options: { includeCompleted?: boolean; limit?: number } = {},
+  ): Promise<CachedEntity[]> {
+    // The cache key is `entity:entityId`, so the list id is not in the key and
+    // the payload has to be read. Only the rows of this entity are considered,
+    // so a cache of every entity in the app is never walked in full.
+    const rows = Object.values(
+      readJson<Record<string, CachedEntity>>(webStorage(), WEB_KEYS.cache, {}),
+    )
+      .filter((item) => item.entity === 'list_item' && item.deletedAt === null)
+      .filter((item) => readCachedPayload<{ listId?: string }>(item).listId === listId)
+      .filter(
+        (item) => options.includeCompleted !== false || !isCompleted(item),
+      )
+      .sort((a, b) => positionOf(a) - positionOf(b));
+
+    // The raw cached rows, exactly as the sqlite driver returns them: the caller
+    // parses the payload itself.
+    return options.limit ? rows.slice(0, Math.max(1, options.limit)) : rows;
   }
 
   async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {

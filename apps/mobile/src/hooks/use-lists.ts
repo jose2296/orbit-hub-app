@@ -161,7 +161,7 @@ export function useLists(filters: ListFilters = {}) {
           tags: source.tags,
           position: source.position,
         },
-        (await store.listCached('list_item')).map((row) => readRecord<ListItem>(row)),
+        (await store.listCachedItems(source.id)).map((row) => readRecord<ListItem>(row)),
         {
           newListId: listId,
           newItemId: () => Crypto.randomUUID(),
@@ -300,12 +300,14 @@ export function useListItems(listId: string | undefined) {
     }
 
     const store = await getLocalStoreReady();
-    const rows = await store.listCached('list_item');
+    // The store narrows to this list and orders by position, so opening a list
+    // of five hundred items no longer parses every cached item in the app.
+    const rows = await store.listCachedItems(listId, {
+      includeCompleted: showCompleted,
+    });
 
     const visible = rows
       .map((row) => readRecord<ListItem>(row))
-      .filter((item) => item.listId === listId && item.deletedAt === null)
-      .filter((item) => (showCompleted ? true : !item.completed))
       .sort((a, b) => a.position - b.position || a.createdAt.localeCompare(b.createdAt));
 
     setItems(visible);
@@ -330,8 +332,8 @@ export function useListItems(listId: string | undefined) {
       if (!listId) return;
 
       const store = await getLocalStoreReady();
-      const existing = (await store.listCached('list_item')).filter(
-        (row) => readRecord<ListItem>(row).listId === listId,
+      const existing = (await store.listCachedItems(listId)).map((row) =>
+        readRecord<ListItem>(row),
       );
       const id = Crypto.randomUUID();
       const now = nowIso();
@@ -413,10 +415,11 @@ export function useListItems(listId: string | undefined) {
    */
   const moveItemTo = useCallback(
     async (itemId: string, delta: number) => {
+      if (!listId) return;
       const store = await getLocalStoreReady();
-      const current = (await store.listCached('list_item'))
-        .map((row) => readRecord<ListItem>(row))
-        .filter((item) => item.listId === listId && item.deletedAt === null);
+      const current = (await store.listCachedItems(listId)).map((row) =>
+        readRecord<ListItem>(row),
+      );
 
       const ordered = reorderItems(current, itemId, delta);
       const before = new Map(current.map((item) => [item.id, item.position]));
