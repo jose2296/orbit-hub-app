@@ -256,6 +256,81 @@ describe('fetchCatalogDetails', () => {
     expect(details.episodes).toBe(62);
   });
 
+  it('returns the franchise with the rest of its parts', async () => {
+    stubFetch((url) => {
+      if (url.pathname.endsWith('/movie/603')) {
+        return {
+          id: 603, title: 'Matrix', release_date: '1999-03-31',
+          belongs_to_collection: { id: 2344, name: 'Matrix' },
+        };
+      }
+      if (url.pathname.includes('/collection/2344')) {
+        return {
+          name: 'Matrix',
+          overview: 'La saga completa.',
+          poster_path: '/c.jpg',
+          parts: [
+            { id: 603, title: 'Matrix' },
+            { id: 604, title: 'Matrix Reloaded' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    const details = await fetchCatalogDetails('movies', 'movie:603');
+
+    expect(details.collection?.name).toBe('Matrix');
+    expect(details.collection?.overview).toBe('La saga completa.');
+    // The film itself is not listed as part of its own franchise.
+    expect(details.collection?.items.map((i) => i.title)).toEqual(['Matrix Reloaded']);
+  });
+
+  it('merges recommendations before similar and never repeats a title', async () => {
+    stubFetch((url) => {
+      if (url.pathname.endsWith('/movie/603')) {
+        return {
+          id: 603, title: 'Matrix',
+          recommendations: { results: [{ id: 1, title: 'Recomendada' }] },
+          similar: {
+            results: [
+              { id: 1, title: 'Recomendada' },
+              { id: 2, title: 'Parecida' },
+              // The film itself can come back in its own similar list.
+              { id: 603, title: 'Matrix' },
+            ],
+          },
+        };
+      }
+      return {};
+    });
+
+    const details = await fetchCatalogDetails('movies', 'movie:603');
+    const titles = details.related?.map((r) => r.title) ?? [];
+
+    expect(titles[0]).toBe('Recomendada');
+    expect(titles).toContain('Parecida');
+    expect(titles.filter((t) => t === 'Recomendada')).toHaveLength(1);
+    expect(titles).not.toContain('Matrix');
+  });
+
+  it('copes with a title that has no similar list at all', async () => {
+    stubFetch(() => ({ id: 603, title: 'Matrix' }));
+
+    const details = await fetchCatalogDetails('movies', 'movie:603');
+
+    expect(details.related).toBeUndefined();
+    expect(details.collection).toBeUndefined();
+  });
+
+  it('does not spend a call on a franchise that does not exist', async () => {
+    stubFetch(() => ({ id: 603, title: 'Matrix' }));
+
+    await fetchCatalogDetails('movies', 'movie:603');
+
+    expect(requests.some((url) => url.pathname.includes('/collection/'))).toBe(false);
+  });
+
   it('refuses an identifier that belongs to another catalog', async () => {
     stubFetch(() => ({}));
 

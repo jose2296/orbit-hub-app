@@ -1,4 +1,10 @@
-import type { CatalogDetails, CatalogKind, CatalogResult } from '@orbit-hub/contracts';
+import type {
+  CatalogCollection,
+  CatalogDetails,
+  CatalogKind,
+  CatalogRelated,
+  CatalogResult,
+} from '@orbit-hub/contracts';
 import { z } from 'zod';
 
 import { env } from '../../config/env.js';
@@ -274,6 +280,14 @@ const tmdbMovieDetailSchema = tmdbMovieSchema.extend({
   vote_average: z.number().optional(),
   homepage: z.string().optional(),
   genres: z.array(tmdbGenreSchema).optional(),
+  belongs_to_collection: z
+    .object({
+      id: z.number(),
+      name: z.string(),
+      overview: z.string().optional(),
+      poster_path: z.string().nullable().optional(),
+    })
+    .nullish(),
 });
 
 const tmdbSeriesDetailSchema = z.object({
@@ -291,6 +305,24 @@ const tmdbSeriesDetailSchema = z.object({
   number_of_episodes: z.number().optional(),
   episode_run_time: z.array(z.number()).optional(),
 });
+
+/** A poster-sized reference to another title, for collections and similar. */
+const relatedSchema = z.object({
+  id: z.number(),
+  title: z.string().optional(),
+  name: z.string().optional(),
+  release_date: z.string().optional(),
+  first_air_date: z.string().optional(),
+  poster_path: z.string().nullable().optional(),
+  overview: z.string().optional(),
+});
+
+const tmdbRelatedSchema = z
+  .object({
+    results: z.array(relatedSchema).optional(),
+  })
+  .optional()
+  .nullable();
 
 const googleBookDetailSchema = googleBookSchema;
 
@@ -312,7 +344,9 @@ async function fetchTmdbDetails(
   const url = new URL(`https://api.themoviedb.org/3/${path}/${encodeURIComponent(raw)}`);
   url.searchParams.set('api_key', env.TMDB_API_KEY as string);
   url.searchParams.set('language', 'es-ES');
-  url.searchParams.append('append_to_response', 'credits');
+  // The cast, the franchise and the "more like this" list all come back on the
+  // same call. Asking for them separately would be three round trips per title.
+  url.searchParams.append('append_to_response', 'credits,similar,recommendations');
 
   const rawPayload = (await fetchJson(url, 'application/json')) as Record<string, unknown>;
   const payload = (kind === 'tv' ? tmdbSeriesDetailSchema : tmdbMovieDetailSchema).parse(rawPayload);
@@ -334,6 +368,72 @@ async function fetchTmdbDetails(
   const runtime = film?.runtime ?? series?.episode_run_time?.[0] ?? null;
   const backdrop = rawPayload['backdrop_path'];
   const poster = film?.poster_path ?? series?.poster_path ?? null;
+
+  const toRelated = (entry: z.infer<typeof relatedSchema>): CatalogRelated => {
+    const year = (entry.release_date ?? entry.first_air_date ?? '').slice(0, 4) || null;
+    return {
+      externalId: `${path}:${entry.id}`,
+      title: entry.title ?? entry.name ?? 'Sin título',
+      imageUrl: entry.poster_path
+        ? `https://image.tmdb.org/t/p/w342${entry.poster_path}`
+        : null,
+      released: year,
+    };
+  };
+
+  // The franchise, when the title belongs to one.
+  const collectionRaw = rawPayload['belongs_to_collection'] as
+    | { id: number; name: string; overview?: string; poster_path?: string | null }
+    | null
+    | undefined;
+
+  // "Similar" and "recommended" overlap heavily; recommendations are better
+  // curated, so they are preferred and the rest of the similar list fills in.
+  // Both are absent for some titles, so neither is required.
+  const recommended = (tmdbRelatedSchema.parse(rawPayload['recommendations'])?.results ?? []).map(
+    toRelated,
+  );
+  const similar = (tmdbRelatedSchema.parse(rawPayload['similar'])?.results ?? []).map(toRelated);
+
+  const seen = new Set(recommended.map((entry) => entry.externalId));
+  const related = [
+    ...recommended,
+    ...similar.filter((entry) => !seen.has(entry.externalId) && entry.externalId !== externalId),
+  ].slice(0, 12);
+
+  // The rest of the franchise, fetched only when there is one.
+  let collection: CatalogCollection | null = null;
+  if (collectionRaw?.id) {
+    const collectionUrl = new URL(
+      `https://api.themoviedb.org/3/collection/${collectionRaw.id}`,
+    );
+    collectionUrl.searchParams.set('api_key', env.TMDB_API_KEY as string);
+    collectionUrl.searchParams.set('language', 'es-ES');
+    const payload = z
+      .object({
+        name: z.string().optional(),
+        overview: z.string().optional(),
+        poster_path: z.string().nullable().optional(),
+        backdrop_path: z.string().nullable().optional(),
+        parts: z.array(relatedSchema).optional(),
+      })
+      .parse(await fetchJson(collectionUrl, 'application/json'));
+
+    collection = {
+      name: payload.name ?? collectionRaw.name,
+      overview: payload.overview ?? null,
+      imageUrl: payload.poster_path
+        ? `https://image.tmdb.org/t/p/w342${payload.poster_path}`
+        : null,
+      backdropUrl: payload.backdrop_path
+        ? `https://image.tmdb.org/t/p/w780${payload.backdrop_path}`
+        : null,
+      items: (payload.parts ?? [])
+        .map(toRelated)
+        .filter((entry) => entry.externalId !== externalId)
+        .slice(0, 12),
+    };
+  }
 
   // Built as a whole rather than inline, so the two branches of the union do
   // not have to be reconciled by the compiler at a single return statement.
@@ -362,6 +462,8 @@ async function fetchTmdbDetails(
         }
       : {}),
     ...(cast.length > 0 ? { cast } : {}),
+    ...(related.length > 0 ? { related } : {}),
+    ...(collection ? { collection } : {}),
   };
 
   return details;

@@ -3,11 +3,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, Linking, StyleSheet, View } from 'react-native';
 
-import type { CatalogDetails } from '@orbit-hub/contracts';
+import type { CatalogDetails, CatalogRelated } from '@orbit-hub/contracts';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { MediaCarousel } from '@/components/ui/media-carousel';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { api, toApiError } from '@/lib/api';
@@ -97,6 +98,27 @@ export default function ItemDetailsScreen() {
 
   const isBook = details.kind === 'books';
   const isSeries = details.kind === 'tv';
+  const collection = details.collection ?? null;
+  const related = details.related ?? [];
+
+  /** A poster reference rendered as a carousel card, which opens on tap. */
+  const toCarouselItem = (item: CatalogRelated) => ({
+    key: item.externalId,
+    title: item.title,
+    imageUrl: item.imageUrl,
+    released: item.released,
+    badge: null,
+    onPress: () =>
+      router.push({
+        pathname: '/(app)/item/[itemId]',
+        params: {
+          itemId: item.externalId,
+          kind: details.kind,
+          externalId: item.externalId,
+          title: item.title,
+        },
+      }),
+  });
 
   return (
     <Screen scroll>
@@ -198,6 +220,37 @@ export default function ItemDetailsScreen() {
           ) : null}
         </Card>
 
+        {/*
+          The franchise and the "more like this" shelf. Both are a carousel of
+          covers, the same as a list, so a title reads the same way everywhere in
+          the app.
+        */}
+        {collection && collection.items.length > 0 ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            {collection.backdropUrl ? (
+              <Image
+                source={{ uri: collection.backdropUrl }}
+                resizeMode="cover"
+                style={[styles.collectionBanner, { borderRadius: theme.radius.lg }]}
+              />
+            ) : null}
+            <AppText variant="heading">{collection.name}</AppText>
+            {collection.overview ? (
+              <AppText variant="callout" tone="muted">
+                {stripHtml(collection.overview)}
+              </AppText>
+            ) : null}
+            <MediaCarousel items={collection.items.map(toCarouselItem)} />
+          </View>
+        ) : null}
+
+        {related.length > 0 ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <AppText variant="heading">{t('itemDetails.related')}</AppText>
+            <MediaCarousel items={related.map(toCarouselItem)} />
+          </View>
+        ) : null}
+
         {details.identifiers && details.identifiers.length > 0 ? (
           <View style={{ gap: theme.spacing.xs }}>
             <AppText variant="bodyStrong">{t('itemDetails.identifiers')}</AppText>
@@ -272,6 +325,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 180,
     borderRadius: 16,
+  },
+  collectionBanner: {
+    width: '100%',
+    height: 120,
   },
   header: {
     flexDirection: 'row',

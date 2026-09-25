@@ -52,6 +52,25 @@ export type CatalogSearchResponse = z.infer<typeof catalogSearchResponseSchema>;
  * Deliberately not stored in the list item: a detail is fetched when it is
  * opened, and a list keeps only enough to recognise the title offline.
  */
+/** A poster-sized reference to another title. */
+export const catalogRelatedSchema = z.object({
+  externalId: z.string().min(1).max(120),
+  title: z.string(),
+  imageUrl: z.url().nullable(),
+  released: z.string().nullable(),
+});
+export type CatalogRelated = z.infer<typeof catalogRelatedSchema>;
+
+/** A franchise, with the rest of its parts. */
+export const catalogCollectionSchema = z.object({
+  name: z.string(),
+  overview: z.string().nullable(),
+  imageUrl: z.url().nullable(),
+  backdropUrl: z.url().nullable(),
+  items: z.array(catalogRelatedSchema),
+});
+export type CatalogCollection = z.infer<typeof catalogCollectionSchema>;
+
 export const catalogDetailsSchema = z.object({
   provider: z.enum(['tmdb', 'google-books']),
   externalId: z.string().min(1).max(120),
@@ -81,6 +100,10 @@ export const catalogDetailsSchema = z.object({
   identifiers: z
     .array(z.object({ type: z.string().optional(), identifier: z.string().optional() }))
     .optional(),
+  /** What else to watch, already merged from recommendations and similar. */
+  related: z.array(catalogRelatedSchema).optional(),
+  /** The franchise, when the title belongs to one. */
+  collection: catalogCollectionSchema.nullable().optional(),
 });
 export type CatalogDetails = z.infer<typeof catalogDetailsSchema>;
 
