@@ -46,6 +46,9 @@ const API_VARS = [
   { name: 'GOOGLE_ANDROID_CLIENT_ID', required: false, default: 'unset: Android Google sign-in disabled' },
   { name: 'GOOGLE_IOS_CLIENT_ID', required: false, default: 'unset: iOS Google sign-in disabled' },
 
+  { name: 'TMDB_API_KEY', required: false, default: 'unset: film and series catalog disabled' },
+  { name: 'GOOGLE_BOOKS_API_KEY', required: false, default: 'unset: books catalog disabled' },
+
   { name: 'EMAIL_TRANSPORT', required: false, default: 'console' },
   { name: 'RESEND_API_KEY', required: 'when EMAIL_TRANSPORT=resend', default: 'unset: email is only logged' },
   { name: 'EMAIL_FROM', required: false, default: 'no-reply@orbithub.app' },
@@ -215,6 +218,18 @@ function commandCheck() {
     log.warn('EMAIL_TRANSPORT=console: emails are logged, not sent');
   } else {
     log.ok(`EMAIL_TRANSPORT=${api['EMAIL_TRANSPORT']}`);
+  }
+
+  if (isSet(api['TMDB_API_KEY'])) {
+    log.ok('Film and series catalog is configured');
+  } else {
+    log.warn('TMDB_API_KEY is unset: the film and series catalog is disabled');
+  }
+
+  if (isSet(api['GOOGLE_BOOKS_API_KEY'])) {
+    log.ok('Books catalog is configured');
+  } else {
+    log.warn('GOOGLE_BOOKS_API_KEY is unset: the books catalog is disabled');
   }
 
   log.title('App');

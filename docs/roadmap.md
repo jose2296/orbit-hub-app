@@ -129,16 +129,22 @@ que llegan con la fase de colaboración.
 - [x] Pantallas de listas y de detalle con elementos
 - [x] Búsqueda en la app sobre la caché local, funciona sin conexión
 - [x] Metadatos de proveedor guardados (`externalId` + `metadata`)
+- [x] Integraciones reales con TheMovieDB y Google Books detrás de la API
 - [ ] Fechas límite y recurrencia (descartadas en alcance, vuelve en revisión)
 - [ ] Plantillas y duplicar
-- [ ] Integraciones reales con TheMovieDB y Google Books detrás de la API
 - [ ] Reordenar elementos arrastrando
 
 **Criterio de salida:** una lista creada en un avión aparece una sola vez, y en orden, en otro
 dispositivo al aterrizar.
 
-**Estado:** el ciclo completo de listas funciona de punta a punta por el outbox. Falta la
-integración con los catálogos externos, que necesita claves de proveedor.
+**Estado:** catálogos integrated y verificados con datos reales: `GET /catalog/search` con TheMovieDB
+(películas y series) y Google Books, las claves solo en la API, caché de 10 minutos para no
+quemar cuota, y una pantalla en la app que añade el título con su `externalId` y su `metadata` al
+mismo outbox que un título escrito a mano. Verificado de punta a punta en el navegador: buscar,
+elegir, sincronizar solo y encontrarlo en el servidor.
+
+La búsqueda en catálogo es la única parte de construir una lista que necesita red, y la pantalla lo
+dice: sin conexión se escribe a mano.
 
 ---
 

@@ -44,6 +44,13 @@ const envSchema = z
     EMAIL_FROM: z.string().default('no-reply@orbithub.app'),
     WEB_ORIGIN: z.string().url().default('https://app.orbithub.com'),
 
+    /**
+     * External catalogs. Server side only: the keys are never exposed to the
+     * app, which is the point of routing catalog search through the API.
+     */
+    TMDB_API_KEY: z.string().optional(),
+    GOOGLE_BOOKS_API_KEY: z.string().optional(),
+
     /** Auth throttling. Generous values in tests keep the suite independent. */
     AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
     AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),

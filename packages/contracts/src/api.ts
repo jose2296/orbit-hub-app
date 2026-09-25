@@ -46,8 +46,7 @@ export const paginationQuerySchema = z.object({
 /** Health payload, also used by the mobile app to detect API availability. */
 export const healthStatusSchema = z.enum(['ok', 'degraded', 'down']);
 
-export const healthResponseSchema = z.object({
-  status: healthStatusSchema,
+export const healthResponseSchema = z.object({  status: healthStatusSchema,
   service: z.literal('orbit-hub-api'),
   version: z.string(),
   environment: z.string(),

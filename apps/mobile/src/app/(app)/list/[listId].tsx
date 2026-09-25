@@ -170,6 +170,15 @@ export default function ListScreen() {
           loading={adding}
           disabled={title.trim().length === 0}
         />
+        {/* The catalogs need the network, so this is the one way of adding a
+            title that does not work on a plane. Type it by hand there and
+            search once you land. */}
+        <Button
+          label={t('catalog.addFromCatalog')}
+          variant="secondary"
+          icon="search-outline"
+          onPress={() => router.push(`/(app)/catalog?listId=${listId}`)}
+        />
       </Card>
 
       {list ? (

@@ -202,7 +202,13 @@ export function useListItems(listId: string | undefined) {
   }, [load]);
 
   const addItem = useCallback(
-    async (input: { title: string; priority?: ListItem['priority'] }) => {
+    async (input: {
+      title: string;
+      priority?: ListItem['priority'];
+      /** Provider record, when the title came from a catalog. */
+      externalId?: string | null;
+      metadata?: Record<string, unknown> | null;
+    }) => {
       if (!listId) return;
 
       const store = await getLocalStoreReady();
@@ -227,8 +233,8 @@ export function useListItems(listId: string | undefined) {
             completed: false,
             favorite: false,
             priority: input.priority ?? 'none',
-            externalId: null,
-            metadata: null,
+            externalId: input.externalId ?? null,
+            metadata: input.metadata ?? null,
             notes: null,
             version: 0,
             createdAt: now,
@@ -249,6 +255,10 @@ export function useListItems(listId: string | undefined) {
           title: input.title,
           position: existing.length,
           ...(input.priority ? { priority: input.priority } : {}),
+          // The provider id travels with the item so the same title is
+          // recognisable later, and so a future import can tell them apart.
+          ...(input.externalId ? { externalId: input.externalId } : {}),
+          ...(input.metadata ? { metadata: input.metadata } : {}),
         },
       });
 

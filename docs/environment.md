@@ -74,6 +74,20 @@ Ver [auth.md](architecture/auth.md#one-google-client-per-platform).
 | `EMAIL_FROM` | no | `no-reply@orbithub.app` | Must be a sender on a domain verified in Resend |
 | `WEB_ORIGIN` | no | `https://app.orbithub.com` | Base for the verification and reset links |
 
+### Catálogos
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `TMDB_API_KEY` | no | unset | Films and series. Without it that catalog answers `configured: false` |
+| `GOOGLE_BOOKS_API_KEY` | no | unset | Books. Same behaviour when missing |
+
+These keys stay on the server. The app asks `GET /catalog/search` on OrbitHub and never talks to
+TheMovieDB or Google Books directly, so a key cannot be lifted out of the app bundle and the quota
+belongs to the project rather than to whoever installed the app.
+
+A missing key is not an error: the endpoint answers `200` with `configured: false` and an empty
+list, and the app shows "this catalog is not set up" instead of a failure.
+
 ### `WEB_ORIGIN` es la app, no la API ni el remitente
 
 `WEB_ORIGIN` es la base de los enlaces de verificación y de reset, así que tiene que ser el
