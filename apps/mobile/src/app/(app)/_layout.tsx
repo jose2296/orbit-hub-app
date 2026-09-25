@@ -34,11 +34,13 @@ export default function AppLayout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="dashboard" options={{ title: t('dashboard.title') }} />
       <Stack.Screen name="workspaces" options={{ title: t('workspaces.title') }} />
-      <Stack.Screen name="workspace/[workspaceId]" options={{ title: '' }} />
+      <Stack.Screen name="workspace/[workspaceId]" options={{ headerShown: false }} />
       <Stack.Screen name="lists" options={{ title: t('lists.title') }} />
-      <Stack.Screen name="list/[listId]" options={{ title: '' }} />
+      <Stack.Screen name="list/[listId]" options={{ headerShown: false }} />
       <Stack.Screen name="sync" options={{ title: t('sync.title') }} />
       <Stack.Screen name="devices" options={{ title: t('settings.devices') }} />
+      <Stack.Screen name="catalog" options={{ headerShown: false }} />
+      <Stack.Screen name="item/[itemId]" options={{ headerShown: false }} />
     </Stack>
   );
 }

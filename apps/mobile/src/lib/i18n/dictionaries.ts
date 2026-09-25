@@ -130,6 +130,14 @@ const es = {
 
   'lists.duplicate': 'Duplicar lista',
 
+  'lists.kindTasks': 'Tareas',
+  'lists.kindMovies': 'Películas y series',
+  'lists.kindBooks': 'Libros',
+  'lists.completedCount': '{count} completadas',
+  'lists.completedSection': 'Completadas ({count})',
+  'lists.allDone': 'Todo hecho. No queda nada pendiente.',
+  'lists.addToList': 'Abrir detalle',
+
   'items.moveUp': 'Subir',
   'items.moveDown': 'Bajar',
 
@@ -441,6 +449,14 @@ const en: Record<TranslationKey, string> = {
   'items.viewDetails': 'View details',
 
   'lists.duplicate': 'Duplicate list',
+
+  'lists.kindTasks': 'Tasks',
+  'lists.kindMovies': 'Films and series',
+  'lists.kindBooks': 'Books',
+  'lists.completedCount': '{count} done',
+  'lists.completedSection': 'Completed ({count})',
+  'lists.allDone': 'All done. Nothing left.',
+  'lists.addToList': 'Open details',
 
   'items.moveUp': 'Move up',
   'items.moveDown': 'Move down',
