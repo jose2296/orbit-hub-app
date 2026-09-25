@@ -11,6 +11,7 @@ import { Screen } from '@/components/ui/screen';
 import { Segmented } from '@/components/ui/segmented';
 import { TextField } from '@/components/ui/text-field';
 import { AppText } from '@/components/ui/text';
+import { allowedCatalogKinds } from '@/lib/lists/catalog-kinds';
 import { CATALOG_MIN_QUERY, useCatalogSearch } from '@/hooks/use-catalog-search';
 import { useListItems, useLists } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
@@ -38,15 +39,21 @@ export default function CatalogSearchScreen() {
   const { results, isSearching, isAvailable, error, search, clear } = useCatalogSearch();
 
   const [query, setQuery] = useState('');
-  const [kind, setKind] = useState<CatalogKind>('movies');
+  const [kindOverride, setKindOverride] = useState<CatalogKind | null>(null);
   const [addingId, setAddingId] = useState<string | null>(null);
 
-  // A films or books list suggests its own catalog, which is the one the user
-  // almost always wants.
+  // A list only ever shows the catalogs that make sense for it, and opens on
+  // the one it almost certainly wants. Defaulting to films and fixing it later
+  // meant a books list searched TMDB and found nothing.
+  const allowedKinds = useMemo(() => allowedCatalogKinds(list?.kind), [list?.kind]);
+
+  const kind: CatalogKind = kindOverride && allowedKinds.includes(kindOverride)
+    ? kindOverride
+    : (allowedKinds[0] ?? 'movies');
+
   useEffect(() => {
-    if (list?.kind === 'books') setKind('books');
-    else if (list?.kind === 'movies') setKind('movies');
-  }, [list?.kind]);
+    setKindOverride(null);
+  }, [listId]);
 
   useEffect(() => {
     if (query.trim().length < CATALOG_MIN_QUERY) {
@@ -82,11 +89,12 @@ export default function CatalogSearchScreen() {
     }
   }
 
-  const kinds: { value: CatalogKind; label: string }[] = [
-    { value: 'movies', label: t('catalog.kindMovies') },
-    { value: 'tv', label: t('catalog.kindTv') },
-    { value: 'books', label: t('catalog.kindBooks') },
-  ];
+  const kinds: { value: CatalogKind; label: string }[] = allowedKinds.map((value) => ({
+    value,
+    label: t(
+      value === 'movies' ? 'catalog.kindMovies' : value === 'tv' ? 'catalog.kindTv' : 'catalog.kindBooks',
+    ),
+  }));
 
   return (
     <Screen>
@@ -107,7 +115,9 @@ export default function CatalogSearchScreen() {
           returnKeyType="search"
           placeholder={t('catalog.searchPlaceholder')}
         />
-        <Segmented options={kinds} value={kind} onChange={setKind} />
+        {kinds.length > 1 ? (
+          <Segmented options={kinds} value={kind} onChange={setKindOverride} />
+        ) : null}
       </Card>
 
       {!isAvailable ? (
