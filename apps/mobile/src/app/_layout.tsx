@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -29,6 +30,18 @@ export default function RootLayout() {
 function Navigation() {
   const theme = useTheme();
   const { status } = useSession();
+
+  useEffect(() => {
+    // Expo requires this at the root of the app: a sign-in started in one tab
+    // and finished in another only resumes if the page that receives the redirect
+    // asks for it. It is a no-op when no auth session is in flight, and it can
+    // throw if the opening window is gone, which must never take the app down.
+    try {
+      WebBrowser.maybeCompleteAuthSession();
+    } catch {
+      // The sign-in screen will offer to try again.
+    }
+  }, []);
 
   useEffect(() => {
     // Hiding the splash on mount shows a blank frame while the session is

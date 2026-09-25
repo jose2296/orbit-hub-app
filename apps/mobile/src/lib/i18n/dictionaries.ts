@@ -63,6 +63,9 @@ const es = {
     'Si existe una cuenta con ese correo, recibirás un enlace para restablecer la contraseña.',
   'auth.forgot.sent': 'Si la cuenta existe, el correo está en camino.',
   'auth.google.unavailable': 'El acceso con Google se habilitará cuando se configure el cliente OAuth.',
+  'auth.google.completing': 'Completando el acceso con Google…',
+  'auth.google.callbackFailed':
+    'No se pudo completar el acceso. Vuelve a intentar desde la pantalla de inicio de sesión.',
   'auth.verify.missingEmail': 'No sabemos a qué correo reenviar el mensaje.',
   'auth.verify.backToSignIn': 'Volver al inicio de sesión',
   'auth.verify.working': 'Verificando tu correo…',
@@ -326,6 +329,9 @@ const en: Record<TranslationKey, string> = {
   'auth.forgot.body': 'If an account exists for that email, you will receive a reset link.',
   'auth.forgot.sent': 'If the account exists, the email is on its way.',
   'auth.google.unavailable': 'Google sign-in will be enabled once the OAuth client is configured.',
+  'auth.google.completing': 'Completing Google sign-in…',
+  'auth.google.callbackFailed':
+    'Sign-in could not be completed. Try again from the sign-in screen.',
   'auth.verify.missingEmail': 'We do not know which address to resend the message to.',
   'auth.verify.backToSignIn': 'Back to sign in',
   'auth.verify.working': 'Verifying your email…',

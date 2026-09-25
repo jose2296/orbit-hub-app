@@ -77,6 +77,15 @@ The platform arrives in the request and only chooses between three clients the p
 app never names a client id for the API to use, so a hostile client cannot redirect the exchange
 somewhere else.
 
+### The web callback is a real route
+
+On web the consent screen opens in a popup and Google returns to the redirect URI. That page has
+to exist as an app route (`src/app/auth/google.tsx`) and call
+`WebBrowser.maybeCompleteAuthSession()`, otherwise the popup lands on the not found screen and the
+sign-in promise never resolves: the button looks broken and nothing reports an error. The root
+layout calls it too, as Expo requires, wrapped in a try because a reload during consent leaves
+the opening window gone.
+
 ## Google account linking
 
 Automatic linking is allowed **only** when all of these hold:

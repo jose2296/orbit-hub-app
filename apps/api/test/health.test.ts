@@ -45,6 +45,19 @@ describe('GET /api/v1/health', () => {
 
     expect(response.headers.get('x-request-id')).toBe('test-request-id');
   });
+
+  it('reports whether email is actually delivered', async () => {
+    // "The emails never arrive" is otherwise invisible: a process started before
+    // EMAIL_TRANSPORT changed keeps logging to the console while the file says
+    // resend. This makes the live value answerable in one request.
+    const response = await fetch(`${baseUrl}/api/v1/health`);
+    const body = (await response.json()) as {
+      checks: { email: { transport: string; delivers: boolean } };
+    };
+
+    expect(['console', 'resend', 'noop']).toContain(body.checks.email.transport);
+    expect(body.checks.email.delivers).toBe(body.checks.email.transport === 'resend');
+  });
 });
 
 describe('error envelope', () => {

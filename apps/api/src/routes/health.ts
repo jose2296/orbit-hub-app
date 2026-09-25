@@ -25,6 +25,13 @@ healthRouter.get('/', async (_req, res) => {
         status: database.ok ? 'ok' : 'down',
         latencyMs: database.latencyMs,
       },
+      // A process can be running with a different transport than the .env file
+      // suggests, and "the emails never arrive" is otherwise invisible until
+      // someone reads the logs.
+      email: {
+        transport: env.EMAIL_TRANSPORT,
+        delivers: env.EMAIL_TRANSPORT === 'resend',
+      },
     },
     timestamp: new Date().toISOString(),
   });

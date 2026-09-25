@@ -57,6 +57,15 @@ export const healthResponseSchema = z.object({
       status: healthStatusSchema,
       latencyMs: z.number().nonnegative().nullable(),
     }),
+    /**
+     * Which transport is live, so "the emails never arrive" is answerable with
+     * one request instead of guessing from the process environment.
+     */
+    email: z.object({
+      transport: z.enum(['console', 'resend', 'noop']),
+      /** False for `console`, which writes the message to the log instead. */
+      delivers: z.boolean(),
+    }),
   }),
   timestamp: isoDateTimeSchema,
 });
