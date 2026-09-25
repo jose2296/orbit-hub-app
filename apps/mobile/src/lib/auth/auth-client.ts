@@ -145,10 +145,22 @@ class AuthClient {
     return result;
   }
 
-  async loginWithGoogleCode(code: string, redirectUri?: string): Promise<Session> {
+  async loginWithGoogleCode(input: {
+    code: string;
+    redirectUri: string;
+    codeVerifier?: string;
+    platform: 'web' | 'ios' | 'android';
+  }): Promise<Session> {
     const result = await api.post<AuthResult>(
       '/auth/google',
-      { code, redirectUri, device: this.deviceInfo() },
+      {
+        code: input.code,
+        redirectUri: input.redirectUri,
+        ...(input.codeVerifier ? { codeVerifier: input.codeVerifier } : {}),
+        // The API picks the matching Google client; it never trusts a client id
+        // chosen by the app.
+        device: { ...this.deviceInfo(), platform: input.platform },
+      },
       { anonymous: true },
     );
 

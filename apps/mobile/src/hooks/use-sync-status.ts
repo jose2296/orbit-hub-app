@@ -1,10 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SyncConflict, SyncState, SyncStatus } from '@orbit-hub/contracts';
 import { useCallback, useEffect, useState } from 'react';
 
 import { STORAGE_KEYS } from '@/constants';
 import { getLocalStoreReady, subscribeToLocalStore, syncNow as runSyncNow } from '@/lib/offline';
 import type { PendingOperationRecord } from '@/lib/offline';
+import { keyValueStore } from '@/lib/storage/key-value';
 
 import { useNetworkStatus } from './use-network-status';
 import type { ConnectionState } from './use-network-status';
@@ -42,12 +42,11 @@ export function useSyncStatus(): SyncCentre {
 
   const refresh = useCallback(async () => {
     const store = await getLocalStoreReady();
-    const [records, storedConflicts, pendingCount, conflictCount, lastSyncedAt] = await Promise.all([
+    const [records, storedConflicts, pendingCount, conflictCount] = await Promise.all([
       store.listPending(50),
       store.listConflicts(),
       store.countPending(),
       store.countConflicts(),
-      AsyncStorage.getItem(STORAGE_KEYS.lastSyncedAt),
     ]);
 
     setPending(records);
@@ -56,7 +55,7 @@ export function useSyncStatus(): SyncCentre {
       ...current,
       pendingOperations: pendingCount,
       pendingConflicts: conflictCount,
-      lastSyncedAt,
+      lastSyncedAt: keyValueStore.get(STORAGE_KEYS.lastSyncedAt),
       state: resolveState(network.state, isSyncing, pendingCount, conflictCount, current.lastError),
     }));
   }, [isSyncing, network.state]);
@@ -88,9 +87,7 @@ export function useSyncStatus(): SyncCentre {
         return;
       }
       const timestamp = new Date().toISOString();
-      await AsyncStorage.setItem(STORAGE_KEYS.lastSyncedAt, timestamp).catch(() => {
-        // Losing the timestamp only affects the "last synced" label.
-      });
+      keyValueStore.set(STORAGE_KEYS.lastSyncedAt, timestamp);
       setStatus((current) => ({ ...current, lastSyncedAt: timestamp, lastError: null }));
       setLastMessage('success');
     } catch (error) {

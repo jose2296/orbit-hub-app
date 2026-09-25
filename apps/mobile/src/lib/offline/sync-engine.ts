@@ -1,7 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
 import { STORAGE_KEYS } from '@/constants';
+import { keyValueStore } from '@/lib/storage/key-value';
 
 import { getLocalStoreReady, subscribeToLocalStore } from './local-store';
 import { flushOutbox, pullIntoCache } from './sync-service';
@@ -66,9 +66,7 @@ async function runOnce(): Promise<SyncRunResult> {
     if (!pull.error) {
       // Recorded here rather than in the sync centre, so an automatic sync and
       // a manual one leave the same "last synced" trace.
-      await AsyncStorage.setItem(STORAGE_KEYS.lastSyncedAt, new Date().toISOString()).catch(() => {
-        // Losing the timestamp only affects the "last synced" label.
-      });
+      keyValueStore.set(STORAGE_KEYS.lastSyncedAt, new Date().toISOString());
     }
     return { pushed, pulled: pull.received, error: pull.error };
   })().finally(() => {

@@ -1,8 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Accent, Appearance } from '@orbit-hub/contracts';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
+
+import { keyValueStore } from '@/lib/storage/key-value';
 
 import { ACCENT_NAMES, createTheme } from './tokens';
 import type { ColorSchemeName, Theme } from './tokens';
@@ -50,9 +51,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw && active) {
-          const parsed = JSON.parse(raw) as Partial<AppearancePreference>;
+        const parsed = keyValueStore.getJson<Partial<AppearancePreference>>(STORAGE_KEY);
+        if (parsed && active) {
           if (isAppearance(String(parsed.appearance))) {
             setAppearanceState(parsed.appearance as Appearance);
           }
@@ -75,9 +75,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const persist = useCallback((next: AppearancePreference) => {
-    void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {
-      // Persistence is best effort; the in-memory value stays correct.
-    });
+    keyValueStore.setJson(STORAGE_KEY, next);
   }, []);
 
   const setAppearance = useCallback(

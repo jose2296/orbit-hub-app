@@ -41,8 +41,10 @@ const API_VARS = [
   { name: 'ACCESS_TOKEN_TTL_SECONDS', required: false, default: '900' },
   { name: 'REFRESH_TOKEN_TTL_SECONDS', required: false, default: '2592000' },
 
-  { name: 'GOOGLE_CLIENT_ID', required: false, default: 'unset: Google sign-in disabled' },
-  { name: 'GOOGLE_CLIENT_SECRET', required: false, default: 'unset: Google sign-in disabled' },
+  { name: 'GOOGLE_CLIENT_ID', required: false, default: 'unset: web Google sign-in disabled' },
+  { name: 'GOOGLE_CLIENT_SECRET', required: false, default: 'unset: web Google sign-in disabled' },
+  { name: 'GOOGLE_ANDROID_CLIENT_ID', required: false, default: 'unset: Android Google sign-in disabled' },
+  { name: 'GOOGLE_IOS_CLIENT_ID', required: false, default: 'unset: iOS Google sign-in disabled' },
 
   { name: 'EMAIL_TRANSPORT', required: false, default: 'console' },
   { name: 'RESEND_API_KEY', required: 'when EMAIL_TRANSPORT=resend', default: 'unset: email is only logged' },

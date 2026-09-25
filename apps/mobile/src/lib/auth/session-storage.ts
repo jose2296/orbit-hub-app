@@ -1,13 +1,13 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Device, Session, User } from '@orbit-hub/contracts';
 
 import { secureStorage } from '@/lib/storage/secure-storage';
+import { keyValueStore } from '@/lib/storage/key-value';
 
 const REFRESH_TOKEN_KEY = 'orbithub:refresh-token';
+const ACCESS_TOKEN_KEY = 'orbithub:access-token';
 const SESSION_META_KEY = 'orbithub:session-meta';
 
 interface SessionMeta {
-  accessToken: string;
   expiresIn: number;
   issuedAt: number;
   user: User;
@@ -15,39 +15,42 @@ interface SessionMeta {
 }
 
 export interface StoredSession {
+  /** Reassembled from the two secure tokens plus the stored profile. */
   session: Session;
   /** When the access token was issued, used to refresh before it expires. */
   issuedAt: number;
 }
 
 /**
- * The refresh token is the only long lived credential, so it goes to secure
- * storage (Keychain / Keystore). The rest of the session is non-sensitive
- * profile data and stays in AsyncStorage for fast reads.
+ * Session persistence.
+ *
+ * Both tokens are credentials, so both live in secure storage (Keychain /
+ * Keystore, and localStorage on web, which is the strongest thing a browser PWA
+ * offers). Only the profile goes to the plain key-value store, so the settings
+ * screens can read the user's name without unlocking the keychain on every
+ * launch. See docs/architecture/auth.md for the web trade-off.
  */
 export const sessionStorage = {
   async read(): Promise<StoredSession | null> {
     try {
-      const [refreshToken, rawMeta] = await Promise.all([
+      const [refreshToken, accessToken] = await Promise.all([
         secureStorage.get(REFRESH_TOKEN_KEY),
-        AsyncStorage.getItem(SESSION_META_KEY),
+        secureStorage.get(ACCESS_TOKEN_KEY),
       ]);
+      const meta = keyValueStore.getJson<SessionMeta>(SESSION_META_KEY);
 
-      if (!refreshToken || !rawMeta) return null;
-
-      const meta = JSON.parse(rawMeta) as SessionMeta;
-      if (!meta?.accessToken) return null;
+      if (!refreshToken || !accessToken || !meta) return null;
 
       return {
-        issuedAt: meta.issuedAt,
         session: {
-          accessToken: meta.accessToken,
+          accessToken,
           refreshToken,
           expiresIn: meta.expiresIn,
           tokenType: 'Bearer',
           user: meta.user,
           ...(meta.device ? { device: meta.device } : {}),
         },
+        issuedAt: meta.issuedAt,
       };
     } catch {
       return null;
@@ -56,7 +59,6 @@ export const sessionStorage = {
 
   async write(session: Session, issuedAt = Date.now()): Promise<void> {
     const meta: SessionMeta = {
-      accessToken: session.accessToken,
       expiresIn: session.expiresIn,
       issuedAt,
       user: session.user,
@@ -65,18 +67,18 @@ export const sessionStorage = {
 
     await Promise.all([
       secureStorage.set(REFRESH_TOKEN_KEY, session.refreshToken),
-      AsyncStorage.setItem(SESSION_META_KEY, JSON.stringify(meta)).catch(() => {
-        // Storage failures must not break an otherwise successful login.
-      }),
+      secureStorage.set(ACCESS_TOKEN_KEY, session.accessToken),
     ]);
+    // Storage failures must not break an otherwise successful login, and the
+    // in-memory session is already correct at this point.
+    keyValueStore.setJson(SESSION_META_KEY, meta);
   },
 
   async clear(): Promise<void> {
+    keyValueStore.remove(SESSION_META_KEY);
     await Promise.all([
       secureStorage.remove(REFRESH_TOKEN_KEY),
-      AsyncStorage.removeItem(SESSION_META_KEY).catch(() => {
-        // Nothing to do: the in-memory session is cleared by the caller.
-      }),
+      secureStorage.remove(ACCESS_TOKEN_KEY),
     ]);
   },
 };

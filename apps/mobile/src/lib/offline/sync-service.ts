@@ -12,6 +12,7 @@ import type {
 import { SYNC_DEFAULTS } from '@orbit-hub/config';
 
 import { api, toApiError } from '@/lib/api';
+import { keyValueStore } from '@/lib/storage/key-value';
 
 import { getLocalStoreReady } from './local-store';
 import type { CachedEntity, LocalStore, PendingOperationRecord } from './local-store';
@@ -44,26 +45,16 @@ export interface PullResult {
 const CURSOR_KEY = 'sync:cursor';
 
 async function readCursor(): Promise<string | null> {
-  const store = await getLocalStoreReady();
-  void store;
-  try {
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    return await AsyncStorage.getItem(CURSOR_KEY);
-  } catch {
-    return null;
-  }
+  void (await getLocalStoreReady());
+  return keyValueStore.get(CURSOR_KEY);
 }
 
 async function writeCursor(cursor: string | null): Promise<void> {
-  try {
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    if (cursor) {
-      await AsyncStorage.setItem(CURSOR_KEY, cursor);
-    } else {
-      await AsyncStorage.removeItem(CURSOR_KEY);
-    }
-  } catch {
+  if (cursor) {
+    keyValueStore.set(CURSOR_KEY, cursor);
+  } else {
     // A missing cursor only means a full resync next time.
+    keyValueStore.remove(CURSOR_KEY);
   }
 }
 

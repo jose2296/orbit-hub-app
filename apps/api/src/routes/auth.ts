@@ -192,6 +192,7 @@ authRouter.post('/google', perIp, sensitivePerIp, async (req, res) => {
     {
       code: input.code,
       ...(input.redirectUri ? { redirectUri: input.redirectUri } : {}),
+      ...(input.codeVerifier ? { codeVerifier: input.codeVerifier } : {}),
       device: deviceFrom(input.device),
     },
     contextFrom(req),

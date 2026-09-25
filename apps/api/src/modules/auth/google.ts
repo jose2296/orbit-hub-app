@@ -39,31 +39,87 @@ export class GoogleAuthError extends Error {
   }
 }
 
+export type GooglePlatform = 'web' | 'ios' | 'android';
+
+interface GoogleClient {
+  clientId: string;
+  /** Absent on native: those clients are public and must not hold a secret. */
+  clientSecret?: string;
+}
+
+/**
+ * One OAuth client per platform, because Google treats them differently.
+ *
+ * A "Web application" client is confidential and Google refuses to let an
+ * installed app use it, answering `invalid_request` with "does not comply with
+ * Google's OAuth 2.0 policy for keeping apps secure". Native clients are public,
+ * have no secret, and must redeem their code with the PKCE verifier.
+ */
+function googleClientFor(platform: GooglePlatform): GoogleClient | null {
+  if (platform === 'ios') {
+    return env.GOOGLE_IOS_CLIENT_ID ? { clientId: env.GOOGLE_IOS_CLIENT_ID } : null;
+  }
+  if (platform === 'android') {
+    return env.GOOGLE_ANDROID_CLIENT_ID ? { clientId: env.GOOGLE_ANDROID_CLIENT_ID } : null;
+  }
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return null;
+  return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
+}
+
 export function isGoogleConfigured(): boolean {
   return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+}
+
+/** True when the platform the device reported has a usable client. */
+export function isGoogleConfiguredFor(platform: GooglePlatform): boolean {
+  return googleClientFor(platform) !== null;
 }
 
 /**
  * Exchanges an authorization code for the user's profile.
  *
- * The app never sees the client secret: it obtains a short lived code with PKCE
- * and the API performs the exchange server side.
+ * The app never sees a client secret: it obtains a short lived code with PKCE
+ * and the API performs the exchange server side. On native the client is public,
+ * so the API sends the `code_verifier` the app generated instead of a secret.
+ *
+ * The platform comes from the request and only chooses between three clients the
+ * project owns. It cannot select an arbitrary third party client, and a wrong
+ * guess simply fails at Google.
  */
 export async function exchangeGoogleCode(input: {
   code: string;
   redirectUri?: string;
+  codeVerifier?: string;
+  platform?: GooglePlatform;
 }): Promise<GoogleProfile> {
-  if (!isGoogleConfigured()) {
-    throw new GoogleAuthError('Google sign-in is not configured', 'not_configured');
+  const platform: GooglePlatform = input.platform ?? 'web';
+  const client = googleClientFor(platform);
+
+  if (!client) {
+    throw new GoogleAuthError(
+      `Google sign-in is not configured for ${platform}`,
+      'not_configured',
+    );
+  }
+
+  if (!client.clientSecret && !input.codeVerifier) {
+    // A public client without the verifier cannot redeem the code at all, so
+    // this is a client bug rather than something a retry would fix.
+    throw new GoogleAuthError('The authorization code could not be redeemed', 'invalid_code');
   }
 
   const body = new URLSearchParams({
     code: input.code,
-    client_id: env.GOOGLE_CLIENT_ID as string,
-    client_secret: env.GOOGLE_CLIENT_SECRET as string,
+    client_id: client.clientId,
     grant_type: 'authorization_code',
   });
 
+  if (client.clientSecret) {
+    body.set('client_secret', client.clientSecret);
+  }
+  if (input.codeVerifier) {
+    body.set('code_verifier', input.codeVerifier);
+  }
   if (input.redirectUri) {
     body.set('redirect_uri', input.redirectUri);
   }

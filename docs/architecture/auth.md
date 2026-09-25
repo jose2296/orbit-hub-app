@@ -53,6 +53,30 @@ API cannot be used to enumerate accounts.
 - Breached-password checks run on register and password change.
 - Changing a password revokes every refresh token except the current one.
 
+## One Google client per platform
+
+Google treats OAuth clients by device type, and getting this wrong produces a dead button with
+a message that points at the app rather than the config:
+
+| Platform | Client type | Secret | Redirect |
+| --- | --- | --- | --- |
+| Web | Web application | yes, held by the API | `https://<domain>/auth/google` |
+| Android | Android | **none** | `orbithub://auth/google` |
+| iOS | iOS | **none** | `orbithub://auth/google` |
+
+Two rules follow, and both are enforced in `apps/api/src/modules/auth/google.ts`:
+
+- **A web client id on an installed app is rejected by Google** with `invalid_request` and "does
+  not comply with Google's OAuth 2.0 policy for keeping apps secure". Native builds need their
+  own clients, created with the package name / bundle id `com.orbithub.app`.
+- **A public client cannot keep a secret**, so its code can only be redeemed with the PKCE
+  verifier. The app generates it, and sends it to the API, which performs the exchange. A native
+  code arriving without a verifier is refused locally rather than sent to Google to fail.
+
+The platform arrives in the request and only chooses between three clients the project owns. The
+app never names a client id for the API to use, so a hostile client cannot redirect the exchange
+somewhere else.
+
 ## Google account linking
 
 Automatic linking is allowed **only** when all of these hold:

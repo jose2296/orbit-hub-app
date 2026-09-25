@@ -57,8 +57,13 @@ re-applies the migrations.
 | `JWT_SECRET` | **in production** | random per boot in development | 32+ characters. `make env-jwt` writes one |
 | `ACCESS_TOKEN_TTL_SECONDS` | no | `900` | 15 minutes |
 | `REFRESH_TOKEN_TTL_SECONDS` | no | `2592000` | 30 days, rotated on every use |
-| `GOOGLE_CLIENT_ID` | no | unset | Without it the Google button is disabled |
+| `GOOGLE_CLIENT_ID` | no | unset | Web client. Without it, Google sign-in is disabled on web |
 | `GOOGLE_CLIENT_SECRET` | no | unset | Server side only, never in the app |
+| `GOOGLE_ANDROID_CLIENT_ID` | no | unset | Android client. Public, no secret. Needed for native builds |
+| `GOOGLE_IOS_CLIENT_ID` | no | unset | iOS client. Public, no secret. Needed for native builds |
+
+Google needs a **different client per platform**: a web client id is rejected on an installed app.
+Ver [auth.md](architecture/auth.md#one-google-client-per-platform).
 
 ### Email
 
@@ -104,6 +109,17 @@ Check delivery at any time:
 make -C apps/api email-test EMAIL=you@example.com
 ```
 
+### Resend en modo prueba
+
+Resend keeps a fresh account in **test mode**: it accepts the sender but only delivers to the
+address of the account owner. Sending to anyone else answers `422` with *"Invalid `to` field.
+Please use our testing email address instead"*.
+
+That is a provider setting, not a bug, and the API handles it without breaking anything: the
+account is created, the failure is written to the audit trail as `auth.email_delivery_failed`, and
+the response is the same one a successful send would give. To leave test mode, open the Resend
+dashboard and check that `jrz-labs.com` shows **Verified** for both DKIM and SPF.
+
 ### Rate limiting
 
 | Variable | Default | Notes |
@@ -135,8 +151,10 @@ make -C apps/api email-test EMAIL=you@example.com
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
 | `EXPO_PUBLIC_API_URL` | no | `http://localhost:4000/api/v1` | On the Android emulator use `http://10.0.2.2:4000/api/v1` |
-| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | no | unset | Same client id as the API. Button disabled while empty |
-| `EXPO_PUBLIC_GOOGLE_REDIRECT_URI` | no | `orbithub://auth/google` | |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB` | no | unset | Web client id. Falls back to `EXPO_PUBLIC_GOOGLE_CLIENT_ID` |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID` | no | unset | Android client id. Public by design |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS` | no | unset | iOS client id. Public by design |
+| `EXPO_PUBLIC_GOOGLE_REDIRECT_URI` | no | `orbithub://auth/google` | Native only. On web the redirect is derived from the page origin |
 
 ---
 
@@ -169,7 +187,8 @@ make -C apps/api email-test EMAIL=you@example.com
 
 | Variable | Who creates it | When |
 | --- | --- | --- |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | You, in the Google Cloud console | Before Google sign-in ships |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | You, in the Google Cloud console | For Google sign-in on web |
+| `GOOGLE_ANDROID_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID` | You, in the Google Cloud console | For Google sign-in on a phone |
 | `DATABASE_URL` | You, on a managed PostgreSQL | Before the first deployment |
 | A real email transport | You, Resend / Postmark / SES | Before anyone else registers |
 

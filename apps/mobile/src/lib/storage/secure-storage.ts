@@ -1,7 +1,13 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const WEB_PREFIX = 'orbithub:';
+/**
+ * SecureStore keys are sandboxed per app, but the prefix still keeps them from
+ * colliding with anything else the app might store there. On web the caller's
+ * key is already namespaced (`orbithub:…`), so no prefix is added: doing it in
+ * both places produced `orbithub:orbithub:access-token`.
+ */
+const NATIVE_PREFIX = 'orbithub:';
 
 function webStorage(): Storage | null {
   try {
@@ -20,10 +26,10 @@ function webStorage(): Storage | null {
 export const secureStorage = {
   async get(key: string): Promise<string | null> {
     if (Platform.OS === 'web') {
-      return webStorage()?.getItem(WEB_PREFIX + key) ?? null;
+      return webStorage()?.getItem(key) ?? null;
     }
     try {
-      return await SecureStore.getItemAsync(key);
+      return await SecureStore.getItemAsync(NATIVE_PREFIX + key);
     } catch {
       return null;
     }
@@ -31,21 +37,21 @@ export const secureStorage = {
 
   async set(key: string, value: string): Promise<void> {
     if (Platform.OS === 'web') {
-      webStorage()?.setItem(WEB_PREFIX + key, value);
+      webStorage()?.setItem(key, value);
       return;
     }
-    await SecureStore.setItemAsync(key, value, {
+    await SecureStore.setItemAsync(NATIVE_PREFIX + key, value, {
       keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
   },
 
   async remove(key: string): Promise<void> {
     if (Platform.OS === 'web') {
-      webStorage()?.removeItem(WEB_PREFIX + key);
+      webStorage()?.removeItem(key);
       return;
     }
     try {
-      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(NATIVE_PREFIX + key);
     } catch {
       // Deleting a missing key is not an error worth surfacing.
     }

@@ -32,6 +32,12 @@ const envSchema = z
 
     GOOGLE_CLIENT_ID: z.string().optional(),
     GOOGLE_CLIENT_SECRET: z.string().optional(),
+    /**
+     * Native Google clients. Google refuses a web client id on an installed
+     * app, and these are public clients: no secret, redeemed with PKCE.
+     */
+    GOOGLE_ANDROID_CLIENT_ID: z.string().optional(),
+    GOOGLE_IOS_CLIENT_ID: z.string().optional(),
 
     EMAIL_TRANSPORT: z.enum(['console', 'resend', 'noop']).default('console'),
     RESEND_API_KEY: z.string().optional(),

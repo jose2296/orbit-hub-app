@@ -24,14 +24,21 @@ vi.mock('@react-native-community/netinfo', () => ({
 
 const storage = new Map<string, string>();
 
-vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: async (key: string) => storage.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
+vi.mock('../src/lib/storage/key-value', () => ({
+  keyValueStore: {
+    get: (key: string) => storage.get(key) ?? null,
+    set: (key: string, value: string) => {
       storage.set(key, value);
     },
-    removeItem: async (key: string) => {
+    remove: (key: string) => {
       storage.delete(key);
+    },
+    getJson: <T,>(key: string): T | null => {
+      const raw = storage.get(key);
+      return raw === undefined ? null : (JSON.parse(raw) as T);
+    },
+    setJson: (key: string, value: unknown) => {
+      storage.set(key, JSON.stringify(value));
     },
   },
 }));

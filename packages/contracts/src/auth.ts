@@ -101,6 +101,11 @@ export type ResendVerificationRequest = z.infer<typeof resendVerificationRequest
 export const googleAuthRequestSchema = z.object({
   code: z.string().min(1),
   redirectUri: z.url().optional(),
+  /**
+   * PKCE verifier. Mandatory to redeem a code on a native public client, which
+   * has no secret: Google's token endpoint rejects the code without it.
+   */
+  codeVerifier: z.string().min(10).max(256).optional(),
   device: deviceSchema.pick({ label: true, platform: true }).optional(),
 });
 export type GoogleAuthRequest = z.infer<typeof googleAuthRequestSchema>;

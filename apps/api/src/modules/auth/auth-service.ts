@@ -463,12 +463,21 @@ export class AuthService {
    * merge.
    */
   async loginWithGoogle(
-    input: { code: string; redirectUri?: string; device: DeviceInfo },
+    input: { code: string; redirectUri?: string; codeVerifier?: string; device: DeviceInfo },
     context: RequestContext,
   ): Promise<Session> {
     let profile;
     try {
-      profile = await exchangeGoogleCode({ code: input.code, redirectUri: input.redirectUri });
+      profile = await exchangeGoogleCode({
+        code: input.code,
+        redirectUri: input.redirectUri,
+        codeVerifier: input.codeVerifier,
+        // 'unknown' is not a Google client, so it falls back to the web one and
+        // fails loudly rather than guessing.
+        platform: input.device.platform === 'ios' || input.device.platform === 'android'
+          ? input.device.platform
+          : 'web',
+      });
     } catch (error) {
       if (error instanceof GoogleAuthError) {
         if (error.reason === 'not_configured') {

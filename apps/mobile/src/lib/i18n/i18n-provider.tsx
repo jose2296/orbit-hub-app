@@ -1,9 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getLocales } from 'expo-localization';
 import type { Locale } from '@orbit-hub/contracts';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@orbit-hub/config';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+
+import { keyValueStore } from '@/lib/storage/key-value';
 
 import { dictionaries, formatTranslation } from './dictionaries';
 import type { TranslationKey } from './dictionaries';
@@ -32,33 +33,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
 
   useEffect(() => {
-    let active = true;
-
-    void (async () => {
-      const fallback = deviceLocale();
-      try {
-        const stored = await AsyncStorage.getItem(STORAGE_KEY);
-        if (!active) return;
-        if (stored === 'es' || stored === 'en') {
-          setLocaleState(stored);
-          return;
-        }
-        setLocaleState(fallback);
-      } catch {
-        if (active) setLocaleState(fallback);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
+    const fallback = deviceLocale();
+    const stored = keyValueStore.get(STORAGE_KEY);
+    setLocaleState(stored === 'es' || stored === 'en' ? stored : fallback);
   }, []);
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
-    void AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {
-      // Best effort: the in-memory locale is still correct for this session.
-    });
+    keyValueStore.set(STORAGE_KEY, next);
   }, []);
 
   const value = useMemo<I18nContextValue>(
