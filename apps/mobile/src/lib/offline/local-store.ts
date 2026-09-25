@@ -16,6 +16,8 @@ export interface PendingOperationRecord {
   baseVersion: number;
   /** JSON encoded payload, or null for deletes. */
   payload: string | null;
+  /** JSON encoded base state the client believed was stored. */
+  base: string | null;
   createdAt: string;
   attempts: number;
   lastAttemptAt: string | null;
@@ -65,6 +67,7 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
   entity_id TEXT NOT NULL,
   base_version INTEGER NOT NULL,
   payload TEXT,
+  base TEXT,
   created_at TEXT NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0,
   last_attempt_at TEXT,
@@ -117,8 +120,8 @@ class ExpoSqliteStore implements NativeStore {
   async enqueue(record: PendingOperationRecord): Promise<void> {
     await this.db().runAsync(
       `INSERT OR REPLACE INTO sync_outbox
-        (operation_id, client_id, kind, entity, entity_id, base_version, payload, created_at, attempts, last_attempt_at, last_error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (operation_id, client_id, kind, entity, entity_id, base_version, payload, base, created_at, attempts, last_attempt_at, last_error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.operationId,
       record.clientId,
       record.kind,
@@ -126,6 +129,7 @@ class ExpoSqliteStore implements NativeStore {
       record.entityId,
       record.baseVersion,
       record.payload,
+      record.base,
       record.createdAt,
       record.attempts,
       record.lastAttemptAt,
@@ -143,6 +147,7 @@ class ExpoSqliteStore implements NativeStore {
       entity_id: string;
       base_version: number;
       payload: string | null;
+      base: string | null;
       created_at: string;
       attempts: number;
       last_attempt_at: string | null;
@@ -157,6 +162,7 @@ class ExpoSqliteStore implements NativeStore {
       entityId: row.entity_id,
       baseVersion: row.base_version,
       payload: row.payload,
+      base: row.base,
       createdAt: row.created_at,
       attempts: row.attempts,
       lastAttemptAt: row.last_attempt_at,

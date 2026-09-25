@@ -34,6 +34,7 @@ Every operation carries:
 | `operationId` | Idempotency key. Replaying is safe. |
 | `clientId` | Stable per device, so the server can attribute changes. |
 | `baseVersion` | The version the client last saw; the basis for conflict detection. |
+| `base` | The values the client believed were stored, for the fields it touches. With them the server can do a real three way merge; without them a stale version plus a differing value is treated as a conflict. |
 | `clientTimestamp` | Ordering hint and debugging aid. Never trusted for conflict resolution. |
 
 ## Pull path
@@ -47,14 +48,19 @@ monotonic `version`; the client applies anything with a higher version than the 
 Decided per field, not per record:
 
 1. **No conflict** when the client's `baseVersion` equals the current server version: apply.
-2. **Field level merge** when the fields touched by the client were not touched by the other
-   writer: apply the client's values and keep the server's for the rest.
-3. **Same field, different value**: the server stores a `SyncConflict` with both versions and
-   returns `status: "conflict"`. The client removes the operation from the outbox and shows the
-   conflict in the sync centre.
-4. **Delete versus edit**: the delete wins, the edit is preserved inside the conflict record so
+2. **Three way merge** when the client sent its `base` state. Field by field:
+   `server === base` means only the client wrote it, so the client value is applied; a field
+   where both sides moved away from `base` is a conflict. No overlap means no conflict, and no
+   user is asked to decide anything.
+3. **No base state**: the server cannot tell "the other writer changed it" from "it was always
+   different", so a stale version plus a differing value is treated as a conflict. Safe by
+   default.
+4. **Same field changed on both sides**: the server keeps its value, stores a `SyncConflict`
+   with both records and returns `status: "conflict"`. The client drops the operation from the
+   outbox and shows it in the sync centre.
+5. **Delete versus edit**: the delete wins, the edit is preserved inside the conflict record so
    the user can restore it deliberately.
-5. **Never** last-write-wins on the whole record. Silent overwrites are the failure mode this
+6. **Never** last-write-wins on the whole record. Silent overwrites are the failure mode this
    design exists to prevent.
 
 Conflicts are resolved explicitly (`keep_server`, `keep_client`, `merge`), which produces a new

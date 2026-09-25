@@ -86,16 +86,24 @@ export const folders = pgTable(
 /**
  * Dashboard layout, one row per user. Stored as the widget grid the legacy app
  * had (pinned, ordered, sized) so the redesign keeps the data.
+ *
+ * It has its own `id` so every syncable table shares the same key shape; the
+ * user is the owner and the unique index enforces one row per user.
  */
-export const dashboardLayouts = pgTable('dashboard_layouts', {
-  userId: uuid('user_id')
-    .primaryKey()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  layout: jsonb('layout').$type<DashboardWidget[]>().notNull().default([]),
-  version: integer('version').notNull().default(1),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
-});
+export const dashboardLayouts = pgTable(
+  'dashboard_layouts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    layout: jsonb('layout').$type<DashboardWidget[]>().notNull().default([]),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('dashboard_layouts_user_unique').on(table.userId)],
+);
 
 export interface DashboardWidget {
   id: string;

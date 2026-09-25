@@ -30,6 +30,13 @@ export const syncOperationSchema = z.object({
   entityId: uuidSchema,
   baseVersion: z.number().int().min(0),
   payload: z.record(z.string(), z.unknown()).nullable().default(null),
+  /**
+   * The values the client believed were stored before this change, for the
+   * fields it is touching. With them the server can do a real three way merge
+   * and auto apply changes that do not collide. Without them a stale version
+   * plus a differing value is treated as a conflict, which is the safe default.
+   */
+  base: z.record(z.string(), z.unknown()).nullable().default(null),
   clientTimestamp: isoDateTimeSchema,
 });
 export type SyncOperation = z.infer<typeof syncOperationSchema>;
@@ -62,6 +69,8 @@ export const syncPullRequestSchema = z.object({
   cursor: z.string().min(1).nullable().default(null),
   limit: z.number().int().min(1).max(500).default(200),
   entities: z.array(syncEntitySchema).optional(),
+  /** Stable per device, so each device keeps its own cursor. */
+  deviceId: uuidSchema.optional(),
 });
 export type SyncPullRequest = z.infer<typeof syncPullRequestSchema>;
 

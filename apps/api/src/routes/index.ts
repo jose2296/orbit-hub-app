@@ -4,6 +4,7 @@ import { HttpError } from '../lib/http-error.js';
 
 import { authRouter } from './auth.js';
 import { healthRouter } from './health.js';
+import { syncRouter } from './sync.js';
 
 /**
  * Endpoints that are contracted but not implemented yet return 501 with a
@@ -21,5 +22,5 @@ export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/auth', authRouter);
-apiRouter.use('/sync', placeholderRouter);
+apiRouter.use('/sync', syncRouter);
 apiRouter.use('/workspaces', placeholderRouter);

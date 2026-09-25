@@ -20,6 +20,11 @@ export interface EnqueueInput {
   entityId: string;
   baseVersion: number;
   payload?: Record<string, unknown> | null;
+  /**
+   * Values the device believed were stored, for the fields being changed. The
+   * server uses them to merge without asking when nothing collides.
+   */
+  base?: Record<string, unknown> | null;
 }
 
 export interface FlushResult {
@@ -48,6 +53,7 @@ export async function enqueueOperation(input: EnqueueInput): Promise<string> {
     entityId: input.entityId,
     baseVersion: input.baseVersion,
     payload: input.payload ? JSON.stringify(input.payload) : null,
+    base: input.base ? JSON.stringify(input.base) : null,
     createdAt: new Date().toISOString(),
     attempts: 0,
     lastAttemptAt: null,
@@ -67,6 +73,7 @@ function toOperation(record: PendingOperationRecord): SyncOperation {
     entityId: record.entityId,
     baseVersion: record.baseVersion,
     payload: record.payload ? (JSON.parse(record.payload) as Record<string, unknown>) : null,
+    base: record.base ? (JSON.parse(record.base) as Record<string, unknown>) : null,
     clientTimestamp: record.createdAt,
   };
 }
