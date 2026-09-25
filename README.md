@@ -102,6 +102,7 @@ Start at [`docs/README.md`](docs/README.md):
 - [Design system](docs/architecture/design-system.md)
 - [Notes editor](docs/architecture/notes-editor.md)
 - [Roadmap](docs/roadmap.md)
+- [Pending from the owner](docs/pending-from-owner.md) — credentials and decisions still needed
 - [Legacy migration (future work)](docs/migration/legacy-migration.md)
 - [Security & secrets](docs/security/secrets.md)
 
