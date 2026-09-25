@@ -117,18 +117,26 @@ que llegan con la fase de colaboración.
 
 ---
 
-## Fase 3 — Listas y búsqueda ⬜
+## Fase 3 — Listas y búsqueda 🟡
 
-- [ ] Listas (tareas, películas, libros) e items
-- [ ] Posición, completada, prioridad, etiquetas, favoritos
-- [ ] Búsqueda global sobre todas las entidades
-- [ ] Plantillas, duplicar, acciones rápidas
-- [ ] Integraciones con proveedores **detrás de la API** (TheMovieDB, Google Books); ninguna
-      clave en el cliente
-- [ ] Metadatos de proveedor cacheados para render offline
+- [x] Esquema: `lists` y `list_items` con una forma única para los tres tipos
+- [x] `list` y `list_item` como entidades sincronizables con campos acotados
+- [x] Los items heredan el workspace de su lista, comprobado antes de insertar
+- [x] Lecturas: `GET /lists`, `/lists/:id`, `/lists/:id/items` con filtros
+- [x] Búsqueda global en el servidor: workspaces, carpetas, listas y elementos
+- [x] Pantallas de listas y de detalle con elementos
+- [x] Búsqueda en la app sobre la caché local, funciona sin conexión
+- [x] Metadatos de proveedor guardados (`externalId` + `metadata`)
+- [ ] Fechas límite y recurrencia (descartadas en alcance, vuelve en revisión)
+- [ ] Plantillas y duplicar
+- [ ] Integraciones reales con TheMovieDB y Google Books detrás de la API
+- [ ] Reordenar elementos arrastrando
 
 **Criterio de salida:** una lista creada en un avión aparece una sola vez, y en orden, en otro
 dispositivo al aterrizar.
+
+**Estado:** el ciclo completo de listas funciona de punta a punta por el outbox. Falta la
+integración con los catálogos externos, que necesita claves de proveedor.
 
 ---
 

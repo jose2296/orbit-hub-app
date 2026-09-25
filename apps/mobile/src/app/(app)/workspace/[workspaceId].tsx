@@ -156,6 +156,12 @@ export default function WorkspaceScreen() {
         )}
       </View>
 
+      <Button
+        label={t('lists.title')}
+        icon="list-outline"
+        onPress={() => router.push(`/(app)/lists?workspaceId=${workspaceId}`)}
+      />
+
       <Card variant="muted" style={{ gap: theme.spacing.md }}>
         <AppText variant="callout" tone="muted">
           {t('folders.createHint')}
