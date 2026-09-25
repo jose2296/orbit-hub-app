@@ -58,10 +58,18 @@ export default function SignUpScreen() {
         return;
       }
 
-      router.push('/(auth)/verify-email');
+      router.push({ pathname: '/(auth)/verify-email', params: { email: email.trim() } });
     } catch (caught) {
       const apiError = toApiError(caught);
-      setError(apiError.message || t('auth.error.generic'));
+      setError(
+        apiError.kind === 'conflict'
+          ? t('auth.error.emailTaken')
+          : apiError.kind === 'network' || apiError.kind === 'timeout'
+            ? t('auth.error.network')
+            : apiError.kind === 'rate_limited'
+              ? t('auth.error.tooManyAttempts')
+              : apiError.message || t('auth.error.generic'),
+      );
     } finally {
       setSubmitting(false);
     }

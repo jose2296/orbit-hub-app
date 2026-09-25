@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "doctor": "expo-doctor",
     "config:check": "expo config --type public",
-    "clean": "rm -rf .expo dist node_modules/.cache"
+    "clean": "rm -rf .expo dist node_modules/.cache",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -44,6 +46,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.2"
   }
 }

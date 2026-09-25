@@ -1,7 +1,8 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { api, toApiError } from '@/lib/api';
+import { authClient, toAuthError } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Screen } from '@/components/ui/screen';
@@ -13,23 +14,33 @@ import { useTheme } from '@/theme';
 export default function ForgotPasswordScreen() {
   const theme = useTheme();
   const t = useTranslation();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ email?: string }>();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(params.email ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit() {
+    if (!email.includes('@')) {
+      setError(t('auth.invalidEmail'));
+      return;
+    }
+
     setError(null);
     setSubmitting(true);
     try {
-      await api.post('/auth/password/forgot', { email: email.trim() }, { anonymous: true });
+      await authClient.requestPasswordReset(email.trim());
       setSent(true);
     } catch (caught) {
-      const apiError = toApiError(caught);
-      // The API always answers the same way to avoid account enumeration.
+      const apiError = toAuthError(caught);
+      // The API answers the same way for unknown accounts; only transport
+      // failures are worth showing.
       if (apiError.kind === 'validation_failed') {
         setError(apiError.message);
+      } else if (apiError.kind === 'network' || apiError.kind === 'timeout') {
+        setError(t('auth.error.network'));
       } else {
         setSent(true);
       }
@@ -49,9 +60,16 @@ export default function ForgotPasswordScreen() {
 
       <Card variant="muted" style={{ gap: theme.spacing.md }}>
         {sent ? (
-          <AppText variant="callout" tone="success">
-            {t('auth.forgot.sent')}
-          </AppText>
+          <>
+            <AppText variant="callout" tone="success">
+              {t('auth.forgot.sent')}
+            </AppText>
+            <Button
+              label={t('common.back')}
+              variant="secondary"
+              onPress={() => router.replace('/(auth)/sign-in')}
+            />
+          </>
         ) : (
           <>
             <TextField
@@ -63,6 +81,10 @@ export default function ForgotPasswordScreen() {
               keyboardType="email-address"
               inputMode="email"
               textContentType="emailAddress"
+              returnKeyType="send"
+              onSubmitEditing={() => {
+                void onSubmit();
+              }}
             />
             {error ? (
               <AppText variant="caption" tone="danger">

@@ -1,9 +1,11 @@
 import { Platform } from 'react-native';
 
+import type { AuthResult, Device, Session } from '@orbit-hub/contracts';
+import { sessionSchema } from '@orbit-hub/contracts';
+import { SYNC_DEFAULTS } from '@orbit-hub/config';
+
 import { api, configureApiClient, toApiError } from '@/lib/api';
 import type { ApiError } from '@/lib/api';
-import type { AuthResult, Session } from '@orbit-hub/contracts';
-import { SYNC_DEFAULTS } from '@orbit-hub/config';
 
 import { sessionStorage } from './session-storage';
 import type { StoredSession } from './session-storage';
@@ -12,6 +14,17 @@ export type AuthEvent =
   | { type: 'signed-in'; session: Session }
   | { type: 'signed-out' }
   | { type: 'refreshed'; session: Session };
+
+/** Raised when the credentials are right but the email is still unverified. */
+export class EmailVerificationRequiredError extends Error {
+  readonly email: string;
+
+  constructor(email: string) {
+    super('Email verification required');
+    this.name = 'EmailVerificationRequiredError';
+    this.email = email;
+  }
+}
 
 type AuthListener = (event: AuthEvent) => void;
 
@@ -59,12 +72,32 @@ class AuthClient {
   async restore(): Promise<Session | null> {
     const stored = await sessionStorage.read();
     this.stored = stored;
-    if (stored) {
-      // A token restored from disk may already be expired: refresh eagerly.
-      if (this.isExpiring(stored)) {
-        await this.refresh();
-      }
+
+    if (!stored) return null;
+
+    // A token restored from disk may already be expired: refresh eagerly.
+    if (this.isExpiring(stored)) {
+      const refreshed = await this.refresh();
+      if (refreshed) return refreshed;
     }
+
+    // Validate the session against the API so the profile is never stale, and a
+    // revoked device stops working immediately.
+    try {
+      const user = await api.get<Session['user']>('/auth/me');
+      if (this.stored) {
+        this.stored = { ...this.stored, session: { ...this.stored.session, user } };
+        await sessionStorage.write(this.stored.session, this.stored.issuedAt);
+      }
+    } catch (error) {
+      const apiError = toApiError(error);
+      if (apiError.kind === 'unauthorized' || apiError.kind === 'forbidden') {
+        await this.clear();
+        return null;
+      }
+      // Offline: keep the cached profile, the app is designed for this.
+    }
+
     return this.session;
   }
 
@@ -73,13 +106,25 @@ class AuthClient {
     return expiresAt - Date.now() < SYNC_DEFAULTS.refreshSkewSeconds * 1000;
   }
 
+  /**
+   * Signs in with email and password.
+   *
+   * Throws `EmailVerificationRequiredError` when the account exists and the
+   * password is correct but the address has not been verified yet.
+   */
   async login(email: string, password: string): Promise<Session> {
     const result = await api.post<AuthResult>(
       '/auth/login',
-      { email, password, device: this.deviceInfo() },
+      { email: email.trim(), password, device: this.deviceInfo() },
       { anonymous: true },
     );
-    return this.handleAuthResult(result);
+
+    if (result.status !== 'authenticated') {
+      throw new EmailVerificationRequiredError(result.email);
+    }
+
+    await this.acceptSession(result.session);
+    return result.session;
   }
 
   async register(input: {
@@ -106,15 +151,38 @@ class AuthClient {
       { code, redirectUri, device: this.deviceInfo() },
       { anonymous: true },
     );
-    return this.handleAuthResult(result);
-  }
 
-  private async handleAuthResult(result: AuthResult): Promise<Session> {
     if (result.status !== 'authenticated') {
-      throw toApiError(new Error('Email verification required'));
+      throw new EmailVerificationRequiredError(result.email);
     }
+
     await this.acceptSession(result.session);
     return result.session;
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    await api.post('/auth/password/forgot', { email: email.trim() }, { anonymous: true });
+  }
+
+  async resendVerification(email: string): Promise<void> {
+    await api.post('/auth/verify-email/resend', { email: email.trim() }, { anonymous: true });
+  }
+
+  async verifyEmail(token: string): Promise<string> {
+    const result = await api.post<{ email: string }>(
+      '/auth/verify-email',
+      { token },
+      { anonymous: true },
+    );
+    return result.email;
+  }
+
+  async listDevices(): Promise<Device[]> {
+    return api.get<Device[]>('/auth/devices');
+  }
+
+  async revokeDevice(sessionId: string): Promise<void> {
+    await api.delete(`/auth/devices/${sessionId}`);
   }
 
   private async acceptSession(session: Session): Promise<void> {
@@ -135,21 +203,17 @@ class AuthClient {
 
     this.refreshInFlight = (async () => {
       try {
-        const result = await api.post<AuthResult>(
+        const payload = await api.post<Session>(
           '/auth/refresh',
           { refreshToken },
           { anonymous: true, noRetryOnUnauthorized: true },
         );
 
-        if (result.status !== 'authenticated') {
-          await this.clear();
-          return null;
-        }
-
-        await sessionStorage.write(result.session);
-        this.stored = { session: result.session, issuedAt: Date.now() };
-        this.emit({ type: 'refreshed', session: result.session });
-        return result.session;
+        const session = sessionSchema.parse(payload);
+        await sessionStorage.write(session);
+        this.stored = { session, issuedAt: Date.now() };
+        this.emit({ type: 'refreshed', session });
+        return session;
       } catch (error) {
         // Only an explicit rejection ends the session; a network blip must not.
         const apiError = toApiError(error);

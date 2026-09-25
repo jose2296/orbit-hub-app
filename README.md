@@ -53,10 +53,25 @@ npm run api                # API on http://localhost:4000
 
 ```bash
 npm run typecheck          # tsc for every workspace
-npm run test               # vitest (API)
+npm run test               # vitest: API integration tests + app client tests
 npm run config:check       # expo config validation
 npm run doctor             # expo-doctor
 npm run check              # typecheck + test + config:check
+```
+
+The API test suite runs against a real Postgres (PGlite, in process) with the committed
+migrations applied. There are no database mocks, so a broken query fails the build.
+
+## Running the API without a database
+
+With no `DATABASE_URL`, development falls back to an embedded Postgres stored in
+`apps/api/.data/pglite`. `npm run api` applies the migrations on boot and is ready to use.
+Delete that directory to start from an empty database.
+
+```bash
+npm run api                                     # start on :4000
+npm run db:migrate -w @orbit-hub/api            # apply migrations only
+npm run db:generate -w @orbit-hub/api           # generate SQL after changing the schema
 ```
 
 ## Environment variables
@@ -68,8 +83,8 @@ Mobile (public, inlined at build time):
 | `EXPO_PUBLIC_API_URL`          | Base URL of the API, e.g. `http://localhost:4000/api/v1` |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth web client id (added later)   |
 
-API (secret, `apps/api/.env`): `DATABASE_URL`, `CORS_ORIGINS`, `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, `EMAIL_FROM`, token TTLs, `LOG_LEVEL`.
+API (secret, `apps/api/.env`): `DATABASE_URL`, `CORS_ORIGINS`, `JWT_SECRET`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EMAIL_FROM`, token TTLs, `LOG_LEVEL`.
 
 Secrets are never committed; see [`.env.example`](.env.example) and
 [`docs/security/secrets.md`](docs/security/secrets.md).
@@ -92,6 +107,12 @@ Start at [`docs/README.md`](docs/README.md):
 
 ## Status
 
-Phase 0/1 foundation: monorepo, design system, app shell (onboarding, auth screens, tabs,
-sync centre), local outbox, API skeleton with health checks, CI and documentation.
-Feature work follows the [roadmap](docs/roadmap.md).
+Phase 0 done: monorepo, design system, app shell (onboarding, auth screens, tabs, sync centre),
+local outbox, API skeleton with health checks, CI and documentation.
+
+Phase 1 done: real auth end to end. Registration with email verification, password login,
+Google code exchange with safe account linking, refresh rotation with replay detection, device
+management and revocation, password reset, account deletion, audit log, rate limiting, and a
+Postgres schema with committed migrations. 45 tests, no database mocks.
+
+Next is Phase 2 (workspaces, folders, dashboard) per the [roadmap](docs/roadmap.md).

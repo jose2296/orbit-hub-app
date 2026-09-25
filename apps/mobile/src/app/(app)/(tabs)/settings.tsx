@@ -108,9 +108,7 @@ export default function SettingsScreen() {
             title={t('settings.devices')}
             subtitle={t('settings.devices.body')}
             chevron
-            onPress={() => {
-              // Devices management ships with the auth API (Phase 1).
-            }}
+            onPress={() => router.push('/(app)/devices')}
           />
           <Divider inset={50} />
           <ListRow

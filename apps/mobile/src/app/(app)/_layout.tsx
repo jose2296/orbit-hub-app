@@ -33,6 +33,7 @@ export default function AppLayout() {
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="sync" options={{ title: t('sync.title') }} />
+      <Stack.Screen name="devices" options={{ title: t('settings.devices') }} />
     </Stack>
   );
 }

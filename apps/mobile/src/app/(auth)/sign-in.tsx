@@ -2,12 +2,12 @@ import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Screen } from '@/components/ui/screen';
 import { TextField } from '@/components/ui/text-field';
 import { AppText } from '@/components/ui/text';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { useSession } from '@/hooks/use-session';
 import { toApiError } from '@/lib/api';
 import { useTranslation } from '@/lib/i18n';
@@ -34,14 +34,24 @@ export default function SignInScreen() {
 
     setSubmitting(true);
     try {
-      await signIn(email.trim(), password);
+      const result = await signIn(email.trim(), password);
+
+      if (result === 'email_verification_required') {
+        router.push({ pathname: '/(auth)/verify-email', params: { email: email.trim() } });
+        return;
+      }
+
       router.replace('/(app)/(tabs)');
     } catch (caught) {
       const apiError = toApiError(caught);
       setError(
         apiError.kind === 'network' || apiError.kind === 'timeout'
           ? t('auth.error.network')
-          : apiError.message || t('auth.error.generic'),
+          : apiError.kind === 'unauthorized'
+            ? t('auth.error.invalidCredentials')
+            : apiError.kind === 'rate_limited'
+              ? t('auth.error.tooManyAttempts')
+              : apiError.message || t('auth.error.generic'),
       );
     } finally {
       setSubmitting(false);
@@ -101,10 +111,8 @@ export default function SignInScreen() {
 
         <Button label={t('auth.submit.signIn')} onPress={() => void onSubmit()} loading={submitting} />
 
-        <Link href="/(auth)/forgot-password">
-          <AppText variant="callout" tone="accent" align="center">
-            {t('auth.forgotPassword')}
-          </AppText>
+        <Link href="/(auth)/forgot-password" asChild>
+          <Button label={t('auth.forgotPassword')} variant="ghost" />
         </Link>
       </Card>
 

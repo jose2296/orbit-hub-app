@@ -1,6 +1,7 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 
-import { api, toApiError } from '@/lib/api';
+import { authClient, toAuthError } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -12,17 +13,26 @@ import { useTheme } from '@/theme';
 export default function VerifyEmailScreen() {
   const theme = useTheme();
   const t = useTranslation();
+  const router = useRouter();
+  const { email } = useLocalSearchParams<{ email?: string }>();
+
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function onResend() {
+    if (!email) {
+      setError(t('auth.verify.missingEmail'));
+      return;
+    }
+
+    setError(null);
     setResending(true);
     try {
-      await api.post('/auth/verify-email/resend', {}, { anonymous: true });
+      await authClient.resendVerification(email);
       setResent(true);
     } catch (caught) {
-      // Silently ignore: the screen already tells the user to check the inbox.
-      void toApiError(caught);
+      setError(toAuthError(caught).message || t('auth.error.generic'));
     } finally {
       setResending(false);
     }
@@ -33,7 +43,7 @@ export default function VerifyEmailScreen() {
       <EmptyState
         icon="mail-outline"
         title={t('auth.verify.title')}
-        description={t('auth.verify.body')}
+        description={email ? `${t('auth.verify.body')}\n\n${email}` : t('auth.verify.body')}
       />
 
       <Card variant="muted" style={{ gap: theme.spacing.md }}>
@@ -42,11 +52,21 @@ export default function VerifyEmailScreen() {
             {t('auth.forgot.sent')}
           </AppText>
         ) : null}
+        {error ? (
+          <AppText variant="caption" tone="danger" align="center">
+            {error}
+          </AppText>
+        ) : null}
         <Button
           label={t('auth.verify.resend')}
           variant="secondary"
           onPress={() => void onResend()}
           loading={resending}
+        />
+        <Button
+          label={t('auth.verify.backToSignIn')}
+          variant="ghost"
+          onPress={() => router.replace('/(auth)/sign-in')}
         />
       </Card>
     </Screen>

@@ -1,5 +1,8 @@
 # Auth design
 
+**Estado:** implementado en `apps/api/src/modules/auth/` y verificado con tests de integración
+(ver `apps/api/test/auth.test.ts`).
+
 ## Decision
 
 OrbitHub owns its authentication. Google is an external identity provider consumed through
@@ -107,10 +110,37 @@ session id is checked against a revocation list.
 
 ## Security checklist before launch
 
-- [ ] Argon2id hashing with tuned parameters and a per-user salt.
-- [ ] Email verification enforced before the first session.
-- [ ] Rate limiting on `/auth/*` (per IP and per email).
-- [ ] Refresh token rotation with replay detection.
-- [ ] Secrets only in the environment, never in the repository or the client bundle.
-- [ ] `emailVerified` checked server side on every privileged action that needs it.
-- [ ] Audit log for sign-in, sign-out, token revocation, linking and deletion.
+Implemented and covered by tests:
+
+- [x] Argon2id hashing with tuned parameters and a per-user salt
+- [x] Email verification enforced before the first session
+- [x] Rate limiting on `/auth/*` (per IP and per email)
+- [x] Refresh token rotation with replay detection
+- [x] Enumeration-safe responses on login, reset and resend
+- [x] Audit log for sign-in, sign-out, token revocation, linking and deletion
+- [x] Re-authentication for password change and account deletion
+
+Still open before going live:
+
+- [ ] A real email provider (the console transport only logs)
+- [ ] Production `JWT_SECRET` and a managed `DATABASE_URL`
+- [ ] Rate limiter backed by a shared store when running more than one instance
+- [ ] Monitoring and alerts on the audit log
+
+## Implementation map
+
+| Concern | File |
+| --- | --- |
+| HTTP surface | `apps/api/src/routes/auth.ts` |
+| Domain logic | `apps/api/src/modules/auth/auth-service.ts` |
+| Data access | `apps/api/src/modules/auth/auth-repository.ts` |
+| Row to contract mapping | `apps/api/src/modules/auth/auth-mappers.ts` |
+| Passwords | `apps/api/src/lib/password.ts` |
+| Access and refresh tokens | `apps/api/src/lib/tokens.ts`, `src/lib/crypto.ts` |
+| Google exchange | `apps/api/src/modules/auth/google.ts` |
+| Session guard | `apps/api/src/middleware/require-auth.ts` |
+| Throttling | `apps/api/src/middleware/rate-limit.ts` |
+| Audit trail | `apps/api/src/modules/audit/audit.ts` |
+| Email | `apps/api/src/modules/email/email.ts` |
+| Client side | `apps/mobile/src/lib/auth/` |
+| Tests | `apps/api/test/auth.test.ts`, `apps/mobile/test/api-client.test.ts` |

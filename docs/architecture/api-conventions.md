@@ -32,6 +32,10 @@ Error:
 Every response carries an `X-Request-Id` header. Clients may send their own; the API echoes it
 when it is a sane length and generates a UUID otherwise.
 
+The mobile client unwraps the envelope in `apiRequest`, so screens and hooks only ever handle
+`data`. A response that is not an envelope is passed through untouched, which keeps the client
+usable against endpoints that answer with a bare payload.
+
 ## Error codes
 
 | Code | Status | Meaning |
@@ -93,5 +97,9 @@ unauthorised row are indistinguishable (`not_found` in both cases).
 ## Rate limiting
 
 Applied per IP for authentication endpoints (login, register, password reset) and per user for
-writes. Limits are configurable and returned as `Retry-After` when exceeded. This is part of
-Phase 1 and must be in place before the API is exposed publicly.
+writes. Limits are configurable through `AUTH_RATE_LIMIT_*` and returned as `Retry-After` when
+exceeded.
+
+The current limiter keeps its counters in process memory, which is correct for a single
+instance. With more than one instance the effective limit becomes `max x instances`, so moving
+it to a shared store (Redis or Postgres) is a deployment requirement, not an optimisation.

@@ -1,29 +1,24 @@
-import type { Session } from '@orbit-hub/contracts';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import type { Device, Session } from '@orbit-hub/contracts';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { authClient } from '@/lib/auth';
+import { authClient, EmailVerificationRequiredError } from '@/lib/auth';
 
 type SessionStatus = 'loading' | 'authenticated' | 'anonymous';
 
-interface SessionContextValue {
+export interface SessionContextValue {
   status: SessionStatus;
   session: Session | null;
   user: Session['user'] | null;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<'authenticated' | 'email_verification_required'>;
   register: (input: {
     email: string;
     password: string;
     displayName: string;
     locale: string;
   }) => Promise<'authenticated' | 'email_verification_required'>;
+  listDevices: () => Promise<Device[]>;
+  revokeDevice: (sessionId: string) => Promise<void>;
   signOut: (allDevices?: boolean) => Promise<void>;
 }
 
@@ -61,9 +56,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const next = await authClient.login(email, password);
-    setSession(next);
-    setStatus('authenticated');
+    try {
+      const next = await authClient.login(email, password);
+      setSession(next);
+      setStatus('authenticated');
+      return 'authenticated' as const;
+    } catch (error) {
+      if (error instanceof EmailVerificationRequiredError) {
+        return 'email_verification_required' as const;
+      }
+      throw error;
+    }
   }, []);
 
   const register = useCallback(
@@ -85,6 +88,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous');
   }, []);
 
+  const listDevices = useCallback(() => authClient.listDevices(), []);
+  const revokeDevice = useCallback((sessionId: string) => authClient.revokeDevice(sessionId), []);
+
   const value = useMemo<SessionContextValue>(
     () => ({
       status,
@@ -92,9 +98,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       signIn,
       register,
+      listDevices,
+      revokeDevice,
       signOut,
     }),
-    [register, session, signIn, signOut, status],
+    [listDevices, register, revokeDevice, session, signIn, signOut, status],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

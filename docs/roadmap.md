@@ -30,45 +30,57 @@ Monorepo, app, API y documentación. Detalle en el commit inicial.
 El objetivo es una cuenta real de principio a fin: registrarse, verificar, entrar en dos
 dispositivos, revocar uno y cerrar sesión en todos.
 
-### 1.1 Datos
-- [ ] ADR 0006: decisión de ORM/capa de acceso
-- [ ] Esquema Drizzle: `users`, `auth_identities`, `sessions`, `email_tokens`, `devices`, `audit_logs`
-- [ ] Migración SQL generada y versionada
-- [ ] Cliente de base de datos con transacciones y pool
-- [ ] Tests de integración contra PGlite (Postgres real en proceso, sin servidor)
+### 1.1 Datos ✅
+- [x] ADR 0006: Drizzle ORM con doble driver (node-postgres / PGlite)
+- [x] Esquema: `users`, `auth_identities`, `sessions`, `email_tokens`, `audit_logs`
+- [x] Migración SQL generada y versionada
+- [x] Cliente de base de datos con transacciones y pool
+- [x] Tests de integración contra PGlite (Postgres real en proceso, sin servidor)
 
-### 1.2 Contratos
-- [ ] Esquemas Zod de request/response de todos los endpoints de auth
-- [ ] `AuthResult`, `Session`, `Device`, `User` compartidos con la app
+### 1.2 Contratos ✅
+- [x] Esquemas Zod de request/response de todos los endpoints de auth
+- [x] `AuthResult`, `Session`, `Device`, `User` compartidos con la app
 
-### 1.3 Seguridad
-- [ ] Hashing Argon2id con sal por usuario
-- [ ] Access tokens JWT (`jose`), refresh tokens opacos almacenados hasheados
-- [ ] Rotación de refresh token con detección de replay (revoca la familia)
-- [ ] Verificación de email con token de un solo uso y expiración
-- [ ] Recuperación de contraseña sin revelar si la cuenta existe
-- [ ] Rate limiting en `/auth/*` por IP y por email
-- [ ] Audit log: login, logout, refresh, revocación, linking, cambio de contraseña
+### 1.3 Seguridad ✅
+- [x] Hashing Argon2id con sal por usuario y rehash oportunista
+- [x] Access tokens JWT (`jose`), refresh tokens opacos almacenados hasheados
+- [x] Rotación de refresh token con detección de replay (revoca la familia)
+- [x] Verificación de email con token de un solo uso y expiración
+- [x] Recuperación de contraseña sin revelar si la cuenta existe
+- [x] Rate limiting en `/auth/*` por IP y por email
+- [x] Audit log: login, logout, refresh, revocación, linking, cambio de contraseña
 
-### 1.4 Endpoints
-- [ ] `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`
-- [ ] `POST /auth/verify-email`, `/auth/verify-email/resend`
-- [ ] `POST /auth/password/forgot`, `/auth/password/reset`, `/auth/password/change`
-- [ ] `POST /auth/google` (intercambio de código + linking seguro)
-- [ ] `GET /auth/me`, `GET /auth/devices`, `DELETE /auth/devices/:id`
+### 1.4 Endpoints ✅
+- [x] `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`
+- [x] `POST /auth/verify-email`, `/auth/verify-email/resend`
+- [x] `POST /auth/password/forgot`, `/auth/password/reset`, `/auth/password/change`
+- [x] `POST /auth/google` (intercambio de código + linking seguro)
+- [x] `GET /auth/me`, `GET /auth/devices`, `DELETE /auth/devices/:id`
+- [x] `DELETE /auth/account` con reautenticación
 
-### 1.5 Email
-- [ ] Abstracción `EmailSender` con transporte de consola en desarrollo
-- [ ] Plantillas de verificación y recuperación
+### 1.5 Email ✅
+- [x] Abstracción `EmailSender` con transporte de consola en desarrollo
+- [x] Plantillas de verificación y recuperación en español e inglés
+- [ ] Proveedor de email real (pendiente de decidir)
 
-### 1.6 App
-- [ ] Registro y login reales conectados a la API
-- [ ] Pantalla de verificación de email alcanzable desde el flujo real
-- [ ] Ajustes → Dispositivos: listar y revocar
-- [ ] Mensajes de error del API por código, no por texto
+### 1.6 App ✅
+- [x] Registro y login reales conectados a la API
+- [x] Pantalla de verificación de email con reenvío
+- [x] Ajustes → Dispositivos: listar, revocar y cerrar sesión en todos
+- [x] Mensajes de error del API por código, no por texto
+- [x] Tests del cliente HTTP (envelope, refresh, reintento, errores, timeout)
 
-**Criterio de salida:** un usuario se registra, verifica el correo, entra en dos dispositivos,
-los ve en Ajustes, revoca uno y cierra sesión en todos. Probado con tests de integración.
+**Estado:** implementada. 45 tests en verde (36 de API, 9 de app), de los cuales 25 son de
+integración contra Postgres real.
+
+**Pendiente para cerrar la fase:**
+- [ ] Proveedor de email real y dominio de producción
+- [ ] Credenciales reales de Google OAuth (las aporta el usuario)
+- [ ] Ejecutar el mismo esquema en PostgreSQL gestionado
+- [ ] Empaquetado de la API para el entorno de destino
+
+**Criterio de salida cumplido:** un usuario se registra, verifica el correo, entra en dos
+dispositivos, los ve en Ajustes, revoca uno y cierra sesión en todos, con tests que lo cubren.
 
 ---
 

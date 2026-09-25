@@ -232,11 +232,20 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     return undefined as T;
   }
 
+  let payload: unknown;
   try {
-    return JSON.parse(text) as T;
+    payload = JSON.parse(text);
   } catch {
     throw new ApiError({ kind: 'unknown', message: 'Malformed JSON response' });
   }
+
+  // The API answers with the { data, meta } envelope (apiResponseSchema in the
+  // shared contracts). Screens work with the payload, never with the envelope.
+  if (payload && typeof payload === 'object' && 'data' in payload && 'meta' in payload) {
+    return (payload as { data: T }).data;
+  }
+
+  return payload as T;
 }
 
 export const api = {
