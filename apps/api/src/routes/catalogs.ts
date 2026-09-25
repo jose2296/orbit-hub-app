@@ -1,4 +1,8 @@
-import { catalogKindsForListSchema, catalogSearchQuerySchema } from '@orbit-hub/contracts';
+import {
+  catalogDetailsQuerySchema,
+  catalogKindsForListSchema,
+  catalogSearchQuerySchema,
+} from '@orbit-hub/contracts';
 import { Router } from 'express';
 
 import { HttpError } from '../lib/http-error.js';
@@ -7,6 +11,7 @@ import { logger } from '../lib/logger.js';
 import {
   CatalogError,
   catalogKindsFor,
+  fetchCatalogDetails,
   isCatalogConfigured,
   searchCatalog,
 } from '../modules/catalogs/catalog-service.js';
@@ -44,6 +49,37 @@ catalogRouter.get('/search', async (req, res) => {
       logger.warn({ kind, reason: error.reason, userId }, 'catalog search failed');
       if (error.reason === 'bad_query') {
         throw HttpError.validation('The request payload is invalid', { q: error.message });
+      }
+      throw HttpError.badRequest('The catalog provider is unavailable right now');
+    }
+    throw error;
+  }
+});
+
+/**
+ * One record in full, for the detail screen.
+ *
+ * Fetched on open rather than stored with the item: a detail is large, changes
+ * with the provider, and a list only needs enough to recognise a title offline.
+ */
+catalogRouter.get('/details', async (req, res) => {
+  const { kind, externalId } = catalogDetailsQuerySchema.parse(req.query);
+  const userId = req.auth?.userId;
+  if (!userId) throw HttpError.unauthorized();
+
+  if (!isCatalogConfigured(kind)) {
+    throw HttpError.notImplemented('This catalog is not configured on this server');
+  }
+
+  try {
+    sendData(res, 200, await fetchCatalogDetails(kind, externalId));
+  } catch (error) {
+    if (error instanceof CatalogError) {
+      logger.warn({ kind, externalId, reason: error.reason, userId }, 'catalog details failed');
+      if (error.reason === 'bad_query') {
+        throw HttpError.validation('The request payload is invalid', {
+          externalId: error.message,
+        });
       }
       throw HttpError.badRequest('The catalog provider is unavailable right now');
     }

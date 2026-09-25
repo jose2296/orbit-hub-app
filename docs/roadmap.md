@@ -130,6 +130,8 @@ que llegan con la fase de colaboración.
 - [x] Búsqueda en la app sobre la caché local, funciona sin conexión
 - [x] Metadatos de proveedor guardados (`externalId` + `metadata`)
 - [x] Integraciones reales con TheMovieDB y Google Books detrás de la API
+- [x] Detalle de película, serie y libro: póster, sinopsis, año, duración, géneros,
+      puntuación, reparto, temporada/editorial e ISBN
 - [ ] Fechas límite y recurrencia (descartadas en alcance, vuelve en revisión)
 - [ ] Plantillas y duplicar
 - [ ] Reordenar elementos arrastrando

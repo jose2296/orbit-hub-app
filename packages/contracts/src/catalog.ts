@@ -46,6 +46,50 @@ export const catalogSearchResponseSchema = z.object({
 });
 export type CatalogSearchResponse = z.infer<typeof catalogSearchResponseSchema>;
 
+/**
+ * One record in full, for the detail screen.
+ *
+ * Deliberately not stored in the list item: a detail is fetched when it is
+ * opened, and a list keeps only enough to recognise the title offline.
+ */
+export const catalogDetailsSchema = z.object({
+  provider: z.enum(['tmdb', 'google-books']),
+  externalId: z.string().min(1).max(120),
+  kind: catalogKindSchema,
+  title: z.string(),
+  imageUrl: z.url().nullable(),
+  /** Wide image, used behind the header on a film or series. */
+  backdropUrl: z.url().nullable(),
+  overview: z.string().nullable(),
+  /** TMDB tagline, or the subtitle of a book. */
+  tagline: z.string().nullable(),
+  /** Year, or the publication year for a book. */
+  released: z.string().nullable(),
+  /** "Released", "Returning series", "Ended". */
+  status: z.string().nullable(),
+  /** Minutes for a film, episode length for a series, pages for a book. */
+  runtime: z.number().int().nullable(),
+  genres: z.array(z.string()),
+  /** Provider rating out of 10. */
+  score: z.number().nullable(),
+  authors: z.array(z.string()),
+  cast: z.array(z.string()).optional(),
+  publisher: z.string().optional(),
+  seasons: z.number().int().optional(),
+  episodes: z.number().int().optional(),
+  homepage: z.string().optional(),
+  identifiers: z
+    .array(z.object({ type: z.string().optional(), identifier: z.string().optional() }))
+    .optional(),
+});
+export type CatalogDetails = z.infer<typeof catalogDetailsSchema>;
+
+export const catalogDetailsQuerySchema = z.object({
+  kind: catalogKindSchema,
+  externalId: z.string().min(1).max(120),
+});
+export type CatalogDetailsQuery = z.infer<typeof catalogDetailsQuerySchema>;
+
 /** Turns a catalog hit into the fields a list item stores. */
 export const catalogItemDraftSchema = z.object({
   listId: uuidSchema,

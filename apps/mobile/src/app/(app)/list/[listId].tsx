@@ -117,20 +117,55 @@ export default function ListScreen() {
                   label=""
                 />
 
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={item.title}
-                  onPress={() => void removeItem(item)}
-                  style={styles.flex}
-                >
-                  <AppText
-                    variant="body"
-                    tone={item.completed ? 'subtle' : 'default'}
-                    style={item.completed ? styles.strike : undefined}
+                {/*
+                  A catalog item opens its detail: the provider record behind it
+                  is the whole point of adding it from a catalog. A hand written
+                  one has no externalId, so the title stays a plain label.
+                */}
+                {item.externalId ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={item.title}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(app)/item/[itemId]',
+                        params: {
+                          itemId: item.id,
+                          kind: list?.kind === 'books' ? 'books' : 'movies',
+                          externalId: item.externalId,
+                          title: item.title,
+                        },
+                      })
+                    }
+                    style={[styles.flex, { gap: 2 }]}
                   >
-                    {item.title}
-                  </AppText>
-                </Pressable>
+                    <AppText
+                      variant="body"
+                      tone={item.completed ? 'subtle' : 'default'}
+                      style={item.completed ? styles.strike : undefined}
+                    >
+                      {item.title}
+                    </AppText>
+                    <AppText variant="caption" tone="subtle">
+                      {t('items.viewDetails')}
+                    </AppText>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={item.title}
+                    onPress={() => void removeItem(item)}
+                    style={styles.flex}
+                  >
+                    <AppText
+                      variant="body"
+                      tone={item.completed ? 'subtle' : 'default'}
+                      style={item.completed ? styles.strike : undefined}
+                    >
+                      {item.title}
+                    </AppText>
+                  </Pressable>
+                )}
 
                 {item.priority !== 'none' ? (
                   <Badge label={t(`items.priority.${item.priority}`)} tone={PRIORITY_TONE[item.priority]} />

@@ -1,4 +1,4 @@
-import type { CatalogKind, CatalogResult } from '@orbit-hub/contracts';
+import type { CatalogDetails, CatalogKind, CatalogResult } from '@orbit-hub/contracts';
 import { z } from 'zod';
 
 import { env } from '../../config/env.js';
@@ -51,19 +51,22 @@ function booksConfigured(): boolean {
  * back constantly while someone browses, and the providers rate limit hard
  * enough that a double click can exhaust a quota.
  */
-const cache = new Map<string, { expiresAt: number; value: CatalogResult[] }>();
+/** Search hits and detail records are cached together under one budget. */
+type CacheValue = CatalogResult[] | CatalogDetails;
 
-function readCache(key: string): CatalogResult[] | null {
+const cache = new Map<string, { expiresAt: number; value: CacheValue }>();
+
+function readCache<T extends CacheValue>(key: string): T | null {
   const entry = cache.get(key);
   if (!entry) return null;
   if (entry.expiresAt <= Date.now()) {
     cache.delete(key);
     return null;
   }
-  return entry.value;
+  return entry.value as T;
 }
 
-function writeCache(key: string, value: CatalogResult[]): void {
+function writeCache(key: string, value: CacheValue): void {
   if (cache.size >= CACHE_MAX_ENTRIES) {
     // Cheap eviction: the oldest insertion, which Map keeps first.
     const oldest = cache.keys().next();
@@ -170,7 +173,13 @@ const googleBookSchema = z.object({
       subtitle: z.string().optional(),
       authors: z.array(z.string()).optional(),
       publishedDate: z.string().optional(),
+      publisher: z.string().optional(),
       description: z.string().optional(),
+      categories: z.array(z.string()).optional(),
+      averageRating: z.number().optional(),
+      industryIdentifiers: z
+        .array(z.object({ type: z.string().optional(), identifier: z.string().optional() }))
+        .optional(),
       imageLinks: z
         .object({
           thumbnail: z.string().optional(),
@@ -254,6 +263,166 @@ export function catalogKindsFor(listKind: string): CatalogKind[] {
   }
 }
 
+/* ----------------------------------------------------------------- details -- */
+
+const tmdbGenreSchema = z.object({ id: z.number(), name: z.string() });
+
+const tmdbMovieDetailSchema = tmdbMovieSchema.extend({
+  tagline: z.string().optional(),
+  status: z.string().optional(),
+  runtime: z.number().nullable().optional(),
+  vote_average: z.number().optional(),
+  homepage: z.string().optional(),
+  genres: z.array(tmdbGenreSchema).optional(),
+});
+
+const tmdbSeriesDetailSchema = z.object({
+  id: z.number(),
+  name: z.string().optional(),
+  overview: z.string().optional(),
+  tagline: z.string().optional(),
+  status: z.string().optional(),
+  first_air_date: z.string().optional(),
+  poster_path: z.string().nullable().optional(),
+  vote_average: z.number().optional(),
+  homepage: z.string().optional(),
+  genres: z.array(tmdbGenreSchema).optional(),
+  number_of_seasons: z.number().optional(),
+  number_of_episodes: z.number().optional(),
+  episode_run_time: z.array(z.number()).optional(),
+});
+
+const googleBookDetailSchema = googleBookSchema;
+
+async function fetchTmdbDetails(
+  kind: 'movies' | 'tv',
+  externalId: string,
+): Promise<CatalogDetails> {
+  if (!tmdbConfigured()) {
+    throw new CatalogError(`The ${kind} catalog is not configured`, 'not_configured');
+  }
+
+  // The search results already know the path, so no extra round trip is needed.
+  const [type, raw] = externalId.split(':');
+  const path = type === 'tv' ? 'tv' : 'movie';
+  if (!raw) {
+    throw new CatalogError('That identifier does not belong to this catalog', 'bad_query');
+  }
+
+  const url = new URL(`https://api.themoviedb.org/3/${path}/${encodeURIComponent(raw)}`);
+  url.searchParams.set('api_key', env.TMDB_API_KEY as string);
+  url.searchParams.set('language', 'es-ES');
+  url.searchParams.append('append_to_response', 'credits');
+
+  const rawPayload = (await fetchJson(url, 'application/json')) as Record<string, unknown>;
+  const payload = (kind === 'tv' ? tmdbSeriesDetailSchema : tmdbMovieDetailSchema).parse(rawPayload);
+
+  const genres = (payload.genres ?? []).map((genre) => genre.name);
+  // A film reports release_date and a series first_air_date, so the branch is on
+  // the parsed union rather than on a field both may or may not have.
+  const film = 'release_date' in payload ? payload : null;
+  const series = 'number_of_seasons' in payload ? payload : null;
+
+  const year = (film?.release_date ?? series?.first_air_date ?? '').slice(0, 4) || null;
+  const credits = (rawPayload['credits'] ?? {}) as { cast?: { name?: string }[] };
+  const cast = (credits.cast ?? [])
+    .map((person) => person.name)
+    .filter((name): name is string => Boolean(name))
+    .slice(0, 12);
+
+  const title = (film?.title ?? series?.name) || 'Sin título';
+  const runtime = film?.runtime ?? series?.episode_run_time?.[0] ?? null;
+  const backdrop = rawPayload['backdrop_path'];
+  const poster = film?.poster_path ?? series?.poster_path ?? null;
+
+  // Built as a whole rather than inline, so the two branches of the union do
+  // not have to be reconciled by the compiler at a single return statement.
+  const details: CatalogDetails = {
+    provider: 'tmdb',
+    externalId,
+    kind,
+    title,
+    imageUrl: poster ? `https://image.tmdb.org/t/p/w342${poster}` : null,
+    backdropUrl: typeof backdrop === 'string' && backdrop
+      ? `https://image.tmdb.org/t/p/w780${backdrop}`
+      : null,
+    overview: payload.overview && payload.overview.length > 0 ? payload.overview : null,
+    tagline: payload.tagline ?? null,
+    released: year,
+    status: payload.status ?? null,
+    runtime,
+    genres,
+    score: payload.vote_average ?? null,
+    authors: [],
+    ...(payload.homepage ? { homepage: payload.homepage } : {}),
+    ...(series?.number_of_seasons
+      ? {
+          seasons: series.number_of_seasons,
+          ...(series.number_of_episodes ? { episodes: series.number_of_episodes } : {}),
+        }
+      : {}),
+    ...(cast.length > 0 ? { cast } : {}),
+  };
+
+  return details;
+}
+
+async function fetchGoogleBookDetails(externalId: string): Promise<CatalogDetails> {
+  if (!booksConfigured()) {
+    throw new CatalogError('The books catalog is not configured', 'not_configured');
+  }
+
+  const url = new URL(
+    `https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(externalId)}`,
+  );
+  url.searchParams.set('key', env.GOOGLE_BOOKS_API_KEY as string);
+
+  const payload = googleBookDetailSchema.parse(await fetchJson(url, 'application/json'));
+  const info = payload.volumeInfo;
+  if (!info?.title) {
+    throw new CatalogError('The provider returned no details for this book', 'unavailable');
+  }
+
+  const authors = info.authors ?? [];
+
+  return {
+    provider: 'google-books',
+    externalId,
+    kind: 'books',
+    title: info.title,
+    imageUrl: httpsImage(info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail),
+    backdropUrl: null,
+    overview: info.description && info.description.length > 0 ? info.description : null,
+    tagline: info.subtitle ?? null,
+    released: (info.publishedDate ?? '').slice(0, 4) || null,
+    status: null,
+    runtime: info.pageCount ?? null,
+    genres: info.categories ?? [],
+    score: info.averageRating ?? null,
+    authors,
+    ...(info.publisher ? { publisher: info.publisher } : {}),
+    ...(info.industryIdentifiers ? { identifiers: info.industryIdentifiers } : {}),
+  };
+}
+
+/** Full record for one item, for the detail screen. */
+export async function fetchCatalogDetails(
+  kind: CatalogKind,
+  externalId: string,
+): Promise<CatalogDetails> {
+  const key = `detail:${kind}:${externalId}`;
+  const cached = readCache<CatalogDetails>(key);
+  if (cached) return cached;
+
+  const details =
+    kind === 'books'
+      ? await fetchGoogleBookDetails(externalId)
+      : await fetchTmdbDetails(kind, externalId);
+
+  writeCache(key, details);
+  return details;
+}
+
 export async function searchCatalog(kind: CatalogKind, rawQuery: string): Promise<CatalogResult[]> {
   const query = rawQuery.trim().slice(0, 120);
   if (query.length < 2) {
@@ -261,10 +430,11 @@ export async function searchCatalog(kind: CatalogKind, rawQuery: string): Promis
   }
 
   const key = `${kind}:${query.toLowerCase()}`;
-  const cached = readCache(key);
+  const cached = readCache<CatalogResult[]>(key);
   if (cached) return cached;
 
-  const results = kind === 'books' ? await searchGoogleBooks(query) : await searchTmdb(kind, query);
+  const results: CatalogResult[] =
+    kind === 'books' ? await searchGoogleBooks(query) : await searchTmdb(kind, query);
   writeCache(key, results);
   return results;
 }

@@ -18,9 +18,13 @@ vi.mock('../src/config/env.js', async (importOriginal) => ({
   env,
 }));
 
-const { CatalogError, catalogKindsFor, clearCatalogCache, searchCatalog } = await import(
-  '../src/modules/catalogs/catalog-service.js'
-);
+const {
+  CatalogError,
+  catalogKindsFor,
+  clearCatalogCache,
+  fetchCatalogDetails,
+  searchCatalog,
+} = await import('../src/modules/catalogs/catalog-service.js');
 
 const requests: URL[] = [];
 
@@ -188,6 +192,140 @@ describe('searchCatalog: shared behaviour', () => {
     const error = await searchCatalog('books', 'error').catch((caught) => caught);
 
     expect((error as InstanceType<typeof CatalogError>).reason).toBe('unavailable');
+  });
+});
+
+describe('fetchCatalogDetails', () => {
+  it('maps a film: poster, backdrop, runtime, genres, score and cast', async () => {
+    stubFetch((url) => {
+      if (url.pathname.endsWith('/movie/603')) {
+        return {
+          id: 603,
+          title: 'Matrix',
+          overview: 'Un hacker descubre la realidad.',
+          tagline: 'El futuro no es lo que era.',
+          release_date: '1999-03-31',
+          runtime: 136,
+          status: 'Released',
+          vote_average: 8.2,
+          homepage: 'https://www.themoviedb.org/movie/603',
+          poster_path: '/p.jpg',
+          backdrop_path: '/b.jpg',
+          genres: [{ id: 28, name: 'Acción' }, { id: 878, name: 'Ciencia ficción' }],
+          credits: { cast: [{ name: 'Keanu Reeves' }, { name: 'Carrie-Anne Moss' }] },
+        };
+      }
+      return {};
+    });
+
+    const details = await fetchCatalogDetails('movies', 'movie:603');
+
+    expect(details.title).toBe('Matrix');
+    expect(details.imageUrl).toContain('/p.jpg');
+    expect(details.backdropUrl).toContain('/b.jpg');
+    expect(details.runtime).toBe(136);
+    expect(details.genres).toEqual(['Acción', 'Ciencia ficción']);
+    expect(details.score).toBe(8.2);
+    expect(details.released).toBe('1999');
+    expect(details.cast).toEqual(['Keanu Reeves', 'Carrie-Anne Moss']);
+  });
+
+  it('maps a series: seasons, episode length and first_air_date', async () => {
+    stubFetch((url) => {
+      if (url.pathname.endsWith('/tv/1396')) {
+        return {
+          id: 1396,
+          name: 'Breaking Bad',
+          first_air_date: '2008-01-20',
+          episode_run_time: [47],
+          number_of_seasons: 5,
+          number_of_episodes: 62,
+          status: 'Ended',
+          genres: [{ id: 18, name: 'Drama' }],
+        };
+      }
+      return {};
+    });
+
+    const details = await fetchCatalogDetails('tv', 'tv:1396');
+
+    expect(details.title).toBe('Breaking Bad');
+    expect(details.released).toBe('2008');
+    expect(details.runtime).toBe(47);
+    expect(details.seasons).toBe(5);
+    expect(details.episodes).toBe(62);
+  });
+
+  it('refuses an identifier that belongs to another catalog', async () => {
+    stubFetch(() => ({}));
+
+    const error = await fetchCatalogDetails('movies', 'no-namespace').catch((caught) => caught);
+
+    expect((error as InstanceType<typeof CatalogError>).reason).toBe('bad_query');
+    expect(requests).toHaveLength(0);
+  });
+
+  it('maps a book: authors, publisher, pages and rating', async () => {
+    stubFetch((url) => {
+      if (url.pathname.includes('/volumes/abc123')) {
+        return {
+          id: 'abc123',
+          volumeInfo: {
+            title: 'Cien años de soledad',
+            subtitle: 'La saga de los Buendía',
+            authors: ['Gabriel García Márquez'],
+            publisher: 'Editorial Sudamericana',
+            publishedDate: '1967-05-30',
+            description: 'La historia de una familia.',
+            pageCount: 471,
+            averageRating: 4.7,
+            categories: ['Fiction', 'Magic realism'],
+            industryIdentifiers: [{ type: 'ISBN_10', identifier: '9780307474728' }],
+          },
+        };
+      }
+      return {};
+    });
+
+    const details = await fetchCatalogDetails('books', 'abc123');
+
+    expect(details.title).toBe('Cien años de soledad');
+    expect(details.tagline).toBe('La saga de los Buendía');
+    expect(details.authors).toEqual(['Gabriel García Márquez']);
+    expect(details.publisher).toBe('Editorial Sudamericana');
+    expect(details.runtime).toBe(471);
+    expect(details.score).toBe(4.7);
+    expect(details.genres).toEqual(['Fiction', 'Magic realism']);
+    expect(details.identifiers?.[0]?.type).toBe('ISBN_10');
+  });
+
+  it('caches a detail so opening the same item twice costs one call', async () => {
+    stubFetch(() => ({
+      id: 603,
+      title: 'Matrix',
+      release_date: '1999-03-31',
+      poster_path: '/p.jpg',
+    }));
+
+    await fetchCatalogDetails('movies', 'movie:603');
+    await fetchCatalogDetails('movies', 'movie:603');
+
+    expect(requests).toHaveLength(1);
+  });
+
+  it('keeps search results and details in separate cache slots', async () => {
+    // A search hit and a detail share the same provider id. If they collided in
+    // the cache, opening the detail would return the list entry instead.
+    stubFetch((url) =>
+      url.pathname.includes('/search/')
+        ? { results: [{ id: 603, title: 'Matrix from search' }] }
+        : { id: 603, title: 'Matrix from details', release_date: '1999-03-31' },
+    );
+
+    await searchCatalog('movies', 'matrix');
+    const details = await fetchCatalogDetails('movies', 'movie:603');
+
+    expect(details.title).toBe('Matrix from details');
   });
 });
 
