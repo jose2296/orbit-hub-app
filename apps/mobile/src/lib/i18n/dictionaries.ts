@@ -143,6 +143,8 @@ const es = {
   'items.moveUp': 'Subir',
   'items.moveDown': 'Bajar',
 
+  'dashboard.masonryLabel': 'Panel',
+
   'tabs.home': 'Inicio',
   'tabs.search': 'Buscar',
   'tabs.settings': 'Ajustes',
@@ -464,6 +466,8 @@ const en: Record<TranslationKey, string> = {
   'items.dragHint': 'Press and hold, then drag',
   'items.moveUp': 'Move up',
   'items.moveDown': 'Move down',
+
+  'dashboard.masonryLabel': 'Dashboard',
 
   'tabs.home': 'Home',
   'tabs.search': 'Search',

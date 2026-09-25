@@ -8,6 +8,8 @@ import { IconAction, WIDGET_ICON, widgetBody } from '@/components/dashboard/widg
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { DraggableRow } from '@/components/ui/draggable-row';
+import { Masonry } from '@/components/ui/masonry';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useDashboard } from '@/hooks/use-dashboard';
@@ -30,12 +32,11 @@ export default function DashboardScreen() {
 
   return (
     <Screen>
-      <View style={[styles.header, { gap: theme.spacing.xs }]}>
-        <AppText variant="title">{t('dashboard.title')}</AppText>
-        <AppText variant="callout" tone="muted">
-          {t('dashboard.subtitle')}
-        </AppText>
-      </View>
+      {/* The stack header already says "Tu panel"; a second title under it just
+          repeats it. */}
+      <AppText variant="callout" tone="muted">
+        {t('dashboard.subtitle')}
+      </AppText>
 
       {isLoading ? (
         <Card variant="muted">
@@ -44,9 +45,24 @@ export default function DashboardScreen() {
           </AppText>
         </Card>
       ) : (
-        <View style={{ gap: theme.spacing.md }}>
+        <Masonry>
           {layout.map((widget) => (
-            <Card key={widget.id} style={{ gap: theme.spacing.md }}>
+            <DraggableRow
+              key={widget.id}
+              id={widget.id}
+              index={layout.findIndex((w) => w.id === widget.id)}
+              total={layout.length}
+              onReorder={(_, toIndex) => {
+                // El dashboard se ordena por flechas; el arrastre reutiliza esa
+                // misma acción para que no haya dos caminos al mismo orden.
+                if (toIndex < layout.findIndex((w) => w.id === widget.id)) {
+                  void move(widget.id, 'up');
+                } else if (toIndex > layout.findIndex((w) => w.id === widget.id)) {
+                  void move(widget.id, 'down');
+                }
+              }}
+            >
+            <Card style={{ gap: theme.spacing.md }} kind={widget.kind}>
               <View style={[styles.row, { gap: theme.spacing.md }]}>
                 <View
                   style={[
@@ -96,8 +112,9 @@ export default function DashboardScreen() {
                 />
               </View>
             </Card>
+            </DraggableRow>
           ))}
-        </View>
+        </Masonry>
       )}
 
       <View style={{ gap: theme.spacing.md }}>

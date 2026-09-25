@@ -10,9 +10,14 @@ export interface CardProps extends ViewProps {
   padded?: boolean;
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
+  /**
+   * Optional tag used by the masonry to balance its columns before they are
+   * measured. It is read by the layout and never rendered.
+   */
+  kind?: string;
 }
 
-export function Card({ variant = 'default', padded = true, style, children, ...rest }: CardProps) {
+export function Card({ variant = 'default', padded = true, style, children, kind: _kind, ...rest }: CardProps) {
   const theme = useTheme();
 
   const variants: Record<CardVariant, ViewStyle> = {
