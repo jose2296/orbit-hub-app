@@ -1,0 +1,115 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { SyncConflict, SyncState, SyncStatus } from '@orbit-hub/contracts';
+import { useCallback, useEffect, useState } from 'react';
+
+import { STORAGE_KEYS } from '@/constants';
+import { flushOutbox, getLocalStoreReady, subscribeToLocalStore } from '@/lib/offline';
+import type { PendingOperationRecord } from '@/lib/offline';
+
+import { useNetworkStatus } from './use-network-status';
+import type { ConnectionState } from './use-network-status';
+
+export interface SyncCentre {
+  status: SyncStatus;
+  pending: PendingOperationRecord[];
+  conflicts: SyncConflict[];
+  isSyncing: boolean;
+  refresh: () => Promise<void>;
+  syncNow: () => Promise<void>;
+  lastMessage: string | null;
+}
+
+const INITIAL_STATUS: SyncStatus = {
+  state: 'idle',
+  pendingOperations: 0,
+  pendingConflicts: 0,
+  lastSyncedAt: null,
+  lastError: null,
+};
+
+/**
+ * Single source of truth for the sync indicator used by the home card and the
+ * sync centre. Counts come from the local store, never from the API, so the UI
+ * is correct even with no connectivity.
+ */
+export function useSyncStatus(): SyncCentre {
+  const network = useNetworkStatus();
+  const [status, setStatus] = useState<SyncStatus>(INITIAL_STATUS);
+  const [pending, setPending] = useState<PendingOperationRecord[]>([]);
+  const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastMessage, setLastMessage] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const store = await getLocalStoreReady();
+    const [records, storedConflicts, pendingCount, conflictCount, lastSyncedAt] = await Promise.all([
+      store.listPending(50),
+      store.listConflicts(),
+      store.countPending(),
+      store.countConflicts(),
+      AsyncStorage.getItem(STORAGE_KEYS.lastSyncedAt),
+    ]);
+
+    setPending(records);
+    setConflicts(storedConflicts);
+    setStatus((current) => ({
+      ...current,
+      pendingOperations: pendingCount,
+      pendingConflicts: conflictCount,
+      lastSyncedAt,
+      state: resolveState(network.state, isSyncing, pendingCount, conflictCount, current.lastError),
+    }));
+  }, [isSyncing, network.state]);
+
+  useEffect(() => {
+    void refresh();
+    return subscribeToLocalStore(() => {
+      void refresh();
+    });
+  }, [refresh]);
+
+  useEffect(() => {
+    setStatus((current) => ({
+      ...current,
+      state: resolveState(network.state, isSyncing, current.pendingOperations, current.pendingConflicts, current.lastError),
+    }));
+  }, [isSyncing, network.state]);
+
+  const syncNow = useCallback(async () => {
+    setIsSyncing(true);
+    setLastMessage(null);
+    try {
+      const result = await flushOutbox();
+      if (result.error) {
+        setLastMessage(result.error);
+        setStatus((current) => ({ ...current, lastError: result.error }));
+      } else {
+        const timestamp = new Date().toISOString();
+        await AsyncStorage.setItem(STORAGE_KEYS.lastSyncedAt, timestamp).catch(() => {
+          // Losing the timestamp only affects the "last synced" label.
+        });
+        setStatus((current) => ({ ...current, lastSyncedAt: timestamp, lastError: null }));
+        setLastMessage('success');
+      }
+    } finally {
+      setIsSyncing(false);
+      await refresh();
+    }
+  }, [refresh]);
+
+  return { status, pending, conflicts, isSyncing, refresh, syncNow, lastMessage };
+}
+
+function resolveState(
+  network: ConnectionState,
+  isSyncing: boolean,
+  pendingCount: number,
+  conflictCount: number,
+  lastError: string | null,
+): SyncState {
+  if (network === 'offline') return 'offline';
+  if (isSyncing) return 'syncing';
+  if (conflictCount > 0) return 'blocked';
+  if (lastError) return 'error';
+  return pendingCount > 0 ? 'syncing' : 'idle';
+}

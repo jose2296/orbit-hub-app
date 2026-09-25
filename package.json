@@ -1,0 +1,33 @@
+{
+  "name": "orbit-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OrbitHub — universal app (Android, iOS, Web) to organise workspaces, tasks, lists and notes.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "start": "npm run start --workspace @orbit-hub/mobile",
+    "web": "npm run web --workspace @orbit-hub/mobile",
+    "android": "npm run android --workspace @orbit-hub/mobile",
+    "ios": "npm run ios --workspace @orbit-hub/mobile",
+    "export:web": "npm run export:web --workspace @orbit-hub/mobile",
+    "api": "npm run dev --workspace @orbit-hub/api",
+    "api:start": "npm run start --workspace @orbit-hub/api",
+    "api:build": "npm run build --workspace @orbit-hub/api",
+    "api:test": "npm run test --workspace @orbit-hub/api",
+    "build:packages": "npm run build --workspace @orbit-hub/contracts && npm run build --workspace @orbit-hub/config",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "test": "npm run build:packages && npm run test --workspaces --if-present",
+    "doctor": "npm run doctor --workspace @orbit-hub/mobile",
+    "config:check": "npm run config:check --workspace @orbit-hub/mobile",
+    "assets:brand": "node scripts/generate-brand-assets.mjs",
+    "check": "npm run typecheck && npm run test && npm run config:check"
+  }
+}
