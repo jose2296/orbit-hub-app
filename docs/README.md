@@ -4,6 +4,7 @@
 | --- | --- |
 | Product scope | [product/scope.md](product/scope.md) |
 | Pending from the owner | [pending-from-owner.md](pending-from-owner.md) |
+| Environment variables | [environment.md](environment.md) |
 | Architecture | [architecture/overview.md](architecture/overview.md) |
 | API conventions | [architecture/api-conventions.md](architecture/api-conventions.md) |
 | Auth | [architecture/auth.md](architecture/auth.md) |

@@ -10,8 +10,10 @@
    variable stops the process instead of failing on the first request.
 4. The logger redacts `Authorization`, `Cookie`, `password`, `*.password`, `*.accessToken`,
    `*.refreshToken` and `googleClientSecret`.
-5. Secrets from the legacy repositories are never copied in. They must be rotated in the
-   systems that own them, not reused here.
+5. Secrets from the legacy repositories are only carried over through
+   `make env-import-legacy`, which copies a short, explicit list of reusable keys, writes them
+   into git ignored `.env` files and never prints a value. Everything it refuses, and why, is
+   listed in [../environment.md](../environment.md).
 
 ## Environment variables
 
@@ -59,9 +61,21 @@
 | Input | Every payload validated with the shared Zod schema; body size limited to 1 MB |
 | SQL | Parameterised queries only; no string interpolation |
 | HTTP | Helmet headers, explicit CORS allow-list, `X-Request-Id` correlation |
-| Rate limiting | Per IP on auth, per user on writes (Phase 1) |
+| Rate limiting | Per IP on auth, per user on writes |
+| Provider keys | Live in the API only. The app never holds a catalog key, unlike the legacy build |
 | Logging | Structured, redacted, correlated by request id |
 | Deletion | Re-authentication plus explicit confirmation, cascading removal |
+
+## Legacy keys
+
+The legacy `.env` files were **not** committed to their repositories, which is the good news: the
+values are not in git history. They did sit on disk next to the source for a long time, so:
+
+- Rotate anything that was imported before going live, even if it looks harmless.
+- `JWT_SECRET` is never reused: a new signing key makes old and new tokens mutually invalid,
+  which is the point.
+- `DATABASE_URL` from the legacy stack is never reused: OrbitHub starts on an empty database and
+  any data migration is a separate, reversible job.
 
 ## Reporting a vulnerability
 

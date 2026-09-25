@@ -40,23 +40,57 @@ orbit-hub/
 ## Getting started
 
 ```bash
-npm install                # installs workspaces and builds shared packages
-cp .env.example .env       # optional: local defaults for app + API
+make install     # installs the workspaces and builds the shared packages
+make env-init     # creates apps/api/.env and apps/mobile/.env from the templates
+make env-check    # shows which variables are missing (names only)
 
-npm run web                # Expo web (React Native Web)
-npm run ios                # iOS simulator
-npm run android            # Android emulator
-npm run api                # API on http://localhost:4000
+make api          # API on http://localhost:4000, with watch
+make web          # app on the web
+make ios          # iOS simulator
+make android      # Android emulator
 ```
+
+`make help` lists every target, and each workspace has its own:
+
+```bash
+make -C apps/api help
+make -C apps/mobile help
+```
+
+### Database
+
+The API needs no external service to run: without `DATABASE_URL` it uses an embedded Postgres
+(PGlite) in `apps/api/.data/pglite` and applies the migrations on boot.
+
+```bash
+make -C apps/api db-reset     # wipe the local database and re-apply the migrations
+make -C apps/api db-migrate   # apply the migrations only
+make -C apps/api smoke        # boot the API, check /health, stop
+```
+
+Point it at a real PostgreSQL by setting `DATABASE_URL` in `apps/api/.env`; the driver swaps with
+no other change.
+
+### Environment variables
+
+```bash
+make env-list           # the full inventory
+make env-check          # what is missing
+make env-jwt            # generate a stable JWT_SECRET
+make env-import-legacy  # copy the reusable keys from the legacy projects
+```
+
+The full list, with what each one is for and which were taken from the old projects, is in
+[docs/environment.md](docs/environment.md).
 
 ## Quality gates
 
 ```bash
-npm run typecheck          # tsc for every workspace
-npm run test               # vitest: API integration tests + app client tests
-npm run config:check       # expo config validation
-npm run doctor             # expo-doctor
-npm run check              # typecheck + test + config:check
+make check        # typecheck + tests + Expo config, for every workspace
+make test         # API integration tests + app tests
+make typecheck    # tsc everywhere
+make doctor       # expo-doctor
+make -C apps/mobile export-web   # static web build
 ```
 
 The API test suite runs against a real Postgres (PGlite, in process) with the committed
@@ -102,6 +136,7 @@ Start at [`docs/README.md`](docs/README.md):
 - [Design system](docs/architecture/design-system.md)
 - [Notes editor](docs/architecture/notes-editor.md)
 - [Roadmap](docs/roadmap.md)
+- [Environment variables](docs/environment.md) — every variable, and which came from where
 - [Pending from the owner](docs/pending-from-owner.md) — credentials and decisions still needed
 - [Legacy migration (future work)](docs/migration/legacy-migration.md)
 - [Security & secrets](docs/security/secrets.md)

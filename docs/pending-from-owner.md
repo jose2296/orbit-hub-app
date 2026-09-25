@@ -60,6 +60,25 @@ Si prefieres, también sirve un **secreto de cliente de la app móvil** (Google 
 
 ---
 
+## 2 bis. Claves ya heredadas del proyecto antiguo ✅
+
+`make env-import-legacy` ya copió lo reutilizable a tus `.env` locales (sin mostrarlos ni
+versionarlos):
+
+| Clave | Origen | Nota |
+| --- | --- | --- |
+| `PUSHER_APP_ID` / `PUSHER_APP_KEY` / `PUSHER_SECRET` | `utility-app-turbo` | Realtime, Fase 5 |
+| `TMDB_API_KEY` | `utility-app-native` | Movida a la API: la app ya no lleva claves de proveedor |
+| `GOOGLE_BOOKS_API_KEY` | `utility-app-native` | Ídem |
+| `GOOGLE_BOOKS_SEARCH_ENGINE_ID` | `utility-app-native` | Ídem |
+
+**Lo que NO se ha copiado y por qué:** `DATABASE_URL` y las claves de Supabase (apuntarían a los
+datos antiguos), `JWT_SECRET` (una clave nueva invalida los tokens viejos a propósito), las
+claves de IA (la IA se eliminó) y las de Firebase (push necesita su propio proyecto en la Fase 6).
+
+Buena noticia: los `.env` antiguos **no estaban versionados** en sus repos, así que las claves no
+no están en el historial de git. Aun así, rota lo que importaste antes de producción.
+
 ## 3. Proveedor de email (necesario para verificación y recuperación) ⬜
 
 Hoy los correos se **imprimen por consola** del servidor: la verificación funciona, pero nadie
@@ -132,7 +151,7 @@ No bloquean el desarrollo, pero abren camino a la Fase 10.
 
 ## 7. Lo que yo hago con cada cosa
 
-| Cuando me lo des | Qué hago |
+| | Cuando me lo des | Qué hago |
 | --- | --- |
 | `client_id` + `client_secret` | Activo el login con Google y añado tests del intercambio y del linking |
 | Proveedor de email | Integro el transporte, plantillas reales y reintentos |
@@ -152,3 +171,18 @@ sincronización). Solo dos cosas son urgentes de verdad:
 2. **Proveedor de email** → dime cuál prefieres (Resend, Postmark, SES o SMTP propio).
 
 El resto (Google, Postgres, dominio, stores) puede llegar más adelante, con avisos.
+
+
+---
+
+## Comandos para trabajar con las variables
+
+```bash
+make env-list           # inventario completo
+make env-init           # crea los .env desde las plantillas
+make env-check          # qué falta (solo nombres, nunca valores)
+make env-jwt            # genera un JWT_SECRET estable
+make env-import-legacy  # copia las claves reutilizables del proyecto antiguo
+```
+
+Referencia completa en [environment.md](environment.md).
