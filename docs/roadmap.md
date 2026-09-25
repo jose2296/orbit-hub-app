@@ -1,104 +1,206 @@
 # Roadmap
 
-Phases are ordered by dependency, not by importance. Each phase ends with something usable.
+Vista general de todo lo que queda, incluidas las fases futuras. Las fases están ordenadas por
+dependencia, no por importancia: cada una termina en algo usable y verificable.
 
-Legend: ✅ done · 🟡 in progress · ⬜ not started
+Leyenda: ✅ hecho · 🟡 en curso · ⬜ pendiente
 
-## Phase 0 — Foundation ✅
+---
 
-- Monorepo: `apps/mobile`, `apps/api`, `packages/contracts`, `packages/config`
-- Expo SDK 57 + Expo Router + React Native Web, static export, PWA manifest
-- Design system: tokens, theme provider (light/dark + accent), component kit
-- App shell: onboarding, sign in, sign up, forgot password, tabs, settings, sync centre
-- i18n: es/en with persisted preference
-- Auth client skeleton: token storage, single-flight refresh, Google PKCE flow (disabled until
-  the OAuth client exists)
-- Offline: local store (SQLite / Web Storage), outbox, conflict table, sync state hook
-- API: Express 5, validated environment, error envelope, request id, security headers, health
-  endpoint, tests
-- CI: typecheck, tests, Expo config check, expo-doctor
+## Fase 0 — Fundación ✅
 
-## Phase 1 — Auth and data 🟡
+Monorepo, app, API y documentación. Detalle en el commit inicial.
 
-- [ ] PostgreSQL schema and first migration (see [ADR 0005](architecture/adr/0005-database-access.md))
-- [ ] ORM / query layer decision
-- [ ] `POST /auth/register`, `/login`, `/refresh`, `/logout`
-- [ ] Email verification, password reset, resend verification
-- [ ] Google code exchange and safe account linking
-- [ ] Session rotation with replay detection, device list and revocation
-- [ ] Rate limiting on `/auth/*`, audit log
-- [ ] Email delivery provider
-- [ ] Integration tests against a real database
+- Monorepo `apps/mobile`, `apps/api`, `packages/contracts`, `packages/config`
+- Expo SDK 57 + Expo Router + React Native Web, export estático, manifest PWA
+- Design system: tokens, temas claro/oscuro, 5 acentos, kit de componentes
+- Shell de la app: onboarding, registro, login, recuperación, tabs, ajustes, centro de sync
+- i18n es/en persistido
+- Cliente de auth: almacenamiento seguro, refresh single-flight, flujo Google PKCE
+- Offline: `LocalStore` (SQLite / Web Storage), outbox, tabla de conflictos
+- API: entorno validado, envelope de errores, request id, Helmet, CORS, health, tests
+- CI: typecheck, tests, config Expo, expo-doctor, export web
 
-**Exit criteria:** a user can register, verify, sign in on two devices, see both devices in
-settings, revoke one, and sign out everywhere.
+**Estado:** commit `c98a704`, publicado en `main`.
 
-## Phase 2 — Organisation
+---
 
-- [ ] Workspaces CRUD, membership, first workspace on signup
-- [ ] Nested folders, move and reorder
-- [ ] Dashboard layout persistence
-- [ ] Local cache tables for workspaces, folders and memberships
-- [ ] `POST /sync/push` and `/sync/pull` for these entities
+## Fase 1 — Auth y datos 🟡
 
-**Exit criteria:** create, rename, move and delete a workspace and a folder from two devices,
-online and offline, with no duplicates and no silent overwrites.
+El objetivo es una cuenta real de principio a fin: registrarse, verificar, entrar en dos
+dispositivos, revocar uno y cerrar sesión en todos.
 
-## Phase 3 — Lists and search
+### 1.1 Datos
+- [ ] ADR 0006: decisión de ORM/capa de acceso
+- [ ] Esquema Drizzle: `users`, `auth_identities`, `sessions`, `email_tokens`, `devices`, `audit_logs`
+- [ ] Migración SQL generada y versionada
+- [ ] Cliente de base de datos con transacciones y pool
+- [ ] Tests de integración contra PGlite (Postgres real en proceso, sin servidor)
 
-- [ ] Lists (tasks, movies, books) and items
-- [ ] Positions, completion, priorities, tags, favourites
-- [ ] Global search across entities
-- [ ] Templates, duplicate, quick actions
-- [ ] Provider integrations behind the API (TheMovieDB, Google Books) with no client keys
+### 1.2 Contratos
+- [ ] Esquemas Zod de request/response de todos los endpoints de auth
+- [ ] `AuthResult`, `Session`, `Device`, `User` compartidos con la app
 
-**Exit criteria:** a list created offline on a plane appears once, in order, on another device
-after landing.
+### 1.3 Seguridad
+- [ ] Hashing Argon2id con sal por usuario
+- [ ] Access tokens JWT (`jose`), refresh tokens opacos almacenados hasheados
+- [ ] Rotación de refresh token con detección de replay (revoca la familia)
+- [ ] Verificación de email con token de un solo uso y expiración
+- [ ] Recuperación de contraseña sin revelar si la cuenta existe
+- [ ] Rate limiting en `/auth/*` por IP y por email
+- [ ] Audit log: login, logout, refresh, revocación, linking, cambio de contraseña
 
-## Phase 4 — Notes and attachments
+### 1.4 Endpoints
+- [ ] `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`
+- [ ] `POST /auth/verify-email`, `/auth/verify-email/resend`
+- [ ] `POST /auth/password/forgot`, `/auth/password/reset`, `/auth/password/change`
+- [ ] `POST /auth/google` (intercambio de código + linking seguro)
+- [ ] `GET /auth/me`, `GET /auth/devices`, `DELETE /auth/devices/:id`
 
-- [ ] Portable document schema and validator
-- [ ] Web rich editor
-- [ ] Native editor
-- [ ] Autosave with version guard
-- [ ] Attachments: local write, queued upload, authorised download
-- [ ] Search over `plain_text`
+### 1.5 Email
+- [ ] Abstracción `EmailSender` con transporte de consola en desarrollo
+- [ ] Plantillas de verificación y recuperación
 
-## Phase 5 — Collaboration and realtime
+### 1.6 App
+- [ ] Registro y login reales conectados a la API
+- [ ] Pantalla de verificación de email alcanzable desde el flujo real
+- [ ] Ajustes → Dispositivos: listar y revocar
+- [ ] Mensajes de error del API por código, no por texto
 
-- [ ] Invitations by email and link, accept, decline, revoke
-- [ ] Roles enforced on every resource read and write
-- [ ] Realtime channel per workspace, scoped by role
-- [ ] Ownership transfer, leave workspace
-- [ ] Comments and activity history (phase 2 of the product scope)
+**Criterio de salida:** un usuario se registra, verifica el correo, entra en dos dispositivos,
+los ve en Ajustes, revoca uno y cierra sesión en todos. Probado con tests de integración.
 
-## Phase 6 — Offline hardening
+---
 
-- [ ] Entity cache with eviction policy
-- [ ] Sync on foreground, reconnect and interval
-- [ ] Backoff, retry budget, permanent rejection handling
-- [ ] Sync centre: conflicts, resolution, per-field merge
-- [ ] Storage quota handling and "clear cache"
+## Fase 2 — Organización
 
-## Phase 7 — Planner, notifications, links, PWA
+- [ ] Workspaces CRUD y membresías; primer workspace al registrarse
+- [ ] Carpetas anidadas, mover y reordenar
+- [ ] Dashboard con layout persistido
+- [ ] Caché local de workspaces, carpetas y membresías
+- [ ] `POST /sync/push` y `POST /sync/pull` para estas entidades
+- [ ] Autenticación: invite pendiente, rol por recurso, propiedad
 
-- [ ] Planner redesign: templates, copy week, undo, mobile and web layouts
-- [ ] Push notifications, preferences per type, quiet hours, daily digest
-- [ ] Deep links and universal links (AASA, Asset Links), one canonical route scheme
-- [ ] PWA: install prompt, offline shell, web push where supported
+**Criterio de salida:** crear, renombrar, mover y borrar un workspace y una carpeta desde dos
+dispositivos, online y offline, sin duplicados ni sobrescrituras silenciosas.
 
-## Phase 8 — Later scope
+---
 
-- [ ] Calendar: recurrence, reminders, time zones, ICS import/export
-- [ ] Export and import of user data
-- [ ] Accessibility and full keyboard support on web
-- [ ] Voice input
-- [ ] Migration tooling for the legacy data (see [migration/legacy-migration.md](migration/legacy-migration.md))
+## Fase 3 — Listas y búsqueda
 
-## Cross-cutting
+- [ ] Listas (tareas, películas, libros) e items
+- [ ] Posición, completada, prioridad, etiquetas, favoritos
+- [ ] Búsqueda global sobre todas las entidades
+- [ ] Plantillas, duplicar, acciones rápidas
+- [ ] Integraciones con proveedores **detrás de la API** (TheMovieDB, Google Books); ninguna
+      clave en el cliente
+- [ ] Metadatos de proveedor cacheados para render offline
 
-- [ ] Rate limiting and abuse protection on all write endpoints
-- [ ] Structured logs with request ids, error tracking, uptime checks
-- [ ] EAS build profiles, store metadata, signing
-- [ ] CI: integration tests, EAS preview builds
-- [ ] Privacy policy and terms pages, cookie/consent handling for the web target
+**Criterio de salida:** una lista creada en un avión aparece una sola vez, y en orden, en otro
+dispositivo al aterrizar.
+
+---
+
+## Fase 4 — Notas y adjuntos
+
+- [ ] Esquema de documento portable y su validador
+- [ ] Editor rico web
+- [ ] Editor nativo
+- [ ] Autoguardado con control de versión
+- [ ] Adjuntos: escritura local, subida encolada, descarga autorizada
+- [ ] Búsqueda sobre `plain_text`
+
+---
+
+## Fase 5 — Colaboración y realtime
+
+- [ ] Invitaciones por email y por enlace: aceptar, rechazar, revocar
+- [ ] Roles (`owner`, `editor`, `viewer`) en cada lectura y escritura
+- [ ] Canal realtime por workspace, con alcance por rol
+- [ ] Transferencia de propiedad, salir del workspace
+- [ ] Comentarios e historial de actividad
+
+---
+
+## Fase 6 — Offline endurecido
+
+- [ ] Caché de entidades con política de expulsión
+- [ ] Sincronización al abrir, al reconectar y por intervalo
+- [ ] Backoff, presupuesto de reintentos, rechazos permanentes
+- [ ] Centro de sincronización: conflictos, resolución, mezcla por campo
+- [ ] Cuota de almacenamiento y "vaciar caché"
+- [ ] Coalescencia de operaciones por entidad
+
+---
+
+## Fase 7 — Planificador, notificaciones, enlaces, PWA
+
+- [ ] Planificador rediseñado: plantillas, copiar semana, deshacer, layouts móvil y web
+- [ ] Notificaciones push, preferencias por tipo, horas de silencio, resumen diario
+- [ ] Deep links y universal links (AASA, Asset Links) con un único esquema de rutas
+- [ ] PWA: prompt de instalación, shell offline, web push donde el navegador lo permita
+
+---
+
+## Fase 8 — Calendario
+
+- [ ] Eventos, recurrencia, recordatorios
+- [ ] Zonas horarias, importación/exportación ICS
+- [ ] Integración con la vista de planner
+
+---
+
+## Fase 9 — Datos, privacidad y datos heredados
+
+- [ ] Exportación de la cuenta (JSON/CSV) como trabajo en segundo plano
+- [ ] Importación/exportaciónadvanced de contenido
+- [ ] Herramienta de migración desde `utility-app-native` / `utility-app-turbo`
+      (ver [migration/legacy-migration.md](migration/legacy-migration.md))
+- [ ] Páginas de términos y privacidad, consentimiento web
+
+---
+
+## Fase 10 — Pulido de plataforma
+
+- [ ] Accesibilidad: contraste, lectores de pantalla, foco, teclado completo en web
+- [ ] Entrada por voz y transcripción
+- [ ] Perfiles de build EAS, metadatos de store, firma
+- [ ] Observabilidad: métricas, seguimiento de errores, comprobaciones de disponibilidad
+- [ ] Presupuesto de rendimiento por pantalla y por arranque
+
+---
+
+## Transversal (arrastra a todas las fases)
+
+- [ ] Rate limiting y protección de abuso en todos los endpoints de escritura
+- [ ] Logs estructurados con request id, tracking de errores, comprobaciones de disponibilidad
+- [ ] Secretos en el gestor de secretos del hosting, nunca en el repositorio
+- [ ] CI: tests de integración, builds de previsualización de EAS
+- [ ] Rotación de secretos heredados antes de cualquier despliegue
+
+---
+
+## Dependencias entre fases
+
+```text
+Fase 1 (auth + datos)
+   └─> Fase 2 (organización)
+          └─> Fase 3 (listas) ─┐
+          └─> Fase 4 (notas)  ─┼─> Fase 5 (colaboración)
+                                └─> Fase 6 (offline endurecido)
+                                       └─> Fase 7 (planificador, push, PWA)
+                                              └─> Fase 8 (calendario)
+                                                     └─> Fase 9 (migración heredada)
+Fase 10 (pulido) es continua y transversal
+```
+
+## Riesgos que ya están identificados
+
+| Riesgo | Impacto | Mitigación |
+| --- | --- | --- |
+| PWA completa vs. límites del navegador | Web más débil que nativo | Degradación explícita en la UI, sin Fingir capacidades |
+| Auth propio | Seguridad de contraseñas y sesiones nuestra | Argon2id, rotación con detección de replay, rate limiting, audit log |
+| Alcance del MVP muy amplio | Entrega tardía | Fases verticales con criterio de salida; nada se declara terminado sin probarlo |
+| Sincronización offline | Complejidad real | Outbox idempotente, conflictos explícitos, pruebas con dos dispositivos simulados |
+| Editores nativos y web | Divergencia de formato | Un único formato de documento validado por esquema |
+| Migración heredada | Datos corruptos si se hace tarde | Transformación pura, versionada y reversible, con informe de anomalías |
