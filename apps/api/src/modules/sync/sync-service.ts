@@ -139,6 +139,14 @@ export class SyncService {
   private async apply(operation: SyncOperation, userId: string): Promise<AppliedResult> {
     // Narrowed once: this build stores a subset of the entities in the contract.
     const entity = assertSupportedEntity(operation.entity);
+    // The dashboard row is per user and created on first write, so it is
+    // handled before the generic "record does not exist" path.
+    if (entity === 'dashboard') {
+      const layout = sanitisePayload('dashboard', operation.payload)['layout'] ?? [];
+      const row = await syncRepository.upsertDashboard(userId, layout);
+      return { status: 'applied', version: row.version };
+    }
+
     const existing = await syncRepository.findEntity(entity, operation.entityId);
 
     if (operation.kind === 'create') {
@@ -149,14 +157,6 @@ export class SyncService {
       }
 
       const payload = sanitisePayload(entity, operation.payload);
-
-      if (entity === 'dashboard') {
-        const row = await syncRepository.insertEntity('dashboard', {
-          userId,
-          layout: payload['layout'] ?? [],
-        });
-        return { status: 'applied', version: row.version };
-      }
 
       if (entity === 'workspace') {
         const row = await syncRepository.insertEntity('workspace', {
@@ -222,15 +222,6 @@ export class SyncService {
       await this.assertCanWrite(operation.entityId, userId);
     } else if (entity === 'folder') {
       await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId);
-    }
-
-    // A dashboard row is created lazily on the first update.
-    if (entity === 'dashboard' && !(existing['userId'] === userId)) {
-      const row = await syncRepository.insertEntity('dashboard', {
-        userId,
-        layout: sanitisePayload('dashboard', operation.payload)['layout'] ?? [],
-      });
-      return { status: 'applied', version: row.version };
     }
 
     if (operation.baseVersion === existing.version) {

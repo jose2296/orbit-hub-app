@@ -75,6 +75,16 @@ Write endpoints that create content accept an `Idempotency-Key` header. Sync ope
 their own `operationId`, which is the idempotency key for `/sync/push`. Replaying the same key
 returns the original result instead of creating a duplicate.
 
+## Reads and writes
+
+- **Reads are REST**: `GET /workspaces`, `GET /workspaces/:id/folders`, `GET /dashboard`.
+- **Writes go through `/sync/push`**: creating or editing content is always a local write plus a
+  queued operation, even when the device is online.
+
+There is deliberately no `POST /workspaces` or `PATCH /workspaces/:id`. A second write path
+would have to reimplement versioning, permissions and conflict handling, and the two would
+drift. Auth is the exception: sessions are not content, so they use plain REST.
+
 ## Versioning and compatibility
 
 - The path prefix is the major version. Breaking changes get `/api/v2`.

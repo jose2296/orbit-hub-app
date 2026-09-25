@@ -58,7 +58,7 @@ describe('error envelope', () => {
   });
 
   it('returns not_implemented for planned endpoints', async () => {
-    const response = await fetch(`${baseUrl}/api/v1/workspaces`, { method: 'POST' });
+    const response = await fetch(`${baseUrl}/api/v1/lists`, { method: 'POST' });
     const body = (await response.json()) as { error?: { code?: string; message?: string } };
 
     expect(response.status).toBe(501);
@@ -72,6 +72,12 @@ describe('error envelope', () => {
 
     expect(response.status).toBe(422);
     expect(body.error?.code).toBe('validation_failed');
+  });
+
+  it('requires authentication on implemented read endpoints', async () => {
+    const response = await fetch(`${baseUrl}/api/v1/workspaces`);
+
+    expect(response.status).toBe(401);
   });
 });
 

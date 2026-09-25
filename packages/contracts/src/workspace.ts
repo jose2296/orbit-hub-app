@@ -162,3 +162,58 @@ export const createInvitationRequestSchema = z.object({
   expiresInHours: z.number().int().min(1).max(720).default(168),
 });
 export type CreateInvitationRequest = z.infer<typeof createInvitationRequestSchema>;
+
+/* ---------------------------------------------------------------- reads ---- */
+
+/**
+ * Reads are REST, writes go through `/sync/push`.
+ *
+ * A single read path keeps the client simple: every screen loads from the local
+ * cache, and the cache is filled either by a pull or by a first load. There is
+ * no second write path that could disagree with the sync protocol.
+ */
+
+export const listWorkspacesResponseSchema = z.object({
+  items: z.array(workspaceSchema),
+  nextCursor: z.string().nullable().default(null),
+});
+export type ListWorkspacesResponse = z.infer<typeof listWorkspacesResponseSchema>;
+
+export const listFoldersResponseSchema = z.object({
+  items: z.array(folderSchema),
+  nextCursor: z.string().nullable().default(null),
+});
+export type ListFoldersResponse = z.infer<typeof listFoldersResponseSchema>;
+
+export const workspaceMemberSchema = z.object({
+  user: userSchema.pick({ id: true, email: true, displayName: true, avatarUrl: true }),
+  role: membershipRoleSchema,
+  joinedAt: isoDateTimeSchema,
+});
+export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
+
+export const listWorkspaceMembersResponseSchema = z.object({
+  items: z.array(workspaceMemberSchema),
+});
+export type ListWorkspaceMembersResponse = z.infer<typeof listWorkspaceMembersResponseSchema>;
+
+/** Dashboard widget grid. Mirrors the JSON stored in `dashboard_layouts`. */
+export const dashboardWidgetSchema = z.object({
+  id: z.string().min(1).max(64),
+  kind: z.enum(['recent_lists', 'recent_notes', 'tasks', 'quick_actions', 'calendar', 'stats']),
+  x: z.number().int().min(0).max(23),
+  y: z.number().int().min(0),
+  w: z.number().int().min(1).max(12),
+  h: z.number().int().min(1).max(24),
+  pinned: z.boolean().default(false),
+  settings: z.record(z.string(), z.unknown()).optional(),
+});
+export type DashboardWidget = z.infer<typeof dashboardWidgetSchema>;
+
+export const dashboardLayoutSchema = z.object({
+  userId: uuidSchema,
+  layout: z.array(dashboardWidgetSchema).max(24),
+  version: z.number().int().min(0),
+  updatedAt: isoDateTimeSchema,
+});
+export type DashboardLayout = z.infer<typeof dashboardLayoutSchema>;

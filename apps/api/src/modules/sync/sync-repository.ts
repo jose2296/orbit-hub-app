@@ -107,6 +107,28 @@ export class SyncRepository {
     return row as StoredEntity;
   }
 
+  /** One row per user, created on first write. */
+  async upsertDashboard(userId: string, layout: unknown): Promise<StoredEntity> {
+    const db = await this.db();
+    const [row] = await db
+      .insert(dashboardLayouts)
+      .values({ userId, layout: layout as never })
+      .onConflictDoUpdate({
+        target: dashboardLayouts.userId,
+        set: {
+          layout: layout as never,
+          version: sql`${dashboardLayouts.version} + 1`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    if (!row) {
+      throw new Error('The dashboard upsert returned no row');
+    }
+    return row as unknown as StoredEntity;
+  }
+
   async roleInWorkspace(
     workspaceId: string,
     userId: string,
