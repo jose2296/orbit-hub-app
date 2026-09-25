@@ -84,17 +84,28 @@ dispositivos, los ve en Ajustes, revoca uno y cierra sesión en todos, con tests
 
 ---
 
-## Fase 2 — Organización
+## Fase 2 — Organización 🟡
 
-- [ ] Workspaces CRUD y membresías; primer workspace al registrarse
-- [ ] Carpetas anidadas, mover y reordenar
-- [ ] Dashboard con layout persistido
-- [ ] Caché local de workspaces, carpetas y membresías
-- [ ] `POST /sync/push` y `POST /sync/pull` para estas entidades
-- [ ] Autenticación: invite pendiente, rol por recurso, propiedad
+- [x] Esquema: `workspaces`, `memberships`, `folders`, `dashboard_layouts`
+- [x] Tablas de sincronización: `sync_operations`, `sync_conflicts`, `sync_cursors`
+- [x] `POST /sync/push` con idempotencia por `operationId`
+- [x] `POST /sync/pull` con cursor por dispositivo y tombstones
+- [x] Fusión de tres vías: los cambios en campos distintos se fusionan solos
+- [x] Conflictos explícitos: `GET /sync/conflicts`, nunca sobrescritura silenciosa
+- [x] Autorización por rol en cada escritura (workspace que no se ve = 404)
+- [x] Outbox del cliente con estado base (`base`) para la fusión
+- [ ] Workspaces CRUD como endpoints REST (además de sync)
+- [ ] Carpetas anidadas: mover, reordenar y arrastrar
+- [ ] Dashboard con layout persistido y editor visual
+- [ ] Caché local de entidades para lectura sin conexión
+- [ ] Pantallas de workspaces y carpetas en la app
+- [ ] Invitaciones y transferencia de propiedad (fase de colaboración)
 
 **Criterio de salida:** crear, renombrar, mover y borrar un workspace y una carpeta desde dos
 dispositivos, online y offline, sin duplicados ni sobrescrituras silenciosas.
+
+**Estado:** el motor de sincronización está completo y probado (20 tests). Falta la capa de
+lectura: endpoints REST de consulta y las pantallas de la app.
 
 ---
 
