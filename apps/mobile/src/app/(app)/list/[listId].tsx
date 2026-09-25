@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -7,8 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Divider } from '@/components/ui/divider';
 import { EmptyState } from '@/components/ui/empty-state';
+import { DraggableRow } from '@/components/ui/draggable-row';
 import { MediaCarousel } from '@/components/ui/media-carousel';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
@@ -40,7 +39,7 @@ export default function ListScreen() {
     setShowCompleted,
     addItem,
     toggleCompleted,
-    moveItem,
+    moveItemTo,
     removeItem,
   } = useListItems(listId);
 
@@ -180,21 +179,28 @@ export default function ListScreen() {
               </AppText>
             </Card>
           ) : (
-            <Card padded={false}>
+            <View style={{ gap: theme.spacing.sm }}>
               {pending.map((item, index) => (
-                <View key={item.id}>
-                  {index > 0 ? <Divider inset={16} /> : null}
+                <DraggableRow
+                  key={item.id}
+                  id={item.id}
+                  index={index}
+                  total={pending.length}
+                  onReorder={(movedId, toIndex) => {
+                    const from = pending.findIndex((row) => row.id === movedId);
+                    // The drag already knows where the row landed, so the write
+                    // is one reorder and not a chain of single steps.
+                    if (from !== -1) void moveItemTo(movedId, toIndex - from);
+                  }}
+                >
                   <TaskRow
                     item={item}
-                    index={index}
-                    total={pending.length}
                     onToggle={() => void toggleCompleted(item)}
                     onRemove={() => void removeItem(item)}
-                    onMove={moveItem}
                   />
-                </View>
+                </DraggableRow>
               ))}
-            </Card>
+            </View>
           )}
 
           {/*
@@ -210,21 +216,26 @@ export default function ListScreen() {
                 label={t('lists.completedSection', { count: completed.length })}
               />
               {showCompleted ? (
-                <Card padded={false}>
+                <View style={{ gap: theme.spacing.sm }}>
                   {completed.map((item, index) => (
-                    <View key={item.id}>
-                      {index > 0 ? <Divider inset={16} /> : null}
+                    <DraggableRow
+                      key={item.id}
+                      id={item.id}
+                      index={index}
+                      total={completed.length}
+                      onReorder={(movedId, toIndex) => {
+                        const from = completed.findIndex((row) => row.id === movedId);
+                        if (from !== -1) void moveItemTo(movedId, toIndex - from);
+                      }}
+                    >
                       <TaskRow
                         item={item}
-                        index={index}
-                        total={completed.length}
                         onToggle={() => void toggleCompleted(item)}
                         onRemove={() => void removeItem(item)}
-                        onMove={moveItem}
                       />
-                    </View>
+                    </DraggableRow>
                   ))}
-                </Card>
+                </View>
               ) : null}
             </View>
           ) : null}
@@ -303,18 +314,12 @@ export default function ListScreen() {
 /** One task row, shared by the pending and the completed sections. */
 function TaskRow({
   item,
-  index,
-  total,
   onToggle,
   onRemove,
-  onMove,
 }: {
   item: import('@orbit-hub/contracts').ListItem;
-  index: number;
-  total: number;
   onToggle: () => void;
   onRemove: () => void;
-  onMove: (id: string, delta: number) => Promise<void>;
 }) {
   const theme = useTheme();
   const t = useTranslation();
@@ -341,63 +346,7 @@ function TaskRow({
       {item.priority !== 'none' ? (
         <Badge label={t(`items.priority.${item.priority}`)} tone={PRIORITY_TONE[item.priority]} />
       ) : null}
-
-      {total > 1 ? (
-        <View style={styles.reorder}>
-          <ReorderButton
-            icon="chevron-up"
-            label={t('items.moveUp')}
-            disabled={index === 0}
-            onPress={() => void onMove(item.id, -1)}
-          />
-          <ReorderButton
-            icon="chevron-down"
-            label={t('items.moveDown')}
-            disabled={index === total - 1}
-            onPress={() => void onMove(item.id, 1)}
-          />
-        </View>
-      ) : null}
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('items.remove')}
-        hitSlop={8}
-        onPress={onRemove}
-      >
-        <Ionicons name="close" size={16} color={theme.colors.textSubtle} />
-      </Pressable>
     </View>
-  );
-}
-
-/**
- * One arrow of the reorder control. Hidden at the edge rather than disabled, so
- * the row does not change width as the list is edited.
- */
-function ReorderButton({
-  icon,
-  label,
-  disabled,
-  onPress,
-}: {
-  icon: 'chevron-up' | 'chevron-down';
-  label: string;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      hitSlop={6}
-      style={disabled ? styles.hidden : undefined}
-      onPress={onPress}
-      disabled={disabled}
-    >
-      <Ionicons name={icon} size={16} color={theme.colors.textMuted} />
-    </Pressable>
   );
 }
 

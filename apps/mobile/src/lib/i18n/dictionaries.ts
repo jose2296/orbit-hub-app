@@ -138,6 +138,8 @@ const es = {
   'lists.allDone': 'Todo hecho. No queda nada pendiente.',
   'lists.addToList': 'Abrir detalle',
 
+  'items.dragToReorder': 'Reordenar',
+  'items.dragHint': 'Mantén pulsado y arrastra',
   'items.moveUp': 'Subir',
   'items.moveDown': 'Bajar',
 
@@ -458,6 +460,8 @@ const en: Record<TranslationKey, string> = {
   'lists.allDone': 'All done. Nothing left.',
   'lists.addToList': 'Open details',
 
+  'items.dragToReorder': 'Reorder',
+  'items.dragHint': 'Press and hold, then drag',
   'items.moveUp': 'Move up',
   'items.moveDown': 'Move down',
 

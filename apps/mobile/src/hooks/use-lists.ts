@@ -401,7 +401,17 @@ export function useListItems(listId: string | undefined) {
    * server treats position as a field it merges on, and a partial update would
    * leave the other devices with a different order and no way to tell why.
    */
-  const moveItem = useCallback(
+  /**
+   * Moves an item by a number of places and renumbers the list.
+   *
+   * A drag knows where the row landed, not how far it travelled, so the caller
+   * converts one into the other. Everything else is the same write.
+   *
+   * Every affected position is enqueued, not just the two that swapped: the
+   * server treats position as a field it merges on, and a partial update would
+   * leave the other devices with a different order and no way to tell why.
+   */
+  const moveItemTo = useCallback(
     async (itemId: string, delta: number) => {
       const store = await getLocalStoreReady();
       const current = (await store.listCached('list_item'))
@@ -446,6 +456,8 @@ export function useListItems(listId: string | undefined) {
     [listId, load],
   );
 
+  const moveItem = useCallback((itemId: string, delta: number) => moveItemTo(itemId, delta), [moveItemTo]);
+
   const removeItem = useCallback(
     async (item: ListItem) => {
       const store = await getLocalStoreReady();
@@ -478,6 +490,7 @@ export function useListItems(listId: string | undefined) {
     addItem,
     toggleCompleted,
     moveItem,
+    moveItemTo,
     removeItem,
   };
 }
