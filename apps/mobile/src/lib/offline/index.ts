@@ -2,6 +2,15 @@ export {
   getLocalStoreReady,
   subscribeToLocalStore,
 } from './local-store';
-export type { LocalStore, PendingOperationRecord } from './local-store';
-export { enqueueOperation, flushOutbox, pullChanges } from './sync-service';
-export type { EnqueueInput, FlushResult } from './sync-service';
+export type { CachedEntity, LocalStore, PendingOperationRecord } from './local-store';
+export {
+  enqueueOperation,
+  fetchRemoteConflicts,
+  flushOutbox,
+  localUpdate,
+  pullIntoCache,
+  readCachedDashboard,
+  readCachedFolders,
+  readCachedWorkspaces,
+} from './sync-service';
+export type { EnqueueInput, FlushResult, PullResult } from './sync-service';

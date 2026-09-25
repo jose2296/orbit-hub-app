@@ -32,6 +32,8 @@ export default function AppLayout() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="workspaces" options={{ title: t('workspaces.title') }} />
+      <Stack.Screen name="workspace/[workspaceId]" options={{ title: '' }} />
       <Stack.Screen name="sync" options={{ title: t('sync.title') }} />
       <Stack.Screen name="devices" options={{ title: t('settings.devices') }} />
     </Stack>

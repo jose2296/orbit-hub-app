@@ -24,6 +24,22 @@ export interface PendingOperationRecord {
   lastError: string | null;
 }
 
+/**
+ * A cached server record. Screens read from here, never straight from the API,
+ * which is what makes the app work with no connectivity.
+ */
+export interface CachedEntity {
+  entity: SyncEntity;
+  entityId: string;
+  version: number;
+  updatedAt: string;
+  deletedAt: string | null;
+  /** JSON encoded record as the server sent it. */
+  payload: string;
+  /** Pending local edits, merged over the payload for display. */
+  pending: string | null;
+}
+
 export interface LocalStore {
   readonly driver: 'sqlite' | 'web-storage';
   initialize(): Promise<void>;
@@ -37,6 +53,12 @@ export interface LocalStore {
   countConflicts(): Promise<number>;
   resolveConflict(conflictId: string): Promise<void>;
   getClientId(): Promise<string>;
+
+  upsertCached(entities: CachedEntity[]): Promise<void>;
+  listCached(entity: SyncEntity, options?: { includeDeleted?: boolean }): Promise<CachedEntity[]>;
+  getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null>;
+  putCached(entity: SyncEntity, entityId: string, values: Record<string, unknown>): Promise<void>;
+  clearCache(): Promise<void>;
   reset(): Promise<void>;
 }
 
@@ -44,7 +66,7 @@ type Listener = () => void;
 
 const listeners = new Set<Listener>();
 
-/** Lets React hooks re-render when the outbox changes, without a polling loop. */
+/** Lets React hooks re-render when the outbox or the cache changes. */
 export function subscribeToLocalStore(listener: Listener): () => void {
   listeners.add(listener);
   return () => {
@@ -90,6 +112,23 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
   resolved_at TEXT
 );
 CREATE INDEX IF NOT EXISTS sync_conflicts_status ON sync_conflicts (status);
+
+CREATE TABLE IF NOT EXISTS cached_entities (
+  entity TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  payload TEXT NOT NULL,
+  pending TEXT,
+  PRIMARY KEY (entity, entity_id)
+);
+CREATE INDEX IF NOT EXISTS cached_entities_updated_at ON cached_entities (updated_at);
+
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
+);
 `;
 
 interface NativeStore extends LocalStore {
@@ -139,35 +178,11 @@ class ExpoSqliteStore implements NativeStore {
   }
 
   async listPending(limit: number): Promise<PendingOperationRecord[]> {
-    const rows = await this.db().getAllAsync<{
-      operation_id: string;
-      client_id: string;
-      kind: string;
-      entity: string;
-      entity_id: string;
-      base_version: number;
-      payload: string | null;
-      base: string | null;
-      created_at: string;
-      attempts: number;
-      last_attempt_at: string | null;
-      last_error: string | null;
-    }>('SELECT * FROM sync_outbox ORDER BY created_at ASC LIMIT ?', limit);
-
-    return rows.map((row) => ({
-      operationId: row.operation_id,
-      clientId: row.client_id,
-      kind: row.kind as PendingOperationRecord['kind'],
-      entity: row.entity as PendingOperationRecord['entity'],
-      entityId: row.entity_id,
-      baseVersion: row.base_version,
-      payload: row.payload,
-      base: row.base,
-      createdAt: row.created_at,
-      attempts: row.attempts,
-      lastAttemptAt: row.last_attempt_at,
-      lastError: row.last_error,
-    }));
+    const rows = await this.db().getAllAsync<OutboxRow>(
+      'SELECT * FROM sync_outbox ORDER BY created_at ASC LIMIT ?',
+      limit,
+    );
+    return rows.map(toPendingOperation);
   }
 
   async countPending(): Promise<number> {
@@ -214,35 +229,10 @@ class ExpoSqliteStore implements NativeStore {
   }
 
   async listConflicts(): Promise<SyncConflict[]> {
-    const rows = await this.db().getAllAsync<{
-      id: string;
-      entity: string;
-      entity_id: string;
-      workspace_id: string | null;
-      base_version: number;
-      server_version: number;
-      server_record: string;
-      client_record: string;
-      conflicting_fields: string;
-      status: string;
-      detected_at: string;
-      resolved_at: string | null;
-    }>("SELECT * FROM sync_conflicts WHERE status = 'pending' ORDER BY detected_at DESC");
-
-    return rows.map((row) => ({
-      id: row.id,
-      entity: row.entity as SyncConflict['entity'],
-      entityId: row.entity_id,
-      workspaceId: row.workspace_id,
-      baseVersion: row.base_version,
-      serverVersion: row.server_version,
-      serverRecord: JSON.parse(row.server_record) as Record<string, unknown>,
-      clientRecord: JSON.parse(row.client_record) as Record<string, unknown>,
-      conflictingFields: JSON.parse(row.conflicting_fields) as string[],
-      status: row.status as SyncConflict['status'],
-      detectedAt: row.detected_at,
-      resolvedAt: row.resolved_at,
-    }));
+    const rows = await this.db().getAllAsync<ConflictRow>(
+      "SELECT * FROM sync_conflicts WHERE status = 'pending' ORDER BY detected_at DESC",
+    );
+    return rows.map(toConflict);
   }
 
   async countConflicts(): Promise<number> {
@@ -261,20 +251,175 @@ class ExpoSqliteStore implements NativeStore {
     notify();
   }
 
+  async upsertCached(entities: CachedEntity[]): Promise<void> {
+    const db = this.db();
+
+    await db.withTransactionAsync(async () => {
+      for (const entity of entities) {
+        await db.runAsync(
+          `INSERT INTO cached_entities (entity, entity_id, version, updated_at, deleted_at, payload, pending)
+           VALUES (?, ?, ?, ?, ?, ?, NULL)
+           ON CONFLICT (entity, entity_id) DO UPDATE SET
+             version = excluded.version,
+             updated_at = excluded.updated_at,
+             deleted_at = excluded.deleted_at,
+             payload = excluded.payload`,
+          entity.entity,
+          entity.entityId,
+          entity.version,
+          entity.updatedAt,
+          entity.deletedAt,
+          entity.payload,
+        );
+      }
+    });
+
+    notify();
+  }
+
+  async listCached(entity: SyncEntity, options: { includeDeleted?: boolean } = {}): Promise<CachedEntity[]> {
+    const rows = await this.db().getAllAsync<CachedEntityRow>(
+      `SELECT * FROM cached_entities
+       WHERE entity = ? ${options.includeDeleted ? '' : 'AND deleted_at IS NULL'}
+       ORDER BY updated_at DESC`,
+      entity,
+    );
+    return rows.map(toCachedEntity);
+  }
+
+  async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {
+    const row = await this.db().getFirstAsync<CachedEntityRow>(
+      'SELECT * FROM cached_entities WHERE entity = ? AND entity_id = ?',
+      entity,
+      entityId,
+    );
+    return row ? toCachedEntity(row) : null;
+  }
+
+  async putCached(entity: SyncEntity, entityId: string, values: Record<string, unknown>): Promise<void> {
+    await this.db().runAsync(
+      `INSERT INTO cached_entities (entity, entity_id, version, updated_at, deleted_at, payload, pending)
+       VALUES (?, ?, 0, ?, NULL, ?, NULL)
+       ON CONFLICT (entity, entity_id) DO UPDATE SET
+         payload = excluded.payload,
+         updated_at = excluded.updated_at`,
+      entity,
+      entityId,
+      new Date().toISOString(),
+      JSON.stringify(values),
+    );
+    notify();
+  }
+
+  async clearCache(): Promise<void> {
+    await this.db().execAsync('DELETE FROM cached_entities; DELETE FROM app_state;');
+    notify();
+  }
+
   async getClientId(): Promise<string> {
     return getOrCreateClientId('sqlite');
   }
 
   async reset(): Promise<void> {
-    await this.db().execAsync('DELETE FROM sync_outbox; DELETE FROM sync_conflicts;');
+    await this.db().execAsync(
+      'DELETE FROM sync_outbox; DELETE FROM sync_conflicts; DELETE FROM cached_entities;',
+    );
     notify();
   }
+}
+
+interface OutboxRow {
+  operation_id: string;
+  client_id: string;
+  kind: string;
+  entity: string;
+  entity_id: string;
+  base_version: number;
+  payload: string | null;
+  base: string | null;
+  created_at: string;
+  attempts: number;
+  last_attempt_at: string | null;
+  last_error: string | null;
+}
+
+function toPendingOperation(row: OutboxRow): PendingOperationRecord {
+  return {
+    operationId: row.operation_id,
+    clientId: row.client_id,
+    kind: row.kind as PendingOperationRecord['kind'],
+    entity: row.entity as PendingOperationRecord['entity'],
+    entityId: row.entity_id,
+    baseVersion: row.base_version,
+    payload: row.payload,
+    base: row.base,
+    createdAt: row.created_at,
+    attempts: row.attempts,
+    lastAttemptAt: row.last_attempt_at,
+    lastError: row.last_error,
+  };
+}
+
+interface ConflictRow {
+  id: string;
+  entity: string;
+  entity_id: string;
+  workspace_id: string | null;
+  base_version: number;
+  server_version: number;
+  server_record: string;
+  client_record: string;
+  conflicting_fields: string;
+  status: string;
+  detected_at: string;
+  resolved_at: string | null;
+}
+
+function toConflict(row: ConflictRow): SyncConflict {
+  return {
+    id: row.id,
+    entity: row.entity as SyncConflict['entity'],
+    entityId: row.entity_id,
+    workspaceId: row.workspace_id,
+    baseVersion: row.base_version,
+    serverVersion: row.server_version,
+    serverRecord: JSON.parse(row.server_record) as Record<string, unknown>,
+    clientRecord: JSON.parse(row.client_record) as Record<string, unknown>,
+    conflictingFields: JSON.parse(row.conflicting_fields) as string[],
+    status: row.status as SyncConflict['status'],
+    detectedAt: row.detected_at,
+    resolvedAt: row.resolved_at,
+  };
+}
+
+interface CachedEntityRow {
+  entity: string;
+  entity_id: string;
+  version: number;
+  updated_at: string;
+  deleted_at: string | null;
+  payload: string;
+  pending: string | null;
+}
+
+function toCachedEntity(row: CachedEntityRow): CachedEntity {
+  return {
+    entity: row.entity as CachedEntity['entity'],
+    entityId: row.entity_id,
+    version: row.version,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+    payload: row.payload,
+    pending: row.pending,
+  };
 }
 
 const WEB_KEYS = {
   clientId: 'orbithub:client-id',
   outbox: 'orbithub:outbox',
   conflicts: 'orbithub:conflicts',
+  cache: 'orbithub:cache',
+  state: 'orbithub:state',
 } as const;
 
 function webStorage(): Storage | null {
@@ -302,13 +447,13 @@ function writeJson(storage: Storage | null, key: string, value: unknown): void {
 
 /**
  * Web implementation. localStorage is synchronous and small, which is fine for
- * an outbox of a few hundred operations; the API surface matches SQLite exactly.
+ * an outbox and a cache of a few hundred records; the API matches SQLite exactly.
  */
 class WebStorageStore implements LocalStore {
   readonly driver = 'web-storage' as const;
 
   async initialize(): Promise<void> {
-    // Nothing to migrate: the schema is implicit in the stored JSON shape.
+    // Nothing to migrate: the shape lives in the stored JSON.
   }
 
   async enqueue(record: PendingOperationRecord): Promise<void> {
@@ -337,7 +482,12 @@ class WebStorageStore implements LocalStore {
       WEB_KEYS.outbox,
       current.map((item) =>
         item.operationId === operationId
-          ? { ...item, attempts: item.attempts + 1, lastAttemptAt: new Date().toISOString(), lastError: error }
+          ? {
+              ...item,
+              attempts: item.attempts + 1,
+              lastAttemptAt: new Date().toISOString(),
+              lastError: error,
+            }
           : item,
       ),
     );
@@ -358,9 +508,10 @@ class WebStorageStore implements LocalStore {
   async saveConflict(conflict: SyncConflict): Promise<void> {
     const storage = webStorage();
     const current = readJson<SyncConflict[]>(storage, WEB_KEYS.conflicts, []);
-    const next = current.filter((item) => item.id !== conflict.id);
-    next.push(conflict);
-    writeJson(storage, WEB_KEYS.conflicts, next);
+    writeJson(storage, WEB_KEYS.conflicts, [
+      ...current.filter((item) => item.id !== conflict.id),
+      conflict,
+    ]);
     notify();
   }
 
@@ -391,6 +542,60 @@ class WebStorageStore implements LocalStore {
     notify();
   }
 
+  async upsertCached(entities: CachedEntity[]): Promise<void> {
+    const storage = webStorage();
+    const current = readJson<Record<string, CachedEntity>>(storage, WEB_KEYS.cache, {});
+
+    for (const entity of entities) {
+      const key = cacheKey(entity.entity, entity.entityId);
+      // A pending local edit survives an incoming server record: the outbox
+      // still owns that value until the push is acknowledged.
+      current[key] = { ...current[key], ...entity, pending: current[key]?.pending ?? null };
+    }
+
+    writeJson(storage, WEB_KEYS.cache, current);
+    notify();
+  }
+
+  async listCached(entity: SyncEntity, options: { includeDeleted?: boolean } = {}): Promise<CachedEntity[]> {
+    const current = readJson<Record<string, CachedEntity>>(webStorage(), WEB_KEYS.cache, {});
+    return Object.values(current)
+      .filter((item) => item.entity === entity)
+      .filter((item) => options.includeDeleted || item.deletedAt === null)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {
+    const current = readJson<Record<string, CachedEntity>>(webStorage(), WEB_KEYS.cache, {});
+    return current[cacheKey(entity, entityId)] ?? null;
+  }
+
+  async putCached(entity: SyncEntity, entityId: string, values: Record<string, unknown>): Promise<void> {
+    const storage = webStorage();
+    const current = readJson<Record<string, CachedEntity>>(storage, WEB_KEYS.cache, {});
+    const key = cacheKey(entity, entityId);
+
+    current[key] = {
+      entity,
+      entityId,
+      version: current[key]?.version ?? 0,
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+      payload: JSON.stringify({ ...JSON.parse(current[key]?.payload ?? '{}'), ...values }),
+      pending: null,
+    };
+
+    writeJson(storage, WEB_KEYS.cache, current);
+    notify();
+  }
+
+  async clearCache(): Promise<void> {
+    const storage = webStorage();
+    storage?.removeItem(WEB_KEYS.cache);
+    storage?.removeItem(WEB_KEYS.state);
+    notify();
+  }
+
   async getClientId(): Promise<string> {
     return getOrCreateClientId('web');
   }
@@ -399,8 +604,13 @@ class WebStorageStore implements LocalStore {
     const storage = webStorage();
     storage?.removeItem(WEB_KEYS.outbox);
     storage?.removeItem(WEB_KEYS.conflicts);
+    storage?.removeItem(WEB_KEYS.cache);
     notify();
   }
+}
+
+function cacheKey(entity: SyncEntity, entityId: string): string {
+  return `${entity}:${entityId}`;
 }
 
 const CLIENT_ID_KEY = 'orbithub:client-id';

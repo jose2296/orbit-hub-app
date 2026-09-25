@@ -94,18 +94,26 @@ dispositivos, los ve en Ajustes, revoca uno y cierra sesión en todos, con tests
 - [x] Conflictos explícitos: `GET /sync/conflicts`, nunca sobrescritura silenciosa
 - [x] Autorización por rol en cada escritura (workspace que no se ve = 404)
 - [x] Outbox del cliente con estado base (`base`) para la fusión
-- [ ] Workspaces CRUD como endpoints REST (además de sync)
-- [ ] Carpetas anidadas: mover, reordenar y arrastrar
-- [ ] Dashboard con layout persistido y editor visual
-- [ ] Caché local de entidades para lectura sin conexión
-- [ ] Pantallas de workspaces y carpetas en la app
+- [x] Endpoints REST de lectura (workspaces, carpetas, miembros, dashboard)
+- [x] Caché local de entidades: SQLite en nativo, Web Storage en web
+- [x] Pull a la caché con cursor por dispositivo
+- [x] Escrituras optimistas: se ve al instante, se encolan y se sincronizan
+- [x] Pantallas de workspaces y carpetas, con árbol e indentación
+- [x] Home conectada a los workspaces reales
+- [ ] Dashboard: editor visual de widgets (la lectura ya está)
+- [ ] Mover y reordenar carpetas con arrastrar
+- [ ] Renombrar en línea y hoja de acciones por carpeta
 - [ ] Invitaciones y transferencia de propiedad (fase de colaboración)
 
 **Criterio de salida:** crear, renombrar, mover y borrar un workspace y una carpeta desde dos
 dispositivos, online y offline, sin duplicados ni sobrescrituras silenciosas.
 
-**Estado:** el motor de sincronización está completo y probado (20 tests). Falta la capa de
-lectura: endpoints REST de consulta y las pantallas de la app.
+**Estado:** sincronización, lectura y escritura local funcionando y probadas (89 tests en
+total). Los escrituras van siempre por el outbox, también estando online: hay un único camino de
+escritura, con versión, permisos y conflictos.
+
+**Pendiente para cerrar la fase:** editor visual del dashboard, arrastrar para mover carpetas y
+las invitaciones, que llegan con la fase de colaboración.
 
 ---
 

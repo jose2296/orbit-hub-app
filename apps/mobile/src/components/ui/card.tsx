@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import type { ViewProps, ViewStyle } from 'react-native';
+import type { StyleProp, ViewProps, ViewStyle } from 'react-native';
 
 import { useTheme } from '@/theme';
 
@@ -8,7 +8,7 @@ export type CardVariant = 'default' | 'elevated' | 'outlined' | 'muted';
 export interface CardProps extends ViewProps {
   variant?: CardVariant;
   padded?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
 }
 
