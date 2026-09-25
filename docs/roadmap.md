@@ -258,3 +258,29 @@ Fase 10 (pulido) es continua y transversal
 | Sincronización offline | Complejidad real | Outbox idempotente, conflictos explícitos, pruebas con dos dispositivos simulados |
 | Editores nativos y web | Divergencia de formato | Un único formato de documento validado por esquema |
 | Migración heredada | Datos corruptos si se hace tarde | Transformación pura, versionada y reversible, con informe de anomalías |
+
+## Rediseño de la interfaz (cerrado)
+
+Un bloque de pulido sobre las fases ya entregadas, cada uno verificado en un
+navegador real antes de commitearlo.
+
+| Bloque | Qué cambia | Commit |
+| --- | --- | --- |
+| 1. Listas | Películas y libros en carrusel horizontal con póster; tareas separadas en pendientes y completadas; una lista de medios ya no ofrece el formulario de texto | `e934351` |
+| 2. Reordenar | Arrastre con pulsación larga en lugar de flechas, sobre el mismo camino de escritura | `87511f0` |
+| 3. Panel | Masonry por columnas medidas y tarjetas arrastrables | `b764077` |
+| 4. Detalle | Colección (franquicia) y similares de TMDB, con su propio carrusel | `0a70ec2` |
+| 5. Listas largas | Consulta por lista en el almacén y `FlatList`: 500 filas pintan ~60 | `8aafd2e` |
+| 6. Contenido real | El espacio muestra sus listas, el inicio muestra tareas y listas de verdad, y las frases contadas concuerdan | `724d002` |
+
+Tres cosas que se aprenden por el camino y conviene no olvidar:
+
+- Una sección dentro de un `ScrollView` **no conoce su desplazamiento**: `onLayout`
+  da la `y` respecto a su padre, no al contenido scrolleado. Una ventana calculada
+  con esa `y` pinta filas una pantalla por debajo de las que se están mirando. Las
+  listas largas las lleva una `FlatList`, que es lo que mide y mantiene la ventana.
+- El driver web del almacén y el de SQLite tienen que devolver **lo mismo**. Uno
+  devolvía el payload ya parseado donde el otro devuelve la fila, y quien lo leyera
+  otra vez acababa con `JSON.parse(undefined)`.
+- En la web un clic dentro de un `Pressable` **burbujea** a él. Un checkbox anidado
+  en la fila que abre la lista marcaba la tarea y abría la lista a la vez.
