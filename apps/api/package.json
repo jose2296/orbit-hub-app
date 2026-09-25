@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "email-test": "tsx src/scripts/email-test.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

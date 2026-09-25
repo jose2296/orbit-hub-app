@@ -24,7 +24,7 @@ Con eso reescribo el autor de los commits existentes (son pocos, y aún no hay c
 
 ---
 
-## 2. Google OAuth (necesario para el login con Google) ⬜
+## 2. Google OAuth ✅ (claves puestas, probado)
 
 Hoy el botón está implemented pero **desactivado**: el cliente no existe, así que la app lo
 muestra deshabilitado con un aviso. En cuanto me pases el par, lo activo.
@@ -79,28 +79,36 @@ claves de IA (la IA se eliminó) y las de Firebase (push necesita su propio proy
 Buena noticia: los `.env` antiguos **no estaban versionados** en sus repos, así que las claves no
 no están en el historial de git. Aun así, rota lo que importaste antes de producción.
 
-## 3. Proveedor de email (necesario para verificación y recuperación) ⬜
+## 3. Proveedor de email — Resend 🟡 (integrado, falta la clave)
 
-Hoy los correos se **imprimen por consola** del servidor: la verificación funciona, pero nadie
-recibe nada. Necesitamos un proveedor real para que un usuario pueda registrarse de verdad.
+**Decidido: Resend.** El transporte ya está implementado y probado
+(`apps/api/src/modules/email/email.ts`): reintenta ante 429 y errores 5xx, distingue un rechazo
+definitivo (no reintenta), tiene timeout de 10 s y nunca hace fallar un registro porque el correo
+no salió: el fallo queda en el audit trail y el usuario puede pedir el reenvío.
 
-### Opciones
+**Me falta esto:**
 
-| Proveedor | Ventajas | A Coste |
+| Dato | Dónde se saca | Dónde va |
 | --- | --- | --- |
-| **Resend** | API mínima, developer-friendly, dominio propio fácil | 3.000 emails/mes gratis, luego ~$20/mes |
-| **Postmark** | Excelente entregabilidad y métricas | 10.000/mes gratis |
-| **Amazon SES** | Muy barato a escala | Configuración más pesada (verificación de dominio) |
-| **SMTP propio** | Sin proveedor | Mantenimiento y entregabilidad bajo tu control |
+| `RESEND_API_KEY` | [resend.com/api-keys](https://resend.com/api-keys), tipo **Sending access** y permisos **Only** (enviar es lo único que hacemos) | `apps/api/.env` |
+| Dominio verificado | [resend.com/domains](https://resend.com/domains), añade los registros DNS que te dé (DKIM + SPF). Vale un subdominio: `mail.orbithub.com` | — |
+| `EMAIL_FROM` | El remitente que quieras, por ejemplo `OrbitHub <no-reply@mail.orbithub.com>` | `apps/api/.env` |
+| `EMAIL_TRANSPORT=resend` | — | `apps/api/.env` |
 
-**Necesito de ti:** proveedor elegido, y con él:
-- la API key (o los datos SMTP),
-- el dominio desde el que se envía (¿`orbithub.com`?),
-- la dirección de envío (`no-reply@...`).
+**Pruebas:**
 
-Mientras tanto, `EMAIL_TRANSPORT=console` sigue funcionando para desarrollo.
+```bash
+# 1. Antes de verificar el dominio solo puedes enviar a tu propio correo
+make -C apps/api email-test EMAIL=tu-correo@ejemplo.com
 
----
+# 2. Cuando la clave esté puesta
+make -C apps/api email-test EMAIL=otro-correo@ejemplo.com
+```
+
+Si el dominio aún no está verificado, Resend solo permite enviar a la dirección de tu cuenta
+usando `onboarding@resend.dev`. Sirve para probar, no para producción.
+
+Plan gratuito: 3.000 correos al mes y 100 al día. Suficiente para empezar.
 
 ## 4. PostgreSQL de producción ⬜
 
@@ -168,7 +176,7 @@ Nada de lo de arriba bloquea el desarrollo de la **Fase 2** (workspaces, carpeta
 sincronización). Solo dos cosas son urgentes de verdad:
 
 1. **Identidad de Git** → dime nombre y correo.
-2. **Proveedor de email** → dime cuál prefieres (Resend, Postmark, SES o SMTP propio).
+2. **La clave de Resend y el dominio verificado** → la integración está hecha, solo falta la clave.
 
 El resto (Google, Postgres, dominio, stores) puede llegar más adelante, con avisos.
 

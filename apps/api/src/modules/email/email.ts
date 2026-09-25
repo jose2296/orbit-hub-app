@@ -15,6 +15,17 @@ export interface EmailSender {
   send(message: EmailMessage): Promise<void>;
 }
 
+export class EmailDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly provider: string,
+  ) {
+    super(message);
+    this.name = 'EmailDeliveryError';
+  }
+}
+
 /**
  * Development transport: logs the message instead of sending it. Never used in
  * production, where a real provider must be configured explicitly.
@@ -47,6 +58,7 @@ class NoopEmailSender implements EmailSender {
 
 export function createEmailSender(): EmailSender {
   if (env.EMAIL_TRANSPORT === 'noop') return new NoopEmailSender();
+  if (env.EMAIL_TRANSPORT === 'resend') return new ResendEmailSender();
   return new ConsoleEmailSender();
 }
 
@@ -54,6 +66,121 @@ export function createEmailSender(): EmailSender {
 export function capturedEmails(): readonly EmailMessage[] {
   return capturedMessages;
 }
+
+/* ------------------------------------------------------------------ resend -- */
+
+const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+const RESEND_TIMEOUT_MS = 10_000;
+const RESEND_ATTEMPTS = 3;
+
+interface ResendResponse {
+  id?: string;
+  message?: string;
+  name?: string;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resend transport.
+ *
+ * Delivery is retried on rate limits and server errors, because a verification
+ * email that never arrives is indistinguishable from a broken sign-up. The
+ * caller still gets a successful HTTP response: the account exists, and the
+ * failure is recorded in the audit trail instead of becoming a 500.
+ */
+export class ResendEmailSender implements EmailSender {
+  readonly transport = 'resend';
+
+  private readonly apiKey = env.RESEND_API_KEY as string;
+  private readonly from = env.EMAIL_FROM;
+
+  async send(message: EmailMessage): Promise<void> {
+    let lastError: EmailDeliveryError | null = null;
+
+    for (let attempt = 1; attempt <= RESEND_ATTEMPTS; attempt += 1) {
+      try {
+        await this.post(message);
+        logger.info(
+          { to: message.to, subject: message.subject, attempt },
+          'email sent through resend',
+        );
+        return;
+      } catch (error) {
+        const failure =
+          error instanceof EmailDeliveryError
+            ? error
+            : new EmailDeliveryError('The email provider could not be reached', null, 'resend');
+
+        lastError = failure;
+
+        const retryable = failure.status === null || failure.status === 429 || failure.status >= 500;
+        if (!retryable || attempt === RESEND_ATTEMPTS) {
+          break;
+        }
+
+        // Exponential backoff: 250ms, 750ms.
+        await sleep(250 * 3 ** (attempt - 1));
+      }
+    }
+
+    throw lastError ?? new EmailDeliveryError('The email could not be sent', null, 'resend');
+  }
+
+  private async post(message: EmailMessage): Promise<void> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(RESEND_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: this.from,
+          to: [message.to],
+          subject: message.subject,
+          html: message.html,
+          text: message.text,
+        }),
+        signal: controller.signal,
+      });
+
+      if (response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as ResendResponse;
+        if (!payload.id) {
+          throw new EmailDeliveryError(
+            'Resend accepted the request but returned no id',
+            response.status,
+            'resend',
+          );
+        }
+        return;
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as ResendResponse;
+      throw new EmailDeliveryError(
+        payload.message ?? `Resend rejected the message with status ${response.status}`,
+        response.status,
+        'resend',
+      );
+    } catch (error) {
+      if (error instanceof EmailDeliveryError) throw error;
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new EmailDeliveryError('Resend did not answer in time', null, 'resend');
+      }
+      throw new EmailDeliveryError('Resend could not be reached', null, 'resend');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/* --------------------------------------------------------------- templates -- */
 
 function link(path: string, token: string): string {
   const base = env.WEB_ORIGIN.replace(/\/$/, '');

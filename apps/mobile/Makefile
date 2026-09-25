@@ -15,7 +15,7 @@ NPM ?= npm
 ENV := $(NPM) run --workspace @orbit-hub/mobile
 
 .PHONY: help install ios android web start device prebuild-ios prebuild-android \
-        test typecheck export-web doctor env-init env-check clean
+        test typecheck export-web doctor env-init env-distribute env-check clean
 
 help: ## Show this help
 	@echo "OrbitHub app"
@@ -67,6 +67,9 @@ doctor: ## Run expo-doctor
 
 env-init: ## Create .env from the example
 	node ../../scripts/env.mjs init
+
+env-distribute: ## Move root .env values into the files that own them
+	node ../../scripts/env.mjs distribute
 
 env-check: ## Report which variables are missing (names only)
 	node ../../scripts/env.mjs check

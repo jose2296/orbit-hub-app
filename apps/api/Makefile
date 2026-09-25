@@ -16,7 +16,7 @@ MIGRATIONS := ./drizzle
 DEV_DATA := .data/pglite
 
 .PHONY: help install dev start smoke test test-watch typecheck build \
-        env-init env-check env-jwt db-migrate db-reset db-studio clean
+        env-init env-distribute env-check env-jwt email-test db-migrate db-reset db-studio clean
 
 help: ## Show this help
 	@echo "OrbitHub API"
@@ -61,11 +61,17 @@ build: ## Bundle the server for production
 env-init: ## Create .env from the example
 	node ../../scripts/env.mjs init
 
+env-distribute: ## Move root .env values into the files that own them
+	node ../../scripts/env.mjs distribute
+
 env-check: ## Report which variables are missing (names only)
 	node ../../scripts/env.mjs check
 
 env-jwt: ## Generate a fresh JWT_SECRET
 	node ../../scripts/env.mjs generate-jwt
+
+email-test: ## Send a real test email: make email-test EMAIL=you@example.com
+	$(ENV) email-test -- $(or $(EMAIL),not-set@example.com)
 
 db-migrate: ## Apply the committed migrations
 	RUN_MIGRATIONS_ON_BOOT=false $(NPM) run --workspace @orbit-hub/api db:migrate

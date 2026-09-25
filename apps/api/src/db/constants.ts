@@ -86,6 +86,7 @@ export const AUDIT_EVENTS = [
   'auth.refresh_replay_detected',
   'auth.verify_email',
   'auth.verify_email_resent',
+  'auth.email_delivery_failed',
   'auth.password_reset_requested',
   'auth.password_reset_completed',
   'auth.password_changed',

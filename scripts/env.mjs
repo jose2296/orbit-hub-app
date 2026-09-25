@@ -45,6 +45,7 @@ const API_VARS = [
   { name: 'GOOGLE_CLIENT_SECRET', required: false, default: 'unset: Google sign-in disabled' },
 
   { name: 'EMAIL_TRANSPORT', required: false, default: 'console' },
+  { name: 'RESEND_API_KEY', required: 'when EMAIL_TRANSPORT=resend', default: 'unset: email is only logged' },
   { name: 'EMAIL_FROM', required: false, default: 'no-reply@orbithub.app' },
   { name: 'WEB_ORIGIN', required: false, default: 'https://app.orbithub.com' },
 
@@ -284,10 +285,85 @@ function commandImportLegacy() {
   }
 }
 
+const rootEnvPath = join(root, '.env');
+
+/**
+ * Moves values out of the root .env and into the file that owns them.
+ *
+ * The root file is a shadow copy of everything, which is a reliable way to edit
+ * a variable in a place nothing reads. This fixes that: EXPO_PUBLIC_* go to the
+ * app, everything else to the API, and the root file is left as a template.
+ */
+function commandDistribute() {
+  const source = readEnvFile(rootEnvPath);
+
+  if (Object.keys(source).length === 0) {
+    log.warn('the root .env is empty, nothing to move');
+    return;
+  }
+
+  log.title('Distributing the root .env');
+  const moved = { api: [], mobile: [] };
+  const lines = [];
+
+  for (const [name, value] of Object.entries(source)) {
+    if (isSet(value)) {
+      const destination = name.startsWith('EXPO_PUBLIC_') ? 'mobile' : 'api';
+      const target = destination === 'api' ? apiEnvPath : mobileEnvPath;
+      const current = readEnvFile(target);
+
+      if (isSet(current[name]) && current[name] !== value) {
+        log.warn(`kept     ${name} in ${destination} (a different value is already set there)`);
+      } else {
+        writeEnvValue(target, name, value);
+        moved[destination].push(name);
+        log.ok(`moved    ${name} -> ${destination}`);
+      }
+      lines.push(`${name}=`);
+    } else {
+      lines.push(`${name}=${value}`);
+    }
+  }
+
+  deriveGoogleClientId();
+
+  // The root file keeps the shape, with no values in it.
+  writeFileSync(
+    rootEnvPath,
+    `# Values moved to apps/api/.env and apps/mobile/.env by \`make env-distribute\`.\n` +
+      '# This file is a map, not a source of truth. See docs/environment.md.\n\n' +
+      `${lines.join('\n')}\n`,
+    'utf8',
+  );
+
+  log.title('Result');
+  log.note(`${moved.api.length} went to the API, ${moved.mobile.length} to the app.`);
+  log.note('The root .env now holds names only.');
+  log.note('Restart the API and the dev server so they pick the values up.');
+}
+
+/**
+ * The OAuth client id is public by design, and the app needs the same value the
+ * API uses for the web client. Deriving it here removes the most common reason
+ * for the Google button to stay disabled.
+ */
+function deriveGoogleClientId() {
+  const api = readEnvFile(apiEnvPath);
+  const mobile = readEnvFile(mobileEnvPath);
+
+  if (!isSet(api['GOOGLE_CLIENT_ID'])) return;
+  if (isSet(mobile['EXPO_PUBLIC_GOOGLE_CLIENT_ID'])) return;
+
+  writeEnvValue(mobileEnvPath, 'EXPO_PUBLIC_GOOGLE_CLIENT_ID', api['GOOGLE_CLIENT_ID']);
+  log.ok('derived  EXPO_PUBLIC_GOOGLE_CLIENT_ID in the app from the API client id');
+  log.note('        the app needs the *web* OAuth client id for the web target');
+}
+
 const commands = {
   list: commandList,
   init: commandInit,
   check: commandCheck,
+  distribute: commandDistribute,
   'generate-jwt': commandGenerateJwt,
   'import-legacy': commandImportLegacy,
 };

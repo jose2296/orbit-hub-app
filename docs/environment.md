@@ -64,9 +64,20 @@ re-applies the migrations.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `EMAIL_TRANSPORT` | no | `console` | `console` logs, `noop` is used by the tests |
-| `EMAIL_FROM` | no | `no-reply@orbithub.app` | |
+| `EMAIL_TRANSPORT` | no | `console` | `console` logs, `resend` sends, `noop` is used by the tests |
+| `RESEND_API_KEY` | with `resend` | unset | From resend.com/api-keys, looks like `re_...` |
+| `EMAIL_FROM` | no | `no-reply@orbithub.app` | Must be a sender on a domain verified in Resend |
 | `WEB_ORIGIN` | no | `https://app.orbithub.com` | Base for the verification and reset links |
+
+The API refuses to boot when `EMAIL_TRANSPORT=resend` and the key is missing, and refuses to
+boot in production with `EMAIL_TRANSPORT=console`, so nobody ships an app that silently logs
+password resets.
+
+Check delivery at any time:
+
+```bash
+make -C apps/api email-test EMAIL=you@example.com
+```
 
 ### Rate limiting
 

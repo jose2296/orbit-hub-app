@@ -61,6 +61,9 @@ env-list: ## Print the inventory of environment variables
 env-init: ## Create the local .env files
 	node scripts/env.mjs init
 
+env-distribute: ## Move root .env values into the files that own them
+	node scripts/env.mjs distribute
+
 env-check: ## Report missing environment variables
 	node scripts/env.mjs check
 

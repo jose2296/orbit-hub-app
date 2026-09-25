@@ -33,7 +33,8 @@ const envSchema = z
     GOOGLE_CLIENT_ID: z.string().optional(),
     GOOGLE_CLIENT_SECRET: z.string().optional(),
 
-    EMAIL_TRANSPORT: z.enum(['console', 'noop']).default('console'),
+    EMAIL_TRANSPORT: z.enum(['console', 'resend', 'noop']).default('console'),
+    RESEND_API_KEY: z.string().optional(),
     EMAIL_FROM: z.string().default('no-reply@orbithub.app'),
     WEB_ORIGIN: z.string().url().default('https://app.orbithub.com'),
 
@@ -51,6 +52,22 @@ const envSchema = z
       });
     }
 
+    if (value.EMAIL_TRANSPORT === 'resend' && !isResendKey(value.RESEND_API_KEY)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RESEND_API_KEY'],
+        message: 'EMAIL_TRANSPORT=resend needs a Resend API key, which looks like re_...',
+      });
+    }
+
+    if (value.NODE_ENV === 'production' && value.EMAIL_TRANSPORT === 'console') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EMAIL_TRANSPORT'],
+        message: 'EMAIL_TRANSPORT=console only logs emails; set it to resend in production',
+      });
+    }
+
     if (value.NODE_ENV === 'production' && !value.JWT_SECRET) {
       ctx.addIssue({
         code: 'custom',
@@ -61,6 +78,11 @@ const envSchema = z
   });
 
 export type Env = z.infer<typeof envSchema>;
+
+/** Resend keys are prefixed, so an obviously wrong value fails at boot. */
+function isResendKey(value: string | undefined): boolean {
+  return typeof value === 'string' && value.startsWith('re_') && value.length > 20;
+}
 
 /** In tests the process provides an explicit secret; never guess one in production. */
 const developmentSecret = randomBytes(48).toString('base64url');

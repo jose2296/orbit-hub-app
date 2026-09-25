@@ -7,10 +7,16 @@ import type { SessionRow, UserRow } from '../../db/schema.js';
 import { randomToken, sha256 } from '../../lib/crypto.js';
 import { HttpError } from '../../lib/http-error.js';
 import { hashPassword, needsRehash, verifyPassword } from '../../lib/password.js';
+import { logger } from '../../lib/logger.js';
 import { createRefreshToken, signAccessToken } from '../../lib/tokens.js';
 import { recordAudit } from '../audit/audit.js';
 import type { AuditContext } from '../audit/audit.js';
-import { createEmailSender, passwordResetEmail, verificationEmail } from '../email/email.js';
+import {
+  createEmailSender,
+  EmailDeliveryError,
+  passwordResetEmail,
+  verificationEmail,
+} from '../email/email.js';
 
 import { toContractDevice, toContractUser } from './auth-mappers.js';
 import { authRepository } from './auth-repository.js';
@@ -85,13 +91,44 @@ export class AuthService {
       expiresAt: new Date(Date.now() + EMAIL_TOKEN_TTL_SECONDS * 1000),
     });
 
-    await emailSender.send(
-      verificationEmail({
-        to: user.email,
-        token,
-        locale: (user.locale === 'en' ? 'en' : 'es') as Locale,
-      }),
+    await this.deliver('verify_email', () =>
+      emailSender.send(
+        verificationEmail({
+          to: user.email,
+          token,
+          locale: (user.locale === 'en' ? 'en' : 'es') as Locale,
+        }),
+      ),
     );
+  }
+
+  /**
+   * Sends an email without ever failing the request over it.
+   *
+   * A verification mail that does not arrive looks exactly like a broken
+   * sign-up, so the failure is logged, recorded in the audit trail, and the user
+   * is pointed at the resend endpoint.
+   */
+  private async deliver(
+    kind: 'verify_email' | 'reset_password',
+    send: () => Promise<void>,
+  ): Promise<boolean> {
+    try {
+      await send();
+      return true;
+    } catch (error) {
+      const failure =
+        error instanceof EmailDeliveryError
+          ? { message: error.message, status: error.status }
+          : { message: 'Unexpected delivery error', status: null };
+
+      logger.error({ err: error, kind, status: failure.status }, 'email delivery failed');
+      await recordAudit({
+        event: 'auth.email_delivery_failed',
+        metadata: { kind, status: failure.status, message: failure.message },
+      });
+      return false;
+    }
   }
 
   async register(
@@ -335,12 +372,14 @@ export class AuthService {
       expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000),
     });
 
-    await emailSender.send(
-      passwordResetEmail({
-        to: user.email,
-        token,
-        locale: (user.locale === 'en' ? 'en' : 'es') as Locale,
-      }),
+    await this.deliver('reset_password', () =>
+      emailSender.send(
+        passwordResetEmail({
+          to: user.email,
+          token,
+          locale: (user.locale === 'en' ? 'en' : 'es') as Locale,
+        }),
+      ),
     );
 
     await recordAudit({ ...context, userId: user.id, event: 'auth.password_reset_requested' });
