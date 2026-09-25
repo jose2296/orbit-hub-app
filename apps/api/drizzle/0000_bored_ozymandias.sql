@@ -15,6 +15,7 @@ CREATE TABLE "auth_identities" (
 	"provider_subject" varchar(320) NOT NULL,
 	"email" varchar(254),
 	"email_verified" boolean DEFAULT false NOT NULL,
+	"password_hash" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"linked_at" timestamp with time zone
 );
@@ -34,6 +35,7 @@ CREATE TABLE "sessions" (
 	"user_id" uuid NOT NULL,
 	"token_family_id" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"token_hash" varchar(64) NOT NULL,
+	"previous_token_hash" varchar(64),
 	"device_label" varchar(80) NOT NULL,
 	"platform" varchar(16) DEFAULT 'unknown' NOT NULL,
 	"user_agent" varchar(400),
@@ -69,6 +71,7 @@ CREATE INDEX "auth_identities_user_idx" ON "auth_identities" USING btree ("user_
 CREATE UNIQUE INDEX "email_tokens_hash_unique" ON "email_tokens" USING btree ("token_hash");--> statement-breakpoint
 CREATE INDEX "email_tokens_user_type_idx" ON "email_tokens" USING btree ("user_id","type");--> statement-breakpoint
 CREATE UNIQUE INDEX "sessions_token_hash_unique" ON "sessions" USING btree ("token_hash");--> statement-breakpoint
+CREATE INDEX "sessions_previous_token_hash_idx" ON "sessions" USING btree ("previous_token_hash");--> statement-breakpoint
 CREATE INDEX "sessions_user_idx" ON "sessions" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "sessions_family_idx" ON "sessions" USING btree ("token_family_id");--> statement-breakpoint
 CREATE INDEX "sessions_expires_at_idx" ON "sessions" USING btree ("expires_at");--> statement-breakpoint

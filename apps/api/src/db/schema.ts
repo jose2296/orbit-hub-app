@@ -61,6 +61,8 @@ export const authIdentities = pgTable(
     providerSubject: varchar('provider_subject', { length: 320 }).notNull(),
     email: varchar('email', { length: 254 }),
     emailVerified: boolean('email_verified').notNull().default(false),
+    /** Argon2id hash. Only present for the `email` provider. */
+    passwordHash: text('password_hash'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     linkedAt: timestamp('linked_at', { withTimezone: true, mode: 'date' }),
   },
@@ -85,6 +87,8 @@ export const sessions = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     tokenFamilyId: uuid('token_family_id').notNull().defaultRandom(),
     tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    /** Hash of the refresh token that the current one replaced. */
+    previousTokenHash: varchar('previous_token_hash', { length: 64 }),
     deviceLabel: varchar('device_label', { length: 80 }).notNull(),
     platform: varchar('platform', { length: 16 }).$type<DevicePlatform>().notNull().default('unknown'),
     userAgent: varchar('user_agent', { length: 400 }),
@@ -97,6 +101,7 @@ export const sessions = pgTable(
   },
   (table) => [
     uniqueIndex('sessions_token_hash_unique').on(table.tokenHash),
+    index('sessions_previous_token_hash_idx').on(table.previousTokenHash),
     index('sessions_user_idx').on(table.userId),
     index('sessions_family_idx').on(table.tokenFamilyId),
     index('sessions_expires_at_idx').on(table.expiresAt),

@@ -36,6 +36,11 @@ const envSchema = z
     EMAIL_TRANSPORT: z.enum(['console', 'noop']).default('console'),
     EMAIL_FROM: z.string().default('no-reply@orbithub.app'),
     WEB_ORIGIN: z.string().url().default('https://app.orbithub.com'),
+
+    /** Auth throttling. Generous values in tests keep the suite independent. */
+    AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
+    AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
+    AUTH_ACCOUNT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
   })
   .superRefine((value, ctx) => {
     if (value.NODE_ENV === 'production' && !value.DATABASE_URL) {

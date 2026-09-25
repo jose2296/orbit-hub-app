@@ -1,6 +1,8 @@
 import { Router } from 'express';
 
 import { HttpError } from '../lib/http-error.js';
+
+import { authRouter } from './auth.js';
 import { healthRouter } from './health.js';
 
 /**
@@ -18,6 +20,6 @@ placeholderRouter.use((req) => {
 export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
-apiRouter.use('/auth', placeholderRouter);
+apiRouter.use('/auth', authRouter);
 apiRouter.use('/sync', placeholderRouter);
 apiRouter.use('/workspaces', placeholderRouter);

@@ -58,12 +58,20 @@ describe('error envelope', () => {
   });
 
   it('returns not_implemented for planned endpoints', async () => {
-    const response = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST' });
+    const response = await fetch(`${baseUrl}/api/v1/workspaces`, { method: 'POST' });
     const body = (await response.json()) as { error?: { code?: string; message?: string } };
 
     expect(response.status).toBe(501);
     expect(body.error?.code).toBe('not_implemented');
     expect(body.error?.message).toContain('next phase');
+  });
+
+  it('validates the payload of implemented endpoints', async () => {
+    const response = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST' });
+    const body = (await response.json()) as { error?: { code?: string } };
+
+    expect(response.status).toBe(422);
+    expect(body.error?.code).toBe('validation_failed');
   });
 });
 

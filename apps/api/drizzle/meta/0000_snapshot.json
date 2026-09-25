@@ -1,5 +1,5 @@
 {
-  "id": "5bde07c1-b6c8-47d1-a7bd-cd780e821bd0",
+  "id": "446aff11-7c3e-44e4-8e54-504135cf2ecc",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -145,6 +145,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -378,6 +384,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "previous_token_hash": {
+          "name": "previous_token_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "device_label": {
           "name": "device_label",
           "type": "varchar(80)",
@@ -448,6 +460,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sessions_previous_token_hash_idx": {
+          "name": "sessions_previous_token_hash_idx",
+          "columns": [
+            {
+              "expression": "previous_token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

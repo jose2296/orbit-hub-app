@@ -8,10 +8,14 @@ import * as esbuild from 'esbuild';
  * artifact does not depend on the monorepo layout.
  */
 const external = [
+  '@electric-sql/pglite',
+  '@node-rs/argon2',
   'cors',
   'dotenv',
+  'drizzle-orm',
   'express',
   'helmet',
+  'jose',
   'pg',
   'pino',
   'pino-http',

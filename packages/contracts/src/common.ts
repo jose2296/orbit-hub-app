@@ -3,8 +3,16 @@ import { z } from 'zod';
 /** UUID v4 identifier. Every entity uses a server generated UUID. */
 export const uuidSchema = z.uuid();
 
-/** Lower-cased, trimmed email address. Normalisation happens on the edge of the API. */
-export const emailSchema = z.email().trim().toLowerCase().max(254);
+/**
+ * Email rules. Trimming and lowercasing happen before validation so a pasted
+ * address with stray whitespace is accepted and stored normalised.
+ */
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .check(z.email())
+  .pipe(z.string().max(254));
 
 /** Password rules for the MVP. Length is the dominant factor, so we only enforce a sane floor. */
 export const passwordSchema = z
