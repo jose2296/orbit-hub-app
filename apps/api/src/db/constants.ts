@@ -24,6 +24,34 @@ export const SESSION_REVOKE_REASONS = [
 ] as const;
 export type SessionRevokeReason = (typeof SESSION_REVOKE_REASONS)[number];
 
+/** Workspaces, folders and the dashboard, plus what the sync engine moves. */
+export const MEMBERSHIP_ROLES = ['owner', 'editor', 'viewer'] as const;
+export type MembershipRoleName = (typeof MEMBERSHIP_ROLES)[number];
+
+/** Numeric rank used for authorisation comparisons. Higher wins. */
+export const MEMBERSHIP_ROLE_RANK: Record<MembershipRoleName, number> = {
+  owner: 3,
+  editor: 2,
+  viewer: 1,
+};
+
+export const SYNC_ENTITIES = [
+  'workspace',
+  'folder',
+  'dashboard',
+] as const;
+export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
+
+export const SYNC_OPERATION_KINDS = ['create', 'update', 'delete'] as const;
+export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
+
+/** Fields the client may write, per entity. Anything else is ignored. */
+export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
+  workspace: ['name', 'description', 'emoji'],
+  folder: ['parentId', 'name', 'emoji', 'position'],
+  dashboard: ['layout'],
+};
+
 export const AUDIT_EVENTS = [
   'auth.register',
   'auth.login',
