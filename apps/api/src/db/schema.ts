@@ -12,6 +12,8 @@ import { auditLogs, authIdentities, emailTokens, sessions, users } from './auth-
 import {
   dashboardLayouts,
   folders,
+  listItems,
+  lists,
   memberships,
   syncConflicts,
   syncCursors,
@@ -30,6 +32,8 @@ export const schema = {
   workspaces,
   memberships,
   folders,
+  lists,
+  listItems,
   dashboardLayouts,
   // sync
   syncOperations,

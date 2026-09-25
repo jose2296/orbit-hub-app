@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -12,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { users } from './auth-schema';
-import type { MembershipRoleName, SyncEntityName } from './constants';
+import type { ListKindName, MembershipRoleName, SyncEntityName } from './constants';
 
 /**
  * Workspace: the top level container. Everything the user creates belongs to
@@ -205,3 +206,81 @@ export const foldersRelations = relations(folders, ({ one }) => ({
     relationName: 'folder_tree',
   }),
 }));
+
+/**
+ * Lists. One shape covers the three kinds: tasks, movies and books, so
+ * filtering, search and sync stay identical across them.
+ */
+export const lists = pgTable(
+  'lists',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id'),
+    kind: varchar('kind', { length: 16 }).$type<ListKindName>().notNull(),
+    title: varchar('title', { length: 120 }).notNull(),
+    description: varchar('description', { length: 1000 }),
+    emoji: varchar('emoji', { length: 16 }),
+    favorite: boolean('favorite').notNull().default(false),
+    tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    position: integer('position').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    index('lists_workspace_kind_idx').on(table.workspaceId, table.kind),
+    index('lists_workspace_updated_at_idx').on(table.workspaceId, table.updatedAt),
+    index('lists_folder_idx').on(table.folderId),
+    index('lists_deleted_at_idx').on(table.deletedAt),
+  ],
+);
+
+/**
+ * Items. `external_id` and `metadata` keep the provider record (TheMovieDB,
+ * Google Books) so a list renders offline without calling the provider again.
+ */
+export const listItems = pgTable(
+  'list_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    listId: uuid('list_id')
+      .notNull()
+      .references(() => lists.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 300 }).notNull(),
+    position: integer('position').notNull().default(0),
+    completed: boolean('completed').notNull().default(false),
+    favorite: boolean('favorite').notNull().default(false),
+    priority: varchar('priority', { length: 8 })
+      .$type<'none' | 'low' | 'medium' | 'high'>()
+      .notNull()
+      .default('none'),
+    externalId: varchar('external_id', { length: 120 }),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    notes: varchar('notes', { length: 2000 }),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    index('list_items_list_position_idx').on(table.listId, table.position),
+    index('list_items_list_updated_at_idx').on(table.listId, table.updatedAt),
+    index('list_items_deleted_at_idx').on(table.deletedAt),
+  ],
+);
+
+export const listsRelations = relations(lists, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [lists.workspaceId], references: [workspaces.id] }),
+  items: many(listItems),
+}));
+
+export const listItemsRelations = relations(listItems, ({ one }) => ({
+  list: one(lists, { fields: [listItems.listId], references: [lists.id] }),
+}));
+
+export type ListRow = typeof lists.$inferSelect;
+export type ListItemRow = typeof listItems.$inferSelect;

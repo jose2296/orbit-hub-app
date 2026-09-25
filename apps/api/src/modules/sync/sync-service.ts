@@ -69,6 +69,63 @@ function sanitisePayload(
       clean[key] = Array.isArray(value) ? value : [];
       continue;
     }
+
+    if (key === 'title') {
+      clean[key] = String(value).slice(0, entity === 'list_item' ? 300 : 120);
+      continue;
+    }
+
+    if (key === 'position') {
+      clean[key] = Math.max(0, Math.trunc(Number(value) || 0));
+      continue;
+    }
+
+    if (key === 'folderId') {
+      clean[key] = value === null ? null : String(value);
+      continue;
+    }
+
+    if (key === 'completed' || key === 'favorite') {
+      clean[key] = value === true;
+      continue;
+    }
+
+    if (key === 'priority') {
+      clean[key] = ['none', 'low', 'medium', 'high'].includes(String(value))
+        ? String(value)
+        : 'none';
+      continue;
+    }
+
+    if (key === 'tags') {
+      clean[key] = Array.isArray(value)
+        ? value.map((tag) => String(tag).trim().slice(0, 40)).filter(Boolean).slice(0, 20)
+        : [];
+      continue;
+    }
+
+    if (key === 'kind') {
+      clean[key] = ['tasks', 'movies', 'books'].includes(String(value)) ? String(value) : 'tasks';
+      continue;
+    }
+
+    if (key === 'notes') {
+      clean[key] = value === null ? null : String(value).slice(0, 2000);
+      continue;
+    }
+
+    if (key === 'externalId') {
+      clean[key] = value === null ? null : String(value).slice(0, 120);
+      continue;
+    }
+
+    if (key === 'metadata') {
+      clean[key] =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : null;
+      continue;
+    }
   }
 
   return clean;
@@ -136,6 +193,22 @@ export class SyncService {
     }
   }
 
+  /**
+   * Items inherit the workspace of their list. Resolving it here keeps the
+   * permission check in one place and hides the list behind the same 404.
+   */
+  private async workspaceOfListItem(item: StoredEntity, userId: string): Promise<string | null> {
+    const listId = item['listId'] as string | null;
+    if (!listId) return null;
+
+    const list = await syncRepository.findEntity('list', listId);
+    if (!list) {
+      throw HttpError.notFound('List not found');
+    }
+    void userId;
+    return (list['workspaceId'] as string | null) ?? null;
+  }
+
   private async apply(operation: SyncOperation, userId: string): Promise<AppliedResult> {
     // Narrowed once: this build stores a subset of the entities in the contract.
     const entity = assertSupportedEntity(operation.entity);
@@ -151,41 +224,99 @@ export class SyncService {
 
     if (operation.kind === 'create') {
       if (existing) {
-        // The client created something that already exists: the row wins, the
-        // duplicate create is absorbed. This is the retry case.
+        // The client created something that already exists: the row wins and
+        // the duplicate create is absorbed. This is the retry case.
         return { status: 'duplicate', version: existing.version };
       }
 
       const payload = sanitisePayload(entity, operation.payload);
+      const rawWorkspaceId = operation.payload?.['workspaceId'];
+      const workspaceId = typeof rawWorkspaceId === 'string' ? rawWorkspaceId : '';
 
-      if (entity === 'workspace') {
-        const row = await syncRepository.insertEntity('workspace', {
-          id: operation.entityId,
-          name: (payload['name'] as string) ?? 'Workspace',
-          description: (payload['description'] as string) ?? null,
-          emoji: (payload['emoji'] as string) ?? null,
-        });
-        // The creator owns what they create.
-        await syncRepository.addMembership(row.id, userId, 'owner');
-        return { status: 'applied', version: row.version };
+      switch (entity) {
+        case 'workspace': {
+          const row = await syncRepository.insertEntity('workspace', {
+            id: operation.entityId,
+            name: (payload['name'] as string) ?? 'Workspace',
+            description: (payload['description'] as string) ?? null,
+            emoji: (payload['emoji'] as string) ?? null,
+          });
+          // The creator owns what they create.
+          await syncRepository.addMembership(row.id, userId, 'owner');
+          return { status: 'applied', version: row.version };
+        }
+
+        case 'folder': {
+          if (workspaceId.length === 0) {
+            throw HttpError.validation('A folder needs a workspaceId');
+          }
+          await this.assertCanWrite(workspaceId, userId);
+
+          const row = await syncRepository.insertEntity('folder', {
+            id: operation.entityId,
+            workspaceId,
+            parentId: (payload['parentId'] as string | null) ?? null,
+            name: (payload['name'] as string) ?? 'Folder',
+            emoji: (payload['emoji'] as string) ?? null,
+            position: (payload['position'] as number) ?? 0,
+          });
+          return { status: 'applied', version: row.version };
+        }
+
+        case 'list': {
+          if (workspaceId.length === 0) {
+            throw HttpError.validation('A list needs a workspaceId');
+          }
+          await this.assertCanWrite(workspaceId, userId);
+
+          const row = await syncRepository.insertEntity('list', {
+            id: operation.entityId,
+            workspaceId,
+            folderId: (payload['folderId'] as string | null) ?? null,
+            kind: (payload['kind'] as string) ?? 'tasks',
+            title: (payload['title'] as string) ?? 'List',
+            description: (payload['description'] as string) ?? null,
+            emoji: (payload['emoji'] as string) ?? null,
+            favorite: (payload['favorite'] as boolean) ?? false,
+            tags: (payload['tags'] as string[]) ?? [],
+            position: (payload['position'] as number) ?? 0,
+          });
+          return { status: 'applied', version: row.version };
+        }
+
+        case 'list_item': {
+          const rawListId = operation.payload?.['listId'];
+          const listId = typeof rawListId === 'string' ? rawListId : '';
+          if (listId.length === 0) {
+            throw HttpError.validation('An item needs a listId');
+          }
+
+          // An item inherits its workspace from the list, and the list is
+          // checked for existence first so a dangling item is not created.
+          const owner = await syncRepository.findEntity('list', listId);
+          if (owner === null || owner['deletedAt']) {
+            throw HttpError.notFound('List not found');
+          }
+          await this.assertCanWrite((owner['workspaceId'] as string | null) ?? null, userId);
+
+          const row = await syncRepository.insertEntity('list_item', {
+            id: operation.entityId,
+            listId,
+            title: (payload['title'] as string) ?? 'Item',
+            position: (payload['position'] as number) ?? 0,
+            completed: (payload['completed'] as boolean) ?? false,
+            favorite: (payload['favorite'] as boolean) ?? false,
+            priority: (payload['priority'] as string) ?? 'none',
+            externalId: (payload['externalId'] as string) ?? null,
+            metadata: (payload['metadata'] as Record<string, unknown>) ?? null,
+            notes: (payload['notes'] as string) ?? null,
+          });
+          return { status: 'applied', version: row.version };
+        }
+
+        default:
+          throw HttpError.validation(`The entity "${entity}" cannot be created`);
       }
-
-      // folder
-      const workspaceId = (operation.payload?.['workspaceId'] as string | undefined) ?? null;
-      if (!workspaceId) {
-        throw HttpError.validation('A folder needs a workspaceId');
-      }
-      await this.assertCanWrite(workspaceId, userId);
-
-      const row = await syncRepository.insertEntity('folder', {
-        id: operation.entityId,
-        workspaceId,
-        parentId: (payload['parentId'] as string | null) ?? null,
-        name: (payload['name'] as string) ?? 'Folder',
-        emoji: (payload['emoji'] as string) ?? null,
-        position: (payload['position'] as number) ?? 0,
-      });
-      return { status: 'applied', version: row.version };
     }
 
     if (!existing) {
@@ -207,8 +338,10 @@ export class SyncService {
     if (operation.kind === 'delete') {
       if (entity === 'workspace') {
         await this.assertCanWrite(operation.entityId, userId);
-      } else if (entity === 'folder') {
+      } else if (entity === 'folder' || entity === 'list') {
         await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId);
+      } else if (entity === 'list_item') {
+        await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId);
       }
 
       const row = await syncRepository.updateEntity(entity, operation.entityId, {}, {
@@ -220,8 +353,10 @@ export class SyncService {
     // update
     if (entity === 'workspace') {
       await this.assertCanWrite(operation.entityId, userId);
-    } else if (entity === 'folder') {
+    } else if (entity === 'folder' || entity === 'list') {
       await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId);
+    } else if (entity === 'list_item') {
+      await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId);
     }
 
     if (operation.baseVersion === existing.version) {

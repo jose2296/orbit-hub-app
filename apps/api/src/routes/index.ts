@@ -5,6 +5,7 @@ import { HttpError } from '../lib/http-error.js';
 import { authRouter } from './auth.js';
 import { healthRouter } from './health.js';
 import { syncRouter } from './sync.js';
+import { listsRouter, searchRouter } from './lists.js';
 import { dashboardRouter, workspacesRouter } from './workspaces.js';
 
 /**
@@ -26,6 +27,8 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/sync', syncRouter);
 apiRouter.use('/workspaces', workspacesRouter);
 apiRouter.use('/dashboard', dashboardRouter);
+apiRouter.use('/lists', listsRouter);
+apiRouter.use('/search', searchRouter);
 
 // Phases 3 and 4. They answer 501 so the client can tell "not built yet" apart
 // from "broken", instead of a bare 404.

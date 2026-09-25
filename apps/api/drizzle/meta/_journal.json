@@ -8,6 +8,13 @@
       "when": 1790339515321,
       "tag": "0000_eminent_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790342384134,
+      "tag": "0001_soft_tinkerer",
+      "breakpoints": true
     }
   ]
 }

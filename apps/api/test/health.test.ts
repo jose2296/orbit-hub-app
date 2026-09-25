@@ -58,7 +58,7 @@ describe('error envelope', () => {
   });
 
   it('returns not_implemented for planned endpoints', async () => {
-    const response = await fetch(`${baseUrl}/api/v1/lists`, { method: 'POST' });
+    const response = await fetch(`${baseUrl}/api/v1/notes`, { method: 'POST' });
     const body = (await response.json()) as { error?: { code?: string; message?: string } };
 
     expect(response.status).toBe(501);

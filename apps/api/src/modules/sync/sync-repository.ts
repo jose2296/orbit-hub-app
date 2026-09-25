@@ -4,9 +4,23 @@ import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
 import type { MembershipRoleName, SyncEntityName } from '../../db/constants.js';
-import { dashboardLayouts, folders, memberships, syncCursors, syncOperations, workspaces } from '../../db/schema.js';
+import {
+  dashboardLayouts,
+  folders,
+  listItems,
+  lists,
+  memberships,
+  syncCursors,
+  syncOperations,
+  workspaces,
+} from '../../db/schema.js';
 
-export type SyncEntityTable = typeof workspaces | typeof folders | typeof dashboardLayouts;
+export type SyncEntityTable =
+  | typeof workspaces
+  | typeof folders
+  | typeof lists
+  | typeof listItems
+  | typeof dashboardLayouts;
 
 export interface StoredEntity {
   id: string;
@@ -27,6 +41,10 @@ export class SyncRepository {
         return workspaces;
       case 'folder':
         return folders;
+      case 'list':
+        return lists;
+      case 'list_item':
+        return listItems;
       case 'dashboard':
         return dashboardLayouts;
       default:
@@ -219,6 +237,40 @@ export class SyncRepository {
       for (const row of folderChanges) {
         changes.push({ entity: 'folder', record: row as Record<string, unknown> });
         remember(row.updatedAt);
+      }
+    }
+
+    if (memberWorkspaceIds.length > 0 && changes.length < input.limit) {
+      const listChanges = await db
+        .select()
+        .from(lists)
+        .where(and(inArray(lists.workspaceId, memberWorkspaceIds), gt(lists.updatedAt, after)))
+        .orderBy(asc(lists.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of listChanges) {
+        changes.push({ entity: 'list', record: row as Record<string, unknown> });
+        remember(row.updatedAt);
+      }
+    }
+
+    if (memberWorkspaceIds.length > 0 && changes.length < input.limit) {
+      const itemChanges = await db
+        .select({ item: listItems })
+        .from(listItems)
+        .innerJoin(lists, eq(listItems.listId, lists.id))
+        .where(
+          and(
+            inArray(lists.workspaceId, memberWorkspaceIds),
+            gt(listItems.updatedAt, after),
+          ),
+        )
+        .orderBy(asc(listItems.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of itemChanges) {
+        changes.push({ entity: 'list_item', record: row.item as Record<string, unknown> });
+        remember(row.item.updatedAt);
       }
     }
 

@@ -38,6 +38,8 @@ export const MEMBERSHIP_ROLE_RANK: Record<MembershipRoleName, number> = {
 export const SYNC_ENTITIES = [
   'workspace',
   'folder',
+  'list',
+  'list_item',
   'dashboard',
 ] as const;
 export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
@@ -46,9 +48,31 @@ export const SYNC_OPERATION_KINDS = ['create', 'update', 'delete'] as const;
 export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
 
 /** Fields the client may write, per entity. Anything else is ignored. */
+export const LIST_KINDS = ['tasks', 'movies', 'books'] as const;
+export type ListKindName = (typeof LIST_KINDS)[number];
+
+export const ITEM_PRIORITIES = ['none', 'low', 'medium', 'high'] as const;
+export type ItemPriority = (typeof ITEM_PRIORITIES)[number];
+
+/**
+ * Fields the client may write, per entity. Anything else in a payload is
+ * dropped: the sync engine must never be talked into writing a column it does
+ * not own (version, id, workspaceId, timestamps).
+ */
 export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   workspace: ['name', 'description', 'emoji'],
   folder: ['parentId', 'name', 'emoji', 'position'],
+  list: ['folderId', 'title', 'description', 'emoji', 'favorite', 'tags', 'position', 'kind'],
+  list_item: [
+    'title',
+    'position',
+    'completed',
+    'favorite',
+    'priority',
+    'externalId',
+    'metadata',
+    'notes',
+  ],
   dashboard: ['layout'],
 };
 

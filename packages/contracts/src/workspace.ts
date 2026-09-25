@@ -217,3 +217,68 @@ export const dashboardLayoutSchema = z.object({
   updatedAt: isoDateTimeSchema,
 });
 export type DashboardLayout = z.infer<typeof dashboardLayoutSchema>;
+
+/* ---------------------------------------------------------------- lists ---- */
+
+/** Search across everything the caller can see. One endpoint, one query. */
+export const searchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(120),
+  workspaceId: uuidSchema.optional(),
+  kind: listKindSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type SearchQuery = z.infer<typeof searchQuerySchema>;
+
+export const searchResultSchema = z.object({
+  /** What the hit belongs to, so the app can route to the right screen. */
+  scope: z.enum(['workspace', 'folder', 'list', 'list_item']),
+  id: uuidSchema,
+  workspaceId: uuidSchema.nullable().default(null),
+  listId: uuidSchema.nullable().default(null),
+  kind: listKindSchema.nullable().default(null),
+  title: z.string(),
+  subtitle: z.string().nullable().default(null),
+  updatedAt: isoDateTimeSchema,
+});
+export type SearchResult = z.infer<typeof searchResultSchema>;
+
+export const searchResponseSchema = z.object({
+  items: z.array(searchResultSchema),
+  nextCursor: z.string().nullable().default(null),
+});
+export type SearchResponse = z.infer<typeof searchResponseSchema>;
+
+export const listListsQuerySchema = z.object({
+  workspaceId: uuidSchema.optional(),
+  folderId: uuidSchema.optional(),
+  kind: listKindSchema.optional(),
+  favorite: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional(),
+});
+export type ListListsQuery = z.infer<typeof listListsQuerySchema>;
+
+export const listListsResponseSchema = z.object({
+  items: z.array(listSchema),
+  nextCursor: z.string().nullable().default(null),
+});
+export type ListListsResponse = z.infer<typeof listListsResponseSchema>;
+
+export const listItemsQuerySchema = z.object({
+  completed: z
+    .enum(['true', 'false', 'any'])
+    .default('any')
+    .transform((value) => (value === 'any' ? undefined : value === 'true')),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+  cursor: z.string().min(1).optional(),
+});
+export type ListItemsQuery = z.infer<typeof listItemsQuerySchema>;
+
+export const listItemsResponseSchema = z.object({
+  items: z.array(listItemSchema),
+  nextCursor: z.string().nullable().default(null),
+});
+export type ListItemsResponse = z.infer<typeof listItemsResponseSchema>;
