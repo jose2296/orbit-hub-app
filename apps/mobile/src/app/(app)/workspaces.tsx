@@ -14,7 +14,7 @@ import { SectionHeader } from '@/components/ui/list-row';
 import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
 import { useWorkspaces } from '@/hooks/use-workspaces';
-import { useTranslation } from '@/lib/i18n';
+import { pluralKey, useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 
 const ROLE_TONE: Record<Workspace['role'], 'accent' | 'neutral'> = {
@@ -64,7 +64,7 @@ export default function WorkspacesScreen() {
       <View style={{ gap: theme.spacing.md }}>
         <SectionHeader
           title={t('workspaces.yours')}
-          subtitle={t('workspaces.count', { count: workspaces.length })}
+          subtitle={t(pluralKey('workspaces.count', workspaces.length), { count: workspaces.length })}
         />
 
         {isLoading ? (
@@ -110,7 +110,7 @@ export default function WorkspacesScreen() {
                         tone={ROLE_TONE[workspace.role]}
                       />
                       <AppText variant="caption" tone="muted">
-                        {t('workspaces.members', { count: workspace.memberCount })}
+                        {t(pluralKey('workspaces.members', workspace.memberCount), { count: workspace.memberCount })}
                       </AppText>
                     </View>
                   </View>

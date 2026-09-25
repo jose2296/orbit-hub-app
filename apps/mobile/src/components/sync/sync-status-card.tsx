@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useSyncStatus } from '@/hooks/use-sync-status';
-import { useTranslation } from '@/lib/i18n';
+import { pluralKey, useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 
 import { Badge } from '@/components/ui/badge';
@@ -79,7 +79,7 @@ export function SyncStatusCard({ onPress }: { onPress: () => void }) {
           <AppText variant="bodyStrong">{t('home.sync.title')}</AppText>
           <AppText variant="caption" tone="muted">
             {status.pendingOperations > 0
-              ? t('home.sync.pending', { count: status.pendingOperations })
+              ? t(pluralKey('home.sync.pending', status.pendingOperations), { count: status.pendingOperations })
               : status.state === 'offline'
                 ? t('home.sync.offline')
                 : t('home.sync.online')}

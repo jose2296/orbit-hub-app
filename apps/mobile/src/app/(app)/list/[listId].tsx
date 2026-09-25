@@ -69,6 +69,11 @@ export default function ListScreen() {
    * the same one.
    */
   const entries = useMemo<ListEntry[]>(() => {
+    // A media list is the carousel and nothing else. Painting its items as
+    // checkboxes underneath is the mixing the two kinds are supposed to avoid:
+    // a film with a checkbox is a task, and the carousel is the list.
+    if (media) return [];
+
     const rows: ListEntry[] = pending.map((item, index) => ({ kind: 'row', item, index }));
     if (completed.length > 0) {
       rows.push({ kind: 'completedHeading' });
@@ -77,7 +82,7 @@ export default function ListScreen() {
       }
     }
     return rows;
-  }, [pending, completed, showCompleted]);
+  }, [pending, completed, showCompleted, media]);
 
   /** Media lists show the carousel; anything else shows the task rows. */
   const carouselItems = useMemo(
@@ -104,6 +109,14 @@ export default function ListScreen() {
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, media, list?.kind, t, toggleCompleted],
+  );
+
+  const kindLabel = t(
+    list?.kind === 'movies'
+      ? 'lists.kindMovies'
+      : list?.kind === 'books'
+        ? 'lists.kindBooks'
+        : 'lists.kindTasks',
   );
 
   function openDetails(externalId: string, itemTitle: string) {
@@ -196,15 +209,13 @@ export default function ListScreen() {
       <View style={styles.headerTop}>
         <View style={styles.flex}>
           <AppText variant="title">{list?.title ?? t('lists.notFound')}</AppText>
-          <AppText variant="caption" tone="muted">
-            {t(
-              list?.kind === 'movies'
-                ? 'lists.kindMovies'
-                : list?.kind === 'books'
-                  ? 'lists.kindBooks'
-                  : 'lists.kindTasks',
-            )}
-          </AppText>
+          {/* A list called "Tareas" of kind tasks does not need to be told twice
+              what it is. */}
+          {kindLabel !== list?.title ? (
+            <AppText variant="caption" tone="muted">
+              {kindLabel}
+            </AppText>
+          ) : null}
         </View>
         {list ? (
           <Button

@@ -8,7 +8,7 @@ import { Screen } from '@/components/ui/screen';
 import { SectionHeader } from '@/components/ui/list-row';
 import { AppText } from '@/components/ui/text';
 import { useSyncStatus } from '@/hooks/use-sync-status';
-import { useTranslation } from '@/lib/i18n';
+import { pluralKey, useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 import type { TranslationKey } from '@/lib/i18n';
 
@@ -51,7 +51,7 @@ export default function SyncScreen() {
           title={t('sync.pending.title')}
           subtitle={
             status.pendingOperations > 0
-              ? t('home.sync.pending', { count: status.pendingOperations })
+              ? t(pluralKey('home.sync.pending', status.pendingOperations), { count: status.pendingOperations })
               : undefined
           }
         />

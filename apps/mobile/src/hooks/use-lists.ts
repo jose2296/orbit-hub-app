@@ -397,13 +397,6 @@ export function useListItems(listId: string | undefined) {
   );
 
   /**
-   * Moves an item up or down and renumbers the list.
-   *
-   * Every affected position is enqueued, not just the two that swapped: the
-   * server treats position as a field it merges on, and a partial update would
-   * leave the other devices with a different order and no way to tell why.
-   */
-  /**
    * Moves an item by a number of places and renumbers the list.
    *
    * A drag knows where the row landed, not how far it travelled, so the caller
