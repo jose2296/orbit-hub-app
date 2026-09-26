@@ -2,14 +2,16 @@ import type {
   List,
   ListItem,
   ListKind,
+  ListOrderMode,
   SearchResult,
-} from '@orbit-hub/contracts';
-import * as Crypto from 'expo-crypto';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+} from "@orbit-hub/contracts";
+import * as Crypto from "expo-crypto";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { planDuplication } from '@/lib/lists/duplicate';
-import { nextPosition, planAddToList } from '@/lib/lists/add-to-list';
-import { reorderItems } from '@/lib/lists/reorder';
+import { planDuplication } from "@/lib/lists/duplicate";
+import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
+import { newListItem, withListItemDefaults } from "@/lib/lists/item-record";
+import { reorderItems } from "@/lib/lists/reorder";
 import {
   enqueueOperation,
   enqueueOperations,
@@ -18,8 +20,8 @@ import {
   pullIntoCache,
   readCachedWorkspaces,
   subscribeToLocalStore,
-} from '@/lib/offline';
-import type { CachedEntity } from '@/lib/offline';
+} from "@/lib/offline";
+import type { CachedEntity } from "@/lib/offline";
 
 /**
  * Lists and items follow the same local-first rule as the rest of the content:
@@ -28,7 +30,9 @@ import type { CachedEntity } from '@/lib/offline';
 
 function readRecord<T>(row: CachedEntity): T {
   const server = JSON.parse(row.payload) as Record<string, unknown>;
-  const pending = row.pending ? (JSON.parse(row.pending) as Record<string, unknown>) : null;
+  const pending = row.pending
+    ? (JSON.parse(row.pending) as Record<string, unknown>)
+    : null;
 
   return {
     ...server,
@@ -54,15 +58,19 @@ export function useLists(filters: ListFilters = {}) {
 
   const load = useCallback(async () => {
     const store = await getLocalStoreReady();
-    const rows = await store.listCached('list');
+    const rows = await store.listCached("list");
 
     const visible = rows
       .map((row) => readRecord<List>(row))
       .filter((list) => list.deletedAt === null)
       .filter((list) => (workspaceId ? list.workspaceId === workspaceId : true))
-      .filter((list) => (folderId !== undefined ? list.folderId === folderId : true))
+      .filter((list) =>
+        folderId !== undefined ? list.folderId === folderId : true,
+      )
       .filter((list) => (kind ? list.kind === kind : true))
-      .filter((list) => (favorite !== undefined ? list.favorite === favorite : true));
+      .filter((list) =>
+        favorite !== undefined ? list.favorite === favorite : true,
+      );
 
     visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     setLists(visible);
@@ -91,7 +99,7 @@ export function useLists(filters: ListFilters = {}) {
 
       await store.upsertCached([
         {
-          entity: 'list',
+          entity: "list",
           entityId: id,
           version: 0,
           updatedAt: now,
@@ -120,8 +128,8 @@ export function useLists(filters: ListFilters = {}) {
       ]);
 
       await enqueueOperation({
-        kind: 'create',
-        entity: 'list',
+        kind: "create",
+        entity: "list",
         entityId: id,
         baseVersion: 0,
         payload: {
@@ -170,8 +178,13 @@ export function useLists(filters: ListFilters = {}) {
           favorite: source.favorite,
           tags: source.tags,
           position: source.position,
+          // A copy of a list sorted by name that came out sorted by hand would
+          // be a different list.
+          orderMode: source.orderMode,
         },
-        (await store.listCachedItems(source.id)).map((row) => readRecord<ListItem>(row)),
+        (await store.listCachedItems(source.id)).map((row) =>
+          readRecord<ListItem>(row),
+        ),
         {
           newListId: listId,
           newItemId: () => Crypto.randomUUID(),
@@ -182,7 +195,7 @@ export function useLists(filters: ListFilters = {}) {
 
       await store.upsertCached([
         {
-          entity: 'list',
+          entity: "list",
           entityId: listId,
           version: 0,
           updatedAt: plan.list.updatedAt,
@@ -191,7 +204,7 @@ export function useLists(filters: ListFilters = {}) {
           pending: null,
         },
         ...plan.items.map((item) => ({
-          entity: 'list_item' as const,
+          entity: "list_item" as const,
           entityId: item.id,
           version: 0,
           updatedAt: item.updatedAt,
@@ -202,8 +215,8 @@ export function useLists(filters: ListFilters = {}) {
       ]);
 
       await enqueueOperation({
-        kind: 'create',
-        entity: 'list',
+        kind: "create",
+        entity: "list",
         entityId: listId,
         baseVersion: 0,
         payload: {
@@ -221,8 +234,8 @@ export function useLists(filters: ListFilters = {}) {
         // outbox rows.
         await enqueueOperations(
           plan.items.map((item) => ({
-            kind: 'create' as const,
-            entity: 'list_item' as const,
+            kind: "create" as const,
+            entity: "list_item" as const,
             entityId: item.id,
             baseVersion: 0,
             payload: {
@@ -230,7 +243,7 @@ export function useLists(filters: ListFilters = {}) {
               title: item.title,
               position: item.position,
               ...(item.completed ? { completed: true } : {}),
-              ...(item.priority !== 'none' ? { priority: item.priority } : {}),
+              ...(item.priority !== "none" ? { priority: item.priority } : {}),
               ...(item.externalId ? { externalId: item.externalId } : {}),
               ...(item.metadata ? { metadata: item.metadata } : {}),
               ...(item.notes ? { notes: item.notes } : {}),
@@ -248,7 +261,7 @@ export function useLists(filters: ListFilters = {}) {
   const deleteList = useCallback(
     async (list: List) => {
       const store = await getLocalStoreReady();
-      const cached = await store.getCached('list', list.id);
+      const cached = await store.getCached("list", list.id);
 
       if (cached) {
         await store.upsertCached([
@@ -262,8 +275,8 @@ export function useLists(filters: ListFilters = {}) {
       }
 
       await enqueueOperation({
-        kind: 'delete',
-        entity: 'list',
+        kind: "delete",
+        entity: "list",
         entityId: list.id,
         baseVersion: cached?.version ?? list.version,
         payload: null,
@@ -274,9 +287,25 @@ export function useLists(filters: ListFilters = {}) {
     [load],
   );
 
+  /**
+   * How the list is read.
+   *
+   * It is a property of the list and not of the person, so everyone looking at
+   * a shared list sees the same order, which is the only way a list somebody
+   * else arranged still means something to you. Changing it renumbers nothing:
+   * the manual order is kept and is what the list goes back to.
+   */
+  const setOrderMode = useCallback(
+    async (list: List, orderMode: ListOrderMode) => {
+      await localUpdate("list", list.id, { orderMode });
+      await load();
+    },
+    [load],
+  );
+
   const toggleFavorite = useCallback(
     async (list: List) => {
-      await localUpdate('list', list.id, { favorite: !list.favorite });
+      await localUpdate("list", list.id, { favorite: !list.favorite });
       await load();
     },
     [load],
@@ -289,6 +318,7 @@ export function useLists(filters: ListFilters = {}) {
     deleteList,
     duplicateList,
     toggleFavorite,
+    setOrderMode,
     reload: load,
   };
 }
@@ -317,8 +347,14 @@ export function useListItems(listId: string | undefined) {
     });
 
     const visible = rows
-      .map((row) => readRecord<ListItem>(row))
-      .sort((a, b) => a.position - b.position || a.createdAt.localeCompare(b.createdAt));
+      // With the defaults filled in: a row written by an older build, or by a
+      // client that sends only what it knows, is read with what the contract
+      // says a missing field is, and not trusted to have all of them.
+      .map((row) => withListItemDefaults(readRecord<ListItem>(row)))
+      .sort(
+        (a, b) =>
+          a.position - b.position || a.createdAt.localeCompare(b.createdAt),
+      );
 
     setItems(visible);
     setIsLoading(false);
@@ -334,7 +370,7 @@ export function useListItems(listId: string | undefined) {
   const addItem = useCallback(
     async (input: {
       title: string;
-      priority?: ListItem['priority'];
+      priority?: ListItem["priority"];
       /** Provider record, when the title came from a catalog. */
       externalId?: string | null;
       metadata?: Record<string, unknown> | null;
@@ -350,7 +386,7 @@ export function useListItems(listId: string | undefined) {
 
       await store.upsertCached([
         {
-          entity: 'list_item',
+          entity: "list_item",
           entityId: id,
           version: 0,
           updatedAt: now,
@@ -362,7 +398,7 @@ export function useListItems(listId: string | undefined) {
             position: existing.length,
             completed: false,
             favorite: false,
-            priority: input.priority ?? 'none',
+            priority: input.priority ?? "none",
             externalId: input.externalId ?? null,
             metadata: input.metadata ?? null,
             notes: null,
@@ -376,8 +412,8 @@ export function useListItems(listId: string | undefined) {
       ]);
 
       await enqueueOperation({
-        kind: 'create',
-        entity: 'list_item',
+        kind: "create",
+        entity: "list_item",
         entityId: id,
         baseVersion: 0,
         payload: {
@@ -400,7 +436,7 @@ export function useListItems(listId: string | undefined) {
 
   const toggleCompleted = useCallback(
     async (item: ListItem) => {
-      await localUpdate('list_item', item.id, { completed: !item.completed });
+      await localUpdate("list_item", item.id, { completed: !item.completed });
       await load();
     },
     [load],
@@ -426,7 +462,9 @@ export function useListItems(listId: string | undefined) {
 
       const ordered = reorderItems(current, itemId, delta);
       const before = new Map(current.map((item) => [item.id, item.position]));
-      const changed = ordered.filter((item) => before.get(item.id) !== item.position);
+      const changed = ordered.filter(
+        (item) => before.get(item.id) !== item.position,
+      );
 
       // Out of range: nothing moved, and nothing is written.
       if (changed.length === 0) return;
@@ -434,20 +472,24 @@ export function useListItems(listId: string | undefined) {
       const now = nowIso();
       await store.upsertCached(
         changed.map((item) => ({
-          entity: 'list_item' as const,
+          entity: "list_item" as const,
           entityId: item.id,
           version: item.version,
           updatedAt: now,
           deletedAt: null,
-          payload: JSON.stringify({ ...item, position: item.position, updatedAt: now }),
+          payload: JSON.stringify({
+            ...item,
+            position: item.position,
+            updatedAt: now,
+          }),
           pending: JSON.stringify({ position: item.position }),
         })),
       );
 
       await enqueueOperations(
         changed.map((item) => ({
-          kind: 'update' as const,
-          entity: 'list_item' as const,
+          kind: "update" as const,
+          entity: "list_item" as const,
           entityId: item.id,
           baseVersion: item.version,
           // Sent as the previous value, so a concurrent edit on another device
@@ -462,7 +504,44 @@ export function useListItems(listId: string | undefined) {
     [listId, load],
   );
 
-  const moveItem = useCallback((itemId: string, delta: number) => moveItemTo(itemId, delta), [moveItemTo]);
+  const moveItem = useCallback(
+    (itemId: string, delta: number) => moveItemTo(itemId, delta),
+    [moveItemTo],
+  );
+
+  /**
+   * Changes the fields of a row that are not its title or its state.
+   *
+   * The icon and the labels are written the same way as everything else, local
+   * first and into the outbox, so they work on a train and sync on their own.
+   */
+  const updateItem = useCallback(
+    async (
+      item: ListItem,
+      changes: { icon?: string | null; tags?: string[] },
+    ) => {
+      if (!listId) return;
+      const store = await getLocalStoreReady();
+      const now = nowIso();
+
+      await localUpdate("list_item", item.id, changes);
+
+      // The cache is written too, because `localUpdate` only records what is
+      // pending and the row that renders comes from the cached payload.
+      const row = await store.getCached("list_item", item.id);
+      if (!row) return;
+      const record = readRecord<ListItem>(row);
+      await store.upsertCached([
+        {
+          ...row,
+          updatedAt: now,
+          payload: JSON.stringify({ ...record, ...changes, updatedAt: now }),
+        },
+      ]);
+      await load();
+    },
+    [listId, load],
+  );
 
   /**
    * Adds a title to a list, whichever one it is.
@@ -493,7 +572,9 @@ export function useListItems(listId: string | undefined) {
       if (!plan.added) {
         return {
           added: false,
-          itemId: existing.find((item) => item.externalId === input.externalId)?.id ?? null,
+          itemId:
+            existing.find((item) => item.externalId === input.externalId)?.id ??
+            null,
         };
       }
 
@@ -501,36 +582,34 @@ export function useListItems(listId: string | undefined) {
       const now = nowIso();
       const position = nextPosition(existing);
 
+      const item = newListItem({
+        id,
+        listId: targetListId,
+        title: input.title,
+        position,
+        createdAt: now,
+        updatedAt: now,
+        ...(input.externalId !== undefined
+          ? { externalId: input.externalId }
+          : {}),
+        ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+      });
+
       await store.upsertCached([
         {
-          entity: 'list_item',
+          entity: "list_item",
           entityId: id,
           version: 0,
           updatedAt: now,
           deletedAt: null,
-          payload: JSON.stringify({
-            id,
-            listId: targetListId,
-            title: input.title,
-            position,
-            completed: false,
-            favorite: false,
-            priority: 'none',
-            externalId: input.externalId ?? null,
-            metadata: input.metadata ?? null,
-            notes: null,
-            version: 0,
-            createdAt: now,
-            updatedAt: now,
-            deletedAt: null,
-          }),
+          payload: JSON.stringify(item),
           pending: null,
         },
       ]);
 
       await enqueueOperation({
-        kind: 'create',
-        entity: 'list_item',
+        kind: "create",
+        entity: "list_item",
         entityId: id,
         baseVersion: 0,
         payload: {
@@ -550,17 +629,22 @@ export function useListItems(listId: string | undefined) {
   const removeItem = useCallback(
     async (item: ListItem) => {
       const store = await getLocalStoreReady();
-      const cached = await store.getCached('list_item', item.id);
+      const cached = await store.getCached("list_item", item.id);
 
       if (cached) {
         await store.upsertCached([
-          { ...cached, deletedAt: nowIso(), updatedAt: nowIso(), pending: null },
+          {
+            ...cached,
+            deletedAt: nowIso(),
+            updatedAt: nowIso(),
+            pending: null,
+          },
         ]);
       }
 
       await enqueueOperation({
-        kind: 'delete',
-        entity: 'list_item',
+        kind: "delete",
+        entity: "list_item",
         entityId: item.id,
         baseVersion: cached?.version ?? item.version,
         payload: null,
@@ -581,6 +665,7 @@ export function useListItems(listId: string | undefined) {
     moveItem,
     moveItemTo,
     addItemTo,
+    updateItem,
     removeItem,
   };
 }
@@ -605,14 +690,17 @@ export function useLocalSearch() {
     setIsSearching(true);
     const store = await getLocalStoreReady();
     const [workspaces, folders, lists, items] = await Promise.all([
-      store.listCached('workspace'),
-      store.listCached('folder'),
-      store.listCached('list'),
-      store.listCached('list_item'),
+      store.listCached("workspace"),
+      store.listCached("folder"),
+      store.listCached("list"),
+      store.listCached("list_item"),
     ]);
 
     const workspacesById = new Map(
-      workspaces.map((row) => [row.entityId, readRecord<{ name: string }>(row)]),
+      workspaces.map((row) => [
+        row.entityId,
+        readRecord<{ name: string }>(row),
+      ]),
     );
 
     const found: SearchResult[] = [];
@@ -622,7 +710,7 @@ export function useLocalSearch() {
       if (record.deletedAt !== null) continue;
       if (!record.name?.toLowerCase().includes(query)) continue;
       found.push({
-        scope: 'workspace',
+        scope: "workspace",
         id: record.id,
         workspaceId: record.id,
         listId: null,
@@ -634,11 +722,17 @@ export function useLocalSearch() {
     }
 
     for (const row of folders) {
-      const record = readRecord<{ name: string; id: string; workspaceId: string; updatedAt: string; deletedAt: string | null }>(row);
+      const record = readRecord<{
+        name: string;
+        id: string;
+        workspaceId: string;
+        updatedAt: string;
+        deletedAt: string | null;
+      }>(row);
       if (record.deletedAt !== null) continue;
       if (!record.name?.toLowerCase().includes(query)) continue;
       found.push({
-        scope: 'folder',
+        scope: "folder",
         id: record.id,
         workspaceId: record.workspaceId,
         listId: null,
@@ -654,7 +748,7 @@ export function useLocalSearch() {
       if (record.deletedAt !== null) continue;
       if (!record.title.toLowerCase().includes(query)) continue;
       found.push({
-        scope: 'list',
+        scope: "list",
         id: record.id,
         workspaceId: record.workspaceId,
         listId: record.id,
@@ -665,7 +759,9 @@ export function useLocalSearch() {
       });
     }
 
-    const listsById = new Map(lists.map((row) => [row.entityId, readRecord<List>(row)]));
+    const listsById = new Map(
+      lists.map((row) => [row.entityId, readRecord<List>(row)]),
+    );
 
     for (const row of items) {
       const record = readRecord<ListItem>(row);
@@ -674,7 +770,7 @@ export function useLocalSearch() {
 
       const list = listsById.get(record.listId);
       found.push({
-        scope: 'list_item',
+        scope: "list_item",
         id: record.id,
         workspaceId: list?.workspaceId ?? null,
         listId: record.listId,
@@ -695,10 +791,10 @@ export function useLocalSearch() {
 
   const grouped = useMemo(() => {
     return {
-      workspaces: results.filter((item) => item.scope === 'workspace'),
-      lists: results.filter((item) => item.scope === 'list'),
-      items: results.filter((item) => item.scope === 'list_item'),
-      folders: results.filter((item) => item.scope === 'folder'),
+      workspaces: results.filter((item) => item.scope === "workspace"),
+      lists: results.filter((item) => item.scope === "list"),
+      items: results.filter((item) => item.scope === "list_item"),
+      folders: results.filter((item) => item.scope === "folder"),
     };
   }, [results]);
 

@@ -1,4 +1,4 @@
-import type { ListItem, ListKind } from '@orbit-hub/contracts';
+import type { ListItem, ListKind, ListOrderMode } from '@orbit-hub/contracts';
 
 type ListItemPriority = ListItem['priority'];
 
@@ -20,6 +20,8 @@ export interface DuplicationSource {
   favorite: boolean;
   tags: string[];
   position: number;
+  /** How the list is read, copied so the copy reads the same way. */
+  orderMode: ListOrderMode;
 }
 
 export interface DuplicableItem {
@@ -30,6 +32,8 @@ export interface DuplicableItem {
   completed: boolean;
   favorite: boolean;
   priority: ListItemPriority;
+  icon: string | null;
+  tags: string[];
   externalId: string | null;
   metadata: Record<string, unknown> | null;
   notes: string | null;
@@ -88,6 +92,9 @@ export function planDuplication(
     completed: item.completed,
     favorite: item.favorite,
     priority: item.priority,
+    icon: item.icon,
+    // Copied by value: a later push to the copy must not touch the original.
+    tags: [...item.tags],
     externalId: item.externalId,
     metadata: item.metadata ? { ...item.metadata } : null,
     notes: item.notes,
@@ -110,6 +117,9 @@ export function planDuplication(
       // Copied by value: a later push to the copy must not touch the original.
       tags: [...source.tags],
       position: source.position,
+      // How the list is read is part of what the list is: a copy of a list
+      // sorted by name that came out sorted by hand would be a different list.
+      orderMode: source.orderMode,
       itemCount: items.length,
       version: 0,
       createdAt: now,

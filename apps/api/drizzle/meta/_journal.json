@@ -22,6 +22,13 @@
       "when": 1790419016011,
       "tag": "0002_list_kinds_and_icon",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790425684290,
+      "tag": "0003_item_icon_tags_and_order",
+      "breakpoints": true
     }
   ]
 }

@@ -67,6 +67,73 @@ export const listKindLabelKey = {
 } as const satisfies Record<z.infer<typeof listKindSchema>, string>;
 export type ListKind = z.infer<typeof listKindSchema>;
 
+/**
+ * The icons a row of a list can carry.
+ *
+ * A list of tasks is also a shopping list, a packing list or a list of repairs,
+ * and an icon is what makes a row of "pan" and "tomate" and "papel" readable at a
+ * glance without reading it. They are keys and not emojis because an emoji looks
+ * different on every device and means something different to everyone.
+ *
+ * They live here and not in either app so there is one list: the API refuses a
+ * key it does not know, and the app cannot draw one it does not have, and
+ * neither of them can be a step behind the other.
+ */
+export const ITEM_ICONS = [
+  'basket',
+  'cart',
+  'apple',
+  'bread',
+  'milk',
+  'water',
+  'meat',
+  'fish',
+  'egg',
+  'cheese',
+  'rice',
+  'coffee',
+  'cake',
+  'pill',
+  'soap',
+  'toothbrush',
+  'shirt',
+  'shoe',
+  'book',
+  'paper',
+  'gift',
+  'tool',
+  'box',
+  'leaf',
+  'paw',
+  'ball',
+  'plane',
+  'bed',
+  'battery',
+] as const;
+export type ItemIcon = (typeof ITEM_ICONS)[number];
+
+/**
+ * The ways a list can be ordered.
+ *
+ * `manual` is the order the items are in. The rest are how to read them, and
+ * none of them change that order.
+ */
+export const listOrderModeSchema = z.enum([
+  'manual',
+  'alphabetical',
+  'alphabetical_desc',
+  'created_desc',
+  'created_asc',
+  'updated_desc',
+  'priority',
+]);
+export type ListOrderMode = z.infer<typeof listOrderModeSchema>;
+
+/** Whether a row can be dragged under this order. */
+export function isManualOrder(mode: ListOrderMode): boolean {
+  return mode === 'manual';
+}
+
 export const listSchema = syncableEntitySchema.extend({
   workspaceId: uuidSchema,
   folderId: uuidSchema.nullable().default(null),
@@ -78,6 +145,20 @@ export const listSchema = syncableEntitySchema.extend({
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   position: z.number().int().min(0),
   itemCount: z.int().min(0).default(0),
+  /**
+   * How the items of this list are ordered, and the default is the order the
+   * person put them in.
+   *
+   * It is a property of the list and not of the person, so everyone looking at
+   * a shared list sees the same order, which is the only way a list somebody
+   * else arranged still means something to you. Changing it never renumbers
+   * anything: the manual order is kept and is what the list goes back to, so
+   * choosing an order to look at something is not a way of losing it.
+   *
+   * The drag only exists while this is `manual`, because a row moved under an
+   * alphabetical order lands somewhere the order did not ask for.
+   */
+  orderMode: listOrderModeSchema.default('manual'),
 });
 export type List = z.infer<typeof listSchema>;
 
@@ -93,6 +174,21 @@ export const listItemSchema = syncableEntitySchema.extend({
   completed: z.boolean().default(false),
   favorite: z.boolean().default(false),
   priority: z.enum(['none', 'low', 'medium', 'high']).default('none'),
+  /**
+   * An icon out of the ones the app offers, for the things a list of tasks is
+   * also used for: what to buy, what to pack, what to fix.
+   *
+   * It is a key and not an emoji on purpose. An emoji looks different on every
+   * device and means a different thing to every person, while a key is the same
+   * shape everywhere and the app can draw it with the same care it draws a
+   * button.
+   */
+  icon: z.string().max(24).nullable().default(null),
+  /**
+   * Free labels, so "Mercadona" and "Carrefour" are values and not folders:
+   * the same thing to buy in two shops is one item to buy.
+   */
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
   externalId: z.string().max(120).nullable().default(null),
   metadata: z.record(z.string(), z.unknown()).nullable().default(null),
   notes: z.string().max(2000).nullable().default(null),

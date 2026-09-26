@@ -1,34 +1,58 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import { FlatList, Pressable, StyleSheet, View } from "react-native";
 
-import type { ListItem } from '@orbit-hub/contracts';
+import type { ListItem, ListOrderMode } from "@orbit-hub/contracts";
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Breadcrumbs } from '@/components/ui/breadcrumbs';
-import { MediaActionsSheet } from '@/components/lists/media-actions-sheet';
-import { DraggableRow } from '@/components/ui/draggable-row';
-import { MediaCarousel } from '@/components/ui/media-carousel';
-import { Screen } from '@/components/ui/screen';
-import { AppText } from '@/components/ui/text';
-import { TextField } from '@/components/ui/text-field';
-import { useFolders, useWorkspaces } from '@/hooks/use-workspaces';
-import { useListItems, useLists } from '@/hooks/use-lists';
-import { useScreenTitle } from '@/hooks/use-screen-title';
-import { useTranslation } from '@/lib/i18n';
-import { isMediaList, mediaCardOf } from '@/lib/lists/media-card';
-import { useTheme } from '@/theme';
-import type { Crumb } from '@/components/ui/breadcrumbs';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
+import {
+  FiltersSheet,
+  IconPickerSheet,
+  ItemIcon,
+} from "@/components/lists/item-picker";
+import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
+import { DraggableRow } from "@/components/ui/draggable-row";
+import { MediaCarousel } from "@/components/ui/media-carousel";
+import { Screen } from "@/components/ui/screen";
+import { Sheet, SheetOptions } from "@/components/ui/sheet";
+import { AppText } from "@/components/ui/text";
+import { TextField } from "@/components/ui/text-field";
+import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
+import { useListItems, useLists } from "@/hooks/use-lists";
+import { useScreenTitle } from "@/hooks/use-screen-title";
+import { useTranslation } from "@/lib/i18n";
+import {
+  canReorder,
+  filterItems,
+  orderItems,
+  tagsByFrequency,
+} from "@/lib/lists/item-presentation";
+import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
+import { useTheme } from "@/theme";
+import type { Crumb } from "@/components/ui/breadcrumbs";
+
+/** The orders a list can be read in, in the order they are offered. */
+const ORDER_MODES: ListOrderMode[] = [
+  "manual",
+  "alphabetical",
+  "alphabetical_desc",
+  "created_desc",
+  "created_asc",
+  "updated_desc",
+  "priority",
+];
 
 const PRIORITY_TONE = {
-  none: 'neutral',
-  low: 'info',
-  medium: 'warning',
-  high: 'danger',
+  none: "neutral",
+  low: "info",
+  medium: "warning",
+  high: "danger",
 } as const;
 
 export default function ListScreen() {
@@ -37,8 +61,12 @@ export default function ListScreen() {
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, deleteList, duplicateList, toggleFavorite } = useLists({});
-  const list = useMemo(() => lists.find((item) => item.id === listId) ?? null, [lists, listId]);
+  const { lists, deleteList, duplicateList, toggleFavorite, setOrderMode } =
+    useLists({});
+  const list = useMemo(
+    () => lists.find((item) => item.id === listId) ?? null,
+    [lists, listId],
+  );
   const { workspaces } = useWorkspaces();
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === list?.workspaceId) ?? null,
@@ -57,12 +85,23 @@ export default function ListScreen() {
     addItem,
     toggleCompleted,
     moveItemTo,
+    updateItem,
     removeItem,
   } = useListItems(listId);
 
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState("");
   const [adding, setAdding] = useState(false);
   const [menuFor, setMenuFor] = useState<ListItem | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [filterState, setFilterState] = useState<"all" | "pending" | "done">(
+    "all",
+  );
+  const [filterText, setFilterText] = useState("");
+  const [iconFor, setIconFor] = useState<ListItem | null>(null);
+  const [tagsFor, setTagsFor] = useState<ListItem | null>(null);
+  const [newTag, setNewTag] = useState("");
   const [duplicating, setDuplicating] = useState(false);
 
   /**
@@ -71,8 +110,48 @@ export default function ListScreen() {
    * hand written row: the carousel is the list.
    */
   const media = isMediaList(list?.kind);
-  const pending = useMemo(() => items.filter((item) => !item.completed), [items]);
-  const completed = useMemo(() => items.filter((item) => item.completed), [items]);
+  /**
+   * What the list is showing, and in what order.
+   *
+   * The order is read from the list and never writes to it: choosing an order to
+   * look at something is not a way of losing the order it was in. That is why
+   * the drag only exists under the manual order, because a row moved while the
+   * list is alphabetical lands somewhere the order did not ask for and the next
+   * re-sort puts it back where it was.
+   */
+  const orderMode = list?.orderMode ?? "manual";
+  const sorted = useMemo(
+    () => orderItems(items, orderMode),
+    [items, orderMode],
+  );
+  const visible = useMemo(
+    () =>
+      filterItems(sorted, {
+        tags: selectedTags,
+        completed: filterState,
+        text: filterText,
+      }),
+    [sorted, selectedTags, filterState, filterText],
+  );
+  const labels = useMemo(() => tagsByFrequency(items), [items]);
+
+  const pending = useMemo(
+    () => visible.filter((item) => !item.completed),
+    [visible],
+  );
+  const completed = useMemo(
+    () => visible.filter((item) => item.completed),
+    [visible],
+  );
+  const isFiltered =
+    selectedTags.length > 0 ||
+    filterState !== "all" ||
+    filterText.trim().length > 0;
+  const activeFilterCount =
+    selectedTags.length +
+    (filterState === "all" ? 0 : 1) +
+    (filterText.trim() ? 1 : 0);
+  const canDrag = canReorder(orderMode);
 
   /**
    * One flat array for the list, with the heading of the completed section as an
@@ -90,11 +169,17 @@ export default function ListScreen() {
     // a film with a checkbox is a task, and the carousel is the list.
     if (media) return [];
 
-    const rows: ListEntry[] = pending.map((item, index) => ({ kind: 'row', item, index }));
+    const rows: ListEntry[] = pending.map((item, index) => ({
+      kind: "row",
+      item,
+      index,
+    }));
     if (completed.length > 0) {
-      rows.push({ kind: 'completedHeading' });
+      rows.push({ kind: "completedHeading" });
       if (showCompleted) {
-        completed.forEach((item, index) => rows.push({ kind: 'row', item, index }));
+        completed.forEach((item, index) =>
+          rows.push({ kind: "row", item, index }),
+        );
       }
     }
     return rows;
@@ -112,11 +197,11 @@ export default function ListScreen() {
               imageUrl: card?.imageUrl ?? null,
               released: card?.released ?? null,
               badge:
-                list?.kind === 'books'
-                  ? t('itemDetails.book')
-                  : card?.mediaKind === 'tv'
-                    ? t('itemDetails.series')
-                    : t('itemDetails.movie'),
+                list?.kind === "books"
+                  ? t("itemDetails.book")
+                  : card?.mediaKind === "tv"
+                    ? t("itemDetails.series")
+                    : t("itemDetails.movie"),
               completed: item.completed,
               onPress: () => openDetails(item),
               onMenu: () => setMenuFor(item),
@@ -128,22 +213,30 @@ export default function ListScreen() {
   );
 
   const kindLabel = t(
-    list?.kind === 'movies'
-      ? 'lists.kindMovies'
-      : list?.kind === 'books'
-        ? 'lists.kindBooks'
-        : 'lists.kindTasks',
+    list?.kind === "movies"
+      ? "lists.kindMovies"
+      : list?.kind === "books"
+        ? "lists.kindBooks"
+        : "lists.kindTasks",
   );
 
   // The header carries the name of the list, so the screen only says what kind
   // of list it is and where it lives.
-  useScreenTitle(list?.title ?? t('lists.notFound'));
+  useScreenTitle(list?.title ?? t("lists.notFound"));
 
   const crumbs = useMemo(() => {
     const rows: Crumb[] = [];
-    if (workspace) rows.push({ label: workspace.name, href: `/(app)/workspace/${workspace.id}` });
-    if (folder) rows.push({ label: folder.name, href: `/(app)/workspace/${workspace?.id}` });
-    rows.push({ label: list?.title ?? t('lists.notFound') });
+    if (workspace)
+      rows.push({
+        label: workspace.name,
+        href: `/(app)/workspace/${workspace.id}`,
+      });
+    if (folder)
+      rows.push({
+        label: folder.name,
+        href: `/(app)/workspace/${workspace?.id}`,
+      });
+    rows.push({ label: list?.title ?? t("lists.notFound") });
     return rows;
   }, [workspace, folder, list?.title, t]);
 
@@ -157,14 +250,19 @@ export default function ListScreen() {
   function openDetails(item: ListItem) {
     const card = mediaCardOf(item);
     router.push({
-      pathname: '/(app)/item/[itemId]',
+      pathname: "/(app)/item/[itemId]",
       params: {
         // Which list it is in, so the detail can take it out of it.
         itemId: listId,
         // Which row of that list it is, so the detail can tick it off.
         itemKey: item.id,
-        kind: card?.mediaKind === 'tv' ? 'tv' : list?.kind === 'books' ? 'books' : 'movies',
-        externalId: item.externalId ?? '',
+        kind:
+          card?.mediaKind === "tv"
+            ? "tv"
+            : list?.kind === "books"
+              ? "books"
+              : "movies",
+        externalId: item.externalId ?? "",
         title: item.title,
       },
     });
@@ -177,7 +275,7 @@ export default function ListScreen() {
     setAdding(true);
     try {
       await addItem({ title: trimmed });
-      setTitle('');
+      setTitle("");
     } finally {
       setAdding(false);
     }
@@ -186,7 +284,7 @@ export default function ListScreen() {
   if (!listId) {
     return (
       <Screen>
-        <EmptyState title={t('lists.notFound')} />
+        <EmptyState title={t("lists.notFound")} />
       </Screen>
     );
   }
@@ -198,38 +296,65 @@ export default function ListScreen() {
    * number a drag needs: the completed rows are the tail of the same array, so
    * the index in the array would be off by however many tasks are already done.
    */
+  /** Adds the typed label to the row, and never adds the same one twice. */
+  const addNewTag = () => {
+    const trimmed = newTag.trim();
+    if (!trimmed || !tagsFor) return;
+    if (tagsFor.tags.includes(trimmed)) {
+      setNewTag("");
+      return;
+    }
+    const next = [...tagsFor.tags, trimmed];
+    void updateItem(tagsFor, { tags: next });
+    setTagsFor({ ...tagsFor, tags: next });
+    setNewTag("");
+  };
+
   const renderEntry = ({ item: entry }: { item: ListEntry }) => {
-    if (entry.kind === 'completedHeading') {
+    if (entry.kind === "completedHeading") {
       return (
         <View style={{ paddingVertical: theme.spacing.xs }}>
           <Checkbox
             checked={showCompleted}
             onToggle={() => setShowCompleted((value) => !value)}
-            label={t('lists.completedSection', { count: completed.length })}
+            label={t("lists.completedSection", { count: completed.length })}
           />
         </View>
       );
     }
 
     const { item, index } = entry;
+    const row = (
+      <TaskRow
+        item={item}
+        onToggle={() => void toggleCompleted(item)}
+        onRemove={() => void removeItem(item)}
+        onIcon={() => setIconFor(item)}
+        onTags={() => setTagsFor(item)}
+      />
+    );
+
+    // A row cannot be dragged while the list is read in another order: it would
+    // land somewhere the order did not ask for, and the next re-sort would put
+    // it back, which looks like the drag did nothing.
+    if (!canDrag) return row;
+
     return (
       <DraggableRow
         id={item.id}
         index={index}
         total={entry.item.completed ? completed.length : pending.length}
         onReorder={(movedId, toIndex) => {
-          const section = completed.some((row) => row.id === movedId) ? completed : pending;
+          const section = completed.some((row) => row.id === movedId)
+            ? completed
+            : pending;
           const from = section.findIndex((row) => row.id === movedId);
           // The drag already knows where the row landed, so the write is one
           // reorder and not a chain of single steps.
           if (from !== -1) void moveItemTo(movedId, toIndex - from);
         }}
       >
-        <TaskRow
-          item={item}
-          onToggle={() => void toggleCompleted(item)}
-          onRemove={() => void removeItem(item)}
-        />
+        {row}
       </DraggableRow>
     );
   };
@@ -260,10 +385,10 @@ export default function ListScreen() {
         </View>
         {list ? (
           <Button
-            label={list.favorite ? t('lists.unfavorite') : t('lists.favorite')}
+            label={list.favorite ? t("lists.unfavorite") : t("lists.favorite")}
             variant="ghost"
             size="sm"
-            icon={list.favorite ? 'bookmark' : 'bookmark-outline'}
+            icon={list.favorite ? "bookmark" : "bookmark-outline"}
             fullWidth={false}
             onPress={() => void toggleFavorite(list)}
           />
@@ -274,33 +399,70 @@ export default function ListScreen() {
         <View style={styles.badges}>
           {completed.length > 0 ? (
             <Badge
-              label={t('lists.completedCount', { count: completed.length })}
+              label={t("lists.completedCount", { count: completed.length })}
               tone="success"
             />
           ) : null}
-          <Badge label={t('lists.pendingCount', { count: pending.length })} />
+          <Badge label={t("lists.pendingCount", { count: pending.length })} />
         </View>
       ) : null}
 
       {isLoading ? (
         <Card variant="muted">
           <AppText variant="callout" tone="muted" align="center">
-            {t('common.loading')}
+            {t("common.loading")}
           </AppText>
         </Card>
       ) : items.length === 0 ? (
         <Card padded={false}>
-          <EmptyState title={t('items.empty.title')} description={t('items.empty.body')} />
+          <EmptyState
+            title={t("items.empty.title")}
+            description={t("items.empty.body")}
+          />
         </Card>
       ) : media ? (
         /* Films and books: a carousel of covers, never mixed with plain rows. */
         <MediaCarousel items={carouselItems} />
       ) : null}
 
+      {/* The two knobs over a list: what it shows and how it is read. They are
+          buttons and not a row of chips because a shopping list has a dozen
+          labels and a row of them would take more space than the items. */}
+      {!media && !isLoading && items.length > 0 ? (
+        <View style={[styles.toolbar, { gap: theme.spacing.sm }]}>
+          <Button
+            label={
+              isFiltered
+                ? t("filters.titleOn", { count: activeFilterCount })
+                : t("filters.title")
+            }
+            icon="funnel-outline"
+            size="sm"
+            variant={isFiltered ? "primary" : "secondary"}
+            fullWidth={false}
+            onPress={() => setFiltersOpen(true)}
+          />
+          <Button
+            label={t(`order.${orderMode}`)}
+            icon="swap-vertical-outline"
+            size="sm"
+            variant="secondary"
+            fullWidth={false}
+            onPress={() => setOrderOpen(true)}
+          />
+        </View>
+      ) : null}
+
+      {!canDrag && !media ? (
+        <AppText variant="caption" tone="subtle">
+          {t("order.readOnlyHint")}
+        </AppText>
+      ) : null}
+
       {!media && !isLoading && items.length > 0 && pending.length === 0 ? (
         <Card variant="muted">
           <AppText variant="callout" tone="success" align="center">
-            {t('lists.allDone')}
+            {t("lists.allDone")}
           </AppText>
         </Card>
       ) : null}
@@ -314,19 +476,19 @@ export default function ListScreen() {
       {!media ? (
         <Card variant="muted" style={{ gap: theme.spacing.md }}>
           <AppText variant="callout" tone="muted">
-            {t('items.createHint')}
+            {t("items.createHint")}
           </AppText>
           <TextField
-            label={t('items.titleLabel')}
+            label={t("items.titleLabel")}
             value={title}
             onChangeText={setTitle}
-            placeholder={t('items.titlePlaceholder')}
+            placeholder={t("items.titlePlaceholder")}
             autoCapitalize="sentences"
             returnKeyType="done"
             onSubmitEditing={() => void onAdd()}
           />
           <Button
-            label={t('items.add')}
+            label={t("items.add")}
             icon="add"
             onPress={() => void onAdd()}
             loading={adding}
@@ -339,8 +501,8 @@ export default function ListScreen() {
           title that does not work on a plane. Type it by hand there and search
           once you land. */}
       <Button
-        label={t('catalog.addFromCatalog')}
-        variant={media ? 'primary' : 'secondary'}
+        label={t("catalog.addFromCatalog")}
+        variant={media ? "primary" : "secondary"}
         icon="search-outline"
         onPress={() => router.push(`/(app)/catalog?listId=${listId}`)}
       />
@@ -348,7 +510,7 @@ export default function ListScreen() {
       {list ? (
         <View style={{ gap: theme.spacing.sm }}>
           <Button
-            label={t('lists.duplicate')}
+            label={t("lists.duplicate")}
             variant="secondary"
             icon="copy-outline"
             loading={duplicating}
@@ -364,7 +526,7 @@ export default function ListScreen() {
             }}
           />
           <Button
-            label={t('lists.delete')}
+            label={t("lists.delete")}
             variant="danger"
             icon="trash-outline"
             onPress={() => {
@@ -387,7 +549,11 @@ export default function ListScreen() {
         ListFooterComponent={footer}
         contentContainerStyle={[
           styles.content,
-          { padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl, gap: theme.spacing.sm },
+          {
+            padding: theme.spacing.lg,
+            paddingBottom: theme.spacing.xxl,
+            gap: theme.spacing.sm,
+          },
         ]}
         // Rows are measured rather than assumed, and a row is not tall: a few
         // screens of rows is plenty, and rendering more of them is what makes a
@@ -406,22 +572,132 @@ export default function ListScreen() {
       <MediaActionsSheet
         item={menuFor}
         listId={listId}
-        listKind={list?.kind ?? 'movies'}
+        listKind={list?.kind ?? "movies"}
         onClose={() => setMenuFor(null)}
       />
+
+      <FiltersSheet
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        tags={labels}
+        selectedTags={selectedTags}
+        onToggleTag={(tag) =>
+          setSelectedTags((current) =>
+            current.includes(tag)
+              ? current.filter((row) => row !== tag)
+              : [...current, tag],
+          )
+        }
+        completed={filterState}
+        onCompleted={setFilterState}
+        text={filterText}
+        onText={setFilterText}
+        activeCount={activeFilterCount}
+        onReset={() => {
+          setSelectedTags([]);
+          setFilterState("all");
+          setFilterText("");
+        }}
+      />
+
+      <Sheet
+        visible={orderOpen}
+        onClose={() => setOrderOpen(false)}
+        title={t("order.title")}
+        subtitle={t("order.hint")}
+        scrollable={false}
+      >
+        <View style={{ paddingHorizontal: theme.spacing.lg }}>
+          <SheetOptions
+            options={ORDER_MODES.map((mode) => ({
+              key: mode,
+              label: t(`order.${mode}`),
+              icon:
+                mode === "manual"
+                  ? "hand-left-outline"
+                  : "swap-vertical-outline",
+              tone:
+                orderMode === mode ? ("accent" as const) : ("default" as const),
+              onPress: () => {
+                setOrderOpen(false);
+                if (list) void setOrderMode(list, mode);
+              },
+            }))}
+          />
+        </View>
+      </Sheet>
+
+      <IconPickerSheet
+        open={iconFor !== null}
+        onClose={() => setIconFor(null)}
+        value={iconFor?.icon ?? null}
+        onPick={(icon) => {
+          if (iconFor) void updateItem(iconFor, { icon });
+          setIconFor(null);
+        }}
+      />
+
+      <Sheet
+        visible={tagsFor !== null}
+        onClose={() => setTagsFor(null)}
+        title={t("tags.title")}
+        subtitle={tagsFor?.title}
+      >
+        <View
+          style={{ paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md }}
+        >
+          <View style={[styles.toolbar, { gap: theme.spacing.sm }]}>
+            {labels.map(({ tag, count }) => (
+              <Button
+                key={tag}
+                label={`${tag} · ${count}`}
+                size="sm"
+                variant={tagsFor?.tags.includes(tag) ? "primary" : "secondary"}
+                fullWidth={false}
+                onPress={() => {
+                  if (!tagsFor) return;
+                  const next = tagsFor.tags.includes(tag)
+                    ? tagsFor.tags.filter((row) => row !== tag)
+                    : [...tagsFor.tags, tag];
+                  void updateItem(tagsFor, { tags: next });
+                  setTagsFor({ ...tagsFor, tags: next });
+                }}
+              />
+            ))}
+          </View>
+          <TextField
+            label={t("tags.newLabel")}
+            value={newTag}
+            onChangeText={setNewTag}
+            placeholder={t("tags.newPlaceholder")}
+            autoCapitalize="words"
+            returnKeyType="done"
+            onSubmitEditing={addNewTag}
+          />
+          {/* A button and not only the Enter key: on the web the field is not
+              in a form, so the key does nothing there, and a feature that
+              works on a phone and not on a laptop is a feature half made. */}
+          <Button
+            label={t("tags.addNew")}
+            icon="add"
+            variant="secondary"
+            disabled={newTag.trim().length === 0}
+            onPress={addNewTag}
+          />
+        </View>
+      </Sheet>
     </Screen>
   );
 }
 
 /** One row of the flat list: a task, or the heading of the completed section. */
 type ListEntry =
-  | { kind: 'row'; item: ListItem; index: number }
-  | { kind: 'completedHeading' };
+  { kind: "row"; item: ListItem; index: number } | { kind: "completedHeading" };
 
-const COMPLETED_HEADING_KEY = 'completed-heading';
+const COMPLETED_HEADING_KEY = "completed-heading";
 
 function entryKey(entry: ListEntry): string {
-  return entry.kind === 'row' ? entry.item.id : COMPLETED_HEADING_KEY;
+  return entry.kind === "row" ? entry.item.id : COMPLETED_HEADING_KEY;
 }
 
 /** One task row, shared by the pending and the completed sections. */
@@ -429,35 +705,84 @@ function TaskRow({
   item,
   onToggle,
   onRemove,
+  onIcon,
+  onTags,
 }: {
-  item: import('@orbit-hub/contracts').ListItem;
+  item: import("@orbit-hub/contracts").ListItem;
   onToggle: () => void;
   onRemove: () => void;
+  onIcon: () => void;
+  onTags: () => void;
 }) {
   const theme = useTheme();
   const t = useTranslation();
 
   return (
-    <View style={[styles.item, { gap: theme.spacing.md, padding: theme.spacing.lg }]}>
-      <Checkbox checked={item.completed} onToggle={onToggle} label="" />
-
+    <View
+      style={[
+        styles.item,
+        { gap: theme.spacing.md, padding: theme.spacing.lg },
+      ]}
+    >
+      {/* The icon is its own target: it is a picture of what to buy, and
+          pressing it opens the pictures rather than the row. With no icon there
+          is still something to press, or the feature is only found by someone
+          who already uses it. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={item.title}
-        onPress={onRemove}
-        style={styles.flex}
+        accessibilityLabel={t("icons.ofItem", { name: item.title })}
+        hitSlop={8}
+        onPress={onIcon}
+        style={styles.iconSlot}
       >
-        <AppText
-          variant="body"
-          tone={item.completed ? 'subtle' : 'default'}
-          style={item.completed ? styles.strike : undefined}
-        >
-          {item.title}
-        </AppText>
+        <ItemIcon icon={item.icon} />
+        {item.icon ? null : (
+          <Ionicons name="add" size={14} color={theme.colors.textSubtle} />
+        )}
       </Pressable>
 
-      {item.priority !== 'none' ? (
-        <Badge label={t(`items.priority.${item.priority}`)} tone={PRIORITY_TONE[item.priority]} />
+      <Checkbox checked={item.completed} onToggle={onToggle} label="" />
+
+      <View style={[styles.flex, { gap: 2 }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={item.title}
+          onPress={onRemove}
+        >
+          <AppText
+            variant="body"
+            tone={item.completed ? "subtle" : "default"}
+            style={item.completed ? styles.strike : undefined}
+            numberOfLines={2}
+          >
+            {item.title}
+          </AppText>
+        </Pressable>
+
+        {/* The labels go under the name and not beside it: a row is already as
+            wide as the screen, a label beside the name is a label cut in half,
+            and the drag handle lives on that same edge. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("tags.title")}
+          hitSlop={6}
+          onPress={onTags}
+        >
+          <AppText
+            variant="caption"
+            tone={item.tags.length > 0 ? "accent" : "subtle"}
+            numberOfLines={1}
+          >
+            {item.tags.length > 0 ? item.tags.join(" · ") : t("tags.add")}
+          </AppText>
+        </Pressable>
+      </View>
+
+      {item.priority !== "none" ? (
+        <Badge
+          label={t(`items.priority.${item.priority}`)}
+          tone={PRIORITY_TONE[item.priority]}
+        />
       ) : null}
     </View>
   );
@@ -469,21 +794,30 @@ const styles = StyleSheet.create({
   },
   header: {},
   headerTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     gap: 8,
   },
   badges: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 6,
   },
   item: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  iconSlot: {
+    width: 24,
+    alignItems: "center",
   },
   reorder: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  toolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
   },
   hidden: {
     opacity: 0,
@@ -492,6 +826,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   strike: {
-    textDecorationLine: 'line-through',
+    textDecorationLine: "line-through",
   },
 });

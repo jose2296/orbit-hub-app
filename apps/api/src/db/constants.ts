@@ -62,6 +62,24 @@ export const LIST_KINDS = [
 ] as const;
 export type ListKindName = (typeof LIST_KINDS)[number];
 
+/**
+ * The ways a list can be read. `manual` is the order the items are in and the
+ * only one where a row can be dragged.
+ */
+export const LIST_ORDER_MODES = [
+  'manual',
+  'alphabetical',
+  'alphabetical_desc',
+  'created_desc',
+  'created_asc',
+  'updated_desc',
+  'priority',
+] as const;
+export type ListOrderModeName = (typeof LIST_ORDER_MODES)[number];
+
+export { ITEM_ICONS } from '@orbit-hub/contracts';
+export type { ItemIcon } from '@orbit-hub/contracts';
+
 export const ITEM_PRIORITIES = ['none', 'low', 'medium', 'high'] as const;
 export type ItemPriority = (typeof ITEM_PRIORITIES)[number];
 
@@ -73,13 +91,25 @@ export type ItemPriority = (typeof ITEM_PRIORITIES)[number];
 export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   workspace: ['name', 'description', 'emoji'],
   folder: ['parentId', 'name', 'emoji', 'position'],
-  list: ['folderId', 'title', 'description', 'emoji', 'favorite', 'tags', 'position', 'kind'],
+  list: [
+    'folderId',
+    'title',
+    'description',
+    'emoji',
+    'favorite',
+    'tags',
+    'position',
+    'kind',
+    'orderMode',
+  ],
   list_item: [
     'title',
     'position',
     'completed',
     'favorite',
     'priority',
+    'icon',
+    'tags',
     'externalId',
     'metadata',
     'notes',

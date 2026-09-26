@@ -1,15 +1,15 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 
-import type { List, ListItem } from '@orbit-hub/contracts';
+import type { List, ListItem } from "@orbit-hub/contracts";
 
-import { useListItems, useLists } from '@/hooks/use-lists';
-import { useTranslation } from '@/lib/i18n';
-import { LIST_KIND_ICON, LIST_KIND_LABEL } from '@/lib/lists/kind';
+import { useListItems, useLists } from "@/hooks/use-lists";
+import { useTranslation } from "@/lib/i18n";
+import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
 
-import { EmptyState } from '@/components/ui/empty-state';
-import { Sheet, SheetOptions } from '@/components/ui/sheet';
-import type { SheetOption } from '@/components/ui/sheet';
+import { EmptyState } from "@/components/ui/empty-state";
+import { Sheet, SheetOptions } from "@/components/ui/sheet";
+import type { SheetOption } from "@/components/ui/sheet";
 
 export interface MediaActionsSheetProps {
   /** The item the menu is for, or `null` when the menu is closed. */
@@ -17,7 +17,7 @@ export interface MediaActionsSheetProps {
   /** The list it is in, which the menu cannot offer to remove it from. */
   listId: string;
   /** Media kind, so the wording is "watched" or "read". */
-  listKind: List['kind'];
+  listKind: List["kind"];
   onClose: () => void;
 }
 
@@ -47,7 +47,7 @@ export function MediaActionsSheet({
 
   const [pickingList, setPickingList] = useState(false);
 
-  const isBook = listKind === 'books';
+  const isBook = listKind === "books";
   const seen = item?.completed ?? false;
 
   /**
@@ -75,14 +75,14 @@ export function MediaActionsSheet({
       <Sheet
         visible
         onClose={close}
-        title={t('mediaActions.addToAnother')}
+        title={t("mediaActions.addToAnother")}
         subtitle={item.title}
       >
         {targets.length === 0 ? (
           <EmptyState
             compact
-            title={t('mediaActions.noOtherList')}
-            description={t('mediaActions.noOtherListBody')}
+            title={t("mediaActions.noOtherList")}
+            description={t("mediaActions.noOtherListBody")}
           />
         ) : (
           <SheetOptions
@@ -113,32 +113,32 @@ export function MediaActionsSheet({
 
   const options: SheetOption[] = [
     {
-      key: 'seen',
+      key: "seen",
       label: seen
         ? isBook
-          ? t('mediaActions.markAsUnread')
-          : t('mediaActions.markAsUnseen')
+          ? t("mediaActions.markAsUnread")
+          : t("mediaActions.markAsUnseen")
         : isBook
-          ? t('mediaActions.markAsRead')
-          : t('mediaActions.markAsSeen'),
-      icon: seen ? 'eye-off-outline' : 'eye-outline',
+          ? t("mediaActions.markAsRead")
+          : t("mediaActions.markAsSeen"),
+      icon: seen ? "eye-off-outline" : "eye-outline",
       onPress: () => {
         void toggleCompleted(item);
         onClose();
       },
     },
     {
-      key: 'details',
-      label: t('items.viewDetails'),
-      icon: 'information-circle-outline',
+      key: "details",
+      label: t("items.viewDetails"),
+      icon: "information-circle-outline",
       onPress: () => {
         onClose();
         router.push({
-          pathname: '/(app)/item/[itemId]',
+          pathname: "/(app)/item/[itemId]",
           params: {
             itemId: listId,
-            kind: isBook ? 'books' : listKind === 'series' ? 'tv' : 'movies',
-            externalId: item.externalId ?? '',
+            kind: isBook ? "books" : listKind === "series" ? "tv" : "movies",
+            externalId: item.externalId ?? "",
             title: item.title,
             itemIdOfItem: item.id,
           },
@@ -146,19 +146,19 @@ export function MediaActionsSheet({
       },
     },
     {
-      key: 'add-elsewhere',
-      label: t('mediaActions.addToAnother'),
-      icon: 'albums-outline',
-      description: t('mediaActions.addToAnotherHint'),
+      key: "add-elsewhere",
+      label: t("mediaActions.addToAnother"),
+      icon: "albums-outline",
+      description: t("mediaActions.addToAnotherHint"),
       disabled: !item.externalId,
       onPress: () => setPickingList(true),
     },
     {
-      key: 'remove',
-      label: t('mediaActions.removeFromList'),
-      icon: 'trash-outline',
-      tone: 'danger',
-      description: t('mediaActions.removeFromListHint'),
+      key: "remove",
+      label: t("mediaActions.removeFromList"),
+      icon: "trash-outline",
+      tone: "danger",
+      description: t("mediaActions.removeFromListHint"),
       onPress: () => {
         void removeItem(item);
         onClose();
@@ -167,7 +167,12 @@ export function MediaActionsSheet({
   ];
 
   return (
-    <Sheet visible onClose={onClose} title={item.title} subtitle={t(LIST_KIND_LABEL[listKind])}>
+    <Sheet
+      visible
+      onClose={onClose}
+      title={item.title}
+      subtitle={t(LIST_KIND_LABEL[listKind])}
+    >
       <SheetOptions options={options} />
     </Sheet>
   );

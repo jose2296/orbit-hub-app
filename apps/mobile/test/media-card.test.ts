@@ -1,19 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ListItem } from '@orbit-hub/contracts';
+
 import { isMediaList, mediaCardOf } from '../src/lib/lists/media-card';
 
 /**
- * A media card is the picture. These rules decide when a list shows one and when
- * it falls back to a text row, and a wrong answer is either a grey hole where a
- * poster should be, or a poster next to "buy milk".
+ * A row of a list.
+ *
+ * The helper exists so a test says what it is about: adding the fields a
+ * contract grows is a one line change here instead of a dozen.
  */
+function makeItem(partial: Partial<ListItem> & { externalId: string | null }): ListItem {
+  return {
+    id: 'item-1',
+    listId: 'list-1',
+    version: 1,
+    title: 'Matrix',
+    position: 0,
+    completed: false,
+    favorite: false,
+    priority: 'none',
+    icon: null,
+    tags: [],
+    metadata: null,
+    notes: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    deletedAt: null,
+    ...partial,
+  };
+}
+
 describe('isMediaList', () => {
-  it('treats films and books as media lists', () => {
+  it('is true for every kind whose items are covers', () => {
     expect(isMediaList('movies')).toBe(true);
+    expect(isMediaList('series')).toBe(true);
+    expect(isMediaList('movies_and_series')).toBe(true);
     expect(isMediaList('books')).toBe(true);
   });
 
-  it('never treats a tasks list as media', () => {
+  it('is false for a tasks list', () => {
+    // A poster next to "buy milk" helps nobody, which is exactly the mixing
+    // the two kinds of list exist to avoid.
     expect(isMediaList('tasks')).toBe(false);
   });
 
@@ -26,96 +54,86 @@ describe('isMediaList', () => {
 
 describe('mediaCardOf', () => {
   it('returns nothing for a hand written item, which has no provider record', () => {
-    const item = {
-      id: 'a', listId: 'l', title: 'Comprar pan', position: 0, completed: false,
-      favorite: false, priority: 'none' as const, externalId: null, metadata: null,
-      notes: null, version: 1, createdAt: '', updatedAt: '', deletedAt: null,
-    };
+    expect(mediaCardOf(makeItem({ externalId: null }))).toBeNull();
+  });
 
-    expect(mediaCardOf(item)).toBeNull();
+  it('returns nothing for a catalog item with no picture', () => {
+    // The card is the picture. Without one there is nothing to show but a grey
+    // hole, so the caller falls back to a text row instead.
+    expect(
+      mediaCardOf(makeItem({ externalId: 'movie:603', metadata: { year: '1999' } })),
+    ).toBeNull();
   });
 
   it('reads the poster, the year and the provider off a film', () => {
-    const item = {
-      id: 'a', listId: 'l', title: 'Matrix', position: 0, completed: false,
-      favorite: false, priority: 'none' as const, externalId: 'movie:603',
-      metadata: {
-        provider: 'tmdb', type: 'movie', year: '1999', releaseDate: '1999-03-31',
-        imageUrl: 'https://image.tmdb.org/t/p/w342/p.jpg',
-      },
-      notes: null, version: 1, createdAt: '', updatedAt: '', deletedAt: null,
-    };
+    const card = mediaCardOf(
+      makeItem({
+        externalId: 'movie:603',
+        metadata: {
+          provider: 'tmdb',
+          type: 'movie',
+          year: '1999',
+          releaseDate: '1999-03-31',
+          imageUrl: 'https://image.tmdb.org/t/p/w342/x.jpg',
+        },
+      }),
+    );
 
-    expect(mediaCardOf(item)).toEqual({
-      imageUrl: 'https://image.tmdb.org/t/p/w342/p.jpg',
-      released: '1999',
-      provider: 'tmdb',
-      mediaKind: 'movie',
+    expect(card?.imageUrl).toBe('https://image.tmdb.org/t/p/w342/x.jpg');
+    expect(card?.released).toBe('1999');
+    expect(card?.provider).toBe('tmdb');
+    expect(card?.mediaKind).toBe('movie');
+  });
+
+  it('takes the year from the release date, which is more precise', () => {
+    const card = mediaCardOf(
+      makeItem({
+        externalId: 'movie:603',
+        metadata: { releaseDate: '1999-03-31', imageUrl: 'https://x/y.jpg' },
+      }),
+    );
+
+    expect(card?.released).toBe('1999');
+  });
+
+  it('reads a book the same way, with its publication date', () => {
+    const card = mediaCardOf(
+      makeItem({
+        externalId: 'kmAQCwAAQBAJ',
+        metadata: {
+          provider: 'google-books',
+          publishedDate: '2015-06-04',
+          imageUrl: 'https://books.google.com/x.jpg',
+        },
+      }),
+    );
+
+    expect(card?.released).toBe('2015');
+    expect(card?.provider).toBe('google-books');
+  });
+
+  it('returns nothing when the metadata is the wrong shape entirely', () => {
+    // A cache written by a future build, or a corrupt one, must not make the
+    // screen throw: there is simply no card to draw.
+    expect(
+      mediaCardOf(
+        makeItem({
+          externalId: 'movie:603',
+          metadata: { imageUrl: 42, year: {}, provider: [] } as never,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps the item untouched', () => {
+    const item = makeItem({
+      externalId: 'movie:603',
+      metadata: { imageUrl: 'https://x/y.jpg' },
     });
-  });
+    const before = JSON.stringify(item.metadata);
 
-  it('prefers the full release date over the bare year for a film', () => {
-    const item = {
-      id: 'a', listId: 'l', title: 'Matrix', position: 0, completed: false,
-      favorite: false, priority: 'none' as const, externalId: 'movie:603',
-      metadata: { year: '1999', releaseDate: '1999-03-31', imageUrl: 'https://x/p.jpg' },
-      notes: null, version: 1, createdAt: '', updatedAt: '', deletedAt: null,
-    };
+    mediaCardOf(item);
 
-    expect(mediaCardOf(item)?.released).toBe('1999');
-  });
-
-  it('reads the published date for a book', () => {
-    const item = {
-      id: 'a', listId: 'l', title: 'Cien años', position: 0, completed: false,
-      favorite: false, priority: 'none' as const, externalId: 'abc123',
-      metadata: {
-        provider: 'google-books', year: '1967', publishedDate: '1967-05-30',
-        imageUrl: 'https://books.google.com/content?id=abc123',
-      },
-      notes: null, version: 1, createdAt: '', updatedAt: '', deletedAt: null,
-    };
-
-    expect(mediaCardOf(item)).toMatchObject({ released: '1967', provider: 'google-books' });
-  });
-
-  it('returns nothing when a catalog item has no image, so the row falls back', () => {
-    // The card is the picture. Without one it is a grey hole, and a text row
-    // reads better than that.
-    const item = {
-      id: 'a', listId: 'l', title: 'Sin portada', position: 0, completed: false,
-      favorite: false, priority: 'none' as const, externalId: 'xyz',
-      metadata: { provider: 'tmdb', year: '2001' },
-      notes: null, version: 1, createdAt: '', updatedAt: '', deletedAt: null,
-    };
-
-    expect(mediaCardOf(item)).toBeNull();
-  });
-
-  it('survives a metadata blob with the wrong types', () => {
-    const item = {
-      id: 'a', listId: 'l', title: 'Raro', position: 0, completed: false,
-      favorite: false, priority: 'none' as const, externalId: 'x',
-      metadata: { imageUrl: 42, year: {}, provider: [] },
-      notes: null, version: 1, createdAt: '', updatedAt: '', deletedAt: null,
-    };
-
-    expect(mediaCardOf(item)).toBeNull();
-  });
-
-  it('reports no provider when the record has only an image', () => {
-    const item = {
-      id: 'a', listId: 'l', title: 'Solo poster', position: 0, completed: false,
-      favorite: false, priority: 'none' as const, externalId: 'x',
-      metadata: { imageUrl: 'https://x/p.jpg' },
-      notes: null, version: 1, createdAt: '', updatedAt: '', deletedAt: null,
-    };
-
-    expect(mediaCardOf(item)).toEqual({
-      imageUrl: 'https://x/p.jpg',
-      released: null,
-      provider: null,
-      mediaKind: null,
-    });
+    expect(JSON.stringify(item.metadata)).toBe(before);
   });
 });

@@ -552,6 +552,105 @@ describe('POST /sync/pull', () => {
     expect(items.map((item) => item.record.position)).toEqual([0, 1, 2]);
   });
 
+  it('keeps every field of a create, not only the ones the insert names', async () => {
+    // The bug this stops: the create spelled out its fields one by one, so a
+    // field the validator accepted and the column had was still dropped on the
+    // floor by the insert, and nothing anywhere said so. The icon of a row, its
+    // labels and the order of a list all arrived as nothing.
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Iconos');
+    const listId = randomUUID();
+    const itemId = randomUUID();
+
+    await push(user, [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: listId,
+        payload: { workspaceId: workspace.id, title: 'Compra', kind: 'tasks', orderMode: 'alphabetical' },
+      }),
+      operation({
+        entity: 'list_item',
+        kind: 'create',
+        entityId: itemId,
+        payload: {
+          listId,
+          title: 'Pan',
+          position: 0,
+          icon: 'bread',
+          tags: ['Mercadona', 'urgente'],
+        },
+      }),
+    ]);
+
+    const items = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const row = items.body.data.items.find((entry: { id: string }) => entry.id === itemId);
+    expect(row.icon).toBe('bread');
+    expect(row.tags).toEqual(['Mercadona', 'urgente']);
+
+    const list = await api.get(`/lists/${listId}`, user.accessToken);
+    expect(list.body.data.orderMode).toBe('alphabetical');
+  });
+
+  it('leaves a field that was not sent at the value the contract gives it', async () => {
+    // The other half: spreading the payload must not invent values. A client
+    // that knows nothing about labels sends none, and the row is read with an
+    // empty list of them rather than with none of the key.
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Sin etiquetas');
+    const listId = randomUUID();
+    const itemId = randomUUID();
+
+    await push(user, [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: listId,
+        payload: { workspaceId: workspace.id, title: 'Vacia', kind: 'tasks' },
+      }),
+      operation({
+        entity: 'list_item',
+        kind: 'create',
+        entityId: itemId,
+        payload: { listId, title: 'Leche', position: 0 },
+      }),
+    ]);
+
+    const items = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const row = items.body.data.items.find((entry: { id: string }) => entry.id === itemId);
+    expect(row.tags).toEqual([]);
+    expect(row.icon).toBeNull();
+  });
+
+  it('refuses an icon the app cannot draw and keeps the rest of the row', async () => {
+    // An icon is a key and not free text, and a key nobody can draw is a blank
+    // space where the picture should be. Refusing it must not cost the labels.
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Iconos raros');
+    const listId = randomUUID();
+    const itemId = randomUUID();
+
+    await push(user, [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: listId,
+        payload: { workspaceId: workspace.id, title: 'Rara', kind: 'tasks' },
+      }),
+      operation({
+        entity: 'list_item',
+        kind: 'create',
+        entityId: itemId,
+        payload: { listId, title: 'Algo', position: 0, icon: 'unicorn', tags: ['Raro'] },
+      }),
+    ]);
+
+    const items = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const row = items.body.data.items.find((entry: { id: string }) => entry.id === itemId);
+    expect(row.icon).toBeNull();
+    expect(row.tags).toEqual(['Raro']);
+  });
+
   it('carries the role and member count a workspace list needs', async () => {
     // The client cache is the app's only read model, including offline, so the
     // workspace projection has to include the view fields. Without them the

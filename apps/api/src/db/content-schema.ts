@@ -13,7 +13,12 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { users } from './auth-schema';
-import type { ListKindName, MembershipRoleName, SyncEntityName } from './constants';
+import type {
+  ListKindName,
+  ListOrderModeName,
+  MembershipRoleName,
+  SyncEntityName,
+} from './constants';
 
 /**
  * Workspace: the top level container. Everything the user creates belongs to
@@ -228,6 +233,12 @@ export const lists = pgTable(
     favorite: boolean('favorite').notNull().default(false),
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     position: integer('position').notNull().default(0),
+    // How the items are read. It never renumbers anything: the manual order is
+    // kept, so choosing an order to look at is not a way of losing it.
+    orderMode: varchar('order_mode', { length: 24 })
+      .$type<ListOrderModeName>()
+      .notNull()
+      .default('manual'),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -260,6 +271,11 @@ export const listItems = pgTable(
       .$type<'none' | 'low' | 'medium' | 'high'>()
       .notNull()
       .default('none'),
+    // A key out of the icons the app offers, never an emoji: the same shape on
+    // every device and something the app can draw with the same care.
+    icon: varchar('icon', { length: 24 }),
+    // Free labels, so two shops are values and not two folders.
+    tags: jsonb('tags').$type<string[]>().notNull().default([]),
     externalId: varchar('external_id', { length: 120 }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
     notes: varchar('notes', { length: 2000 }),

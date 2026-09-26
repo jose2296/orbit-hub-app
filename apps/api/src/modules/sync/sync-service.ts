@@ -10,8 +10,20 @@ import { syncOperationSchema } from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
-import { LIST_KINDS, MEMBERSHIP_ROLE_RANK, SYNC_ENTITIES, SYNC_WRITABLE_FIELDS } from '../../db/constants.js';
-import type { ListKindName, MembershipRoleName, SyncEntityName } from '../../db/constants.js';
+import {
+  ITEM_ICONS,
+  LIST_KINDS,
+  LIST_ORDER_MODES,
+  MEMBERSHIP_ROLE_RANK,
+  SYNC_ENTITIES,
+  SYNC_WRITABLE_FIELDS,
+} from '../../db/constants.js';
+import type {
+  ListKindName,
+  ListOrderModeName,
+  MembershipRoleName,
+  SyncEntityName,
+} from '../../db/constants.js';
 import { HttpError } from '../../lib/http-error.js';
 import { logger } from '../../lib/logger.js';
 import { syncConflicts } from '../../db/schema.js';
@@ -119,6 +131,21 @@ function sanitisePayload(
       clean[key] = ['none', 'low', 'medium', 'high'].includes(String(value))
         ? String(value)
         : 'none';
+      continue;
+    }
+
+    if (key === 'orderMode') {
+      // An order from a newer build falls back to manual, which is the order
+      // the items are already in: a list is never left unreadable.
+      clean[key] = LIST_ORDER_MODES.includes(value as ListOrderModeName) ? value : 'manual';
+      continue;
+    }
+
+    if (key === 'icon') {
+      // A key out of the icons the app offers, never free text: the same shape
+      // on every device and something the app can draw.
+      const icon = String(value);
+      clean[key] = (ITEM_ICONS as readonly string[]).includes(icon) ? icon : null;
       continue;
     }
 
@@ -297,16 +324,17 @@ export class SyncService {
           }
           await this.assertCanWrite(workspaceId, userId);
 
+          // Every writable field flows through from the sanitised payload, and
+          // only the ones with no default are filled in here. Spelling the
+          // fields out one by one is how a new field ends up accepted by the
+          // validator and then dropped on the floor by the insert, with nothing
+          // anywhere saying so.
           const row = await syncRepository.insertEntity('list', {
+            ...payload,
             id: operation.entityId,
             workspaceId,
-            folderId: (payload['folderId'] as string | null) ?? null,
             kind: (payload['kind'] as string) ?? 'tasks',
             title: (payload['title'] as string) ?? 'List',
-            description: (payload['description'] as string) ?? null,
-            emoji: (payload['emoji'] as string) ?? null,
-            favorite: (payload['favorite'] as boolean) ?? false,
-            tags: (payload['tags'] as string[]) ?? [],
             position: (payload['position'] as number) ?? 0,
           });
           return { status: 'applied', version: row.version };
@@ -328,16 +356,11 @@ export class SyncService {
           await this.assertCanWrite((owner['workspaceId'] as string | null) ?? null, userId);
 
           const row = await syncRepository.insertEntity('list_item', {
+            ...payload,
             id: operation.entityId,
             listId,
             title: (payload['title'] as string) ?? 'Item',
             position: (payload['position'] as number) ?? 0,
-            completed: (payload['completed'] as boolean) ?? false,
-            favorite: (payload['favorite'] as boolean) ?? false,
-            priority: (payload['priority'] as string) ?? 'none',
-            externalId: (payload['externalId'] as string) ?? null,
-            metadata: (payload['metadata'] as Record<string, unknown>) ?? null,
-            notes: (payload['notes'] as string) ?? null,
           });
           return { status: 'applied', version: row.version };
         }
