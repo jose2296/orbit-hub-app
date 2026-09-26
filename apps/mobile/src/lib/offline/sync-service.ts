@@ -1,4 +1,4 @@
-import * as Crypto from 'expo-crypto';
+import * as Crypto from "expo-crypto";
 import type {
   DashboardWidget,
   Folder,
@@ -8,14 +8,19 @@ import type {
   SyncOperationKind,
   SyncPullResponse,
   Workspace,
-} from '@orbit-hub/contracts';
-import { SYNC_DEFAULTS } from '@orbit-hub/config';
+} from "@orbit-hub/contracts";
+import { SYNC_DEFAULTS } from "@orbit-hub/config";
 
-import { api, toApiError } from '@/lib/api';
-import { keyValueStore } from '@/lib/storage/key-value';
+import { api, toApiError } from "@/lib/api";
+import { keyValueStore } from "@/lib/storage/key-value";
 
-import { getLocalStoreReady } from './local-store';
-import type { CachedEntity, LocalStore, PendingOperationRecord } from './local-store';
+import { resolveDashboardRow } from "./dashboard-row";
+import { getLocalStoreReady } from "./local-store";
+import type {
+  CachedEntity,
+  LocalStore,
+  PendingOperationRecord,
+} from "./local-store";
 
 export interface EnqueueInput {
   kind: SyncOperationKind;
@@ -42,7 +47,7 @@ export interface PullResult {
   error: string | null;
 }
 
-const CURSOR_KEY = 'sync:cursor';
+const CURSOR_KEY = "sync:cursor";
 
 async function readCursor(): Promise<string | null> {
   void (await getLocalStoreReady());
@@ -93,7 +98,9 @@ export async function enqueueOperation(input: EnqueueInput): Promise<string> {
  * duplicating a list. The order is preserved, because the server rejects an
  * item whose list does not exist yet.
  */
-export async function enqueueOperations(inputs: EnqueueInput[]): Promise<string[]> {
+export async function enqueueOperations(
+  inputs: EnqueueInput[],
+): Promise<string[]> {
   if (inputs.length === 0) return [];
 
   const store = await getLocalStoreReady();
@@ -132,13 +139,20 @@ function toOperation(record: PendingOperationRecord): SyncOperation {
     entity: record.entity,
     entityId: record.entityId,
     baseVersion: record.baseVersion,
-    payload: record.payload ? (JSON.parse(record.payload) as Record<string, unknown>) : null,
-    base: record.base ? (JSON.parse(record.base) as Record<string, unknown>) : null,
+    payload: record.payload
+      ? (JSON.parse(record.payload) as Record<string, unknown>)
+      : null,
+    base: record.base
+      ? (JSON.parse(record.base) as Record<string, unknown>)
+      : null,
     clientTimestamp: record.createdAt,
   };
 }
 
-function toConflict(record: PendingOperationRecord, serverVersion: number): SyncConflict {
+function toConflict(
+  record: PendingOperationRecord,
+  serverVersion: number,
+): SyncConflict {
   return {
     id: Crypto.randomUUID(),
     entity: record.entity,
@@ -147,9 +161,11 @@ function toConflict(record: PendingOperationRecord, serverVersion: number): Sync
     baseVersion: record.baseVersion,
     serverVersion,
     serverRecord: {},
-    clientRecord: record.payload ? (JSON.parse(record.payload) as Record<string, unknown>) : {},
+    clientRecord: record.payload
+      ? (JSON.parse(record.payload) as Record<string, unknown>)
+      : {},
     conflictingFields: [],
-    status: 'pending',
+    status: "pending",
     detectedAt: new Date().toISOString(),
     resolvedAt: null,
   };
@@ -178,30 +194,42 @@ export async function flushOutbox(): Promise<FlushResult> {
   }
 
   try {
-    const response = await api.post<{ results: { operationId: string; status: string; version: number | null; error: string | null }[] }>(
-      '/sync/push',
-      { deviceId: clientId, lastPulledAt: null, operations: pending.map(toOperation) },
-    );
+    const response = await api.post<{
+      results: {
+        operationId: string;
+        status: string;
+        version: number | null;
+        error: string | null;
+      }[];
+    }>("/sync/push", {
+      deviceId: clientId,
+      lastPulledAt: null,
+      operations: pending.map(toOperation),
+    });
 
     for (const outcome of response.results) {
-      const record = pending.find((item) => item.operationId === outcome.operationId);
+      const record = pending.find(
+        (item) => item.operationId === outcome.operationId,
+      );
       if (!record) continue;
 
       switch (outcome.status) {
-        case 'applied':
+        case "applied":
           await store.remove(record.operationId);
           result.applied += 1;
           break;
-        case 'duplicate':
+        case "duplicate":
           await store.remove(record.operationId);
           result.duplicates += 1;
           break;
-        case 'conflict':
-          await store.saveConflict(toConflict(record, outcome.version ?? record.baseVersion));
+        case "conflict":
+          await store.saveConflict(
+            toConflict(record, outcome.version ?? record.baseVersion),
+          );
           await store.remove(record.operationId);
           result.conflicts += 1;
           break;
-        case 'rejected':
+        case "rejected":
         default:
           await store.recordAttempt(record.operationId, outcome.error);
           if (record.attempts + 1 >= SYNC_DEFAULTS.maxAttempts) {
@@ -229,13 +257,15 @@ export async function flushOutbox(): Promise<FlushResult> {
  * The cache is what makes the app readable offline: screens never depend on
  * this call having happened recently.
  */
-export async function pullIntoCache(options: { full?: boolean } = {}): Promise<PullResult> {
+export async function pullIntoCache(
+  options: { full?: boolean } = {},
+): Promise<PullResult> {
   const store = await getLocalStoreReady();
   const clientId = await store.getClientId();
   const cursor = options.full ? null : await readCursor();
 
   try {
-    const response = await api.post<SyncPullResponse>('/sync/pull', {
+    const response = await api.post<SyncPullResponse>("/sync/pull", {
       cursor,
       limit: SYNC_DEFAULTS.pullPageSize,
       deviceId: clientId,
@@ -244,42 +274,85 @@ export async function pullIntoCache(options: { full?: boolean } = {}): Promise<P
     await applyChanges(store, response);
     await writeCursor(response.nextCursor);
 
-    return { received: response.changes.length, cursor: response.nextCursor, error: null };
+    return {
+      received: response.changes.length,
+      cursor: response.nextCursor,
+      error: null,
+    };
   } catch (error) {
     return { received: 0, cursor, error: toApiError(error).message };
   }
 }
 
-async function applyChanges(store: LocalStore, response: SyncPullResponse): Promise<void> {
+async function applyChanges(
+  store: LocalStore,
+  response: SyncPullResponse,
+): Promise<void> {
   const entities: CachedEntity[] = response.changes.map((change) => {
     const record = change.record as Record<string, unknown>;
     return {
       entity: change.entity,
-      entityId: String(record['id'] ?? ''),
-      version: Number(record['version'] ?? 0),
-      updatedAt: new Date(String(record['updatedAt'] ?? new Date().toISOString())).toISOString(),
-      deletedAt: record['deletedAt'] ? new Date(String(record['deletedAt'])).toISOString() : null,
+      entityId: String(record["id"] ?? ""),
+      version: Number(record["version"] ?? 0),
+      updatedAt: new Date(
+        String(record["updatedAt"] ?? new Date().toISOString()),
+      ).toISOString(),
+      deletedAt: record["deletedAt"]
+        ? new Date(String(record["deletedAt"])).toISOString()
+        : null,
       payload: JSON.stringify(record),
       pending: null,
     };
   });
 
-  // A dashboard row is keyed by the user, not by an entity id.
   const usable = entities.filter((entity) => entity.entityId.length > 0);
-  if (usable.length > 0) {
-    await store.upsertCached(usable);
+  const panel = usable.filter((entity) => entity.entity === "dashboard");
+  const rest = usable.filter((entity) => entity.entity !== "dashboard");
+
+  if (rest.length > 0) {
+    await store.upsertCached(rest);
+  }
+
+  // The panel is one row per person and the server gives it an identifier of its
+  // own, which is not the one this device wrote it under. Writing it as it
+  // arrives puts a second copy of the panel in the cache next to the first, and
+  // from then on every read takes whichever came first: a list pinned on the
+  // phone is gone on the laptop and back again on the phone. So it goes into the
+  // row that is already here, under the identifier that keeps coming back.
+  for (const change of panel) {
+    const { entityId } = await resolveDashboardRow(store);
+    await store.upsertCached([
+      {
+        ...change,
+        entityId,
+        payload: JSON.stringify({
+          layout: readLayoutOfPayload(change.payload),
+        }),
+      },
+    ]);
+  }
+}
+
+function readLayoutOfPayload(payload: string): DashboardWidget[] {
+  try {
+    const record = JSON.parse(payload) as { layout?: DashboardWidget[] };
+    return Array.isArray(record.layout) ? record.layout : [];
+  } catch {
+    return [];
   }
 }
 
 export async function fetchRemoteConflicts(): Promise<SyncConflict[]> {
-  return api.get<SyncConflict[]>('/sync/conflicts');
+  return api.get<SyncConflict[]>("/sync/conflicts");
 }
 
 /* ------------------------------------------------------------- read path ---- */
 
 function readRecord<T>(cached: CachedEntity): T {
   const server = JSON.parse(cached.payload) as Record<string, unknown>;
-  const pending = cached.pending ? (JSON.parse(cached.pending) as Record<string, unknown>) : null;
+  const pending = cached.pending
+    ? (JSON.parse(cached.pending) as Record<string, unknown>)
+    : null;
 
   // The wrapper columns are canonical for the fields the cache indexes on, and
   // the pending overlay wins on top so the user sees their own edit.
@@ -296,7 +369,7 @@ function readRecord<T>(cached: CachedEntity): T {
 /** Workspaces from the local cache, with pending local creations included. */
 export async function readCachedWorkspaces(): Promise<Workspace[]> {
   const store = await getLocalStoreReady();
-  const rows = await store.listCached('workspace');
+  const rows = await store.listCached("workspace");
 
   return rows
     .map((row) => readRecord<Workspace>(row))
@@ -304,19 +377,24 @@ export async function readCachedWorkspaces(): Promise<Workspace[]> {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export async function readCachedFolders(workspaceId: string): Promise<Folder[]> {
+export async function readCachedFolders(
+  workspaceId: string,
+): Promise<Folder[]> {
   const store = await getLocalStoreReady();
-  const rows = await store.listCached('folder');
+  const rows = await store.listCached("folder");
 
   return rows
     .map((row) => readRecord<Folder>(row))
-    .filter((folder) => folder.workspaceId === workspaceId && folder.deletedAt === null)
+    .filter(
+      (folder) =>
+        folder.workspaceId === workspaceId && folder.deletedAt === null,
+    )
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 }
 
 export async function readCachedDashboard(): Promise<DashboardWidget[]> {
   const store = await getLocalStoreReady();
-  const rows = await store.listCached('dashboard');
+  const rows = await store.listCached("dashboard");
   const first = rows[0];
   if (!first) return [];
 
@@ -333,7 +411,9 @@ export async function localUpdate(
   const store = await getLocalStoreReady();
   const cached = await store.getCached(entity, entityId);
   const baseVersion = cached?.version ?? 0;
-  const base = cached ? (JSON.parse(cached.payload) as Record<string, unknown>) : null;
+  const base = cached
+    ? (JSON.parse(cached.payload) as Record<string, unknown>)
+    : null;
 
   const record = cached
     ? { ...JSON.parse(cached.payload), ...values }
@@ -352,7 +432,7 @@ export async function localUpdate(
   ]);
 
   await enqueueOperation({
-    kind: 'update',
+    kind: "update",
     entity,
     entityId,
     baseVersion,

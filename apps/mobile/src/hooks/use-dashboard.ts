@@ -1,40 +1,43 @@
-import type { DashboardWidget } from '@orbit-hub/contracts';
-import { useCallback, useEffect, useState } from 'react';
+import type { DashboardWidget } from "@orbit-hub/contracts";
+import { useCallback, useEffect, useState } from "react";
 
-import { DEFAULT_LAYOUT, normaliseLayout } from '@/lib/dashboard/layout';
+import { DEFAULT_LAYOUT, normaliseLayout } from "@/lib/dashboard/layout";
 import {
   addWidget,
   compactLayout,
   moveWidget,
   removeWidget,
   togglePin,
-} from '@/lib/dashboard/layout';
-import { getLocalStoreReady, pullIntoCache, readCachedDashboard, subscribeToLocalStore } from '@/lib/offline';
-import { localUpdate } from '@/lib/offline';
+} from "@/lib/dashboard/layout";
+import type { CachedEntity } from "@/lib/offline/local-store";
+import { resolveDashboardRow } from "@/lib/offline/dashboard-row";
+import {
+  getLocalStoreReady,
+  pullIntoCache,
+  readCachedDashboard,
+  subscribeToLocalStore,
+} from "@/lib/offline";
+import { localUpdate } from "@/lib/offline";
 
 /**
- * The one row this entity has per person.
+ * Makes sure there is a panel to read, and returns the row it is in.
  *
- * A uuid, because the sync contract says the id of an entity is a uuid and
- * rejects the whole push otherwise. The literal "dashboard" passed validation
- * on the device and came back as a 422 for the entire batch, so nothing this
- * person wrote was ever sent: one bad identifier held the whole outbox hostage.
- *
- * The value does not identify a row, the user does: the server keys this entity
- * by the person and ignores the id.
+ * A brand new person gets a useful starting point instead of a blank screen,
+ * and everybody else gets the row the server uses, so a change made here and a
+ * change that arrives on a pull end up in the same place.
  */
-const DASHBOARD_ENTITY_ID = 'd5a0d1f2-4b3c-4a7e-9c2f-1b6d8e5a4f30';
-
-async function ensureCached() {
+async function ensureCached(): Promise<{
+  entityId: string;
+  row: CachedEntity | null;
+}> {
   const store = await getLocalStoreReady();
-  const rows = await store.listCached('dashboard');
-  if (rows.length > 0) return;
+  const found = await resolveDashboardRow(store);
+  if (found.row) return found;
 
-  // A brand new user gets a useful starting point instead of a blank screen.
   await store.upsertCached([
     {
-      entity: 'dashboard',
-      entityId: DASHBOARD_ENTITY_ID,
+      entity: "dashboard",
+      entityId: found.entityId,
       version: 0,
       updatedAt: new Date().toISOString(),
       deletedAt: null,
@@ -42,6 +45,17 @@ async function ensureCached() {
       pending: null,
     },
   ]);
+  return { entityId: found.entityId, row: null };
+}
+
+/** The layout of a panel row, or nothing if the row is not one. */
+function readLayoutOf(row: CachedEntity): DashboardWidget[] {
+  try {
+    const payload = JSON.parse(row.payload) as { layout?: DashboardWidget[] };
+    return Array.isArray(payload.layout) ? payload.layout : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -54,8 +68,8 @@ export function useDashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   const load = useCallback(async () => {
-    await ensureCached();
-    setLayout(await readCachedDashboard());
+    const { row } = await ensureCached();
+    setLayout(row ? readLayoutOf(row) : await readCachedDashboard());
     setIsLoading(false);
   }, []);
 
@@ -70,14 +84,17 @@ export function useDashboard() {
     async (next: DashboardWidget[]) => {
       const normalised = normaliseLayout(next);
       setLayout(normalised);
-      await localUpdate('dashboard', DASHBOARD_ENTITY_ID, { layout: normalised });
+      // The row the read came from, so a pin written here is a pin that comes
+      // back on the next read instead of one in a second copy of the panel.
+      const { entityId } = await ensureCached();
+      await localUpdate("dashboard", entityId, { layout: normalised });
       await load();
     },
     [load],
   );
 
   const add = useCallback(
-    async (kind: DashboardWidget['kind']) => {
+    async (kind: DashboardWidget["kind"]) => {
       await save(addWidget(layout, kind));
     },
     [layout, save],
@@ -98,7 +115,7 @@ export function useDashboard() {
   );
 
   const move = useCallback(
-    async (id: string, direction: 'up' | 'down') => {
+    async (id: string, direction: "up" | "down") => {
       await save(moveWidget(layout, id, direction));
     },
     [layout, save],

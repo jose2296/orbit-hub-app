@@ -3,14 +3,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import type { List } from "@orbit-hub/contracts";
+import type { Folder, List } from "@orbit-hub/contracts";
 
 import { CreateSheet } from "@/components/folders/create-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
 import { FolderBrowser } from "@/components/folders/folder-browser";
+import { FolderMenuSheet } from "@/components/folders/folder-menu-sheet";
 import { FloatingCreateButton } from "@/components/folders/floating-create-button";
-import { Sheet, SheetOptions } from "@/components/ui/sheet";
-import type { SheetOption } from "@/components/ui/sheet";
+import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
@@ -19,14 +19,6 @@ import { useLists } from "@/hooks/use-lists";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
-
-interface FolderRow {
-  id: string;
-  name: string;
-  emoji: string | null;
-  parentId: string | null;
-  position: number;
-}
 
 /**
  * A space, seen as a folder.
@@ -47,7 +39,7 @@ export default function WorkspaceScreen() {
   const { lists, createList } = useLists({ workspaceId });
 
   const [menuFor, setMenuFor] = useState<
-    { kind: "folder"; folder: FolderRow } | { kind: "list"; list: List } | null
+    { kind: "folder"; folder: Folder } | { kind: "list"; list: List } | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createStep, setCreateStep] = useState<"what" | "details">("what");
@@ -60,6 +52,14 @@ export default function WorkspaceScreen() {
   );
 
   useScreenTitle(workspace?.name ?? t("workspaces.title"));
+
+  /** The folder a list lives in, for the menu to say where it is. */
+  const folderOf = (list: List) =>
+    folders.find((folder) => folder.id === list.folderId) ?? null;
+
+  /** How many lists are inside a folder, for the delete to say what it takes. */
+  const folderListCount = (folder: Folder | null) =>
+    folder ? lists.filter((list) => list.folderId === folder.id).length : 0;
 
   const closeSheets = useCallback(() => {
     setMenuFor(null);
@@ -86,90 +86,6 @@ export default function WorkspaceScreen() {
     }
     closeSheets();
   }, [closeSheets, createFolder, createList, createKind, title, workspaceId]);
-
-  const menuOptions: SheetOption[] = useMemo(() => {
-    if (!menuFor) return [];
-    const options: SheetOption[] =
-      menuFor.kind === "list"
-        ? [
-            {
-              key: "edit",
-              label: t("common.edit"),
-              icon: "create-outline",
-              onPress: () => setMenuFor(null),
-            },
-            {
-              key: "share",
-              label: t("common.share"),
-              icon: "people-outline",
-              description: t("lists.shareHint"),
-              onPress: () => setMenuFor(null),
-            },
-            {
-              key: "pin",
-              label: t("lists.pinToDashboard"),
-              icon: "apps-outline",
-              onPress: () => setMenuFor(null),
-            },
-            {
-              key: "duplicate",
-              label: t("lists.duplicate"),
-              icon: "copy-outline",
-              onPress: () => setMenuFor(null),
-            },
-            {
-              key: "delete",
-              label: t("common.delete"),
-              icon: "trash-outline",
-              tone: "danger",
-              onPress: () => setMenuFor(null),
-            },
-          ]
-        : [
-            {
-              key: "new-list",
-              label: t("lists.create"),
-              icon: "add-circle-outline",
-              onPress: () => {
-                setMenuFor(null);
-                setCreateKind("tasks");
-                setCreateStep("details");
-                setCreateOpen(true);
-              },
-            },
-            {
-              key: "new-folder",
-              label: t("folders.create"),
-              icon: "folder-open-outline",
-              onPress: () => {
-                setMenuFor(null);
-                setCreateKind("folder");
-                setCreateStep("details");
-                setCreateOpen(true);
-              },
-            },
-            {
-              key: "rename",
-              label: t("common.rename"),
-              icon: "create-outline",
-              onPress: () => setMenuFor(null),
-            },
-            {
-              key: "share",
-              label: t("common.share"),
-              icon: "people-outline",
-              onPress: () => setMenuFor(null),
-            },
-            {
-              key: "delete",
-              label: t("common.delete"),
-              icon: "trash-outline",
-              tone: "danger",
-              onPress: () => setMenuFor(null),
-            },
-          ];
-    return options;
-  }, [menuFor, t]);
 
   if (!workspaceId) {
     return (
@@ -217,17 +133,26 @@ export default function WorkspaceScreen() {
         onListMenu={(list) => setMenuFor({ kind: "list", list })}
       />
 
-      <Sheet
-        visible={menuFor !== null}
+      <ListMenuSheet
+        list={menuFor?.kind === "list" ? menuFor.list : null}
+        folder={menuFor?.kind === "list" ? folderOf(menuFor.list) : null}
         onClose={closeSheets}
-        title={
-          menuFor?.kind === "list" ? menuFor.list.title : menuFor?.folder.name
-        }
-        subtitle={workspace?.name}
-        scrollable={false}
-      >
-        <SheetOptions options={menuOptions} />
-      </Sheet>
+      />
+
+      <FolderMenuSheet
+        folder={menuFor?.kind === "folder" ? menuFor.folder : null}
+        workspaceId={workspaceId}
+        listCount={folderListCount(
+          menuFor?.kind === "folder" ? menuFor.folder : null,
+        )}
+        onClose={closeSheets}
+        onCreateInside={(kind) => {
+          setMenuFor(null);
+          setCreateKind(kind);
+          setCreateStep("details");
+          setCreateOpen(true);
+        }}
+      />
 
       <CreateSheet
         open={createOpen}

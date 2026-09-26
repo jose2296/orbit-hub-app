@@ -303,6 +303,27 @@ export function useLists(filters: ListFilters = {}) {
     [load],
   );
 
+  /**
+   * Changes what a list is called and what it says about itself.
+   *
+   * The same write as everything else, local first and into the outbox, so a
+   * rename made on a train is a rename when the train stops.
+   */
+  const updateList = useCallback(
+    async (
+      list: List,
+      changes: {
+        title?: string;
+        description?: string | null;
+        emoji?: string | null;
+      },
+    ) => {
+      await localUpdate("list", list.id, changes);
+      await load();
+    },
+    [load],
+  );
+
   const toggleFavorite = useCallback(
     async (list: List) => {
       await localUpdate("list", list.id, { favorite: !list.favorite });
@@ -318,6 +339,7 @@ export function useLists(filters: ListFilters = {}) {
     deleteList,
     duplicateList,
     toggleFavorite,
+    updateList,
     setOrderMode,
     reload: load,
   };
