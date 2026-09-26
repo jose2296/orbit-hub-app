@@ -103,7 +103,9 @@ export function DraggableRow({
       { scale: isDragging.value ? 1.02 : 1 },
     ],
     zIndex: isDragging.value ? 10 : 0,
-    shadowOpacity: isDragging.value ? 0.2 : 0,
+    // A lifted row is a larger shadow, and the CSS form is the one that is not
+    // deprecated on the web.
+    boxShadow: isDragging.value ? '0px 10px 20px rgba(0, 0, 0, 0.25)' : '0px 0px 0px rgba(0, 0, 0, 0)',
   }));
 
   return (

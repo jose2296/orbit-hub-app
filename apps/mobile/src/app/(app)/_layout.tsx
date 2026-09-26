@@ -43,6 +43,12 @@ export default function AppLayout() {
       <Stack.Screen name="dashboard" options={{ title: t('dashboard.title') }} />
       <Stack.Screen name="workspaces" options={{ title: t('workspaces.title') }} />
       <Stack.Screen name="workspace/[workspaceId]" options={{ title: '' }} />
+      {/* One screen per folder level, so the back button leaves one level at a
+          time instead of jumping out of the whole space. */}
+      <Stack.Screen
+        name="workspace/[workspaceId]/folder/[folderId]"
+        options={{ title: '' }}
+      />
       <Stack.Screen name="lists" options={{ title: t('lists.title') }} />
       <Stack.Screen name="list/[listId]" options={{ title: '' }} />
       <Stack.Screen name="sync" options={{ title: t('sync.title') }} />

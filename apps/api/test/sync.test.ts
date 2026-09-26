@@ -347,6 +347,132 @@ describe('POST /sync/push', () => {
   });
 });
 
+describe('one bad operation in a batch', () => {
+  /**
+   * A batch is everything a person wrote while offline.
+   *
+   * Rejecting the whole batch for one operation the server cannot read leaves
+   * the outbox unable to drain, and the app silent, because a client that
+   * retries gets the same answer every time. This is not hypothetical: one
+   * entity had a literal string where a uuid belongs, and from that moment
+   * nothing anybody wrote was ever sent again.
+   */
+  it('rejects only the operation that cannot be read, and applies the rest', async () => {
+    const user = await createVerifiedUser(api);
+    const { id: workspaceId } = await createWorkspace(user, 'Lote');
+
+    const good = randomUUID();
+    const response = await push(user, [
+      operation({ entity: 'list', kind: 'create', entityId: good, payload: { workspaceId, title: 'Buena' } }),
+      // The literal that broke it: an entity id that is not a uuid.
+      operation({ entity: 'dashboard', kind: 'update', entityId: 'dashboard', payload: { layout: [] } }),
+      operation({ entity: 'list', kind: 'create', entityId: randomUUID(), payload: { workspaceId, title: 'También buena' } }),
+    ]);
+
+    const byStatus = response.body.data.results.map((r: { status: string }) => r.status);
+    expect(byStatus).toEqual(['applied', 'rejected', 'applied']);
+
+    const stored = await api.get(`/lists?workspaceId=${workspaceId}`, user.accessToken);
+    const titles = stored.body.data.items.map((l: { title: string }) => l.title);
+    expect(titles).toContain('Buena');
+    expect(titles).toContain('También buena');
+  });
+
+  it('says why it was rejected, so the client can drop it instead of retrying', async () => {
+    const user = await createVerifiedUser(api);
+    const response = await push(user, [
+      operation({ entity: 'list', kind: 'create', entityId: 'no-so-un-uuid', payload: {} }),
+    ]);
+
+    const result = response.body.data.results[0];
+    expect(result.status).toBe('rejected');
+    expect(result.error).toBeTruthy();
+  });
+
+  it('still applies the batch when nothing in it is wrong', async () => {
+    const user = await createVerifiedUser(api);
+    const { id: workspaceId } = await createWorkspace(user, 'Entero');
+
+    const ids = [randomUUID(), randomUUID()];
+    const response = await push(
+      user,
+      ids.map((id, index) =>
+        operation({ entity: 'list', kind: 'create', entityId: id, payload: { workspaceId, title: `Lista ${index}` } }),
+      ),
+    );
+
+    expect(response.body.data.results.every((r: { status: string }) => r.status === 'applied')).toBe(true);
+  });
+});
+
+describe('the kinds of a list', () => {
+  /**
+   * Every kind survives the trip to the server.
+   *
+   * This was a list of three in two places, and the copy in the field sanitis
+   * silently turned a list of series into a list of tasks: the person created
+   * it, saw it appear as tasks, and had no idea why. A kind that is quietly
+   * replaced is worse than one that is rejected, so each of the five is pinned
+   * here against the real push.
+   */
+  it('keeps all five, one list at a time', async () => {
+    const user = await createVerifiedUser(api);
+    const { id: workspaceId } = await createWorkspace(user, 'Kinds');
+
+    const kinds = ['tasks', 'movies', 'series', 'movies_and_series', 'books'] as const;
+    const ids = kinds.map(() => randomUUID());
+
+    const response = await push(
+      user,
+      ids.map((id, index) =>
+        operation({
+          entity: 'list',
+          kind: 'create',
+          entityId: id,
+          payload: { workspaceId, title: `Lista ${kinds[index]}`, kind: kinds[index] },
+        }),
+      ),
+    );
+
+    for (const result of response.body.data.results) {
+      expect(result.status).toBe('applied');
+    }
+
+    // Read them back from the list endpoint rather than from the push response,
+    // so what is checked is what was stored.
+    const stored = await api.get(`/lists?workspaceId=${workspaceId}`, user.accessToken);
+    const byTitle = new Map(
+      (stored.body.data.items ?? []).map((list: { title: string; kind: string }) => [list.title, list.kind]),
+    );
+
+    for (const kind of kinds) {
+      expect(byTitle.get(`Lista ${kind}`)).toBe(kind);
+    }
+  });
+
+  it('turns a kind that does not exist into tasks rather than failing', async () => {
+    // The field is a string from a client that may be a newer build, so an
+    // unknown value is a fallback and not a rejection: rejecting it would leave
+    // the operation in the outbox forever with nothing to show for it.
+    const user = await createVerifiedUser(api);
+    const { id: workspaceId } = await createWorkspace(user, 'Kinds');
+
+    const id = randomUUID();
+    const response = await push(user, [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: id,
+        payload: { workspaceId, title: 'Inventada', kind: 'films' },
+      }),
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+    const stored = await api.get(`/lists?workspaceId=${workspaceId}`, user.accessToken);
+    expect(stored.body.data.items[0].kind).toBe('tasks');
+  });
+});
+
 describe('POST /sync/pull', () => {
   it('returns everything the user can see, ordered by updatedAt', async () => {    const user = await createVerifiedUser(api);
     await createWorkspace(user, 'Primero');

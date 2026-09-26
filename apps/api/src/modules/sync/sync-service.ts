@@ -4,20 +4,45 @@ import type {
   SyncOperationResult,
   SyncPullRequest,
   SyncPullResponse,
-  SyncPushRequest,
   SyncPushResponse,
 } from '@orbit-hub/contracts';
+import { syncOperationSchema } from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
-import { MEMBERSHIP_ROLE_RANK, SYNC_ENTITIES, SYNC_WRITABLE_FIELDS } from '../../db/constants.js';
-import type { MembershipRoleName, SyncEntityName } from '../../db/constants.js';
+import { LIST_KINDS, MEMBERSHIP_ROLE_RANK, SYNC_ENTITIES, SYNC_WRITABLE_FIELDS } from '../../db/constants.js';
+import type { ListKindName, MembershipRoleName, SyncEntityName } from '../../db/constants.js';
 import { HttpError } from '../../lib/http-error.js';
 import { logger } from '../../lib/logger.js';
 import { syncConflicts } from '../../db/schema.js';
 
 import { syncRepository } from './sync-repository';
 import type { StoredEntity } from './sync-repository';
+
+/**
+ * The id a result carries when the operation it belongs to has no usable one.
+ *
+ * The zero uuid is accepted by the contract for exactly this, and inventing a
+ * random one would make a rejected operation look like a different operation.
+ */
+const UNKNOWN_OPERATION_ID = '00000000-0000-0000-0000-000000000000';
+
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+
+/** Reads a uuid out of an unvalidated operation, or reports that there is none. */
+function readUuid(raw: unknown, key = 'operationId'): string | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = (raw as Record<string, unknown>)[key];
+  return typeof value === 'string' && UUID_PATTERN.test(value) ? value : null;
+}
+
+function readEntity(raw: unknown): SyncEntityName | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = (raw as Record<string, unknown>)['entity'];
+  return typeof value === 'string' && (SYNC_ENTITIES as readonly string[]).includes(value)
+    ? (value as SyncEntityName)
+    : null;
+}
 
 interface AppliedResult {
   status: SyncOperationResult['status'];
@@ -105,7 +130,10 @@ function sanitisePayload(
     }
 
     if (key === 'kind') {
-      clean[key] = ['tasks', 'movies', 'books'].includes(String(value)) ? String(value) : 'tasks';
+      // The list of kinds lives in one place, and this was a second copy of it
+      // with three entries: a list of series was silently turned into a list of
+      // tasks, and the person who created it never found out why.
+      clean[key] = LIST_KINDS.includes(value as ListKindName) ? value : 'tasks';
       continue;
     }
 
@@ -428,10 +456,45 @@ export class SyncService {
       .onConflictDoNothing();
   }
 
-  async push(input: SyncPushRequest, userId: string): Promise<SyncPushResponse> {
+  /**
+   * Applies a batch, one operation at a time and each one on its own terms.
+   *
+   * A push is everything a person wrote while offline, and the batch is
+   * validated here rather than at the door: one operation the server cannot
+   * read comes back as `rejected` with the reason, and the other hundred are
+   * applied. Rejecting the whole batch for one bad operation left the outbox
+   * unable to drain, and the app silent, because a client that retries a
+   * rejected batch gets the same rejection forever.
+   */
+  async push(
+    _envelope: { deviceId: string; lastPulledAt: string | null },
+    userId: string,
+    rawOperations: unknown[],
+  ): Promise<SyncPushResponse> {
     const results: SyncOperationResult[] = [];
 
-    for (const operation of input.operations) {
+    for (const raw of rawOperations) {
+      const parsed = syncOperationSchema.safeParse(raw);
+
+      if (!parsed.success) {
+        // The id is the one thing the result cannot do without, and an
+        // operation with no usable id has no id at all: the zero uuid is the
+        // one the schema itself accepts as "nothing".
+        const operationId = readUuid(raw) ?? UNKNOWN_OPERATION_ID;
+        logger.warn({ issues: parsed.error.issues.slice(0, 3) }, 'sync operation is not valid');
+
+        results.push({
+          operationId,
+          status: 'rejected',
+          entity: readEntity(raw) ?? 'dashboard',
+          entityId: readUuid(raw, 'entityId') ?? UNKNOWN_OPERATION_ID,
+          version: null,
+          error: 'The operation is not valid and was not applied',
+        });
+        continue;
+      }
+
+      const operation = parsed.data;
       try {
         const seen = await syncRepository.findOperation(operation.operationId);
         if (seen) {

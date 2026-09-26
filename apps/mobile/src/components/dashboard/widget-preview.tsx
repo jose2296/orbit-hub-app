@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import type { DashboardWidget, ListKind } from '@orbit-hub/contracts';
+import type { DashboardWidget } from '@orbit-hub/contracts';
 
 import { useRecentLists, useTaskPreview } from '@/hooks/use-dashboard-preview';
 import { pluralKey, useTranslation } from '@/lib/i18n';
@@ -17,11 +17,9 @@ export interface WidgetPreviewProps {
   workspaceCount: number;
 }
 
-const KIND_ICON: Record<ListKind, keyof typeof Ionicons.glyphMap> = {
-  tasks: 'checkbox-outline',
-  movies: 'film-outline',
-  books: 'book-outline',
-};
+import { LIST_KIND_ICON } from '@/lib/lists/kind';
+
+const KIND_ICON = LIST_KIND_ICON;
 
 /**
  * A widget with its actual content.

@@ -15,6 +15,13 @@
       "when": 1790342384134,
       "tag": "0001_soft_tinkerer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790419016011,
+      "tag": "0002_list_kinds_and_icon",
+      "breakpoints": true
     }
   ]
 }

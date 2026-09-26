@@ -48,6 +48,22 @@ export const syncPushRequestSchema = z.object({
 });
 export type SyncPushRequest = z.infer<typeof syncPushRequestSchema>;
 
+/**
+ * The envelope of a push, with the operations left unvalidated.
+ *
+ * The whole point of a push is that a person who has been offline for a week
+ * sends everything at once, and one operation the server cannot read must not
+ * cost them the other hundred. The envelope is checked here, the operations are
+ * checked one at a time by the server, and the one that is wrong comes back as
+ * `rejected` with the reason while the rest are applied.
+ */
+export const syncPushEnvelopeSchema = z.object({
+  deviceId: uuidSchema,
+  lastPulledAt: isoDateTimeSchema.nullable().default(null),
+  operations: z.array(z.unknown()).min(1),
+});
+export type SyncPushEnvelope = z.infer<typeof syncPushEnvelopeSchema>;
+
 export const syncOperationResultSchema = z.object({
   operationId: uuidSchema,
   status: z.enum(['applied', 'duplicate', 'rejected', 'conflict']),

@@ -53,5 +53,5 @@ export function mediaCardOf(item: ListItem): MediaCard | null {
  * exactly the mixing the design is trying to avoid.
  */
 export function isMediaList(kind: string | null | undefined): boolean {
-  return kind === 'movies' || kind === 'books';
+  return kind === 'movies' || kind === 'series' || kind === 'movies_and_series' || kind === 'books';
 }

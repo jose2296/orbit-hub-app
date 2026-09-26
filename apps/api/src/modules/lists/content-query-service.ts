@@ -13,10 +13,12 @@ import type { Database } from '../../db/client.js';
 import { folders, listItems, lists, memberships, workspaces } from '../../db/schema.js';
 import { HttpError } from '../../lib/http-error.js';
 
+import type { ListKindName } from '../../db/constants';
+
 interface ListFilters {
   workspaceId?: string;
   folderId?: string;
-  kind?: 'tasks' | 'movies' | 'books';
+  kind?: ListKindName;
   favorite?: boolean;
   limit: number;
   cursor: string | null;
@@ -210,7 +212,7 @@ export class ContentQueryService {
    */
   async search(
     userId: string,
-    query: { q: string; workspaceId?: string; kind?: 'tasks' | 'movies' | 'books'; limit: number },
+    query: { q: string; workspaceId?: string; kind?: ListKindName; limit: number },
   ): Promise<SearchResponse> {
     const workspaceIds = query.workspaceId
       ? await (async () => {

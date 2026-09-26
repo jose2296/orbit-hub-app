@@ -219,7 +219,9 @@ export const lists = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     folderId: uuid('folder_id'),
-    kind: varchar('kind', { length: 16 }).$type<ListKindName>().notNull(),
+    // 24, not 16: 'movies_and_series' is 17 characters and postgres would
+    // refuse to store it rather than warn.
+    kind: varchar('kind', { length: 24 }).$type<ListKindName>().notNull(),
     title: varchar('title', { length: 120 }).notNull(),
     description: varchar('description', { length: 1000 }),
     emoji: varchar('emoji', { length: 16 }),

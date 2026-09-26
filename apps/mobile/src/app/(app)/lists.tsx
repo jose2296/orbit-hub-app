@@ -15,6 +15,7 @@ import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useLists } from "@/hooks/use-lists";
+import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 import type { TranslationKey } from "@/lib/i18n";
@@ -22,11 +23,15 @@ import type { TranslationKey } from "@/lib/i18n";
 const KIND_META: Record<
   ListKind,
   { icon: keyof typeof Ionicons.glyphMap; labelKey: TranslationKey }
-> = {
-  tasks: { icon: "checkbox-outline", labelKey: "lists.kind.tasks" },
-  movies: { icon: "film-outline", labelKey: "lists.kind.movies" },
-  books: { icon: "book-outline", labelKey: "lists.kind.books" },
-};
+> = Object.fromEntries(
+  (Object.keys(LIST_KIND_ICON) as ListKind[]).map((kind) => [
+    kind,
+    { icon: LIST_KIND_ICON[kind], labelKey: LIST_KIND_LABEL[kind] },
+  ]),
+) as Record<
+  ListKind,
+  { icon: keyof typeof Ionicons.glyphMap; labelKey: TranslationKey }
+>;
 
 type Filter = ListKind | "all";
 

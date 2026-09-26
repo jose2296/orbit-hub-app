@@ -76,7 +76,14 @@ export function useLists(filters: ListFilters = {}) {
   }, [load]);
 
   const createList = useCallback(
-    async (input: { workspaceId: string; title: string; kind: ListKind; emoji?: string }) => {
+    async (input: {
+      workspaceId: string;
+      title: string;
+      kind: ListKind;
+      /** `null` is the space itself, which is the root folder. */
+      folderId?: string | null;
+      emoji?: string;
+    }) => {
       const store = await getLocalStoreReady();
       const id = Crypto.randomUUID();
       const now = new Date().toISOString();
@@ -91,7 +98,9 @@ export function useLists(filters: ListFilters = {}) {
           payload: JSON.stringify({
             id,
             workspaceId: input.workspaceId,
-            folderId: null,
+            // A list is never floating: `null` is the space itself, which is the
+            // root folder of the tree.
+            folderId: input.folderId ?? null,
             kind: input.kind,
             title: input.title,
             description: null,

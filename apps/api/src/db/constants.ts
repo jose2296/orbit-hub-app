@@ -47,8 +47,19 @@ export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
 export const SYNC_OPERATION_KINDS = ['create', 'update', 'delete'] as const;
 export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
 
-/** Fields the client may write, per entity. Anything else is ignored. */
-export const LIST_KINDS = ['tasks', 'movies', 'books'] as const;
+/**
+ * Fields the client may write, per entity. Anything else is ignored.
+ *
+ * The kinds match the contract exactly: a list is one of these for good, and
+ * never two at once.
+ */
+export const LIST_KINDS = [
+  'tasks',
+  'movies',
+  'series',
+  'movies_and_series',
+  'books',
+] as const;
 export type ListKindName = (typeof LIST_KINDS)[number];
 
 export const ITEM_PRIORITIES = ['none', 'low', 'medium', 'high'] as const;

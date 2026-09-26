@@ -1,0 +1,1 @@
+ALTER TABLE "lists" ALTER COLUMN "kind" SET DATA TYPE varchar(24);

@@ -12,7 +12,18 @@ import {
 import { getLocalStoreReady, pullIntoCache, readCachedDashboard, subscribeToLocalStore } from '@/lib/offline';
 import { localUpdate } from '@/lib/offline';
 
-const DASHBOARD_ENTITY_ID = 'dashboard';
+/**
+ * The one row this entity has per person.
+ *
+ * A uuid, because the sync contract says the id of an entity is a uuid and
+ * rejects the whole push otherwise. The literal "dashboard" passed validation
+ * on the device and came back as a 422 for the entire batch, so nothing this
+ * person wrote was ever sent: one bad identifier held the whole outbox hostage.
+ *
+ * The value does not identify a row, the user does: the server keys this entity
+ * by the person and ignores the id.
+ */
+const DASHBOARD_ENTITY_ID = 'd5a0d1f2-4b3c-4a7e-9c2f-1b6d8e5a4f30';
 
 async function ensureCached() {
   const store = await getLocalStoreReady();

@@ -40,7 +40,31 @@ export const folderSchema = syncableEntitySchema.extend({
 });
 export type Folder = z.infer<typeof folderSchema>;
 
-export const listKindSchema = z.enum(['tasks', 'movies', 'books']);
+/**
+ * The kinds of list, and they never mix.
+ *
+ * A list is a films list, a series list, a films and series list, a books list
+ * or a tasks list, and it is one of them for good. The reason is the reading:
+ * a list of films is a shelf of covers and a list of tasks is a checklist, and
+ * a list that is both is a shelf with a checkbox on it, which is neither.
+ *
+ * `movies_and_series` exists because wanting to see a film and a series is one
+ * intention, and splitting it by hand is work the app should not ask for.
+ */
+export const listKindSchema = z.enum([
+  'tasks',
+  'movies',
+  'series',
+  'movies_and_series',
+  'books',
+]);
+export const listKindLabelKey = {
+  tasks: 'lists.kind.tasks',
+  movies: 'lists.kind.movies',
+  series: 'lists.kind.series',
+  movies_and_series: 'lists.kind.moviesAndSeries',
+  books: 'lists.kind.books',
+} as const satisfies Record<z.infer<typeof listKindSchema>, string>;
 export type ListKind = z.infer<typeof listKindSchema>;
 
 export const listSchema = syncableEntitySchema.extend({
