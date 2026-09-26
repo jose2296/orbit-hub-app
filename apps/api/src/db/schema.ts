@@ -18,6 +18,7 @@ import {
   syncConflicts,
   syncCursors,
   syncOperations,
+  workspaceInvitations,
   workspaces,
 } from './content-schema';
 
@@ -35,6 +36,7 @@ export const schema = {
   lists,
   listItems,
   dashboardLayouts,
+  workspaceInvitations,
   // sync
   syncOperations,
   syncConflicts,

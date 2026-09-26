@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { SessionProvider, useSession } from '@/hooks/use-session';
-import { I18nProvider } from '@/lib/i18n';
+import { I18nProvider, useTranslation } from '@/lib/i18n';
 import { ThemeProvider, useTheme } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
@@ -29,6 +29,7 @@ export default function RootLayout() {
 
 function Navigation() {
   const theme = useTheme();
+  const t = useTranslation();
   const { status } = useSession();
 
   useEffect(() => {
@@ -68,6 +69,9 @@ function Navigation() {
         <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(app)" options={{ headerShown: false }} />
+        {/* Outside the auth guard on purpose: the person who opens an
+            invitation is the person who is not signed in yet. */}
+        <Stack.Screen name="invite/[token]" options={{ title: t('invite.title') }} />
       </Stack>
     </>
   );

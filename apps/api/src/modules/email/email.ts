@@ -56,6 +56,14 @@ class NoopEmailSender implements EmailSender {
   }
 }
 
+/**
+ * The sender the whole API uses.
+ *
+ * One instance for the process, so a test that swaps the transport and the
+ * verification mail and the invitation mail all go through the same door.
+ */
+export const emailSender: EmailSender = createEmailSender();
+
 export function createEmailSender(): EmailSender {
   if (env.EMAIL_TRANSPORT === 'noop') return new NoopEmailSender();
   if (env.EMAIL_TRANSPORT === 'resend') return new ResendEmailSender();
@@ -207,6 +215,11 @@ const COPY = {
     resetBody: 'Este enlace caduca en 1 hora. Si no lo has solicitado, no hagas nada.',
     resetCta: 'Elegir nueva contraseña',
     resetIgnore: 'Si no has solicitado el cambio, tu contraseña actual sigue siendo válida.',
+    inviteSubject: 'Te han invitado a {workspace} en OrbitHub',
+    inviteTitle: 'Invitación a {workspace}',
+    inviteBody: '{inviter} te ha invitado como {role}. Pulsa el botón para entrar en el espacio. El enlace caduca el {expires}.',
+    inviteCta: 'Entrar en el espacio',
+    inviteIgnore: 'Si no reconoces a quien te invita, puedes ignorar este correo: nadie se une sin que pulses el botón.',
   },
   en: {
     verifySubject: 'Verify your email for OrbitHub',
@@ -219,6 +232,11 @@ const COPY = {
     resetBody: 'This link expires in 1 hour. If you did not request it, do nothing.',
     resetCta: 'Set a new password',
     resetIgnore: 'If you did not request this, your current password is still valid.',
+    inviteSubject: 'You have been invited to {workspace} on OrbitHub',
+    inviteTitle: 'Invitation to {workspace}',
+    inviteBody: '{inviter} invited you as {role}. Tap the button to join the space. The link expires on {expires}.',
+    inviteCta: 'Join the space',
+    inviteIgnore: 'If you do not know who invited you, ignore this email: nobody joins anything without tapping the button.',
   },
 } satisfies Record<Locale, Record<string, string>>;
 
@@ -256,6 +274,56 @@ export function verificationEmail(input: TemplateInput): EmailMessage {
     subject: copy.verifySubject,
     text: `${copy.verifyTitle}\n\n${copy.verifyBody}\n\n${href}\n\n${copy.verifyIgnore}`,
     html: layout(copy.verifyTitle, copy.verifyBody, copy.verifyCta, href, copy.verifyIgnore),
+  };
+}
+
+/**
+ * The invitation mail.
+ *
+ * The button is the whole point of the mail, and the text below it says so: a
+ * link is not a membership until somebody presses it, and the person reading
+ * this is about to be told what role they would get. The role is named in the
+ * body rather than left to be discovered inside the app, because "te han
+ * invitado" and "te han invitado a ver" are different decisions.
+ */
+export function invitationEmail(input: {
+  to: string;
+  token: string;
+  locale: Locale;
+  workspaceName: string;
+  inviterName: string;
+  role: 'editor' | 'viewer';
+  expiresAt: Date;
+}): EmailMessage {
+  const copy = COPY[input.locale] ?? COPY.es;
+  const href = link('/invite', input.token);
+  const fill = (value: string) =>
+    value
+      .replace('{workspace}', input.workspaceName)
+      .replace('{inviter}', input.inviterName)
+      .replace(
+        '{role}',
+        input.role === 'editor'
+          ? input.locale === 'en'
+            ? 'an editor'
+            : 'editor'
+          : input.locale === 'en'
+            ? 'a viewer'
+            : 'lector',
+      )
+      .replace('{expires}', input.expiresAt.toISOString().slice(0, 10));
+
+  return {
+    to: input.to,
+    subject: fill(copy.inviteSubject),
+    text: `${fill(copy.inviteTitle)}\n\n${fill(copy.inviteBody)}\n\n${href}\n\n${fill(copy.inviteIgnore)}`,
+    html: layout(
+      fill(copy.inviteTitle),
+      fill(copy.inviteBody),
+      copy.inviteCta,
+      href,
+      fill(copy.inviteIgnore),
+    ),
   };
 }
 

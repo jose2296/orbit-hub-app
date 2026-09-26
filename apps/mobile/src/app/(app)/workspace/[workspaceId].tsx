@@ -13,9 +13,8 @@ import { FloatingCreateButton } from "@/components/folders/floating-create-butto
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
-import { Card } from "@/components/ui/card";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
-import { WorkspaceColorPicker } from "@/components/workspace/workspace-color-picker";
+import { WorkspaceMenuSheet } from "@/components/workspace/workspace-menu-sheet";
 import { useLists } from "@/hooks/use-lists";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { pluralKey, useTranslation } from "@/lib/i18n";
@@ -35,7 +34,7 @@ export default function WorkspaceScreen() {
   const router = useRouter();
   const { workspaceId } = useLocalSearchParams<{ workspaceId: string }>();
 
-  const { workspaces, updateWorkspace, deleteWorkspace } = useWorkspaces();
+  const { workspaces } = useWorkspaces();
   const { folders, isLoading, createFolder } = useFolders(workspaceId);
   const { lists, createList } = useLists({ workspaceId });
 
@@ -46,6 +45,7 @@ export default function WorkspaceScreen() {
   const [createStep, setCreateStep] = useState<"what" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === workspaceId) ?? null,
@@ -64,6 +64,7 @@ export default function WorkspaceScreen() {
 
   const closeSheets = useCallback(() => {
     setMenuFor(null);
+    setMenuOpen(false);
     setCreateOpen(false);
     setCreateStep("what");
     setCreateKind(null);
@@ -116,13 +117,37 @@ export default function WorkspaceScreen() {
               {t(`workspaces.role.${workspace.role}` as never)}
             </AppText>
           </View>
-          <AppText variant="caption" tone="muted">
+          <AppText variant="caption" tone="muted" style={styles.flex}>
             {t(pluralKey("workspaces.members", workspace.memberCount), {
               count: workspace.memberCount,
             })}
           </AppText>
+          {/* One button for the space, where the space is. Sharing, renaming and
+              deleting all live behind it, so there is one place to look and not
+              one per action. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("workspaceMenu.open")}
+            onPress={() => setMenuOpen(true)}
+            style={({ pressed }) => [
+              styles.more,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={18}
+              color={theme.colors.text}
+            />
+          </Pressable>
         </View>
       ) : null}
+
+      <WorkspaceMenuSheet
+        workspace={menuOpen ? workspace : null}
+        onClose={closeSheets}
+        onDeleted={() => router.replace("/(app)/workspaces")}
+      />
 
       <FolderBrowser
         workspaceId={workspaceId}
@@ -171,59 +196,62 @@ export default function WorkspaceScreen() {
 
       <FloatingCreateButton onPress={() => setCreateOpen(true)} />
 
-      {workspace ? (
-        <Card variant="outlined" style={{ gap: theme.spacing.md }}>
-          {/* The colour of a space, right where the space is: it is the colour
-              of every card this space makes, so it is asked for here and not in
-              a settings screen somebody has to find. */}
-          <View style={{ gap: theme.spacing.sm }}>
-            <AppText variant="bodyStrong">{t("workspaces.colorLabel")}</AppText>
-            <WorkspaceColorPicker
-              value={workspace.color}
-              onPick={(color) => void updateWorkspace(workspace, { color })}
-            />
-          </View>
-        </Card>
-      ) : null}
+      <WorkspaceMenuSheet
+        workspace={menuOpen ? workspace : null}
+        onClose={closeSheets}
+        onDeleted={() => router.replace("/(app)/workspaces")}
+      />
 
-      {workspace ? (
-        <Card variant="outlined" style={{ gap: theme.spacing.md }}>
-          <AppText variant="callout" tone="muted">
-            {t("workspaces.dangerZone")}
-          </AppText>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("workspaces.delete")}
-            onPress={() => {
-              void deleteWorkspace(workspace);
-              router.replace("/(app)/workspaces");
-            }}
-            style={({ pressed }) => [
-              styles.dangerRow,
-              {
-                backgroundColor: theme.colors.dangerSoft,
-                borderRadius: theme.radius.md,
-                padding: theme.spacing.md,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-          >
-            <Ionicons
-              name="trash-outline"
-              size={18}
-              color={theme.colors.danger}
-            />
-            <AppText variant="body" tone="danger">
-              {t("workspaces.delete")}
-            </AppText>
-          </Pressable>
-        </Card>
-      ) : null}
+      <ListMenuSheet
+        list={menuFor?.kind === "list" ? menuFor.list : null}
+        folder={menuFor?.kind === "list" ? folderOf(menuFor.list) : null}
+        onClose={closeSheets}
+      />
+
+      <FolderMenuSheet
+        folder={menuFor?.kind === "folder" ? menuFor.folder : null}
+        workspaceId={workspaceId}
+        listCount={folderListCount(
+          menuFor?.kind === "folder" ? menuFor.folder : null,
+        )}
+        onClose={closeSheets}
+        onCreateInside={(kind) => {
+          setMenuFor(null);
+          setCreateKind(kind);
+          setCreateStep("details");
+          setCreateOpen(true);
+        }}
+      />
+
+      <CreateSheet
+        open={createOpen}
+        onClose={closeSheets}
+        subtitle={workspace?.name}
+        step={createStep}
+        onStep={setCreateStep}
+        kind={createKind}
+        onKind={setCreateKind}
+        title={title}
+        onTitle={setTitle}
+        onCreate={() => void onCreate()}
+        creating={false}
+      />
+
+      <FloatingCreateButton onPress={() => setCreateOpen(true)} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  more: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   meta: {
     flexDirection: "row",
     alignItems: "center",

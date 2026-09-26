@@ -298,7 +298,7 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | 20 | Menú por lista: renombrar, favorita, pinear, duplicar, eliminar | Hecho y verificado. Renombrar, favorita, pinear y duplicar hacen lo que dicen; eliminar avisa de cuántos elementos se van y que no se puede deshacer | — |
 | 20b | Menú por carpeta: crear una lista dentro, renombrar, eliminar | Hecho y verificado. Eliminar una carpeta **no** borra las listas de dentro: se quedan sin carpeta | — |
 | 20c | Botón de menú visible en cada fila | Estaba solo en la pulsación larga, que en web no existe. Ahora hay un botón `⋯` | — |
-| 20d | Compartir, y el menú del espacio | Sin empezar. Compartir necesita tabla de invitaciones, token, correo y pantalla de aceptar | — |
+| 20d | Compartir, y el menú del espacio | Hecho y verificado con dos personas. Menú del espacio con editar, compartir y eliminar; invitaciones por correo y por enlace, con rol, caducidad, revocar, aceptar y rechazar | `COMPARTIR` |
 | 21 | Panel con `w`/`h` por tarjeta, colocar y guardar, como el de la app antigua | Hecho y verificado. Las tarjetas son las listas de cada persona, se ponen de un color a otro, se colocan con un lápiz y se guardan con Guardar | `6efb917` |
 | 22 | El color de cada espacio, obligatorio | Hecho y verificado. Ocho colores, se elige en la pantalla del espacio, y las tarjetas del panel se pintan con él | `6efb917` |
 
@@ -307,9 +307,8 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | # | Qué se pidió | Notas |
 | --- | --- | --- |
 | 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | La lista de la compra no tiene nada de esto |
-| 23 | Escritorio: cajón lateral, ancho máximo | Todo está pensado para móvil; la versión ancha es la de móvil estirada |
 | 25 | Los detalles con el aspecto de los de la app vieja | Hay datos, no la maquetación |
-| 26 | Compartir de verdad (invitar a alguien) | La API solo tiene leer miembros. Invitar es un bloque entero: tabla de invitaciones, token, correo y pantalla de aceptar |
+| 26 | Compartir de verdad (invitar a alguien) | Hecho y verificado en navegador: la API tenía `GET /members` y nada más. Ahora hay tabla de invitaciones, token, correo, y la pantalla de aceptar | `COMPARTIR` |
 
 ### Lo que ya no hace falta decidir
 
@@ -355,6 +354,12 @@ haya 335 pruebas donde antes había 287:
 | **Dos controles con el mismo nombre en pantalla** (el icono de una fila y la fila) | El navegador pulsaba el equivocado al hacer la prueba |
 | **El menú de una lista solo salía con pulsación larga** | En web no hay pulsación larga, y en móvil nadie lo descubre |
 | **La tecla Enter no hacía nada en el campo de etiqueta** | En web el campo no está en un formulario |
+| **El lápiz del panel abría el selector de listas** | Los dos botones compartían manejador, así que el modo de colocar no se podía entrar |
+| **Los controles de tamaño no se veían en una tarjeta de 127 px** | Eran una fila de botones dentro de la tarjeta, y la tarjeta es un tercio de móvil |
+| **El rol salía dos veces en la fila de una persona** | Se pintaba en el subtítulo *y* en la derecha, según quién fuera |
+| **"Vas a entrar como Puede editar."** | El nombre del rol es una etiqueta y se había metido en una frase |
+| **"1 personas dentro"** | El número no pasaba por el plural del diccionario |
+| **Un 401 por cada enlace abierto sin sesión** | La pantalla pedía la vista previa antes de saber si había sesión |
 
 ### Lo que NO he comprobado
 

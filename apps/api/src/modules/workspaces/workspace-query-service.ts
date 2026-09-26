@@ -6,15 +6,21 @@ import type {
   ListWorkspacesResponse,
   Workspace,
   WorkspaceMember,
-} from '@orbit-hub/contracts';
-import { and, asc, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
+} from "@orbit-hub/contracts";
+import { and, asc, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 
-import { getDatabase } from '../../db/client.js';
-import type { Database } from '../../db/client.js';
-import { dashboardLayouts, folders, memberships, users, workspaces } from '../../db/schema.js';
-import { HttpError } from '../../lib/http-error.js';
+import { getDatabase } from "../../db/client.js";
+import type { Database } from "../../db/client.js";
+import {
+  dashboardLayouts,
+  folders,
+  memberships,
+  users,
+  workspaces,
+} from "../../db/schema.js";
+import { HttpError } from "../../lib/http-error.js";
 
-type Role = Workspace['role'];
+type Role = Workspace["role"];
 
 /** Read side of the content API. Every write goes through the sync engine. */
 export class WorkspaceQueryService {
@@ -22,11 +28,18 @@ export class WorkspaceQueryService {
     return (await getDatabase()).db;
   }
 
-  async listWorkspaces(userId: string, limit: number, cursor: string | null): Promise<ListWorkspacesResponse> {
+  async listWorkspaces(
+    userId: string,
+    limit: number,
+    cursor: string | null,
+  ): Promise<ListWorkspacesResponse> {
     const db = await this.db();
     const after = cursor ? new Date(cursor) : null;
 
-    const workspaceConditions = [eq(memberships.userId, userId), isNull(workspaces.deletedAt)];
+    const workspaceConditions = [
+      eq(memberships.userId, userId),
+      isNull(workspaces.deletedAt),
+    ];
     if (after) {
       // Ordered newest first, so the next page holds older rows.
       workspaceConditions.push(lt(workspaces.updatedAt, after));
@@ -72,7 +85,8 @@ export class WorkspaceQueryService {
     const last = rows.at(-1);
     return {
       items,
-      nextCursor: rows.length === limit && last ? last.updatedAt.toISOString() : null,
+      nextCursor:
+        rows.length === limit && last ? last.updatedAt.toISOString() : null,
     };
   }
 
@@ -112,7 +126,7 @@ export class WorkspaceQueryService {
       .limit(1);
 
     if (!row) {
-      throw HttpError.notFound('Workspace not found');
+      throw HttpError.notFound("Workspace not found");
     }
 
     return {
@@ -141,7 +155,10 @@ export class WorkspaceQueryService {
     const db = await this.db();
     const after = options.cursor ? new Date(options.cursor) : null;
 
-    const conditions = [eq(folders.workspaceId, workspaceId), isNull(folders.deletedAt)];
+    const conditions = [
+      eq(folders.workspaceId, workspaceId),
+      isNull(folders.deletedAt),
+    ];
 
     // `parentId: null` means the root level; absent means the whole tree.
     if (options.parentId !== undefined) {
@@ -178,11 +195,17 @@ export class WorkspaceQueryService {
     const last = rows.at(-1);
     return {
       items,
-      nextCursor: rows.length === options.limit && last ? last.updatedAt.toISOString() : null,
+      nextCursor:
+        rows.length === options.limit && last
+          ? last.updatedAt.toISOString()
+          : null,
     };
   }
 
-  async listMembers(userId: string, workspaceId: string): Promise<ListWorkspaceMembersResponse> {
+  async listMembers(
+    userId: string,
+    workspaceId: string,
+  ): Promise<ListWorkspaceMembersResponse> {
     await this.getWorkspace(userId, workspaceId);
 
     const db = await this.db();
@@ -207,11 +230,50 @@ export class WorkspaceQueryService {
         displayName: row.displayName,
         avatarUrl: row.avatarUrl,
       },
-      role: row.role as WorkspaceMember['role'],
+      role: row.role as WorkspaceMember["role"],
       joinedAt: row.createdAt.toISOString(),
     }));
 
     return { items };
+  }
+
+  /**
+   * Who somebody is, as far as a space is concerned: the name, the address and
+   * the language. Used to write a mail that sounds like the person who sent it
+   * and not like the server.
+   */
+  async getMemberProfile(
+    userId: string,
+    workspaceId: string,
+  ): Promise<{
+    displayName: string;
+    email: string;
+    locale: "es" | "en";
+  } | null> {
+    const db = await this.db();
+    const [row] = await db
+      .select({
+        displayName: users.displayName,
+        email: users.email,
+        locale: users.locale,
+      })
+      .from(memberships)
+      .innerJoin(users, eq(memberships.userId, users.id))
+      .where(
+        and(
+          eq(memberships.userId, userId),
+          eq(memberships.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) return null;
+    return {
+      displayName:
+        row.displayName?.trim() || row.email.split("@")[0] || "Alguien",
+      email: row.email,
+      locale: row.locale === "en" ? "en" : "es",
+    };
   }
 
   async getDashboard(userId: string): Promise<DashboardLayout> {

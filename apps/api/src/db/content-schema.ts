@@ -70,6 +70,51 @@ export const memberships = pgTable(
   ],
 );
 
+/**
+ * An invitation to join a space.
+ *
+ * Not a syncable entity and deliberately so: an invitation is an act between two
+ * people, not content the person is editing offline. It cannot be created from a
+ * phone on a train that later mails itself, and it cannot be queued and applied
+ * on a device that no longer belongs to anybody. So it lives in its own table
+ * with its own endpoints, and the contract says so next to it.
+ *
+ * The token is what the link carries. It is random, it is not the id, and the
+ * row is thrown away with a tombstone when it is used or revoked, so a link that
+ * leaked a year ago answers "this link is no longer valid" instead of handing
+ * over a space.
+ */
+export const workspaceInvitations = pgTable(
+  'workspace_invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Who sent it. A tombstone too, so a deleted sender does not hide it. */
+    invitedByUserId: uuid('invited_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** editor or viewer. There is one owner per workspace and it is not given away here. */
+    role: varchar('role', { length: 16 }).$type<'editor' | 'viewer'>().notNull(),
+    /** The link, and never the id: the id travels in every API answer. */
+    token: varchar('token', { length: 64 }).notNull(),
+    /** Who it was addressed to. Null means anybody with the link. */
+    invitedEmail: varchar('invited_email', { length: 254 }),
+    status: varchar('status', { length: 16 })
+      .$type<'pending' | 'accepted' | 'declined' | 'revoked'>()
+      .notNull()
+      .default('pending'),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true, mode: 'date' }),
+    acceptedByUserId: uuid('accepted_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('workspace_invitations_token_unique').on(table.token),
+    index('workspace_invitations_workspace_status_idx').on(table.workspaceId, table.status),
+    index('workspace_invitations_email_idx').on(table.invitedEmail),
+  ],
+);
+
 /** Nested folders. `parent_id` is nullable for the root level. */
 export const folders = pgTable(
   'folders',
@@ -201,6 +246,7 @@ export const syncCursors = pgTable(
 export const workspacesRelations = relations(workspaces, ({ many }) => ({
   memberships: many(memberships),
   folders: many(folders),
+  invitations: many(workspaceInvitations),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({

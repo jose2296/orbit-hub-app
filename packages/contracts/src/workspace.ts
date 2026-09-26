@@ -1,9 +1,9 @@
-import { z } from 'zod';
-import { emailSchema, isoDateTimeSchema, uuidSchema } from './common';
-import { syncableEntitySchema } from './api';
-import { userSchema } from './auth';
+import { z } from "zod";
+import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
+import { syncableEntitySchema } from "./api";
+import { userSchema } from "./auth";
 
-export const membershipRoleSchema = z.enum(['owner', 'editor', 'viewer']);
+export const membershipRoleSchema = z.enum(["owner", "editor", "viewer"]);
 export type MembershipRole = z.infer<typeof membershipRoleSchema>;
 
 /** Numeric rank used by the API for permission comparisons. */
@@ -16,7 +16,12 @@ export const membershipRoleRank: Record<MembershipRole, number> = {
 export const membershipSchema = z.object({
   id: uuidSchema,
   workspaceId: uuidSchema,
-  user: userSchema.pick({ id: true, email: true, displayName: true, avatarUrl: true }),
+  user: userSchema.pick({
+    id: true,
+    email: true,
+    displayName: true,
+    avatarUrl: true,
+  }),
   role: membershipRoleSchema,
   createdAt: isoDateTimeSchema,
 });
@@ -30,14 +35,14 @@ export type Membership = z.infer<typeof membershipSchema>;
  * step behind the other.
  */
 export const WORKSPACE_COLORS = [
-  'teal',
-  'indigo',
-  'rose',
-  'amber',
-  'moss',
-  'sky',
-  'violet',
-  'slate',
+  "teal",
+  "indigo",
+  "rose",
+  "amber",
+  "moss",
+  "sky",
+  "violet",
+  "slate",
 ] as const;
 export const workspaceColorSchema = z.enum(WORKSPACE_COLORS);
 export type WorkspaceColor = z.infer<typeof workspaceColorSchema>;
@@ -54,7 +59,7 @@ export const workspaceSchema = syncableEntitySchema.extend({
    * picker to exist on a phone. A space written before there were colours reads
    * with the default one.
    */
-  color: workspaceColorSchema.default('slate'),
+  color: workspaceColorSchema.default("slate"),
   role: membershipRoleSchema,
   memberCount: z.int().min(1),
 });
@@ -81,18 +86,18 @@ export type Folder = z.infer<typeof folderSchema>;
  * intention, and splitting it by hand is work the app should not ask for.
  */
 export const listKindSchema = z.enum([
-  'tasks',
-  'movies',
-  'series',
-  'movies_and_series',
-  'books',
+  "tasks",
+  "movies",
+  "series",
+  "movies_and_series",
+  "books",
 ]);
 export const listKindLabelKey = {
-  tasks: 'lists.kind.tasks',
-  movies: 'lists.kind.movies',
-  series: 'lists.kind.series',
-  movies_and_series: 'lists.kind.moviesAndSeries',
-  books: 'lists.kind.books',
+  tasks: "lists.kind.tasks",
+  movies: "lists.kind.movies",
+  series: "lists.kind.series",
+  movies_and_series: "lists.kind.moviesAndSeries",
+  books: "lists.kind.books",
 } as const satisfies Record<z.infer<typeof listKindSchema>, string>;
 export type ListKind = z.infer<typeof listKindSchema>;
 
@@ -109,35 +114,35 @@ export type ListKind = z.infer<typeof listKindSchema>;
  * neither of them can be a step behind the other.
  */
 export const ITEM_ICONS = [
-  'basket',
-  'cart',
-  'apple',
-  'bread',
-  'milk',
-  'water',
-  'meat',
-  'fish',
-  'egg',
-  'cheese',
-  'rice',
-  'coffee',
-  'cake',
-  'pill',
-  'soap',
-  'toothbrush',
-  'shirt',
-  'shoe',
-  'book',
-  'paper',
-  'gift',
-  'tool',
-  'box',
-  'leaf',
-  'paw',
-  'ball',
-  'plane',
-  'bed',
-  'battery',
+  "basket",
+  "cart",
+  "apple",
+  "bread",
+  "milk",
+  "water",
+  "meat",
+  "fish",
+  "egg",
+  "cheese",
+  "rice",
+  "coffee",
+  "cake",
+  "pill",
+  "soap",
+  "toothbrush",
+  "shirt",
+  "shoe",
+  "book",
+  "paper",
+  "gift",
+  "tool",
+  "box",
+  "leaf",
+  "paw",
+  "ball",
+  "plane",
+  "bed",
+  "battery",
 ] as const;
 export type ItemIcon = (typeof ITEM_ICONS)[number];
 
@@ -148,19 +153,19 @@ export type ItemIcon = (typeof ITEM_ICONS)[number];
  * none of them change that order.
  */
 export const listOrderModeSchema = z.enum([
-  'manual',
-  'alphabetical',
-  'alphabetical_desc',
-  'created_desc',
-  'created_asc',
-  'updated_desc',
-  'priority',
+  "manual",
+  "alphabetical",
+  "alphabetical_desc",
+  "created_desc",
+  "created_asc",
+  "updated_desc",
+  "priority",
 ]);
 export type ListOrderMode = z.infer<typeof listOrderModeSchema>;
 
 /** Whether a row can be dragged under this order. */
 export function isManualOrder(mode: ListOrderMode): boolean {
-  return mode === 'manual';
+  return mode === "manual";
 }
 
 export const listSchema = syncableEntitySchema.extend({
@@ -187,7 +192,7 @@ export const listSchema = syncableEntitySchema.extend({
    * The drag only exists while this is `manual`, because a row moved under an
    * alphabetical order lands somewhere the order did not ask for.
    */
-  orderMode: listOrderModeSchema.default('manual'),
+  orderMode: listOrderModeSchema.default("manual"),
 });
 export type List = z.infer<typeof listSchema>;
 
@@ -202,7 +207,7 @@ export const listItemSchema = syncableEntitySchema.extend({
   position: z.number().int().min(0),
   completed: z.boolean().default(false),
   favorite: z.boolean().default(false),
-  priority: z.enum(['none', 'low', 'medium', 'high']).default('none'),
+  priority: z.enum(["none", "low", "medium", "high"]).default("none"),
   /**
    * An icon out of the ones the app offers, for the things a list of tasks is
    * also used for: what to buy, what to pack, what to fix.
@@ -229,7 +234,7 @@ export type ListItem = z.infer<typeof listItemSchema>;
  * native editor and the web editor can both read and write the same payload.
  */
 export const noteDocumentSchema = z.object({
-  type: z.literal('doc'),
+  type: z.literal("doc"),
   content: z.array(z.unknown()),
 });
 
@@ -238,7 +243,7 @@ export const noteSchema = syncableEntitySchema.extend({
   folderId: uuidSchema.nullable().default(null),
   title: z.string().trim().min(1).max(200),
   document: noteDocumentSchema,
-  plainText: z.string().default(''),
+  plainText: z.string().default(""),
   favorite: z.boolean().default(false),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   attachmentCount: z.int().min(0).default(0),
@@ -259,14 +264,20 @@ export const attachmentSchema = z.object({
 });
 export type Attachment = z.infer<typeof attachmentSchema>;
 
-export const invitationStatusSchema = z.enum(['pending', 'accepted', 'declined', 'revoked', 'expired']);
+export const invitationStatusSchema = z.enum([
+  "pending",
+  "accepted",
+  "declined",
+  "revoked",
+  "expired",
+]);
 export type InvitationStatus = z.infer<typeof invitationStatusSchema>;
 
 export const invitationSchema = z.object({
   id: uuidSchema,
   workspaceId: uuidSchema,
   workspaceName: z.string(),
-  role: membershipRoleSchema.exclude(['owner']),
+  role: membershipRoleSchema.exclude(["owner"]),
   token: z.string().min(10),
   status: invitationStatusSchema,
   invitedBy: userSchema.pick({ id: true, displayName: true }),
@@ -282,7 +293,9 @@ export const createWorkspaceRequestSchema = z.object({
   description: z.string().max(500).optional(),
   emoji: z.string().max(16).optional(),
 });
-export type CreateWorkspaceRequest = z.infer<typeof createWorkspaceRequestSchema>;
+export type CreateWorkspaceRequest = z.infer<
+  typeof createWorkspaceRequestSchema
+>;
 
 export const createFolderRequestSchema = z.object({
   workspaceId: uuidSchema,
@@ -306,11 +319,27 @@ export type CreateListRequest = z.infer<typeof createListRequestSchema>;
 
 export const createInvitationRequestSchema = z.object({
   workspaceId: uuidSchema,
-  role: membershipRoleSchema.exclude(['owner']),
+  role: membershipRoleSchema.exclude(["owner"]),
   email: z.string().trim().toLowerCase().email().max(254).optional(),
   expiresInHours: z.number().int().min(1).max(720).default(168),
 });
-export type CreateInvitationRequest = z.infer<typeof createInvitationRequestSchema>;
+export type CreateInvitationRequest = z.infer<
+  typeof createInvitationRequestSchema
+>;
+
+/**
+ * Changing somebody's role.
+ *
+ * `owner` is not a role you can hand out with this: a space has one owner, and
+ * handing it over is a different act with different consequences, so it is not
+ * offered here rather than refused at the last moment.
+ */
+export const updateMemberRoleRequestSchema = z.object({
+  role: membershipRoleSchema.exclude(["owner"]),
+});
+export type UpdateMemberRoleRequest = z.infer<
+  typeof updateMemberRoleRequestSchema
+>;
 
 /* ---------------------------------------------------------------- reads ---- */
 
@@ -326,7 +355,9 @@ export const listWorkspacesResponseSchema = z.object({
   items: z.array(workspaceSchema),
   nextCursor: z.string().nullable().default(null),
 });
-export type ListWorkspacesResponse = z.infer<typeof listWorkspacesResponseSchema>;
+export type ListWorkspacesResponse = z.infer<
+  typeof listWorkspacesResponseSchema
+>;
 
 export const listFoldersResponseSchema = z.object({
   items: z.array(folderSchema),
@@ -335,7 +366,12 @@ export const listFoldersResponseSchema = z.object({
 export type ListFoldersResponse = z.infer<typeof listFoldersResponseSchema>;
 
 export const workspaceMemberSchema = z.object({
-  user: userSchema.pick({ id: true, email: true, displayName: true, avatarUrl: true }),
+  user: userSchema.pick({
+    id: true,
+    email: true,
+    displayName: true,
+    avatarUrl: true,
+  }),
   role: membershipRoleSchema,
   joinedAt: isoDateTimeSchema,
 });
@@ -344,12 +380,64 @@ export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
 export const listWorkspaceMembersResponseSchema = z.object({
   items: z.array(workspaceMemberSchema),
 });
-export type ListWorkspaceMembersResponse = z.infer<typeof listWorkspaceMembersResponseSchema>;
+export type ListWorkspaceMembersResponse = z.infer<
+  typeof listWorkspaceMembersResponseSchema
+>;
+
+export const listInvitationsResponseSchema = z.object({
+  items: z.array(invitationSchema),
+});
+export type ListInvitationsResponse = z.infer<
+  typeof listInvitationsResponseSchema
+>;
+
+/**
+ * What accepting an invitation gives back.
+ *
+ * The workspace, so the app lands on it instead of making the person look for
+ * it, and whether they were already a member: accepting a link twice is not an
+ * error, it is somebody clicking twice.
+ */
+export const acceptInvitationResponseSchema = z.object({
+  workspace: workspaceSchema,
+  alreadyMember: z.boolean().default(false),
+});
+export type AcceptInvitationResponse = z.infer<
+  typeof acceptInvitationResponseSchema
+>;
+
+/** The invitation behind a link, before deciding about it. */
+export const previewInvitationResponseSchema = z.object({
+  workspace: z.object({
+    id: uuidSchema,
+    name: z.string(),
+    emoji: z.string().nullable().default(null),
+    color: workspaceColorSchema,
+  }),
+  role: membershipRoleSchema.exclude(["owner"]),
+  invitedBy: z.string(),
+  /** Who it was addressed to, or null when the link can be used by anybody. */
+  invitedEmail: z.string().nullable().default(null),
+  /** Whether the person reading it is the one it was sent to. */
+  isForYou: z.boolean(),
+  alreadyMember: z.boolean(),
+  expiresAt: isoDateTimeSchema,
+});
+export type PreviewInvitationResponse = z.infer<
+  typeof previewInvitationResponseSchema
+>;
 
 /** Dashboard widget grid. Mirrors the JSON stored in `dashboard_layouts`. */
 export const dashboardWidgetSchema = z.object({
   id: z.string().min(1).max(64),
-  kind: z.enum(['recent_lists', 'recent_notes', 'tasks', 'quick_actions', 'calendar', 'stats']),
+  kind: z.enum([
+    "recent_lists",
+    "recent_notes",
+    "tasks",
+    "quick_actions",
+    "calendar",
+    "stats",
+  ]),
   x: z.number().int().min(0).max(23),
   y: z.number().int().min(0),
   w: z.number().int().min(1).max(12),
@@ -380,7 +468,7 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>;
 
 export const searchResultSchema = z.object({
   /** What the hit belongs to, so the app can route to the right screen. */
-  scope: z.enum(['workspace', 'folder', 'list', 'list_item']),
+  scope: z.enum(["workspace", "folder", "list", "list_item"]),
   id: uuidSchema,
   workspaceId: uuidSchema.nullable().default(null),
   listId: uuidSchema.nullable().default(null),
@@ -402,8 +490,8 @@ export const listListsQuerySchema = z.object({
   folderId: uuidSchema.optional(),
   kind: listKindSchema.optional(),
   favorite: z
-    .enum(['true', 'false'])
-    .transform((value) => value === 'true')
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
     .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().min(1).optional(),
@@ -418,9 +506,9 @@ export type ListListsResponse = z.infer<typeof listListsResponseSchema>;
 
 export const listItemsQuerySchema = z.object({
   completed: z
-    .enum(['true', 'false', 'any'])
-    .default('any')
-    .transform((value) => (value === 'any' ? undefined : value === 'true')),
+    .enum(["true", "false", "any"])
+    .default("any")
+    .transform((value) => (value === "any" ? undefined : value === "true")),
   limit: z.coerce.number().int().min(1).max(200).default(100),
   cursor: z.string().min(1).optional(),
 });

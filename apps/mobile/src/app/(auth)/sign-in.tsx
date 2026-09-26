@@ -1,4 +1,4 @@
-import { Link, useRouter } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -18,6 +18,10 @@ export default function SignInScreen() {
   const t = useTranslation();
   const router = useRouter();
   const { signIn } = useSession();
+  // Where to go once inside. An invitation link sends the person here signed
+  // out, and landing them on the home screen would throw the link away.
+  const { next } = useLocalSearchParams<{ next?: string }>();
+  const destination = typeof next === 'string' && next.startsWith('/') ? next : '/(app)/(tabs)';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +45,7 @@ export default function SignInScreen() {
         return;
       }
 
-      router.replace('/(app)/(tabs)');
+      router.replace(destination);
     } catch (caught) {
       const apiError = toApiError(caught);
       setError(

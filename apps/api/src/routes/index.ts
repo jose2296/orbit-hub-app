@@ -7,7 +7,7 @@ import { catalogRouter } from './catalogs.js';
 import { healthRouter } from './health.js';
 import { syncRouter } from './sync.js';
 import { listsRouter, searchRouter } from './lists.js';
-import { dashboardRouter, workspacesRouter } from './workspaces.js';
+import { dashboardRouter, invitationsRouter, workspacesRouter } from './workspaces.js';
 
 /**
  * Endpoints that are contracted but not implemented yet return 501 with a
@@ -27,6 +27,7 @@ apiRouter.use('/health', healthRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/sync', syncRouter);
 apiRouter.use('/workspaces', workspacesRouter);
+apiRouter.use('/invitations', invitationsRouter);
 apiRouter.use('/dashboard', dashboardRouter);
 apiRouter.use('/lists', listsRouter);
 apiRouter.use('/catalog', catalogRouter);
