@@ -1,15 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { useListItems } from '@/hooks/use-lists';
 import { useScreenTitle } from '@/hooks/use-screen-title';
-import { Image, Linking, StyleSheet, View } from 'react-native';
+import { Image, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import type { CatalogDetails, CatalogRelated } from '@orbit-hub/contracts';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { MediaActionsSheet } from '@/components/lists/media-actions-sheet';
 import { MediaCarousel } from '@/components/ui/media-carousel';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
@@ -30,16 +32,35 @@ export default function ItemDetailsScreen() {
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
-  const { kind, externalId, title } = useLocalSearchParams<{
+  const { itemId, kind, externalId, title, itemKey } = useLocalSearchParams<{
+    /** Which list it is in, so the detail can take it out of it. */
+    itemId?: string;
     kind?: string;
     externalId?: string;
     title?: string;
+    /** Which row of that list it is, so it can be ticked off from here. */
+    itemKey?: string;
   }>();
 
   const [details, setDetails] = useState<CatalogDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
+
+  /**
+   * The row in the list this title came from.
+   *
+   * The detail is fetched from the provider, so it knows nothing about what
+   * this person did with it: whether it is in a list, whether they have watched
+   * it, whether they want to take it out. Those live in the item, and the
+   * screen is a dead end without them.
+   */
+  const { items, toggleCompleted } = useListItems(itemId);
+  const item = useMemo(
+    () => items.find((row) => (itemKey ? row.id === itemKey : row.externalId === externalId)) ?? null,
+    [items, itemKey, externalId],
+  );
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Before any early return: a hook behind one is called a different number of
   // times while loading and once it has failed, and React stops believing the
@@ -111,6 +132,7 @@ export default function ItemDetailsScreen() {
   const isSeries = details.kind === 'tv';
   const collection = details.collection ?? null;
   const related = details.related ?? [];
+
 
   /** A poster reference rendered as a carousel card, which opens on tap. */
   const toCarouselItem = (item: CatalogRelated) => ({
@@ -186,6 +208,38 @@ export default function ItemDetailsScreen() {
             </View>
           </View>
         </View>
+
+        {/* The actions on the title, not only on its card in the list: the
+            detail is where a person goes to decide what to do with it. */}
+        {item ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <View style={[styles.actions, { gap: theme.spacing.sm }]}>
+              <ActionButton
+                icon={item.completed ? 'eye-off-outline' : 'eye-outline'}
+                label={
+                  isBook
+                    ? item.completed
+                      ? t('mediaActions.markAsUnread')
+                      : t('mediaActions.markAsRead')
+                    : item.completed
+                      ? t('mediaActions.markAsUnseen')
+                      : t('mediaActions.markAsSeen')
+                }
+                onPress={() => void toggleCompleted(item)}
+              />
+              <ActionButton
+                icon="ellipsis-horizontal"
+                label={t('mediaActions.moreActions')}
+                onPress={() => setMenuOpen(true)}
+              />
+            </View>
+            {item.completed ? (
+              <AppText variant="caption" tone="success">
+                {isBook ? t('mediaActions.readItIs') : t('mediaActions.seenItIs')}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
 
         {details.overview ? (
           <View style={{ gap: theme.spacing.xs }}>
@@ -293,7 +347,55 @@ export default function ItemDetailsScreen() {
           </Card>
         ) : null}
       </View>
+
+      <MediaActionsSheet
+        item={menuOpen ? item : null}
+        listId={itemId ?? ''}
+        listKind={isBook ? 'books' : isSeries ? 'series' : 'movies'}
+        onClose={() => setMenuOpen(false)}
+      />
     </Screen>
+  );
+}
+
+/**
+ * One action on the title, as a button with its name under it.
+ *
+ * The name is not decoration: an eye with no label is a guess, and the two
+ * things a person does most with a title are ticked off and taken out, which
+ * are not the same and not reversible in the same way.
+ */
+function ActionButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.action,
+        {
+          backgroundColor: theme.colors.surfaceMuted,
+          borderRadius: theme.radius.md,
+          paddingVertical: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.md,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      <Ionicons name={icon} size={18} color={theme.colors.text} />
+      <AppText variant="caption" tone="muted" numberOfLines={1}>
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -357,6 +459,15 @@ const styles = StyleSheet.create({
   badges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+  },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  action: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   badge: {
     paddingHorizontal: 8,

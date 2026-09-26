@@ -20,6 +20,8 @@ export interface MediaCarouselItem {
   /** Marks a watched or read title without leaving the list. */
   completed?: boolean;
   onToggleCompleted?: () => void;
+  /** Opens the menu of what can be done with this title. */
+  onMenu?: () => void;
 }
 
 export interface MediaCarouselProps {
@@ -54,7 +56,12 @@ export function MediaCarousel({ items, title }: MediaCarouselProps) {
         decelerationRate="fast"
       >
         {items.map((item) => (
-          <MediaCard key={item.key} item={item} labelAdd={t('lists.addToList')} />
+          <MediaCard
+            key={item.key}
+            item={item}
+            labelAdd={t('lists.addToList')}
+            menuHint={t('mediaActions.menuHint')}
+          />
         ))}
       </ScrollView>
     </View>
@@ -63,14 +70,22 @@ export function MediaCarousel({ items, title }: MediaCarouselProps) {
 
 const CARD_WIDTH = 140;
 
-function MediaCard({ item, labelAdd }: { item: MediaCarouselItem; labelAdd: string }) {
+function MediaCard({
+  item,
+  labelAdd,
+  menuHint,
+}: {
+  item: MediaCarouselItem;
+  labelAdd: string;
+  menuHint: string;
+}) {
   const theme = useTheme();
   const [failed, setFailed] = useState(false);
 
   const showImage = item.imageUrl && !failed;
 
   return (
-    <View style={{ width: CARD_WIDTH, gap: theme.spacing.xs }}>
+    <View style={{ width: CARD_WIDTH }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={item.title}
@@ -122,7 +137,31 @@ function MediaCard({ item, labelAdd }: { item: MediaCarouselItem; labelAdd: stri
         </View>
       </Pressable>
 
-      <AppText variant="caption" numberOfLines={2} style={styles.title}>
+      {/* The menu is a sibling of the poster and not a child of it: a button
+          inside a button is not valid HTML, a screen reader reads the two as
+          one, and the tap lands on the outer one. It sits over the corner of
+          the poster, which is where a menu is expected. */}
+      {item.onMenu ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={item.title}
+          accessibilityHint={menuHint}
+          hitSlop={8}
+          onPress={item.onMenu}
+          style={({ pressed }) => [
+            styles.menu,
+            {
+              backgroundColor: theme.colors.surfaceMuted,
+              borderRadius: theme.radius.sm,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Ionicons name="ellipsis-horizontal" size={14} color={theme.colors.text} />
+        </Pressable>
+      ) : null}
+
+      <AppText variant="caption" numberOfLines={2} style={[styles.title, { marginTop: theme.spacing.xs }]}>
         {item.title}
       </AppText>
 
@@ -166,6 +205,15 @@ const styles = StyleSheet.create({
   },
   fallback: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menu: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },

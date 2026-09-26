@@ -8,6 +8,7 @@ import * as Crypto from 'expo-crypto';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { planDuplication } from '@/lib/lists/duplicate';
+import { nextPosition, planAddToList } from '@/lib/lists/add-to-list';
 import { reorderItems } from '@/lib/lists/reorder';
 import {
   enqueueOperation,
@@ -463,6 +464,89 @@ export function useListItems(listId: string | undefined) {
 
   const moveItem = useCallback((itemId: string, delta: number) => moveItemTo(itemId, delta), [moveItemTo]);
 
+  /**
+   * Adds a title to a list, whichever one it is.
+   *
+   * Adding to another list from the menu of a title is the same write as adding
+   * to the one you are looking at, so it is the same function: one way to
+   * create an item, and the outbox and the cache behave the same in both.
+   *
+   * A title already in that list is not added again. The same film in two lists
+   * of films is a mistake, and a person choosing from a menu of lists is not
+   * asking to be told they already have it.
+   */
+  const addItemTo = useCallback(
+    async (
+      input: {
+        title: string;
+        externalId?: string | null;
+        metadata?: Record<string, unknown> | null;
+      },
+      targetListId: string,
+    ) => {
+      const store = await getLocalStoreReady();
+      const existing = (await store.listCachedItems(targetListId)).map((row) =>
+        readRecord<ListItem>(row),
+      );
+
+      const plan = planAddToList(existing, input);
+      if (!plan.added) {
+        return {
+          added: false,
+          itemId: existing.find((item) => item.externalId === input.externalId)?.id ?? null,
+        };
+      }
+
+      const id = Crypto.randomUUID();
+      const now = nowIso();
+      const position = nextPosition(existing);
+
+      await store.upsertCached([
+        {
+          entity: 'list_item',
+          entityId: id,
+          version: 0,
+          updatedAt: now,
+          deletedAt: null,
+          payload: JSON.stringify({
+            id,
+            listId: targetListId,
+            title: input.title,
+            position,
+            completed: false,
+            favorite: false,
+            priority: 'none',
+            externalId: input.externalId ?? null,
+            metadata: input.metadata ?? null,
+            notes: null,
+            version: 0,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+          }),
+          pending: null,
+        },
+      ]);
+
+      await enqueueOperation({
+        kind: 'create',
+        entity: 'list_item',
+        entityId: id,
+        baseVersion: 0,
+        payload: {
+          listId: targetListId,
+          title: input.title,
+          position,
+          ...(input.externalId ? { externalId: input.externalId } : {}),
+          ...(input.metadata ? { metadata: input.metadata } : {}),
+        },
+      });
+
+      return { added: true, itemId: id };
+    },
+    [],
+  );
+
   const removeItem = useCallback(
     async (item: ListItem) => {
       const store = await getLocalStoreReady();
@@ -496,6 +580,7 @@ export function useListItems(listId: string | undefined) {
     toggleCompleted,
     moveItem,
     moveItemTo,
+    addItemTo,
     removeItem,
   };
 }

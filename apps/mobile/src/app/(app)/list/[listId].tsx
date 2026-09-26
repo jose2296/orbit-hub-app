@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
+import { MediaActionsSheet } from '@/components/lists/media-actions-sheet';
 import { DraggableRow } from '@/components/ui/draggable-row';
 import { MediaCarousel } from '@/components/ui/media-carousel';
 import { Screen } from '@/components/ui/screen';
@@ -61,6 +62,7 @@ export default function ListScreen() {
 
   const [title, setTitle] = useState('');
   const [adding, setAdding] = useState(false);
+  const [menuFor, setMenuFor] = useState<ListItem | null>(null);
   const [duplicating, setDuplicating] = useState(false);
 
   /**
@@ -116,8 +118,8 @@ export default function ListScreen() {
                     ? t('itemDetails.series')
                     : t('itemDetails.movie'),
               completed: item.completed,
-              onPress: () => openDetails(item.externalId as string, item.title),
-              onLongPress: () => void toggleCompleted(item),
+              onPress: () => openDetails(item),
+              onMenu: () => setMenuFor(item),
             };
           })
         : [],
@@ -145,14 +147,25 @@ export default function ListScreen() {
     return rows;
   }, [workspace, folder, list?.title, t]);
 
-  function openDetails(externalId: string, itemTitle: string) {
+  /**
+   * Opens the detail of a title.
+   *
+   * The kind comes from the item, not from the list. A list of films and series
+   * holds both, and asking the server for a film with the id of a series is how
+   * a detail came back with no title at all.
+   */
+  function openDetails(item: ListItem) {
+    const card = mediaCardOf(item);
     router.push({
       pathname: '/(app)/item/[itemId]',
       params: {
+        // Which list it is in, so the detail can take it out of it.
         itemId: listId,
-        kind: list?.kind === 'books' ? 'books' : 'movies',
-        externalId,
-        title: itemTitle,
+        // Which row of that list it is, so the detail can tick it off.
+        itemKey: item.id,
+        kind: card?.mediaKind === 'tv' ? 'tv' : list?.kind === 'books' ? 'books' : 'movies',
+        externalId: item.externalId ?? '',
+        title: item.title,
       },
     });
   }
@@ -385,6 +398,16 @@ export default function ListScreen() {
         updateCellsBatchingPeriod={60}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+      />
+
+      {/* What can be done with a film, a series or a book. It lives here and in
+          the detail and nowhere else, because two lists of the same handful of
+          actions is how they stop agreeing. */}
+      <MediaActionsSheet
+        item={menuFor}
+        listId={listId}
+        listKind={list?.kind ?? 'movies'}
+        onClose={() => setMenuFor(null)}
       />
     </Screen>
   );
