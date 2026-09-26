@@ -63,6 +63,16 @@ export const LIST_KINDS = [
 export type ListKindName = (typeof LIST_KINDS)[number];
 
 /**
+ * The colours a space can be painted with.
+ *
+ * Re-exported from the contract and not a second list: the server refuses a
+ * colour it does not know, the app cannot draw one that is not here, and two
+ * lists are two lists that are a step behind each other.
+ */
+export { WORKSPACE_COLORS } from '@orbit-hub/contracts';
+export type { WorkspaceColor as WorkspaceColorName } from '@orbit-hub/contracts';
+
+/**
  * The ways a list can be read. `manual` is the order the items are in and the
  * only one where a row can be dragged.
  */
@@ -89,7 +99,7 @@ export type ItemPriority = (typeof ITEM_PRIORITIES)[number];
  * not own (version, id, workspaceId, timestamps).
  */
 export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
-  workspace: ['name', 'description', 'emoji'],
+  workspace: ['name', 'description', 'emoji', 'color'],
   folder: ['parentId', 'name', 'emoji', 'position'],
   list: [
     'folderId',

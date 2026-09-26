@@ -29,6 +29,13 @@
       "when": 1790425684290,
       "tag": "0003_item_icon_tags_and_order",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790451716883,
+      "tag": "0004_workspace_color",
+      "breakpoints": true
     }
   ]
 }

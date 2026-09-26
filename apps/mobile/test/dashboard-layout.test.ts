@@ -1,176 +1,64 @@
-import type { DashboardWidget } from '@orbit-hub/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import {
-  addWidget,
-  compactLayout,
-  DEFAULT_LAYOUT,
-  moveWidget,
-  normaliseLayout,
-  removeWidget,
-  togglePin,
-} from '../src/lib/dashboard/layout';
+import { DEFAULT_LAYOUT, normaliseLayout } from "../src/lib/dashboard/layout";
 
-const orders = (widgets: DashboardWidget[]) => widgets.map((widget) => widget.id);
-
-describe('normaliseLayout', () => {
-  it('returns an empty layout for rubbish input', () => {
+/**
+ * Reading a panel that arrived from another device.
+ *
+ * The panel is a list of cards with a size in grid cells, and it comes out of
+ * the cache written by an older build, out of a payload a client sent with
+ * nothing it did not know, and out of nothing at all. None of those is a reason
+ * to leave a person's panel blank: what cannot be read is left out and the rest
+ * stays.
+ */
+describe("normaliseLayout", () => {
+  it("returns an empty panel for rubbish input", () => {
     expect(normaliseLayout(null)).toEqual([]);
-    expect(normaliseLayout('nope')).toEqual([]);
+    expect(normaliseLayout("nope")).toEqual([]);
     expect(normaliseLayout(42)).toEqual([]);
   });
 
-  it('drops widgets that fail validation', () => {
+  it("drops cards that fail validation", () => {
     const result = normaliseLayout([
-      { id: 'ok', kind: 'tasks', x: 0, y: 0, w: 6, h: 4, pinned: false },
-      { id: 'broken', kind: 'not-a-kind', x: 0, y: 0, w: 6, h: 4, pinned: false },
-      { kind: 'tasks', x: 0, y: 0, w: 6, h: 4, pinned: false },
+      { id: "ok", kind: "recent_lists", x: 0, y: 0, w: 6, h: 4, pinned: false },
+      { id: "roto", kind: "not-a-kind", x: 0, y: 0, w: 6, h: 4, pinned: false },
+      { kind: "recent_lists", x: 0, y: 0, w: 6, h: 4, pinned: false },
     ]);
 
-    expect(orders(result)).toEqual(['ok']);
+    expect(result.map((widget) => widget.id)).toEqual(["ok"]);
   });
 
-  it('removes duplicate ids, keeping the first', () => {
-    const result = normaliseLayout([
-      { id: 'same', kind: 'tasks', x: 0, y: 0, w: 4, h: 2, pinned: false },
-      { id: 'same', kind: 'stats', x: 0, y: 0, w: 4, h: 2, pinned: false },
+  it("reads a card that has no pinned flag, because it was written before one", () => {
+    const [card] = normaliseLayout([
+      { id: "a", kind: "recent_lists", x: 0, y: 0, w: 6, h: 4 },
     ]);
+    expect(card?.pinned).toBe(false);
+  });
 
+  it("drops two cards with the same identifier", () => {
+    // The identifier is what says which card it is and what a drag moves, and
+    // two cards that answer to the same one are two cards that move together.
+    const result = normaliseLayout([
+      { id: "a", kind: "recent_lists", x: 0, y: 0, w: 6, h: 4, pinned: false },
+      { id: "a", kind: "recent_lists", x: 0, y: 0, w: 3, h: 2, pinned: false },
+    ]);
     expect(result).toHaveLength(1);
-    expect(result[0]?.kind).toBe('tasks');
   });
 
-  it('clamps sizes to the grid instead of failing', () => {
-    const [widget] = normaliseLayout([
-      { id: 'huge', kind: 'tasks', x: 0, y: 0, w: 99, h: 999, pinned: false },
-    ]);
-
-    expect(widget?.w).toBeLessThanOrEqual(12);
-    expect(widget?.h).toBeLessThanOrEqual(24);
-  });
-
-  it('brings pinned widgets to the top without losing the chosen order', () => {
-    const result = normaliseLayout([
-      { id: 'a', kind: 'tasks', x: 0, y: 0, w: 6, h: 2, pinned: false },
-      { id: 'b', kind: 'stats', x: 0, y: 2, w: 6, h: 2, pinned: true },
-      { id: 'c', kind: 'recent_lists', x: 0, y: 4, w: 6, h: 2, pinned: false },
-    ]);
-
-    expect(orders(result)).toEqual(['b', 'a', 'c']);
+  it("does not change the panel it is given", () => {
+    const input = [
+      { id: "a", kind: "recent_lists", x: 0, y: 0, w: 6, h: 4, pinned: false },
+    ];
+    const before = JSON.stringify(input);
+    normaliseLayout(input);
+    expect(JSON.stringify(input)).toBe(before);
   });
 });
 
-describe('addWidget', () => {
-  it('appends below the current stack', () => {
-    const layout = normaliseLayout(DEFAULT_LAYOUT);
-    const result = addWidget(layout, 'calendar');
-    const calendar = result.find((widget) => widget.kind === 'calendar');
-
-    expect(calendar).toBeDefined();
-    expect(calendar?.y).toBeGreaterThanOrEqual(6);
-  });
-
-  it('refuses a widget that is already there', () => {
-    const layout = normaliseLayout(DEFAULT_LAYOUT);
-    expect(addWidget(layout, 'tasks')).toHaveLength(layout.length);
-  });
-
-  it('never exceeds the maximum widget count', () => {
-    let layout: DashboardWidget[] = [];
-    for (let index = 0; index < 40; index += 1) {
-      layout = addWidget(layout, index % 2 === 0 ? 'recent_notes' : 'calendar');
-    }
-    expect(layout.length).toBeLessThanOrEqual(24);
-  });
-});
-
-describe('removeWidget and togglePin', () => {
-  it('removes by id', () => {
-    const layout = normaliseLayout(DEFAULT_LAYOUT);
-    const result = removeWidget(layout, 'tasks');
-
-    expect(orders(result)).not.toContain('tasks');
-    expect(result).toHaveLength(layout.length - 1);
-  });
-
-  it('ignores an unknown id', () => {
-    const layout = normaliseLayout(DEFAULT_LAYOUT);
-    expect(removeWidget(layout, 'ghost')).toHaveLength(layout.length);
-  });
-
-  it('pins and unpins, and the newly pinned one comes first', () => {
-    // A layout with nothing pinned yet, so the assertion is about the pin.
-    const layout = normaliseLayout([
-      { id: 'a', kind: 'tasks', x: 0, y: 0, w: 6, h: 2, pinned: false },
-      { id: 'b', kind: 'stats', x: 0, y: 2, w: 6, h: 2, pinned: false },
-    ]);
-
-    const pinned = togglePin(layout, 'b');
-    expect(pinned[0]?.id).toBe('b');
-    expect(pinned[0]?.pinned).toBe(true);
-
-    // Unpinning leaves the widget where the pin put it: the order is the one
-    // the user chose by pinning, not an automatic re-sort.
-    const unpinned = togglePin(pinned, 'b');
-    expect(unpinned.find((widget) => widget.id === 'b')?.pinned).toBe(false);
-    expect(orders(unpinned)).toEqual(['b', 'a']);
-  });
-
-  it('keeps already pinned widgets above a newly pinned one', () => {
-    const layout = normaliseLayout(DEFAULT_LAYOUT);
-    const pinned = togglePin(layout, 'stats');
-
-    // quick-actions was already pinned, so it stays first and stats follows.
-    expect(orders(pinned)).toEqual(['quick-actions', 'stats', 'tasks', 'recent-lists']);
-  });
-});
-
-describe('moveWidget', () => {
-  it('moves a widget up and down', () => {
-    const layout = normaliseLayout([
-      { id: 'a', kind: 'tasks', x: 0, y: 0, w: 6, h: 2, pinned: false },
-      { id: 'b', kind: 'stats', x: 0, y: 2, w: 6, h: 2, pinned: false },
-      { id: 'c', kind: 'recent_lists', x: 0, y: 4, w: 6, h: 2, pinned: false },
-    ]);
-
-    expect(orders(moveWidget(layout, 'c', 'up'))).toEqual(['a', 'c', 'b']);
-    expect(orders(moveWidget(layout, 'a', 'down'))).toEqual(['b', 'a', 'c']);
-  });
-
-  it('does nothing at the edges', () => {
-    const layout = normaliseLayout(DEFAULT_LAYOUT);
-
-    expect(orders(moveWidget(layout, 'tasks', 'up'))).toEqual(orders(layout));
-    expect(orders(moveWidget(layout, 'stats', 'down'))).toEqual(orders(layout));
-  });
-
-  it('keeps unpinned widgets below the pinned block', () => {
-    const layout = normaliseLayout([
-      { id: 'pinned', kind: 'quick_actions', x: 0, y: 0, w: 12, h: 2, pinned: true },
-      { id: 'a', kind: 'tasks', x: 0, y: 2, w: 6, h: 2, pinned: false },
-    ]);
-
-    // 'a' cannot jump above the pinned widget.
-    expect(orders(moveWidget(layout, 'a', 'up'))).toEqual(['pinned', 'a']);
-  });
-
-  it('ignores an unknown widget', () => {
-    const layout = normaliseLayout(DEFAULT_LAYOUT);
-    expect(moveWidget(layout, 'ghost', 'up')).toHaveLength(layout.length);
-  });
-});
-
-describe('compactLayout', () => {
-  it('removes the holes left by a removal', () => {
-    const layout = normaliseLayout([
-      { id: 'a', kind: 'tasks', x: 0, y: 0, w: 6, h: 3, pinned: false },
-      { id: 'b', kind: 'stats', x: 6, y: 3, w: 6, h: 2, pinned: false },
-      { id: 'c', kind: 'recent_lists', x: 0, y: 5, w: 6, h: 2, pinned: false },
-    ]);
-
-    const compacted = compactLayout(removeWidget(layout, 'b'));
-
-    expect(orders(compacted)).toEqual(['a', 'c']);
-    expect(compacted.map((widget) => widget.y)).toEqual([0, 3]);
+describe("the panel of a new person", () => {
+  it('starts empty, because a card that says "recent lists" is about the app', () => {
+    // It used to start with four widgets of its own, which made the panel a page
+    // about the app instead of about the person's day.
+    expect(DEFAULT_LAYOUT).toEqual([]);
   });
 });

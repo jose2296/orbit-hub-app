@@ -1,31 +1,38 @@
-import { dashboardWidgetSchema } from '@orbit-hub/contracts';
-import type { DashboardWidget } from '@orbit-hub/contracts';
+import { dashboardWidgetSchema } from "@orbit-hub/contracts";
+import type { DashboardWidget } from "@orbit-hub/contracts";
 
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 24;
 const MAX_WIDGETS = 24;
 
-type WidgetKind = DashboardWidget['kind'];
+type WidgetKind = DashboardWidget["kind"];
 
 /**
  * The layout a new user starts with. It is deliberately small: the dashboard
  * should open with something useful, not with a wall of empty widgets.
  */
-export const DEFAULT_LAYOUT: readonly DashboardWidget[] = [
-  { id: 'quick-actions', kind: 'quick_actions', x: 0, y: 0, w: 12, h: 2, pinned: true },
-  { id: 'tasks', kind: 'tasks', x: 0, y: 2, w: 6, h: 4, pinned: false },
-  { id: 'recent-lists', kind: 'recent_lists', x: 6, y: 2, w: 6, h: 4, pinned: false },
-  { id: 'stats', kind: 'stats', x: 0, y: 6, w: 6, h: 3, pinned: false },
-];
+/**
+ * The panel starts empty.
+ *
+ * It used to start with four widgets of its own, which made the panel a page
+ * about the app: "recent lists", "tasks", "stats". A card that says "recent
+ * lists" tells you what the app knows and not what you have to do, and the
+ * panel is more useful with the person's own lists on it and the colour of their
+ * own spaces. What is on it is what they put on it.
+ */
+export const DEFAULT_LAYOUT: readonly DashboardWidget[] = [];
 
 /** Every widget kind the dashboard can show, with its default size. */
-export const WIDGET_CATALOG: Record<WidgetKind, { labelKey: string; w: number; h: number }> = {
-  quick_actions: { labelKey: 'dashboard.widget.quickActions', w: 12, h: 2 },
-  tasks: { labelKey: 'dashboard.widget.tasks', w: 6, h: 4 },
-  recent_lists: { labelKey: 'dashboard.widget.recentLists', w: 6, h: 4 },
-  recent_notes: { labelKey: 'dashboard.widget.recentNotes', w: 6, h: 4 },
-  calendar: { labelKey: 'dashboard.widget.calendar', w: 6, h: 5 },
-  stats: { labelKey: 'dashboard.widget.stats', w: 6, h: 3 },
+export const WIDGET_CATALOG: Record<
+  WidgetKind,
+  { labelKey: string; w: number; h: number }
+> = {
+  quick_actions: { labelKey: "dashboard.widget.quickActions", w: 12, h: 2 },
+  tasks: { labelKey: "dashboard.widget.tasks", w: 6, h: 4 },
+  recent_lists: { labelKey: "dashboard.widget.recentLists", w: 6, h: 4 },
+  recent_notes: { labelKey: "dashboard.widget.recentNotes", w: 6, h: 4 },
+  calendar: { labelKey: "dashboard.widget.calendar", w: 6, h: 5 },
+  stats: { labelKey: "dashboard.widget.stats", w: 6, h: 3 },
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -42,16 +49,16 @@ function toNumber(value: unknown, fallback: number): number {
  * merely out of bounds gets repaired instead of discarded by the schema.
  */
 function sanitise(candidate: unknown): unknown {
-  if (typeof candidate !== 'object' || candidate === null) return candidate;
+  if (typeof candidate !== "object" || candidate === null) return candidate;
   const record = candidate as Record<string, unknown>;
 
-  const w = clamp(toNumber(record['w'], 6), 1, GRID_COLUMNS);
-  const h = clamp(toNumber(record['h'], 3), 1, GRID_ROWS);
+  const w = clamp(toNumber(record["w"], 6), 1, GRID_COLUMNS);
+  const h = clamp(toNumber(record["h"], 3), 1, GRID_ROWS);
 
   return {
     ...record,
-    x: clamp(toNumber(record['x'], 0), 0, GRID_COLUMNS - w),
-    y: clamp(toNumber(record['y'], 0), 0, 1000),
+    x: clamp(toNumber(record["x"], 0), 0, GRID_COLUMNS - w),
+    y: clamp(toNumber(record["y"], 0), 0, 1000),
     w,
     h,
   };
@@ -93,30 +100,52 @@ export function normaliseLayout(input: unknown): DashboardWidget[] {
   return result.sort((a, b) => Number(b.pinned) - Number(a.pinned));
 }
 
-export function addWidget(layout: DashboardWidget[], kind: WidgetKind): DashboardWidget[] {
+export function addWidget(
+  layout: DashboardWidget[],
+  kind: WidgetKind,
+): DashboardWidget[] {
   if (layout.length >= MAX_WIDGETS) return layout;
   if (layout.some((widget) => widget.kind === kind)) return layout;
 
   const preset = WIDGET_CATALOG[kind];
-  const bottom = layout.reduce((max, widget) => Math.max(max, widget.y + widget.h), 0);
+  const bottom = layout.reduce(
+    (max, widget) => Math.max(max, widget.y + widget.h),
+    0,
+  );
 
   return normaliseLayout([
     ...layout,
-    { id: kind, kind, x: 0, y: bottom, w: preset.w, h: preset.h, pinned: false },
+    {
+      id: kind,
+      kind,
+      x: 0,
+      y: bottom,
+      w: preset.w,
+      h: preset.h,
+      pinned: false,
+    },
   ]);
 }
 
-export function removeWidget(layout: DashboardWidget[], id: string): DashboardWidget[] {
+export function removeWidget(
+  layout: DashboardWidget[],
+  id: string,
+): DashboardWidget[] {
   return layout.filter((widget) => widget.id !== id);
 }
 
-export function togglePin(layout: DashboardWidget[], id: string): DashboardWidget[] {
+export function togglePin(
+  layout: DashboardWidget[],
+  id: string,
+): DashboardWidget[] {
   return normaliseLayout(
-    layout.map((widget) => (widget.id === id ? { ...widget, pinned: !widget.pinned } : widget)),
+    layout.map((widget) =>
+      widget.id === id ? { ...widget, pinned: !widget.pinned } : widget,
+    ),
   );
 }
 
-export type MoveDirection = 'up' | 'down';
+export type MoveDirection = "up" | "down";
 
 /**
  * Reorders the dashboard. Pinned widgets form a block at the top, so moving an
@@ -130,7 +159,7 @@ export function moveWidget(
   const index = layout.findIndex((widget) => widget.id === id);
   if (index < 0) return layout;
 
-  const target = direction === 'up' ? index - 1 : index + 1;
+  const target = direction === "up" ? index - 1 : index + 1;
   if (target < 0 || target >= layout.length) return layout;
 
   const widget = layout[index];

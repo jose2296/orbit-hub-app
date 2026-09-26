@@ -1,0 +1,1 @@
+ALTER TABLE "workspaces" ADD COLUMN "color" varchar(16) DEFAULT 'slate' NOT NULL;

@@ -14,6 +14,7 @@ import {
   ITEM_ICONS,
   LIST_KINDS,
   LIST_ORDER_MODES,
+  WORKSPACE_COLORS,
   MEMBERSHIP_ROLE_RANK,
   SYNC_ENTITIES,
   SYNC_WRITABLE_FIELDS,
@@ -138,6 +139,15 @@ function sanitisePayload(
       // An order from a newer build falls back to manual, which is the order
       // the items are already in: a list is never left unreadable.
       clean[key] = LIST_ORDER_MODES.includes(value as ListOrderModeName) ? value : 'manual';
+      continue;
+    }
+
+    if (key === 'color') {
+      // A colour out of the eight the app offers. An unknown one falls back to
+      // the default rather than to nothing, because a space with no colour is a
+      // card with no colour to read.
+      const color = String(value);
+      clean[key] = (WORKSPACE_COLORS as readonly string[]).includes(color) ? color : 'slate';
       continue;
     }
 
@@ -290,11 +300,13 @@ export class SyncService {
 
       switch (entity) {
         case 'workspace': {
+          // Every writable field flows through from the sanitised payload, and
+          // only the ones with no default are filled in here, for the same
+          // reason the list and the item are built that way.
           const row = await syncRepository.insertEntity('workspace', {
+            ...payload,
             id: operation.entityId,
             name: (payload['name'] as string) ?? 'Workspace',
-            description: (payload['description'] as string) ?? null,
-            emoji: (payload['emoji'] as string) ?? null,
           });
           // The creator owns what they create.
           await syncRepository.addMembership(row.id, userId, 'owner');

@@ -15,6 +15,7 @@ import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { Card } from "@/components/ui/card";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
+import { WorkspaceColorPicker } from "@/components/workspace/workspace-color-picker";
 import { useLists } from "@/hooks/use-lists";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { pluralKey, useTranslation } from "@/lib/i18n";
@@ -34,7 +35,7 @@ export default function WorkspaceScreen() {
   const router = useRouter();
   const { workspaceId } = useLocalSearchParams<{ workspaceId: string }>();
 
-  const { workspaces, deleteWorkspace } = useWorkspaces();
+  const { workspaces, updateWorkspace, deleteWorkspace } = useWorkspaces();
   const { folders, isLoading, createFolder } = useFolders(workspaceId);
   const { lists, createList } = useLists({ workspaceId });
 
@@ -169,6 +170,21 @@ export default function WorkspaceScreen() {
       />
 
       <FloatingCreateButton onPress={() => setCreateOpen(true)} />
+
+      {workspace ? (
+        <Card variant="outlined" style={{ gap: theme.spacing.md }}>
+          {/* The colour of a space, right where the space is: it is the colour
+              of every card this space makes, so it is asked for here and not in
+              a settings screen somebody has to find. */}
+          <View style={{ gap: theme.spacing.sm }}>
+            <AppText variant="bodyStrong">{t("workspaces.colorLabel")}</AppText>
+            <WorkspaceColorPicker
+              value={workspace.color}
+              onPick={(color) => void updateWorkspace(workspace, { color })}
+            />
+          </View>
+        </Card>
+      ) : null}
 
       {workspace ? (
         <Card variant="outlined" style={{ gap: theme.spacing.md }}>

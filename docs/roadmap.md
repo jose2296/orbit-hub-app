@@ -299,15 +299,15 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | 20b | Menú por carpeta: crear una lista dentro, renombrar, eliminar | Hecho y verificado. Eliminar una carpeta **no** borra las listas de dentro: se quedan sin carpeta | — |
 | 20c | Botón de menú visible en cada fila | Estaba solo en la pulsación larga, que en web no existe. Ahora hay un botón `⋯` | — |
 | 20d | Compartir, y el menú del espacio | Sin empezar. Compartir necesita tabla de invitaciones, token, correo y pantalla de aceptar | — |
+| 21 | Panel con `w`/`h` por tarjeta, colocar y guardar, como el de la app antigua | Hecho y verificado. Las tarjetas son las listas de cada persona, se ponen de un color a otro, se colocan con un lápiz y se guardan con Guardar | `e2c1a0b` |
+| 22 | El color de cada espacio, obligatorio | Hecho y verificado. Ocho colores, se elige en la pantalla del espacio, y las tarjetas del panel se pintan con él | `e2c1a0b` |
 
 ### Sin empezar
 
 | # | Qué se pidió | Notas |
 | --- | --- | --- |
-| 21 | Panel con posición y tamaño de cada tarjeta editables | Hoy el masonry existe y las tarjetas se ordenan, pero no se mueven ni se redimensionan. El modelo ya tiene `x/y/w/h` en 12 columnas y falta la edición |
-| 22 | Cada espacio con su color | El modelo **no tiene color**: hay que añadirlo a `workspaces`, migrar, y teñir las tarjetas de cada espacio |
-| 23 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | La lista de la compra no tiene nada de esto |
-| 24 | Escritorio: cajón lateral, ancho máximo | Todo está pensado para móvil; la versión ancha es la de móvil estirada |
+| 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | La lista de la compra no tiene nada de esto |
+| 23 | Escritorio: cajón lateral, ancho máximo | Todo está pensado para móvil; la versión ancha es la de móvil estirada |
 | 25 | Los detalles con el aspecto de los de la app vieja | Hay datos, no la maquetación |
 | 26 | Compartir de verdad (invitar a alguien) | La API solo tiene leer miembros. Invitar es un bloque entero: tabla de invitaciones, token, correo y pantalla de aceptar |
 

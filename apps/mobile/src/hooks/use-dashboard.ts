@@ -2,13 +2,6 @@ import type { DashboardWidget } from "@orbit-hub/contracts";
 import { useCallback, useEffect, useState } from "react";
 
 import { DEFAULT_LAYOUT, normaliseLayout } from "@/lib/dashboard/layout";
-import {
-  addWidget,
-  compactLayout,
-  moveWidget,
-  removeWidget,
-  togglePin,
-} from "@/lib/dashboard/layout";
 import type { CachedEntity } from "@/lib/offline/local-store";
 import { resolveDashboardRow } from "@/lib/offline/dashboard-row";
 import {
@@ -93,34 +86,6 @@ export function useDashboard() {
     [load],
   );
 
-  const add = useCallback(
-    async (kind: DashboardWidget["kind"]) => {
-      await save(addWidget(layout, kind));
-    },
-    [layout, save],
-  );
-
-  const remove = useCallback(
-    async (id: string) => {
-      await save(compactLayout(removeWidget(layout, id)));
-    },
-    [layout, save],
-  );
-
-  const pin = useCallback(
-    async (id: string) => {
-      await save(togglePin(layout, id));
-    },
-    [layout, save],
-  );
-
-  const move = useCallback(
-    async (id: string, direction: "up" | "down") => {
-      await save(moveWidget(layout, id, direction));
-    },
-    [layout, save],
-  );
-
   const refresh = useCallback(async () => {
     await pullIntoCache();
     await load();
@@ -130,5 +95,5 @@ export function useDashboard() {
     await save(normaliseLayout(DEFAULT_LAYOUT));
   }, [save]);
 
-  return { layout, isLoading, add, remove, pin, move, refresh, reset, save };
+  return { layout, isLoading, refresh, reset, save };
 }

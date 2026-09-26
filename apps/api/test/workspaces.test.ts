@@ -22,7 +22,7 @@ afterAll(async () => {
 });
 
 /** Creates a workspace through the sync engine, like the app does. */
-async function createWorkspace(user: TestUser, name: string, emoji?: string) {
+async function createWorkspace(user: TestUser, name: string, emoji?: string, color?: string) {
   const id = randomUUID();
   const response = await api.post(
     '/sync/push',
@@ -37,7 +37,7 @@ async function createWorkspace(user: TestUser, name: string, emoji?: string) {
           kind: 'create',
           entityId: id,
           baseVersion: 0,
-          payload: { name, ...(emoji ? { emoji } : {}) },
+          payload: { name, ...(emoji ? { emoji } : {}), ...(color ? { color } : {}) },
           base: null,
           clientTimestamp: new Date().toISOString(),
         },
@@ -121,6 +121,23 @@ describe('GET /workspaces', () => {
     expect(workspace.memberCount).toBe(1);
     expect(workspace.emoji).toBe('🏡');
     expect(workspace.deletedAt).toBeNull();
+  });
+
+  it('keeps the colour of a space and refuses one it does not know', async () => {
+    // The colour is how a space is told apart from another one and how its cards
+    // are painted on the panel, so a space with no colour is a space whose cards
+    // have nothing to be painted with.
+    const user = await createVerifiedUser(api);
+    const teal = await createWorkspace(user, 'Casa', undefined, 'teal');
+    const stranger = await createWorkspace(user, 'Imposible', undefined, 'fucsia');
+
+    const response = await api.get('/workspaces', user.accessToken);
+    const items = response.body.data.items as { id: string; color: string }[];
+
+    expect(items.find((item) => item.id === teal)?.color).toBe('teal');
+    // An unknown colour falls back to the default instead of to nothing, and the
+    // rest of the space is kept: refusing a colour must not cost a space.
+    expect(items.find((item) => item.id === stranger)?.color).toBe('slate');
   });
 
   it('hides a deleted workspace from the list', async () => {

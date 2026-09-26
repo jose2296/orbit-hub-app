@@ -1,11 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, View } from 'react-native';
-import type { ViewStyle } from 'react-native';
+import { Ionicons } from "@expo/vector-icons";
+import type { ReactNode } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
+import type { ViewStyle } from "react-native";
 
-import { useTheme } from '@/theme';
+import { useTheme } from "@/theme";
 
-import type { IconName } from './button';
-import { AppText } from './text';
+import type { IconName } from "./button";
+import { AppText } from "./text";
 
 export interface SectionHeaderProps {
   title: string;
@@ -15,7 +16,13 @@ export interface SectionHeaderProps {
   style?: ViewStyle;
 }
 
-export function SectionHeader({ title, subtitle, actionLabel, onAction, style }: SectionHeaderProps) {
+export function SectionHeader({
+  title,
+  subtitle,
+  actionLabel,
+  onAction,
+  style,
+}: SectionHeaderProps) {
   const theme = useTheme();
 
   return (
@@ -45,6 +52,13 @@ export function SectionHeader({ title, subtitle, actionLabel, onAction, style }:
 }
 
 export interface ListRowProps {
+  /**
+   * What goes before the title.
+   *
+   * The colour of the space a row belongs to goes here, so a list of spaces is
+   * told apart by something other than its name.
+   */
+  leading?: ReactNode;
   title: string;
   subtitle?: string;
   icon?: IconName;
@@ -61,6 +75,7 @@ export function ListRow({
   title,
   subtitle,
   icon,
+  leading,
   onPress,
   rightLabel,
   chevron = false,
@@ -72,12 +87,15 @@ export function ListRow({
 
   const content = (
     <>
+      {leading ?? null}
       {icon ? (
         <View
           style={[
             styles.icon,
             {
-              backgroundColor: destructive ? theme.colors.dangerSoft : theme.colors.accentSoft,
+              backgroundColor: destructive
+                ? theme.colors.dangerSoft
+                : theme.colors.accentSoft,
               borderRadius: theme.radius.sm,
             },
           ]}
@@ -85,12 +103,14 @@ export function ListRow({
           <Ionicons
             name={icon}
             size={18}
-            color={destructive ? theme.colors.danger : theme.colors.accentSoftText}
+            color={
+              destructive ? theme.colors.danger : theme.colors.accentSoftText
+            }
           />
         </View>
       ) : null}
       <View style={styles.flex}>
-        <AppText variant="bodyStrong" tone={destructive ? 'danger' : 'default'}>
+        <AppText variant="bodyStrong" tone={destructive ? "danger" : "default"}>
           {title}
         </AppText>
         {subtitle ? (
@@ -104,13 +124,25 @@ export function ListRow({
           {rightLabel}
         </AppText>
       ) : null}
-      {chevron ? <Ionicons name="chevron-forward" size={18} color={theme.colors.textSubtle} /> : null}
+      {chevron ? (
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={theme.colors.textSubtle}
+        />
+      ) : null}
     </>
   );
 
   if (!onPress) {
     return (
-      <View style={[styles.row, { gap: theme.spacing.md, paddingVertical: theme.spacing.md }, style]}>
+      <View
+        style={[
+          styles.row,
+          { gap: theme.spacing.md, paddingVertical: theme.spacing.md },
+          style,
+        ]}
+      >
         {content}
       </View>
     );
@@ -138,8 +170,8 @@ export function ListRow({
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   flex: {
     flex: 1,
@@ -147,7 +179,7 @@ const styles = StyleSheet.create({
   icon: {
     width: 34,
     height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

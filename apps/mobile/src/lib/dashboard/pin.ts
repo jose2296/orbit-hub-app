@@ -1,4 +1,4 @@
-import type { DashboardWidget, List } from '@orbit-hub/contracts';
+import type { DashboardWidget, List } from "@orbit-hub/contracts";
 
 /**
  * Pinning a list to the dashboard.
@@ -18,20 +18,27 @@ const HEADER_ROWS = 4;
 
 /** A card that says which list it is, which the dashboard needs and cannot guess. */
 export function listWidget(list: List): DashboardWidget {
+  // A third of a phone and one row: a card is a thing to tap, not a column of
+  // colour, and somebody who wants it bigger has six sizes to choose from.
   return {
     id: `list:${list.id}`,
-    kind: 'recent_lists',
+    kind: "recent_lists",
     x: 0,
     y: 0,
-    w: 3,
-    h: 4,
+    w: 4,
+    h: 1,
     pinned: true,
-    settings: { listId: list.id, title: list.title, kind: list.kind, emoji: list.emoji },
+    settings: {
+      listId: list.id,
+      title: list.title,
+      kind: list.kind,
+      emoji: list.emoji,
+    },
   };
 }
 
 export function isPinned(layout: DashboardWidget[], listId: string): boolean {
-  return layout.some((widget) => widget.settings?.['listId'] === listId);
+  return layout.some((widget) => widget.settings?.["listId"] === listId);
 }
 
 /**
@@ -41,11 +48,17 @@ export function isPinned(layout: DashboardWidget[], listId: string): boolean {
  * row below them. A card that lands on top of another one hides it, and a
  * dashboard where half the cards are unreachable is worse than a long one.
  */
-export function withPinnedList(layout: DashboardWidget[], list: List): DashboardWidget[] {
+export function withPinnedList(
+  layout: DashboardWidget[],
+  list: List,
+): DashboardWidget[] {
   if (isPinned(layout, list.id)) return layout;
 
   const widget = listWidget(list);
-  const bottom = layout.reduce((lowest, row) => Math.max(lowest, row.y + row.h), HEADER_ROWS);
+  const bottom = layout.reduce(
+    (lowest, row) => Math.max(lowest, row.y + row.h),
+    HEADER_ROWS,
+  );
   return [...layout, { ...widget, x: 0, y: bottom }];
 }
 
@@ -54,7 +67,7 @@ export function withoutPinnedList(
   layout: DashboardWidget[],
   listId: string,
 ): DashboardWidget[] {
-  return layout.filter((widget) => widget.settings?.['listId'] !== listId);
+  return layout.filter((widget) => widget.settings?.["listId"] !== listId);
 }
 
 /**
@@ -63,7 +76,10 @@ export function withoutPinnedList(
  * A grid of twelve columns and a card three wide always has room, and this says
  * so rather than letting the dashboard discover it with a card off the edge.
  */
-export function fits(widget: DashboardWidget, taken: DashboardWidget[]): boolean {
+export function fits(
+  widget: DashboardWidget,
+  taken: DashboardWidget[],
+): boolean {
   if (widget.x + widget.w > COLUMNS) return false;
   return !taken.some(
     (other) =>

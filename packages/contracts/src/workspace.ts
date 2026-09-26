@@ -22,10 +22,39 @@ export const membershipSchema = z.object({
 });
 export type Membership = z.infer<typeof membershipSchema>;
 
+/**
+ * The colours a space can be painted with.
+ *
+ * They live in the contract because the server refuses a colour it does not know
+ * and the app cannot draw one that is not here, and neither of them can be a
+ * step behind the other.
+ */
+export const WORKSPACE_COLORS = [
+  'teal',
+  'indigo',
+  'rose',
+  'amber',
+  'moss',
+  'sky',
+  'violet',
+  'slate',
+] as const;
+export const workspaceColorSchema = z.enum(WORKSPACE_COLORS);
+export type WorkspaceColor = z.infer<typeof workspaceColorSchema>;
+
 export const workspaceSchema = syncableEntitySchema.extend({
   name: z.string().trim().min(1).max(80),
   description: z.string().max(500).nullable().default(null),
   emoji: z.string().max(16).nullable().default(null),
+  /**
+   * The colour this space is painted with, out of the eight the app offers.
+   *
+   * A key and not a hex value: the person picks from the eight and the app
+   * draws them, so there is no colour nobody can read and no need for a colour
+   * picker to exist on a phone. A space written before there were colours reads
+   * with the default one.
+   */
+  color: workspaceColorSchema.default('slate'),
   role: membershipRoleSchema,
   memberCount: z.int().min(1),
 });

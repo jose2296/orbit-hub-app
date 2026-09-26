@@ -1,4 +1,6 @@
 import type { Folder, Workspace } from "@orbit-hub/contracts";
+
+import { DEFAULT_WORKSPACE_COLOR } from "@/lib/workspace/color";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -47,8 +49,31 @@ export function useWorkspaces() {
     [load],
   );
 
+  /**
+   * Changes what a space is called and what colour it is.
+   *
+   * The colour is the one field of a space a person goes back and forth on, so
+   * it is a write like any other: local first, into the outbox, and the space
+   * changes colour the moment they tap and syncs when there is a connection.
+   */
+  const updateWorkspace = useCallback(
+    async (
+      workspace: Workspace,
+      changes: { name?: string; description?: string | null; color?: string },
+    ) => {
+      await localUpdate("workspace", workspace.id, changes);
+      await load();
+    },
+    [load],
+  );
+
   const createWorkspace = useCallback(
-    async (input: { name: string; emoji?: string; description?: string }) => {
+    async (input: {
+      name: string;
+      emoji?: string;
+      description?: string;
+      color?: string;
+    }) => {
       const { randomUUID } = await import("expo-crypto");
       const id = randomUUID();
       const store = await getLocalStoreReady();
@@ -67,6 +92,10 @@ export function useWorkspaces() {
             name: input.name,
             description: input.description ?? null,
             emoji: input.emoji ?? null,
+            // The colour a space is painted with travels with it from the start:
+            // a space created without one would be a card with no colour to read
+            // until somebody remembered to pick it.
+            color: input.color ?? DEFAULT_WORKSPACE_COLOR,
             version: 0,
             createdAt: now,
             updatedAt: now,
@@ -85,6 +114,7 @@ export function useWorkspaces() {
         baseVersion: 0,
         payload: {
           name: input.name,
+          color: input.color ?? DEFAULT_WORKSPACE_COLOR,
           ...(input.emoji ? { emoji: input.emoji } : {}),
           ...(input.description ? { description: input.description } : {}),
         },
@@ -140,6 +170,7 @@ export function useWorkspaces() {
     refresh,
     createWorkspace,
     renameWorkspace,
+    updateWorkspace,
     deleteWorkspace,
   };
 }

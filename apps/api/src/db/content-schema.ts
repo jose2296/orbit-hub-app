@@ -16,6 +16,7 @@ import { users } from './auth-schema';
 import type {
   ListKindName,
   ListOrderModeName,
+  WorkspaceColorName,
   MembershipRoleName,
   SyncEntityName,
 } from './constants';
@@ -31,6 +32,10 @@ export const workspaces = pgTable(
     name: varchar('name', { length: 80 }).notNull(),
     description: varchar('description', { length: 500 }),
     emoji: varchar('emoji', { length: 16 }),
+    // A key out of the eight the app offers and not a hex value: the person picks
+    // from the eight and the app draws them, so there is no colour nobody can
+    // read on a card.
+    color: varchar('color', { length: 16 }).$type<WorkspaceColorName>().notNull().default('slate'),
     /** Optimistic concurrency token, compared against the client's baseVersion. */
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
