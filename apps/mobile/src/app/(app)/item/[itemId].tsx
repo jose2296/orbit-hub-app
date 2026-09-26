@@ -1,24 +1,28 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 
-import { useListItems, useLists } from '@/hooks/use-lists';
-import { useScreenTitle } from '@/hooks/use-screen-title';
-import { Image, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { useListItems, useLists } from "@/hooks/use-lists";
+import { useScreenTitle } from "@/hooks/use-screen-title";
+import { Image, Linking, Pressable, StyleSheet, View } from "react-native";
 
-import type { CatalogDetails, CatalogRelated } from '@orbit-hub/contracts';
+import type { CatalogDetails, CatalogRelated } from "@orbit-hub/contracts";
 
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
-import { MediaActionsSheet } from '@/components/lists/media-actions-sheet';
-import { MediaCarousel } from '@/components/ui/media-carousel';
-import { Screen } from '@/components/ui/screen';
-import { AppText } from '@/components/ui/text';
-import { api, toApiError } from '@/lib/api';
-import { useTranslation } from '@/lib/i18n';
-import { stripHtml } from '@/lib/text/html';
-import { useTheme } from '@/theme';
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ExpandableText } from "@/components/media/expandable-text";
+import { Rating } from "@/components/media/rating";
+import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
+import { MediaCarousel } from "@/components/ui/media-carousel";
+import { Screen } from "@/components/ui/screen";
+import { AppText } from "@/components/ui/text";
+import { api, toApiError } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
+import { statusKeyOf } from "@/lib/media/status";
+import { stripHtml } from "@/lib/text/html";
+import { useTheme } from "@/theme";
 
 /**
  * Detail of a film, a series or a book.
@@ -57,7 +61,10 @@ export default function ItemDetailsScreen() {
    */
   const { items, toggleCompleted } = useListItems(itemId);
   const item = useMemo(
-    () => items.find((row) => (itemKey ? row.id === itemKey : row.externalId === externalId)) ?? null,
+    () =>
+      items.find((row) =>
+        itemKey ? row.id === itemKey : row.externalId === externalId,
+      ) ?? null,
     [items, itemKey, externalId],
   );
   const [menuOpen, setMenuOpen] = useState(false);
@@ -69,13 +76,14 @@ export default function ItemDetailsScreen() {
    * in. Which provider answered for the record comes from the item itself,
    * never from here: that is the whole point of `providerRefOf`.
    */
-  const listKind = useLists({}).lists.find((row) => row.id === itemId)?.kind ?? kind;
-  const isBookItem = listKind === 'books';
+  const listKind =
+    useLists({}).lists.find((row) => row.id === itemId)?.kind ?? kind;
+  const isBookItem = listKind === "books";
 
   // Before any early return: a hook behind one is called a different number of
   // times while loading and once it has failed, and React stops believing the
   // order of the calls from then on.
-  useScreenTitle(name ?? item?.title ?? title ?? t('itemDetails.loading'));
+  useScreenTitle(name ?? item?.title ?? title ?? t("itemDetails.loading"));
 
   useEffect(() => {
     // A row with no provider record is not a failed request: there is nothing
@@ -107,9 +115,9 @@ export default function ItemDetailsScreen() {
         if (!active) return;
         const apiError = toApiError(caught);
         setError(
-          apiError.kind === 'network' || apiError.kind === 'timeout'
-            ? t('itemDetails.offline')
-            : apiError.message || t('itemDetails.generic'),
+          apiError.kind === "network" || apiError.kind === "timeout"
+            ? t("itemDetails.offline")
+            : apiError.message || t("itemDetails.generic"),
         );
       })
       .finally(() => {
@@ -124,7 +132,7 @@ export default function ItemDetailsScreen() {
   if (isLoading) {
     return (
       <Screen>
-        <EmptyState icon="hourglass-outline" title={t('common.loading')} />
+        <EmptyState icon="hourglass-outline" title={t("common.loading")} />
       </Screen>
     );
   }
@@ -138,11 +146,11 @@ export default function ItemDetailsScreen() {
         <Card variant="muted" style={{ gap: theme.spacing.md }}>
           <AppText variant="title">{item.title}</AppText>
           <AppText variant="body" tone="muted">
-            {t('itemDetails.noRecord')}
+            {t("itemDetails.noRecord")}
           </AppText>
           {item.tags.length > 0 ? (
             <AppText variant="caption" tone="accent">
-              {item.tags.join(' · ')}
+              {item.tags.join(" · ")}
             </AppText>
           ) : null}
           {item.notes ? (
@@ -154,12 +162,19 @@ export default function ItemDetailsScreen() {
 
         <View style={[styles.actions, { gap: theme.spacing.sm }]}>
           <Button
-            label={isBookItem ? t('itemDetails.findBook') : t('itemDetails.findTitle')}
+            label={
+              isBookItem
+                ? t("itemDetails.findBook")
+                : t("itemDetails.findTitle")
+            }
             icon="search"
             onPress={() =>
               router.push({
-                pathname: '/(app)/catalog',
-                params: { listId: itemId, kind: isBookItem ? 'books' : 'movies' },
+                pathname: "/(app)/catalog",
+                params: {
+                  listId: itemId,
+                  kind: isBookItem ? "books" : "movies",
+                },
               })
             }
           />
@@ -170,13 +185,13 @@ export default function ItemDetailsScreen() {
             label={
               isBookItem
                 ? item.completed
-                  ? t('mediaActions.markAsUnread')
-                  : t('mediaActions.markAsRead')
+                  ? t("mediaActions.markAsUnread")
+                  : t("mediaActions.markAsRead")
                 : item.completed
-                  ? t('mediaActions.markAsUnseen')
-                  : t('mediaActions.markAsSeen')
+                  ? t("mediaActions.markAsUnseen")
+                  : t("mediaActions.markAsSeen")
             }
-            icon={item.completed ? 'eye-off-outline' : 'eye-outline'}
+            icon={item.completed ? "eye-off-outline" : "eye-outline"}
             variant="secondary"
             onPress={() => void toggleCompleted(item)}
           />
@@ -190,19 +205,22 @@ export default function ItemDetailsScreen() {
       <Screen>
         <EmptyState
           icon="alert-circle-outline"
-          title={t('common.error')}
-          description={error ?? t('itemDetails.generic')}
+          title={t("common.error")}
+          description={error ?? t("itemDetails.generic")}
         />
-        <Button label={t('common.back')} variant="secondary" onPress={() => router.back()} />
+        <Button
+          label={t("common.back")}
+          variant="secondary"
+          onPress={() => router.back()}
+        />
       </Screen>
     );
   }
 
-  const isBook = details.kind === 'books';
-  const isSeries = details.kind === 'tv';
+  const isBook = details.kind === "books";
+  const isSeries = details.kind === "tv";
   const collection = details.collection ?? null;
   const related = details.related ?? [];
-
 
   /** A poster reference rendered as a carousel card, which opens on tap. */
   const toCarouselItem = (item: CatalogRelated) => ({
@@ -213,7 +231,7 @@ export default function ItemDetailsScreen() {
     badge: null,
     onPress: () =>
       router.push({
-        pathname: '/(app)/item/[itemId]',
+        pathname: "/(app)/item/[itemId]",
         params: {
           itemId: item.externalId,
           kind: details.kind,
@@ -229,133 +247,172 @@ export default function ItemDetailsScreen() {
         <Image
           source={{ uri: details.backdropUrl }}
           resizeMode="cover"
-          style={[styles.backdrop, { backgroundColor: theme.colors.surfaceMuted }]}
+          style={[
+            styles.backdrop,
+            { backgroundColor: theme.colors.surfaceMuted },
+          ]}
         />
       ) : null}
 
       <View style={{ gap: theme.spacing.lg }}>
         <View style={[styles.header, { gap: theme.spacing.lg }]}>
-          {details.imageUrl ? (
-            <Image
-              source={{ uri: details.imageUrl }}
-              resizeMode="cover"
-              style={[
-                styles.poster,
-                { borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceMuted },
-              ]}
-            />
-          ) : (
-            <View
-              style={[
-                styles.poster,
-                styles.posterFallback,
-                { borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceMuted },
-              ]}
-            >
-              <Ionicons
-                name={isBook ? 'book-outline' : 'film-outline'}
-                size={28}
-                color={theme.colors.textMuted}
+          {/* The poster, and beside it the two things a person comes here to do.
+              On a wide screen they stand next to the cover, where the eye lands
+              first; on a phone they fall under it, because there is no room to
+              the side of a cover. */}
+          <View style={[styles.cover, { gap: theme.spacing.md }]}>
+            {details.imageUrl ? (
+              <Image
+                source={{ uri: details.imageUrl }}
+                resizeMode="cover"
+                style={[
+                  styles.poster,
+                  {
+                    borderRadius: theme.radius.md,
+                    backgroundColor: theme.colors.surfaceMuted,
+                  },
+                ]}
               />
-            </View>
-          )}
+            ) : (
+              <View
+                style={[
+                  styles.poster,
+                  styles.posterFallback,
+                  {
+                    borderRadius: theme.radius.md,
+                    backgroundColor: theme.colors.surfaceMuted,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={isBook ? "book-outline" : "film-outline"}
+                  size={28}
+                  color={theme.colors.textMuted}
+                />
+              </View>
+            )}
 
-          <View style={[styles.headerText, { gap: theme.spacing.xs }]}>
+            {details.score !== null ? (
+              <Rating score={details.score} outOf={details.scoreOutOf} />
+            ) : null}
+
+            {/* The actions on the title and not only on its card in the list: the
+                detail is where a person comes to decide what to do with it. */}
+            {item ? (
+              <View style={[styles.actions, { gap: theme.spacing.sm }]}>
+                <ActionButton
+                  icon={item.completed ? "eye-off-outline" : "eye-outline"}
+                  label={
+                    isBook
+                      ? item.completed
+                        ? t("mediaActions.markAsUnread")
+                        : t("mediaActions.markAsRead")
+                      : item.completed
+                        ? t("mediaActions.markAsUnseen")
+                        : t("mediaActions.markAsSeen")
+                  }
+                  onPress={() => void toggleCompleted(item)}
+                />
+                <ActionButton
+                  icon="ellipsis-horizontal"
+                  label={t("mediaActions.moreActions")}
+                  onPress={() => setMenuOpen(true)}
+                />
+              </View>
+            ) : null}
+          </View>
+
+          <View style={[styles.headerText, { gap: theme.spacing.sm }]}>
             {details.tagline ? (
-              <AppText variant="callout" tone="muted">
+              <AppText variant="title" style={styles.tagline}>
                 {details.tagline}
               </AppText>
             ) : null}
 
+            {details.overview ? (
+              <ExpandableText text={stripHtml(details.overview)} lines={6} />
+            ) : null}
+
+            {/* The facts as a sentence and not as a table: the year, what it is,
+                where it stands, how long it takes. A two column table of labels
+                and values turns five short pieces of information into five rows
+                to scroll past. */}
             <View style={[styles.badges, { gap: theme.spacing.xs }]}>
-              {details.released ? <Badge label={details.released} /> : null}
-              {details.kind === 'movies' ? <Badge label={t('itemDetails.movie')} /> : null}
-              {isSeries ? <Badge label={t('itemDetails.series')} /> : null}
-              {isBook ? <Badge label={t('itemDetails.book')} /> : null}
-              {details.score !== null ? (
-                // The scale travels with the score: a book rated 3 out of 5 shown
-                // as 3/10 reads like a book nobody liked.
+              {details.released ? (
+                <AppText variant="callout">{details.released}</AppText>
+              ) : null}
+              {isBook ? <Badge label={t("itemDetails.book")} /> : null}
+              {isSeries ? <Badge label={t("itemDetails.series")} /> : null}
+              {!isBook && !isSeries ? (
+                <Badge label={t("itemDetails.movie")} />
+              ) : null}
+              {/* The status comes from the provider in English, and it sits next
+                  to a badge in the person's language. Half a sentence in each
+                  language is how a screen starts to look machine made. */}
+              {details.status ? (
                 <Badge
-                  label={`${details.score.toFixed(1)}/${details.scoreOutOf}`}
-                  tone="accent"
+                  label={
+                    statusKeyOf(details.status)
+                      ? t(statusKeyOf(details.status) as never)
+                      : details.status
+                  }
                 />
               ) : null}
+              {details.runtime ? (
+                <AppText variant="callout" tone="muted">
+                  {isBook
+                    ? `${details.runtime} ${t("itemDetails.pages")}`
+                    : `${details.runtime} ${t("itemDetails.minutes")}`}
+                </AppText>
+              ) : null}
             </View>
-          </View>
-        </View>
 
-        {/* The actions on the title, not only on its card in the list: the
-            detail is where a person goes to decide what to do with it. */}
-        {item ? (
-          <View style={{ gap: theme.spacing.sm }}>
-            <View style={[styles.actions, { gap: theme.spacing.sm }]}>
-              <ActionButton
-                icon={item.completed ? 'eye-off-outline' : 'eye-outline'}
-                label={
-                  isBook
-                    ? item.completed
-                      ? t('mediaActions.markAsUnread')
-                      : t('mediaActions.markAsRead')
-                    : item.completed
-                      ? t('mediaActions.markAsUnseen')
-                      : t('mediaActions.markAsSeen')
-                }
-                onPress={() => void toggleCompleted(item)}
-              />
-              <ActionButton
-                icon="ellipsis-horizontal"
-                label={t('mediaActions.moreActions')}
-                onPress={() => setMenuOpen(true)}
-              />
-            </View>
-            {item.completed ? (
-              <AppText variant="caption" tone="success">
-                {isBook ? t('mediaActions.readItIs') : t('mediaActions.seenItIs')}
+            {details.genres.length > 0 ? (
+              <AppText variant="callout" tone="muted">
+                {details.genres.join(" · ")}
               </AppText>
             ) : null}
           </View>
+        </View>
+
+        {item?.completed ? (
+          <AppText variant="caption" tone="success">
+            {isBook ? t("mediaActions.readItIs") : t("mediaActions.seenItIs")}
+          </AppText>
         ) : null}
 
-        {details.overview ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            <AppText variant="bodyStrong">{t('itemDetails.overview')}</AppText>
-            {/* Google Books returns HTML in the description, and rendering it as
-                text would show the tags themselves. */}
-            <AppText variant="body" tone="muted">
-              {stripHtml(details.overview)}
-            </AppText>
-          </View>
-        ) : null}
-
+        {/* What does not fit in the line under the synopsis: who made it and who
+            is in it. The year, what it is, where it stands, how long it takes
+            and the genres are already in that line, and saying them twice on one
+            screen is a screen where you cannot tell which is the one that counts. */}
         <Card variant="muted" style={{ gap: theme.spacing.sm }}>
           {details.authors.length > 0 ? (
-            <Fact label={t('itemDetails.authors')} value={details.authors.join(', ')} />
+            <Fact
+              label={t("itemDetails.authors")}
+              value={details.authors.join(", ")}
+            />
           ) : null}
           {details.cast && details.cast.length > 0 ? (
-            <Fact label={t('itemDetails.cast')} value={details.cast.slice(0, 6).join(', ')} />
-          ) : null}
-          {details.publisher ? <Fact label={t('itemDetails.publisher')} value={details.publisher} /> : null}
-          {details.runtime ? (
             <Fact
-              label={isBook ? t('itemDetails.pages') : t('itemDetails.runtime')}
-              value={
-                isBook
-                  ? String(details.runtime)
-                  : `${details.runtime} ${t('itemDetails.minutes')}`
-              }
+              label={t("itemDetails.cast")}
+              value={details.cast.slice(0, 6).join(", ")}
+            />
+          ) : null}
+          {details.publisher ? (
+            <Fact
+              label={t("itemDetails.publisher")}
+              value={details.publisher}
             />
           ) : null}
           {details.seasons ? (
             <Fact
-              label={t('itemDetails.seasons')}
+              label={t("itemDetails.seasons")}
               value={`${details.seasons}${
-                details.episodes ? ` · ${details.episodes} ${t('itemDetails.episodes')}` : ''
+                details.episodes
+                  ? ` · ${details.episodes} ${t("itemDetails.episodes")}`
+                  : ""
               }`}
             />
-          ) : null}
-          {details.status ? <Fact label={t('itemDetails.status')} value={details.status} /> : null}
-          {details.genres.length > 0 ? (
-            <Fact label={t('itemDetails.genres')} value={details.genres.join(', ')} />
           ) : null}
         </Card>
 
@@ -370,7 +427,10 @@ export default function ItemDetailsScreen() {
               <Image
                 source={{ uri: collection.backdropUrl }}
                 resizeMode="cover"
-                style={[styles.collectionBanner, { borderRadius: theme.radius.lg }]}
+                style={[
+                  styles.collectionBanner,
+                  { borderRadius: theme.radius.lg },
+                ]}
               />
             ) : null}
             <AppText variant="heading">{collection.name}</AppText>
@@ -385,16 +445,22 @@ export default function ItemDetailsScreen() {
 
         {related.length > 0 ? (
           <View style={{ gap: theme.spacing.sm }}>
-            <AppText variant="heading">{t('itemDetails.related')}</AppText>
+            <AppText variant="heading">{t("itemDetails.related")}</AppText>
             <MediaCarousel items={related.map(toCarouselItem)} />
           </View>
         ) : null}
 
         {details.identifiers && details.identifiers.length > 0 ? (
           <View style={{ gap: theme.spacing.xs }}>
-            <AppText variant="bodyStrong">{t('itemDetails.identifiers')}</AppText>
+            <AppText variant="bodyStrong">
+              {t("itemDetails.identifiers")}
+            </AppText>
             {details.identifiers.slice(0, 3).map((identifier, index) => (
-              <AppText key={`${identifier.type}-${index}`} variant="caption" tone="muted">
+              <AppText
+                key={`${identifier.type}-${index}`}
+                variant="caption"
+                tone="muted"
+              >
                 {identifier.type}: {identifier.identifier}
               </AppText>
             ))}
@@ -403,7 +469,7 @@ export default function ItemDetailsScreen() {
 
         {details.homepage ? (
           <Button
-            label={t('itemDetails.openProvider')}
+            label={t("itemDetails.openProvider")}
             variant="secondary"
             icon="open-outline"
             onPress={() => {
@@ -416,7 +482,7 @@ export default function ItemDetailsScreen() {
         {title ? (
           <Card variant="outlined" style={{ gap: theme.spacing.xs }}>
             <AppText variant="caption" tone="subtle">
-              {t('itemDetails.addedAs')}
+              {t("itemDetails.addedAs")}
             </AppText>
             <AppText variant="bodyStrong">{title}</AppText>
           </Card>
@@ -425,8 +491,8 @@ export default function ItemDetailsScreen() {
 
       <MediaActionsSheet
         item={menuOpen ? item : null}
-        listId={itemId ?? ''}
-        listKind={isBook ? 'books' : isSeries ? 'series' : 'movies'}
+        listId={itemId ?? ""}
+        listKind={isBook ? "books" : isSeries ? "series" : "movies"}
         onClose={() => setMenuOpen(false)}
       />
     </Screen>
@@ -474,25 +540,6 @@ function ActionButton({
   );
 }
 
-function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'accent' }) {
-  const theme = useTheme();
-  return (
-    <View
-      style={[
-        styles.badge,
-        {
-          borderRadius: theme.radius.sm,
-          backgroundColor: tone === 'accent' ? theme.colors.accentSoft : theme.colors.surfaceMuted,
-        },
-      ]}
-    >
-      <AppText variant="caption" tone={tone === 'accent' ? 'accent' : 'muted'}>
-        {label}
-      </AppText>
-    </View>
-  );
-}
-
 function Fact({ label, value }: { label: string; value: string }) {
   const theme = useTheme();
   return (
@@ -509,39 +556,46 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   backdrop: {
-    width: '100%',
+    width: "100%",
     height: 180,
     borderRadius: 16,
   },
   collectionBanner: {
-    width: '100%',
+    width: "100%",
     height: 120,
   },
   header: {
-    flexDirection: 'row',
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  cover: {
+    alignItems: "center",
+  },
+  tagline: {
+    fontStyle: "italic",
   },
   poster: {
     width: 110,
     height: 165,
   },
   posterFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerText: {
     flex: 1,
   },
   badges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
   actions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
   action: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
   badge: {
@@ -549,8 +603,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   fact: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
   },
   factLabel: {
     width: 96,

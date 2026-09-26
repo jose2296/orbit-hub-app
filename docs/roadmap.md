@@ -300,15 +300,16 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | 20c | Botón de menú visible en cada fila | Estaba solo en la pulsación larga, que en web no existe. Ahora hay un botón `⋯` | — |
 | 20d | Compartir, y el menú del espacio | Hecho y verificado con dos personas. Menú del espacio con editar, compartir y eliminar; invitaciones por correo y por enlace, con rol, caducidad, revocar, aceptar y rechazar | `1aa255b` |
 | 21 | Panel con `w`/`h` por tarjeta, colocar y guardar, como el de la app antigua | Hecho y verificado. Las tarjetas son las listas de cada persona, se ponen de un color a otro, se colocan con un lápiz y se guardan con Guardar | `6efb917` |
-| 22 | El color de cada espacio, obligatorio | Hecho y verificado. Ocho colores, se elige en la pantalla del espacio, y las tarjetas del panel se pintan con él | `6efb917` |
+| 22 | El color de cada espacio, obligatorio | Hecho y verificado. Ocho colores, se elige en el menú del espacio, y las tarjetas del panel se pintan con él | `6efb917` |
+| 23 | Escritorio: cajón lateral y ancho máximo | Hecho y verificado a 1280px. En pantalla ancha la navegación pasa a una columna a la izquierda con los espacios y su color, y el contenido se limita a una columna de 720 (1000 el panel) | `2e9ca51` |
+| 26 | Compartir de verdad (invitar a alguien) | Hecho y verificado en navegador con dos personas. La API solo tenía `GET /members`: ahora hay tabla de invitaciones, token, correo, pantalla de aceptar y menú de personas | `1aa255b` |
 
 ### Sin empezar
 
 | # | Qué se pidió | Notas |
 | --- | --- | --- |
 | 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | La lista de la compra no tiene nada de esto |
-| 25 | Los detalles con el aspecto de los de la app vieja | Hay datos, no la maquetación |
-| 26 | Compartir de verdad (invitar a alguien) | Hecho y verificado en navegador: la API tenía `GET /members` y nada más. Ahora hay tabla de invitaciones, token, correo, y la pantalla de aceptar | `1aa255b` |
+| 25 | Los detalles con el aspecto de los de la app vieja | Hecho y verificado. Portada a la izquierda con la nota al lado, lema en grande, sinopsis que se despliega, y los datos en una línea con etiquetas. La colección y los similares siguen siendo el carrusel de portadas que pediste | `DETALLE` |
 
 ### Lo que ya no hace falta decidir
 
@@ -363,6 +364,8 @@ haya 335 pruebas donde antes había 287:
 | **La barra de abajo decía "index", "search" y "settings"** | Las tres pantallas se compartían en un fragmento, y el router lee sus hijos directamente: no ve a través de un fragmento |
 | **El cajón se dibujaba abajo, en la barra** | Faltaba ponerlo a la izquierda; con la barra de abajo encima quedaba una columna de 264px pegada al borde inferior |
 | **El cajón solo salía en las tres pestañas** | Estaba en el layout de las pestañas, así que el panel, una lista o un detalle se quedaban sin navegación |
+| **La etiqueta decía "Released" en una pantalla en español** | El estado viene del proveedor en inglés y salía sin traducir, junto a una etiqueta que sí estaba traducida |
+| **El año, el tipo, el estado y los géneros salían dos veces** | Estaba en la línea de datos y también en la tarjeta de detalles, y no se sabe cuál es la buena |
 
 ### Lo que NO he comprobado
 
