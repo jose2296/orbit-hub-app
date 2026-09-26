@@ -123,6 +123,7 @@ const es = {
   'itemDetails.openProvider': 'Ver en el proveedor',
   'itemDetails.addedAs': 'Añadido a la lista como',
   'itemDetails.missingId': 'No se sabe qué título abrir.',
+  'itemDetails.loading': 'Cargando…',
   'itemDetails.offline':
     'El detalle necesita conexión. El título sigue guardado en tu lista.',
   'itemDetails.generic': 'No se pudo cargar el detalle.',
@@ -462,6 +463,7 @@ const en: Record<TranslationKey, string> = {
   'itemDetails.openProvider': 'Open at the provider',
   'itemDetails.addedAs': 'Added to the list as',
   'itemDetails.missingId': 'There is no title to open.',
+  'itemDetails.loading': 'Loading…',
   'itemDetails.offline': 'The detail needs a connection. The title is still in your list.',
   'itemDetails.generic': 'The detail could not be loaded.',
 

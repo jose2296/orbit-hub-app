@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { CatalogResultRow } from '@/components/catalog/catalog-result-row';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Divider } from '@/components/ui/divider';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -99,7 +98,6 @@ export default function CatalogSearchScreen() {
   return (
     <Screen>
       <View style={{ gap: theme.spacing.xs }}>
-        <AppText variant="title">{t('catalog.title')}</AppText>
         <AppText variant="callout" tone="muted">
           {list ? t('catalog.subtitle', { list: list.title }) : t('catalog.subtitleNoList')}
         </AppText>
@@ -160,17 +158,6 @@ export default function CatalogSearchScreen() {
         <EmptyState icon="search-outline" title={t('catalog.emptyTitle')} />
       ) : null}
 
-      {query.trim().length < CATALOG_MIN_QUERY ? (
-        <Button
-          label={t('catalog.back')}
-          variant="ghost"
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-            else if (listId) router.replace(`/(app)/list/${listId}`);
-            else router.replace('/(app)/(tabs)');
-          }}
-        />
-      ) : null}
     </Screen>
   );
 }

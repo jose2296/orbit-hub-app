@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
+
+import { useScreenTitle } from '@/hooks/use-screen-title';
 import { Image, Linking, StyleSheet, View } from 'react-native';
 
 import type { CatalogDetails, CatalogRelated } from '@orbit-hub/contracts';
@@ -37,6 +39,12 @@ export default function ItemDetailsScreen() {
   const [details, setDetails] = useState<CatalogDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
+
+  // Before any early return: a hook behind one is called a different number of
+  // times while loading and once it has failed, and React stops believing the
+  // order of the calls from then on.
+  useScreenTitle(name ?? title ?? t('itemDetails.loading'));
 
   useEffect(() => {
     if (!kind || !externalId) {
@@ -55,6 +63,9 @@ export default function ItemDetailsScreen() {
         if (active) {
           setDetails(payload);
           setError(null);
+          // The name of the thing, once it is known: the header is what says
+          // where you are.
+          setName(payload.title);
         }
       })
       .catch((caught) => {
@@ -158,7 +169,6 @@ export default function ItemDetailsScreen() {
           )}
 
           <View style={[styles.headerText, { gap: theme.spacing.xs }]}>
-            <AppText variant="title">{details.title}</AppText>
             {details.tagline ? (
               <AppText variant="callout" tone="muted">
                 {details.tagline}

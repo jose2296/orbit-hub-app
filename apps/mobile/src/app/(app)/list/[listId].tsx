@@ -9,15 +9,19 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { DraggableRow } from '@/components/ui/draggable-row';
 import { MediaCarousel } from '@/components/ui/media-carousel';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
+import { useFolders, useWorkspaces } from '@/hooks/use-workspaces';
 import { useListItems, useLists } from '@/hooks/use-lists';
+import { useScreenTitle } from '@/hooks/use-screen-title';
 import { useTranslation } from '@/lib/i18n';
 import { isMediaList, mediaCardOf } from '@/lib/lists/media-card';
 import { useTheme } from '@/theme';
+import type { Crumb } from '@/components/ui/breadcrumbs';
 
 const PRIORITY_TONE = {
   none: 'neutral',
@@ -34,6 +38,16 @@ export default function ListScreen() {
 
   const { lists, deleteList, duplicateList, toggleFavorite } = useLists({});
   const list = useMemo(() => lists.find((item) => item.id === listId) ?? null, [lists, listId]);
+  const { workspaces } = useWorkspaces();
+  const workspace = useMemo(
+    () => workspaces.find((item) => item.id === list?.workspaceId) ?? null,
+    [workspaces, list?.workspaceId],
+  );
+  const { folders } = useFolders(list?.workspaceId);
+  const folder = useMemo(
+    () => folders.find((item) => item.id === list?.folderId) ?? null,
+    [folders, list?.folderId],
+  );
   const {
     items,
     isLoading,
@@ -118,6 +132,18 @@ export default function ListScreen() {
         ? 'lists.kindBooks'
         : 'lists.kindTasks',
   );
+
+  // The header carries the name of the list, so the screen only says what kind
+  // of list it is and where it lives.
+  useScreenTitle(list?.title ?? t('lists.notFound'));
+
+  const crumbs = useMemo(() => {
+    const rows: Crumb[] = [];
+    if (workspace) rows.push({ label: workspace.name, href: `/(app)/workspace/${workspace.id}` });
+    if (folder) rows.push({ label: folder.name, href: `/(app)/workspace/${workspace?.id}` });
+    rows.push({ label: list?.title ?? t('lists.notFound') });
+    return rows;
+  }, [workspace, folder, list?.title, t]);
 
   function openDetails(externalId: string, itemTitle: string) {
     router.push({
@@ -205,10 +231,12 @@ export default function ListScreen() {
    * that keeps the page reading as one screen.
    */
   const header = (
-    <View style={[styles.header, { gap: theme.spacing.xs }]}>
+    <View style={[styles.header, { gap: theme.spacing.sm }]}>
       <View style={styles.headerTop}>
-        <View style={styles.flex}>
-          <AppText variant="title">{list?.title ?? t('lists.notFound')}</AppText>
+        <View style={[styles.flex, { gap: theme.spacing.xxs }]}>
+          {/* The header carries the name of the list; this says what kind of
+              list it is and where it lives. */}
+          <Breadcrumbs crumbs={crumbs} />
           {/* A list called "Tareas" of kind tasks does not need to be told twice
               what it is. */}
           {kindLabel !== list?.title ? (

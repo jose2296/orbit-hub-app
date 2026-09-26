@@ -15,6 +15,7 @@ import { Segmented } from '@/components/ui/segmented';
 import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
 import { useFolders, useWorkspaces } from '@/hooks/use-workspaces';
+import { useScreenTitle } from '@/hooks/use-screen-title';
 import { useLists } from '@/hooks/use-lists';
 import { pluralKey, useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
@@ -94,6 +95,10 @@ export default function WorkspaceScreen() {
   );
   const tree = useMemo(() => buildTree(folders), [folders]);
 
+  // The name of the space is the title of the screen, and the path above it
+  // says which one when you are inside a list of it.
+  useScreenTitle(workspace?.name ?? t('workspaces.title'));
+
   /**
    * The lists grouped by folder, in the order the folders appear, with the ones
    * that have no folder last. Sorting by name inside a group keeps the tree
@@ -155,7 +160,6 @@ export default function WorkspaceScreen() {
   return (
     <Screen>
       <View style={{ gap: theme.spacing.xs }}>
-        <AppText variant="title">{workspace?.name ?? t('workspaces.title')}</AppText>
         {workspace ? (
           <View style={[styles.meta, { gap: theme.spacing.sm }]}>
             <Badge label={t(`workspaces.role.${workspace.role}`)} tone="accent" />
