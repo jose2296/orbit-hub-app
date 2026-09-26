@@ -29,7 +29,7 @@ export default function SyncScreen() {
   };
 
   return (
-    <Screen>
+    <Screen width="grid">
       <Card variant="muted" style={{ gap: theme.spacing.sm }}>
         <AppText variant="heading">{t('sync.subtitle')}</AppText>
         <AppText variant="caption" tone="muted">

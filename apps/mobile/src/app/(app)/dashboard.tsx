@@ -122,7 +122,7 @@ export default function DashboardScreen() {
   );
 
   return (
-    <Screen>
+    <Screen width="grid">
       <PanelGrid
         layout={layout}
         colorOfWidget={colorOfWidget}

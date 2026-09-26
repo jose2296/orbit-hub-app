@@ -360,6 +360,9 @@ haya 335 pruebas donde antes había 287:
 | **"Vas a entrar como Puede editar."** | El nombre del rol es una etiqueta y se había metido en una frase |
 | **"1 personas dentro"** | El número no pasaba por el plural del diccionario |
 | **Un 401 por cada enlace abierto sin sesión** | La pantalla pedía la vista previa antes de saber si había sesión |
+| **La barra de abajo decía "index", "search" y "settings"** | Las tres pantallas se compartían en un fragmento, y el router lee sus hijos directamente: no ve a través de un fragmento |
+| **El cajón se dibujaba abajo, en la barra** | Faltaba ponerlo a la izquierda; con la barra de abajo encima quedaba una columna de 264px pegada al borde inferior |
+| **El cajón solo salía en las tres pestañas** | Estaba en el layout de las pestañas, así que el panel, una lista o un detalle se quedaban sin navegación |
 
 ### Lo que NO he comprobado
 

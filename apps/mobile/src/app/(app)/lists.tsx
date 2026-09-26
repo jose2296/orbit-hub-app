@@ -73,7 +73,7 @@ export default function ListsScreen() {
   }
 
   return (
-    <Screen>
+    <Screen width="grid">
       <View style={{ gap: theme.spacing.md }}>
         <Segmented<Filter>
           value={filter}

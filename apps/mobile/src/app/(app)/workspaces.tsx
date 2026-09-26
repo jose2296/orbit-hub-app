@@ -54,7 +54,7 @@ export default function WorkspacesScreen() {
   }
 
   return (
-    <Screen>
+    <Screen width="grid">
       <View style={[styles.header, { gap: theme.spacing.xs }]}>
         <AppText variant="title">{t('workspaces.title')}</AppText>
         <AppText variant="callout" tone="muted">
