@@ -453,6 +453,7 @@ async function fetchTmdbDetails(
     runtime,
     genres,
     score: payload.vote_average ?? null,
+    scoreOutOf: 10,
     authors: [],
     ...(payload.homepage ? { homepage: payload.homepage } : {}),
     ...(series?.number_of_seasons
@@ -501,6 +502,8 @@ async function fetchGoogleBookDetails(externalId: string): Promise<CatalogDetail
     runtime: info.pageCount ?? null,
     genres: info.categories ?? [],
     score: info.averageRating ?? null,
+    // Google Books rates out of five, not out of ten.
+    scoreOutOf: 5,
     authors,
     ...(info.publisher ? { publisher: info.publisher } : {}),
     ...(info.industryIdentifiers ? { identifiers: info.industryIdentifiers } : {}),

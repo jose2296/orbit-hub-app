@@ -226,6 +226,9 @@ describe('fetchCatalogDetails', () => {
     expect(details.runtime).toBe(136);
     expect(details.genres).toEqual(['Acción', 'Ciencia ficción']);
     expect(details.score).toBe(8.2);
+    // The scale travels with the score: a book rated 3 out of 5 shown as 3/10
+    // reads like a book nobody liked, and that is how it was.
+    expect(details.scoreOutOf).toBe(10);
     expect(details.released).toBe('1999');
     expect(details.cast).toEqual(['Keanu Reeves', 'Carrie-Anne Moss']);
   });
@@ -370,6 +373,8 @@ describe('fetchCatalogDetails', () => {
     expect(details.publisher).toBe('Editorial Sudamericana');
     expect(details.runtime).toBe(471);
     expect(details.score).toBe(4.7);
+    // Google Books rates out of five, not out of ten.
+    expect(details.scoreOutOf).toBe(5);
     expect(details.genres).toEqual(['Fiction', 'Magic realism']);
     expect(details.identifiers?.[0]?.type).toBe('ISBN_10');
   });

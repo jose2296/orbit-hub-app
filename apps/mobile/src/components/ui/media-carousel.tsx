@@ -22,6 +22,8 @@ export interface MediaCarouselItem {
   onToggleCompleted?: () => void;
   /** Opens the menu of what can be done with this title. */
   onMenu?: () => void;
+  /** The menu's own name, so it is not the same control twice on a screen. */
+  menuLabel?: string;
 }
 
 export interface MediaCarouselProps {

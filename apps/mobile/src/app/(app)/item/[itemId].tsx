@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 
-import { useListItems } from '@/hooks/use-lists';
+import { useListItems, useLists } from '@/hooks/use-lists';
 import { useScreenTitle } from '@/hooks/use-screen-title';
 import { Image, Linking, Pressable, StyleSheet, View } from 'react-native';
 
@@ -62,14 +62,28 @@ export default function ItemDetailsScreen() {
   );
   const [menuOpen, setMenuOpen] = useState(false);
 
+  /**
+   * The kind of list the row came from.
+   *
+   * Only used to word a screen and to choose which catalog to look the title up
+   * in. Which provider answered for the record comes from the item itself,
+   * never from here: that is the whole point of `providerRefOf`.
+   */
+  const listKind = useLists({}).lists.find((row) => row.id === itemId)?.kind ?? kind;
+  const isBookItem = listKind === 'books';
+
   // Before any early return: a hook behind one is called a different number of
   // times while loading and once it has failed, and React stops believing the
   // order of the calls from then on.
-  useScreenTitle(name ?? title ?? t('itemDetails.loading'));
+  useScreenTitle(name ?? item?.title ?? title ?? t('itemDetails.loading'));
 
   useEffect(() => {
+    // A row with no provider record is not a failed request: there is nothing
+    // to ask and the screen below shows what the row itself knows. Only a
+    // missing pair of parameters is a mistake, and it is a mistake in the link.
     if (!kind || !externalId) {
-      setError(t('itemDetails.missingId'));
+      setDetails(null);
+      setError(null);
       setIsLoading(false);
       return;
     }
@@ -111,6 +125,62 @@ export default function ItemDetailsScreen() {
     return (
       <Screen>
         <EmptyState icon="hourglass-outline" title={t('common.loading')} />
+      </Screen>
+    );
+  }
+
+  // A title written by hand has no record anywhere to fetch. The screen is not
+  // an error and not an empty one: it is the row itself, with the actions that
+  // apply to a row, and the way to give it a record if it is a real title.
+  if (!details && !error && item) {
+    return (
+      <Screen>
+        <Card variant="muted" style={{ gap: theme.spacing.md }}>
+          <AppText variant="title">{item.title}</AppText>
+          <AppText variant="body" tone="muted">
+            {t('itemDetails.noRecord')}
+          </AppText>
+          {item.tags.length > 0 ? (
+            <AppText variant="caption" tone="accent">
+              {item.tags.join(' · ')}
+            </AppText>
+          ) : null}
+          {item.notes ? (
+            <AppText variant="body" tone="muted">
+              {item.notes}
+            </AppText>
+          ) : null}
+        </Card>
+
+        <View style={[styles.actions, { gap: theme.spacing.sm }]}>
+          <Button
+            label={isBookItem ? t('itemDetails.findBook') : t('itemDetails.findTitle')}
+            icon="search"
+            onPress={() =>
+              router.push({
+                pathname: '/(app)/catalog',
+                params: { listId: itemId, kind: isBookItem ? 'books' : 'movies' },
+              })
+            }
+          />
+          <Button
+            // A book is read rather than watched: the wording follows what the
+            // list holds, and a screen that calls a book "vista" is a screen
+            // that is asking about the wrong thing.
+            label={
+              isBookItem
+                ? item.completed
+                  ? t('mediaActions.markAsUnread')
+                  : t('mediaActions.markAsRead')
+                : item.completed
+                  ? t('mediaActions.markAsUnseen')
+                  : t('mediaActions.markAsSeen')
+            }
+            icon={item.completed ? 'eye-off-outline' : 'eye-outline'}
+            variant="secondary"
+            onPress={() => void toggleCompleted(item)}
+          />
+        </View>
       </Screen>
     );
   }
@@ -203,7 +273,12 @@ export default function ItemDetailsScreen() {
               {isSeries ? <Badge label={t('itemDetails.series')} /> : null}
               {isBook ? <Badge label={t('itemDetails.book')} /> : null}
               {details.score !== null ? (
-                <Badge label={`${details.score.toFixed(1)}/10`} tone="accent" />
+                // The scale travels with the score: a book rated 3 out of 5 shown
+                // as 3/10 reads like a book nobody liked.
+                <Badge
+                  label={`${details.score.toFixed(1)}/${details.scoreOutOf}`}
+                  tone="accent"
+                />
               ) : null}
             </View>
           </View>

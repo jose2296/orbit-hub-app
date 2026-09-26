@@ -34,6 +34,7 @@ import {
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
+import { providerRefOf } from "@/lib/lists/provider-ref";
 import { useTheme } from "@/theme";
 import type { Crumb } from "@/components/ui/breadcrumbs";
 
@@ -205,6 +206,7 @@ export default function ListScreen() {
               completed: item.completed,
               onPress: () => openDetails(item),
               onMenu: () => setMenuFor(item),
+              menuLabel: t("mediaActions.menuOf", { name: item.title }),
             };
           })
         : [],
@@ -248,7 +250,10 @@ export default function ListScreen() {
    * a detail came back with no title at all.
    */
   function openDetails(item: ListItem) {
-    const card = mediaCardOf(item);
+    // Which provider to ask comes from the item. A list of films and series
+    // holds both, a list of tasks is also where a book somebody typed by hand
+    // ends up, and asking the wrong provider returns nothing at all.
+    const ref = providerRefOf(item);
     router.push({
       pathname: "/(app)/item/[itemId]",
       params: {
@@ -256,13 +261,10 @@ export default function ListScreen() {
         itemId: listId,
         // Which row of that list it is, so the detail can tick it off.
         itemKey: item.id,
-        kind:
-          card?.mediaKind === "tv"
-            ? "tv"
-            : list?.kind === "books"
-              ? "books"
-              : "movies",
-        externalId: item.externalId ?? "",
+        // Left empty when the row has no provider record: the detail screen then
+        // shows the row itself instead of an error.
+        kind: ref?.kind ?? "",
+        externalId: ref?.externalId ?? "",
         title: item.title,
       },
     });

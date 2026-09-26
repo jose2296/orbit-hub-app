@@ -89,8 +89,15 @@ export const catalogDetailsSchema = z.object({
   /** Minutes for a film, episode length for a series, pages for a book. */
   runtime: z.number().int().nullable(),
   genres: z.array(z.string()),
-  /** Provider rating out of 10. */
+  /**
+   * The provider's own rating, and what it is a rating out of.
+   *
+   * Two numbers without a scale is a number that lies: a book rated 3 out of 5
+   * shown as "3.0/10" reads like a book nobody liked, when it is one most people
+   * did. The scale travels with the value instead of being assumed.
+   */
   score: z.number().nullable(),
+  scoreOutOf: z.union([z.literal(5), z.literal(10)]),
   authors: z.array(z.string()),
   cast: z.array(z.string()).optional(),
   publisher: z.string().optional(),
