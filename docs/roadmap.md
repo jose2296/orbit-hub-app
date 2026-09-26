@@ -298,7 +298,7 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | 20 | Menú por lista: renombrar, favorita, pinear, duplicar, eliminar | Hecho y verificado. Renombrar, favorita, pinear y duplicar hacen lo que dicen; eliminar avisa de cuántos elementos se van y que no se puede deshacer | — |
 | 20b | Menú por carpeta: crear una lista dentro, renombrar, eliminar | Hecho y verificado. Eliminar una carpeta **no** borra las listas de dentro: se quedan sin carpeta | — |
 | 20c | Botón de menú visible en cada fila | Estaba solo en la pulsación larga, que en web no existe. Ahora hay un botón `⋯` | — |
-| 20d | Compartir, y el menú del espacio | Hecho y verificado con dos personas. Menú del espacio con editar, compartir y eliminar; invitaciones por correo y por enlace, con rol, caducidad, revocar, aceptar y rechazar | `COMPARTIR` |
+| 20d | Compartir, y el menú del espacio | Hecho y verificado con dos personas. Menú del espacio con editar, compartir y eliminar; invitaciones por correo y por enlace, con rol, caducidad, revocar, aceptar y rechazar | `1aa255b` |
 | 21 | Panel con `w`/`h` por tarjeta, colocar y guardar, como el de la app antigua | Hecho y verificado. Las tarjetas son las listas de cada persona, se ponen de un color a otro, se colocan con un lápiz y se guardan con Guardar | `6efb917` |
 | 22 | El color de cada espacio, obligatorio | Hecho y verificado. Ocho colores, se elige en la pantalla del espacio, y las tarjetas del panel se pintan con él | `6efb917` |
 
@@ -308,7 +308,7 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | --- | --- | --- |
 | 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | La lista de la compra no tiene nada de esto |
 | 25 | Los detalles con el aspecto de los de la app vieja | Hay datos, no la maquetación |
-| 26 | Compartir de verdad (invitar a alguien) | Hecho y verificado en navegador: la API tenía `GET /members` y nada más. Ahora hay tabla de invitaciones, token, correo, y la pantalla de aceptar | `COMPARTIR` |
+| 26 | Compartir de verdad (invitar a alguien) | Hecho y verificado en navegador: la API tenía `GET /members` y nada más. Ahora hay tabla de invitaciones, token, correo, y la pantalla de aceptar | `1aa255b` |
 
 ### Lo que ya no hace falta decidir
 
