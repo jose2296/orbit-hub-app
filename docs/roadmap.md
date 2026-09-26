@@ -299,8 +299,8 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | 20b | Menú por carpeta: crear una lista dentro, renombrar, eliminar | Hecho y verificado. Eliminar una carpeta **no** borra las listas de dentro: se quedan sin carpeta | — |
 | 20c | Botón de menú visible en cada fila | Estaba solo en la pulsación larga, que en web no existe. Ahora hay un botón `⋯` | — |
 | 20d | Compartir, y el menú del espacio | Sin empezar. Compartir necesita tabla de invitaciones, token, correo y pantalla de aceptar | — |
-| 21 | Panel con `w`/`h` por tarjeta, colocar y guardar, como el de la app antigua | Hecho y verificado. Las tarjetas son las listas de cada persona, se ponen de un color a otro, se colocan con un lápiz y se guardan con Guardar | `e2c1a0b` |
-| 22 | El color de cada espacio, obligatorio | Hecho y verificado. Ocho colores, se elige en la pantalla del espacio, y las tarjetas del panel se pintan con él | `e2c1a0b` |
+| 21 | Panel con `w`/`h` por tarjeta, colocar y guardar, como el de la app antigua | Hecho y verificado. Las tarjetas son las listas de cada persona, se ponen de un color a otro, se colocan con un lápiz y se guardan con Guardar | `6efb917` |
+| 22 | El color de cada espacio, obligatorio | Hecho y verificado. Ocho colores, se elige en la pantalla del espacio, y las tarjetas del panel se pintan con él | `6efb917` |
 
 ### Sin empezar
 
