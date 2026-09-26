@@ -309,7 +309,7 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 | # | Qué se pidió | Notas |
 | --- | --- | --- |
 | 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | La lista de la compra no tiene nada de esto |
-| 25 | Los detalles con el aspecto de los de la app vieja | Hecho y verificado. Portada a la izquierda con la nota al lado, lema en grande, sinopsis que se despliega, y los datos en una línea con etiquetas. La colección y los similares siguen siendo el carrusel de portadas que pediste | `DETALLE` |
+| 25 | Los detalles con el aspecto de los de la app vieja | Hecho y verificado. Portada a la izquierda con la nota al lado, lema en grande, sinopsis que se despliega, y los datos en una línea con etiquetas. La colección y los similares siguen siendo el carrusel de portadas que pediste | `f703e41` |
 
 ### Lo que ya no hace falta decidir
 
