@@ -1,27 +1,29 @@
 import { Redirect, Stack } from "expo-router";
 import { View } from "react-native";
 
-import { BackButton } from "@/components/ui/breadcrumbs";
+import {
+  Drawer,
+  DrawerButton,
+  DrawerProvider,
+} from "@/components/layout/drawer";
 import { SideDrawer } from "@/components/layout/side-drawer";
+import { BackButton } from "@/components/ui/breadcrumbs";
 import { useTranslation } from "@/lib/i18n";
 import { useIsWide } from "@/lib/layout/width";
 import { useSession } from "@/hooks/use-session";
 import { useTheme } from "@/theme";
 
 /**
- * Auth guard, and the column of navigation on a screen with room for one.
+ * Auth guard, and the navigation on both sides of the same idea.
  *
- * The drawer is here and not in the tabs layout because the tabs are three of
- * the screens this app has, and a navigation that exists on three of them is a
- * navigation that is missing on the other nine: on a wide screen, opening a
- * list, a detail or the panel would take away the only way to get anywhere
- * without the back button and a list of guesses. Here it wraps the whole stack,
- * so wherever you are, your spaces are on the left.
+ * On a wide screen the navigation is a column that is always there, drawn here so
+ * it wraps the whole stack: the tabs are three of the screens this app has, and
+ * a navigation that exists on three of them is missing on the other nine.
  *
- * A phone does not get it, and does not get a drawer that opens over the
- * content either: a drawer over the content is a drawer you open to look at a
- * list and then cannot see the list, and a thumb cannot reach the left edge of a
- * phone anyway. It keeps the bar at the bottom, where the thumb is.
+ * On a phone it is a panel that comes from the left edge, opened by the button in
+ * the header, with the same menu and the same spaces inside it. A thumb cannot
+ * reach the left edge of a phone, which is why this one opens from a button
+ * instead of from a swipe.
  */
 export default function AppLayout() {
   const theme = useTheme();
@@ -47,7 +49,20 @@ export default function AppLayout() {
         contentStyle: { backgroundColor: theme.colors.background },
         // The browser bar is not a navigation control: on the web there is no
         // swipe back, and the header is the only place a person looks for one.
-        headerLeft: () => <BackButton />,
+        //
+        // On a phone the menu of the spaces goes first and the back button
+        // next to it, both on the left, because that is where the thumb and the
+        // eye already look for them. A screen where you can go back but not
+        // sideways is half a navigation.
+        headerLeft: () =>
+          wide ? (
+            <BackButton />
+          ) : (
+            <View style={styles.headerLeft}>
+              <DrawerButton />
+              <BackButton />
+            </View>
+          ),
       }}
     >
       {/* Every screen below the tabs keeps the header. It is the back button
@@ -79,17 +94,29 @@ export default function AppLayout() {
     </Stack>
   );
 
-  if (!wide) return stack;
-
   return (
-    <View style={styles.row}>
-      <SideDrawer />
-      <View style={styles.flex}>{stack}</View>
-    </View>
+    <DrawerProvider>
+      {/* On a phone the menu pushes the app instead of covering it, so the
+          screen you interrupted is still there and still lit. On a wide screen
+          there is room for both, and the column is always there. */}
+      {wide ? (
+        <View style={styles.row}>
+          <SideDrawer />
+          <View style={styles.flex}>{stack}</View>
+        </View>
+      ) : (
+        <Drawer>{stack}</Drawer>
+      )}
+    </DrawerProvider>
   );
 }
 
 const styles = {
+  headerLeft: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 2,
+  },
   row: {
     flex: 1,
     flexDirection: "row" as const,

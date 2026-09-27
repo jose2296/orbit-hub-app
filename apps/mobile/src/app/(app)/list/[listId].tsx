@@ -11,11 +11,8 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
-import {
-  FiltersSheet,
-  IconPickerSheet,
-  ItemIcon,
-} from "@/components/lists/item-picker";
+import { FiltersSheet, ItemIcon } from "@/components/lists/item-picker";
+import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { DraggableRow } from "@/components/ui/draggable-row";
 import { MediaCarousel } from "@/components/ui/media-carousel";
@@ -86,8 +83,6 @@ export default function ListScreen() {
     addItem,
     toggleCompleted,
     moveItemTo,
-    updateItem,
-    removeItem,
   } = useListItems(listId);
 
   const [title, setTitle] = useState("");
@@ -100,9 +95,10 @@ export default function ListScreen() {
     "all",
   );
   const [filterText, setFilterText] = useState("");
-  const [iconFor, setIconFor] = useState<ListItem | null>(null);
-  const [tagsFor, setTagsFor] = useState<ListItem | null>(null);
-  const [newTag, setNewTag] = useState("");
+  const [editing, setEditing] = useState<{
+    item: ListItem;
+    page: "edit" | "icon" | "tags";
+  } | null>(null);
   const [duplicating, setDuplicating] = useState(false);
 
   /**
@@ -298,20 +294,6 @@ export default function ListScreen() {
    * number a drag needs: the completed rows are the tail of the same array, so
    * the index in the array would be off by however many tasks are already done.
    */
-  /** Adds the typed label to the row, and never adds the same one twice. */
-  const addNewTag = () => {
-    const trimmed = newTag.trim();
-    if (!trimmed || !tagsFor) return;
-    if (tagsFor.tags.includes(trimmed)) {
-      setNewTag("");
-      return;
-    }
-    const next = [...tagsFor.tags, trimmed];
-    void updateItem(tagsFor, { tags: next });
-    setTagsFor({ ...tagsFor, tags: next });
-    setNewTag("");
-  };
-
   const renderEntry = ({ item: entry }: { item: ListEntry }) => {
     if (entry.kind === "completedHeading") {
       return (
@@ -330,9 +312,14 @@ export default function ListScreen() {
       <TaskRow
         item={item}
         onToggle={() => void toggleCompleted(item)}
-        onRemove={() => void removeItem(item)}
-        onIcon={() => setIconFor(item)}
-        onTags={() => setTagsFor(item)}
+        // Un toque abre el elemento. Antes el nombre era un boton que BORRABA,
+        // sin confirmar y sin vuelta atras: la forma mas mala de perder trabajo
+        // que puede tener una lista, y peor que una funcionalidad que falte,
+        // porque te enteras cuando ya no lo querias.
+        onEdit={() => setEditing({ item, page: "edit" })}
+        onIcon={() => setEditing({ item, page: "icon" })}
+        onTags={() => setEditing({ item, page: "tags" })}
+        onPriority={() => setEditing({ item, page: "edit" })}
       />
     );
 
@@ -629,65 +616,12 @@ export default function ListScreen() {
         </View>
       </Sheet>
 
-      <IconPickerSheet
-        open={iconFor !== null}
-        onClose={() => setIconFor(null)}
-        value={iconFor?.icon ?? null}
-        onPick={(icon) => {
-          if (iconFor) void updateItem(iconFor, { icon });
-          setIconFor(null);
-        }}
+      <ItemEditSheet
+        item={editing?.item ?? null}
+        listId={listId}
+        startOn={editing?.page ?? "edit"}
+        onClose={() => setEditing(null)}
       />
-
-      <Sheet
-        visible={tagsFor !== null}
-        onClose={() => setTagsFor(null)}
-        title={t("tags.title")}
-        subtitle={tagsFor?.title}
-      >
-        <View
-          style={{ paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md }}
-        >
-          <View style={[styles.toolbar, { gap: theme.spacing.sm }]}>
-            {labels.map(({ tag, count }) => (
-              <Button
-                key={tag}
-                label={`${tag} · ${count}`}
-                size="sm"
-                variant={tagsFor?.tags.includes(tag) ? "primary" : "secondary"}
-                fullWidth={false}
-                onPress={() => {
-                  if (!tagsFor) return;
-                  const next = tagsFor.tags.includes(tag)
-                    ? tagsFor.tags.filter((row) => row !== tag)
-                    : [...tagsFor.tags, tag];
-                  void updateItem(tagsFor, { tags: next });
-                  setTagsFor({ ...tagsFor, tags: next });
-                }}
-              />
-            ))}
-          </View>
-          <TextField
-            label={t("tags.newLabel")}
-            value={newTag}
-            onChangeText={setNewTag}
-            placeholder={t("tags.newPlaceholder")}
-            autoCapitalize="words"
-            returnKeyType="done"
-            onSubmitEditing={addNewTag}
-          />
-          {/* A button and not only the Enter key: on the web the field is not
-              in a form, so the key does nothing there, and a feature that
-              works on a phone and not on a laptop is a feature half made. */}
-          <Button
-            label={t("tags.addNew")}
-            icon="add"
-            variant="secondary"
-            disabled={newTag.trim().length === 0}
-            onPress={addNewTag}
-          />
-        </View>
-      </Sheet>
     </Screen>
   );
 }
@@ -706,15 +640,17 @@ function entryKey(entry: ListEntry): string {
 function TaskRow({
   item,
   onToggle,
-  onRemove,
+  onEdit,
   onIcon,
   onTags,
+  onPriority,
 }: {
   item: import("@orbit-hub/contracts").ListItem;
   onToggle: () => void;
-  onRemove: () => void;
+  onEdit: () => void;
   onIcon: () => void;
   onTags: () => void;
+  onPriority: () => void;
 }) {
   const theme = useTheme();
   const t = useTranslation();
@@ -746,10 +682,14 @@ function TaskRow({
       <Checkbox checked={item.completed} onToggle={onToggle} label="" />
 
       <View style={[styles.flex, { gap: 2 }]}>
+        {/* The name opens the row. It used to be wired to the delete: one tap
+            and the thing you were reading was gone, with nothing said and
+            nothing to undo. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={item.title}
-          onPress={onRemove}
+          accessibilityHint={t("itemEdit.subtitle")}
+          onPress={onEdit}
         >
           <AppText
             variant="body"
@@ -781,11 +721,25 @@ function TaskRow({
       </View>
 
       {item.priority !== "none" ? (
-        <Badge
-          label={t(`items.priority.${item.priority}`)}
-          tone={PRIORITY_TONE[item.priority]}
-        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("itemEdit.changePriority", {
+            name: t(`items.priority.${item.priority}` as never),
+          })}
+          hitSlop={6}
+          onPress={onPriority}
+        >
+          <Badge
+            label={t(`items.priority.${item.priority}` as never)}
+            tone={PRIORITY_TONE[item.priority]}
+          />
+        </Pressable>
       ) : null}
+      {item.priority !== "none" ? null : (
+        /* Un hueco del ancho de la insignia, para que al ponerla la fila no
+           dé un salto hacia la derecha y el nombre no se mueva bajo el dedo. */
+        <View style={styles.priorityGap} />
+      )}
     </View>
   );
 }
@@ -807,6 +761,9 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  priorityGap: {
+    width: 64,
   },
   iconSlot: {
     width: 24,

@@ -9,7 +9,7 @@ export interface ExpandableTextProps {
   text: string;
   /** How many lines to show before it is cut. */
   lines?: number;
-  variant?: "body" | "callout";
+  variant?: "body" | "bodyLarge" | "callout";
   tone?: "muted" | "subtle";
 }
 

@@ -380,15 +380,24 @@ export async function readCachedWorkspaces(): Promise<Workspace[]> {
 export async function readCachedFolders(
   workspaceId: string,
 ): Promise<Folder[]> {
+  const all = await readAllCachedFolders();
+  return all.filter((folder) => folder.workspaceId === workspaceId);
+}
+
+/**
+ * Every folder the cache knows about, grouped later by whoever asks.
+ *
+ * A tree of spaces and folders reads all of them at once, and reading the cache
+ * once per space to build one list is one read per space for a screen that
+ * shows all the spaces together.
+ */
+export async function readAllCachedFolders(): Promise<Folder[]> {
   const store = await getLocalStoreReady();
   const rows = await store.listCached("folder");
 
   return rows
     .map((row) => readRecord<Folder>(row))
-    .filter(
-      (folder) =>
-        folder.workspaceId === workspaceId && folder.deletedAt === null,
-    )
+    .filter((folder) => folder.deletedAt === null)
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 }
 

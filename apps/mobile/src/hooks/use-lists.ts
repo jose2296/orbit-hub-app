@@ -3,6 +3,7 @@ import type {
   ListItem,
   ListKind,
   ListOrderMode,
+  Priority,
   SearchResult,
 } from "@orbit-hub/contracts";
 import * as Crypto from "expo-crypto";
@@ -540,7 +541,14 @@ export function useListItems(listId: string | undefined) {
   const updateItem = useCallback(
     async (
       item: ListItem,
-      changes: { icon?: string | null; tags?: string[] },
+      changes: {
+        icon?: string | null;
+        tags?: string[];
+        /** The name, the description and how urgent it is. */
+        title?: string;
+        notes?: string | null;
+        priority?: Priority;
+      },
     ) => {
       if (!listId) return;
       const store = await getLocalStoreReady();

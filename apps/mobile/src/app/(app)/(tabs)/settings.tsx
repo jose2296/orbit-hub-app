@@ -1,9 +1,10 @@
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Platform, View } from 'react-native';
+import { Alert, Platform, StyleSheet, View } from 'react-native';
 
 import { LogoMark } from '@/components/brand/logo-mark';
+import { DrawerButton } from '@/components/layout/drawer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Divider } from '@/components/ui/divider';
@@ -49,7 +50,8 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
-      <View>
+      <View style={styles.header}>
+        <DrawerButton />
         <AppText variant="title">{t('tabs.settings')}</AppText>
       </View>
 
@@ -154,3 +156,11 @@ export default function SettingsScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+});

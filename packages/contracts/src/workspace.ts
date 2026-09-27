@@ -152,6 +152,9 @@ export type ItemIcon = (typeof ITEM_ICONS)[number];
  * `manual` is the order the items are in. The rest are how to read them, and
  * none of them change that order.
  */
+export const prioritySchema = z.enum(["none", "low", "medium", "high"]);
+export type Priority = z.infer<typeof prioritySchema>;
+
 export const listOrderModeSchema = z.enum([
   "manual",
   "alphabetical",
@@ -207,6 +210,11 @@ export const listItemSchema = syncableEntitySchema.extend({
   position: z.number().int().min(0),
   completed: z.boolean().default(false),
   favorite: z.boolean().default(false),
+  /**
+   * How urgent the row is, in words and not in a number: a number is something
+   * to sort by and nothing to read, and "alta" on a shopping list says why you
+   * are looking at it.
+   */
   priority: z.enum(["none", "low", "medium", "high"]).default("none"),
   /**
    * An icon out of the ones the app offers, for the things a list of tasks is

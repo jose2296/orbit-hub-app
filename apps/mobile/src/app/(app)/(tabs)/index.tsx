@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 
+import { DrawerButton } from "@/components/layout/drawer";
 import { SyncStatusCard } from "@/components/sync/sync-status-card";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -37,7 +38,8 @@ export default function HomeScreen() {
   return (
     <Screen>
       <View style={styles.header}>
-        <View style={{ gap: theme.spacing.xxs }}>
+        <DrawerButton />
+        <View style={[styles.flex, { gap: theme.spacing.xxs }]}>
           <AppText variant="title">
             {t("home.greeting", { name: user?.displayName ?? "" })}
           </AppText>
@@ -188,6 +190,9 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     paddingTop: 8,
   },
   flex: {

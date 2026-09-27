@@ -20,6 +20,7 @@ import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { api, toApiError } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
+import { useIsWide } from "@/lib/layout/width";
 import { statusKeyOf } from "@/lib/media/status";
 import { stripHtml } from "@/lib/text/html";
 import { useTheme } from "@/theme";
@@ -84,6 +85,10 @@ export default function ItemDetailsScreen() {
   // times while loading and once it has failed, and React stops believing the
   // order of the calls from then on.
   useScreenTitle(name ?? item?.title ?? title ?? t("itemDetails.loading"));
+
+  // Also before them, and for the same reason. The backdrop only exists on a
+  // wide screen, and asking "is this wide" is a hook and not a constant.
+  const wide = useIsWide();
 
   useEffect(() => {
     // A row with no provider record is not a failed request: there is nothing
@@ -243,7 +248,11 @@ export default function ItemDetailsScreen() {
 
   return (
     <Screen scroll>
-      {details.backdropUrl ? (
+      {/* The backdrop is atmosphere and it costs 180 points of a phone before
+          the first word, saying what the cover right below says again. The old
+          app did not paint it either. So it is for the wide screen, where there
+          is room for it and it is not in the way. */}
+      {wide && details.backdropUrl ? (
         <Image
           source={{ uri: details.backdropUrl }}
           resizeMode="cover"
@@ -255,11 +264,23 @@ export default function ItemDetailsScreen() {
       ) : null}
 
       <View style={{ gap: theme.spacing.lg }}>
+        {/*
+          Móvil primero, y el móvil es una columna de 430 puntos.
+
+          En un teléfono la portada y los botones comparten la primera fila, y
+          el texto va DEBAJO a todo el ancho: el lema, la sinopsis y los datos
+          en una columna de 280 puntos al lado de una portada de 110 son cuatro
+          palabras por línea y una sinopsis partida en veinte. La pantalla de la
+          app antigua hacía justo esto — `flex-col sm:flex-row` — y por eso se
+          leía.
+
+          En una pantalla ancha la columna de texto se coloca al lado, que es lo
+          que ya se hacía y lo que aprovecha un portátil.
+        */}
         <View style={[styles.header, { gap: theme.spacing.lg }]}>
-          {/* The poster, and beside it the two things a person comes here to do.
-              On a wide screen they stand next to the cover, where the eye lands
-              first; on a phone they fall under it, because there is no room to
-              the side of a cover. */}
+          {/* The cover, and beside it the score and the two things a person comes
+              here to do. Always in a row, on every width: a cover with the
+              actions stacked under it wastes the width of a whole phone. */}
           <View style={[styles.cover, { gap: theme.spacing.md }]}>
             {details.imageUrl ? (
               <Image
@@ -292,34 +313,39 @@ export default function ItemDetailsScreen() {
               </View>
             )}
 
-            {details.score !== null ? (
-              <Rating score={details.score} outOf={details.scoreOutOf} />
-            ) : null}
+            <View style={[styles.coverSide, { gap: theme.spacing.md }]}>
+              {details.score !== null ? (
+                <Rating score={details.score} outOf={details.scoreOutOf} />
+              ) : null}
 
-            {/* The actions on the title and not only on its card in the list: the
-                detail is where a person comes to decide what to do with it. */}
-            {item ? (
-              <View style={[styles.actions, { gap: theme.spacing.sm }]}>
-                <ActionButton
-                  icon={item.completed ? "eye-off-outline" : "eye-outline"}
-                  label={
-                    isBook
-                      ? item.completed
-                        ? t("mediaActions.markAsUnread")
-                        : t("mediaActions.markAsRead")
-                      : item.completed
-                        ? t("mediaActions.markAsUnseen")
-                        : t("mediaActions.markAsSeen")
-                  }
-                  onPress={() => void toggleCompleted(item)}
-                />
-                <ActionButton
-                  icon="ellipsis-horizontal"
-                  label={t("mediaActions.moreActions")}
-                  onPress={() => setMenuOpen(true)}
-                />
-              </View>
-            ) : null}
+              {/* The actions on the title and not only on its card in the list:
+                  the detail is where a person comes to decide what to do with
+                  it. In a column, the way the old app had them: two buttons side
+                  by side in a 280px column read as a menu, not as two
+                  decisions. */}
+              {item ? (
+                <View style={[styles.actions, { gap: theme.spacing.sm }]}>
+                  <ActionButton
+                    icon={item.completed ? "eye-off-outline" : "eye-outline"}
+                    label={
+                      isBook
+                        ? item.completed
+                          ? t("mediaActions.markAsUnread")
+                          : t("mediaActions.markAsRead")
+                        : item.completed
+                          ? t("mediaActions.markAsUnseen")
+                          : t("mediaActions.markAsSeen")
+                    }
+                    onPress={() => void toggleCompleted(item)}
+                  />
+                  <ActionButton
+                    icon="ellipsis-horizontal"
+                    label={t("mediaActions.moreActions")}
+                    onPress={() => setMenuOpen(true)}
+                  />
+                </View>
+              ) : null}
+            </View>
           </View>
 
           <View style={[styles.headerText, { gap: theme.spacing.sm }]}>
@@ -330,7 +356,11 @@ export default function ItemDetailsScreen() {
             ) : null}
 
             {details.overview ? (
-              <ExpandableText text={stripHtml(details.overview)} lines={6} />
+              <ExpandableText
+                text={stripHtml(details.overview)}
+                lines={6}
+                variant="bodyLarge"
+              />
             ) : null}
 
             {/* The facts as a sentence and not as a table: the year, what it is,
@@ -374,7 +404,6 @@ export default function ItemDetailsScreen() {
             ) : null}
           </View>
         </View>
-
         {item?.completed ? (
           <AppText variant="caption" tone="success">
             {isBook ? t("mediaActions.readItIs") : t("mediaActions.seenItIs")}
@@ -569,7 +598,15 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   cover: {
-    alignItems: "center",
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  coverSide: {
+    // Next to the cover, not centred in whatever width is left over: a ring
+    // floating in the middle of an empty column reads as something that did not
+    // fit where it should.
+    alignItems: "flex-start",
+    justifyContent: "center",
   },
   tagline: {
     fontStyle: "italic",
@@ -583,19 +620,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerText: {
-    flex: 1,
+    // On a phone this is the full width under the cover, so it needs no flex at
+    // all. On a wide screen it sits beside it and takes what is left.
+    flexGrow: 1,
+    flexBasis: 260,
   },
   badges: {
     flexDirection: "row",
     flexWrap: "wrap",
   },
   actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: "column",
+    alignItems: "stretch",
   },
   action: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
   },
   badge: {

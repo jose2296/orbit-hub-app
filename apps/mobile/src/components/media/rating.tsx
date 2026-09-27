@@ -38,8 +38,11 @@ export function Rating({ score, outOf, size = 72 }: RatingProps) {
   const ratio = Math.max(0, Math.min(1, score / outOf));
   const filled = Math.round(ratio * MARKS);
   const color = colorFor(ratio);
-  const markLength = Math.max(5, Math.round(size * 0.12));
-  const ring = size - markLength * 2;
+  // Round marks and not dashes: a dash is a different shape depending on where
+  // it lands on the circle, and ten of them in a row read as a ring that is
+  // slightly not round. Ten dots are ten of the same thing.
+  const mark = Math.max(5, Math.round(size * 0.15));
+  const ring = size - mark * 2;
 
   return (
     <View
@@ -66,14 +69,14 @@ export function Rating({ score, outOf, size = 72 }: RatingProps) {
             style={[
               styles.mark,
               {
-                width: markLength,
-                height: Math.max(2, Math.round(markLength * 0.42)),
-                borderRadius: 1,
+                width: mark,
+                height: mark,
+                borderRadius: mark / 2,
                 backgroundColor:
                   index < filled ? color : theme.colors.surfaceMuted,
                 transform: [
                   { rotate: `${angle}deg` },
-                  { translateY: -ring / 2 - markLength / 2 },
+                  { translateY: -ring / 2 - mark / 2 },
                 ],
               },
             ]}

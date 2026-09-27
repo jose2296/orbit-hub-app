@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { DrawerButton } from '@/components/layout/drawer';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Screen } from '@/components/ui/screen';
@@ -54,7 +55,10 @@ export default function SearchScreen() {
   return (
     <Screen>
       <View style={{ gap: theme.spacing.xs }}>
-        <AppText variant="title">{t('tabs.search')}</AppText>
+        <View style={styles.header}>
+          <DrawerButton />
+          <AppText variant="title">{t('tabs.search')}</AppText>
+        </View>
         <TextField
           value={query}
           onChangeText={onChange}
@@ -142,6 +146,12 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+
   row: {
     flexDirection: 'row',
     alignItems: 'center',

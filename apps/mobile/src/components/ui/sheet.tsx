@@ -63,14 +63,27 @@ export function Sheet({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <View style={[styles.root, wide ? styles.rootWide : styles.rootNarrow]}>
+      {/* The dimming is on this view and not on a separate backdrop view.
+          An absolutely positioned backdrop that is a sibling of the panel is
+          painted *over* it, because positioned elements paint above the ones in
+          normal flow, and on web that left the panel floating on a screen that
+          was exactly as bright as before. Painting it here, on the thing that is
+          painted first, cannot come out in the wrong order. */}
+      <View
+        style={[
+          styles.root,
+          wide ? styles.rootWide : styles.rootNarrow,
+          { backgroundColor: theme.colors.overlay },
+        ]}
+      >
         {/* The tap outside closes, which is the only way out on a wide screen
-            where there is no edge to drag from. */}
+            where there is no edge to drag from. It is there to be pressed, not
+            to be seen. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("common.close")}
           onPress={onClose}
-          style={[styles.backdrop, { backgroundColor: theme.colors.overlay }]}
+          style={styles.backdrop}
         />
 
         <View

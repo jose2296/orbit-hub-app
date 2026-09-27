@@ -156,9 +156,7 @@ export function IconPickerSheet({
   value,
   onPick,
 }: IconPickerSheetProps) {
-  const theme = useTheme();
   const t = useTranslation();
-
   const choose = (icon: string | null) => {
     onPick(icon);
     onClose();
@@ -166,36 +164,58 @@ export function IconPickerSheet({
 
   return (
     <Sheet visible={open} onClose={onClose} title={t("icons.title")}>
-      <View
-        style={{ gap: theme.spacing.lg, paddingHorizontal: theme.spacing.lg }}
-      >
-        <IconCell
-          glyph="close-circle-outline"
-          label={t("icons.none")}
-          selected={value === null}
-          onPress={() => choose(null)}
-        />
-
-        {ITEM_ICON_GROUPS.map((group) => (
-          <View key={group.key} style={{ gap: theme.spacing.sm }}>
-            <AppText variant="caption" tone="subtle">
-              {t(group.key as TranslationKey)}
-            </AppText>
-            <View style={[styles.grid, { gap: theme.spacing.sm }]}>
-              {group.icons.map((icon) => (
-                <IconCell
-                  key={icon}
-                  glyph={ITEM_GLYPHS[icon].glyph}
-                  label={t(ITEM_GLYPHS[icon].labelKey)}
-                  selected={value === icon}
-                  onPress={() => choose(icon)}
-                />
-              ))}
-            </View>
-          </View>
-        ))}
-      </View>
+      <IconPickerPanel value={value} onPick={choose} />
     </Sheet>
+  );
+}
+
+/**
+ * The icons, without a panel of their own.
+ *
+ * A page of the sheet that edits the row, and not a second sheet: a panel on top
+ * of a panel is two backdrops over one screen, and a tap that reaches the wrong
+ * one closes what is underneath instead of doing what was asked.
+ */
+export function IconPickerPanel({
+  value,
+  onPick,
+}: {
+  value: string | null;
+  onPick: (icon: string | null) => void;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  return (
+    <View
+      style={{ gap: theme.spacing.lg, paddingHorizontal: theme.spacing.lg }}
+    >
+      <IconCell
+        glyph="close-circle-outline"
+        label={t("icons.none")}
+        selected={value === null}
+        onPress={() => onPick(null)}
+      />
+
+      {ITEM_ICON_GROUPS.map((group) => (
+        <View key={group.key} style={{ gap: theme.spacing.sm }}>
+          <AppText variant="caption" tone="subtle">
+            {t(group.key as TranslationKey)}
+          </AppText>
+          <View style={[styles.grid, { gap: theme.spacing.sm }]}>
+            {group.icons.map((icon) => (
+              <IconCell
+                key={icon}
+                glyph={ITEM_GLYPHS[icon].glyph}
+                label={t(ITEM_GLYPHS[icon].labelKey)}
+                selected={value === icon}
+                onPress={() => onPick(icon)}
+              />
+            ))}
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
