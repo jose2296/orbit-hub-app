@@ -428,30 +428,41 @@ ancho del botón que lo lleva**, porque "Marcar como vista" tiene que seguir
  appearing en un botón pequeño al lado del cartel y solo deja de estar bien en uno
 de pantalla completa.
 
-### El cajon: hecho a medias, y se por que
+### El cajon: en movil tapa, en pantalla ancha empuja
 
-**Medido, con `cajon-ancho-e2e.mjs`:** con el menu abierto, en un movil de 430, la
-columna de la app mide **430 px igual que cerrada**. O sea: el menu se superpone y
-empuja, pero **la app no se estrecha** — sus filas siguen midiendo 366 px dentro de
-una columna de 284. Lo que ves es una franja de 146 px de una pantalla de 430, y por
-eso parece "una linea fea".
+Hecho, y **he cambiado una cosa que habias pedido**, asi que lo cuento con los numeros
+que lo motivan.
 
-Lo que **si** he cambiado: el menu pasa de tres cuartos (320 px) a dos tercios (284
-px), medido. Deja ver 146 px de app en vez de 110, y 122 en vez de 90 en un movil de
-360. Es una mejora pequena y es la unica parte de esto que funcionaba.
+Medido en 430x932 con el menu abierto, empujando: el menu se llevaba 284 y la app se
+quedaba en **146 px**. Las filas quedaban en 82, los nombres de los items **no cabian
+en absoluto** y "Tareas" iba **una letra por linea**. Eso no es un menu encima de una
+app: es una app rota con un menu al lado. Push en todas partes no funciona en un movil,
+y ninguna medida de "estrechar un poco mas el menu" lo arregla: a 146 tampoco se lee, y
+a 130 (que es lo que seacia al 80%) menos.
 
-**Lo que no funciona y no he_arreglado:** el `flex: 1` + `minWidth: 0` del contenedor
-de la app no la estrecha. He medido el contenedor por su `testID` y sigue a 430 con el
-menu abierto, en un padre `flexDirection: row` cuyo hermano mide 284. Un hijo de flex
-con `flex: 1` y `minWidth: 0` deberia quedarse en 146. Que no se quede significa que
-el padre no estaalogyduciendo como creo, y hay que mirar por que antes de tocar
-ancho: mientras la app no se estreche, cualquier ancho del menu es cosmetico.
+- **Movil (menos de 900 px):** el menu **tapa**. La app se queda entera, con su ancho,
+  y la franja que queda libre lleva un velo y se toca para cerrar. El menu es opaco,
+  porque si no se ven las dos pantallas encima.
+- **Pantalla ancha (900 o mas):** el menu **empuja**, con una franja del 30%. Ahi si
+  queda una pantalla entera al lado, que es justo para lo que sirve empujar.
 
-**Y una decision que es tuya, con numeros:** en un movil de 430, un menu de 284 deja
-146 px de app, y 146 tampoco se lee. O el menu tapa (y entonces la app se estrecha
-sola, sin nada deLayout raro) o se queda el push y hay que decidir que la app se
-muestre estrecha de verdad. La app vieja, por lo que se ve de lo que cuentas, hacia
-lo primero en movil y lo segundo en tablet. Digo cual de las dos y lo hago.
+Es lo que hacia la app vieja segun lo que cuentas, y ahora esta medido y no de memoria.
+
+**Lo que me equivoque al informar del bloque anterior:** di que el empuje no
+funcionaba porque la app no se estrechaba. Es cierto que con el menu abierto la
+columna de la app seguia midiendo 430 — pero **la prueba estaba abriendo el menu de la
+lista, no el cajon**: el boton del cajon se llama "Abrir el menu" y el menu de la lista
+"Menú de la lista", y mi prueba buscaba "Menu", que salia el segundo. Con el boton
+correcto, el empuje funcionaba y la app se estrechaba bien. El `minWidth: 0` que puse
+en el contenedor si hacia falta, y se queda.
+
+Leccion, y la tercera vez que me pasa: **una prueba que no ha abierto lo que dice abrir
+no mide nada**, y sus numeros hay que leerlos como una sospecha, no como un hecho. Los
+tres numeros que cite antes (284, 146, 130) tambien salieron de ahi y no eran de la app
+que yo creia estar midiendo.
+
+`cajon-ancho-e2e.mjs` mide las dos cosas: que la app siga entera en movil, y que siga
+siendo empujada a partir de 900. Falta probarlo en 1280.
 
 ### Lo que ya no hace falta decidir
 
