@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ExpandableText } from "@/components/media/expandable-text";
 import { Rating } from "@/components/media/rating";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
+import { ProvidersSheet } from "@/components/lists/providers-sheet";
 import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
@@ -69,6 +70,7 @@ export default function ItemDetailsScreen() {
     [items, itemKey, externalId],
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [whereOpen, setWhereOpen] = useState(false);
 
   /**
    * The kind of list the row came from.
@@ -503,7 +505,25 @@ export default function ItemDetailsScreen() {
                 })
             : undefined
         }
+        onWhereToWatch={
+          item && item.externalId
+            ? () => setWhereOpen(true)
+            : undefined
+        }
         onClose={() => setMenuOpen(false)}
+      />
+
+      <ProvidersSheet
+        item={
+          whereOpen && item && item.externalId
+            ? {
+                externalId: item.externalId,
+                title: item.title,
+                kind: isBook ? "books" : isSeries ? "tv" : "movies",
+              }
+            : null
+        }
+        onClose={() => setWhereOpen(false)}
       />
     </Screen>
   );

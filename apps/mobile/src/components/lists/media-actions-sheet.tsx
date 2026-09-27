@@ -20,9 +20,11 @@ export interface MediaActionsSheetProps {
   listKind: List["kind"];
   /**
    * When the menu is opened from the detail of the item, searching for its title
-   * is an action on the thing and not a button on the screen.
+   * and asking where it is are actions on the thing and not buttons on the screen.
    */
   onFindTitle?: () => void;
+  /** Only when the title has a provider id: a book is not on Netflix. */
+  onWhereToWatch?: () => void;
   onClose: () => void;
 }
 
@@ -43,6 +45,7 @@ export function MediaActionsSheet({
   listId,
   listKind,
   onFindTitle,
+  onWhereToWatch,
   onClose,
 }: MediaActionsSheetProps) {
   const t = useTranslation();
@@ -133,6 +136,19 @@ export function MediaActionsSheet({
             onPress: () => {
               onClose();
               onFindTitle();
+            },
+          },
+        ]
+      : []),
+    ...(onWhereToWatch
+      ? [
+          {
+            key: "where",
+            label: t("providers.action"),
+            icon: "tv-outline" as const,
+            onPress: () => {
+              onClose();
+              onWhereToWatch();
             },
           },
         ]

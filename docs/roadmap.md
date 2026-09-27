@@ -455,6 +455,33 @@ La medida es la que manda: `cajon-ancho-e2e.mjs` comprueba que la app conserva e
 ancho de la pantalla con el menu abierto a 430 y a 360, y que las filas no se
 encogen.
 
+### Donde verla
+
+Hecho y verificado en el navegador, con datos de verdad. `GET /catalog/providers` en la
+API contra el `watch/providers` de TMDB, y una hoja en el detalle, en el menu de medios.
+
+Tres cosas que hace y que una lista de nombres no hace:
+
+- **Dice de que pais responde.** Lo que hay en Netflix en Espana no es lo que hay en
+  Mexico, y una hoja que contesta por el pais equivocado te manda a pagar por un
+  servicio que no lo tiene. La region sale del idioma de la app y se muestra, para que
+  una suposicion equivocada se vea y no sea un misterio.
+- **"No esta en nada aqui" es una respuesta.** La region vuelve en la respuesta, asi
+  que vacio significa "no hay en ES", no "no se ha podido mirar". Una hoja que se
+  abre vacia y no dice nada parece rota.
+- **No se abre antes de saber.** Dice que esta mirando.
+
+Los logos son los del propio servicio, del mismo servidor de imagenes que los
+carteles: una columna de nombres es una lista que hay que leer, y "Netflix" es una cosa
+que se reconoce.
+
+**Un fallo que se ve y no esta arreglado:** TMDB devuelve el mismo servicio varias
+veces con nombres distintos ("Movistar Plus+" y "Movistar Plus+ ...", "Amazon Prime" y
+"Amazon Prime ...", "HBO Max Amazon"), y la hoja los enseña como tarjetas separadas.
+La deduplicacion es por nombre y tipo, y dos entradas del mismo servicio llegan con
+nombres distintos. Lo siguiente es deduplicar por logotipo, que es lo unico que
+comparten, y decidir que hacer con "HBO Max Amazon" —que es un bundle, no un servicio.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el
