@@ -428,35 +428,32 @@ ancho del botón que lo lleva**, porque "Marcar como vista" tiene que seguir
  appearing en un botón pequeño al lado del cartel y solo deja de estar bien en uno
 de pantalla completa.
 
-### El cajon: empuja, y la fila se deforma para caber
+### El cajon: empuja de verdad
 
-Hecho, **volviendo a la decision anterior**: el menu empuja siempre y la app se
-desplaza fuera de pantalla. Se habia cambiado a "tapa en movil" y se ha revertido a
-pedido expreso. Eramos dos y me lo has dicho las dos veces.
+Hecho, y por fin como se queria: **la app no se adapta, se sale**.
 
-El problema de fondo no era el empuje, era **la fila al estrecharse**, y eso si se ha
-arreglado. Medido: el menu se lleva 284 de 430, la app se queda en 146 y la fila en
-**82**. Con casilla de 22 y 32 de margenes, al nombre le quedaban 20 px, y lo que se
-veia era una casilla, un asa de arrastrar y **nada de nombre**: una lista que no se
-puede leer en el momento justo en que abres el menu.
+Medido a 430 con el menu abierto: la app mide **430 px igual que cerrada** y lo
+visible son sus primeros 146. Las filas siguen midiendo 366 y salen enteras con su
+icono y su nombre; la cabecera sigue en una linea. No hay fila apilada, no hay
+cabecera partida, no hay nada que se degrade. Lo que se ve es la app entera, cortada
+por donde la tapa el menu.
 
-La fila se mide a si misma y cede por este orden, que es el orden de lo que importa:
+Lo que hacia mal, y eran tres cosas:
 
-1. **Por debajo de 210 px** se van el icono y la insignia de urgencia. El icono es un
-   dibujo de la cosa y la insignia un recordatorio; el nombre es la cosa.
-2. **Por debajo de 150 px** se apila: la casilla arriba y el nombre debajo, con todo
-   el ancho. Es la unica disposicion que a 82 px se lee.
-3. **El asa de arrastrar desaparece tambien**, y con ella el hueco de 60 px que
-   estaba reservado a su derecha — que eran 60 de los 82, y el nombre no tenia nada.
-   En una fila de 82 px el arrastre no es usable de todos modos: un dedo se la cubre
-   entera.
+- **La app se encogia a 146 en vez de salirse.** El empuje era por ancho, y una app
+  de 146 px reordena todo dentro para caber: la fila dejaba de ser fila y el nombre
+  desaparecia. Ahora el empuje es por desplazamiento y la app mide lo mismo que
+  siempre.
+- **`flex: 1` ganaba al ancho que se le ponia.** Su base es 0, asi que el ancho
+  explicito no hacia nada y el hijo se encogia igual. Con `flexShrink: 0` y la base
+  en `auto`, el ancho manda.
+- **La pagina crecia a 714 en un movil de 430** y salia una barra de scroll
+  horizontal: el menu empujando te dejaba arrastrar la pantalla de lado. El
+  contenedor recorta.
 
-Medido despues, con el menu abierto: filas de 82x73, con "Pan", "Pilas", "Café" y
-"Leche de ..." a dos lineas. Se leen.
-
-Lo que **sigue roto** y no he tocado: la cabecera de la lista con el menu abierto
-sigue "!Tareas" letra a letra y los botones se salen ("Marcar f..."). La cabecera no
-es una fila y no sabe degradarse. Es un bloque aparte, y no lo he hecho.
+La medida es la que manda: `cajon-ancho-e2e.mjs` comprueba que la app conserva el
+ancho de la pantalla con el menu abierto a 430 y a 360, y que las filas no se
+encogen.
 
 ### Lo que ya no hace falta decidir
 

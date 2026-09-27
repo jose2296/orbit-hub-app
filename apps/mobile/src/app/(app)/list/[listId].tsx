@@ -680,42 +680,18 @@ function TaskRow({
 }) {
   const theme = useTheme();
   const t = useTranslation();
-  // Whether there is room for the extras.
-  //
-  // With the menu pushing, the app is left with 146 px of a 430 and the row with
-  // 82. With a checkbox, an icon, a name and a badge in 82 the name does not
-  // fit, and what was on screen was a checkbox, a drag handle and nothing else —
-  // a list you cannot read at the moment you opened the menu. So the row is
-  // measured and gives up the extras before it gives up the name: the icon is a
-  // picture of the thing and the badge is a reminder, and the name is the thing.
-  const [ancho, setAncho] = useState(0);
-  const estrecho = ancho > 0 && ancho < 210;
-  // Below this the row stops being a row: with the menu pushing it is 82px, and
-  // una casilla de 22 mas 32 de margenes se dejan 20 para el nombre, que es una
-  // letra y un punto por linea. Apila: la casilla arriba y el nombre debajo,
-  // con todo el ancho. Es la unica disposicion que a 82 px se lee, y cuatro
-  // palabras seguidas en vertical dicen mas que cinco palabras en vertical
-  // una detras de otra.
-  const apilado = ancho > 0 && ancho < 150;
-
   return (
     <View
       testID={`item-row-${item.id}`}
-      onLayout={(event) => setAncho(event.nativeEvent.layout.width)}
       style={[
-        apilado ? styles.apilado : styles.item,
+        styles.item,
         {
-          gap: estrecho ? theme.spacing.xs : theme.spacing.md,
-          padding: apilado ? theme.spacing.md : theme.spacing.lg,
+          gap: theme.spacing.md,
+          padding: theme.spacing.lg,
           // El asa de arrastrar va encima, en el borde derecho, y la insignia de
           // urgencia se solapaba con ella. Se le deja sitio: dos cosas que se
           // pisan no se leen, y ademas el que va debajo no se puede pulsar.
-          //
-          // Estrecha, ese hueco se queda sin sitio: en una fila de 82 px eran 60
-          // de los 82, y al nombre no le quedaba nada. Estrecha, el asa tampoco
-          // esta (lo quita DraggableRow), asi que el hueco se devuelve al nombre.
-          paddingRight:
-            theme.spacing.lg + (estrecho ? 0 : styles.dragHandle.width),
+          paddingRight: theme.spacing.lg + styles.dragHandle.width,
         },
       ]}
     >
@@ -729,25 +705,23 @@ function TaskRow({
           otro extremo se leía como una foto de la lista y no como el icono de
           esta fila, y con la casilla al lado se sabe de un vistazo qué vas a
           marcar y qué has marcado. */}
-      {estrecho ? null : (
-        <Pressable
-          testID={`item-icon-${item.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={t("icons.ofItem", { name: item.title })}
-          hitSlop={8}
-          onPress={onIcon}
-          style={styles.iconSlot}
-        >
-          <ItemIcon
-            icon={item.icon}
-            style={item.iconStyle}
-            color={item.iconColor}
-          />
-          {item.icon ? null : (
-            <Ionicons name="add" size={14} color={theme.colors.textSubtle} />
-          )}
-        </Pressable>
-      )}
+      <Pressable
+        testID={`item-icon-${item.id}`}
+        accessibilityRole="button"
+        accessibilityLabel={t("icons.ofItem", { name: item.title })}
+        hitSlop={8}
+        onPress={onIcon}
+        style={styles.iconSlot}
+      >
+        <ItemIcon
+          icon={item.icon}
+          style={item.iconStyle}
+          color={item.iconColor}
+        />
+        {item.icon ? null : (
+          <Ionicons name="add" size={14} color={theme.colors.textSubtle} />
+        )}
+      </Pressable>
 
       <View style={[styles.flex, { gap: 2 }]}>
         {/* The name opens the row. It used to be wired to the delete: one tap
@@ -779,7 +753,7 @@ function TaskRow({
         ) : null}
       </View>
 
-      {item.priority !== "none" && !estrecho ? (
+      {item.priority !== "none" ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("itemEdit.changePriority", {
@@ -794,7 +768,7 @@ function TaskRow({
           />
         </Pressable>
       ) : null}
-      {item.priority !== "none" || estrecho ? null : (
+      {item.priority !== "none" ? null : (
         /* Un hueco del ancho de la insignia, para que al ponerla la fila no
            dé un salto hacia la derecha y el nombre no se mueva bajo el dedo. */
         <View style={styles.priorityGap} />
@@ -824,10 +798,6 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  apilado: {
-    flexDirection: "column",
-    alignItems: "flex-start",
   },
   /** Lo que ocupa el asa de arrastrar, en el borde derecho de la fila. */
   dragHandle: {

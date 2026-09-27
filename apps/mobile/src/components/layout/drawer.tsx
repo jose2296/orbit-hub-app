@@ -145,7 +145,28 @@ export function Drawer({ children }: { children: React.ReactNode }) {
         Eso es lo de "se queda todo en una linea fea", y no era un problema de
         ancho del menu.
       */}
-      <View testID="drawer-app" style={styles.app}>
+      <View
+        testID="drawer-app"
+        style={[
+          styles.app,
+          {
+            // Su propio ancho, siempre, y no el que le sobra: al empujar, la app
+            // se desplaza y su derecha se sale de la pantalla. Estrecharla es lo
+            // que hacia que todo dentro se reordenara para caber en un trozo —la
+            // fila apilada, la cabecera partida— y una app cortada se lee mejor
+            // que una app encogida.
+            width,
+            transform: [
+              {
+                translateX: progress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, drawerWidth],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
         {children}
         {/* It is there to be pressed and not to be seen: closing by tapping the
             screen you interrupted, which is what a push means. */}
@@ -925,15 +946,22 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     flexDirection: "row",
+    // Y recorta. La app se sale por la derecha a proposito, y sin esto la pagina
+    // crece a 714 en un movil de 430 y sale una barra de scroll horizontal: el
+    //menu empujando te dejaader arrastrar la pantalla de lado.
+    overflow: "hidden",
   },
   flex: {
     flex: 1,
   },
   app: {
-    flex: 1,
-    // Sin esto la app no se estrecha: un hijo de flex no baja del ancho minimo de
-    // su contenido, y el contenido de una lista es mas ancho que 146 px.
-    minWidth: 0,
+    // Sin encogerse. `flex: 1` gana al ancho que se le pone, porque su base es 0,
+    // asi que la app se quedaba en lo que le sobraba —146 px— en vez de salirse
+    // por la derecha. Lo que se quiere es que mida lo mismo que la pantalla y que
+    // su derecha se salga, no que se encoja para caber.
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: 'auto',
   },
   overMenu: {
     position: "absolute",
