@@ -500,6 +500,29 @@ Estaban en pantalla y nadie los habia buscado:
   pendiente".
 - **"Completadas (1)"**, lo mismo en la cabecera de los completados.
 
+### Las claves de traduccion detras de una plantilla
+
+Arreglado de raiz, porque **los textos rotos de arriba no eran tres unlucky**: son el
+sintoma de una clase. `t("lists.pendingCount")` lo comprueba el compilador —si la clave
+no esta en el diccionario, el tipo `TranslationKey` no la tiene y la compilacion
+falla—. `t(\`items.priority.${algo}\`)` no lo comprueba nadie, porque el compilador ve
+una cadena y no una clave. Y ahi es donde viven las que faltan.
+
+Hay **11 llamadas con plantilla** en la app, en siete familias: prioridades, orden,
+roles, color del espacio, y el filtro de la lista. `test/translations.test.ts` las
+recorre y comprueba, valor por valor, que todas las claves existen. Los valores se
+leen del contrato (`prioritySchema`, `listOrderModeSchema`, `membershipRoleSchema`) y
+de `WORKSPACE_COLORS`, no de una lista escrita en la prueba: mi primera version de la
+prueba traia tres colores que no existen en la app, y habria fallado por lo
+contrario.
+
+Tambien comprueba que las dos lenguas tienen las mismas claves, que una clave de
+plural tiene las dos formas (`.one` y `.other`, no una suelta mas una `_one`), y que
+ninguna traduccion se queda vacia.
+
+Una familia nueva necesita una linea en el test. Es el precio entero de la
+comprobacion.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el
