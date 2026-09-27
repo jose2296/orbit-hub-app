@@ -77,9 +77,17 @@ export function Drawer({ children }: { children: React.ReactNode }) {
   const { open, setOpen } = useDrawer();
   const closeLabel = t("drawer.closeByTapping");
 
-  // Three quarters of the screen, so the strip left over is enough to recognise
-  // the screen you interrupted and to tap to come back.
-  const drawerWidth = Math.min(320, Math.round(width * 0.75));
+  // Two thirds, and medido: con tres cuartos la app se quedaba en 110 px de un
+  // movil de 430, y en 90 de uno de 360. Una franja de 110 px no reconoce la
+  // pantalla que interrumpes, y las filas se salen de ella.
+  //
+  // Que aun asi no haya una respuesta buena aqui: en un movil de 430, un menu de
+  // 284 deja 146 de app, y 146 tampoco se lee. O el menu tapa, o la app se
+  // estrecha de mas, y las dos son故答案为. En un movil el menu deberia tapar y
+  // empujar solo en pantallas anchas, que es lo de la app vieja; esto es el
+  // compromiso hasta que se decida, y esta medido para que se pueda decidir con
+  // numeros y no de memoria.
+  const drawerWidth = Math.min(288, Math.round(width * 0.66));
   const progress = useRef(new Animated.Value(open ? 1 : 0)).current;
 
   useEffect(() => {
@@ -121,7 +129,15 @@ export function Drawer({ children }: { children: React.ReactNode }) {
         </View>
       </Animated.View>
 
-      <View style={styles.flex}>
+      {/*
+        `minWidth: 0` y no es un detalle. Un hijo de un `flex` no baja de su
+        contenido por defecto, y con el menu abierto la app se negaba a
+        estrecharse: las filas seguian midiendo 366 px dentro de una columna de
+        284, y lo que se veia era una franja de 146 px de una pantalla entera.
+        Eso es lo de "se queda todo en una linea fea", y no era un problema de
+        ancho del menu.
+      */}
+      <View testID="drawer-app" style={styles.app}>
         {children}
         {/* It is there to be pressed and not to be seen: closing by tapping the
             screen you interrupted, which is what a push means. */}
@@ -903,6 +919,12 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  app: {
+    flex: 1,
+    // Sin esto la app no se estrecha: un hijo de flex no baja del ancho minimo de
+    // su contenido, y el contenido de una lista es mas ancho que 146 px.
+    minWidth: 0,
   },
   column: {
     overflow: "hidden",

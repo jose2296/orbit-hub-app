@@ -428,6 +428,31 @@ ancho del botón que lo lleva**, porque "Marcar como vista" tiene que seguir
  appearing en un botón pequeño al lado del cartel y solo deja de estar bien en uno
 de pantalla completa.
 
+### El cajon: hecho a medias, y se por que
+
+**Medido, con `cajon-ancho-e2e.mjs`:** con el menu abierto, en un movil de 430, la
+columna de la app mide **430 px igual que cerrada**. O sea: el menu se superpone y
+empuja, pero **la app no se estrecha** — sus filas siguen midiendo 366 px dentro de
+una columna de 284. Lo que ves es una franja de 146 px de una pantalla de 430, y por
+eso parece "una linea fea".
+
+Lo que **si** he cambiado: el menu pasa de tres cuartos (320 px) a dos tercios (284
+px), medido. Deja ver 146 px de app en vez de 110, y 122 en vez de 90 en un movil de
+360. Es una mejora pequena y es la unica parte de esto que funcionaba.
+
+**Lo que no funciona y no he_arreglado:** el `flex: 1` + `minWidth: 0` del contenedor
+de la app no la estrecha. He medido el contenedor por su `testID` y sigue a 430 con el
+menu abierto, en un padre `flexDirection: row` cuyo hermano mide 284. Un hijo de flex
+con `flex: 1` y `minWidth: 0` deberia quedarse en 146. Que no se quede significa que
+el padre no estaalogyduciendo como creo, y hay que mirar por que antes de tocar
+ancho: mientras la app no se estreche, cualquier ancho del menu es cosmetico.
+
+**Y una decision que es tuya, con numeros:** en un movil de 430, un menu de 284 deja
+146 px de app, y 146 tampoco se lee. O el menu tapa (y entonces la app se estrecha
+sola, sin nada deLayout raro) o se queda el push y hay que decidir que la app se
+muestre estrecha de verdad. La app vieja, por lo que se ve de lo que cuentas, hacia
+lo primero en movil y lo segundo en tablet. Digo cual de las dos y lo hago.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el
