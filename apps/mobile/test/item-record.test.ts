@@ -33,7 +33,7 @@ describe('newListItem', () => {
       completed: false,
       favorite: false,
       priority: 'none',
-      icon: null,
+      icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
       tags: [],
       externalId: null,
       metadata: null,
@@ -59,13 +59,15 @@ describe('newListItem', () => {
       title: 'Urgente',
       position: 0,
       priority: 'high',
-      icon: 'bread',
+      icon: 'pan',
+      iconStyle: 'outline' as const,
+      iconColor: 'neutral' as const,
       externalId: 'movie:603',
       metadata: { imageUrl: 'https://x/y.jpg' },
     });
 
     expect(item.priority).toBe('high');
-    expect(item.icon).toBe('bread');
+    expect(item.icon).toBe('pan');
     expect(item.externalId).toBe('movie:603');
     expect(item.metadata).toEqual({ imageUrl: 'https://x/y.jpg' });
   });

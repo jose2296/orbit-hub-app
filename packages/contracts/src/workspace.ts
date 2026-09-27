@@ -1,4 +1,6 @@
 import { z } from "zod";
+
+import { ITEM_ICON_COLORS, ITEM_ICONS } from "./item-icons.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
 import { userSchema } from "./auth";
@@ -113,38 +115,15 @@ export type ListKind = z.infer<typeof listKindSchema>;
  * key it does not know, and the app cannot draw one it does not have, and
  * neither of them can be a step behind the other.
  */
-export const ITEM_ICONS = [
-  "basket",
-  "cart",
-  "apple",
-  "bread",
-  "milk",
-  "water",
-  "meat",
-  "fish",
-  "egg",
-  "cheese",
-  "rice",
-  "coffee",
-  "cake",
-  "pill",
-  "soap",
-  "toothbrush",
-  "shirt",
-  "shoe",
-  "book",
-  "paper",
-  "gift",
-  "tool",
-  "box",
-  "leaf",
-  "paw",
-  "ball",
-  "plane",
-  "bed",
-  "battery",
-] as const;
-export type ItemIcon = (typeof ITEM_ICONS)[number];
+export {
+  ITEM_ICONS,
+  ITEM_ICON_CATEGORIES,
+  ITEM_ICON_GROUP,
+  ITEM_ICON_COLORS,
+  isItemIcon,
+} from "./item-icons.js";
+export type { ItemIcon, ItemIconCategory, ItemIconColor } from "./item-icons.js";
+
 
 /**
  * The ways a list can be ordered.
@@ -225,7 +204,23 @@ export const listItemSchema = syncableEntitySchema.extend({
    * shape everywhere and the app can draw it with the same care it draws a
    * button.
    */
-  icon: z.string().max(24).nullable().default(null),
+  icon: z.enum(ITEM_ICONS).nullable().default(null),
+  /**
+   * Filled or outline.
+   *
+   * Two drawings of the same thing and not a decoration: a row of twelve things
+   * drawn con trazo is una lista de palabras, y rellenar los que importan dice
+   * cuales sin tener que leer ninguno.
+   */
+  iconStyle: z.enum(["outline", "fill"]).default("outline"),
+  /**
+   * Which of the app's icon colours it is drawn in.
+   *
+   * A key and not a colour value, for the reason the space colour is a key: the
+   * app draws the ones it offers, so there is no colour nobody can read and no
+   * picker of fifty shades on a phone.
+   */
+  iconColor: z.enum(ITEM_ICON_COLORS).default("neutral"),
   /**
    * Free labels, so "Mercadona" and "Carrefour" are values and not folders:
    * the same thing to buy in two shops is one item to buy.
@@ -483,6 +478,15 @@ export const searchResultSchema = z.object({
   kind: listKindSchema.nullable().default(null),
   title: z.string(),
   subtitle: z.string().nullable().default(null),
+  /**
+   * Whether a row is already done, and `null` for anything that is not a row.
+   *
+   * It is in the hit and not looked up afterwards because the point of finding
+   * something is to act on it: a shopping list is searched to tick off the milk
+   * or to ask for it again, and a hit that cannot be ticked is a screen you have
+   * to leave and come back from.
+   */
+  completed: z.boolean().nullable().default(null),
   updatedAt: isoDateTimeSchema,
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;

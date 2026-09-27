@@ -397,6 +397,12 @@ export function useListItems(listId: string | undefined) {
       /** Provider record, when the title came from a catalog. */
       externalId?: string | null;
       metadata?: Record<string, unknown> | null;
+      /** The rest of what the item panel offers, when it created the row. */
+      notes?: string | null;
+      icon?: ListItem["icon"];
+      iconStyle?: ListItem["iconStyle"];
+      iconColor?: ListItem["iconColor"];
+      tags?: string[];
     }) => {
       if (!listId) return;
 
@@ -407,6 +413,26 @@ export function useListItems(listId: string | undefined) {
       const id = Crypto.randomUUID();
       const now = nowIso();
 
+      // The row is built by the same function that builds a row anywhere else,
+      // so a row created from the panel and one created by the catalog have the
+      // same fields — and the field added last is not missing from one of them.
+      const record = newListItem({
+        id,
+        listId,
+        title: input.title,
+        position: existing.length,
+        createdAt: now,
+        updatedAt: now,
+        priority: input.priority,
+        notes: input.notes ?? null,
+        icon: input.icon ?? null,
+        iconStyle: input.iconStyle,
+        iconColor: input.iconColor,
+        tags: input.tags,
+        externalId: input.externalId ?? null,
+        metadata: input.metadata ?? null,
+      });
+
       await store.upsertCached([
         {
           entity: "list_item",
@@ -414,22 +440,7 @@ export function useListItems(listId: string | undefined) {
           version: 0,
           updatedAt: now,
           deletedAt: null,
-          payload: JSON.stringify({
-            id,
-            listId,
-            title: input.title,
-            position: existing.length,
-            completed: false,
-            favorite: false,
-            priority: input.priority ?? "none",
-            externalId: input.externalId ?? null,
-            metadata: input.metadata ?? null,
-            notes: null,
-            version: 0,
-            createdAt: now,
-            updatedAt: now,
-            deletedAt: null,
-          }),
+          payload: JSON.stringify(record),
           pending: null,
         },
       ]);
@@ -444,6 +455,11 @@ export function useListItems(listId: string | undefined) {
           title: input.title,
           position: existing.length,
           ...(input.priority ? { priority: input.priority } : {}),
+          ...(input.icon ? { icon: input.icon } : {}),
+          ...(input.iconStyle ? { iconStyle: input.iconStyle } : {}),
+          ...(input.iconColor ? { iconColor: input.iconColor } : {}),
+          ...(input.notes ? { notes: input.notes } : {}),
+          ...(input.tags?.length ? { tags: input.tags } : {}),
           // The provider id travels with the item so the same title is
           // recognisable later, and so a future import can tell them apart.
           ...(input.externalId ? { externalId: input.externalId } : {}),
@@ -458,7 +474,12 @@ export function useListItems(listId: string | undefined) {
   );
 
   const toggleCompleted = useCallback(
-    async (item: ListItem) => {
+    /**
+     * Only the two fields it reads, and not a whole row: a search hit has a name
+     * and whether it is done, and making it fetch the row to hand it over would
+     * be a reason not to let a hit be ticked.
+     */
+    async (item: { id: string; completed: boolean }) => {
       await localUpdate("list_item", item.id, { completed: !item.completed });
       await load();
     },
@@ -542,7 +563,10 @@ export function useListItems(listId: string | undefined) {
     async (
       item: ListItem,
       changes: {
-        icon?: string | null;
+        icon?: ListItem["icon"];
+        /** Filled or outline, and which of the colours the app offers. */
+        iconStyle?: ListItem["iconStyle"];
+        iconColor?: ListItem["iconColor"];
         tags?: string[];
         /** The name, the description and how urgent it is. */
         title?: string;
@@ -741,6 +765,7 @@ export function useLocalSearch() {
       if (!record.name?.toLowerCase().includes(query)) continue;
       found.push({
         scope: "workspace",
+          completed: null,
         id: record.id,
         workspaceId: record.id,
         listId: null,
@@ -763,6 +788,7 @@ export function useLocalSearch() {
       if (!record.name?.toLowerCase().includes(query)) continue;
       found.push({
         scope: "folder",
+          completed: null,
         id: record.id,
         workspaceId: record.workspaceId,
         listId: null,
@@ -779,6 +805,7 @@ export function useLocalSearch() {
       if (!record.title.toLowerCase().includes(query)) continue;
       found.push({
         scope: "list",
+          completed: null,
         id: record.id,
         workspaceId: record.workspaceId,
         listId: record.id,
@@ -808,6 +835,9 @@ export function useLocalSearch() {
         title: record.title,
         // The parent list is the context a hit needs to be understandable.
         subtitle: list?.title ?? null,
+        // So the hit can be ticked from the search itself, which is the whole
+        // reason somebody is looking for "milk" a second time.
+        completed: record.completed,
         updatedAt: record.updatedAt,
       });
     }

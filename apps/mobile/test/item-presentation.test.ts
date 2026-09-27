@@ -30,7 +30,7 @@ function item(partial: Partial<ListItem> & { id: string }): ListItem {
     completed: false,
     favorite: false,
     priority: 'none',
-    icon: null,
+    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [],
     externalId: null,
     metadata: null,
@@ -172,7 +172,7 @@ describe('tagsByFrequency', () => {
 
 describe('isItemIcon', () => {
   it('knows the icons it can draw', () => {
-    expect(isItemIcon('basket')).toBe(true);
+    expect(isItemIcon('pan')).toBe(true);
   });
 
   it('says no to a key it does not have, rather than drawing nothing', () => {

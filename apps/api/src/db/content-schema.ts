@@ -14,6 +14,7 @@ import {
 
 import { users } from './auth-schema';
 import type {
+  ItemIconColorName,
   ListKindName,
   ListOrderModeName,
   WorkspaceColorName,
@@ -324,7 +325,18 @@ export const listItems = pgTable(
       .default('none'),
     // A key out of the icons the app offers, never an emoji: the same shape on
     // every device and something the app can draw with the same care.
-    icon: varchar('icon', { length: 24 }),
+    icon: varchar('icon', { length: 32 }),
+    // Filled or outline, and which of the app's colours. Both with a default, so
+    // a row written before them keeps drawing and does not need its data
+    // migrated: what it had was always an outline in the neutral colour.
+    iconStyle: varchar('icon_style', { length: 8 })
+      .$type<'outline' | 'fill'>()
+      .notNull()
+      .default('outline'),
+    iconColor: varchar('icon_color', { length: 16 })
+      .$type<ItemIconColorName>()
+      .notNull()
+      .default('neutral'),
     // Free labels, so two shops are values and not two folders.
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     externalId: varchar('external_id', { length: 120 }),

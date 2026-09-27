@@ -9,13 +9,22 @@ export interface CheckboxProps {
   onToggle: () => void;
   label: string;
   disabled?: boolean;
+  /** For naming this one box in a test, when there is more than one on screen. */
+  testID?: string;
 }
 
-export function Checkbox({ checked, onToggle, label, disabled = false }: CheckboxProps) {
+export function Checkbox({
+  checked,
+  onToggle,
+  label,
+  disabled = false,
+  testID,
+}: CheckboxProps) {
   const theme = useTheme();
 
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="checkbox"
       accessibilityState={{ checked, disabled }}
       disabled={disabled}

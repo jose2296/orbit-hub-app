@@ -1,3 +1,4 @@
+import { ITEM_ICON_COLORS, isItemIcon } from "@orbit-hub/contracts";
 import type { ListItem } from "@orbit-hub/contracts";
 
 /**
@@ -11,6 +12,19 @@ import type { ListItem } from "@orbit-hub/contracts";
  * place, where a missing field gets the value the contract gives it.
  */
 
+/**
+ * The colour an icon is drawn in, or the app's own.
+ *
+ * The column is free text and a future build can write a colour this one does
+ * not have, so a row with a colour nobody can draw comes out in the neutral one
+ * instead of not coming out.
+ */
+function iconColorOf(value: unknown): ListItem["iconColor"] {
+  return (ITEM_ICON_COLORS as readonly string[]).includes(String(value))
+    ? (value as ListItem["iconColor"])
+    : "neutral";
+}
+
 export interface NewListItemInput {
   id: string;
   listId: string;
@@ -20,6 +34,9 @@ export interface NewListItemInput {
   updatedAt?: string;
   priority?: ListItem["priority"];
   icon?: string | null;
+  /** Filled or outline, and which of the app's colours. */
+  iconStyle?: "outline" | "fill";
+  iconColor?: string;
   tags?: string[];
   externalId?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -48,7 +65,12 @@ export function newListItem(input: NewListItemInput): ListItem {
     // A fresh array and not a shared constant: one row's labels must not appear
     // on every other row the moment somebody types one.
     tags: input.tags ? [...input.tags] : [],
-    icon: input.icon ?? null,
+    // An icon the app cannot draw is no icon, and not a broken row: what
+    // somebody typed by hand, or what a future build wrote, arrives here and the
+    // row still opens.
+    icon: isItemIcon(input.icon) ? input.icon : null,
+    iconStyle: input.iconStyle ?? "outline",
+    iconColor: iconColorOf(input.iconColor),
     externalId: input.externalId ?? null,
     metadata: input.metadata ?? null,
     notes: input.notes ?? null,
@@ -88,7 +110,12 @@ export function withListItemDefaults(value: unknown): ListItem {
     // string or a null where the contract says a list is a row that cannot be
     // counted, filtered or read.
     tags: Array.isArray(record.tags) ? (record.tags as string[]) : [],
-    icon: typeof record.icon === "string" ? record.icon : null,
+    // Same here as on the way in: a key this build cannot draw is no icon, and
+    // the row around it still reads. A cache from a future build, or a payload
+    // somebody edited by hand, does not take a whole list down with it.
+    icon: isItemIcon(record.icon) ? record.icon : null,
+    iconStyle: record.iconStyle === "fill" ? "fill" : "outline",
+    iconColor: iconColorOf(record.iconColor),
     externalId:
       typeof record.externalId === "string" ? record.externalId : null,
     metadata:

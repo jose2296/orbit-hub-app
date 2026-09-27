@@ -32,7 +32,9 @@ export interface DuplicableItem {
   completed: boolean;
   favorite: boolean;
   priority: ListItemPriority;
-  icon: string | null;
+  icon: ListItem["icon"];
+  iconStyle: ListItem["iconStyle"];
+  iconColor: ListItem["iconColor"];
   tags: string[];
   externalId: string | null;
   metadata: Record<string, unknown> | null;
@@ -93,6 +95,9 @@ export function planDuplication(
     favorite: item.favorite,
     priority: item.priority,
     icon: item.icon,
+    // How it is drawn is part of how the row is, so a copy looks the same.
+    iconStyle: item.iconStyle,
+    iconColor: item.iconColor,
     // Copied by value: a later push to the copy must not touch the original.
     tags: [...item.tags],
     externalId: item.externalId,

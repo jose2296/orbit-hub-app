@@ -43,6 +43,13 @@
       "when": 1790456173467,
       "tag": "0005_workspace_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790506133812,
+      "tag": "0006_item_icon_style",
+      "breakpoints": true
     }
   ]
 }

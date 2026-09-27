@@ -577,7 +577,7 @@ describe('POST /sync/pull', () => {
           listId,
           title: 'Pan',
           position: 0,
-          icon: 'bread',
+          icon: 'pan',
           tags: ['Mercadona', 'urgente'],
         },
       }),
@@ -585,7 +585,7 @@ describe('POST /sync/pull', () => {
 
     const items = await api.get(`/lists/${listId}/items`, user.accessToken);
     const row = items.body.data.items.find((entry: { id: string }) => entry.id === itemId);
-    expect(row.icon).toBe('bread');
+    expect(row.icon).toBe('pan');
     expect(row.tags).toEqual(['Mercadona', 'urgente']);
 
     const list = await api.get(`/lists/${listId}`, user.accessToken);

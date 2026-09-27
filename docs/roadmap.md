@@ -308,8 +308,74 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 
 | # | Qué se pidió | Notas |
 | --- | --- | --- |
-| 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | La lista de la compra no tiene nada de esto |
+| 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | Hecho de otra manera, que es la que servía: la **bandeja de completados**, fija abajo en la lista, con cuántos hay y sus casillas. Abres, destachas y vuelve a pendientes sin recorrer la lista. Y el resultado de la búsqueda lleva su casilla, para tacharlo sin salir de la búsqueda. Falta lo de *ofrecerlo al escribir*, que es otra cosa: ver abajo |
 | 25 | Los detalles con el aspecto de los de la app vieja | Hecho y verificado. Portada a la izquierda con la nota al lado, lema en grande, sinopsis que se despliega, y los datos en una línea con etiquetas. La colección y los similares siguen siendo el carrusel de portadas que pediste | `f703e41` |
+
+
+### Iconos de los elementos
+
+Hecho y verificado en navegador. 131 iconos en 10 grupos, la clave es **la palabra que se
+escribe** ("pan", "pilas", "pastilla"), así que el buscador encuentra lo que se busca sin
+tener que traducirlo a otro idioma. Se eligen con buscador, con el color (12) y con el
+dibujo (contorno o relleno), y el elegido se marca **con un borde**: el color es lo que
+elegiste para el icono, y al marcarlo se perdía.
+
+Archivos: `packages/contracts/src/item-icons.ts` (los 131 y sus grupos), `apps/mobile/src/lib/lists/item-icons.ts` (el buscador y las etiquetas), `apps/mobile/src/lib/lists/item-glyphs.ts` (el dibujo de cada uno, con los dos comprobados), `apps/mobile/src/components/lists/icon-picker.tsx`.
+
+**Un bug que costó encontrar:** elegir un icono y luego un color **borraba el icono**. El
+selector mandaba el icono entero en cada cambio, y lo que mandaba era lo que él creía que
+tenía la fila, que era el valor de antes de elegirlo. Ahora cada control manda solo lo que
+cambia, y la pantalla de la lista guarda el **id** de la fila abierta y no una copia: una
+copia se queda vieja en la primera escritura, y el panel se lo devuelve al servidor.
+
+**Otro, y este es de infraestructura:** el proceso del API estaba en pie desde antes de
+que existiera el contrato de los iconos, así que rechazaba `icon: "pan"` y un `pull`
+borraba lo que habías elegido en el móvil. Parecía un fallo del selector. Merece la pena
+un `watch` en el API mientras se tocan los contratos.
+
+### Añadir elementos: un botón, no un formulario
+
+Hecho y verificado. Debajo de la lista ya no hay un formulario: hay **un botón fijo abajo a
+la derecha**, y es el mismo botón para todas las listas. En una lista de tareas abre el
+panel del elemento para escribirlo con todo (icono, color, etiquetas, urgencia); en una
+lista de películas, series o libros abre el catálogo, porque un título escrito a mano no tiene
+cartel y no hay nada que enseñar.
+
+El panel es **el mismo** en los dos casos, con un `mode` de crear: son los mismos campos, y
+dos paneles para una fila son dos sitios que dejan de estar de acuerdo.
+
+La fila ya no dice "+ Etiqueta" debajo del nombre, y las etiquetas se editan en el panel.
+
+### Marcar y desmarcar
+
+Hecho y verificado. El panel del elemento tiene una fila con la casilla: "Marcar como hecho"
+y, si ya lo está, "Devolver a pendientes". Y la bandeja de completados del punto anterior,
+que es lo que hace utilizable en una lista larga.
+
+### Rendimiento con 1000 elementos
+
+Medido con `lista-grande-e2e.mjs`, en Chrome sin cabeza a 430×932, con el servidor de
+desarrollo puesto (que es como se mide aquí, y hay que decirlo):
+
+| Qué | Antes | Ahora |
+| --- | --- | --- |
+| Filas montadas en el DOM al pintar | 420 | **26** |
+| Filas visibles a la vez | 7 | 7 |
+| 20 saltos de una pantalla | 427 ms, 2 cuadros perdidos | **458 ms, 0 cuadros perdidos** |
+| Filas en el DOM tras recorrerla | 470 | **60** |
+
+El cambio fue `windowSize` de 7 a 5 en la lista. Se nota en el arranque y no se nota al
+desplazar.
+
+**Y un dato que desactiva la alarma:** abrir la lista de 1000 elements tarda lo mismo que
+abrir una pantalla vacía (4967 ms contra 4988 ms de mediana: **-21 ms**). Con 100 elements
+tarda lo mismo que con 1000. Los ~5 s son de recargar el *bundle* del servidor de
+desarrollo, no de la lista. Por eso el arranque en caliente se mide **restando** una
+pantalla vacía: sin esa resta el número no dice nada.
+
+Lo que **no** se ha medido y sigue sin medirse: en un móvil de verdad, con el bundle
+minificado, y con la lista abierta mientras se sincroniza. El 97 px de alto por fila es de
+la versión de escritorio con etiquetas; en un móvil es más bajo.
 
 ### Lo que ya no hace falta decidir
 
@@ -347,6 +413,9 @@ haya 335 pruebas donde antes había 287:
 
 | Qué pasaba | Por qué no lo veía el typecheck |
 | --- | --- |
+| **Elegir un icono y luego un color borraba el icono.** Parecía que el selector no guardaba | El selector mandaba el icono entero en cada cambio, con el valor que él tenía, que era el de antes. El typecheck lo daba por bueno: los dos tipos eran correctos |
+| **El icono no llegaba al móvil.** Parecía un fallo del selector y era del servidor | El proceso del API llevaba en pie desde antes del contrato nuevo, así que rechazaba la clave. El typecheck no ve un proceso que se quedó con un módulo viejo |
+| **El panel del elemento no cabía en un móvil y no se desplazaba**, con el botón de guardar debajo de la pantalla | El panel solo se hacía desplazable en la página de iconos, cuando entonces cabía. Al añadir una fila dejó de caber |
 | **Escribir una tarea a mano rompía la lista.** Salía `item.tags.length` de undefined | La fila se escribía a mano en la caché, sin el campo nuevo, y el contrato no lo comprueba |
 | **El servidor tiraba el icono, las etiquetas y el orden al crear** | El `create` escribía los campos uno a uno y el `insert` no mencionaba los nuevos |
 | **Un libro escrito a mano no se podía abrir** | El detalle pedía el proveedor de la lista en vez del elemento, y sin id no hay nada que pedir |
@@ -366,6 +435,15 @@ haya 335 pruebas donde antes había 287:
 | **El cajón solo salía en las tres pestañas** | Estaba en el layout de las pestañas, así que el panel, una lista o un detalle se quedaban sin navegación |
 | **La etiqueta decía "Released" en una pantalla en español** | El estado viene del proveedor en inglés y salía sin traducir, junto a una etiqueta que sí estaba traducida |
 | **El año, el tipo, el estado y los géneros salían dos veces** | Estaba en la línea de datos y también en la tarjeta de detalles, y no se sabe cuál es la buena |
+
+### Lo que sale de verdad a flotas
+
+`GET /api/v1/health` falla con "Test timed out in 5000ms" cuando los 11 ficheros de
+pruebas del API corren a la vez y la máquina está ocupada (con el servidor de desarrollo y
+Metro levantados, que es como se trabaja aquí). En solitario pasa siempre, y 187 de 187
+pasan cuando no hay nada más corriendo. No lo he arreglado: el arreglo es que cada fichero
+tenga su base de datos, no un `timeout` más grande. Salido a relucir tres veces hoy, y
+ninguna era un fallo del API.
 
 ### Lo que NO he comprobado
 

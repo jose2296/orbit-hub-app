@@ -6,6 +6,7 @@ import type { ListItem, Priority } from "@orbit-hub/contracts";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
@@ -14,22 +15,51 @@ import { pluralKey, useTranslation } from "@/lib/i18n";
 import { tagsByFrequency } from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
 
-import { IconPickerPanel } from "./item-picker";
+import { ItemIcon, IconPickerPanel } from "./icon-picker";
+import { iconLabel } from "@/lib/lists/item-icons";
 
 type Page = "edit" | "icon" | "tags";
 
 const PRIORITIES: Priority[] = ["none", "low", "medium", "high"];
 
 export interface ItemEditSheetProps {
-  /** The row being edited, or `null` when the sheet is closed. */
+  /** The row being edited, or `null` when the sheet is closed or creating. */
   item: ListItem | null;
   listId: string;
+  /**
+   * `create` opens the same panel with nothing in it and writes the row when you
+   * press save. It is the same panel and not a second one because the fields are
+   * the same fields, and two panels for one row is how they stop agreeing about
+   * what a row can have.
+   */
+  mode?: "edit" | "create";
   /** The page to open on, so a tap on the icon goes straight to the icons. */
   startOn?: Page;
   onClose: () => void;
   /** Called after the row is gone, so the screen can put itself right. */
   onDeleted?: () => void;
 }
+
+/** What a row being written looks like before it exists. */
+interface Draft {
+  title: string;
+  notes: string | null;
+  priority: Priority;
+  icon: ListItem["icon"];
+  iconStyle: ListItem["iconStyle"];
+  iconColor: ListItem["iconColor"];
+  tags: string[];
+}
+
+const EMPTY_DRAFT: Draft = {
+  title: "",
+  notes: null,
+  priority: "none",
+  icon: null,
+  iconStyle: "outline",
+  iconColor: "neutral",
+  tags: [],
+};
 
 /**
  * Everything you can do with one row, in one panel.
@@ -53,17 +83,21 @@ export interface ItemEditSheetProps {
 export function ItemEditSheet({
   item,
   listId,
+  mode = "edit",
   startOn = "edit",
   onClose,
   onDeleted,
 }: ItemEditSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
-  const { items, updateItem, removeItem } = useListItems(listId);
+  const { items, updateItem, removeItem, addItem, toggleCompleted } =
+    useListItems(listId);
+  const isNew = mode === "create";
   const [page, setPage] = useState<Page>(startOn);
   const [title, setTitle] = useState(item?.title ?? "");
   const [notes, setNotes] = useState(item?.notes ?? "");
   const [newTag, setNewTag] = useState("");
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
   // Reopening always starts where the tap asked to start, on a fresh copy of
   // what the row has now and not on what it had when the panel was created.
@@ -76,66 +110,127 @@ export function ItemEditSheet({
     }
   }, [item, startOn]);
 
+  // Creating always starts empty, every time it is opened.
+  useEffect(() => {
+    if (isNew) {
+      setPage("edit");
+      setTitle("");
+      setNotes("");
+      setNewTag("");
+      setDraft(EMPTY_DRAFT);
+    }
+  }, [isNew]);
+
+  /** What the panel is showing, whether the row exists yet or not. */
+  const shown: Draft = isNew
+    ? { ...draft, title, notes: notes || null }
+    : {
+        title: item?.title ?? "",
+        notes: item?.notes ?? null,
+        priority: item?.priority ?? "none",
+        icon: item?.icon ?? null,
+        iconStyle: item?.iconStyle ?? "outline",
+        iconColor: item?.iconColor ?? "neutral",
+        tags: item?.tags ?? [],
+      };
+
   /** The labels already used in this list, so a new row reuses the old ones. */
   const labels = useMemo(
-    () => tagsByFrequency(items).filter(({ tag }) => !item?.tags.includes(tag)),
-    [items, item?.tags],
+    () => tagsByFrequency(items).filter(({ tag }) => !shown.tags.includes(tag)),
+    // The list of labels the row has, as one string: `shown` is rebuilt on every
+    // render, so depending on the array itself would re-filter on every tick of
+    // anything, and the filter is not free with a hundred rows in the list.
+    [items, shown.tags.join("|")],
   );
 
-  if (!item) return null;
+  if (!isNew && !item) return null;
 
   const save = (changes: Parameters<typeof updateItem>[1]) => {
-    void updateItem(item, changes);
+    if (isNew) {
+      setDraft((current) => ({ ...current, ...changes }));
+      return;
+    }
+    void updateItem(item!, changes);
   };
 
   const saveTitle = () => {
     const trimmed = title.trim();
     // An empty name is not a name: the row would be a blank line in the list
     // with nothing in it to find again.
-    if (trimmed && trimmed !== item.title) save({ title: trimmed });
+    if (isNew) {
+      if (trimmed) setDraft((current) => ({ ...current, title: trimmed }));
+      return;
+    }
+    if (trimmed && trimmed !== item!.title) save({ title: trimmed });
   };
 
   const saveNotes = () => {
     const trimmed = notes.trim();
-    if (trimmed !== (item.notes ?? "")) save({ notes: trimmed || null });
+    if (isNew) {
+      setDraft((current) => ({ ...current, notes: trimmed || null }));
+      return;
+    }
+    if (trimmed !== (item!.notes ?? "")) save({ notes: trimmed || null });
   };
 
   const addTag = () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
-    if (item.tags.includes(trimmed)) {
+    if (shown.tags.includes(trimmed)) {
       setNewTag("");
       return;
     }
-    save({ tags: [...item.tags, trimmed] });
+    save({ tags: [...shown.tags, trimmed] });
     setNewTag("");
   };
 
   const toggleTag = (tag: string) =>
     save({
-      tags: item.tags.includes(tag)
-        ? item.tags.filter((row) => row !== tag)
-        : [...item.tags, tag],
+      tags: shown.tags.includes(tag)
+        ? shown.tags.filter((row) => row !== tag)
+        : [...shown.tags, tag],
     });
+
+  /** Writes the row for the first time, with everything the panel was given. */
+  const create = async () => {
+    const trimmed = title.trim();
+    // A row with no name is a blank line you cannot find again, so the button
+    // says so instead of writing it.
+    if (!trimmed) return;
+    await addItem({
+      title: trimmed,
+      notes: notes.trim() || null,
+      priority: draft.priority,
+      icon: draft.icon,
+      iconStyle: draft.iconStyle,
+      iconColor: draft.iconColor,
+      tags: draft.tags,
+    });
+    onClose();
+  };
 
   const subtitle =
     page === "icon"
       ? t("itemEdit.iconSubtitle")
       : page === "tags"
-        ? t(pluralKey("itemEdit.tagsSubtitle", item.tags.length), {
-            count: item.tags.length,
+        ? t(pluralKey("itemEdit.tagsSubtitle", shown.tags.length), {
+            count: shown.tags.length,
           })
-        : item.tags.length > 0
-          ? item.tags.join(" · ")
+        : shown.tags.length > 0
+          ? shown.tags.join(" · ")
           : t("itemEdit.subtitle");
 
   return (
     <Sheet
       visible
       onClose={onClose}
-      title={item.title}
+      title={isNew ? t("itemCreate.title") : item!.title}
       subtitle={subtitle}
-      scrollable={page === "icon"}
+      // Scrolling on every page, and not only on the icons: with the name, the
+      // description, the urgency, the icon, the labels, whether it is done, save
+      // and delete, this panel is taller than a phone, and a panel that does not
+      // scroll hides its own save button under the bottom of the screen.
+      scrollable
     >
       <View
         style={{
@@ -177,7 +272,7 @@ export function ItemEditSheet({
               </AppText>
               <View style={[styles.row, { gap: theme.spacing.xs }]}>
                 {PRIORITIES.map((option) => {
-                  const active = option === item.priority;
+                  const active = option === shown.priority;
                   return (
                     <Pressable
                       key={option}
@@ -233,15 +328,18 @@ export function ItemEditSheet({
                 },
               ]}
             >
-              <Ionicons
-                name="color-palette-outline"
-                size={18}
-                color={theme.colors.textMuted}
+              {/* The row's own icon, in its own colour and its own drawing: what
+                  you chose has to be on this row before you go back, or picking
+                  a colour is picking a colour blind. */}
+              <ItemIcon
+                icon={shown.icon}
+                style={shown.iconStyle}
+                color={shown.iconColor}
+                size={20}
               />
               <AppText variant="body" style={styles.flex}>
-                {t("itemEdit.icon")}
+                {shown.icon ? iconLabel(shown.icon) : t("itemEdit.icon")}
               </AppText>
-              {item.icon ? <Badge label={t("itemEdit.iconChosen")} /> : null}
               <Ionicons
                 name="chevron-forward"
                 size={16}
@@ -273,9 +371,9 @@ export function ItemEditSheet({
               <AppText variant="body" style={styles.flex}>
                 {t("itemEdit.tags")}
               </AppText>
-              {item.tags.length > 0 ? (
+              {shown.tags.length > 0 ? (
                 <AppText variant="caption" tone="accent">
-                  {item.tags.join(" · ")}
+                  {shown.tags.join(" · ")}
                 </AppText>
               ) : null}
               <Ionicons
@@ -285,52 +383,108 @@ export function ItemEditSheet({
               />
             </Pressable>
 
-            {item.completed ? (
-              <Badge label={t("itemEdit.done")} tone="success" />
+            {/* Whether it is done, as a thing you can change and not as a badge
+                you can only read. A shopping list lives on this: "I already
+                bought the milk" puts the row back in the pending section, and
+                the only place to say that is the row itself. */}
+            {!isNew ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("itemEdit.markDone")}
+                accessibilityHint={t("itemEdit.markDoneHint")}
+                onPress={() => {
+                  onClose();
+                  void toggleCompleted(item!);
+                }}
+                style={({ pressed }) => [
+                  styles.link,
+                  {
+                    borderColor: theme.colors.border,
+                    borderRadius: theme.radius.md,
+                    backgroundColor: pressed
+                      ? theme.colors.surfaceMuted
+                      : "transparent",
+                  },
+                ]}
+              >
+                <Checkbox
+                  checked={item!.completed}
+                  onToggle={() => {
+                    onClose();
+                    void toggleCompleted(item!);
+                  }}
+                  label=""
+                />
+                <AppText variant="body" style={styles.flex}>
+                  {item!.completed
+                    ? t("itemEdit.putBack")
+                    : t("itemEdit.markDone")}
+                </AppText>
+                {item!.completed ? (
+                  <Badge label={t("itemEdit.done")} tone="success" />
+                ) : null}
+              </Pressable>
             ) : null}
 
             {/* Un botón de guardar, y no solo "se guarda al salir del campo".
                 Un campo que se guarda al salir es un campo que pierde lo que
                 escribiste si cierras el panel sin tocar en ninguna parte: el
                 evento de salir no llega, y lo escrito se va con el panel. */}
-            <Button
-              label={t("rename.save")}
-              icon="checkmark"
-              fullWidth
-              onPress={() => {
-                saveTitle();
-                saveNotes();
-              }}
-            />
-
-            {/* Last, red, and it says what it is going to take with it. */}
-            <View
-              style={{ gap: theme.spacing.xs, marginTop: theme.spacing.sm }}
-            >
+            {isNew ? (
               <Button
-                label={t("itemEdit.delete")}
-                icon="trash-outline"
-                variant="danger"
+                testID="item-create"
+                label={t("itemCreate.save")}
+                icon="checkmark"
+                fullWidth
+                disabled={title.trim().length === 0}
+                onPress={() => void create()}
+              />
+            ) : (
+              <Button
+                label={t("rename.save")}
+                icon="checkmark"
                 fullWidth
                 onPress={() => {
-                  onClose();
-                  void removeItem(item);
-                  onDeleted?.();
+                  saveTitle();
+                  saveNotes();
                 }}
               />
-              <AppText variant="caption" tone="subtle">
-                {t("confirm.irreversible")}
-              </AppText>
-            </View>
+            )}
+
+            {/* Last, red, and it says what it is going to take with it. A row
+                being created has nothing to delete yet. */}
+            {!isNew ? (
+              <View
+                style={{ gap: theme.spacing.xs, marginTop: theme.spacing.sm }}
+              >
+                <Button
+                  label={t("itemEdit.delete")}
+                  icon="trash-outline"
+                  variant="danger"
+                  fullWidth
+                  onPress={() => {
+                    onClose();
+                    void removeItem(item!);
+                    onDeleted?.();
+                  }}
+                />
+                <AppText variant="caption" tone="subtle">
+                  {t("confirm.irreversible")}
+                </AppText>
+              </View>
+            ) : null}
           </>
         ) : null}
 
         {page === "icon" ? (
           <IconPickerPanel
-            value={item.icon}
-            onPick={(icon) => {
-              save({ icon });
-              setPage("edit");
+            value={shown.icon}
+            style={shown.iconStyle}
+            color={shown.iconColor}
+            onPick={(choice) => {
+              // The colour and the drawing travel with the icon, so a tap on a
+              // red outline is one write and not three that could half-land.
+              save(choice);
             }}
           />
         ) : null}
@@ -340,7 +494,7 @@ export function ItemEditSheet({
             <View
               style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}
             >
-              {item.tags.map((tag) => (
+              {shown.tags.map((tag) => (
                 <Pressable
                   key={tag}
                   accessibilityRole="button"

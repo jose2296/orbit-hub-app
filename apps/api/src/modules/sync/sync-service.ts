@@ -11,7 +11,8 @@ import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import {
-  ITEM_ICONS,
+  ITEM_ICON_COLORS,
+  isItemIcon,
   LIST_KINDS,
   LIST_ORDER_MODES,
   WORKSPACE_COLORS,
@@ -155,7 +156,22 @@ function sanitisePayload(
       // A key out of the icons the app offers, never free text: the same shape
       // on every device and something the app can draw.
       const icon = String(value);
-      clean[key] = (ITEM_ICONS as readonly string[]).includes(icon) ? icon : null;
+      clean[key] = isItemIcon(icon) ? icon : null;
+      continue;
+    }
+
+    if (key === 'iconStyle') {
+      // Outline or filled. Anything else is the outline, which is what a row
+      // with no style has always been drawn as.
+      clean[key] = value === 'fill' ? 'fill' : 'outline';
+      continue;
+    }
+
+    if (key === 'iconColor') {
+      // One of the colours the app offers, and not a colour value: a row with a
+      // colour nobody can draw is a row with no colour.
+      const color = String(value);
+      clean[key] = (ITEM_ICON_COLORS as readonly string[]).includes(color) ? color : 'neutral';
       continue;
     }
 

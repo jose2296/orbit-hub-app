@@ -69,7 +69,8 @@ export type ListKindName = (typeof LIST_KINDS)[number];
  * colour it does not know, the app cannot draw one that is not here, and two
  * lists are two lists that are a step behind each other.
  */
-export { WORKSPACE_COLORS } from '@orbit-hub/contracts';
+export { ITEM_ICON_COLORS, WORKSPACE_COLORS, isItemIcon } from '@orbit-hub/contracts';
+export type { ItemIconColor as ItemIconColorName } from '@orbit-hub/contracts';
 export type { WorkspaceColor as WorkspaceColorName } from '@orbit-hub/contracts';
 
 /**
@@ -119,6 +120,8 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'favorite',
     'priority',
     'icon',
+    'iconStyle',
+    'iconColor',
     'tags',
     'externalId',
     'metadata',

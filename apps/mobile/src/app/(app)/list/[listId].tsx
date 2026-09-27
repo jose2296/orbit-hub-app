@@ -11,7 +11,9 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
-import { FiltersSheet, ItemIcon } from "@/components/lists/item-picker";
+import { DoneTray } from "@/components/lists/done-tray";
+import { ItemIcon } from "@/components/lists/icon-picker";
+import { FiltersSheet } from "@/components/lists/item-picker";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { DraggableRow } from "@/components/ui/draggable-row";
@@ -19,7 +21,6 @@ import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
-import { TextField } from "@/components/ui/text-field";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenTitle } from "@/hooks/use-screen-title";
@@ -80,13 +81,10 @@ export default function ListScreen() {
     isLoading,
     showCompleted,
     setShowCompleted,
-    addItem,
     toggleCompleted,
     moveItemTo,
   } = useListItems(listId);
 
-  const [title, setTitle] = useState("");
-  const [adding, setAdding] = useState(false);
   const [menuFor, setMenuFor] = useState<ListItem | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
@@ -95,10 +93,19 @@ export default function ListScreen() {
     "all",
   );
   const [filterText, setFilterText] = useState("");
+  // Which row is being edited and where the panel opens, and *not* a copy of the
+  // row: the panel needs the row as it is now, because it is the one that
+  // changes it. A snapshot taken when the panel opened goes stale on the first
+  // write, and the panel then paints the previous choice and sends the previous
+  // value back — which is how picking an icon and then a colour lost the icon.
   const [editing, setEditing] = useState<{
-    item: ListItem;
+    /** Empty when the panel is creating a row rather than editing one. */
+    itemId: string;
     page: "edit" | "icon" | "tags";
   } | null>(null);
+  const editingItem = editing
+    ? (items.find((row) => row.id === editing.itemId) ?? null)
+    : null;
   const [duplicating, setDuplicating] = useState(false);
 
   /**
@@ -266,19 +273,6 @@ export default function ListScreen() {
     });
   }
 
-  async function onAdd() {
-    const trimmed = title.trim();
-    if (trimmed.length === 0) return;
-
-    setAdding(true);
-    try {
-      await addItem({ title: trimmed });
-      setTitle("");
-    } finally {
-      setAdding(false);
-    }
-  }
-
   if (!listId) {
     return (
       <Screen>
@@ -316,10 +310,9 @@ export default function ListScreen() {
         // sin confirmar y sin vuelta atras: la forma mas mala de perder trabajo
         // que puede tener una lista, y peor que una funcionalidad que falte,
         // porque te enteras cuando ya no lo querias.
-        onEdit={() => setEditing({ item, page: "edit" })}
-        onIcon={() => setEditing({ item, page: "icon" })}
-        onTags={() => setEditing({ item, page: "tags" })}
-        onPriority={() => setEditing({ item, page: "edit" })}
+        onEdit={() => setEditing({ itemId: item.id, page: "edit" })}
+        onIcon={() => setEditing({ itemId: item.id, page: "icon" })}
+        onPriority={() => setEditing({ itemId: item.id, page: "edit" })}
       />
     );
 
@@ -460,41 +453,9 @@ export default function ListScreen() {
 
   const footer = (
     <View style={{ gap: theme.spacing.lg }}>
-      {/* A media list has nothing to type: its items come from a catalog, so the
-          form would only invite a title that then has no poster. */}
-      {!media ? (
-        <Card variant="muted" style={{ gap: theme.spacing.md }}>
-          <AppText variant="callout" tone="muted">
-            {t("items.createHint")}
-          </AppText>
-          <TextField
-            label={t("items.titleLabel")}
-            value={title}
-            onChangeText={setTitle}
-            placeholder={t("items.titlePlaceholder")}
-            autoCapitalize="sentences"
-            returnKeyType="done"
-            onSubmitEditing={() => void onAdd()}
-          />
-          <Button
-            label={t("items.add")}
-            icon="add"
-            onPress={() => void onAdd()}
-            loading={adding}
-            disabled={title.trim().length === 0}
-          />
-        </Card>
-      ) : null}
-
-      {/* The catalog needs the network, so this is the one way of adding a
-          title that does not work on a plane. Type it by hand there and search
-          once you land. */}
-      <Button
-        label={t("catalog.addFromCatalog")}
-        variant={media ? "primary" : "secondary"}
-        icon="search-outline"
-        onPress={() => router.push(`/(app)/catalog?listId=${listId}`)}
-      />
+      {/* A media list takes its items from a catalog, so there is nothing to
+          type: the button that creates a row is hidden there and the catalog
+          button is the way in. */}
 
       {list ? (
         <View style={{ gap: theme.spacing.sm }}>
@@ -548,7 +509,12 @@ export default function ListScreen() {
         // screens of rows is plenty, and rendering more of them is what makes a
         // long list feel heavy.
         initialNumToRender={14}
-        windowSize={7}
+        // Five screens each way and not seven: measured on a list of a thousand
+        // rows, seven mounted 420 of them on the first paint, which is the part
+        // a phone pays for, and five mounts half as many for the same
+        // smoothness when you scroll (20 screen-jumps in 427 ms, 2 frames
+        // dropped). The number is in docs/roadmap.md with the rest.
+        windowSize={5}
         maxToRenderPerBatch={10}
         updateCellsBatchingPeriod={60}
         keyboardShouldPersistTaps="handled"
@@ -616,9 +582,58 @@ export default function ListScreen() {
         </View>
       </Sheet>
 
+      {/* The one button that adds to this list, at the bottom right where the
+          thumb is on a phone, and it is the same button everywhere: in a list of
+          tasks it opens the item panel to write one, and in a list of films,
+          series or books it opens the catalog, because a title written by hand
+          has no poster and there is nothing to show for it.
+
+          It is a button and not the form that was under the list because on a
+          long list the form is three screens down, and a list you have to scroll
+          to the end of to add anything to is a list you stop adding things to.
+
+          The catalog needs the network, so on a plane this one does not work.
+          It says so when it is pressed, rather than opening a search that cannot
+          answer. */}
+      <DoneTray
+        items={completed}
+        bottomInset={theme.spacing.lg * 2 + 56 + theme.spacing.md}
+        onToggle={(item) => void toggleCompleted(item)}
+        onOpen={(item) => setEditing({ itemId: item.id, page: "edit" })}
+      />
+
+      <Pressable
+        testID="item-create-button"
+        accessibilityRole="button"
+        accessibilityLabel={media ? t("catalog.addFromCatalog") : t("itemCreate.title")}
+        accessibilityHint={
+          media ? t("catalog.addFromCatalogHint") : t("itemCreate.titleHint")
+        }
+        onPress={() => {
+          if (media) {
+            void router.push(`/(app)/catalog?listId=${listId}`);
+            return;
+          }
+          setEditing({ itemId: "", page: "edit" });
+        }}
+        style={({ pressed }) => [
+          styles.createButton,
+          {
+            bottom: theme.spacing.lg,
+            right: theme.spacing.lg,
+            borderRadius: theme.radius.pill,
+            backgroundColor: theme.colors.accent,
+            opacity: pressed ? 0.8 : 1,
+          },
+        ]}
+      >
+        <Ionicons name="add" size={26} color={theme.colors.onAccent} />
+      </Pressable>
+
       <ItemEditSheet
-        item={editing?.item ?? null}
+        item={editingItem}
         listId={listId}
+        mode={editing && editing.itemId === "" ? "create" : "edit"}
         startOn={editing?.page ?? "edit"}
         onClose={() => setEditing(null)}
       />
@@ -642,14 +657,12 @@ function TaskRow({
   onToggle,
   onEdit,
   onIcon,
-  onTags,
   onPriority,
 }: {
   item: import("@orbit-hub/contracts").ListItem;
   onToggle: () => void;
   onEdit: () => void;
   onIcon: () => void;
-  onTags: () => void;
   onPriority: () => void;
 }) {
   const theme = useTheme();
@@ -657,29 +670,46 @@ function TaskRow({
 
   return (
     <View
+      testID={`item-row-${item.id}`}
       style={[
         styles.item,
-        { gap: theme.spacing.md, padding: theme.spacing.lg },
+        {
+          gap: theme.spacing.md,
+          padding: theme.spacing.lg,
+          // El asa de arrastrar va encima, en el borde derecho, y la insignia de
+          // urgencia se solapaba con ella. Se le deja sitio: dos cosas que se
+          // pisan no se leen, y ademas el que va debajo no se puede pulsar.
+          paddingRight: theme.spacing.lg + styles.dragHandle.width,
+        },
       ]}
     >
       {/* The icon is its own target: it is a picture of what to buy, and
           pressing it opens the pictures rather than the row. With no icon there
           is still something to press, or the feature is only found by someone
           who already uses it. */}
+      <Checkbox checked={item.completed} onToggle={onToggle} label="" />
+
+      {/* El icono va a la derecha de la casilla, y no en el borde de la fila: al
+          otro extremo se leía como una foto de la lista y no como el icono de
+          esta fila, y con la casilla al lado se sabe de un vistazo qué vas a
+          marcar y qué has marcado. */}
       <Pressable
+        testID={`item-icon-${item.id}`}
         accessibilityRole="button"
         accessibilityLabel={t("icons.ofItem", { name: item.title })}
         hitSlop={8}
         onPress={onIcon}
         style={styles.iconSlot}
       >
-        <ItemIcon icon={item.icon} />
+        <ItemIcon
+          icon={item.icon}
+          style={item.iconStyle}
+          color={item.iconColor}
+        />
         {item.icon ? null : (
           <Ionicons name="add" size={14} color={theme.colors.textSubtle} />
         )}
       </Pressable>
-
-      <Checkbox checked={item.completed} onToggle={onToggle} label="" />
 
       <View style={[styles.flex, { gap: 2 }]}>
         {/* The name opens the row. It used to be wired to the delete: one tap
@@ -701,23 +731,14 @@ function TaskRow({
           </AppText>
         </Pressable>
 
-        {/* The labels go under the name and not beside it: a row is already as
-            wide as the screen, a label beside the name is a label cut in half,
-            and the drag handle lives on that same edge. */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("tags.title")}
-          hitSlop={6}
-          onPress={onTags}
-        >
-          <AppText
-            variant="caption"
-            tone={item.tags.length > 0 ? "accent" : "subtle"}
-            numberOfLines={1}
-          >
-            {item.tags.length > 0 ? item.tags.join(" · ") : t("tags.add")}
+        {/* The labels, and only the ones there are. A row used to say "+ Label"
+            under every name, which is a second place to add the same thing the
+            item panel already does, in a row with no room to say it in. */}
+        {item.tags.length > 0 ? (
+          <AppText variant="caption" tone="accent" numberOfLines={1}>
+            {item.tags.join(" · ")}
           </AppText>
-        </Pressable>
+        ) : null}
       </View>
 
       {item.priority !== "none" ? (
@@ -762,8 +783,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  /** Lo que ocupa el asa de arrastrar, en el borde derecho de la fila. */
+  dragHandle: {
+    width: 28,
+  },
   priorityGap: {
     width: 64,
+  },
+  createButton: {
+    position: "absolute",
+    width: 56,
+    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    // It floats over the rows, so it casts a shadow to say it is above them and
+    // not one more row at the end of the list.
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   iconSlot: {
     width: 24,

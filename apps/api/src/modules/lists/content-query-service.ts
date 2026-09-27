@@ -1,3 +1,4 @@
+import { isItemIcon } from '@orbit-hub/contracts';
 import type {
   List,
   ListItem,
@@ -190,7 +191,13 @@ export class ContentQueryService {
       completed: row.completed,
       favorite: row.favorite,
       priority: row.priority,
-      icon: row.icon,
+      // An icon this build does not know is no icon, and not a broken row: the
+      // column is free text and a future build can write a key this one has
+      // never heard of. Showing nothing in the picture's place is a missing
+      // detail; refusing to answer is a list that does not open.
+      icon: isItemIcon(row.icon) ? row.icon : null,
+      iconStyle: row.iconStyle,
+      iconColor: row.iconColor,
       tags: row.tags ?? [],
       externalId: row.externalId,
       metadata: row.metadata,
@@ -248,6 +255,7 @@ export class ContentQueryService {
     for (const row of workspaceRows) {
       results.push({
         scope: 'workspace',
+          completed: null,
         id: row.id,
         workspaceId: row.id,
         listId: null,
@@ -274,6 +282,7 @@ export class ContentQueryService {
       for (const row of folderRows) {
         results.push({
           scope: 'folder',
+          completed: null,
           id: row.id,
           workspaceId: row.workspaceId,
           listId: null,
@@ -304,6 +313,7 @@ export class ContentQueryService {
       for (const row of listRows) {
         results.push({
           scope: 'list',
+          completed: null,
           id: row.id,
           workspaceId: row.workspaceId,
           listId: row.id,
@@ -340,6 +350,7 @@ export class ContentQueryService {
           kind: row.list.kind,
           title: row.item.title,
           subtitle: row.list.title,
+          completed: row.item.completed,
           updatedAt: row.item.updatedAt.toISOString(),
         });
       }

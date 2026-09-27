@@ -1,17 +1,10 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet } from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
-import type { TranslationKey } from "@/lib/i18n";
-import {
-  ITEM_GLYPHS,
-  ITEM_ICON_GROUPS,
-  isItemIcon,
-} from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
 
 import { AppText } from "../ui/text";
@@ -135,170 +128,10 @@ export function FiltersSheet({
   );
 }
 
-export interface IconPickerSheetProps {
-  open: boolean;
-  onClose: () => void;
-  /** The icon the row has now, or `null`. */
-  value: string | null;
-  onPick: (icon: string | null) => void;
-}
-
-/**
- * The icon of a row, out of the ones the app draws.
- *
- * Grouped, because thirty icons in one grid is a wall, and with nothing to
- * choose at the top: a row with no icon is a perfectly good row and the picture
- * is a help, not a requirement.
- */
-export function IconPickerSheet({
-  open,
-  onClose,
-  value,
-  onPick,
-}: IconPickerSheetProps) {
-  const t = useTranslation();
-  const choose = (icon: string | null) => {
-    onPick(icon);
-    onClose();
-  };
-
-  return (
-    <Sheet visible={open} onClose={onClose} title={t("icons.title")}>
-      <IconPickerPanel value={value} onPick={choose} />
-    </Sheet>
-  );
-}
-
-/**
- * The icons, without a panel of their own.
- *
- * A page of the sheet that edits the row, and not a second sheet: a panel on top
- * of a panel is two backdrops over one screen, and a tap that reaches the wrong
- * one closes what is underneath instead of doing what was asked.
- */
-export function IconPickerPanel({
-  value,
-  onPick,
-}: {
-  value: string | null;
-  onPick: (icon: string | null) => void;
-}) {
-  const theme = useTheme();
-  const t = useTranslation();
-
-  return (
-    <View
-      style={{ gap: theme.spacing.lg, paddingHorizontal: theme.spacing.lg }}
-    >
-      <IconCell
-        glyph="close-circle-outline"
-        label={t("icons.none")}
-        selected={value === null}
-        onPress={() => onPick(null)}
-      />
-
-      {ITEM_ICON_GROUPS.map((group) => (
-        <View key={group.key} style={{ gap: theme.spacing.sm }}>
-          <AppText variant="caption" tone="subtle">
-            {t(group.key as TranslationKey)}
-          </AppText>
-          <View style={[styles.grid, { gap: theme.spacing.sm }]}>
-            {group.icons.map((icon) => (
-              <IconCell
-                key={icon}
-                glyph={ITEM_GLYPHS[icon].glyph}
-                label={t(ITEM_GLYPHS[icon].labelKey)}
-                selected={value === icon}
-                onPress={() => onPick(icon)}
-              />
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function IconCell({
-  glyph,
-  label,
-  selected,
-  onPress,
-}: {
-  glyph: keyof typeof Ionicons.glyphMap;
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [styles.iconCell, { opacity: pressed ? 0.7 : 1 }]}
-    >
-      <View
-        style={[
-          styles.iconBox,
-          {
-            backgroundColor: selected
-              ? theme.colors.accent
-              : theme.colors.surfaceMuted,
-            borderRadius: theme.radius.md,
-          },
-        ]}
-      >
-        <Ionicons
-          name={glyph}
-          size={20}
-          color={selected ? theme.colors.onAccent : theme.colors.textMuted}
-        />
-      </View>
-      <AppText variant="caption" tone="subtle" numberOfLines={1} align="center">
-        {label}
-      </AppText>
-    </Pressable>
-  );
-}
-
-/** The glyph of a row's icon, or nothing when it has none. */
-export function ItemIcon({
-  icon,
-  size = 18,
-}: {
-  icon: string | null;
-  size?: number;
-}) {
-  const theme = useTheme();
-  if (!isItemIcon(icon)) return null;
-  return (
-    <Ionicons
-      name={ITEM_GLYPHS[icon].glyph}
-      size={size}
-      color={theme.colors.textMuted}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   labels: {
     flexDirection: "row",
     flexWrap: "wrap",
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  iconCell: {
-    width: 74,
-    gap: 4,
-  },
-  iconBox: {
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
   },
   checkRow: {
     flexDirection: "row",

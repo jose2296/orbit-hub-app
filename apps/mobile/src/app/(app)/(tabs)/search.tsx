@@ -5,11 +5,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DrawerButton } from '@/components/layout/drawer';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
-import { useLocalSearch } from '@/hooks/use-lists';
+import { useListItems, useLocalSearch } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 import type { SearchResult } from '@orbit-hub/contracts';
@@ -30,6 +31,9 @@ export default function SearchScreen() {
   const t = useTranslation();
   const router = useRouter();
   const { results, grouped, search, isSearching } = useLocalSearch();
+  // Sin lista: la casilla solo necesita el id y si esta hecho, y la
+  // busqueda se repite despues para que el resultado se entere.
+  const { toggleCompleted } = useListItems(undefined);
 
   const [query, setQuery] = useState('');
 
@@ -125,13 +129,35 @@ export default function SearchScreen() {
                           color={theme.colors.accentSoftText}
                         />
                         <View style={styles.flex}>
-                          <AppText variant="body">{result.title}</AppText>
+                          <AppText
+                            variant="body"
+                            tone={result.completed ? 'subtle' : 'default'}
+                            style={result.completed ? styles.strike : undefined}
+                          >
+                            {result.title}
+                          </AppText>
                           {result.subtitle ? (
                             <AppText variant="caption" tone="muted">
                               {result.subtitle}
                             </AppText>
                           ) : null}
                         </View>
+                        {result.scope === 'list_item' && result.completed !== null ? (
+                          <Checkbox
+                            testID={`search-done-${result.id}`}
+                            checked={result.completed}
+                            label=""
+                            onToggle={() => {
+                              // La búsqueda se repite porque el resultado vive
+                              // en memoria: sin esto la casilla se quedaría como
+                              // estaba y la fila con ella.
+                              void toggleCompleted({
+                                id: result.id,
+                                completed: result.completed ?? false,
+                              }).then(() => void search(query));
+                            }}
+                          />
+                        ) : null}
                       </Pressable>
                     </View>
                   ))}
@@ -158,6 +184,9 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  strike: {
+    textDecorationLine: 'line-through',
   },
   separator: {
     height: StyleSheet.hairlineWidth,
