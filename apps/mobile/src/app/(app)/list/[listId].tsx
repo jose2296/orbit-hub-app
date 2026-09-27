@@ -16,7 +16,7 @@ import { ItemIcon } from "@/components/lists/icon-picker";
 import { FiltersSheet } from "@/components/lists/item-picker";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
-import { DraggableRow } from "@/components/ui/draggable-row";
+import { DraggableRow, DraggableSort } from "@/components/ui/draggable-row";
 import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
@@ -491,7 +491,11 @@ export default function ListScreen() {
 
   return (
     <Screen scroll={false}>
-      <FlatList
+      {/* El provider va alrededor de la lista y no en cada fila: las filas
+          comparten el estado del arrastre por contexto, y son las tres cifras
+          que necesitan para apartarse. */}
+      <DraggableSort>
+        <FlatList
         data={entries}
         keyExtractor={entryKey}
         renderItem={renderEntry}
@@ -520,6 +524,7 @@ export default function ListScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       />
+      </DraggableSort>
 
       {/* What can be done with a film, a series or a book. It lives here and in
           the detail and nowhere else, because two lists of the same handful of

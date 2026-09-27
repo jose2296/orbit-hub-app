@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { SessionProvider, useSession } from '@/hooks/use-session';
@@ -15,15 +16,21 @@ export default function RootLayout() {
   // useTheme() only works below ThemeProvider, so nothing that reads the theme
   // may live in this component.
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <I18nProvider>
-          <SessionProvider>
-            <Navigation />
-          </SessionProvider>
-        </I18nProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    // El gestor de gestos necesita su raiz. En nativo hace falta para que los
+    // gestos seRegistren; en web es lo que pone `touch-action: none` a las
+    // filas arrastrables, y sin eso el navegador se queda con el dedo para
+    // desplazar la lista y el arrastre no llega a empezar nunca.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <I18nProvider>
+            <SessionProvider>
+              <Navigation />
+            </SessionProvider>
+          </I18nProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

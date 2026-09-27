@@ -2,7 +2,7 @@ import type { Server } from 'node:http';
 
 import { createApp } from './app.js';
 import { env } from './config/env.js';
-import { closeDatabase, runMigrations } from './db/client.js';
+import { closeDatabase, pingDatabase, runMigrations } from './db/client.js';
 import { logger } from './lib/logger.js';
 
 const app = createApp();
@@ -18,12 +18,24 @@ async function start(): Promise<Server> {
     await runMigrations(process.env['MIGRATIONS_FOLDER'] ?? './drizzle');
   }
 
-  return new Promise<Server>((resolve) => {
-    const server = app.listen(env.PORT, env.HOST, () => {
+  const server = await new Promise<Server>((resolve) => {
+    const started = app.listen(env.PORT, env.HOST, () => {
       logger.info({ port: env.PORT, host: env.HOST, env: env.NODE_ENV }, 'OrbitHub API listening');
-      resolve(server);
+      resolve(started);
     });
   });
+
+  // The connection is opened before answering anything, and not on the first
+  // request. A liveness probe that pays for a cold start is a liveness probe
+  // that gets killed by the startup timeout of whatever is watching, and the
+  // health endpoint is the one place where being slow is worst: it is the thing
+  // people watch when they want to know if the API is alive.
+  const database = await pingDatabase();
+  if (!database.ok) {
+    logger.warn({ latencyMs: database.latencyMs }, 'the database did not answer on boot');
+  }
+
+  return server;
 }
 
 const server = await start();

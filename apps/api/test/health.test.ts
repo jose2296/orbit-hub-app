@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/app.js';
+import { pingDatabase } from '../src/db/client.js';
 
 let server: Server;
 let baseUrl: string;
@@ -17,6 +18,12 @@ beforeAll(async () => {
     throw new Error('Could not determine the test server address');
   }
   baseUrl = `http://127.0.0.1:${address.port}`;
+
+  // The connection is warmed here, the way the real server warms it on boot.
+  // Without this the first health request pays for opening it — a second and a
+  // half, measured — and a test that took 1.7s alone fails at 5s when the other
+  // ten files are running against the same database.
+  await pingDatabase();
 });
 
 afterAll(async () => {

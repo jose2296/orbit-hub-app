@@ -377,6 +377,31 @@ Lo que **no** se ha medido y sigue sin medirse: en un móvil de verdad, con el b
 minificado, y con la lista abierta mientras se sincroniza. El 97 px de alto por fila es de
 la versión de escritorio con etiquetas; en un móvil es más bajo.
 
+### Arrastrar en vivo
+
+Hecho y verificado en el navegador, con el dedo apretado en mitad del camino.
+
+Las filas se apartan mientras arrastras: la que va detrás sube (o baja) una fila y
+deja el hueco donde va a caer la que arrastras. Lo que se escribe al final sigue
+siendo una sola operación, porque lo que se mueve durante el arrastre es la fila
+y no los datos.
+
+**El bug de verdad no era el reordenado: era que no habia `GestureHandlerRootView`.**
+Sin esa raiz el gestor de gestos no registra los gestos en la web —no pone
+`touch-action: none` a las filas— y el navegador se queda con el dedo para
+desplazar la lista. El arrastre no empezaba nunca. Se nota en que el sintoma era
+"no se reordena en vivo" y en realidad era "no se arrastra": dos cosas que parecen
+la misma y no lo son.
+
+`apps/mobile/src/lib/lists/drag-shift.ts` tiene la aritmética (qué fila se aparta y
+hacia dónde, y dónde caería) con 13 pruebas, y el componente la usa. La prueba
+del navegador (`arrastre-e2e.mjs`) aprieta, mueve en pasos sin soltar, mira las
+posiciones en mitad, suelta y comprueba el orden guardado.
+
+**Lo que NO se ha comprobado:** el arrastre en un móvil de verdad, que es donde
+importa. En el navegador funciona; en nativo la raiz tambien esta puesta ahora, pero
+no lo he visto en un dispositivo.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el
@@ -415,6 +440,7 @@ haya 335 pruebas donde antes había 287:
 | --- | --- |
 | **Elegir un icono y luego un color borraba el icono.** Parecía que el selector no guardaba | El selector mandaba el icono entero en cada cambio, con el valor que él tenía, que era el de antes. El typecheck lo daba por bueno: los dos tipos eran correctos |
 | **El icono no llegaba al móvil.** Parecía un fallo del selector y era del servidor | El proceso del API llevaba en pie desde antes del contrato nuevo, así que rechazaba la clave. El typecheck no ve un proceso que se quedó con un módulo viejo |
+| **El arrastre no arrancaba en web.** Parecía que el reordenado en vivo no estaba hecho | La app no tenía `GestureHandlerRootView`: sin ella el gestor de gestos no pone `touch-action: none` y el navegador se queda con el dedo para desplazar. El typecheck no ve una raiz que falta |
 | **El panel del elemento no cabía en un móvil y no se desplazaba**, con el botón de guardar debajo de la pantalla | El panel solo se hacía desplazable en la página de iconos, cuando entonces cabía. Al añadir una fila dejó de caber |
 | **Escribir una tarea a mano rompía la lista.** Salía `item.tags.length` de undefined | La fila se escribía a mano en la caché, sin el campo nuevo, y el contrato no lo comprueba |
 | **El servidor tiraba el icono, las etiquetas y el orden al crear** | El `create` escribía los campos uno a uno y el `insert` no mencionaba los nuevos |
@@ -438,12 +464,21 @@ haya 335 pruebas donde antes había 287:
 
 ### Lo que sale de verdad a flotas
 
-`GET /api/v1/health` falla con "Test timed out in 5000ms" cuando los 11 ficheros de
-pruebas del API corren a la vez y la máquina está ocupada (con el servidor de desarrollo y
-Metro levantados, que es como se trabaja aquí). En solitario pasa siempre, y 187 de 187
-pasan cuando no hay nada más corriendo. No lo he arreglado: el arreglo es que cada fichero
-tenga su base de datos, no un `timeout` más grande. Salido a relucir tres veces hoy, y
-ninguna era un fallo del API.
+**Arreglado, y no era el test.** `GET /api/v1/health` fallaba con "Test timed out in
+5000ms" al correr los 11 ficheros a la vez. La causa era de verdad y estaba en el
+producto: `pingDatabase()` abría la conexión **dentro de la petición**, así que la
+primera llamada al endpoint de salud pagaba el arranque en frío —1,7 s medidos—. Una
+sonda de vida que paga un arranque en frío es una sonda que mata el arranque de lo que
+la vigila, y el endpoint de salud es justo donde ser lento es peor.
+
+Ahora el servidor abre la conexión antes de escuchar, y la prueba la calienta en su
+`beforeAll` como hace el servidor de verdad. 187 de 187, dos veces seguidas, con la
+máquina ocupada.
+
+Lo que **queda** delparrandeado: los 11 ficheros comparten una base de datos y cada uno
+corre migraciones en su `beforeAll`. Con once workers a la vez eso se nota, y el
+`timeout` de 5 s no es un número mágico sino el sitio donde se nota. Arreglarlo es dar
+una base de datos por fichero, y eso es un bloque entero.
 
 ### Lo que NO he comprobado
 
