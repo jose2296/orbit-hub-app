@@ -308,7 +308,7 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 
 | # | Qué se pidió | Notas |
 | --- | --- | --- |
-| 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | Hecho de otra manera, que es la que servía: la **bandeja de completados**, fija abajo en la lista, con cuántos hay y sus casillas. Abres, destachas y vuelve a pendientes sin recorrer la lista. Y el resultado de la búsqueda lleva su casilla, para tacharlo sin salir de la búsqueda. Falta lo de *ofrecerlo al escribir*, que es otra cosa: ver abajo |
+| 24 | Al escribir un elemento, si coincide con uno ya completado, ofrecer volverlo a pendiente | Hecho y verificado, de las dos maneras que hacía falta. La **bandeja de completados**, fija abajo, con sus casillas; el **resultado de la búsqueda** con su casilla; y al **escribir el nombre** en el panel de crear, la fila que ofrece devolver a pendientes. Ver abajo |
 | 25 | Los detalles con el aspecto de los de la app vieja | Hecho y verificado. Portada a la izquierda con la nota al lado, lema en grande, sinopsis que se despliega, y los datos en una línea con etiquetas. La colección y los similares siguen siendo el carrusel de portadas que pediste | `f703e41` |
 
 
@@ -463,6 +463,42 @@ que yo creia estar midiendo.
 
 `cajon-ancho-e2e.mjs` mide las dos cosas: que la app siga entera en movil, y que siga
 siendo empujada a partir de 900. Falta probarlo en 1280.
+
+### Escribir algo que ya esta hecho
+
+Hecho y verificado en el navegador. Es la #24 del inventario, y es el caso de la
+lista de la compra: compraste leche hace tres semanas, la fila sigue ahi hecha, y al
+escribir "Leche" la app anadia una segunda leche. Ahora la lista dice que necesitas
+leche y que ya tienes leche, y ninguna de las dos cosas es verdad.
+
+Al escribir el nombre en el panel de crear, si el elemento ya esta en la lista y esta
+hecho, aparece **una fila con la unica accion que sirve**: "Volver a pendientes
+«Leche»". No un aviso de que ya existe —un aviso que nadie accionas— y no reutilizar
+en silencio la fila vieja, porque una fila que hiciste hace tres semanas no es la
+fila que estas escribiendo hoy: puede tener otro icono, otras etiquetas y otra
+urgencia. Al tocarla, esa fila vuelve a pendientes y **no se crea nada nuevo**.
+
+La comparacion **ignora mayusculas, tildes y espacios**, porque asi es como llega la
+misma palabra escrita en un movil, y una coincidencia que solo salta con la
+ortografia exacta no salta nunca. Con dos letras no ofrece nada: "p" coincide con
+media tienda y una oferta que sale siempre no ofrece nada. Si hay varias iguales, da
+la mas reciente, que es la que quieres decir.
+
+`lib/lists/done-match.ts` con 9 pruebas, y `hecho-otra-vez-e2e.mjs` en el navegador.
+
+### Tres fallos de textos que salieron de paso
+
+Estaban en pantalla y nadie los habia buscado:
+
+- **"items.priority.none" salia en crudo** en la pastilla de urgencia, en las dos
+  lenguas. La clave no estaba en el diccionario y el typecheck no la echa: el mapa de
+  traducciones acepta cualquier `TranslationKey` que exista, y esta no existia porque
+  se construia con una plantilla. Ahora sale "Ninguna".
+- **"1 completadas" y "1 pendientes"**: el plural se elige con `pluralKey`, que busca
+  `.one` y `.other`, y las claves estaban sueltas, sin ninguna de las dos. Una clave
+  suelta mas una `_one` no son la misma cosa. Ahora sale "1 completada" y "1
+  pendiente".
+- **"Completadas (1)"**, lo mismo en la cabecera de los completados.
 
 ### Lo que ya no hace falta decidir
 

@@ -16,6 +16,7 @@ import { tagsByFrequency } from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
 
 import { ItemIcon, IconPickerPanel } from "./icon-picker";
+import { completedMatch } from "@/lib/lists/done-match";
 import { iconLabel } from "@/lib/lists/item-icons";
 
 type Page = "edit" | "icon" | "tags";
@@ -142,6 +143,14 @@ export function ItemEditSheet({
     // anything, and the filter is not free with a hundred rows in the list.
     [items, shown.tags.join("|")],
   );
+
+  /**
+   * The done row this new one is about, if any.
+   *
+   * Only in create mode: offering to un-done a row you are already editing is a
+   * button about a different row.
+   */
+  const yaHecho = isNew ? completedMatch(title, items) : null;
 
   if (!isNew && !item) return null;
 
@@ -430,6 +439,28 @@ export function ItemEditSheet({
                 Un campo que se guarda al salir es un campo que pierde lo que
                 escribiste si cierras el panel sin tocar en ninguna parte: el
                 evento de salir no llega, y lo escrito se va con el panel. */}
+            {yaHecho ? (
+              <View
+                style={{ gap: theme.spacing.xs }}
+                testID="done-match"
+              >
+                <AppText variant="caption" tone="muted">
+                  {t("itemCreate.alreadyDone", { name: yaHecho.title })}
+                </AppText>
+                <Button
+                  testID="done-match-action"
+                  label={t("itemCreate.putBack", { name: yaHecho.title })}
+                  icon="arrow-undo-outline"
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => {
+                    onClose();
+                    void toggleCompleted(yaHecho);
+                  }}
+                />
+              </View>
+            ) : null}
+
             {isNew ? (
               <Button
                 testID="item-create"

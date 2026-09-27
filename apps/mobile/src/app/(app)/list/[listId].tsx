@@ -25,7 +25,7 @@ import { AppText } from "@/components/ui/text";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenTitle } from "@/hooks/use-screen-title";
-import { useTranslation } from "@/lib/i18n";
+import { pluralKey, useTranslation } from "@/lib/i18n";
 import {
   canReorder,
   filterItems,
@@ -296,7 +296,9 @@ export default function ListScreen() {
           <Checkbox
             checked={showCompleted}
             onToggle={() => setShowCompleted((value) => !value)}
-            label={t("lists.completedSection", { count: completed.length })}
+            label={t(pluralKey('lists.completedSection', completed.length), {
+              count: completed.length,
+            })}
           />
         </View>
       );
@@ -395,11 +397,17 @@ export default function ListScreen() {
         <View style={styles.badges}>
           {completed.length > 0 ? (
             <Badge
-              label={t("lists.completedCount", { count: completed.length })}
+              label={t(pluralKey('lists.completedCount', completed.length), {
+                count: completed.length,
+              })}
               tone="success"
             />
           ) : null}
-          <Badge label={t("lists.pendingCount", { count: pending.length })} />
+          <Badge
+            label={t(pluralKey('lists.pendingCount', pending.length), {
+              count: pending.length,
+            })}
+          />
         </View>
       ) : null}
 
