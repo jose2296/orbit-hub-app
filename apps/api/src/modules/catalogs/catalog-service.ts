@@ -2,6 +2,7 @@ import type {
   CatalogCollection,
   CatalogDetails,
   CatalogKind,
+  CatalogProviders,
   CatalogRelated,
   CatalogResult,
 } from '@orbit-hub/contracts';
@@ -526,6 +527,95 @@ export async function fetchCatalogDetails(
 
   writeCache(key, details);
   return details;
+}
+
+/* --------------------------------------------------------------- donde verlo -- */
+
+const tmdbProviderSchema = z.object({
+  provider_id: z.number(),
+  provider_name: z.string(),
+  logo_path: z.string().nullish(),
+});
+
+const tmdbProvidersSchema = z.object({
+  results: z.record(
+    z.string(),
+    z.object({
+      link: z.string().optional(),
+      buy: z.array(tmdbProviderSchema).optional(),
+      rent: z.array(tmdbProviderSchema).optional(),
+      flatrate: z.array(tmdbProviderSchema).optional(),
+    }),
+  ),
+});
+
+/**
+ * Where a title can be watched, bought or rented, for one country.
+ *
+ * The country is a parameter and not a setting, because what is on Netflix in
+ * Spain is not what is on it in Mexico, and a list that silently answers for the
+ * wrong country is worse than one that says it does not know. TMDB has a path
+ * per country for exactly this, so the app can ask for its own and nobody has to
+ * be told which one it is.
+ */
+export async function fetchCatalogProviders(
+  kind: CatalogKind,
+  externalId: string,
+  region: string,
+): Promise<CatalogProviders> {
+  if (kind === 'books') {
+    // A book is not on Netflix. Saying so is the honest answer; sending somebody
+    // to a shelf that does not exist is not.
+    return { region, available: false, providers: [] };
+  }
+
+  const [type, raw] = externalId.split(':');
+  const path = type === 'tv' ? 'tv' : 'movie';
+  if (!raw) {
+    throw new CatalogError('That identifier does not belong to this catalog', 'bad_query');
+  }
+
+  const url = new URL(
+    `https://api.themoviedb.org/3/${path}/${encodeURIComponent(raw)}/watch/providers`,
+  );
+  url.searchParams.set('api_key', env.TMDB_API_KEY as string);
+  url.searchParams.set('language', 'es-ES');
+
+  const rawPayload = (await fetchJson(url, 'application/json')) as Record<string, unknown>;
+  const payload = tmdbProvidersSchema.parse(rawPayload);
+  const delPais = payload.results[region.toUpperCase()] ?? null;
+
+  if (!delPais) return { region: region.toUpperCase(), available: false, providers: [] };
+
+  const logoDe = (ruta: string | null | undefined) =>
+    ruta ? `https://image.tmdb.org/t/p/w92${ruta}` : null;
+
+  // Renting before buying before streaming, because that is the order in which
+  // they are different decisions: you can only stream the one that is on the
+  // subscription you pay for.
+  const grupos: [CatalogProviders['providers'][number]['offering'], typeof delPais.buy][] = [
+    ['rent', delPais.rent],
+    ['buy', delPais.buy],
+    ['flatrate', delPais.flatrate],
+  ];
+
+  const providers: CatalogProviders['providers'] = [];
+  for (const [offering, entradas] of grupos) {
+    for (const entrada of entradas ?? []) {
+      const repetido = providers.some(
+        (p) => p.name === entrada.provider_name && p.offering === offering,
+      );
+      if (repetido) continue;
+      providers.push({
+        name: entrada.provider_name,
+        offering,
+        logoUrl: logoDe(entrada.logo_path),
+        url: delPais.link ?? null,
+      });
+    }
+  }
+
+  return { region: region.toUpperCase(), available: providers.length > 0, providers };
 }
 
 export async function searchCatalog(kind: CatalogKind, rawQuery: string): Promise<CatalogResult[]> {

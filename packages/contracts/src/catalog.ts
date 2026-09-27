@@ -120,6 +120,51 @@ export const catalogDetailsQuerySchema = z.object({
 });
 export type CatalogDetailsQuery = z.infer<typeof catalogDetailsQuerySchema>;
 
+/**
+ * Where to watch something, by country.
+ *
+ * The region is a parameter and not a setting because availability changes by
+ * country and by day, and a stale country is a wrong answer rather than a missing
+ * one. It is ISO 3166-1 alpha-2, as TMDB expects.
+ */
+export const catalogProvidersQuerySchema = z.object({
+  kind: catalogKindSchema,
+  externalId: z.string().min(1).max(120),
+  /** Two letters, uppercase. The app sends the one its language implies. */
+  region: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .optional(),
+});
+export type CatalogProvidersQuery = z.infer<typeof catalogProvidersQuerySchema>;
+
+/** One place a title can be watched, bought or rented. */
+export const catalogProviderSchema = z.object({
+  name: z.string(),
+  /** What it offers there: watching it flat, or renting it, or buying it. */
+  offering: z.enum(["flatrate", "rent", "buy"]),
+  /** The TMDB logo, so the sheet is not a list of words. */
+  logoUrl: z.string().nullable().default(null),
+  /** Where to go. Null when the provider does not give a link for this country. */
+  url: z.string().nullable().default(null),
+});
+export type CatalogProvider = z.infer<typeof catalogProviderSchema>;
+
+/**
+ * What a title is on, and where — and what is *not* there.
+ *
+ * `region` comes back in the answer and `available` says whether anything came
+ * back at all, because "no sale en España" and "no se ha podido mirar" are
+ * different things and a sheet that shows an empty list for both sends you to
+ * check a country you did not ask about.
+ */
+export const catalogProvidersSchema = z.object({
+  region: z.string().length(2),
+  available: z.boolean(),
+  providers: z.array(catalogProviderSchema),
+});
+export type CatalogProviders = z.infer<typeof catalogProvidersSchema>;
+
 /** Turns a catalog hit into the fields a list item stores. */
 export const catalogItemDraftSchema = z.object({
   listId: uuidSchema,

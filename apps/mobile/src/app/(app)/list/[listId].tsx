@@ -61,8 +61,7 @@ export default function ListScreen() {
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, toggleFavorite, setOrderMode } =
-    useLists({});
+  const { lists, toggleFavorite, setOrderMode } = useLists({});
   const list = useMemo(
     () => lists.find((item) => item.id === listId) ?? null,
     [lists, listId],
@@ -296,7 +295,7 @@ export default function ListScreen() {
           <Checkbox
             checked={showCompleted}
             onToggle={() => setShowCompleted((value) => !value)}
-            label={t(pluralKey('lists.completedSection', completed.length), {
+            label={t(pluralKey("lists.completedSection", completed.length), {
               count: completed.length,
             })}
           />
@@ -371,7 +370,9 @@ export default function ListScreen() {
         {list ? (
           <View style={[styles.headerActions, { gap: theme.spacing.xs }]}>
             <Button
-              label={list.favorite ? t("lists.unfavorite") : t("lists.favorite")}
+              label={
+                list.favorite ? t("lists.unfavorite") : t("lists.favorite")
+              }
               variant="ghost"
               size="sm"
               icon={list.favorite ? "bookmark" : "bookmark-outline"}
@@ -397,14 +398,14 @@ export default function ListScreen() {
         <View style={styles.badges}>
           {completed.length > 0 ? (
             <Badge
-              label={t(pluralKey('lists.completedCount', completed.length), {
+              label={t(pluralKey("lists.completedCount", completed.length), {
                 count: completed.length,
               })}
               tone="success"
             />
           ) : null}
           <Badge
-            label={t(pluralKey('lists.pendingCount', pending.length), {
+            label={t(pluralKey("lists.pendingCount", pending.length), {
               count: pending.length,
             })}
           />
@@ -485,34 +486,34 @@ export default function ListScreen() {
           que necesitan para apartarse. */}
       <DraggableSort>
         <FlatList
-        data={entries}
-        keyExtractor={entryKey}
-        renderItem={renderEntry}
-        ListHeaderComponent={header}
-        ListFooterComponent={footer}
-        contentContainerStyle={[
-          styles.content,
-          {
-            padding: theme.spacing.lg,
-            paddingBottom: theme.spacing.xxl,
-            gap: theme.spacing.sm,
-          },
-        ]}
-        // Rows are measured rather than assumed, and a row is not tall: a few
-        // screens of rows is plenty, and rendering more of them is what makes a
-        // long list feel heavy.
-        initialNumToRender={14}
-        // Five screens each way and not seven: measured on a list of a thousand
-        // rows, seven mounted 420 of them on the first paint, which is the part
-        // a phone pays for, and five mounts half as many for the same
-        // smoothness when you scroll (20 screen-jumps in 427 ms, 2 frames
-        // dropped). The number is in docs/roadmap.md with the rest.
-        windowSize={5}
-        maxToRenderPerBatch={10}
-        updateCellsBatchingPeriod={60}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      />
+          data={entries}
+          keyExtractor={entryKey}
+          renderItem={renderEntry}
+          ListHeaderComponent={header}
+          ListFooterComponent={footer}
+          contentContainerStyle={[
+            styles.content,
+            {
+              padding: theme.spacing.lg,
+              paddingBottom: theme.spacing.xxl,
+              gap: theme.spacing.sm,
+            },
+          ]}
+          // Rows are measured rather than assumed, and a row is not tall: a few
+          // screens of rows is plenty, and rendering more of them is what makes a
+          // long list feel heavy.
+          initialNumToRender={14}
+          // Five screens each way and not seven: measured on a list of a thousand
+          // rows, seven mounted 420 of them on the first paint, which is the part
+          // a phone pays for, and five mounts half as many for the same
+          // smoothness when you scroll (20 screen-jumps in 427 ms, 2 frames
+          // dropped). The number is in docs/roadmap.md with the rest.
+          windowSize={5}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={60}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        />
       </DraggableSort>
 
       {/* What can be done with a film, a series or a book. It lives here and in
@@ -530,14 +531,14 @@ export default function ListScreen() {
           al cambiar la lista. */}
       {menuOpen && list ? (
         <ListMenuSheet
-        list={list}
-        folder={
-          list?.folderId
-            ? (folders.find((f) => f.id === list.folderId) ?? null)
-            : null
-        }
-        onClose={() => setMenuOpen(false)}
-        onDeleted={() => router.back()}
+          list={list}
+          folder={
+            list?.folderId
+              ? (folders.find((f) => f.id === list.folderId) ?? null)
+              : null
+          }
+          onClose={() => setMenuOpen(false)}
+          onDeleted={() => router.back()}
         />
       ) : null}
 
@@ -615,7 +616,9 @@ export default function ListScreen() {
       <Pressable
         testID="item-create-button"
         accessibilityRole="button"
-        accessibilityLabel={media ? t("catalog.addFromCatalog") : t("itemCreate.title")}
+        accessibilityLabel={
+          media ? t("catalog.addFromCatalog") : t("itemCreate.title")
+        }
         accessibilityHint={
           media ? t("catalog.addFromCatalogHint") : t("itemCreate.titleHint")
         }
@@ -677,19 +680,42 @@ function TaskRow({
 }) {
   const theme = useTheme();
   const t = useTranslation();
+  // Whether there is room for the extras.
+  //
+  // With the menu pushing, the app is left with 146 px of a 430 and the row with
+  // 82. With a checkbox, an icon, a name and a badge in 82 the name does not
+  // fit, and what was on screen was a checkbox, a drag handle and nothing else —
+  // a list you cannot read at the moment you opened the menu. So the row is
+  // measured and gives up the extras before it gives up the name: the icon is a
+  // picture of the thing and the badge is a reminder, and the name is the thing.
+  const [ancho, setAncho] = useState(0);
+  const estrecho = ancho > 0 && ancho < 210;
+  // Below this the row stops being a row: with the menu pushing it is 82px, and
+  // una casilla de 22 mas 32 de margenes se dejan 20 para el nombre, que es una
+  // letra y un punto por linea. Apila: la casilla arriba y el nombre debajo,
+  // con todo el ancho. Es la unica disposicion que a 82 px se lee, y cuatro
+  // palabras seguidas en vertical dicen mas que cinco palabras en vertical
+  // una detras de otra.
+  const apilado = ancho > 0 && ancho < 150;
 
   return (
     <View
       testID={`item-row-${item.id}`}
+      onLayout={(event) => setAncho(event.nativeEvent.layout.width)}
       style={[
-        styles.item,
+        apilado ? styles.apilado : styles.item,
         {
-          gap: theme.spacing.md,
-          padding: theme.spacing.lg,
+          gap: estrecho ? theme.spacing.xs : theme.spacing.md,
+          padding: apilado ? theme.spacing.md : theme.spacing.lg,
           // El asa de arrastrar va encima, en el borde derecho, y la insignia de
           // urgencia se solapaba con ella. Se le deja sitio: dos cosas que se
           // pisan no se leen, y ademas el que va debajo no se puede pulsar.
-          paddingRight: theme.spacing.lg + styles.dragHandle.width,
+          //
+          // Estrecha, ese hueco se queda sin sitio: en una fila de 82 px eran 60
+          // de los 82, y al nombre no le quedaba nada. Estrecha, el asa tampoco
+          // esta (lo quita DraggableRow), asi que el hueco se devuelve al nombre.
+          paddingRight:
+            theme.spacing.lg + (estrecho ? 0 : styles.dragHandle.width),
         },
       ]}
     >
@@ -703,23 +729,25 @@ function TaskRow({
           otro extremo se leía como una foto de la lista y no como el icono de
           esta fila, y con la casilla al lado se sabe de un vistazo qué vas a
           marcar y qué has marcado. */}
-      <Pressable
-        testID={`item-icon-${item.id}`}
-        accessibilityRole="button"
-        accessibilityLabel={t("icons.ofItem", { name: item.title })}
-        hitSlop={8}
-        onPress={onIcon}
-        style={styles.iconSlot}
-      >
-        <ItemIcon
-          icon={item.icon}
-          style={item.iconStyle}
-          color={item.iconColor}
-        />
-        {item.icon ? null : (
-          <Ionicons name="add" size={14} color={theme.colors.textSubtle} />
-        )}
-      </Pressable>
+      {estrecho ? null : (
+        <Pressable
+          testID={`item-icon-${item.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={t("icons.ofItem", { name: item.title })}
+          hitSlop={8}
+          onPress={onIcon}
+          style={styles.iconSlot}
+        >
+          <ItemIcon
+            icon={item.icon}
+            style={item.iconStyle}
+            color={item.iconColor}
+          />
+          {item.icon ? null : (
+            <Ionicons name="add" size={14} color={theme.colors.textSubtle} />
+          )}
+        </Pressable>
+      )}
 
       <View style={[styles.flex, { gap: 2 }]}>
         {/* The name opens the row. It used to be wired to the delete: one tap
@@ -751,7 +779,7 @@ function TaskRow({
         ) : null}
       </View>
 
-      {item.priority !== "none" ? (
+      {item.priority !== "none" && !estrecho ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("itemEdit.changePriority", {
@@ -766,7 +794,7 @@ function TaskRow({
           />
         </Pressable>
       ) : null}
-      {item.priority !== "none" ? null : (
+      {item.priority !== "none" || estrecho ? null : (
         /* Un hueco del ancho de la insignia, para que al ponerla la fila no
            dé un salto hacia la derecha y el nombre no se mueva bajo el dedo. */
         <View style={styles.priorityGap} />
@@ -796,6 +824,10 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  apilado: {
+    flexDirection: "column",
+    alignItems: "flex-start",
   },
   /** Lo que ocupa el asa de arrastrar, en el borde derecho de la fila. */
   dragHandle: {

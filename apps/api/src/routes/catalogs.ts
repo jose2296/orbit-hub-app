@@ -1,6 +1,9 @@
+import type { Request } from 'express';
+
 import {
   catalogDetailsQuerySchema,
   catalogKindsForListSchema,
+  catalogProvidersQuerySchema,
   catalogSearchQuerySchema,
 } from '@orbit-hub/contracts';
 import { Router } from 'express';
@@ -12,6 +15,7 @@ import {
   CatalogError,
   catalogKindsFor,
   fetchCatalogDetails,
+  fetchCatalogProviders,
   isCatalogConfigured,
   searchCatalog,
 } from '../modules/catalogs/catalog-service.js';
@@ -81,6 +85,54 @@ catalogRouter.get('/details', async (req, res) => {
           externalId: error.message,
         });
       }
+      throw HttpError.badRequest('The catalog provider is unavailable right now');
+    }
+    throw error;
+  }
+});
+
+/**
+ * Where a title can be watched, bought or rented, for one country.
+ *
+ * The country is asked for and not remembered: what is on Netflix in Spain is not
+ * what is on it in Mexico, and answering for the wrong one without saying so is
+ * how somebody ends up paying for a service that does not have it.
+ */
+/**
+ * The country to answer for when nobody asked.
+ *
+ * Taken from the language the request says it wants, because that is the one thing
+ * about a person this request knows, and because it is better than a hardcoded
+ * country: someone reading the app in English is not in Spain, whatever the
+ * server is deployed in.
+ */
+function defaultRegion(req: Request): string {
+  const accept = String(req.headers['accept-language'] ?? '');
+  const primero = accept.split(',')[0] ?? '';
+  const region = primero.trim().split('-')[1];
+  return (region && /^[A-Za-z]{2}$/.test(region) ? region : 'es').toUpperCase();
+}
+
+catalogRouter.get('/providers', async (req, res) => {
+  const { kind, externalId, region } = catalogProvidersQuerySchema.parse(req.query);
+  const userId = req.auth?.userId;
+  if (!userId) throw HttpError.unauthorized();
+
+  if (!isCatalogConfigured(kind)) {
+    throw HttpError.notImplemented('This catalog is not configured on this server');
+  }
+
+  try {
+    // Without a region, the language the app is in is the best guess anybody has,
+    // and it is echoed back in the answer so the sheet can say which one.
+    sendData(
+      res,
+      200,
+      await fetchCatalogProviders(kind, externalId, region ?? defaultRegion(req)),
+    );
+  } catch (error) {
+    if (error instanceof CatalogError) {
+      logger.warn({ kind, externalId, reason: error.reason, userId }, 'catalog providers failed');
       throw HttpError.badRequest('The catalog provider is unavailable right now');
     }
     throw error;

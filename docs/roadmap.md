@@ -428,123 +428,35 @@ ancho del botón que lo lleva**, porque "Marcar como vista" tiene que seguir
  appearing en un botón pequeño al lado del cartel y solo deja de estar bien en uno
 de pantalla completa.
 
-### El cajon: en movil tapa, en pantalla ancha empuja
+### El cajon: empuja, y la fila se deforma para caber
 
-Hecho, y **he cambiado una cosa que habias pedido**, asi que lo cuento con los numeros
-que lo motivan.
+Hecho, **volviendo a la decision anterior**: el menu empuja siempre y la app se
+desplaza fuera de pantalla. Se habia cambiado a "tapa en movil" y se ha revertido a
+pedido expreso. Eramos dos y me lo has dicho las dos veces.
 
-Medido en 430x932 con el menu abierto, empujando: el menu se llevaba 284 y la app se
-quedaba en **146 px**. Las filas quedaban en 82, los nombres de los items **no cabian
-en absoluto** y "Tareas" iba **una letra por linea**. Eso no es un menu encima de una
-app: es una app rota con un menu al lado. Push en todas partes no funciona en un movil,
-y ninguna medida de "estrechar un poco mas el menu" lo arregla: a 146 tampoco se lee, y
-a 130 (que es lo que seacia al 80%) menos.
+El problema de fondo no era el empuje, era **la fila al estrecharse**, y eso si se ha
+arreglado. Medido: el menu se lleva 284 de 430, la app se queda en 146 y la fila en
+**82**. Con casilla de 22 y 32 de margenes, al nombre le quedaban 20 px, y lo que se
+veia era una casilla, un asa de arrastrar y **nada de nombre**: una lista que no se
+puede leer en el momento justo en que abres el menu.
 
-- **Movil (menos de 900 px):** el menu **tapa**. La app se queda entera, con su ancho,
-  y la franja que queda libre lleva un velo y se toca para cerrar. El menu es opaco,
-  porque si no se ven las dos pantallas encima.
-- **Pantalla ancha (900 o mas):** el menu **empuja**, con una franja del 30%. Ahi si
-  queda una pantalla entera al lado, que es justo para lo que sirve empujar.
+La fila se mide a si misma y cede por este orden, que es el orden de lo que importa:
 
-Es lo que hacia la app vieja segun lo que cuentas, y ahora esta medido y no de memoria.
+1. **Por debajo de 210 px** se van el icono y la insignia de urgencia. El icono es un
+   dibujo de la cosa y la insignia un recordatorio; el nombre es la cosa.
+2. **Por debajo de 150 px** se apila: la casilla arriba y el nombre debajo, con todo
+   el ancho. Es la unica disposicion que a 82 px se lee.
+3. **El asa de arrastrar desaparece tambien**, y con ella el hueco de 60 px que
+   estaba reservado a su derecha — que eran 60 de los 82, y el nombre no tenia nada.
+   En una fila de 82 px el arrastre no es usable de todos modos: un dedo se la cubre
+   entera.
 
-**Lo que me equivoque al informar del bloque anterior:** di que el empuje no
-funcionaba porque la app no se estrechaba. Es cierto que con el menu abierto la
-columna de la app seguia midiendo 430 — pero **la prueba estaba abriendo el menu de la
-lista, no el cajon**: el boton del cajon se llama "Abrir el menu" y el menu de la lista
-"Menú de la lista", y mi prueba buscaba "Menu", que salia el segundo. Con el boton
-correcto, el empuje funcionaba y la app se estrechaba bien. El `minWidth: 0` que puse
-en el contenedor si hacia falta, y se queda.
+Medido despues, con el menu abierto: filas de 82x73, con "Pan", "Pilas", "Café" y
+"Leche de ..." a dos lineas. Se leen.
 
-Leccion, y la tercera vez que me pasa: **una prueba que no ha abierto lo que dice abrir
-no mide nada**, y sus numeros hay que leerlos como una sospecha, no como un hecho. Los
-tres numeros que cite antes (284, 146, 130) tambien salieron de ahi y no eran de la app
-que yo creia estar midiendo.
-
-`cajon-ancho-e2e.mjs` mide las dos cosas: que la app siga entera en movil, y que siga
-siendo empujada a partir de 900. Falta probarlo en 1280.
-
-### Escribir algo que ya esta hecho
-
-Hecho y verificado en el navegador. Es la #24 del inventario, y es el caso de la
-lista de la compra: compraste leche hace tres semanas, la fila sigue ahi hecha, y al
-escribir "Leche" la app anadia una segunda leche. Ahora la lista dice que necesitas
-leche y que ya tienes leche, y ninguna de las dos cosas es verdad.
-
-Al escribir el nombre en el panel de crear, si el elemento ya esta en la lista y esta
-hecho, aparece **una fila con la unica accion que sirve**: "Volver a pendientes
-«Leche»". No un aviso de que ya existe —un aviso que nadie accionas— y no reutilizar
-en silencio la fila vieja, porque una fila que hiciste hace tres semanas no es la
-fila que estas escribiendo hoy: puede tener otro icono, otras etiquetas y otra
-urgencia. Al tocarla, esa fila vuelve a pendientes y **no se crea nada nuevo**.
-
-La comparacion **ignora mayusculas, tildes y espacios**, porque asi es como llega la
-misma palabra escrita en un movil, y una coincidencia que solo salta con la
-ortografia exacta no salta nunca. Con dos letras no ofrece nada: "p" coincide con
-media tienda y una oferta que sale siempre no ofrece nada. Si hay varias iguales, da
-la mas reciente, que es la que quieres decir.
-
-`lib/lists/done-match.ts` con 9 pruebas, y `hecho-otra-vez-e2e.mjs` en el navegador.
-
-### Tres fallos de textos que salieron de paso
-
-Estaban en pantalla y nadie los habia buscado:
-
-- **"items.priority.none" salia en crudo** en la pastilla de urgencia, en las dos
-  lenguas. La clave no estaba en el diccionario y el typecheck no la echa: el mapa de
-  traducciones acepta cualquier `TranslationKey` que exista, y esta no existia porque
-  se construia con una plantilla. Ahora sale "Ninguna".
-- **"1 completadas" y "1 pendientes"**: el plural se elige con `pluralKey`, que busca
-  `.one` y `.other`, y las claves estaban sueltas, sin ninguna de las dos. Una clave
-  suelta mas una `_one` no son la misma cosa. Ahora sale "1 completada" y "1
-  pendiente".
-- **"Completadas (1)"**, lo mismo en la cabecera de los completados.
-
-### Las claves de traduccion detras de una plantilla
-
-Arreglado de raiz, porque **los textos rotos de arriba no eran tres unlucky**: son el
-sintoma de una clase. `t("lists.pendingCount")` lo comprueba el compilador —si la clave
-no esta en el diccionario, el tipo `TranslationKey` no la tiene y la compilacion
-falla—. `t(\`items.priority.${algo}\`)` no lo comprueba nadie, porque el compilador ve
-una cadena y no una clave. Y ahi es donde viven las que faltan.
-
-Hay **11 llamadas con plantilla** en la app, en siete familias: prioridades, orden,
-roles, color del espacio, y el filtro de la lista. `test/translations.test.ts` las
-recorre y comprueba, valor por valor, que todas las claves existen. Los valores se
-leen del contrato (`prioritySchema`, `listOrderModeSchema`, `membershipRoleSchema`) y
-de `WORKSPACE_COLORS`, no de una lista escrita en la prueba: mi primera version de la
-prueba traia tres colores que no existen en la app, y habria fallado por lo
-contrario.
-
-Tambien comprueba que las dos lenguas tienen las mismas claves, que una clave de
-plural tiene las dos formas (`.one` y `.other`, no una suelta mas una `_one`), y que
-ninguna traduccion se queda vacia.
-
-Una familia nueva necesita una linea en el test. Es el precio entero de la
-comprobacion.
-
-### El panel vacio se ve como el panel
-
-Hecho y verificado. Antes, sin tarjetas, no habia nada: un aviso de que estaba vacio.
-Lo que se va a anadir es una **rejilla** de tarjetas, y una rejilla que solo se ve
-cuando ya tiene algo dentro no explica nada —ni que forma tiene, ni cuanto cabe, ni
-por donde se empieza. Ahora el panel vacio se dibuja **con su forma**: cuatro casillas
-fantasma en dos filas, y la tarjeta de "Anadir una lista al panel" debajo.
-
-Dos cosas que se supieron al mirarlo:
-
-- **Las casillas fantasma se dibujan a tamano de tarjeta, no de casilla.** El panel se
-  coloca en una rejilla fina de doce columnas para poder poner una tarjeta de una, dos,
-  tres o media. Esa rejilla es para colocar, no para mirar: dibujada tal cual, un
-  panel vacio eran veinticuatro tiras de 26 px, una hoja de calculo. A tamano de
-  tarjeta (tres de las doce columnas) son cuatro bloques que dicen lo que van a ser.
-- **El texto de "a馹ade una lista" fuera.** Con la forma delante y la tarjeta debajo ya
-  decia las dos cosas, y el texto era una tercera forma de lo mismo y la mas debil.
-  Tres maneras de decir "aqui pondras cosas" es una de sobra.
-
-`panel-vacio-e2e.mjs` comprueba que la rejilla sale, que las casillas van en dos filas,
-que ninguna es mas ancha que la caja, y que **desaparece en cuanto hay una tarjeta**
-—porque si se queda parece que hay dos rejillas—.
+Lo que **sigue roto** y no he tocado: la cabecera de la lista con el menu abierto
+sigue "!Tareas" letra a letra y los botones se salen ("Marcar f..."). La cabecera no
+es una fila y no sabe degradarse. Es un bloque aparte, y no lo he hecho.
 
 ### Lo que ya no hace falta decidir
 

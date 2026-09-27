@@ -51,22 +51,6 @@ const LIST_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 const ITEMS_SHOWN = 12;
 
 /**
- * From this screen width on, the app is pushed instead of covered.
- *
- * It was a push everywhere, and on a phone it was wrong. Measured in a 430x932
- * viewport: the menu took 284 and the app was left with 146, the rows ended up
- * 82px wide, the names of the items did not fit at all and "Tareas" went one
- * letter per line. That is not a menu over an app, it is a broken app with a
- * menu beside it.
- *
- * From here on there is room for both: the app keeps a screen and the menu takes
- * its strip, which is the whole point of pushing. Below it, the menu covers and
- * the app stays whole, because an app you cannot read is not an app you were
- * interrupting.
- */
-const PUSH_FROM = 900;
-
-/**
  * The menu of the left, and on a phone it *pushes* the app instead of covering
  * it.
  *
@@ -88,11 +72,14 @@ const PUSH_FROM = 900;
  * second list.
  */
 export function Drawer({ children }: { children: React.ReactNode }) {
-  const theme = useTheme();
   const t = useTranslation();
   const { width } = useWindowDimensions();
   const { open, setOpen } = useDrawer();
-  const push = width >= PUSH_FROM;
+  // Empuja siempre. Se midio que en un movil deja 146 px de app y que ahi los
+  // nombres de los items no caben, y la respuesta fue que se quiere el empuje de
+  // todos modos: se cambia entonces lo que se rompe, que es la fila al estrecharse
+  // (ver `degrada`), y no el empuje.
+  const push = true;
   const closeLabel = t("drawer.closeByTapping");
 
   // Two thirds, and medido: con tres cuartos la app se quedaba en 110 px de un
@@ -107,9 +94,7 @@ export function Drawer({ children }: { children: React.ReactNode }) {
   // numeros y no de memoria.
   // Covering: the menu takes most of the screen because there is nothing to see
   // behind it. Pushing: a strip, so the screen you interrupted is still a screen.
-  const drawerWidth = push
-    ? Math.min(320, Math.round(width * 0.3))
-    : Math.min(300, Math.round(width * 0.8));
+  const drawerWidth = Math.min(288, Math.round(width * 0.66));
   const progress = useRef(new Animated.Value(open ? 1 : 0)).current;
 
   useEffect(() => {
@@ -144,32 +129,7 @@ export function Drawer({ children }: { children: React.ReactNode }) {
         up *over* the menu, so the last thing in the menu, the arrow that opens
         a space, ends up under the screen you were reading.
       */}
-      {/* The menu sits in the row when it pushes and in its own layer when it
-          covers: same component, same contents, and the only thing that changes
-          is whether the app gets narrower, which is the thing to decide. */}
-      <Animated.View
-        pointerEvents={open ? "auto" : "none"}
-        style={[
-          styles.column,
-          push
-            ? { width: columnWidth }
-            : [
-                styles.overMenu,
-                {
-                  width: drawerWidth,
-                  backgroundColor: theme.colors.background,
-                  transform: [
-                    {
-                      translateX: progress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-drawerWidth, 0],
-                      }),
-                    },
-                  ],
-                },
-              ],
-        ]}
-      >
+      <Animated.View style={[styles.column, { width: columnWidth }]}>
         {/* A fixed width inside, so the lines of the menu do not re-wrap sixty
             times while the column grows. */}
         <View style={[styles.columnInner, { width: drawerWidth }]}>
@@ -187,20 +147,14 @@ export function Drawer({ children }: { children: React.ReactNode }) {
       */}
       <View testID="drawer-app" style={styles.app}>
         {children}
-        {/* Closing by tapping the screen you interrupted. When the menu pushes,
-            that screen is the strip beside it and there is nothing behind to see
-            through, so the scrim is invisible. When the menu covers, the strip
-            that is left does show the app, and it gets a veil: a strip of a
-            screen you are not supposed to be reading is worse than no strip. */}
+        {/* It is there to be pressed and not to be seen: closing by tapping the
+            screen you interrupted, which is what a push means. */}
         {open ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={closeLabel}
             onPress={() => setOpen(false)}
-            style={[
-              styles.scrim,
-              push ? null : { backgroundColor: theme.colors.overlay },
-            ]}
+            style={styles.scrim}
           />
         ) : null}
       </View>

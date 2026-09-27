@@ -194,10 +194,21 @@ export function DraggableRow({
     return { transform: [{ translateY: desplazamiento }] };
   });
 
+  // Whether there is width for the handle.
+  //
+  // With the menu pushing, the row is 82px. The handle and the space reserved for
+  // it are 60 of those, and what was left for the name of the item was nothing:
+  // a checkbox, a drag handle and no item. On a row that narrow the drag is not
+  // usable either — a finger covers the whole thing — so the handle goes and the
+  // name comes back.
+  const [ancho, setAncho] = useState(0);
+  const estrecho = ancho > 0 && ancho < 210;
+
   return (
     <View
       style={styles.wrapper}
       onLayout={(event) => {
+        setAncho(event.nativeEvent.layout.width);
         // Measured, not assumed: the rows are not all the same height, and a
         // gap of the wrong size is a drop target that is off by a row.
         const alto = event.nativeEvent.layout.height;
@@ -222,6 +233,7 @@ export function DraggableRow({
       </GestureDetector>
 
       {/* The handle is the explicit affordance: the row body stays tappable. */}
+      {estrecho ? null : (
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('items.dragToReorder')}
@@ -232,6 +244,7 @@ export function DraggableRow({
       >
         <Ionicons name="reorder-two" size={18} color={theme.colors.textMuted} />
       </Pressable>
+      )}
     </View>
   );
 }
