@@ -523,6 +523,29 @@ ninguna traduccion se queda vacia.
 Una familia nueva necesita una linea en el test. Es el precio entero de la
 comprobacion.
 
+### El panel vacio se ve como el panel
+
+Hecho y verificado. Antes, sin tarjetas, no habia nada: un aviso de que estaba vacio.
+Lo que se va a anadir es una **rejilla** de tarjetas, y una rejilla que solo se ve
+cuando ya tiene algo dentro no explica nada —ni que forma tiene, ni cuanto cabe, ni
+por donde se empieza. Ahora el panel vacio se dibuja **con su forma**: cuatro casillas
+fantasma en dos filas, y la tarjeta de "Anadir una lista al panel" debajo.
+
+Dos cosas que se supieron al mirarlo:
+
+- **Las casillas fantasma se dibujan a tamano de tarjeta, no de casilla.** El panel se
+  coloca en una rejilla fina de doce columnas para poder poner una tarjeta de una, dos,
+  tres o media. Esa rejilla es para colocar, no para mirar: dibujada tal cual, un
+  panel vacio eran veinticuatro tiras de 26 px, una hoja de calculo. A tamano de
+  tarjeta (tres de las doce columnas) son cuatro bloques que dicen lo que van a ser.
+- **El texto de "a馹ade una lista" fuera.** Con la forma delante y la tarjeta debajo ya
+  decia las dos cosas, y el texto era una tercera forma de lo mismo y la mas debil.
+  Tres maneras de decir "aqui pondras cosas" es una de sobra.
+
+`panel-vacio-e2e.mjs` comprueba que la rejilla sale, que las casillas van en dos filas,
+que ninguna es mas ancha que la caja, y que **desaparece en cuanto hay una tarjeta**
+—porque si se queda parece que hay dos rejillas—.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el

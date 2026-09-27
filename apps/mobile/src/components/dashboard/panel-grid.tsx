@@ -6,7 +6,6 @@ import type { DashboardWidget } from "@orbit-hub/contracts";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
 import { AppText } from "@/components/ui/text";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import {
@@ -20,6 +19,27 @@ import { cardColors } from "@/lib/workspace/color";
 import { useTheme } from "@/theme";
 
 /** How many cells wide and tall a card can be. */
+/**
+ * How many rows the empty panel draws.
+ *
+ * Two, because the panel is a column of a phone and a band of a laptop, and one
+ * row says nothing about either. Two rows of ghosts already show the shape
+ * without turning a panel nobody has filled into a poster.
+ */
+const EMPTY_ROWS = 2;
+
+/**
+ * How wide an empty cell is drawn, in the fine grid of twelve columns.
+ *
+ * The panel is placed in a grid of twelve columns so a card can be one wide, two,
+ * three or half, and that grid is for placing, not for looking at. Drawn as it
+ * is, an empty panel is twenty-four slivers of 26 px: a spreadsheet, and nothing
+ * like the panel you are about to fill. A card of three columns is a third of the
+ * width, which is what a card actually is.
+ */
+const EMPTY_CELL_COLUMNS = 3;
+const EMPTY_CELLS = 4;
+
 const SIZES = [
   { w: 3, h: 1 },
   { w: 4, h: 1 },
@@ -163,12 +183,53 @@ export function PanelGrid({
         )}
       </View>
 
+      {/* El panel se dibuja siempre, y vacio se dibuja con su forma. Antes, sin
+          tarjetas, no habia nada: un aviso de que estaba vacio y ya. Pero lo que
+          se va a anadir es una rejilla, y una rejilla que solo se ve cuando ya
+          tiene algo dentro no explica nada —ni como queda, ni cuanto cabe, ni
+          por donde se empieza a poner. La casilla fantasia dice las tres cosas
+          sin una palabra. */}
       {cards.length === 0 ? (
-        <EmptyState
-          compact
-          title={t("dashboard.empty")}
-          description={t("dashboard.emptyHint")}
-        />
+        <View style={{ gap: theme.spacing.sm }}>
+          <View
+            testID="panel-empty-grid"
+            accessibilityLabel={t("dashboard.empty")}
+            style={[
+              styles.grid,
+              {
+                // Las casillas son absolutas, asi que el contenedor no crece con
+                // ellas: sin esta altura, la leyenda de abajo se monta encima de
+                // la primera fila.
+                height: EMPTY_ROWS * (cellHeight + gap) - gap,
+              },
+            ]}
+            onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+          >
+            {Array.from({ length: EMPTY_CELLS }).map((_, index) => (
+              <View
+                key={`fantasia-${index}`}
+                style={[
+                  styles.cell,
+                  {
+                    left:
+                      (index % 2) *
+                      (EMPTY_CELL_COLUMNS * cellWidth +
+                        (EMPTY_CELL_COLUMNS - 1) * gap),
+                    top: Math.floor(index / 2) * (cellHeight + gap),
+                    width:
+                      EMPTY_CELL_COLUMNS * cellWidth +
+                      (EMPTY_CELL_COLUMNS - 1) * gap,
+                    height: cellHeight,
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surfaceMuted,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        </View>
       ) : null}
 
       {cards.length > 0 ? (
