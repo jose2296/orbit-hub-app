@@ -18,6 +18,11 @@ export interface MediaActionsSheetProps {
   listId: string;
   /** Media kind, so the wording is "watched" or "read". */
   listKind: List["kind"];
+  /**
+   * When the menu is opened from the detail of the item, searching for its title
+   * is an action on the thing and not a button on the screen.
+   */
+  onFindTitle?: () => void;
   onClose: () => void;
 }
 
@@ -37,6 +42,7 @@ export function MediaActionsSheet({
   item,
   listId,
   listKind,
+  onFindTitle,
   onClose,
 }: MediaActionsSheetProps) {
   const t = useTranslation();
@@ -112,6 +118,25 @@ export function MediaActionsSheet({
   }
 
   const options: SheetOption[] = [
+    // Buscar el titulo es una accion sobre la peli, y desde el detalle cabe en el
+    // menu como una mas. Antes era un boton de pantalla completa al final del
+    // texto, que empujaba la sinopsis hacia abajo y duplicaba lo que ya hacia el
+    // boton de al lado de la portada.
+    ...(onFindTitle
+      ? [
+          {
+            key: "find-title",
+            label: isBook
+              ? t("itemDetails.findBook")
+              : t("itemDetails.findTitle"),
+            icon: "search-outline" as const,
+            onPress: () => {
+              onClose();
+              onFindTitle();
+            },
+          },
+        ]
+      : []),
     {
       key: "seen",
       label: seen

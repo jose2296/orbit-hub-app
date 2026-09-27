@@ -140,6 +140,7 @@ const es = {
 
   "items.viewDetails": "Ver detalle",
 
+  "lists.menu": "Menú de la lista",
   "lists.duplicate": "Duplicar lista",
 
   "lists.kindTasks": "Tareas",
@@ -780,6 +781,7 @@ const en: Record<TranslationKey, string> = {
 
   "items.viewDetails": "View details",
 
+  "lists.menu": "List menu",
   "lists.duplicate": "Duplicate list",
 
   "lists.kindTasks": "Tasks",

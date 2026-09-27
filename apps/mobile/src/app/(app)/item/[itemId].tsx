@@ -165,42 +165,11 @@ export default function ItemDetailsScreen() {
           ) : null}
         </Card>
 
-        <View style={[styles.actions, { gap: theme.spacing.sm }]}>
-          <Button
-            label={
-              isBookItem
-                ? t("itemDetails.findBook")
-                : t("itemDetails.findTitle")
-            }
-            icon="search"
-            onPress={() =>
-              router.push({
-                pathname: "/(app)/catalog",
-                params: {
-                  listId: itemId,
-                  kind: isBookItem ? "books" : "movies",
-                },
-              })
-            }
-          />
-          <Button
-            // A book is read rather than watched: the wording follows what the
-            // list holds, and a screen that calls a book "vista" is a screen
-            // that is asking about the wrong thing.
-            label={
-              isBookItem
-                ? item.completed
-                  ? t("mediaActions.markAsUnread")
-                  : t("mediaActions.markAsRead")
-                : item.completed
-                  ? t("mediaActions.markAsUnseen")
-                  : t("mediaActions.markAsSeen")
-            }
-            icon={item.completed ? "eye-off-outline" : "eye-outline"}
-            variant="secondary"
-            onPress={() => void toggleCompleted(item)}
-          />
-        </View>
+        {/* Aqui no hay botones: "buscar este titulo" y "marcar como vista"
+            estan en el menu de al lado de la portada, que es donde esta el resto
+            de lo que se puede hacer con una peli. Dos botones de pantalla
+            completa al final del detalle eran los mismos dos, otra vez, en otro
+            sitio — y los dos sitios se走向 opuestos en cuanto uno cambia. */}
       </Screen>
     );
   }
@@ -522,6 +491,18 @@ export default function ItemDetailsScreen() {
         item={menuOpen ? item : null}
         listId={itemId ?? ""}
         listKind={isBook ? "books" : isSeries ? "series" : "movies"}
+        onFindTitle={
+          item
+            ? () =>
+                router.push({
+                  pathname: "/(app)/catalog",
+                  params: {
+                    listId: itemId,
+                    kind: isBookItem ? "books" : "movies",
+                  },
+                })
+            : undefined
+        }
         onClose={() => setMenuOpen(false)}
       />
     </Screen>

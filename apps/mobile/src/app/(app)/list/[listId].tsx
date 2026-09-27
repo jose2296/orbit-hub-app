@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DoneTray } from "@/components/lists/done-tray";
 import { ItemIcon } from "@/components/lists/icon-picker";
+import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { FiltersSheet } from "@/components/lists/item-picker";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
@@ -60,7 +61,7 @@ export default function ListScreen() {
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, deleteList, duplicateList, toggleFavorite, setOrderMode } =
+  const { lists, toggleFavorite, setOrderMode } =
     useLists({});
   const list = useMemo(
     () => lists.find((item) => item.id === listId) ?? null,
@@ -106,7 +107,7 @@ export default function ListScreen() {
   const editingItem = editing
     ? (items.find((row) => row.id === editing.itemId) ?? null)
     : null;
-  const [duplicating, setDuplicating] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   /**
    * Tasks are split into pending and completed rather than filtered, so the
@@ -366,14 +367,27 @@ export default function ListScreen() {
           ) : null}
         </View>
         {list ? (
-          <Button
-            label={list.favorite ? t("lists.unfavorite") : t("lists.favorite")}
-            variant="ghost"
-            size="sm"
-            icon={list.favorite ? "bookmark" : "bookmark-outline"}
-            fullWidth={false}
-            onPress={() => void toggleFavorite(list)}
-          />
+          <View style={[styles.headerActions, { gap: theme.spacing.xs }]}>
+            <Button
+              label={list.favorite ? t("lists.unfavorite") : t("lists.favorite")}
+              variant="ghost"
+              size="sm"
+              icon={list.favorite ? "bookmark" : "bookmark-outline"}
+              fullWidth={false}
+              onPress={() => void toggleFavorite(list)}
+            />
+            {/* Lo que se puede hacer con la lista entera, aqui arriba. Abajo
+                ocupaba media pantalla y empujaba las filas hacia arriba. */}
+            <Button
+              testID="list-menu-button"
+              label={t("lists.menu")}
+              variant="ghost"
+              size="sm"
+              icon="ellipsis-horizontal"
+              fullWidth={false}
+              onPress={() => setMenuOpen(true)}
+            />
+          </View>
         ) : null}
       </View>
 
@@ -451,43 +465,10 @@ export default function ListScreen() {
     </View>
   );
 
-  const footer = (
-    <View style={{ gap: theme.spacing.lg }}>
-      {/* A media list takes its items from a catalog, so there is nothing to
-          type: the button that creates a row is hidden there and the catalog
-          button is the way in. */}
-
-      {list ? (
-        <View style={{ gap: theme.spacing.sm }}>
-          <Button
-            label={t("lists.duplicate")}
-            variant="secondary"
-            icon="copy-outline"
-            loading={duplicating}
-            onPress={() => {
-              setDuplicating(true);
-              void duplicateList(list)
-                .then((newId) => {
-                  // Straight into the copy: the point of duplicating is to work
-                  // on it, not to go looking for it.
-                  router.replace(`/(app)/list/${newId}`);
-                })
-                .finally(() => setDuplicating(false));
-            }}
-          />
-          <Button
-            label={t("lists.delete")}
-            variant="danger"
-            icon="trash-outline"
-            onPress={() => {
-              void deleteList(list);
-              router.back();
-            }}
-          />
-        </View>
-      ) : null}
-    </View>
-  );
+  // El pie no lleva acciones. Duplicar y eliminar estan en el menu del header, y
+  // un boton rojo de pantalla completa debajo de la lista compite con las filas
+  // por el sitio donde el dedo quiere ir.
+  const footer = null;
 
   return (
     <Screen scroll={false}>
@@ -535,6 +516,22 @@ export default function ListScreen() {
         listKind={list?.kind ?? "movies"}
         onClose={() => setMenuFor(null)}
       />
+
+      {/* El menu se monta cuando se pide y se desmonta al cerrar, que es como
+          decide abrirse: un menu siempre presente seria un menu que se abre solo
+          al cambiar la lista. */}
+      {menuOpen && list ? (
+        <ListMenuSheet
+        list={list}
+        folder={
+          list?.folderId
+            ? (folders.find((f) => f.id === list.folderId) ?? null)
+            : null
+        }
+        onClose={() => setMenuOpen(false)}
+        onDeleted={() => router.back()}
+        />
+      ) : null}
 
       <FiltersSheet
         open={filtersOpen}
@@ -775,6 +772,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   header: {},
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   headerTop: {
     flexDirection: "row",
     alignItems: "flex-start",

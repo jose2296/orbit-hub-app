@@ -30,8 +30,24 @@ export default function SyncScreen() {
 
   return (
     <Screen width="grid">
-      <Card variant="muted" style={{ gap: theme.spacing.sm }}>
-        <AppText variant="heading">{t('sync.subtitle')}</AppText>
+      {/* Sincronizar va arriba, con el titulo, y no como un boton dentro de una
+          tarjeta: la accion de una pantalla va en la cabecera, y aqui era lo
+          unico que la tarjeta hacia. */}
+      <View style={{ gap: theme.spacing.xs }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+          <AppText variant="title" style={styles.flex}>
+            {t('sync.subtitle')}
+          </AppText>
+          <Button
+            testID="sync-now"
+            label={isSyncing ? t('sync.syncing') : t('sync.syncNow')}
+            variant="ghost"
+            size="sm"
+            fullWidth={false}
+            onPress={() => void syncNow()}
+            loading={isSyncing}
+          />
+        </View>
         <AppText variant="caption" tone="muted">
           {status.lastSyncedAt
             ? t('sync.lastSynced', {
@@ -39,12 +55,7 @@ export default function SyncScreen() {
               })
             : t('sync.never')}
         </AppText>
-        <Button
-          label={isSyncing ? t('sync.syncing') : t('sync.syncNow')}
-          onPress={() => void syncNow()}
-          loading={isSyncing}
-        />
-      </Card>
+      </View>
 
       <View style={{ gap: theme.spacing.md }}>
         <SectionHeader

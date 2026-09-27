@@ -402,6 +402,32 @@ posiciones en mitad, suelta y comprueba el orden guardado.
 importa. En el navegador funciona; en nativo la raiz tambien esta puesta ahora, pero
 no lo he visto en un dispositivo.
 
+### Las acciones van en el header
+
+Hecho y verificado, vista por vista.
+
+- **Lista:** duplicar y eliminar ocupaban media pantalla debajo de las filas. Ahora
+  hay un botón de menú en el header, y es **el mismo** `ListMenuSheet` que el de una
+  lista dentro de un espacio: dos menús de una lista son dos listas de lo que se
+  puede hacer con ella, y dejan de estar de acuerdo.
+- **Detalle de una peli:** dos botones de pantalla completa al final del texto
+  ("buscar este título" y "marcar como vista"), que además duplicaban los dos
+  botones pequeños que ya había al lado del cartel. "Buscar este título" se ha
+  bajado al menú de medios, que es donde está el resto de lo que se puede hacer
+  con una peli. Los dos botones pequeños se quedan, porque son la acción principal
+  de esa pantalla y miden 154 px.
+- **Sincronización:** "sincronizar ahora" estaba dentro de una tarjeta y era lo
+  único que la tarjeta hacía. Ahora está arriba, con el título.
+
+**Lo que dejo como está, y por qué:** el "cerrar sesión" de ajustes. Es una acción
+de página y no de una cosa, y esconderla en un menú la haría más difícil de
+encontrar sin ganar nada. Si prefieres que también vaya en el header, se mueve.
+
+La prueba (`header-acciones-e2e.mjs`) no busca el texto: busca el texto **y mide el
+ancho del botón que lo lleva**, porque "Marcar como vista" tiene que seguir
+ appearing en un botón pequeño al lado del cartel y solo deja de estar bien en uno
+de pantalla completa.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el
