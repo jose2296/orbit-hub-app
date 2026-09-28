@@ -514,6 +514,35 @@ colocado.
 concesion. Sin esa tercera parte las dos tablas son decorativas y la app no puede
 enseñarte nada.
 
+### Compartir: parte 2, el servicio
+
+Hecho y probado contra la base de verdad, 8 pruebas de extremo a extremo del servicio.
+
+`createShare`, `revokeShare`, `placeShare`, `inbox` y `whoHas`. Lo que se ha decidido
+al escribirlas y no antes:
+
+- **El orden dentro del servicio es el servicio.** Primero que el nodo exista y tenga
+  nombre, despues que quien comparte pueda compartir, y despues que no se comparta
+  consigo mismo. Un orden distinto deja filas a medias.
+- **Compartirte a ti mismo es un error explicito**, y no por descuido. `access.ts` saca
+  el techo de las membresias, y quien no es miembro de nada no tiene techo: un
+  auto-compartir seria **la unica via** para sacar editor sobre una lista en el espacio
+  de otro. Ese es el agujero que la regla de permisos no coge.
+- **Quien recibe elige el sitio, y el sitio se comprueba.** Un montaje en el espacio de
+  otro seria compartir por la puerta de atras, y una carpeta de otro espacio con el
+  id del tuyo es un `folder_id` que no pertenece ahi.
+- **La bandeja solo trae lo no colocado.** En cuanto eliges donde va, esa lista es de
+  un espacio tuyo y la bandeja ha hecho su trabajo.
+- **`whoHas` es la pregunta de un borrado**: "esto va a desaparecer de dos sitios". Y
+  cuenta solo concesion vivas, porque una revocada no le afecta a un borrado.
+
+**Un fallo mio de una hora, y es el segundo del mismo tipo:** el helper de push de la
+prueba no mandaba `clientTimestamp`, que el contrato exige, y las cuatro operaciones
+salian rechazadas sin decir por que. Es el mismo `clientTimestamp` que me hizo perder
+tiempo en la prueba de iconos hace unas horas, en el otro bando. El mensaje de
+rechazo es generico a proposito —no filtra que espacios existen—, asi que en el test hay
+que sacar el motivo del log del servidor, y eso se me hizo evidente tarde.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el
