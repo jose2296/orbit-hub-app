@@ -1,5 +1,5 @@
 import type { SyncChange } from '@orbit-hub/contracts';
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
@@ -10,10 +10,19 @@ import {
   listItems,
   lists,
   memberships,
+  shares,
   syncCursors,
   syncOperations,
   workspaces,
 } from '../../db/schema.js';
+
+/** The ids of one kind out of the shared chains, for an `in` that has to be non-empty. */
+function cadenaDe(
+  cadenas: readonly { folderId: string | null; listId: string | null }[],
+  campo: 'folderId' | 'listId',
+): string[] {
+  return cadenas.map((c) => c[campo]).filter((v): v is string => Boolean(v));
+}
 
 export type SyncEntityTable =
   | typeof workspaces
@@ -190,6 +199,74 @@ export class SyncRepository {
    * because every write bumps it. Tombstones come back too, so a delete on one
    * device reaches the others.
    */
+  /**
+   * The chains this person reaches without being a member.
+   *
+   * One row per live grant, resolved into the chain that holds the node: the node
+   * itself, and the list, folder and space above it. A device cannot show a list
+   * it has no folder for and no space for, so a grant on an item is useless to the
+   * other end unless its whole path comes with it.
+   *
+   * The walk up the folders is bounded and not recursive on purpose: a cycle in
+   * the folder tree would spin here forever, and a path of more than 32 folders is
+   * not a thing a person built.
+   */
+  private async cadenasDeCompartido(
+    userId: string,
+  ): Promise<{ nodeType: string; workspaceId: string; folderId: string | null; listId: string | null }[]> {
+    const db = await this.db();
+    const grants = await db
+      .select({ nodeType: shares.nodeType, nodeId: shares.nodeId })
+      .from(shares)
+      .where(and(eq(shares.granteeUserId, userId), isNull(shares.revokedAt)));
+
+    const cadenas: { nodeType: string; workspaceId: string; folderId: string | null; listId: string | null }[] = [];
+
+    for (const grant of grants) {
+      if (grant.nodeType === 'workspace') {
+        cadenas.push({ nodeType: 'workspace', workspaceId: grant.nodeId, folderId: null, listId: null });
+        continue;
+      }
+
+      if (grant.nodeType === 'folder') {
+        const row = await db
+          .select({ workspaceId: folders.workspaceId, parentId: folders.parentId })
+          .from(folders)
+          .where(eq(folders.id, grant.nodeId))
+          .limit(1);
+        const found = row[0];
+        if (!found) continue;
+        cadenas.push({ nodeType: 'folder', workspaceId: found.workspaceId, folderId: found.parentId, listId: null });
+        continue;
+      }
+
+      const listId = grant.nodeType === 'list' ? grant.nodeId : (
+        await db
+          .select({ listId: listItems.listId })
+          .from(listItems)
+          .where(eq(listItems.id, grant.nodeId))
+          .limit(1)
+      )[0]?.listId;
+      if (!listId) continue;
+
+      const row = await db
+        .select({ workspaceId: lists.workspaceId, folderId: lists.folderId })
+        .from(lists)
+        .where(eq(lists.id, listId))
+        .limit(1);
+      const found = row[0];
+      if (!found) continue;
+      cadenas.push({
+        nodeType: grant.nodeType,
+        workspaceId: found.workspaceId,
+        folderId: found.folderId,
+        listId,
+      });
+    }
+
+    return cadenas;
+  }
+
   async changesSince(input: {
     userId: string;
     cursor: string | null;
@@ -205,6 +282,22 @@ export class SyncRepository {
         .where(eq(memberships.userId, input.userId))
     ).map((row) => row.id);
 
+    // What this person reaches without being a member of the space, and the spaces
+    // that has to be read as: a granted node, and the chain that holds it.
+    //
+    // Chains and not subtrees, and it is worth saying why. This pull walks
+    // forward by time and hands out a cursor, so "everything under that folder" is
+    // a walk of a tree in the middle of a query that is supposed to be a slice of
+    // a timeline. What a shared node needs to arrive is its own chain — itself,
+    // its list, its folder, the space — because a device cannot show a list it has
+    // no folder for. What lives *under* a shared folder arrives in cursor order
+    // like anything else, one row at a time, as it changes, and the app has no idea
+    // it is shared and needs none.
+    const cadenas = await this.cadenasDeCompartido(input.userId);
+    const espaciosVisibles = [
+      ...new Set([...memberWorkspaceIds, ...cadenas.map((c) => c.workspaceId)]),
+    ];
+
     const changes: SyncChange[] = [];
     let lastUpdatedAt = null as Date | null;
 
@@ -212,7 +305,11 @@ export class SyncRepository {
       lastUpdatedAt = lastUpdatedAt && lastUpdatedAt > updatedAt ? lastUpdatedAt : updatedAt;
     };
 
-    if (memberWorkspaceIds.length > 0) {
+    if (espaciosVisibles.length > 0) {
+      const compartidos = new Set(
+        cadenas.filter((c) => c.nodeType === 'workspace').map((c) => c.workspaceId),
+      );
+
       const workspaceChanges = await db
         .select({
           row: workspaces,
@@ -223,11 +320,13 @@ export class SyncRepository {
           )`,
         })
         .from(workspaces)
-        .innerJoin(memberships, eq(memberships.workspaceId, workspaces.id))
+        .leftJoin(
+          memberships,
+          and(eq(memberships.workspaceId, workspaces.id), eq(memberships.userId, input.userId)),
+        )
         .where(
           and(
-            inArray(workspaces.id, memberWorkspaceIds),
-            eq(memberships.userId, input.userId),
+            inArray(workspaces.id, espaciosVisibles),
             gt(workspaces.updatedAt, after),
           ),
         )
@@ -242,7 +341,9 @@ export class SyncRepository {
           entity: 'workspace',
           record: {
             ...(entry.row as Record<string, unknown>),
-            role: entry.role,
+            // `null` and not "owner": a space you were given is not a space you
+            // own, and the app draws the difference with a symbol on it.
+            role: entry.role ?? (compartidos.has(entry.row.id) ? 'editor' : 'viewer'),
             memberCount: entry.memberCount,
           },
         });
@@ -250,11 +351,19 @@ export class SyncRepository {
       }
     }
 
-    if (memberWorkspaceIds.length > 0 && changes.length < input.limit) {
+    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
       const folderChanges = await db
         .select()
         .from(folders)
-        .where(and(inArray(folders.workspaceId, memberWorkspaceIds), gt(folders.updatedAt, after)))
+        .where(
+          and(
+            or(
+              inArray(folders.workspaceId, memberWorkspaceIds),
+              inArray(folders.id, cadenaDe(cadenas, 'folderId')),
+            ),
+            gt(folders.updatedAt, after),
+          ),
+        )
         .orderBy(asc(folders.updatedAt))
         .limit(input.limit - changes.length);
 
@@ -264,11 +373,19 @@ export class SyncRepository {
       }
     }
 
-    if (memberWorkspaceIds.length > 0 && changes.length < input.limit) {
+    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
       const listChanges = await db
         .select()
         .from(lists)
-        .where(and(inArray(lists.workspaceId, memberWorkspaceIds), gt(lists.updatedAt, after)))
+        .where(
+          and(
+            or(
+              inArray(lists.workspaceId, memberWorkspaceIds),
+              inArray(lists.id, cadenaDe(cadenas, 'listId')),
+            ),
+            gt(lists.updatedAt, after),
+          ),
+        )
         .orderBy(asc(lists.updatedAt))
         .limit(input.limit - changes.length);
 
@@ -310,14 +427,17 @@ export class SyncRepository {
       }
     }
 
-    if (memberWorkspaceIds.length > 0 && changes.length < input.limit) {
+    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
       const itemChanges = await db
         .select({ item: listItems })
         .from(listItems)
         .innerJoin(lists, eq(listItems.listId, lists.id))
         .where(
           and(
-            inArray(lists.workspaceId, memberWorkspaceIds),
+            or(
+              inArray(lists.workspaceId, memberWorkspaceIds),
+              inArray(lists.id, cadenaDe(cadenas, 'listId')),
+            ),
             gt(listItems.updatedAt, after),
           ),
         )

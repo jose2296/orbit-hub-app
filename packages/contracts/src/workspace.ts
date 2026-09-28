@@ -469,6 +469,76 @@ export const searchQuerySchema = z.object({
 });
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
 
+/* --------------------------------------------------------------- compartir -- */
+
+/** What can be shared. A note is the `notes` column of an item, not a table. */
+export const shareNodeTypeSchema = z.enum(['workspace', 'folder', 'list', 'list_item']);
+export type ShareNodeType = z.infer<typeof shareNodeTypeSchema>;
+
+/**
+ * editor or viewer, and deliberately not owner.
+ *
+ * There is one owner per space and it is not given away here. Somebody who can
+ * edit fifty items still cannot decide that a sixth person sees them, and adding
+ * an owner to a grant would put a second owner on a thing that already has one.
+ */
+export const shareRoleSchema = z.enum(['editor', 'viewer']);
+export type ShareRole = z.infer<typeof shareRoleSchema>;
+
+export const shareSchema = z.object({
+  id: uuidSchema,
+  nodeType: shareNodeTypeSchema,
+  nodeId: uuidSchema,
+  role: shareRoleSchema,
+  /** The name of the thing, so the inbox does not need a second request. */
+  title: z.string(),
+  /** The space it lives in, which is not yours. */
+  workspaceId: uuidSchema,
+  /** Who shared it, so the inbox can say who. Null if that account is gone. */
+  ownerName: z.string().nullable().default(null),
+  /** Where it is filed in your tree, or null while it is still in the inbox. */
+  placedAt: z.iso.datetime().nullable().default(null),
+  createdAt: z.iso.datetime(),
+});
+export type Share = z.infer<typeof shareSchema>;
+
+export const shareListResponseSchema = z.object({ items: z.array(shareSchema) });
+export type ShareListResponse = z.infer<typeof shareListResponseSchema>;
+
+export const createShareRequestSchema = z.object({
+  nodeType: shareNodeTypeSchema,
+  nodeId: uuidSchema,
+  /** Who it is for. By id when they are already in the app, by mail otherwise. */
+  granteeUserId: uuidSchema.optional(),
+  granteeEmail: z.string().max(254).optional(),
+  role: shareRoleSchema,
+});
+export type CreateShareRequest = z.infer<typeof createShareRequestSchema>;
+
+/** Where a received thing is filed, in your own tree. */
+export const placeShareRequestSchema = z.object({
+  shareId: uuidSchema,
+  workspaceId: uuidSchema,
+  /** Null is the root of the space, which is a place and not "nowhere". */
+  folderId: uuidSchema.nullable().default(null),
+  position: z.number().int().min(0).optional(),
+});
+export type PlaceShareRequest = z.infer<typeof placeShareRequestSchema>;
+
+/**
+ * Who a delete is about to hit, and how many.
+ *
+ * The count is in the answer and not just the list because the sentence the
+ * confirmation needs is "this disappears from three places", and a screen that has
+ * to count a list of people to write a sentence is a screen that will write the
+ * wrong one.
+ */
+export const shareReachSchema = z.object({
+  count: z.number().int().nonnegative(),
+  people: z.array(z.object({ userId: uuidSchema, email: z.string(), role: shareRoleSchema })),
+});
+export type ShareReach = z.infer<typeof shareReachSchema>;
+
 export const searchResultSchema = z.object({
   /** What the hit belongs to, so the app can route to the right screen. */
   scope: z.enum(["workspace", "folder", "list", "list_item"]),

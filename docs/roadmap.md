@@ -581,6 +581,37 @@ antepasados— y que las listas de dentro lleguen segun cambien, una a una, en o
 cursor, que es como la app ya se come los cambios. Lo escribo aqui para que quede
 decidido y no se pierda.
 
+### Compartir parte 3b: rutas HTTP y el pull
+
+Hecho y probado. `POST /shares`, `DELETE /shares/:id`, `POST /shares/:id/place`,
+`GET /shares/inbox`, `GET /shares/:nodeType/:nodeId/reach`.
+
+**Por que `/shares` y no dentro de `/workspaces` o de `/sync`.** Porque lo que se
+comparte no es un espacio, y metido ahi diria que si. Y porque una concesion es un acto
+entre dos personas, no contenido que alguien edita sin conexion: no se puede encolar en un
+dispositivo que ya no es de nadie, ni aplicar dos veces por un reintento que la segunda
+vez significa otra cosa. Es el mismo razonamiento que sazo las invitaciones a su propia
+tabla.
+
+**El pull trae las cadenas, no los subarboles.** El pull anda por cursor y por fecha, y
+"todo lo que cuelga de esa carpeta" es recorrer un arbol en mitad de una consulta que
+deberia ser un trozo de linea de tiempo. Lo que un nodo compartido necesita para llegar
+es **su cadena**: el, su lista, su carpeta y el espacio, porque un movil no puede pintar
+una lista sin carpeta. Lo que cuelga *dentro* de una carpeta compartida llega en orden de
+cursor como cualquier otra cosa, fila a fila, segun cambia, y la app no necesita saber que
+esta compartido.
+
+**Dos fallos reales de esta parte, y el segundo es el clasico:**
+
+1. El filtro de cada entidad es un **"o"** entre "esta en un espacio tuyo" y "esta en una
+   cadena". Escribi primero un "y" y hacia desaparecer justo lo tuyo que no estuviera en
+   ninguna cadena compartida. Hay una prueba que lo coge, porque es el fallo que solo se ve
+   en produccion.
+2. `GET /shares/:nodeType/:nodeId/reach` resuelve el nodo **antes** de mirar si puedes
+   verlo, y un id que no existe respondia "no found" con un mensaje distinto al del
+   "existe pero no es tuyo". Eso convierte un 404 en un manera de averiguar que ids son
+   reales. Ahora comprueba el acceso y, si no llega, cae al mismo 404.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el

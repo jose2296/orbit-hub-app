@@ -4,6 +4,7 @@ import { HttpError } from '../lib/http-error.js';
 
 import { authRouter } from './auth.js';
 import { catalogRouter } from './catalogs.js';
+import { sharesRouter } from './shares.js';
 import { healthRouter } from './health.js';
 import { syncRouter } from './sync.js';
 import { listsRouter, searchRouter } from './lists.js';
@@ -31,6 +32,7 @@ apiRouter.use('/invitations', invitationsRouter);
 apiRouter.use('/dashboard', dashboardRouter);
 apiRouter.use('/lists', listsRouter);
 apiRouter.use('/catalog', catalogRouter);
+apiRouter.use('/shares', sharesRouter);
 apiRouter.use('/search', searchRouter);
 
 // Phases 3 and 4. They answer 501 so the client can tell "not built yet" apart

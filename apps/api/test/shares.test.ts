@@ -313,3 +313,83 @@ describe('una lista compartida en el sync', () => {
     expect(estado(r)?.status).toBe('applied');
   });
 });
+
+describe('el pull trae lo compartido', () => {
+  const pull = (user: TestUser) =>
+    api.post(
+      '/sync/pull',
+      { deviceId: randomUUID(), lastPulledAt: null, limit: 200 },
+      user.accessToken,
+    );
+
+  const titulos = (r: { body?: { data?: { changes?: { entity: string; record: { title?: string; name?: string } }[] } } }) =>
+    (r.body?.data?.changes ?? [])
+      .map((c) => c.record.title ?? c.record.name)
+      .filter(Boolean) as string[];
+
+  it('la cadena entera de una lista compartida llega a un movil sin espacios', async () => {
+    const yo = await conEspacio('Pull yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Pull otra' });
+    // Sin ningun espacio propio: el caso real de alguien a quien le comparten
+    // algo antes de que haya creado nada.
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    // Un elemento nuevo en la lista compartida: es lo que el cursor tiene que
+    // traer, y no un cambio de algo que ya estaba.
+    const nuevo = randomUUID();
+    const r = await push(yo.user, [
+      { kind: 'create', entity: 'list_item', entityId: nuevo, payload: { listId: yo.listId, title: 'Huevos', position: 1 } },
+    ]);
+    expect(r.body?.data?.results?.[0]?.status).toBe('applied');
+
+    const titres = titulos(await pull(otra));
+    // La lista y el elemento. El espacio tambien tiene que llegar, o la lista
+    // queda colgada de un sitio que no existe en el movil.
+    expect(titres).toContain('Compra');
+    expect(titres).toContain('Huevos');
+  });
+
+  it('lo tuyo sigue llegando igual, compartido o no', async () => {
+    // El filtro se toco para admitir cadenas, y un "y" donde deberia haber un "o"
+    // hacia desaparecer justo lo de siempre. Esta prueba es la que lo coge.
+    const propia = await conEspacio('Pull propia');
+
+    const conCambios = await push(propia.user, [
+      { kind: 'create', entity: 'list_item', entityId: randomUUID(), payload: { listId: propia.listId, title: 'Sin compartir', position: 1 } },
+      { kind: 'create', entity: 'folder', entityId: randomUUID(), payload: { workspaceId: propia.workspaceId, name: 'Carpeta mia', position: 1 } },
+    ]);
+    expect(
+      conCambios.body?.data?.results?.every((r: { status: string }) => r.status === 'applied'),
+    ).toBe(true);
+
+    const titres = titulos(await pull(propia.user));
+    expect(titres).toContain('Sin compartir');
+    expect(titres).toContain('Carpeta mia');
+  });
+
+  it('lo revocado deja de llegar', async () => {
+    const yo = await conEspacio('Pull yo tres');
+    const otra = await createVerifiedUser(api, { displayName: 'Pull otra tres' });
+    const { shareId } = await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    expect(titulos(await pull(otra))).toContain('Compra');
+
+    await shareService.revokeShare({ userId: yo.user.userId, shareId });
+
+    const despues = await pull(otra);
+    // Un pull nuevo no lo trae. El que ya lo tenia se queda con lo que copio, y
+    // por eso revoke deja la fila con fecha: el movil sin conexion tiene que
+    // enterarse de que dejo de estar.
+    expect(titulos(despues)).not.toContain('Compra');
+  });
+});
