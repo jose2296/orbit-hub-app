@@ -191,8 +191,12 @@ export class ResendEmailSender implements EmailSender {
 /* --------------------------------------------------------------- templates -- */
 
 function link(path: string, token: string): string {
-  const base = env.WEB_ORIGIN.replace(/\/$/, '');
-  return `${base}${path}?token=${encodeURIComponent(token)}`;
+  return `${absoluteLink(path)}?token=${encodeURIComponent(token)}`;
+}
+
+/** A link into the app that carries no secret and does not expire. */
+function absoluteLink(path: string): string {
+  return `${env.WEB_ORIGIN.replace(/\/$/, '')}${path}`;
 }
 
 function escapeHtml(value: string): string {
@@ -220,6 +224,19 @@ const COPY = {
     inviteBody: '{inviter} te ha invitado como {role}. Pulsa el botón para entrar en el espacio. El enlace caduca el {expires}.',
     inviteCta: 'Entrar en el espacio',
     inviteIgnore: 'Si no reconoces a quien te invita, puedes ignorar este correo: nadie se une sin que pulses el botón.',
+    shareSubject: '{owner} ha compartido {node} contigo en OrbitHub',
+    shareSubjectOf: '{owner} ha compartido {node} de {space} contigo en OrbitHub',
+    shareTitle: '{node} está en tu bandeja',
+    shareBodyEditor: '{owner} te lo ha compartido y puedes editarlo. Elige dónde ponerlo y aparecerá en tu menú junto a lo demás.',
+    shareBodyViewer: '{owner} te lo ha compartido y puedes verlo, pero no cambiarlo.',
+    shareCta: 'Ver lo que me han compartido',
+    shareIgnore: 'El enlace abre OrbitHub. Si no reconoces a quien te lo ha compartido, no pulses nada: dentro de la app puedes quitarlo.',
+    shareNodeSpace: 'un espacio',
+    shareNodeFolder: 'una carpeta',
+    shareNodeList: 'una lista',
+    shareNodeItem: 'un elemento',
+    shareRoleEditor: 'puedes editarlo',
+    shareRoleViewer: 'solo puedes verlo',
   },
   en: {
     verifySubject: 'Verify your email for OrbitHub',
@@ -237,6 +254,19 @@ const COPY = {
     inviteBody: '{inviter} invited you as {role}. Tap the button to join the space. The link expires on {expires}.',
     inviteCta: 'Join the space',
     inviteIgnore: 'If you do not know who invited you, ignore this email: nobody joins anything without tapping the button.',
+    shareSubject: '{owner} shared {node} with you on OrbitHub',
+    shareSubjectOf: '{owner} shared {node} from {space} with you on OrbitHub',
+    shareTitle: '{node} is in your inbox',
+    shareBodyEditor: '{owner} shared it with you and you can edit it. Choose where to put it and it shows up in your menu with everything else.',
+    shareBodyViewer: '{owner} shared it with you and you can look at it, but not change it.',
+    shareCta: 'See what was shared with me',
+    shareIgnore: 'The button opens OrbitHub. If you do not know who shared this, do not tap it: inside the app you can remove it.',
+    shareNodeSpace: 'a space',
+    shareNodeFolder: 'a folder',
+    shareNodeList: 'a list',
+    shareNodeItem: 'an item',
+    shareRoleEditor: 'you can edit it',
+    shareRoleViewer: 'you can only look at it',
   },
 } satisfies Record<Locale, Record<string, string>>;
 
@@ -325,6 +355,67 @@ export function invitationEmail(input: {
       fill(copy.inviteIgnore),
     ),
   };
+}
+
+/**
+ * "Somebody shared something with you".
+ *
+ * Three things this mail has to say and no more: **what** was shared, **who** shared
+ * it, and **whether you can change it or only look at it**. The last one is the whole
+ * point — somebody who receives a list they can only read has to know that now, in the
+ * mail, and not by discovering it when the checkbox does not answer.
+ *
+ * It points at the inbox and not at the thing. There is no link to a thing that lives
+ * in somebody else's space until you have decided where it goes in yours, and a link
+ * that guesses is a link to a 404.
+ */
+export function sharedWithYouEmail(input: {
+  to: string;
+  locale: Locale;
+  nodeTitle: string;
+  nodeType: 'workspace' | 'folder' | 'list' | 'list_item';
+  /** The space it lives in, when it is not the space itself. */
+  spaceName: string | null;
+  ownerName: string;
+  role: 'editor' | 'viewer';
+}): EmailMessage {
+  const copy = COPY[input.locale] ?? COPY.es;
+  const href = absoluteLink('/shared');
+
+  const nodeKind = copy[`shareNode${cap(input.nodeType)}` as keyof typeof copy];
+  const node = `${nodeKind} «${input.nodeTitle}»`;
+
+  const fill = (value: string) =>
+    value
+      .replace('{node}', node)
+      .replace('{owner}', input.ownerName)
+      .replace('{space}', input.spaceName ?? '');
+
+  // A shared space has no other space to point at, so the subject loses the second
+  // half rather than reading "de  con".
+  const subject =
+    input.nodeType === 'workspace' || input.spaceName === null
+      ? fill(copy.shareSubject)
+      : fill(copy.shareSubjectOf);
+
+  return {
+    to: input.to,
+    subject,
+    text: `${fill(copy.shareTitle)}\n\n${
+      input.role === 'editor' ? fill(copy.shareBodyEditor) : fill(copy.shareBodyViewer)
+    }\n\n${href}\n\n${copy.shareIgnore}`,
+    html: layout(
+      fill(copy.shareTitle),
+      input.role === 'editor' ? fill(copy.shareBodyEditor) : fill(copy.shareBodyViewer),
+      copy.shareCta,
+      href,
+      copy.shareIgnore,
+    ),
+  };
+}
+
+function cap(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 export function passwordResetEmail(input: TemplateInput): EmailMessage {

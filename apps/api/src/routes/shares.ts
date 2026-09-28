@@ -9,6 +9,7 @@ import {
 import { users } from '../db/auth-schema.js';
 import { getDatabase } from '../db/client.js';
 import { sendData } from './respond.js';
+import { emailSender, sharedWithYouEmail } from '../modules/email/email.js';
 import { HttpError } from '../lib/http-error.js';
 import { logger } from '../lib/logger.js';
 import { shareService } from '../modules/shares/share-service.js';
@@ -67,6 +68,30 @@ sharesRouter.post('/', async (req, res) => {
   });
 
   logger.info({ shareId: creada.shareId, nodeType: body.nodeType, userId }, 'share created');
+
+  // The mail goes out and the share stays, whatever the mail does. A provider down is
+  // not a reason to un-share something somebody already agreed to, and the notice
+  // inside the app does not need the mail to have arrived: it is in the inbox either
+  // way. So this is not awaited into the response, and a rejection is logged.
+  void emailSender
+    .send(
+      sharedWithYouEmail({
+        to: creada.address,
+        locale: creada.locale,
+        nodeTitle: creada.title,
+        nodeType: body.nodeType,
+        spaceName: creada.spaceName,
+        ownerName: creada.ownerName,
+        role: body.role,
+      }),
+    )
+    .catch((error: unknown) => {
+      logger.warn(
+        { err: error, shareId: creada.shareId },
+        'the share was created but the mail could not be sent',
+      );
+    });
+
   sendData(res, 201, { id: creada.shareId });
 });
 

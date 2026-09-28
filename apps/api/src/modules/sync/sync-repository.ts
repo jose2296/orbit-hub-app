@@ -16,6 +16,15 @@ import {
   workspaces,
 } from '../../db/schema.js';
 
+/** One live grant, resolved into the chain that holds the node it points at. */
+interface CadenaCompartida {
+  nodeType: string;
+  workspaceId: string;
+  folderId: string | null;
+  listId: string | null;
+  role: 'editor' | 'viewer';
+}
+
 /** The ids of one kind out of the shared chains, for an `in` that has to be non-empty. */
 function cadenaDe(
   cadenas: readonly { folderId: string | null; listId: string | null }[],
@@ -211,20 +220,31 @@ export class SyncRepository {
    * the folder tree would spin here forever, and a path of more than 32 folders is
    * not a thing a person built.
    */
-  private async cadenasDeCompartido(
-    userId: string,
-  ): Promise<{ nodeType: string; workspaceId: string; folderId: string | null; listId: string | null }[]> {
+  private async cadenasDeCompartido(userId: string): Promise<CadenaCompartida[]> {
     const db = await this.db();
     const grants = await db
-      .select({ nodeType: shares.nodeType, nodeId: shares.nodeId })
+      .select({
+        nodeType: shares.nodeType,
+        nodeId: shares.nodeId,
+        // The grant's own role, and not the node's: it is what the space has to
+        // show when this person is not a member of it, because a role there is
+        // the only thing that says whether they can change what they were given.
+        role: shares.role,
+      })
       .from(shares)
       .where(and(eq(shares.granteeUserId, userId), isNull(shares.revokedAt)));
 
-    const cadenas: { nodeType: string; workspaceId: string; folderId: string | null; listId: string | null }[] = [];
+    const cadenas: CadenaCompartida[] = [];
 
     for (const grant of grants) {
       if (grant.nodeType === 'workspace') {
-        cadenas.push({ nodeType: 'workspace', workspaceId: grant.nodeId, folderId: null, listId: null });
+        cadenas.push({
+          nodeType: 'workspace',
+          workspaceId: grant.nodeId,
+          folderId: null,
+          listId: null,
+          role: grant.role,
+        });
         continue;
       }
 
@@ -236,7 +256,13 @@ export class SyncRepository {
           .limit(1);
         const found = row[0];
         if (!found) continue;
-        cadenas.push({ nodeType: 'folder', workspaceId: found.workspaceId, folderId: found.parentId, listId: null });
+        cadenas.push({
+          nodeType: 'folder',
+          workspaceId: found.workspaceId,
+          folderId: found.parentId,
+          listId: null,
+          role: grant.role,
+        });
         continue;
       }
 
@@ -261,6 +287,7 @@ export class SyncRepository {
         workspaceId: found.workspaceId,
         folderId: found.folderId,
         listId,
+        role: grant.role,
       });
     }
 
@@ -306,9 +333,17 @@ export class SyncRepository {
     };
 
     if (espaciosVisibles.length > 0) {
-      const compartidos = new Set(
-        cadenas.filter((c) => c.nodeType === 'workspace').map((c) => c.workspaceId),
-      );
+      // The grants that put you in each space, and the one with the most reach if
+      // there are several: somebody who was given a folder with an editor grant and
+      // a list inside it with a viewer grant is, in that space, an editor — the
+      // broader one is the one they will meet.
+      const porEspacio = new Map<string, 'editor' | 'viewer'>();
+      for (const cadena of cadenas) {
+        if (cadena.role === 'editor' || !porEspacio.has(cadena.workspaceId)) {
+          porEspacio.set(cadena.workspaceId, cadena.role);
+        }
+      }
+      const compartidos = new Set(porEspacio.keys());
 
       const workspaceChanges = await db
         .select({
@@ -341,10 +376,15 @@ export class SyncRepository {
           entity: 'workspace',
           record: {
             ...(entry.row as Record<string, unknown>),
-            // `null` and not "owner": a space you were given is not a space you
-            // own, and the app draws the difference with a symbol on it.
-            role: entry.role ?? (compartidos.has(entry.row.id) ? 'editor' : 'viewer'),
+            // The membership role when there is one, and the grant's role when there
+            // is not. Never "owner": a space you were given is not a space you own.
+            role: entry.role ?? porEspacio.get(entry.row.id) ?? 'viewer',
             memberCount: entry.memberCount,
+            // The flag the app draws the symbol from, and it is not the same thing
+            // as the role: a viewer who was *invited* is a member, and a viewer who
+            // was *given a list* is not. One word for both would put the symbol on
+            // the wrong spaces.
+            shared: entry.role === null && compartidos.has(entry.row.id),
           },
         });
         remember(entry.row.updatedAt);

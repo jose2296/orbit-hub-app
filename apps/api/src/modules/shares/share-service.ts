@@ -240,7 +240,15 @@ export class ShareService {
     target: ShareTarget;
     grantee: ShareGrantee;
     role: 'editor' | 'viewer';
-  }): Promise<{ shareId: string }> {
+  }): Promise<{
+    shareId: string;
+    /** Who to write to, and how. The mail needs both and the service is where they are. */
+    address: string;
+    locale: 'es' | 'en';
+    title: string;
+    spaceName: string | null;
+    ownerName: string;
+  }> {
     const db = await this.db();
 
     if (args.grantee.userId === args.ownerUserId) {
@@ -269,6 +277,38 @@ export class ShareService {
       throw HttpError.conflict('That is already shared with that person');
     }
 
+    // Who writes it, and in which language. Read once here so the route does not have
+    // to go back for it after the row is already written, and so the two places that
+    // can fail (this read and the insert) fail before anything is half-done.
+    const paraQuien = await db
+      .select({ email: users.email, locale: users.locale, displayName: users.displayName })
+      .from(users)
+      .where(eq(users.id, args.grantee.userId))
+      .limit(1);
+
+    const para = paraQuien[0];
+    if (!para) throw HttpError.notFound('There is nobody with that id');
+
+    const delDueno = await db
+      .select({ name: users.displayName })
+      .from(users)
+      .where(eq(users.id, args.ownerUserId))
+      .limit(1);
+
+    const paraEl = {
+      shareId: '',
+      address: para.email,
+      locale: (para.locale === 'en' ? 'en' : 'es') as 'es' | 'en',
+      title: args.target.title,
+      // A shared space has no space above it, and the mail says so by dropping the
+      // second half of the subject instead of naming itself.
+      spaceName:
+        args.target.nodeType === 'workspace'
+          ? null
+          : await this.spaceName(args.target.workspaceId),
+      ownerName: delDueno[0]?.name ?? para.email,
+    };
+
     const [creada] = await db
       .insert(shares)
       .values({
@@ -287,11 +327,22 @@ export class ShareService {
         .update(shares)
         .set({ role: args.role, revokedAt: null, ownerUserId: args.ownerUserId, updatedAt: new Date() })
         .where(eq(shares.id, previa.id));
-      return { shareId: previa.id };
+      return { ...paraEl, shareId: previa.id };
     }
 
     if (!creada) throw HttpError.badRequest('The share could not be created');
-    return { shareId: creada.id };
+    return { ...paraEl, shareId: creada.id };
+  }
+
+  /** The name of a space, for the mail that says where the thing came from. */
+  private async spaceName(workspaceId: string): Promise<string | null> {
+    const db = await this.db();
+    const row = await db
+      .select({ name: workspaces.name })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    return row[0]?.name ?? null;
   }
 
   /**

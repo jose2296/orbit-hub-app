@@ -80,6 +80,11 @@ export class WorkspaceQueryService {
       deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
       role: row.role as Role,
       memberCount: row.memberCount,
+      // Every row here comes from the memberships table, so none of them is a
+      // space somebody merely gave you: this is the "all your spaces" screen, and
+      // it does not show the shared ones. The flag is here because the contract
+      // requires it, not because it can be true.
+      shared: false,
     }));
 
     const last = rows.at(-1);
@@ -141,6 +146,10 @@ export class WorkspaceQueryService {
       deletedAt: null,
       role: row.role as Role,
       memberCount: row.memberCount,
+      // Found through a membership, so by definition not shared: this method is
+      // what the pull and the space screen call, and a space reached by a grant
+      // is not one this lookup will ever return.
+      shared: false,
     };
   }
 

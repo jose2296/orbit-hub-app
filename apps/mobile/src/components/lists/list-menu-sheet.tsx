@@ -5,6 +5,7 @@ import type { Folder, List } from "@orbit-hub/contracts";
 
 import { useDashboard } from "@/hooks/use-dashboard";
 import { useLists } from "@/hooks/use-lists";
+import { useShareReach } from "@/hooks/use-shares";
 import {
   isPinned,
   withPinnedList,
@@ -61,6 +62,14 @@ export function ListMenuSheet({
     {},
   );
   const { layout, save } = useDashboard();
+  // Asked when the panel opens, and only then: the answer changes if somebody
+  // shares the list in another tab, and there is no delete in flight to be wrong
+  // about. `null` while asking, and also when the server could not be reached, so
+  // a failed request never says "nobody else has this".
+  const [reached, setReached] = useState(false);
+  const reach = useShareReach(
+    reached && list ? { nodeType: "list", nodeId: list.id } : null,
+  );
 
   const [page, setPage] = useState<Page>("options");
   const [name, setName] = useState(list?.title ?? "");
@@ -71,6 +80,10 @@ export function ListMenuSheet({
     if (list) {
       setPage("options");
       setName(list.title);
+      // Armed when the panel opens rather than when delete is pressed, so the
+      // sentence about other people's phones is already there by the time anybody
+      // reads the confirmation.
+      setReached(true);
     }
   }, [list]);
 
@@ -211,6 +224,43 @@ export function ListMenuSheet({
             <AppText variant="body">
               {t("lists.deleteBody", { count: list.itemCount })}
             </AppText>
+
+            {/*
+              How many people it disappears from, and who.
+
+              Only when there is somebody. A delete that always shows this, even with
+              nobody, teaches people to read past the red box and then it is the one
+              time it mattered.
+            */}
+            {reach && reach.count > 0 ? (
+              <View
+                style={{
+                  gap: theme.spacing.xs,
+                  padding: theme.spacing.md,
+                  borderRadius: theme.radius.md,
+                  borderWidth: 1,
+                  borderColor: theme.colors.danger,
+                }}
+              >
+                <AppText variant="callout" style={{ color: theme.colors.danger }}>
+                  {t("share.reachBody", { count: reach.count })}
+                </AppText>
+                <AppText variant="caption" tone="subtle">
+                  {t("share.reachPeople")}
+                </AppText>
+                {reach.people.map((person) => (
+                  <AppText
+                    key={person.userId}
+                    variant="caption"
+                    tone="muted"
+                    numberOfLines={1}
+                  >
+                    {person.email}
+                  </AppText>
+                ))}
+              </View>
+            ) : null}
+
             <AppText variant="caption" tone="subtle">
               {t("confirm.irreversible")}
             </AppText>

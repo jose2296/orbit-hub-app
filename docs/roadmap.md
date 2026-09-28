@@ -612,6 +612,46 @@ esta compartido.
    "existe pero no es tuyo". Eso convierte un 404 en un manera de averiguar que ids son
    reales. Ahora comprueba el acceso y, si no llega, cae al mismo 404.
 
+### Compartir parte 4: la app, la bandeja y el aviso de borrar
+
+Hecho. El cajon tiene "Compartido conmigo" con lo que te han pasado y no has
+colocado, y al tocarlo sale un panel que pregunta en que espacio de los tuyos va.
+El aviso de borrar dice a cuantas personas afecta y quien son, antes de confirmar. Un
+espacio que te han compartido lleva un simbolo en el menu.
+
+**La bandeja no es offline-first, y el motivo es el mismo que da la API:** una
+concesion es un acto entre dos personas decidido en el servidor cuando alguien pulsa un
+boton. Una copia cacheada de "compartido conmigo" puede estar equivocada sobre si quien
+te lo mando sigue queriendote en su lista — y la bandeja es justo la pantalla donde
+equivocarse importa, porque lo que ofrece es "pon esto en mi espacio".
+
+Lo que **si** funciona sin conexion es la cosa en si: creada la concesion, el sync
+baja la lista como cualquier otra, y puedes tacharla en modo avion. Ver la bandeja
+necesita red; usar lo que te dieron no.
+
+**Tres decisiones que no eran obvias:**
+
+1. **"Compartido conmigo" solo aparece cuando hay algo.** Con la vacia son dos lineas
+   diciendolo, para siempre. Y un encabezado que esta siempre deja de leerse, que es
+   justo cuando haria falta.
+2. **El papel de un espacio compartido es el mas amplio de tus concesiones.** Alguien
+   con una lista en solo lectura y una carpeta con permiso de edicion esta en ese
+   espacio como editor, porque es lo que va a encontrar al entrar. Si saliera el
+   primero que llego, entraria pensando que no puede tocar nada.
+3. **`shared` es una bandera, no un papel.** Un `viewer` invitado y un `viewer` al que
+   le compartieron una lista son el mismo `role` y no la misma cosa: el primero es
+   miembro y el segundo tiene a alguien al otro lado que puede quitarselo. Con un solo
+   campo, el simbolo iba a caer en los espacios equivocados.
+
+**Un fallo mio que cago la prueba de traducciones:** puse el mismo texto en
+`.one` y en `.other` del contador de la bandeja, con `{count}` en los dos. Funciona y
+por eso no se ve: sale "Compartido conmigo · 1" bien. Pero es un plural que no
+pluraliza, y la prueba de las frases que la app promete al compartir (que comprueba
+las oraciones enteras, no que la clave exista) lo cazo a la primera.
+
+Queda: la deduplicacion de proveedores por `logoPath` en "Donde verlo", y el aviso
+dentro de la app a quien le revocan algo.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { sharedWithYouEmail } from '../src/modules/email/email.js';
 import { shareService } from '../src/modules/shares/share-service.js';
 import { createVerifiedUser, startTestServer } from './helpers';
 import type { TestServer, TestUser } from './helpers';
@@ -370,6 +371,137 @@ describe('el pull trae lo compartido', () => {
     const titres = titulos(await pull(propia.user));
     expect(titres).toContain('Sin compartir');
     expect(titres).toContain('Carpeta mia');
+  });
+
+  it('a quien le comparten un espacio no le sale el nombre del espacio en el asunto', async () => {
+    // El asunto tiene dos formas: con el espacio del que viene y sin el. Meter el
+    // nombre de un espacio en el asunto de un espacio compartido deja un
+    // "de  " con un hueco, y eso es lo que se ve en la bandeja de correo.
+    const yo = await conEspacio('Correo yo');
+    // Sin `locale`: el helper no lo acepta, y el idioma sale de la fila, que es de
+    // donde tiene que salir. Pasarlo por el helper seria inventar un segundo sitio
+    // donde se decide en que idioma escribe el correo.
+    const otra = await createVerifiedUser(api, { displayName: 'Correo otra' });
+    const creada = await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    expect(creada.title).toBe('Compra');
+    expect(creada.spaceName).toBe('Casa');
+    expect(creada.ownerName).toBe('Correo yo');
+    expect(creada.address).toBe(otra.email);
+
+    const correo = sharedWithYouEmail({
+      to: creada.address,
+      locale: creada.locale,
+      nodeTitle: creada.title,
+      nodeType: 'list',
+      spaceName: creada.spaceName,
+      ownerName: creada.ownerName,
+      role: 'editor',
+    });
+
+    // Dice las tres cosas que hay que decir: que, quien, y si se puede tocar.
+    expect(correo.subject).toContain('Compra');
+    expect(correo.subject).toContain('Correo yo');
+    expect(correo.subject).toContain('Casa');
+    expect(correo.text).toMatch(/puedes editarlo/);
+    // Y el enlace va a la bandeja, no a un sitio que todavia no existe.
+    expect(correo.text).toContain('/shared');
+    expect(correo.text).not.toMatch(/\/shared\?token=/);
+  });
+
+  it('un espacio compartido no lleva el nombre de un espacio en el asunto', async () => {
+    const yo = await conEspacio('Correo espacio');
+    const otra = await createVerifiedUser(api, { displayName: 'Correo espacio otra' });
+    const creada = await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('workspace', yo.workspaceId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'viewer',
+    });
+
+    expect(creada.spaceName).toBeNull();
+
+    const correo = sharedWithYouEmail({
+      to: creada.address,
+      locale: creada.locale,
+      nodeTitle: creada.title,
+      nodeType: 'workspace',
+      spaceName: creada.spaceName,
+      ownerName: creada.ownerName,
+      role: 'viewer',
+    });
+
+    expect(correo.subject).not.toMatch(/de\s+con/);
+    expect(correo.subject).toContain('Casa');
+    // Y avisa de que no se puede tocar, en vez de dejarlo para descubrirlo.
+    expect(correo.text).toMatch(/no puedes cambiarlo|puedes verlo/);
+  });
+
+  it('el espacio compartido llega marcado como compartido, y el tuyo no', async () => {
+    // La palabra "compartido" en la app sale de este campo, y confundirse aqui
+    // pone el simbolo en espacios que no lo son y lo quita de los que si. Un
+    // viewer invitado y un viewer al que le compartieron una lista son el mismo
+    // `role` y no la misma cosa.
+    const yo = await conEspacio('Marca yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Marca otra' });
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'viewer',
+    });
+
+    const campos = (user: TestUser) =>
+      pull(user)
+        .then((r) =>
+          (r.body?.data?.changes ?? [])
+            .filter((c: { entity: string }) => c.entity === 'workspace')
+            .map((c: { record: { name: string; role: string; shared: boolean } }) => ({
+              name: c.record.name,
+              role: c.record.role,
+              shared: c.record.shared,
+            })),
+        );
+
+    // El espacio ajeno llega con el papel de la concesion y marcado.
+    const ajenos = await campos(otra);
+    expect(ajenos).toEqual([{ name: 'Casa', role: 'viewer', shared: true }]);
+
+    // Y el tuyo llega igual que antes: miembro, no compartido.
+    const propios = await campos(yo.user);
+    expect(propios.every((w: { shared: boolean }) => w.shared === false)).toBe(true);
+  });
+
+  it('el papel del espacio compartido es el mas amplio de tus concessiones', async () => {
+    // Alguien con una lista en solo lectura y una carpeta con permiso de edicion
+    // esta, en ese espacio, como editor: lo que va a encontrar al entrar. Si aqui
+    // saliera el primero que llego, entraria pensando que no puede tocar nada.
+    const yo = await conEspacio('Amplo yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Amplo otra' });
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'viewer',
+    });
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('folder', yo.folderId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    const r = await pull(otra);
+    const espacio = (r.body?.data?.changes ?? []).find(
+      (c: { entity: string }) => c.entity === 'workspace',
+    );
+    expect(espacio?.record.role).toBe('editor');
+    expect(espacio?.record.shared).toBe(true);
   });
 
   it('lo revocado deja de llegar', async () => {

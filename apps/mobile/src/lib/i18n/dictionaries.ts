@@ -267,6 +267,21 @@ const es = {
   "lists.deleteConfirm": "Eliminar la lista",
   "lists.deleteFolderBody":
     "Se elimina la carpeta. Las listas que había dentro se quedan, sin carpeta.",
+  "share.reachTitle": "A cuántas personas afecta",
+  "share.reachBody":
+    "Esta lista también la tienen {count} personas. Si la eliminas, desaparece de sus móviles sin aviso previo.",
+  "share.reachPeople": "Con quién la has compartido",
+  "share.reachOne": "1 persona",
+  "share.reachOther": "{count} personas",
+  "place.title": "Dónde lo pongo",
+  "place.isALink":
+    "No es una copia. Se queda donde lo tiene quien te lo ha compartido, y si él lo borra, desaparece de aquí también.",
+  "place.chooseSpace": "Elige el espacio",
+  "place.chooseFolder": "Y la carpeta, si quieres",
+  "place.rootOfSpace": "Sin carpeta, en el espacio",
+  "place.confirm": "Ponerlo aquí",
+  "place.saving": "Poniéndolo…",
+  "place.chooseSpaceHint": "Elegir en qué espacio de los tuyos va a aparecer.",
   "folders.whatItHolds": "{count} listas dentro",
   "folders.whatTheyAre": "la carpeta",
   "folders.deleteTitle": "Eliminar «{what}»",
@@ -392,6 +407,14 @@ const es = {
   "workspaces.allOfThem": "Todos los espacios",
   "drawer.label": "Menú del espacio de trabajo",
   "drawer.goTo": "Ir a {what}",
+  "drawer.sharedWithMe": "Compartido conmigo",
+  "drawer.sharedWithMeEmpty":
+    "Cuando alguien te comparta algo aparecerá aquí antes de decidir dónde va.",
+  "drawer.sharedWithMeCount.one": "Compartido conmigo · 1",
+  "drawer.sharedWithMeCount.other": "Compartido conmigo · {count}",
+  "drawer.sharedBadge": "Compartido contigo",
+  "drawer.sharedBadgeHint":
+    "Alguien te ha compartido esto y no eres miembro de su espacio.",
   "common.more": "Leer más",
   "common.less": "Leer menos",
   "rating.says": "{score} de {outOf}, un {percent} por ciento",
@@ -921,6 +944,21 @@ const en: Record<TranslationKey, string> = {
   "lists.deleteConfirm": "Delete the list",
   "lists.deleteFolderBody":
     "The folder is deleted. The lists inside it are kept, with no folder.",
+  "share.reachTitle": "How many people this affects",
+  "share.reachBody":
+    "{count} other people have this list too. If you delete it, it disappears from their phones without warning.",
+  "share.reachPeople": "Who you shared it with",
+  "share.reachOne": "1 person",
+  "share.reachOther": "{count} people",
+  "place.title": "Where to put it",
+  "place.isALink":
+    "It is not a copy. It stays where the person who shared it has it, and if they delete it, it disappears from here too.",
+  "place.chooseSpace": "Choose the space",
+  "place.chooseFolder": "And the folder, if you want",
+  "place.rootOfSpace": "No folder, in the space",
+  "place.confirm": "Put it here",
+  "place.saving": "Putting it…",
+  "place.chooseSpaceHint": "Choose which of your spaces it shows up in.",
   "folders.whatItHolds": "{count} lists inside",
   "folders.whatTheyAre": "the folder",
   "folders.deleteTitle": 'Delete "{what}"',
@@ -1047,6 +1085,14 @@ const en: Record<TranslationKey, string> = {
   "workspaces.allOfThem": "All the spaces",
   "drawer.label": "Workspace menu",
   "drawer.goTo": "Go to {what}",
+  "drawer.sharedWithMe": "Shared with me",
+  "drawer.sharedWithMeEmpty":
+    "When somebody shares something with you it shows up here, before you decide where it goes.",
+  "drawer.sharedWithMeCount.one": "Shared with me · 1",
+  "drawer.sharedWithMeCount.other": "Shared with me · {count}",
+  "drawer.sharedBadge": "Shared with you",
+  "drawer.sharedBadgeHint":
+    "Somebody shared this with you and you are not a member of their space.",
   "common.more": "Read more",
   "common.less": "Read less",
   "rating.says": "{score} out of {outOf}, {percent} percent",

@@ -19,10 +19,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { Folder, List, Workspace } from "@orbit-hub/contracts";
+import type { Folder, List, Share, Workspace } from "@orbit-hub/contracts";
 
+import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
 import { AppText } from "@/components/ui/text";
 import { useListItems } from "@/hooks/use-lists";
+import { useShares } from "@/hooks/use-shares";
 import { useSyncStatus } from "@/hooks/use-sync-status";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { pluralKey, useTranslation } from "@/lib/i18n";
@@ -194,6 +196,17 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
   const { status } = useSyncStatus();
   const tree = useSpacesTree();
 
+  // What has been shared with this person and not filed yet. The section is in
+  // the menu and not on its own screen because the thing to do with it is
+  // one tap away from where you are already looking: a list that arrived in a
+  // place you have to remember to visit is a list you never file.
+  const { inbox, load: reloadInbox } = useShares();
+  const [colocando, setColocando] = useState<Share | null>(null);
+
+  useEffect(() => {
+    void reloadInbox();
+  }, [reloadInbox]);
+
   const go = (href: string) => {
     onNavigate?.();
     router.push(href as never);
@@ -342,7 +355,80 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
             </AppText>
           </Pressable>
         ) : null}
+        {/*
+          Only when there is something. An empty "compartido conmigo" heading with
+          a sentence explaining that it is empty is a thing the menu spends two
+          lines on, forever, to say nothing — and a heading that is always there
+          stops being something you read.
+        */}
+        {inbox.length > 0 ? (
+          <>
+            <View style={[styles.rule, { backgroundColor: theme.colors.border }]} />
+            <AppText
+              variant="caption"
+              tone="subtle"
+              style={{
+                paddingHorizontal: theme.spacing.sm,
+                paddingBottom: theme.spacing.xs,
+              }}
+            >
+              {t(pluralKey("drawer.sharedWithMeCount", inbox.length), {
+                count: inbox.length,
+              })}
+            </AppText>
+            {inbox.map((share) => (
+              <Pressable
+                key={share.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${t("drawer.sharedWithMe")}: ${share.title}`}
+                accessibilityHint={t("place.chooseSpaceHint")}
+                onPress={() => setColocando(share)}
+                style={({ pressed }) => [
+                  styles.item,
+                  {
+                    borderRadius: theme.radius.md,
+                    backgroundColor: pressed
+                      ? theme.colors.surfaceMuted
+                      : "transparent",
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: 7,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={15}
+                  color={theme.colors.accent}
+                />
+                <View style={{ flex: 1 }}>
+                  <AppText variant="callout" numberOfLines={1}>
+                    {share.title}
+                  </AppText>
+                  <AppText variant="caption" tone="subtle" numberOfLines={1}>
+                    {share.ownerName ?? ""}
+                  </AppText>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={14}
+                  color={theme.colors.textSubtle}
+                />
+              </Pressable>
+            ))}
+          </>
+        ) : null}
       </ScrollView>
+
+      {/*
+        The panel that asks where it goes, and it lives with the menu that
+        offered it. Mounted only while there is one to place, so opening the
+        menu does not leave a hidden modal behind it.
+      */}
+      <PlaceShareSheet
+        share={colocando}
+        onClose={() => setColocando(null)}
+        onPlaced={() => void reloadInbox()}
+      />
     </View>
   );
 }
@@ -377,10 +463,13 @@ function SpaceBranch({
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
           accessibilityLabel={workspace.name}
-          accessibilityHint={t(
-            pluralKey("workspaces.members", workspace.memberCount),
-            { count: workspace.memberCount },
-          )}
+          accessibilityHint={
+            workspace.shared
+              ? t("drawer.sharedBadgeHint")
+              : t(pluralKey("workspaces.members", workspace.memberCount), {
+                  count: workspace.memberCount,
+                })
+          }
           onPress={() => onOpen(`/(app)/workspace/${workspace.id}`)}
           style={({ pressed }) => [
             styles.item,
@@ -403,6 +492,22 @@ function SpaceBranch({
           <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {workspace.name}
           </AppText>
+          {/*
+            The mark on a space you were given rather than invited to.
+
+            A symbol and not a colour or a different dot, because the difference
+            that matters is a fact about *who owns this* and not about how it looks,
+            and a recoloured dot would say it to nobody who is not already looking
+            for it.
+          */}
+          {workspace.shared ? (
+            <Ionicons
+              name="people"
+              size={13}
+              color={theme.colors.textSubtle}
+              accessibilityLabel={t("drawer.sharedBadge")}
+            />
+          ) : null}
         </Pressable>
 
         <BranchToggle
@@ -761,6 +866,7 @@ function BranchToggle({
 /* ------------------------------------------------------------------ the tree -- */
 
 export interface SpacesTree {
+  spaces: () => Workspace[];
   foldersOf: (workspaceId: string, parentId: string | null) => Folder[];
   listsOf: (workspaceId: string, parentId: string | null) => List[];
   isEmpty: (workspaceId: string) => boolean;
@@ -778,20 +884,23 @@ export interface SpacesTree {
 export function useSpacesTree(): SpacesTree {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [lists, setLists] = useState<List[]>([]);
+  const [spaces, setSpaces] = useState<Workspace[]>([]);
 
   useEffect(() => {
     let active = true;
 
     const load = async () => {
-      const [{ readAllCachedFolders }, localStore] = await Promise.all([
-        import("@/lib/offline/sync-service"),
-        import("@/lib/offline/local-store"),
-      ]);
+      const [{ readAllCachedFolders, readCachedWorkspaces }, localStore] =
+        await Promise.all([
+          import("@/lib/offline/sync-service"),
+          import("@/lib/offline/local-store"),
+        ]);
 
       const store = await localStore.getLocalStoreReady();
-      const [folderRows, listRows] = await Promise.all([
+      const [folderRows, listRows, workspaceRows] = await Promise.all([
         readAllCachedFolders(),
         store.listCached("list"),
+        readCachedWorkspaces(),
       ]);
 
       const listRecords = listRows
@@ -810,6 +919,7 @@ export function useSpacesTree(): SpacesTree {
       if (!active) return;
       setFolders(folderRows);
       setLists(listRecords);
+      setSpaces(workspaceRows);
     };
 
     void load();
@@ -874,6 +984,7 @@ export function useSpacesTree(): SpacesTree {
       byTitle(listsByParent.get(key(workspaceId, parentId)) ?? []);
 
     return {
+      spaces: () => spaces,
       foldersOf,
       listsOf,
       isEmpty: (workspaceId) =>
@@ -881,7 +992,7 @@ export function useSpacesTree(): SpacesTree {
         (listsByParent.get(key(workspaceId, null))?.length ?? 0) === 0,
       isFolderEmpty: (folderId) => (childCount.get(folderId) ?? 0) === 0,
     };
-  }, [folders, lists]);
+  }, [folders, lists, spaces]);
 }
 
 /**

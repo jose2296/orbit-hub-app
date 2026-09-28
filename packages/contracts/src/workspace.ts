@@ -64,6 +64,18 @@ export const workspaceSchema = syncableEntitySchema.extend({
   color: workspaceColorSchema.default("slate"),
   role: membershipRoleSchema,
   memberCount: z.int().min(1),
+  /**
+   * Whether you are here because somebody shared it rather than because you were
+   * made a member.
+   *
+   * A flag and not a role, and the reason is that a role cannot say it: somebody
+   * with a `viewer` grant on a shared space and somebody who was invited as a
+   * viewer are the same two words and not the same thing. The first has a person
+   * on the other side who can take it back; the second is a membership. The app
+   * draws a symbol on the first and says why, and guessing from the role would
+   * put that symbol on spaces that are simply not shared.
+   */
+  shared: z.boolean().default(false),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
