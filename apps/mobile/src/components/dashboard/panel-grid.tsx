@@ -6,6 +6,7 @@ import type { DashboardWidget } from "@orbit-hub/contracts";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { AppText } from "@/components/ui/text";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import {
@@ -141,6 +142,9 @@ export function PanelGrid({
     [draft],
   );
 
+  const pistaEdit = useA11yHint(t("dashboard.editLayoutHint"));
+  const pistaAdd = useA11yHint(t("dashboard.addCardHint"));
+
   return (
     <View style={{ gap: theme.spacing.md }}>
       <View style={[styles.row, { gap: theme.spacing.sm }]}>
@@ -164,22 +168,25 @@ export function PanelGrid({
             }}
           />
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("dashboard.editLayout")}
-            accessibilityHint={t("dashboard.editLayoutHint")}
-            onPress={() => setEditing(true)}
-            style={({ pressed }) => [
-              styles.iconButton,
-              { opacity: pressed ? 0.6 : 1 },
-            ]}
-          >
-            <Ionicons
-              name="create-outline"
-              size={18}
-              color={theme.colors.text}
-            />
-          </Pressable>
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("dashboard.editLayout")}
+              {...pistaEdit.props}
+              onPress={() => setEditing(true)}
+              style={({ pressed }) => [
+                styles.iconButton,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Ionicons
+                name="create-outline"
+                size={18}
+                color={theme.colors.text}
+              />
+            </Pressable>
+            {pistaEdit.node}
+          </>
         )}
       </View>
 
@@ -376,30 +383,33 @@ export function PanelGrid({
       ) : null}
 
       {availableCount > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("dashboard.addCard")}
-          accessibilityHint={t("dashboard.addCardHint")}
-          onPress={onOpenEditor}
-          style={({ pressed }) => [
-            styles.addCard,
-            {
-              borderColor: theme.colors.border,
-              backgroundColor: theme.colors.surfaceMuted,
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          <Ionicons name="add" size={20} color={theme.colors.textMuted} />
-          <AppText variant="bodyStrong" tone="muted">
-            {t("dashboard.addCard")}
-          </AppText>
-          <AppText variant="caption" tone="subtle">
-            {t(pluralKey("dashboard.cardsAvailable", availableCount), {
-              count: availableCount,
-            })}
-          </AppText>
-        </Pressable>
+        <>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("dashboard.addCard")}
+            {...pistaAdd.props}
+            onPress={onOpenEditor}
+            style={({ pressed }) => [
+              styles.addCard,
+              {
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surfaceMuted,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="add" size={20} color={theme.colors.textMuted} />
+            <AppText variant="bodyStrong" tone="muted">
+              {t("dashboard.addCard")}
+            </AppText>
+            <AppText variant="caption" tone="subtle">
+              {t(pluralKey("dashboard.cardsAvailable", availableCount), {
+                count: availableCount,
+              })}
+            </AppText>
+          </Pressable>
+          {pistaAdd.node}
+        </>
       ) : null}
 
       {hidden.length > 0 ? (
@@ -439,51 +449,60 @@ function PanelCard({
   compact: boolean;
   onPress: () => void;
 }) {
+  // The hint is the space while the panel is being arranged and the subtitle
+  // otherwise, and the node is a sibling rather than a wrapper: the `Pressable`
+  // is the root of this component and it is `flex: 1` inside an absolutely
+  // positioned cell, which a `View` around it would take away.
+  const pista = useA11yHint(editing ? where : subtitle);
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityHint={editing ? where : subtitle}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.card,
-        {
-          backgroundColor: colors.background,
-          borderColor: selected ? colors.foreground : colors.border,
-          borderWidth: selected ? 3 : 1,
-          opacity: pressed ? 0.85 : 1,
-        },
-      ]}
-    >
-      {/* The emoji when the list has one, nothing when it does not: the card is
-          already painted with the colour of the space, so a dot of that same
-          colour beside the name would say nothing at all. A card of one row has
-          not even room for the emoji. */}
-      {emoji && !compact ? <AppText variant="title">{emoji}</AppText> : null}
-
-      <AppText
-        variant="bodyStrong"
-        numberOfLines={compact ? 1 : 3}
-        style={{ color: colors.foreground, flexShrink: 1 }}
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        {...pista.props}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.card,
+          {
+            backgroundColor: colors.background,
+            borderColor: selected ? colors.foreground : colors.border,
+            borderWidth: selected ? 3 : 1,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ]}
       >
-        {title}
-      </AppText>
+        {/* The emoji when the list has one, nothing when it does not: the card is
+            already painted with the colour of the space, so a dot of that same
+            colour beside the name would say nothing at all. A card of one row has
+            not even room for the emoji. */}
+        {emoji && !compact ? <AppText variant="title">{emoji}</AppText> : null}
 
-      {/* A card of one row has room for the name and nothing else, and a second
-          line in it is a line cut in half. */}
-      {compact ? null : (
-        <>
-          <View style={styles.spacer} />
-          <AppText
-            variant="caption"
-            style={{ color: colors.muted }}
-            numberOfLines={1}
-          >
-            {editing ? where : subtitle}
-          </AppText>
-        </>
-      )}
-    </Pressable>
+        <AppText
+          variant="bodyStrong"
+          numberOfLines={compact ? 1 : 3}
+          style={{ color: colors.foreground, flexShrink: 1 }}
+        >
+          {title}
+        </AppText>
+
+        {/* A card of one row has room for the name and nothing else, and a second
+            line in it is a line cut in half. */}
+        {compact ? null : (
+          <>
+            <View style={styles.spacer} />
+            <AppText
+              variant="caption"
+              style={{ color: colors.muted }}
+              numberOfLines={1}
+            >
+              {editing ? where : subtitle}
+            </AppText>
+          </>
+        )}
+      </Pressable>
+      {pista.node}
+    </>
   );
 }
 

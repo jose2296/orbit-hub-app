@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import type { ListItem } from "@orbit-hub/contracts";
 
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -42,6 +43,8 @@ export function DoneTray({ items, onToggle, onOpen, bottomInset }: DoneTrayProps
   const t = useTranslation();
   const [open, setOpen] = useState(false);
 
+  const pistaBar = useA11yHint(t("doneTray.hint"));
+
   if (items.length === 0) return null;
 
   const shown = open ? items : [];
@@ -68,30 +71,12 @@ export function DoneTray({ items, onToggle, onOpen, bottomInset }: DoneTrayProps
           showsVerticalScrollIndicator={false}
         >
           {shown.map((item) => (
-            <Pressable
+            <DoneRow
               key={item.id}
-              accessibilityRole="button"
-              accessibilityLabel={item.title}
-              accessibilityHint={t("doneTray.undoHint")}
-              onPress={() => onOpen(item)}
-              style={({ pressed }) => [
-                styles.row,
-                {
-                  gap: theme.spacing.sm,
-                  paddingVertical: theme.spacing.sm,
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}
-            >
-              <Checkbox
-                checked
-                onToggle={() => onToggle(item)}
-                label=""
-              />
-              <AppText variant="body" tone="subtle" numberOfLines={1} style={styles.flex}>
-                {item.title}
-              </AppText>
-            </Pressable>
+              item={item}
+              onToggle={onToggle}
+              onOpen={onOpen}
+            />
           ))}
         </ScrollView>
       ) : null}
@@ -101,7 +86,7 @@ export function DoneTray({ items, onToggle, onOpen, bottomInset }: DoneTrayProps
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={t("doneTray.title", { count: items.length })}
-        accessibilityHint={t("doneTray.hint")}
+        {...pistaBar.props}
         onPress={() => setOpen((value) => !value)}
         style={({ pressed }) => [
           styles.bar,
@@ -124,7 +109,52 @@ export function DoneTray({ items, onToggle, onOpen, bottomInset }: DoneTrayProps
           {t("doneTray.title", { count: items.length })}
         </AppText>
       </Pressable>
+      {pistaBar.node}
     </View>
+  );
+}
+
+/**
+ * One done row, in its own component so the hint hook is not called once per row
+ * inside the map.
+ */
+function DoneRow({
+  item,
+  onToggle,
+  onOpen,
+}: {
+  item: ListItem;
+  onToggle: (item: ListItem) => void;
+  onOpen: (item: ListItem) => void;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  const pista = useA11yHint(t("doneTray.undoHint"));
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={item.title}
+        {...pista.props}
+        onPress={() => onOpen(item)}
+        style={({ pressed }) => [
+          styles.row,
+          {
+            gap: theme.spacing.sm,
+            paddingVertical: theme.spacing.sm,
+            opacity: pressed ? 0.7 : 1,
+          },
+        ]}
+      >
+        <Checkbox checked onToggle={() => onToggle(item)} label="" />
+        <AppText variant="body" tone="subtle" numberOfLines={1} style={styles.flex}>
+          {item.title}
+        </AppText>
+      </Pressable>
+      {pista.node}
+    </>
   );
 }
 

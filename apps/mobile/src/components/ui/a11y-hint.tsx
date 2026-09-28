@@ -61,17 +61,33 @@ export function A11yHint({ hint, children }: { hint: string; children: ReactNode
  * {pista.node}
  * ```
  */
-export function useA11yHint(hint: string) {
+export function useA11yHint(hint?: string | null) {
   const id = useHintId();
   const web = Platform.OS === "web";
+  const hay = typeof hint === "string" && hint.length > 0;
 
   return {
-    props: web ? ({ "aria-describedby": id } as Record<string, string>) : {},
-    node: web ? (
+    /**
+     * Spread onto the control. **Both** platforms, not one.
+     *
+     * On web it is `aria-describedby`; on native it is `accessibilityHint` again,
+     * which is what the call site was passing before. Returning `{}` on native
+     * would have been shorter and it would have quietly deleted the hint from
+     * iOS and Android at every migrated call site — the fix for a web bug
+     * breaking the platforms that already worked, which is the worst direction
+     * for this kind of change to fail in.
+     */
+    props: !hay
+      ? ({} as Record<string, string>)
+      : web
+        ? ({ "aria-describedby": id } as Record<string, string>)
+        : ({ accessibilityHint: hint } as Record<string, string>),
+    // Nothing to point at when there is no hint, so no node and no id in the tree.
+    node: !hay || !web ? null : (
       <Text id={id} style={styles.soloParaLectores}>
         {hint}
       </Text>
-    ) : null,
+    ),
   };
 }
 
@@ -94,6 +110,21 @@ function useHintId(): string {
 const styles = StyleSheet.create({
   soloParaLectores: {
     position: "absolute",
+    // Off the top-left corner, and **not** left at its static position.
+    //
+    // Measured: with `position: absolute` and no `left`/`top`, the node lands on
+    // the top-left pixel of the control it belongs to, and `elementFromPoint`
+    // there returns the hint instead of the button. One CSS pixel, in a corner,
+    // never the middle — so nothing was visibly broken and nothing was clickable
+    // by accident, but "never the middle" is a property of the layout and not a
+    // guarantee, and a control with no text is small enough for the corner to be
+    // a quarter of it.
+    //
+    // The node is also the last thing in the tab order of a screen reader, so
+    // -9999 does not make it unreachable; it is not focusable and it has nothing
+    // to focus.
+    left: -9999,
+    top: 0,
     width: 1,
     height: 1,
     // Not `display: none` and not `opacity: 0`: both remove the node from the

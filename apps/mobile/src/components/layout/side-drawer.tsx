@@ -2,6 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { usePathname, useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
+import type { WorkspaceColor } from "@orbit-hub/contracts";
+
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { AppText } from "@/components/ui/text";
 import { useSyncStatus } from "@/hooks/use-sync-status";
 import { useWorkspaces } from "@/hooks/use-workspaces";
@@ -76,45 +79,15 @@ export function SideDrawer() {
       </View>
 
       <View style={{ padding: theme.spacing.sm, gap: 2 }}>
-        {DESTINATIONS.map((destination) => {
-          const focused = pathname === destination.route;
-          const tint = focused ? theme.colors.accent : theme.colors.textMuted;
-
-          return (
-            <Pressable
-              key={destination.name}
-              accessibilityRole="button"
-              accessibilityState={{ selected: focused }}
-              accessibilityLabel={t(destination.labelKey)}
-              accessibilityHint={t("drawer.goTo", {
-                what: t(destination.labelKey),
-              })}
-              onPress={() => router.push(destination.route)}
-              style={({ pressed }) => [
-                styles.item,
-                {
-                  borderRadius: theme.radius.md,
-                  backgroundColor: pressed
-                    ? theme.colors.surfaceMuted
-                    : focused
-                      ? theme.colors.accentSoft
-                      : "transparent",
-                  paddingHorizontal: theme.spacing.sm,
-                  paddingVertical: theme.spacing.sm,
-                },
-              ]}
-            >
-              <Ionicons
-                name={destination.icon as never}
-                size={18}
-                color={tint}
-              />
-              <AppText variant="body" style={{ color: tint }}>
-                {t(destination.labelKey)}
-              </AppText>
-            </Pressable>
-          );
-        })}
+        {DESTINATIONS.map((destination) => (
+          <DestinationRow
+            key={destination.name}
+            route={destination.route}
+            labelKey={destination.labelKey}
+            icon={destination.icon}
+            focused={pathname === destination.route}
+          />
+        ))}
       </View>
 
       <View style={[styles.rule, { backgroundColor: theme.colors.border }]} />
@@ -140,37 +113,13 @@ export function SideDrawer() {
         </AppText>
 
         {workspaces.map((workspace) => (
-          <Pressable
+          <WorkspaceRow
             key={workspace.id}
-            accessibilityRole="button"
-            accessibilityLabel={workspace.name}
-            accessibilityHint={t(
-              pluralKey("workspaces.members", workspace.memberCount),
-              { count: workspace.memberCount },
-            )}
-            onPress={() => router.push(`/(app)/workspace/${workspace.id}`)}
-            style={({ pressed }) => [
-              styles.item,
-              {
-                borderRadius: theme.radius.md,
-                backgroundColor: pressed
-                  ? theme.colors.surfaceMuted
-                  : "transparent",
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.sm,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.dot,
-                { backgroundColor: colorOf(workspace.color) },
-              ]}
-            />
-            <AppText variant="body" numberOfLines={1} style={styles.flex}>
-              {workspace.name}
-            </AppText>
-          </Pressable>
+            id={workspace.id}
+            name={workspace.name}
+            color={workspace.color}
+            memberCount={workspace.memberCount}
+          />
         ))}
 
         <Pressable
@@ -238,6 +187,117 @@ export function SideDrawer() {
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * One of the three destinations, in its own component so the hint hook is not
+ * called once per destination inside a map.
+ */
+function DestinationRow({
+  route,
+  labelKey,
+  icon,
+  focused,
+}: {
+  route: (typeof DESTINATIONS)[number]["route"];
+  labelKey: (typeof DESTINATIONS)[number]["labelKey"];
+  icon: (typeof DESTINATIONS)[number]["icon"];
+  focused: boolean;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+  const router = useRouter();
+
+  const pista = useA11yHint(
+    t("drawer.goTo", {
+      what: t(labelKey),
+    }),
+  );
+
+  const tint = focused ? theme.colors.accent : theme.colors.textMuted;
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected: focused }}
+        accessibilityLabel={t(labelKey)}
+        {...pista.props}
+        onPress={() => router.push(route)}
+        style={({ pressed }) => [
+          styles.item,
+          {
+            borderRadius: theme.radius.md,
+            backgroundColor: pressed
+              ? theme.colors.surfaceMuted
+              : focused
+                ? theme.colors.accentSoft
+                : "transparent",
+            paddingHorizontal: theme.spacing.sm,
+            paddingVertical: theme.spacing.sm,
+          },
+        ]}
+      >
+        <Ionicons name={icon as never} size={18} color={tint} />
+        <AppText variant="body" style={{ color: tint }}>
+          {t(labelKey)}
+        </AppText>
+      </Pressable>
+      {pista.node}
+    </>
+  );
+}
+
+/**
+ * One space, in its own component so the hint hook is not called once per space
+ * inside a map.
+ */
+function WorkspaceRow({
+  id,
+  name,
+  color,
+  memberCount,
+}: {
+  id: string;
+  name: string;
+  color: WorkspaceColor;
+  memberCount: number;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+  const router = useRouter();
+
+  const pista = useA11yHint(
+    t(pluralKey("workspaces.members", memberCount), { count: memberCount }),
+  );
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={name}
+        {...pista.props}
+        onPress={() => router.push(`/(app)/workspace/${id}`)}
+        style={({ pressed }) => [
+          styles.item,
+          {
+            borderRadius: theme.radius.md,
+            backgroundColor: pressed
+              ? theme.colors.surfaceMuted
+              : "transparent",
+            paddingHorizontal: theme.spacing.sm,
+            paddingVertical: theme.spacing.sm,
+          },
+        ]}
+      >
+        <View style={[styles.dot, { backgroundColor: colorOf(color) }]} />
+        <AppText variant="body" numberOfLines={1} style={styles.flex}>
+          {name}
+        </AppText>
+      </Pressable>
+      {pista.node}
+    </>
   );
 }
 

@@ -176,58 +176,80 @@ export function SheetOptions({ options }: { options: SheetOption[] }) {
 
   return (
     <View style={{ gap: theme.spacing.xs }}>
-      {options.map((option, index) => {
-        const danger = option.tone === "danger";
-        const accent = option.tone === "accent";
-        const color = danger
-          ? theme.colors.danger
-          : accent
-            ? theme.colors.accent
-            : theme.colors.text;
+      {options.map((option, index) => (
+        <SheetOptionRow key={option.key} option={option} first={index === 0} />
+      ))}
+    </View>
+  );
+}
 
-        return (
-          <View key={option.key}>
-            {index > 0 ? (
-              <View
-                style={[
-                  styles.separator,
-                  { backgroundColor: theme.colors.border },
-                ]}
-              />
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={option.label}
-              accessibilityHint={option.description}
-              disabled={option.disabled}
-              onPress={option.onPress}
-              style={({ pressed }) => [
-                styles.option,
-                {
-                  backgroundColor: pressed
-                    ? theme.colors.surfaceMuted
-                    : "transparent",
-                  opacity: option.disabled ? 0.4 : 1,
-                },
-              ]}
-            >
-              {option.icon ? (
-                <Ionicons name={option.icon} size={18} color={color} />
-              ) : null}
-              <View style={[styles.optionText, { gap: 2 }]}>
-                <AppText variant="body" style={{ color }}>
-                  {option.label}
-                </AppText>
-                {option.description ? (
-                  <AppText variant="caption" tone="subtle" numberOfLines={2}>
-                    {option.description}
-                  </AppText>
-                ) : null}
-              </View>
-            </Pressable>
-          </View>
-        );
-      })}
+/**
+ * One row of the menu, in its own component so the hint hook is not called
+ * once per option inside a loop.
+ */
+function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean }) {
+  const theme = useTheme();
+
+  // Optional: an option without a description has nothing to describe.
+  /*
+   * No hint here, and on purpose: the description is already painted inside the
+   * button, so a screen reader reaches it on its own as part of the control.
+   * Pointing `aria-describedby` at a second copy of the same sentence means the
+   * same words twice — once as the content of the button and once as its
+   * description — and the version that is only a hint is the one people learn to
+   * skip.
+   *
+   * The hint is for the descriptions that are *not* on screen: the ones that
+   * explain what pressing a button you cannot see the meaning of will do.
+   */
+
+  const danger = option.tone === "danger";
+  const accent = option.tone === "accent";
+  const color = danger
+    ? theme.colors.danger
+    : accent
+      ? theme.colors.accent
+      : theme.colors.text;
+
+  return (
+    <View>
+      {first ? null : (
+        <View
+          style={[
+            styles.separator,
+            { backgroundColor: theme.colors.border },
+          ]}
+        />
+      )}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={option.label}
+        disabled={option.disabled}
+        onPress={option.onPress}
+        style={({ pressed }) => [
+          styles.option,
+          {
+            backgroundColor: pressed
+              ? theme.colors.surfaceMuted
+              : "transparent",
+            opacity: option.disabled ? 0.4 : 1,
+          },
+        ]}
+      >
+        {option.icon ? (
+          <Ionicons name={option.icon} size={18} color={color} />
+        ) : null}
+        <View style={[styles.optionText, { gap: 2 }]}>
+          <AppText variant="body" style={{ color }}>
+            {option.label}
+          </AppText>
+          {option.description ? (
+            <AppText variant="caption" tone="subtle" numberOfLines={2}>
+              {option.description}
+            </AppText>
+          ) : null}
+        </View>
+      </Pressable>
     </View>
   );
 }

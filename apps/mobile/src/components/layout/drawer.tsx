@@ -19,7 +19,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { Folder, List, Share, Workspace } from "@orbit-hub/contracts";
+import type {
+  Folder,
+  List,
+  ListItem,
+  Share,
+  Workspace,
+} from "@orbit-hub/contracts";
 
 import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
 import { useA11yHint } from "@/components/ui/a11y-hint";
@@ -381,43 +387,11 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
               })}
             </AppText>
             {inbox.map((share) => (
-              <Pressable
+              <InboxRow
                 key={share.id}
-                accessibilityRole="button"
-                accessibilityLabel={`${t("drawer.sharedWithMe")}: ${share.title}`}
-                accessibilityHint={t("place.chooseSpaceHint")}
+                share={share}
                 onPress={() => setColocando(share)}
-                style={({ pressed }) => [
-                  styles.item,
-                  {
-                    borderRadius: theme.radius.md,
-                    backgroundColor: pressed
-                      ? theme.colors.surfaceMuted
-                      : "transparent",
-                    paddingHorizontal: theme.spacing.sm,
-                    paddingVertical: 7,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="people-outline"
-                  size={15}
-                  color={theme.colors.accent}
-                />
-                <View style={{ flex: 1 }}>
-                  <AppText variant="callout" numberOfLines={1}>
-                    {share.title}
-                  </AppText>
-                  <AppText variant="caption" tone="subtle" numberOfLines={1}>
-                    {share.ownerName ?? ""}
-                  </AppText>
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={14}
-                  color={theme.colors.textSubtle}
-                />
-              </Pressable>
+              />
             ))}
           </>
         ) : null}
@@ -434,6 +408,65 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
         onPlaced={() => void reloadInbox()}
       />
     </View>
+  );
+}
+
+/**
+ * One thing shared with this person that is not filed yet, in its own component
+ * so the hint hook is not called once per share inside a map.
+ */
+function InboxRow({
+  share,
+  onPress,
+}: {
+  share: Share;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  const pista = useA11yHint(t("place.chooseSpaceHint"));
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${t("drawer.sharedWithMe")}: ${share.title}`}
+        {...pista.props}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.item,
+          {
+            borderRadius: theme.radius.md,
+            backgroundColor: pressed
+              ? theme.colors.surfaceMuted
+              : "transparent",
+            paddingHorizontal: theme.spacing.sm,
+            paddingVertical: 7,
+          },
+        ]}
+      >
+        <Ionicons
+          name="people-outline"
+          size={15}
+          color={theme.colors.accent}
+        />
+        <View style={{ flex: 1 }}>
+          <AppText variant="callout" numberOfLines={1}>
+            {share.title}
+          </AppText>
+          <AppText variant="caption" tone="subtle" numberOfLines={1}>
+            {share.ownerName ?? ""}
+          </AppText>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={14}
+          color={theme.colors.textSubtle}
+        />
+      </Pressable>
+      {pista.node}
+    </>
   );
 }
 
@@ -704,6 +737,12 @@ function ListBranch({
   const shown = items.slice(0, ITEMS_SHOWN);
   const left = items.length - shown.length;
 
+  const pista = useA11yHint(
+    t(pluralKey("lists.itemCount", list.itemCount), {
+      count: list.itemCount,
+    }),
+  );
+
   return (
     <View>
       <View style={[styles.item, { gap: 2 }]}>
@@ -711,9 +750,7 @@ function ListBranch({
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
           accessibilityLabel={list.title}
-          accessibilityHint={t(pluralKey("lists.itemCount", list.itemCount), {
-            count: list.itemCount,
-          })}
+          {...pista.props}
           onPress={() => onOpen(`/(app)/list/${list.id}`)}
           style={({ pressed }) => [
             styles.item,
@@ -742,6 +779,7 @@ function ListBranch({
             </AppText>
           ) : null}
         </Pressable>
+        {pista.node}
 
         <BranchToggle
           open={open}
@@ -766,50 +804,15 @@ function ListBranch({
             </AppText>
           ) : (
             shown.map((item) => (
-              <Pressable
+              <ListItemRow
                 key={item.id}
-                accessibilityRole="button"
-                accessibilityLabel={item.title}
-                accessibilityHint={t("drawer.opensItem")}
-                onPress={() =>
+                item={item}
+                onOpen={() =>
                   onOpen(
                     `/(app)/item/${item.externalId ?? item.id}?kind=${list.kind}&itemKey=${item.id}&itemId=${list.id}&title=${encodeURIComponent(item.title)}`,
                   )
                 }
-                style={({ pressed }) => [
-                  styles.item,
-                  {
-                    borderRadius: theme.radius.md,
-                    backgroundColor: pressed
-                      ? theme.colors.surfaceMuted
-                      : "transparent",
-                    paddingHorizontal: theme.spacing.sm,
-                    paddingVertical: 6,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.tick,
-                    {
-                      borderColor: item.completed
-                        ? theme.colors.accent
-                        : theme.colors.borderStrong,
-                      backgroundColor: item.completed
-                        ? theme.colors.accent
-                        : "transparent",
-                    },
-                  ]}
-                />
-                <AppText
-                  variant="caption"
-                  tone={item.completed ? "subtle" : "muted"}
-                  numberOfLines={1}
-                  style={[styles.flex, item.completed ? styles.done : null]}
-                >
-                  {item.title}
-                </AppText>
-              </Pressable>
+              />
             ))
           )}
 
@@ -828,6 +831,68 @@ function ListBranch({
         </View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * One row of a list opened from the drawer, in its own component so the hint
+ * hook is not called once per row inside a map.
+ */
+function ListItemRow({
+  item,
+  onOpen,
+}: {
+  item: ListItem;
+  onOpen: () => void;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  const pista = useA11yHint(t("drawer.opensItem"));
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={item.title}
+        {...pista.props}
+        onPress={onOpen}
+        style={({ pressed }) => [
+          styles.item,
+          {
+            borderRadius: theme.radius.md,
+            backgroundColor: pressed
+              ? theme.colors.surfaceMuted
+              : "transparent",
+            paddingHorizontal: theme.spacing.sm,
+            paddingVertical: 6,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.tick,
+            {
+              borderColor: item.completed
+                ? theme.colors.accent
+                : theme.colors.borderStrong,
+              backgroundColor: item.completed
+                ? theme.colors.accent
+                : "transparent",
+            },
+          ]}
+        />
+        <AppText
+          variant="caption"
+          tone={item.completed ? "subtle" : "muted"}
+          numberOfLines={1}
+          style={[styles.flex, item.completed ? styles.done : null]}
+        >
+          {item.title}
+        </AppText>
+      </Pressable>
+      {pista.node}
+    </>
   );
 }
 
@@ -915,23 +980,30 @@ export function DrawerButton() {
   const t = useTranslation();
   const { setOpen } = useDrawer();
 
+  const pista = useA11yHint(t("drawer.openHint"));
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      testID="drawer-button"
-      accessibilityLabel={t("drawer.open")}
-      accessibilityHint={t("drawer.openHint")}
-      onPress={() => setOpen(true)}
-      style={({ pressed }) => [
-        styles.button,
-        {
-          backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
-          borderRadius: theme.radius.pill,
-        },
-      ]}
-    >
-      <Ionicons name="menu" size={22} color={theme.colors.text} />
-    </Pressable>
+    <>
+      <Pressable
+        accessibilityRole="button"
+        testID="drawer-button"
+        accessibilityLabel={t("drawer.open")}
+        {...pista.props}
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [
+          styles.button,
+          {
+            backgroundColor: pressed
+              ? theme.colors.surfaceMuted
+              : "transparent",
+            borderRadius: theme.radius.pill,
+          },
+        ]}
+      >
+        <Ionicons name="menu" size={22} color={theme.colors.text} />
+      </Pressable>
+      {pista.node}
+    </>
   );
 }
 

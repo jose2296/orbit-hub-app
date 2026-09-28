@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 
 import { DrawerButton } from "@/components/layout/drawer";
 import { SyncStatusCard } from "@/components/sync/sync-status-card";
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow, SectionHeader } from "@/components/ui/list-row";
@@ -34,6 +35,8 @@ export default function HomeScreen() {
   const tasks = useTaskPreview(3, 3);
 
   const recent = workspaces.slice(0, 4);
+
+  const pistaPanel = useA11yHint(t("dashboard.addCardHint"));
 
   return (
     <Screen>
@@ -158,7 +161,7 @@ export default function HomeScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t("home.dashboard.customise")}
-        accessibilityHint={t("dashboard.addCardHint")}
+        {...pistaPanel.props}
         onPress={() => router.push("/(app)/dashboard")}
         style={({ pressed }) => [
           styles.panelLink,
@@ -184,6 +187,7 @@ export default function HomeScreen() {
           color={theme.colors.textSubtle}
         />
       </Pressable>
+      {pistaPanel.node}
     </Screen>
   );
 }

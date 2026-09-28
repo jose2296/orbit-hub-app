@@ -721,33 +721,52 @@ react-native-web 0.21.2 **no tiene la cadena en ningun sitio del paquete** y fil
 props por una lista blanca estricta, asi que en web la pista se borra en el limite del
 `<View>`: sin atributo ARIA, sin fuga como atributo desconocido, sin aviso. Las 27
 pistas de esta app funcionan en un movil y no existen en un navegador, y ni el DOM ni la
-consola lo dicen. Una auditoria de accesibilidad no puede encontrar una hueco que no
+consola lo dicen. Una auditoria de accesibilidad no puede encontrar un hueco que no
 deja rastro.
 
-El destino en web es `aria-describedby`, que quiere el **id de un elemento**, no una
+Hecho en los **27 sitios, 12 ficheros**, y verificado midiendo, no mirando el codigo.
+
+**El destino en web es `aria-describedby`, que quiere el id de un elemento**, no una
 cadena — asi que el texto tiene que existir en el documento. De ahi el nodo oculto: esta
 en el arbol de accesibilidad, no se pinta, y no lo lee nadie que este mirando la
 pantalla. Fuera de pantalla y no con `display: none` ni `opacity: 0`, porque los dos lo
 sacan del arbol, que es justo para lo que esta.
 
-**Hecho en el cajon** (espacio, carpeta) y verificado leyendo el DOM real: el boton
-lleva `aria-describedby="pista-2"` y el nodo es `<div id="pista-2">Abre la carpeta dentro
-de Docs E2E.</div>`, de 1x1 px.
+**El nodo va siempre como HERMANO, nunca envuelto**, y en fragment si hace falta. Un
+`View` alrededor habria roto `position: absolute` (el boton flotante de la lista, el
+asa de reordenar, el boton de menu de la tarjeta), `flex: 1` (las tarjetas del panel, que
+viven en celdas absolutas) y `alignSelf: stretch` (los botones con `fullWidth`). Y donde
+el `Pressable` esta dentro de un `.map` —los destinos y los espacios del cajon lateral,
+las filas de la bandeja de completados, las opciones del panel— **no se puede llamar al
+hook en el bucle**, asi que se extrajo un componente por fila.
 
-**Quedan 25 en 10 ficheros.** La receta es la misma y son 10 lineas: `useA11yHint`
-devuelve `{props, node}`, se reparte el `props` en el `Pressable` y se pinta el `node`
-al lado. Los ficheros, con su numero: drawer (3 mas), panel-grid 3, item-edit-sheet 3,
-button 3, list/[listId] 2, side-drawer 2, done-tray 2, media-carousel 2, tabs/index 1,
-draggable-row 1, sheet 1. **No se ha hecho a proposito en este bloque:** es otro
-componente entero y mezclado con compartir haria la revision de este mas dificil de
-leer. Es el siguiente bloque.
+**Dos bugs que aparecieron al hacerlo y que no eran hipoteticos:**
 
-Y de paso, **una prueba nueva de traducciones cazo dos rotos**: `t("share.title")` sin
-nombre, que pintaba "Compartir {name}" en el menu — se ve en la captura, y ninguna
-prueba que pregunte "existe esta clave" lo puede ver porque la clave existe y la llamada
-es un `t` como cualquier otra — y `t("drawer.opensFolder")` sin nombre, que estaba
-roto desde antes. La prueba recorre los ficheros de `src`, cuenta los `t("clave")` que
-se llaman sin segundo argumento y comprueba que ninguno apunta a una clave con `{name}`.
+1. **El helper devolvia `{}` en nativo**, y en los dos primeros sitios habia quitado el
+   `accessibilityHint` del `Pressable` al poner el spread. Es decir: arreglar un bug de
+   web habia **borrado la pista de iOS y Android**, que antes funcionaba. Ahora el
+   `props` lleva `aria-describedby` en web y `accessibilityHint` en nativo, y ninguna
+   plataforma pierde lo que ya tenia.
+2. **El nodo se comia un pixel en la esquina del control.** Medido: con
+   `position: absolute` sin `left`, el nodo cae en el pixel superior izquierdo del
+   boton al que pertenece, y `elementFromPoint` ahi devuelve la pista en vez del boton.
+   Un pixel, en una esquina, nunca en el centro — o sea que no habia nada visiblemente
+   roto ni nada pulsable por error, pero "nunca en el centro" es una propiedad de la
+   maqueta y no una garantia. Resuelto con `left: -9999`, medido: **11 945 sondeos de
+   `elementFromPoint` (centro, 4 esquinas y una rejilla de 10 px sobre tres pantallas) y
+   cero contaminados**, cero `aria-describedby` rotos, y `scrollWidth` 430 = `clientWidth`
+   430, o sea que el nodo no crea scroll.
+
+**Y un decision de producto, no de layout:** en las opciones del panel **no** hay pista.
+La descripcion ya esta pintada dentro del boton, asi que un lector de pantalla la llega
+sola; apuntar `aria-describedby` a una segunda copia es decir lo mismo dos veces —una
+como contenido del boton y otra como su descripcion— y la que solo es pista es la que
+la gente aprende a saltar. La pista es para lo que no esta en pantalla: lo que explica
+que va a hacer un boton cuyo nombre no lo dice.
+
+**Comprobado en el arbol de accesibilidad real** (CDP `Accessibility.getFullAXTree`, no
+solo que el id exista):
+`role=button name="Documentacion Pistas" description="Abre la carpeta dentro de Documentacion Pistas."`
 
 ### Lo que ya no hace falta decidir
 

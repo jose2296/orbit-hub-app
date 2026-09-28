@@ -15,6 +15,8 @@ import { dropIndex, rowShift } from '@/lib/lists/drag-shift';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 
+import { useA11yHint } from './a11y-hint';
+
 /**
  * What the rows share while one of them is being dragged.
  *
@@ -204,6 +206,8 @@ export function DraggableRow({
   const [ancho, setAncho] = useState(0);
   const estrecho = ancho > 0 && ancho < 210;
 
+  const pista = useA11yHint(t('items.dragHint'));
+
   return (
     <View
       style={styles.wrapper}
@@ -234,16 +238,19 @@ export function DraggableRow({
 
       {/* The handle is the explicit affordance: the row body stays tappable. */}
       {estrecho ? null : (
+      <>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('items.dragToReorder')}
-        accessibilityHint={t('items.dragHint')}
+        {...pista.props}
         hitSlop={8}
         style={styles.handle}
         onLongPress={() => setDraggingState(true)}
       >
         <Ionicons name="reorder-two" size={18} color={theme.colors.textMuted} />
       </Pressable>
+      {pista.node}
+      </>
       )}
     </View>
   );

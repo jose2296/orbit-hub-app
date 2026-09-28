@@ -5,6 +5,7 @@ import type { ViewStyle } from 'react-native';
 
 import { useTheme } from '@/theme';
 
+import { useA11yHint } from './a11y-hint';
 import { AppText } from './text';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -43,6 +44,11 @@ export function Button({
 }: ButtonProps) {
   const theme = useTheme();
   const isDisabled = disabled || loading;
+
+  // A fragment and not a wrapper `View`: the `Pressable` below is the root of
+  // this component and it sets `alignSelf: 'stretch'`/`'flex-start'` and
+  // `fullWidth`. Wrapping it in another element would take the width away.
+  const pista = useA11yHint(accessibilityHint);
 
   const palette: Record<ButtonVariant, { background: string; border: string; text: string }> = {
     primary: {
@@ -99,31 +105,34 @@ export function Button({
   );
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled: isDisabled, busy: loading }}
-      accessibilityHint={accessibilityHint}
-      testID={testID}
-      disabled={isDisabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        {
-          height: sizeConfig.height,
-          paddingHorizontal: sizeConfig.paddingHorizontal,
-          borderRadius: theme.radius.md,
-          backgroundColor: colors.background,
-          borderWidth: StyleSheet.hairlineWidth * 2,
-          borderColor: colors.border,
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
-          alignSelf: fullWidth ? 'stretch' : 'flex-start',
-        },
-        style,
-      ]}
-    >
-      {content}
-    </Pressable>
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: isDisabled, busy: loading }}
+        {...pista.props}
+        testID={testID}
+        disabled={isDisabled}
+        onPress={onPress}
+        style={({ pressed }) => [
+          {
+            height: sizeConfig.height,
+            paddingHorizontal: sizeConfig.paddingHorizontal,
+            borderRadius: theme.radius.md,
+            backgroundColor: colors.background,
+            borderWidth: StyleSheet.hairlineWidth * 2,
+            borderColor: colors.border,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
+            alignSelf: fullWidth ? 'stretch' : 'flex-start',
+          },
+          style,
+        ]}
+      >
+        {content}
+      </Pressable>
+      {pista.node}
+    </>
   );
 }
 

@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 
+import { useA11yHint } from './a11y-hint';
 import { AppText } from './text';
 
 export interface MediaCarouselItem {
@@ -84,6 +85,12 @@ function MediaCard({
   const theme = useTheme();
   const [failed, setFailed] = useState(false);
 
+  // Two controls, two hints: the poster opens the title, the corner button
+  // opens its menu. The menu's hint only exists while there is a menu button,
+  // so there is nothing to point at when `onMenu` is absent.
+  const pistaPoster = useA11yHint(labelAdd);
+  const pistaMenu = useA11yHint(item.onMenu ? menuHint : null);
+
   const showImage = item.imageUrl && !failed;
 
   return (
@@ -91,7 +98,7 @@ function MediaCard({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={item.title}
-        accessibilityHint={labelAdd}
+        {...pistaPoster.props}
         onPress={item.onPress}
         onLongPress={item.onLongPress}
         style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
@@ -138,29 +145,33 @@ function MediaCard({
           ) : null}
         </View>
       </Pressable>
+      {pistaPoster.node}
 
       {/* The menu is a sibling of the poster and not a child of it: a button
           inside a button is not valid HTML, a screen reader reads the two as
           one, and the tap lands on the outer one. It sits over the corner of
           the poster, which is where a menu is expected. */}
       {item.onMenu ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={item.title}
-          accessibilityHint={menuHint}
-          hitSlop={8}
-          onPress={item.onMenu}
-          style={({ pressed }) => [
-            styles.menu,
-            {
-              backgroundColor: theme.colors.surfaceMuted,
-              borderRadius: theme.radius.sm,
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          <Ionicons name="ellipsis-horizontal" size={14} color={theme.colors.text} />
-        </Pressable>
+        <>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={item.title}
+            {...pistaMenu.props}
+            hitSlop={8}
+            onPress={item.onMenu}
+            style={({ pressed }) => [
+              styles.menu,
+              {
+                backgroundColor: theme.colors.surfaceMuted,
+                borderRadius: theme.radius.sm,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="ellipsis-horizontal" size={14} color={theme.colors.text} />
+          </Pressable>
+          {pistaMenu.node}
+        </>
       ) : null}
 
       <AppText variant="caption" numberOfLines={2} style={[styles.title, { marginTop: theme.spacing.xs }]}>

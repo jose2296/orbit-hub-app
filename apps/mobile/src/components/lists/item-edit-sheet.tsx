@@ -7,6 +7,7 @@ import type { ListItem, Priority } from "@orbit-hub/contracts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Sheet } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
@@ -151,6 +152,10 @@ export function ItemEditSheet({
    * button about a different row.
    */
   const yaHecho = isNew ? completedMatch(title, items) : null;
+
+  const pistaIcon = useA11yHint(t("itemEdit.iconHint"));
+  const pistaTags = useA11yHint(t("itemEdit.tagsHint"));
+  const pistaMarkDone = useA11yHint(t("itemEdit.markDoneHint"));
 
   if (!isNew && !item) return null;
 
@@ -324,7 +329,7 @@ export function ItemEditSheet({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("itemEdit.icon")}
-              accessibilityHint={t("itemEdit.iconHint")}
+              {...pistaIcon.props}
               onPress={() => setPage("icon")}
               style={({ pressed }) => [
                 styles.link,
@@ -355,11 +360,12 @@ export function ItemEditSheet({
                 color={theme.colors.textSubtle}
               />
             </Pressable>
+            {pistaIcon.node}
 
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("itemEdit.tags")}
-              accessibilityHint={t("itemEdit.tagsHint")}
+              {...pistaTags.props}
               onPress={() => setPage("tags")}
               style={({ pressed }) => [
                 styles.link,
@@ -391,48 +397,52 @@ export function ItemEditSheet({
                 color={theme.colors.textSubtle}
               />
             </Pressable>
+            {pistaTags.node}
 
             {/* Whether it is done, as a thing you can change and not as a badge
                 you can only read. A shopping list lives on this: "I already
                 bought the milk" puts the row back in the pending section, and
                 the only place to say that is the row itself. */}
             {!isNew ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("itemEdit.markDone")}
-                accessibilityHint={t("itemEdit.markDoneHint")}
-                onPress={() => {
-                  onClose();
-                  void toggleCompleted(item!);
-                }}
-                style={({ pressed }) => [
-                  styles.link,
-                  {
-                    borderColor: theme.colors.border,
-                    borderRadius: theme.radius.md,
-                    backgroundColor: pressed
-                      ? theme.colors.surfaceMuted
-                      : "transparent",
-                  },
-                ]}
-              >
-                <Checkbox
-                  checked={item!.completed}
-                  onToggle={() => {
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("itemEdit.markDone")}
+                  {...pistaMarkDone.props}
+                  onPress={() => {
                     onClose();
                     void toggleCompleted(item!);
                   }}
-                  label=""
-                />
-                <AppText variant="body" style={styles.flex}>
-                  {item!.completed
-                    ? t("itemEdit.putBack")
-                    : t("itemEdit.markDone")}
-                </AppText>
-                {item!.completed ? (
-                  <Badge label={t("itemEdit.done")} tone="success" />
-                ) : null}
-              </Pressable>
+                  style={({ pressed }) => [
+                    styles.link,
+                    {
+                      borderColor: theme.colors.border,
+                      borderRadius: theme.radius.md,
+                      backgroundColor: pressed
+                        ? theme.colors.surfaceMuted
+                        : "transparent",
+                    },
+                  ]}
+                >
+                  <Checkbox
+                    checked={item!.completed}
+                    onToggle={() => {
+                      onClose();
+                      void toggleCompleted(item!);
+                    }}
+                    label=""
+                  />
+                  <AppText variant="body" style={styles.flex}>
+                    {item!.completed
+                      ? t("itemEdit.putBack")
+                      : t("itemEdit.markDone")}
+                  </AppText>
+                  {item!.completed ? (
+                    <Badge label={t("itemEdit.done")} tone="success" />
+                  ) : null}
+                </Pressable>
+                {pistaMarkDone.node}
+              </>
             ) : null}
 
             {/* Un botón de guardar, y no solo "se guarda al salir del campo".

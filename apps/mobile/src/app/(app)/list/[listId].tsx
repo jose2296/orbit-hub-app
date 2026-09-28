@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DoneTray } from "@/components/lists/done-tray";
@@ -114,6 +115,13 @@ export default function ListScreen() {
    * hand written row: the carousel is the list.
    */
   const media = isMediaList(list?.kind);
+
+  // The floating button is a different control on a media list, and the hint
+  // says so. Resolved here, in the body and not in the JSX: the id is made once
+  // per mount, and the node it points at follows the text.
+  const pistaCreate = useA11yHint(
+    media ? t("catalog.addFromCatalogHint") : t("itemCreate.titleHint"),
+  );
   /**
    * What the list is showing, and in what order.
    *
@@ -619,9 +627,7 @@ export default function ListScreen() {
         accessibilityLabel={
           media ? t("catalog.addFromCatalog") : t("itemCreate.title")
         }
-        accessibilityHint={
-          media ? t("catalog.addFromCatalogHint") : t("itemCreate.titleHint")
-        }
+        {...pistaCreate.props}
         onPress={() => {
           if (media) {
             void router.push(`/(app)/catalog?listId=${listId}`);
@@ -642,6 +648,7 @@ export default function ListScreen() {
       >
         <Ionicons name="add" size={26} color={theme.colors.onAccent} />
       </Pressable>
+      {pistaCreate.node}
 
       <ItemEditSheet
         item={editingItem}
@@ -680,6 +687,9 @@ function TaskRow({
 }) {
   const theme = useTheme();
   const t = useTranslation();
+
+  const pistaNombre = useA11yHint(t("itemEdit.subtitle"));
+
   return (
     <View
       testID={`item-row-${item.id}`}
@@ -730,7 +740,7 @@ function TaskRow({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={item.title}
-          accessibilityHint={t("itemEdit.subtitle")}
+          {...pistaNombre.props}
           onPress={onEdit}
         >
           <AppText
@@ -742,6 +752,7 @@ function TaskRow({
             {item.title}
           </AppText>
         </Pressable>
+        {pistaNombre.node}
 
         {/* The labels, and only the ones there are. A row used to say "+ Label"
             under every name, which is a second place to add the same thing the
