@@ -309,6 +309,29 @@ export class ShareService {
       ownerName: delDueno[0]?.name ?? para.email,
     };
 
+    // A revoked grant is put back rather than duplicated: one row per person and
+    // node, so the device that already knows the share id keeps knowing it.
+    //
+    // This branch comes **before** the insert and not after, and that ordering is
+    // the whole point. There is a unique index on (node, person), so inserting
+    // first and updating afterwards looks equivalent and is not: it walks straight
+    // into the constraint. The tell is that the code below had the same comment and
+    // the comment was right about the *design* and nobody ever ran the path — share,
+    // revoke, share again — because every test shared once and stopped.
+    if (previa) {
+      await db
+        .update(shares)
+        .set({
+          role: args.role,
+          revokedAt: null,
+          ownerUserId: args.ownerUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(shares.id, previa.id));
+      await this.tocaElNodo(args.target);
+      return { ...paraEl, shareId: previa.id };
+    }
+
     const [creada] = await db
       .insert(shares)
       .values({
@@ -320,18 +343,44 @@ export class ShareService {
       })
       .returning({ id: shares.id });
 
-    // A revoked grant is put back rather than duplicated: one row per person and
-    // node, so the device that already knows the share id keeps knowing it.
-    if (previa) {
-      await db
-        .update(shares)
-        .set({ role: args.role, revokedAt: null, ownerUserId: args.ownerUserId, updatedAt: new Date() })
-        .where(eq(shares.id, previa.id));
-      return { ...paraEl, shareId: previa.id };
-    }
-
     if (!creada) throw HttpError.badRequest('The share could not be created');
+    await this.tocaElNodo(args.target);
     return { ...paraEl, shareId: creada.id };
+  }
+
+  /**
+   * Moves the node's own clock forward when a grant starts or stops.
+   *
+   * The pull is a walk through time and the cursor is a date, so the only way a
+   * device hears about a node is if the node's `updatedAt` is after where it left
+   * off. Sharing a list that has not been touched since last Tuesday would
+   * therefore send nothing: the row is not newer than the cursor, the cursor does
+   * not move, and the phone that just received a tombstone for that list — or
+   * that never had it — never learns it exists. The share row is new and nobody is
+   * looking at it.
+   *
+   * The node is stamped, not the grant, because the grant's timestamp is not in
+   * the stream the client reads. And it is not a lie: the node's set of readers
+   * really did change at this moment, which is the only thing `updatedAt` is
+   * supposed to mean.
+   *
+   * The owner gets a re-send of a row they already have. That is free and it is
+   * better than the alternative, which is a person who shared a list and never
+   * saw it arrive.
+   */
+  private async tocaElNodo(target: ShareTarget): Promise<void> {
+    const db = await this.db();
+    const ahora = new Date();
+
+    if (target.nodeType === 'workspace') {
+      await db.update(workspaces).set({ updatedAt: ahora }).where(eq(workspaces.id, target.nodeId));
+    } else if (target.nodeType === 'folder') {
+      await db.update(folders).set({ updatedAt: ahora }).where(eq(folders.id, target.nodeId));
+    } else if (target.nodeType === 'list') {
+      await db.update(lists).set({ updatedAt: ahora }).where(eq(lists.id, target.nodeId));
+    } else {
+      await db.update(listItems).set({ updatedAt: ahora }).where(eq(listItems.id, target.nodeId));
+    }
   }
 
   /** The name of a space, for the mail that says where the thing came from. */
@@ -355,7 +404,13 @@ export class ShareService {
   async revokeShare(args: { userId: string; shareId: string }): Promise<void> {
     const db = await this.db();
     const row = await db
-      .select({ ownerUserId: shares.ownerUserId, granteeUserId: shares.granteeUserId, revokedAt: shares.revokedAt })
+      .select({
+        ownerUserId: shares.ownerUserId,
+        granteeUserId: shares.granteeUserId,
+        revokedAt: shares.revokedAt,
+        nodeType: shares.nodeType,
+        nodeId: shares.nodeId,
+      })
       .from(shares)
       .where(eq(shares.id, args.shareId))
       .limit(1);
@@ -371,6 +426,14 @@ export class ShareService {
     // The mount goes with it: a filing that points at a share nobody has any more
     // is a list in a folder that cannot be opened.
     await db.delete(shareMounts).where(eq(shareMounts.shareId, args.shareId));
+
+    // The node's clock moves too, for the same reason it moves on sharing: the
+    // tombstone is keyed by `revokedAt`, and a device whose cursor is already past
+    // the node's own `updatedAt` would never be sent it.
+    // `found`, not `row`: `row` is the array, and `row[0].nodeType` is a property
+    // of an array that does not exist. It type-errors, which is the good case.
+    const target = await this.resolveTarget(found.nodeType, found.nodeId).catch(() => null);
+    if (target) await this.tocaElNodo(target);
   }
 
   /**

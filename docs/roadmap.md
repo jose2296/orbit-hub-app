@@ -652,6 +652,57 @@ las oraciones enteras, no que la clave exista) lo cazo a la primera.
 Queda: la deduplicacion de proveedores por `logoPath` en "Donde verlo", y el aviso
 dentro de la app a quien le revocan algo.
 
+### Compartir parte 5: revocar de verdad, y los duplicados de "donde verlo"
+
+Hecho y probado. Al revocar, el pull manda un **entierro** del nodo, asi que el movil
+que ya lo tenia cacheado lo borra de verdad. Y "donde verlo" ya no sale con el mismo
+servicio dos veces.
+
+**Revocar sin el entierro era un fallo seriouso que se escribio como si no pasara.** El
+filtro de cadenas deja de traer filas nuevas, pero la fila que ya esta en la cache es
+*tuya* y nada en el flujo del cursor dice que dejo de serlo. La persona seguia viendo la
+lista en el menu, y sin conexion hasta podia editarla. Parar de traer no devuelve lo que
+ya te trajeron. El entierro es un tombstone —`deletedAt` puesto, la misma forma que
+produce un borrar— y no un tipo de entidad nuevo, porque la app ya filtra `deletedAt` para
+sus propios borrados y una segunda manera de decir "desaparece" seria una cosa mas que
+aprender en cada lectura.
+
+**El nodo tiene que mover su propio reloj al compartir y al revocar, y esto no se ve
+leyendo el codigo.** El pull es un paseo por el tiempo y el cursor es una fecha, asi que
+la unica forma de que un dispositivo se entere de un nodo es que su `updatedAt` sea
+posterior a donde lo dejo. Compartir una lista que no se toca desde el martes no mandaba
+nada: la fila no es mas nueva que el cursor, el cursor no avanza, y el movil —que acababa
+de recibir un entierro de esa lista, o que nunca la tuvo— no se entera de que existe. La
+concesion es nueva y nadie la esta mirando. Se marca el **nodo**, no la concesion, porque
+el timestamp de la concesion no esta en el flujo que lee el cliente. Y no es mentira: el
+conjunto de lectores del nodo cambio de verdad en ese momento, que es lo unico que
+`updatedAt` deberia significar.
+
+**Un bug de verdad, de los que el comentario ya describia bien y nadie ejecuto:** al
+volver a compartir tras revocar, `createShare` insertaba **antes** de mirar la fila
+previa, y hay un indice unico en (nodo, persona). Chocaba contra el indice. El codigo de
+abajo tenia el comentario correcto sobre el diseno y la rama estaba despues del insert,
+y todas las pruebas compartian una vez y paraban. El orden de las ramas no es un detalle
+de estilo: es lo unico que separaba "volver a compartir" de "error de base de datos".
+
+**El cursor lo lleva el cliente y el servidor solo lo guarda.** Lo decia el subagente al
+depurarlo y es la razon de que dos pruebas dieran el mismo sintoma por causas distintas:
+una mandaba `lastPulledAt` en vez de `cursor` (el esquema tiene `null` por defecto, asi
+que no falla: baja la historia entera desde 1970 y "el entierro vuelve siempre" pasa a
+ser la respuesta correcta), y las otras no devolvian el cursor, que es un movil que ha
+perdido el sitio.
+
+Y **"donde verlo" deduplica por logo, no por nombre**, porque los nombres son lo que
+discrepa: hoy en Espana una peli viene con "Movistar Plus+" y "Movistar Plus+ Utd", y
+"Amazon Prime" junto a "Amazon Prime Video". Se queda el nombre **mas corto**, y no por
+gusto: las variantes de TMDB son el mismo nombre con un calificador pegado al final
+("Utd", "Espana", "International"), y quedarse con la mas larga deja el nombre interno del
+distribuidor en vez del que se dice de viva voz. **El mismo servicio en suscripcion y en
+alquiler son dos tarjetas, a proposito** —la tienda de Apple es dos decisiones y un
+precio distinto— y los **paquetes se dejan en paz**: "HBO Max Amazon" tiene su logo y su
+suscripcion, y fusionarlo con cualquiera de las dos partes dira a alguien que pague a la
+que no es.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el

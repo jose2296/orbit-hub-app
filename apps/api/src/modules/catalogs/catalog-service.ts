@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
+import { deduplicaCrudos } from './provider-dedupe.js';
 
 /**
  * External catalogs: TheMovieDB for films and series, Google Books for books.
@@ -601,15 +602,14 @@ export async function fetchCatalogProviders(
 
   const providers: CatalogProviders['providers'] = [];
   for (const [offering, entradas] of grupos) {
-    for (const entrada of entradas ?? []) {
-      const repetido = providers.some(
-        (p) => p.name === entrada.provider_name && p.offering === offering,
-      );
-      if (repetido) continue;
+    // Dedupe by logo and not by name, because names are what disagree: TMDB has
+    // the same company under "Amazon Prime" and "Amazon Prime Video" in the same
+    // list. See `provider-dedupe` for why a different offering is not a duplicate.
+    for (const entrada of deduplicaCrudos(entradas ?? [], offering)) {
       providers.push({
-        name: entrada.provider_name,
+        name: entrada.name,
         offering,
-        logoUrl: logoDe(entrada.logo_path),
+        logoUrl: logoDe(entrada.logoPath),
         url: delPais.link ?? null,
       });
     }

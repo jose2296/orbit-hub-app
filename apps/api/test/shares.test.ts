@@ -316,12 +316,45 @@ describe('una lista compartida en el sync', () => {
 });
 
 describe('el pull trae lo compartido', () => {
-  const pull = (user: TestUser) =>
-    api.post(
+  /**
+   * The same phone, pulling twice.
+   *
+   * Two things have to be right here and both were wrong at first, which is worth
+   * writing down because the symptom in each case was the same and the cause was
+   * not:
+   *
+   * - The field is `cursor`, not `lastPulledAt`. The request schema has a default
+   *   of `null` for it, so a wrong key does not fail — it silently pulls the whole
+   *   history from 1970 on every call, and "the tombstone comes back forever"
+   *   becomes the correct answer instead of a bug.
+   * - The cursor has to be fed back. The server *stores* it per device but never
+   *   reads it back: the cursor is the client's to keep, and a test that does not
+   *   return it is testing a device that lost its place.
+   */
+  const cursores = new Map<string, string | null>();
+
+  const pull = async (user: TestUser) => {
+    const cursor = cursores.get(user.userId) ?? null;
+
+    const r = await api.post(
       '/sync/pull',
-      { deviceId: randomUUID(), lastPulledAt: null, limit: 200 },
+      { deviceId: deviceOf(user), cursor, limit: 200 },
       user.accessToken,
     );
+
+    const siguiente = r.body?.data?.nextCursor;
+    if (typeof siguiente === 'string') cursores.set(user.userId, siguiente);
+
+    return r;
+  };
+
+  const deviceOf = (user: TestUser) => {
+    const existente = cursores.get(`device:${user.userId}`);
+    if (existente) return existente;
+    const nuevo = randomUUID();
+    cursores.set(`device:${user.userId}`, nuevo);
+    return nuevo;
+  };
 
   const titulos = (r: { body?: { data?: { changes?: { entity: string; record: { title?: string; name?: string } }[] } } }) =>
     (r.body?.data?.changes ?? [])
@@ -504,7 +537,86 @@ describe('el pull trae lo compartido', () => {
     expect(espacio?.record.shared).toBe(true);
   });
 
-  it('lo revocado deja de llegar', async () => {
+  it('revocar manda un entierro, para que el movil lo borre de verdad', async () => {
+    // El fallo que decia "ya esta, revocado": el movil se queda con la lista en la
+    // cache. La fila es tuya, y nada en el flujo del cursor dice que ya no. La
+    // persona sigue viendo la lista en el menu, y offline hasta puede editarla.
+    // Parar de traer filas nuevas no devuelve las que ya tenia.
+    const yo = await conEspacio('Revocar yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Revocar otra' });
+    const { shareId } = await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    // La primera vez llega entera.
+    expect(titulos(await pull(otra))).toContain('Compra');
+
+    await shareService.revokeShare({ userId: yo.user.userId, shareId });
+
+    // Y ahora llega el entierro: la lista, con fecha de borrado, y la marca de que
+    // se la llevaron (no la borro esta persona).
+    const r = await pull(otra);
+    const laLista = (r.body?.data?.changes ?? []).find(
+      (c: { entity: string; record: { title?: string } }) =>
+        c.entity === 'list' && c.record.title === 'Compra',
+    );
+    expect(laLista?.record.deletedAt).toBeTruthy();
+    expect(laLista?.record.withdrawn).toBe(true);
+
+    // Y no se repite. Este pull ya paso el cursor por la revocacion, asi que la
+    // siguiente no dice nada: un entierro es un hecho que se cuenta una vez, y si
+    // se reenviara en cada sincronizacion el cliente no tendria forma de saber
+    // cuando parar de avisar.
+    const otraVez = await pull(otra);
+    expect(
+      (otraVez.body?.data?.changes ?? []).filter(
+        (c: { entity: string; record: { title?: string } }) =>
+          c.entity === 'list' && c.record.title === 'Compra',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('compartir otra vez despues de revocar no lo deja escondido para siempre', async () => {
+    // Si el entierro se guardase con `updatedAt`, al volver a compartir se
+    // actualizaria esa fila y el movil volveria a esconder la lista para siempre
+    // — y no hay forma de que el cliente distinga eso de un fallo.
+    const yo = await conEspacio('Revocar dos');
+    const otra = await createVerifiedUser(api, { displayName: 'Revocar otra dos' });
+    const { shareId } = await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    await shareService.revokeShare({ userId: yo.user.userId, shareId });
+    // Por el `pull` de verdad, para que el cursor quede donde ha quedado: el
+    // siguiente tiene que empezar despues de la revocacion, que es el escenario
+    // entero.
+    await pull(otra);
+
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    // Cambia algo, a proposito: sin un cambio el cursor no avanza y no se puede
+    // saber si la lista vuelve o no.
+    await push(yo.user, [
+      { kind: 'create', entity: 'list_item', entityId: randomUUID(), payload: { listId: yo.listId, title: 'Pan', position: 1 } },
+    ]);
+
+    const titres = titulos(await pull(otra));
+    expect(titres).toContain('Compra');
+    expect(titres).toContain('Pan');
+  });
+
+  it('lo revocado deja de llegar con vida, y con un entierro por delante', async () => {
     const yo = await conEspacio('Pull yo tres');
     const otra = await createVerifiedUser(api, { displayName: 'Pull otra tres' });
     const { shareId } = await shareService.createShare({
@@ -518,10 +630,24 @@ describe('el pull trae lo compartido', () => {
 
     await shareService.revokeShare({ userId: yo.user.userId, shareId });
 
+    // Lo que llega ya no es una lista viva: es la misma fila con fecha de borrado,
+    // que es lo unico que puede hacer que un movil que ya la tiene.cacheada la
+    // oculte. Lo que ya no llega —y por eso el nombre no se comprueba aqui— es el
+    // *contenido* de una lista revocada: nada nuevo, nada editable.
     const despues = await pull(otra);
-    // Un pull nuevo no lo trae. El que ya lo tenia se queda con lo que copio, y
-    // por eso revoke deja la fila con fecha: el movil sin conexion tiene que
-    // enterarse de que dejo de estar.
-    expect(titulos(despues)).not.toContain('Compra');
+    const cambios = despues.body?.data?.changes ?? [];
+    const laLista = cambios.find(
+      (c: { entity: string; record: { title?: string } }) =>
+        c.entity === 'list' && c.record.title === 'Compra',
+    );
+    expect(laLista?.record.deletedAt).toBeTruthy();
+
+    // Y de los elementos de dentro no llega ni uno sin fecha de borrado: son
+    // hijos de una lista que ya no es tuya.
+    const items = cambios.filter(
+      (c: { entity: string; record: { title?: string; deletedAt?: string | null } }) =>
+        c.entity === 'list_item' && c.record.title === 'Leche',
+    );
+    expect(items).toHaveLength(0);
   });
 });

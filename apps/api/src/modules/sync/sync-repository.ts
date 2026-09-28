@@ -1,5 +1,5 @@
 import type { SyncChange } from '@orbit-hub/contracts';
-import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
@@ -23,6 +23,71 @@ interface CadenaCompartida {
   folderId: string | null;
   listId: string | null;
   role: 'editor' | 'viewer';
+}
+
+/**
+ * A share's node type as a sync entity name, or `null` for one that is not a
+ * node the sync stream carries. Written out rather than cast, because the
+ * alternative is a `as` that is a promise: adding a shareable type to
+ * `shareNodeType` without teaching this function about it would silently stop
+ * the tombstones for it, and nothing would say so.
+ */
+function toEntityName(nodeType: string): SyncEntityName | null {
+  if (nodeType === 'workspace') return 'workspace';
+  if (nodeType === 'folder') return 'folder';
+  if (nodeType === 'list') return 'list';
+  if (nodeType === 'list_item') return 'list_item';
+  return null;
+}
+
+/**
+ * A node whose grant was taken back, as a change the app can act on.
+ *
+ * A device that received a list and cached it keeps showing it after the grant
+ * is revoked, because that row in the cache is *yours* and nothing in the
+ * cursor's stream says otherwise. The chain filter stops bringing new rows; it
+ * does not take back the ones already on the phone. So a revocation that only
+ * stops the pull leaves a list in somebody's menu that they can open, read and
+ * even edit offline, and whose only sign that it is not really theirs is that
+ * the next pull says nothing.
+ *
+ * It is a tombstone — the same shape a delete produces, `deletedAt` set — and
+ * not a new entity kind. The app already filters `deletedAt` for its own
+ * deletes, and a second way of saying "go away" would be one more thing every
+ * reader has to learn.
+ *
+ * `revokedAt` is the cursor field and not `updatedAt`, so a share that is granted,
+ * revoked, granted again and revoked again reports the second revocation.
+ */
+export function changeDeRevocada(
+  nodeType: string,
+  nodeId: string,
+  revokedAt: Date,
+  previo: Record<string, unknown> | null,
+): SyncChange | null {
+  const entity = toEntityName(nodeType);
+  if (!entity) return null;
+
+  return {
+    entity,
+    record: {
+      ...(previo ?? {}),
+      id: nodeId,
+      // `updatedAt` moves to the revocation and not to the row's own date, and
+      // that is not a detail. The pull sorts by `updatedAt` and hands out a
+      // cursor built from the largest one it saw, so a tombstone carrying the
+      // old date would sort to the front of the page while the cursor jumped
+      // past it — the change would be delivered after the cursor had already
+      // moved beyond it, and on a device that pulled twice in that window it
+      // would arrive out of order or not at all.
+      updatedAt: revokedAt.toISOString(),
+      deletedAt: revokedAt.toISOString(),
+      // Why it went, in the one place the app can read it without asking again.
+      // Without it the app can only say "this disappeared", and the person is
+      // left wondering whether they did something.
+      withdrawn: true,
+    },
+  };
 }
 
 /** The ids of one kind out of the shared chains, for an `in` that has to be non-empty. */
@@ -294,6 +359,62 @@ export class SyncRepository {
     return cadenas;
   }
 
+  /**
+   * The grants this person had that were taken back after the cursor.
+   *
+   * `revokedAt` and not `updatedAt` on purpose. Re-granting a share touches
+   * `updatedAt` and clears `revokedAt`, so with `updatedAt` a share that was
+   * granted, revoked, granted again and revoked again would report the first
+   * revocation forever and never the second: the device would keep re-hiding a
+   * list the person is allowed to see, and there is no way for it to tell that
+   * apart from a bug.
+   */
+  private async revocadasDesde(
+    userId: string,
+    after: Date,
+  ): Promise<SyncChange[]> {
+    const db = await this.db();
+
+    const rows = await db
+      .select({
+        nodeType: shares.nodeType,
+        nodeId: shares.nodeId,
+        revokedAt: shares.revokedAt,
+      })
+      .from(shares)
+      .where(
+        and(
+          eq(shares.granteeUserId, userId),
+          isNotNull(shares.revokedAt),
+          gt(shares.revokedAt, after),
+        ),
+      )
+      .orderBy(asc(shares.revokedAt))
+      .limit(50);
+
+    const changes: SyncChange[] = [];
+    for (const row of rows) {
+      if (!row.revokedAt) continue;
+      const entity = toEntityName(row.nodeType);
+      if (!entity) continue;
+
+      // The row the phone already has, with the deletion stamped on it. Sending
+      // only `{ id, deletedAt }` would be enough to hide the list and not enough
+      // to say a word about it, and a list that silently vanishes from the menu
+      // is the thing that makes people stop trusting a sync.
+      const previo = await this.findEntity(entity, row.nodeId);
+      const change = changeDeRevocada(
+        row.nodeType,
+        row.nodeId,
+        row.revokedAt,
+        previo as Record<string, unknown> | null,
+      );
+      if (change) changes.push(change);
+    }
+
+    return changes;
+  }
+
   async changesSince(input: {
     userId: string;
     cursor: string | null;
@@ -507,6 +628,17 @@ export class SyncRepository {
         changes.push({ entity: 'dashboard', record: row as Record<string, unknown> });
         remember(row.updatedAt);
       }
+    }
+
+    // What stopped being yours, so the device that has it takes it back.
+    //
+    // After the dashboard and not before: a revocation is rarer than a change, it
+    // has to reach a device that was offline to matter, and the panel is the only
+    // thing here that is about this person rather than about the content.
+    const revocadas = await this.revocadasDesde(input.userId, after);
+    for (const change of revocadas) {
+      changes.push(change);
+      remember(new Date(String(change.record['deletedAt'] ?? new Date().toISOString())));
     }
 
     changes.sort((a, b) => {
