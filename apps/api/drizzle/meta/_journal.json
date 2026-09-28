@@ -50,6 +50,13 @@
       "when": 1790506133812,
       "tag": "0006_item_icon_style",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790579384379,
+      "tag": "0008_shares",
+      "breakpoints": true
     }
   ]
 }

@@ -482,6 +482,38 @@ La deduplicacion es por nombre y tipo, y dos entradas del mismo servicio llegan 
 nombres distintos. Lo siguiente es deduplicar por logotipo, que es lo unico que
 comparten, y decidir que hacer con "HBO Max Amazon" —que es un bundle, no un servicio.
 
+### Compartir: empezar por el esquema
+
+**Parte 1 de 3, hecha: las dos tablas.** `shares` (la concesion: quien, que nodo, que
+papel, y `revoked_at` en vez de borrar) y `share_mounts` (donde lo ha colocado quien
+lo recibio: que espacio, que carpeta, en que orden, y `placed_at`).
+
+Tres cosas que se decidieron al escribirlas, no antes:
+
+- **Una nota no es una tabla.** La nota es la columna `notes` de un elemento, asi que
+  compartir una nota es compartir ese elemento. No hay un cuarto tipo de nodo.
+- **`revoked_at` y no borrar la fila.** El que lo recibio tiene que enterarse de que
+  dejo de estar, y un movil que estaba sin conexion necesita algo que leer en su
+  proximo `pull`. Una fila desaparecida es indistinguible de una concesion que nunca
+  existio.
+- **`placed_at` a null es lo que separa "lo he recibido y no lo he puesto" de "esta
+  en la carpeta de Viajes".** Sin esa columna no hay forma de saber que filas son las
+  de "compartido conmigo" y cuales ya estan colocadas, y las dos cosas se
+  confunden.
+
+La migracion la genero `drizzle-kit` desde el esquema, y a mano solo lo que el no sabe
+expresar: los dos CHECK de columna (`node_type` y `role` con cuatro y dos valores) y
+los dos **indices parciales** — el de concesiones vivas, que se pregunta en cada
+borrado para decir a cuantos les afecta, y el de lo no colocado, que se pregunta cada
+vez que se abre "compartido conmigo". Un indice parcial no es una 查询 mas rapida: es
+que la consulta se responde con el indice en vez de recorriendo lo que esa persona ha
+colocado.
+
+**Lo que sigue, y es lo gordo:** el sync. Un `pull` tiene que traer lo compartido y un
+`push` tiene que dejar escribir en un nodo donde no eres miembro pero si tienes
+concesion. Sin esa tercera parte las dos tablas son decorativas y la app no puede
+enseñarte nada.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el

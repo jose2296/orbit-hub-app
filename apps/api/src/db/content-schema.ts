@@ -365,3 +365,88 @@ export const listItemsRelations = relations(listItems, ({ one }) => ({
 
 export type ListRow = typeof lists.$inferSelect;
 export type ListItemRow = typeof listItems.$inferSelect;
+
+/**
+ * A grant: this person, this node, this role.
+ *
+ * Not a membership. A membership says "this is one of my spaces"; a grant says
+ * "this person is letting me see this thing inside a space that is not mine". The
+ * two are kept apart because they answer different questions and fail
+ * differently: leaving a space is one button, and being un-shared a list has to
+ * disappear from a folder somebody else filed it in.
+ *
+ * `nodeType` and `nodeId` rather than a `workspace_id`, because what is shared is
+ * a folder, a list or a single item, and all three live in somebody else's space.
+ * A note is not a table of its own — it is the `notes` column of an item — so
+ * sharing a note is sharing that item.
+ *
+ * `revokedAt` and not a delete: the grantee is told it stopped, and a device that
+ * was offline when it happened has something to read on its next pull. A row that
+ * vanished would be indistinguishable from a share that never existed.
+ */
+export const shares = pgTable(
+  'shares',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Who shared it. A tombstone too, so a deleted account does not hide it. */
+    ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
+    nodeType: varchar('node_type', { length: 16 })
+      .$type<'workspace' | 'folder' | 'list' | 'list_item'>()
+      .notNull(),
+    nodeId: uuid('node_id').notNull(),
+    granteeUserId: uuid('grantee_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: varchar('role', { length: 16 }).$type<'editor' | 'viewer'>().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    // One grant per person and node. Two rows would mean two roles and no way to
+    // say which one is the real one.
+    uniqueIndex('shares_node_grantee_unique').on(table.nodeType, table.nodeId, table.granteeUserId),
+    index('shares_grantee_idx').on(table.granteeUserId),
+    index('shares_node_idx').on(table.nodeType, table.nodeId),
+  ],
+);
+
+/**
+ * Where a grantee filed what they were given.
+ *
+ * The shared node stays in the owner's tree — it is the same object, and moving it
+ * there would move it for them too. This is the grantee's own reference, with its
+ * own place and its own order, inside a space and folder of theirs.
+ *
+ * No `folder_id` null meaning "the root of my space" is stored as a real null: a
+ * list filed in the root of a space is a different thing from a list that is not
+ * filed anywhere, and the second is the one still sitting in "shared with me".
+ * `placedAt` is what tells them apart.
+ */
+export const shareMounts = pgTable(
+  'share_mounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shareId: uuid('share_id')
+      .notNull()
+      .references(() => shares.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Where it was filed. Both null would be "filed nowhere", which is not filed. */
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull().default(0),
+    /** Null while it is still in "shared with me", waiting to be placed. */
+    placedAt: timestamp('placed_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('share_mounts_share_user_unique').on(table.shareId, table.userId),
+    index('share_mounts_user_idx').on(table.userId),
+    index('share_mounts_workspace_idx').on(table.workspaceId),
+  ],
+);
