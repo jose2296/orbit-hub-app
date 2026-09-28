@@ -543,6 +543,44 @@ tiempo en la prueba de iconos hace unas horas, en el otro bando. El mensaje de
 rechazo es generico a proposito —no filtra que espacios existen—, asi que en el test hay
 que sacar el motivo del log del servidor, y eso se me hizo evidente tarde.
 
+### Compartir: parte 3, el push deja escribir en lo compartido
+
+Hecho y probado. Una lista compartida ya se puede **tachar** desde el movil de quien la
+recibio, sin que sea miembro del espacio.
+
+`assertCanWrite` miraba solo la membresia del espacio, asi que una lista compartida era
+una lista que se podia mirar y no tocar — y a nadie le dijeron eso cuando se compartio.
+Ahora el nodo se consulta tambien: si no eres miembro pero hay una concesion viva que
+llega a el, `accessOf` decide. Y el 404 por "no tienes acceso" se sigue pareciendo
+exactamente al 404 de "esto no existe".
+
+**Tres fallos que ha encontrado la prueba, y los tres eran de los que no se ven leyendo
+el codigo:**
+
+1. **Una concesion sobre una lista no llegaba a sus elementos.** La cadena de
+   antepasados incluia el elemento, el espacio y la carpeta de la lista — pero no la
+   lista. O sea que "comparte esta lista" y "comparte esta lista vacia" eran lo mismo, y
+   el que la recibio no podia tachar nada. Es justo el caso que nadie probaba.
+2. **Un array metido en `sql` crudo no sale como una lista de un `IN`.** Sale como un
+   parametro, y la comparacion no encuentra nada: cero concessiones visibles, en
+   silencio. `inArray` es lo que sabe traducirlo.
+3. **Solo cablee la rama de creacion y no la de actualizacion ni la de borrado**, que
+   son las que de verdad usa la app para cambiar una fila. Por eso la prueba de tachar
+   —que es un `update`— seguia dando "Workspace not found".
+
+Y uno mio de antes, que ha salido aqui tambien: **resolver el nodo antes de comprobar
+la membresia cambia el mensaje de error de un id que no existe**, y eso filtra que ids
+son reales en un espacio que no has visto nunca. Rompio un test previo que justo
+comprueba eso. Ahora la resolucion se traga su fallo y se cae al 404 de siempre.
+
+**Lo que queda de la parte 3: el `pull`.** Un `pull` tiene que traer lo compartido, y
+eso no es coser un filtro mas: el pull va por cursor y por fecha, y traer "todo lo que
+cuelga de una carpeta compartida" es recorrer un subarbol, que no cabe en esa forma.
+La decision que propongo es traer **las cadenas** —el nodo compartido y sus
+antepasados— y que las listas de dentro lleguen segun cambien, una a una, en orden de
+cursor, que es como la app ya se come los cambios. Lo escribo aqui para que quede
+decidido y no se pierda.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el

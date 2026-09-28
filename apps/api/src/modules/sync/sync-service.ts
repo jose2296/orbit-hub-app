@@ -28,6 +28,8 @@ import type {
 } from '../../db/constants.js';
 import { HttpError } from '../../lib/http-error.js';
 import { logger } from '../../lib/logger.js';
+
+import { shareService } from '../shares/share-service.js';
 import { syncConflicts } from '../../db/schema.js';
 
 import { syncRepository } from './sync-repository';
@@ -256,7 +258,25 @@ function merge(
 }
 
 export class SyncService {
-  private async assertCanWrite(workspaceId: string | null, userId: string): Promise<void> {
+  /**
+   * Whether this person may write in this node.
+   *
+   * Two doors, and this is the second one. The membership of the space decides
+   * everything for a person who is in it; for somebody who is not, the only way
+   * in is a grant on the node or on something above it, and a grant of `editor` is
+   * a real way to edit. Without this, a shared list is a list you can look at and
+   * not touch, and nobody was told that when it was shared with them.
+   *
+   * The 404 for "no membership" comes before the grant is even consulted on
+   * purpose: a node in a space you cannot see and a node that does not exist have
+   * to look the same, and a grant is not a way to find out whether an id is real
+   * in a space you have never seen.
+   */
+  private async assertCanWrite(
+    workspaceId: string | null,
+    userId: string,
+    target?: { nodeType: 'workspace' | 'folder' | 'list' | 'list_item'; nodeId: string },
+  ): Promise<void> {
     if (!workspaceId) {
       // Workspaces and dashboards are owned by the user; authorisation is the
       // ownership check below.
@@ -265,11 +285,28 @@ export class SyncService {
 
     const role = await syncRepository.roleInWorkspace(workspaceId, userId);
     if (!role) {
+      if (target) {
+        // The grant is only worth looking up if the node resolves, and a node that
+        // does not resolve must not say so: "this exists but is not yours" and
+        // "this does not exist" have to be the same 404, or the error is a way of
+        // finding out which ids are real in a space you have never seen.
+        const resoluble = await shareService.resolveTarget(target.nodeType, target.nodeId).catch(() => null);
+        if (resoluble) {
+          const acceso = await shareService.accessFor(resoluble, userId);
+          if (acceso === 'edit') return;
+          if (acceso === 'view') {
+            throw HttpError.forbidden('You need edit access to make this change');
+          }
+        }
+      }
       // A resource the user cannot see and one that does not exist look the same.
       throw HttpError.notFound('Workspace not found');
     }
 
     if (MEMBERSHIP_ROLE_RANK[role as MembershipRoleName] < MEMBERSHIP_ROLE_RANK['editor']) {
+      // Being a viewer in the space is a ceiling: a grant on something inside it
+      // does not turn you into an editor there. `accessOf` has the rule; this is
+      // the same answer reached from the other direction.
       throw HttpError.forbidden('You need edit access to make this change');
     }
   }
@@ -333,7 +370,10 @@ export class SyncService {
           if (workspaceId.length === 0) {
             throw HttpError.validation('A folder needs a workspaceId');
           }
-          await this.assertCanWrite(workspaceId, userId);
+          await this.assertCanWrite(workspaceId, userId, {
+            nodeType: 'folder',
+            nodeId: operation.entityId,
+          });
 
           const row = await syncRepository.insertEntity('folder', {
             id: operation.entityId,
@@ -350,7 +390,10 @@ export class SyncService {
           if (workspaceId.length === 0) {
             throw HttpError.validation('A list needs a workspaceId');
           }
-          await this.assertCanWrite(workspaceId, userId);
+          await this.assertCanWrite(workspaceId, userId, {
+            nodeType: 'list',
+            nodeId: operation.entityId,
+          });
 
           // Every writable field flows through from the sanitised payload, and
           // only the ones with no default are filled in here. Spelling the
@@ -381,7 +424,10 @@ export class SyncService {
           if (owner === null || owner['deletedAt']) {
             throw HttpError.notFound('List not found');
           }
-          await this.assertCanWrite((owner['workspaceId'] as string | null) ?? null, userId);
+          await this.assertCanWrite((owner['workspaceId'] as string | null) ?? null, userId, {
+            nodeType: 'list_item',
+            nodeId: operation.entityId,
+          });
 
           const row = await syncRepository.insertEntity('list_item', {
             ...payload,
@@ -418,9 +464,15 @@ export class SyncService {
       if (entity === 'workspace') {
         await this.assertCanWrite(operation.entityId, userId);
       } else if (entity === 'folder' || entity === 'list') {
-        await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId);
+        await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId, {
+          nodeType: entity,
+          nodeId: operation.entityId,
+        });
       } else if (entity === 'list_item') {
-        await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId);
+        await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId, {
+          nodeType: 'list_item',
+          nodeId: operation.entityId,
+        });
       }
 
       const row = await syncRepository.updateEntity(entity, operation.entityId, {}, {
@@ -433,9 +485,15 @@ export class SyncService {
     if (entity === 'workspace') {
       await this.assertCanWrite(operation.entityId, userId);
     } else if (entity === 'folder' || entity === 'list') {
-      await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId);
+      await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId, {
+        nodeType: entity,
+        nodeId: operation.entityId,
+      });
     } else if (entity === 'list_item') {
-      await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId);
+      await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId, {
+        nodeType: 'list_item',
+        nodeId: operation.entityId,
+      });
     }
 
     if (operation.baseVersion === existing.version) {

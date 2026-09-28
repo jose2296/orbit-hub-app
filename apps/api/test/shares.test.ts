@@ -229,3 +229,87 @@ describe('compartir', () => {
     await expect(shareService.createShare(args)).rejects.toThrow(/already shared/);
   });
 });
+
+describe('una lista compartida en el sync', () => {
+  /** Tacha un elemento de la lista, por la via normal de la app. */
+  async function tachar(user: TestUser, itemId: string) {
+    return api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          {
+            operationId: randomUUID(),
+            clientId: 'test-client-shares',
+            kind: 'update',
+            entity: 'list_item',
+            entityId: itemId,
+            baseVersion: 0,
+            base: { completed: false },
+            payload: { completed: true },
+            clientTimestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      user.accessToken,
+    );
+  }
+
+  const estado = (r: { body?: { data?: { results?: { status: string; error?: string }[] } } }) =>
+    r.body?.data?.results?.[0];
+
+  it('quien la recibe como editor puede tachar, sin ser miembro del espacio', async () => {
+    const yo = await conEspacio('Sync yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Sync otra' });
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    const r = await tachar(otra, yo.itemId);
+    expect(estado(r)?.status).toBe('applied');
+  });
+
+  it('quien la recibe como solo ver puede tacharla y le dicen que no', async () => {
+    const yo = await conEspacio('Sync yo dos');
+    const otra = await createVerifiedUser(api, { displayName: 'Sync otra dos' });
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'viewer',
+    });
+
+    const r = await tachar(otra, yo.itemId);
+    // Rechazada, y con el motivo: "no found" seria leer de mas, "forbidden" es la
+    // respuesta honesta para alguien que puede verla y no tocarla.
+    expect(estado(r)?.status).toBe('rejected');
+    expect(estado(r)?.error).toMatch(/edit access/);
+  });
+
+  it('a quien no se la ha compartido le sale como si no existiera', async () => {
+    const yo = await conEspacio('Sync yo tres');
+    const ajena = await createVerifiedUser(api, { displayName: 'Sync ajena' });
+
+    const r = await tachar(ajena, yo.itemId);
+    expect(estado(r)?.status).toBe('rejected');
+    expect(estado(r)?.error).toMatch(/not found/i);
+  });
+
+  it('tachar la lista de dentro de una carpeta compartida tambien vale', async () => {
+    const yo = await conEspacio('Sync yo cuatro');
+    const otra = await createVerifiedUser(api, { displayName: 'Sync otra cuatro' });
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('folder', yo.folderId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'editor',
+    });
+
+    const r = await tachar(otra, yo.itemId);
+    expect(estado(r)?.status).toBe('applied');
+  });
+});

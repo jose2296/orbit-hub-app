@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 
 import { users } from '../../db/auth-schema.js';
 import { getDatabase } from '../../db/client.js';
@@ -134,7 +134,7 @@ export class ShareService {
         and(
           eq(shares.granteeUserId, userId),
           isNull(shares.revokedAt),
-          sql`${shares.nodeId} in ${ancestors}`,
+          inArray(shares.nodeId, ancestors),
         ),
       )
       .orderBy(desc(shares.createdAt))
@@ -180,6 +180,10 @@ export class ShareService {
                 .limit(1)
             )[0]?.listId;
       if (listId) {
+        // La lista misma, y no solo su carpeta: una concesion sobre una lista tiene
+        // que llegar a los elementos de dentro, o "comparte esta lista" y "comparte
+        // esta lista vacia" serian lo mismo y el que la recibio no puede tachar nada.
+        ids.push(listId);
         const row = await db
           .select({ folderId: lists.folderId })
           .from(lists)
@@ -339,7 +343,7 @@ export class ShareService {
       })
       .from(shares)
       .innerJoin(users, eq(users.id, shares.granteeUserId))
-      .where(and(isNull(shares.revokedAt), sql`${shares.nodeId} in ${ancestors}`))
+      .where(and(isNull(shares.revokedAt), inArray(shares.nodeId, ancestors)))
       .orderBy(desc(shares.createdAt));
 
     return { count: rows.length, people: rows };
