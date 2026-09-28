@@ -703,6 +703,52 @@ precio distinto— y los **paquetes se dejan en paz**: "HBO Max Amazon" tiene su
 suscripcion, y fusionarlo con cualquiera de las dos partes dira a alguien que pague a la
 que no es.
 
+### Compartir parte 6: el boton de compartir
+
+Hecho y verificado en navegador. "Compartir" es una **pagina del panel del menu de la
+lista**, no un panel encima del otro. Dos paneles en una pantalla son dos fondos, y un
+toque que llega al que no toca cierra lo de debajo en vez de hacer lo que se le pidio.
+
+El panel dice **que es un vinculo antes de que pulses nada**, y nombra los papeles desde
+quien los recibe: "Podra editarla" / "Solo podra verla". Y no es offline-first, ni la
+concesion: una concesion se decide en el servidor cuando alguien pulsa ese boton, y
+encolarla seria decir que funciono cuando aun no se ha decidido.
+
+### Los 27 `accessibilityHint` de la app no existen en web
+
+**Encontrado al mirar una captura, no el codigo.** `accessibilityHint` es una prop de iOS.
+react-native-web 0.21.2 **no tiene la cadena en ningun sitio del paquete** y filtra las
+props por una lista blanca estricta, asi que en web la pista se borra en el limite del
+`<View>`: sin atributo ARIA, sin fuga como atributo desconocido, sin aviso. Las 27
+pistas de esta app funcionan en un movil y no existen en un navegador, y ni el DOM ni la
+consola lo dicen. Una auditoria de accesibilidad no puede encontrar una hueco que no
+deja rastro.
+
+El destino en web es `aria-describedby`, que quiere el **id de un elemento**, no una
+cadena — asi que el texto tiene que existir en el documento. De ahi el nodo oculto: esta
+en el arbol de accesibilidad, no se pinta, y no lo lee nadie que este mirando la
+pantalla. Fuera de pantalla y no con `display: none` ni `opacity: 0`, porque los dos lo
+sacan del arbol, que es justo para lo que esta.
+
+**Hecho en el cajon** (espacio, carpeta) y verificado leyendo el DOM real: el boton
+lleva `aria-describedby="pista-2"` y el nodo es `<div id="pista-2">Abre la carpeta dentro
+de Docs E2E.</div>`, de 1x1 px.
+
+**Quedan 25 en 10 ficheros.** La receta es la misma y son 10 lineas: `useA11yHint`
+devuelve `{props, node}`, se reparte el `props` en el `Pressable` y se pinta el `node`
+al lado. Los ficheros, con su numero: drawer (3 mas), panel-grid 3, item-edit-sheet 3,
+button 3, list/[listId] 2, side-drawer 2, done-tray 2, media-carousel 2, tabs/index 1,
+draggable-row 1, sheet 1. **No se ha hecho a proposito en este bloque:** es otro
+componente entero y mezclado con compartir haria la revision de este mas dificil de
+leer. Es el siguiente bloque.
+
+Y de paso, **una prueba nueva de traducciones cazo dos rotos**: `t("share.title")` sin
+nombre, que pintaba "Compartir {name}" en el menu — se ve en la captura, y ninguna
+prueba que pregunte "existe esta clave" lo puede ver porque la clave existe y la llamada
+es un `t` como cualquier otra — y `t("drawer.opensFolder")` sin nombre, que estaba
+roto desde antes. La prueba recorre los ficheros de `src`, cuenta los `t("clave")` que
+se llaman sin segundo argumento y comprueba que ninguno apunta a una clave con `{name}`.
+
 ### Lo que ya no hace falta decidir
 
 - **Orden manual por persona o por lista:** por lista. Todos los colaboradores ven el

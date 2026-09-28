@@ -3,6 +3,7 @@ import { View } from "react-native";
 
 import type { Folder, List } from "@orbit-hub/contracts";
 
+import { ShareNodeForm } from "@/components/shares/share-node-sheet";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { useLists } from "@/hooks/use-lists";
 import { useShareReach } from "@/hooks/use-shares";
@@ -48,7 +49,7 @@ export interface ListMenuSheetProps {
  * that reaches the wrong one closes what is underneath instead of doing what was
  * asked. One panel whose content changes has neither problem.
  */
-type Page = "options" | "rename" | "delete";
+type Page = "options" | "rename" | "share" | "delete";
 
 export function ListMenuSheet({
   list,
@@ -137,6 +138,17 @@ export function ListMenuSheet({
         },
       },
       {
+        key: "share",
+        label: t("share.title", { name: list.title }),
+        icon: "people-outline",
+        // The description is the "not a copy" line, because this is the one option
+        // on the menu whose consequences are not visible afterwards. Somebody who
+        // is about to hand a colleague the ability to edit a real list should read
+        // that before pressing it, not discover it later.
+        description: t("share.isALink"),
+        onPress: () => setPage("share"),
+      },
+      {
         key: "delete",
         label: t("common.delete"),
         icon: "trash-outline",
@@ -154,7 +166,9 @@ export function ListMenuSheet({
       ? `${t(LIST_KIND_LABEL[list.kind])}${folder ? ` · ${folder.name}` : ""}`
       : page === "rename"
         ? t("rename.title", { what: t(LIST_KIND_LABEL[list.kind]) })
-        : t("lists.deleteTitle", { what: list.title });
+        : page === "share"
+          ? t("share.subtitle", { name: list.title })
+          : t("lists.deleteTitle", { what: list.title });
 
   return (
     <Sheet
@@ -217,6 +231,18 @@ export function ListMenuSheet({
               />
             </View>
           </View>
+        ) : null}
+
+        {/*
+          "Compartir" is a page of this panel and not a sheet of its own. Two
+          panels on one screen is two backdrops, and a tap that reaches the wrong
+          one closes what is underneath instead of doing what was asked.
+        */}
+        {page === "share" ? (
+          <ShareNodeForm
+            target={{ nodeType: "list", nodeId: list.id, title: list.title }}
+            onDone={() => onClose()}
+          />
         ) : null}
 
         {page === "delete" ? (

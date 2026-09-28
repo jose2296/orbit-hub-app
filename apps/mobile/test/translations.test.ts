@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -148,4 +148,62 @@ describe("las claves de traduccion que van detras de una plantilla", () => {
 
     expect(vacias).toEqual([]);
   });
+
+  /**
+   * A key with a `{name}` in it, called with no values, prints the placeholder
+   * on the screen.
+   *
+   * `formatTranslation` leaves a token it has no value for exactly as it found
+   * it, so `t("share.title")` against a dictionary entry of `"Share {name}"`
+   * renders the word "Share" and then the braces and the word "name" in the
+   * middle of a menu row. It is not a crash and not a missing key, so every test
+   * that asks "does this key exist?" passes.
+   *
+   * Reading the code does not catch it either, because both halves are right: the
+   * key exists, and the call site is a `t` like any other. It was caught by
+   * looking at a screenshot, and the way to stop needing the screenshot is to walk
+   * the call sites and count the placeholders.
+   */
+  it("ninguna clave con {name} se llama sin el nombre", () => {
+    const sinNombre: string[] = [];
+    const es = dictionaries.es as Record<string, string>;
+
+    for (const [archivo, texto] of fuentesDeLaApp()) {
+      // Every `t("clave", ...)`, and whether a values object follows.
+      const llamada = /\bt\(\s*"([^"]+)"\s*([,)])/g;
+      let m: RegExpExecArray | null;
+
+      while ((m = llamada.exec(texto)) !== null) {
+        const clave = m[1];
+        const cierre = m[2];
+        if (clave === undefined || cierre === undefined) continue;
+        if (!/\{name\}/.test(es[clave] ?? "")) continue;
+        // A comma means there are arguments after it, which is where the values
+        // live. A closing paren means the call is bare.
+        if (cierre === ")") sinNombre.push(`${archivo}: ${clave}`);
+      }
+    }
+
+    expect(sinNombre).toEqual([]);
+  });
 });
+
+/** Every source file under `src`, with its text. */
+function fuentesDeLaApp(): [string, string][] {
+  const salida: [string, string][] = [];
+  const raiz = resolve(process.cwd(), "src");
+
+  const recorrer = (dir: string) => {
+    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
+      const ruta = join(dir, entrada.name);
+      if (entrada.isDirectory()) {
+        recorrer(ruta);
+      } else if (entrada.name.endsWith(".tsx") || entrada.name.endsWith(".ts")) {
+        salida.push([relative(raiz, ruta), readFileSync(ruta, "utf8")]);
+      }
+    }
+  };
+
+  recorrer(raiz);
+  return salida;
+}

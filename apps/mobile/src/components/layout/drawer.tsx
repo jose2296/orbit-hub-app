@@ -22,14 +22,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Folder, List, Share, Workspace } from "@orbit-hub/contracts";
 
 import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { AppText } from "@/components/ui/text";
 import { useListItems } from "@/hooks/use-lists";
 import { useShares } from "@/hooks/use-shares";
+import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useSyncStatus } from "@/hooks/use-sync-status";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { colorOf } from "@/lib/workspace/color";
 import { useTheme } from "@/theme";
+
+import type { SpacesTree } from "@/hooks/use-spaces-tree";
 
 const DESTINATIONS = [
   { route: "/(app)/(tabs)", icon: "home", labelKey: "tabs.home" },
@@ -456,6 +460,14 @@ function SpaceBranch({
     if (inside) setOpen(true);
   }, [inside]);
 
+  const pista = useA11yHint(
+    workspace.shared
+      ? t("drawer.sharedBadgeHint")
+      : t(pluralKey("workspaces.members", workspace.memberCount), {
+          count: workspace.memberCount,
+        }),
+  );
+
   return (
     <View>
       <View style={[styles.item, { gap: 2 }]}>
@@ -463,13 +475,7 @@ function SpaceBranch({
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
           accessibilityLabel={workspace.name}
-          accessibilityHint={
-            workspace.shared
-              ? t("drawer.sharedBadgeHint")
-              : t(pluralKey("workspaces.members", workspace.memberCount), {
-                  count: workspace.memberCount,
-                })
-          }
+          {...pista.props}
           onPress={() => onOpen(`/(app)/workspace/${workspace.id}`)}
           style={({ pressed }) => [
             styles.item,
@@ -509,6 +515,7 @@ function SpaceBranch({
             />
           ) : null}
         </Pressable>
+        {pista.node}
 
         <BranchToggle
           open={open}
@@ -601,6 +608,7 @@ function FolderBranch({
   const t = useTranslation();
   const [open, setOpen] = useState(false);
   const empty = tree.isFolderEmpty(folder.id);
+  const pista = useA11yHint(t("drawer.opensFolder", { name: folder.name }));
 
   return (
     <View>
@@ -609,7 +617,7 @@ function FolderBranch({
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
           accessibilityLabel={folder.name}
-          accessibilityHint={t("drawer.opensFolder")}
+          {...pista.props}
           onPress={() =>
             onOpen(`/(app)/workspace/${folder.workspaceId}/folder/${folder.id}`)
           }
@@ -636,6 +644,7 @@ function FolderBranch({
             {folder.name}
           </AppText>
         </Pressable>
+        {pista.node}
 
         <BranchToggle
           open={open}
@@ -865,135 +874,8 @@ function BranchToggle({
 
 /* ------------------------------------------------------------------ the tree -- */
 
-export interface SpacesTree {
-  spaces: () => Workspace[];
-  foldersOf: (workspaceId: string, parentId: string | null) => Folder[];
-  listsOf: (workspaceId: string, parentId: string | null) => List[];
-  isEmpty: (workspaceId: string) => boolean;
-  isFolderEmpty: (folderId: string) => boolean;
-}
-
-/**
- * Every folder and every list, grouped by where they hang.
- *
- * One read of the cache and then lookups by parent, so opening a folder three
- * levels down costs a lookup and not another read. A folder's own lists are the
- * ones whose `folderId` is that folder, and a space's are the ones with no
- * folder at all.
- */
-export function useSpacesTree(): SpacesTree {
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [lists, setLists] = useState<List[]>([]);
-  const [spaces, setSpaces] = useState<Workspace[]>([]);
-
-  useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      const [{ readAllCachedFolders, readCachedWorkspaces }, localStore] =
-        await Promise.all([
-          import("@/lib/offline/sync-service"),
-          import("@/lib/offline/local-store"),
-        ]);
-
-      const store = await localStore.getLocalStoreReady();
-      const [folderRows, listRows, workspaceRows] = await Promise.all([
-        readAllCachedFolders(),
-        store.listCached("list"),
-        readCachedWorkspaces(),
-      ]);
-
-      const listRecords = listRows
-        .map((row) => {
-          try {
-            return JSON.parse(row.payload) as List;
-          } catch {
-            return null;
-          }
-        })
-        .filter(
-          (row): row is List =>
-            Boolean(row) && (row as List).deletedAt === null,
-        );
-
-      if (!active) return;
-      setFolders(folderRows);
-      setLists(listRecords);
-      setSpaces(workspaceRows);
-    };
-
-    void load();
-
-    let unsubscribe: (() => void) | undefined;
-    void import("@/lib/offline/local-store").then((m) => {
-      // Suscrito *despues* de la primera lectura, con un import dinamico de por
-      // medio, se pierde lo que se escriba entre medias. Y la sincronizacion
-      // escribe fila a fila: la primera lectura caia a mitad, la carpeta de
-      // primer nivel llegaba y la de segundo no, y como no hubo aviso después no
-      // se releía nunca. Un menú que muestra un árbol a medias es un menú que
-      // miente sobre lo que tienes.
-      if (!active) return;
-      unsubscribe = m.subscribeToLocalStore(() => void load());
-      // Y al suscribirse otra vez: lo que se escribió antes de suscribirse
-      // tampoco lo hemos visto.
-      void load();
-    });
-
-    return () => {
-      active = false;
-      unsubscribe?.();
-    };
-  }, []);
-
-  return useMemo<SpacesTree>(() => {
-    const key = (workspaceId: string, parentId: string | null) =>
-      `${workspaceId}:${parentId ?? "root"}`;
-
-    const foldersByParent = new Map<string, Folder[]>();
-    const listsByParent = new Map<string, List[]>();
-    // Cuantas cosas cuelgan *directamente* de cada carpeta. Una cuenta y no un
-    // recorrido: preguntar si una carpeta esta vacia es preguntarlo una vez por
-    // cada fila del menu, y recorrer el arbol entero en cada pregunta es un menu
-    // que tarda en abrirse.
-    const childCount = new Map<string, number>();
-    const bump = (id: string) =>
-      childCount.set(id, (childCount.get(id) ?? 0) + 1);
-
-    for (const folder of folders) {
-      const parentKey = key(folder.workspaceId, folder.parentId);
-      if (!foldersByParent.has(parentKey)) foldersByParent.set(parentKey, []);
-      foldersByParent.get(parentKey)!.push(folder);
-      if (folder.parentId) bump(folder.parentId);
-    }
-
-    for (const list of lists) {
-      const parentKey = key(list.workspaceId, list.folderId);
-      if (!listsByParent.has(parentKey)) listsByParent.set(parentKey, []);
-      listsByParent.get(parentKey)!.push(list);
-      if (list.folderId) bump(list.folderId);
-    }
-
-    const byName = (rows: Folder[]) =>
-      [...rows].sort((one, two) => one.name.localeCompare(two.name));
-    const byTitle = (rows: List[]) =>
-      [...rows].sort((one, two) => one.title.localeCompare(two.title));
-
-    const foldersOf = (workspaceId: string, parentId: string | null) =>
-      byName(foldersByParent.get(key(workspaceId, parentId)) ?? []);
-    const listsOf = (workspaceId: string, parentId: string | null) =>
-      byTitle(listsByParent.get(key(workspaceId, parentId)) ?? []);
-
-    return {
-      spaces: () => spaces,
-      foldersOf,
-      listsOf,
-      isEmpty: (workspaceId) =>
-        (foldersByParent.get(key(workspaceId, null))?.length ?? 0) === 0 &&
-        (listsByParent.get(key(workspaceId, null))?.length ?? 0) === 0,
-      isFolderEmpty: (folderId) => (childCount.get(folderId) ?? 0) === 0,
-    };
-  }, [folders, lists, spaces]);
-}
+export type { SpacesTree } from "@/hooks/use-spaces-tree";
+export { useSpacesTree } from "@/hooks/use-spaces-tree";
 
 /**
  * Whether the menu is open, and who opens it.

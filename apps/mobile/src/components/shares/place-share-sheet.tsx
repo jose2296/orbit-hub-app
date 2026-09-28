@@ -8,10 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { useShares } from "@/hooks/use-shares";
+import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
-
-import { useSpacesTree } from "../layout/drawer";
 
 const NODE_ICON: Record<Share["nodeType"], string> = {
   workspace: "grid-outline",
