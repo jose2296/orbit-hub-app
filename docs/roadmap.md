@@ -1013,6 +1013,27 @@ propósito: el color se apaga en el hueco que ocupa, en vez de apagarse dentro d
 el corte justo en su borde. Y el filo de un píxel de la barra **se quita cuando hay lavado**,
 porque sería el corte que acabamos de borrar dibujado encima.
 
+#### El velo de la cabecera, y por qué el título ya no usa el color del lavado
+
+Una barra es un sitio donde se dibuja texto y una función, no un cartel. Con el lavado entero
+encima, un espacio teal se veía bien y uno rojo parecía un aviso — medido con los dos, el rojo
+canta y el teal no—, y el mismo componente pintando dos cosas muy distintas.
+
+Así que el lavado se ve **atenuado**: un velo del color del fondo por encima, al 45%. La forma
+del degradado es lo que identifica el espacio, y eso se conserva; la intensidad no es
+información, y eso se va.
+
+El título pasa al **color del tema**, y no al que el wash dice que va encima de él. Con el velo de
+por medio ese wash ya no es el fondo real del título: es una respuesta que se dio para un fondo que
+ya no está debajo. El color del tema es lo único que se puede prometer que se lee, porque es
+exactamente el color que hay bajo el velo.
+
+El filo de la barra se quita **siempre**, no solo con lavado. Sin color la barra se apoyaba en un
+hilo de un píxel para separarse del contenido, y ese hilo se veía como un borde raro justo debajo
+del desvanecido; con color era el corte que el desvanecido acababa de borrar, dibujado encima.
+
+Comprobado en web a 390 con el espacio en rojo fuerte, en oscuro y en claro.
+
 #### Los botones de la izquierda, y los tres puntitos
 
 El menú y el atrás van **uno al lado del otro** y los dos centrados en vertical, en ese orden: es

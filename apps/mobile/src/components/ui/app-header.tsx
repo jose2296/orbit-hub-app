@@ -7,7 +7,6 @@ import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
 import { AppText } from '@/components/ui/text';
 import { SpaceWash } from '@/components/ui/wash';
-import { spacePaint } from '@/lib/workspace/color';
 import type { WashVariant } from '@/lib/workspace/wash';
 import { useTheme } from '@/theme';
 
@@ -92,9 +91,6 @@ export function AppHeader({ options, children }: AppHeaderProps) {
     not have to be taught anything.
   */
   const espacio = (options as { espacio?: EspacioHeader | null }).espacio ?? null;
-  const paint = espacio
-    ? spacePaint(espacio.color, espacio.wash ?? undefined, espacio.colorTo)
-    : null;
 
   return (
     <View
@@ -102,10 +98,12 @@ export function AppHeader({ options, children }: AppHeaderProps) {
         styles.caja,
         {
           backgroundColor: theme.colors.background,
-          borderBottomColor: theme.colors.border,
-          // El filo solo cuando **no** hay color: con lavado, el desvanecido hace
-          // de separacion y una linea de un pixel seria un corte dibujado encima.
-          borderBottomWidth: espacio ? 0 : StyleSheet.hairlineWidth,
+          // **Sin filo, nunca.** Con lavado el desvanecido ya separa, y una linea de
+          // un pixel seria el corte que el desvanecido acaba de borrar. Sin lavado
+          // la barra se apoyaba en un hilo de color para separarse del contenido, y
+          // ese hilo se veía como un borde raro debajo de la barra: medido, es la
+          // linea que aparecia entre el desvanecido y la primera fila.
+          borderBottomWidth: 0,
         },
       ]}
     >
@@ -122,6 +120,30 @@ export function AppHeader({ options, children }: AppHeaderProps) {
             wash={espacio.wash ?? undefined}
             style={styles.lavado}
           />
+          {/*
+            El velo, y es lo que baja el saturado.
+
+            El lavado entero de la barra es **mucho** color: con un espacio teal o
+            indigo se ve bonito y con uno rojo la barra parece un aviso. Y no es
+            que el rojo sea feo, es que una barra es un sitio donde se dibuja texto
+            y una funcion, no un cartel.
+
+            Asi que el lavado se ve **atenuado**: un velo del color del fondo por
+            encima, que deja la forma del degradado —que es lo que identifica el
+            espacio— y se lleva la intensidad. Es el mismo washing que se llevo el
+            tinte de las cabeceras que se quitaron, y por el mismo motivo: la
+            intensity no es informacion, el color si.
+
+            Y por eso el titulo pasa al color del tema. El wash sabe que color va
+            **encima de el**, pero esa respuesta es para el lavado entero, y con el
+            velo de encima ya no es el fondo real del titulo: el color del tema es lo
+            unico que se puede prometer que se lee, porque es el color del fondo que
+            hay debajo del velo.
+          */}
+          <View
+            style={[styles.velo, { backgroundColor: theme.colors.background, opacity: VELO }]}
+          />
+
           {/*
             El corte de abajo, y esto es lo que lo quita.
 
@@ -147,16 +169,18 @@ export function AppHeader({ options, children }: AppHeaderProps) {
         </View>
 
         {/*
-          The title in the colour that goes **on the wash**, which the wash itself
-          knows: it is the same answer the panel's cards use. Calculating a second
-          one here would be two answers to one question, and they would drift.
+          El titulo con el color del tema, y no con el que el wash dice que va
+          encima de el. Con el velo de por medio ese wash ya no es el fondo real
+          del titulo, y una respuesta que se dio para un fondo que ya no esta
+          debajo es una respuesta a otra pregunta. El color del tema es lo unico
+          que se puede prometer que se lee, porque es el color que hay bajo el velo.
         */}
         <View style={styles.centro} pointerEvents="none">
           {typeof options.title === 'string' && options.title.length > 0 ? (
             <AppText
               variant="heading"
               numberOfLines={1}
-              style={[styles.titulo, { color: paint?.foreground ?? theme.colors.text }]}
+              style={[styles.titulo, { color: theme.colors.text }]}
             >
               {options.title}
             </AppText>
@@ -190,6 +214,16 @@ const ALTO = 56;
  */
 const FALSO = 28;
 
+/**
+ * How much of the space's colour the header keeps.
+ *
+ * **A little under half.** Enough that the shape of the wash is still there —it
+ * is what tells you which space you are in— and little enough that a strong colour
+ * is a colour and not a warning. Measured against a red space, which is the one
+ * that complains.
+ */
+const VELO = 0.45;
+
 const styles = StyleSheet.create({
   caja: {
     /* La barra **mas el desvanizado**, y por eso el contenido de la pantalla
@@ -199,7 +233,6 @@ const styles = StyleSheet.create({
        sobresale se apaga en el hueco que ha ocupado la pantalla y ahi ya no hay
        borde que ver. */
     minHeight: ALTO + FALSO,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   fondo: {
@@ -211,6 +244,13 @@ const styles = StyleSheet.create({
   },
   lavado: {
     flex: 1,
+  },
+  velo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   desvanecido: {
     position: 'absolute',
