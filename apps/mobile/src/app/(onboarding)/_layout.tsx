@@ -11,7 +11,7 @@ export default function OnboardingLayout() {
   // directly, or whose session is restored while it is on screen, belongs in the
   // app.
   if (status === 'loading') return null;
-  if (status === 'authenticated') return <Redirect href="/(app)/(tabs)" />;
+  if (status === 'authenticated') return <Redirect href="/(app)" />;
 
   return (
     <Stack

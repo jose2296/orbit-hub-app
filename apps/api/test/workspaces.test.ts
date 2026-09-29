@@ -350,6 +350,9 @@ describe('GET /dashboard', () => {
   it('returns the saved layout after a sync write', async () => {
     const user = await createVerifiedUser(api);
 
+    // Written without a `page`, which is what every layout written before the
+    // panel had screens looks like. The answer fills it in as screen one rather
+    // than handing back a layout the response type says is wrong.
     const layout = [
       { id: 'recent', kind: 'recent_lists', x: 0, y: 0, w: 6, h: 4, pinned: true },
       { id: 'tasks', kind: 'tasks', x: 6, y: 0, w: 6, h: 4, pinned: false },
@@ -381,8 +384,48 @@ describe('GET /dashboard', () => {
 
     const dashboard = await api.get('/dashboard', user.accessToken);
     expect(dashboardLayoutSchema.safeParse(dashboard.body.data).success).toBe(true);
-    expect(dashboard.body.data.layout).toEqual(layout);
+    expect(dashboard.body.data.layout).toEqual([
+      { ...layout[0], page: 0 },
+      { ...layout[1], page: 0 },
+    ]);
     expect(dashboard.body.data.version).toBe(1);
+  });
+
+  it('keeps which screen of the panel a card is on', async () => {
+    // The whole point of `page`: a card on the second screen has to still be on
+    // the second screen when it comes back, or everybody's panel collapses onto
+    // the first one the first time it syncs.
+    const user = await createVerifiedUser(api);
+
+    const layout = [
+      { id: 'primera', kind: 'recent_lists', x: 0, y: 0, w: 6, h: 4, page: 0, pinned: true },
+      { id: 'segunda', kind: 'tasks', x: 0, y: 0, w: 6, h: 4, page: 2, pinned: true },
+    ];
+
+    await api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          {
+            operationId: randomUUID(),
+            clientId: 'test-client-workspaces',
+            entity: 'dashboard',
+            kind: 'update',
+            entityId: randomUUID(),
+            baseVersion: 0,
+            payload: { layout },
+            base: null,
+            clientTimestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      user.accessToken,
+    );
+
+    const dashboard = await api.get('/dashboard', user.accessToken);
+    expect(dashboard.body.data.layout).toEqual(layout);
   });
 
   it('never returns another user layout', async () => {

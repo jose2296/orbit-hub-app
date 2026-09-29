@@ -76,6 +76,20 @@ export function BackButton({ fallbackHref }: { fallbackHref?: string }) {
   const t = useTranslation();
   const router = useRouter();
 
+  /*
+   * Nothing to go back to, nothing to press.
+   *
+   * `canGoBack()` is false on the three destinations — the panel, buscar and
+   * ajustes — because they root the tabs and the tabs are the first screen of the
+   * stack. The button was drawn anyway, next to a menu button that works, and it
+   * offered a back that goes nowhere. A dead arrow beside a live one is the kind
+   * of thing that makes somebody distrust both.
+   *
+   * The `fallbackHref` still draws it, because a caller that names a landing
+   * place is saying "there is somewhere to go from here".
+   */
+  if (!router.canGoBack() && !fallbackHref) return null;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -84,7 +98,7 @@ export function BackButton({ fallbackHref }: { fallbackHref?: string }) {
       onPress={() => {
         if (router.canGoBack()) router.back();
         else if (fallbackHref) router.replace(fallbackHref as never);
-        else router.replace('/(app)/(tabs)');
+        else router.replace('/(app)');
       }}
       style={({ pressed }) => [
         styles.back,

@@ -1,7 +1,7 @@
 import type { Accent, Appearance } from '@orbit-hub/contracts';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 
 import { keyValueStore } from '@/lib/storage/key-value';
 
@@ -108,6 +108,32 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }),
     [accent, appearance, hydrated, setAccent, setAppearance, scheme],
   );
+
+  /*
+   * The document follows the app, on the web.
+   *
+   * `+html.tsx` paints `body` from a media query, so the document is the colour
+   * of the *system* and the app is the colour the person chose, and the two
+   * disagree the moment anybody forces one against the other: force dark on a
+   * light system and the page is dark on a white sheet. Nothing visible inside
+   * the app changes, because `Screen` paints the whole viewport — the light shows
+   * in the places the app does not reach, and, worse, in the moment before it
+   * mounts. `#root` is transparent, `Screen` has not painted yet, and on a slow
+   * connection somebody who chose dark gets a white flash first.
+   *
+   * So the document is corrected here, once the preference is known: the CSS
+   * stays as it is for the first paint — it is the only thing that can be right
+   * before JavaScript runs — and this takes it from there. `colorScheme` as well,
+   * because a scrollbar and a form control are painted by the browser from that
+   * and would otherwise stay on the system's choice.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const body = document.body;
+    const root = document.documentElement;
+    body.style.backgroundColor = value.theme.colors.background;
+    root.style.colorScheme = scheme === 'dark' ? 'dark' : 'light';
+  }, [scheme, value.theme.colors.background]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

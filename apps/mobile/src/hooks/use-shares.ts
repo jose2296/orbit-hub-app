@@ -55,9 +55,14 @@ export function useShares() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Nothing is loaded on mount, on purpose.
+  //
+  // It used to be, and every caller paid for it: the two share sheets only want
+  // `share` and `place` and were fetching the whole inbox to get them, and the
+  // drawer is mounted from the first frame — including the frames where the
+  // session is still being restored — so its copy went out with no token and came
+  // back 401, every time the menu was drawn. The one caller that wants the inbox
+  // asks for it, and asks once there is a session to ask with.
 
   /** Gives a node to somebody. A link, not a copy: it stays where it is. */
   const share = useCallback(

@@ -25,6 +25,20 @@ export interface ButtonProps {
   fullWidth?: boolean;
   style?: ViewStyle;
   accessibilityHint?: string;
+  /**
+   * Draw only the icon and keep the label for the accessibility tree.
+   *
+   * For a header that has more than one action: measured on a 430-point phone,
+   * two labelled buttons in the header of a list took 307 of the 398 points the
+   * content column has, and the title was left 63 — which is a word and a half,
+   * and the icon of the first button was drawn on top of it. The icon alone is
+   * 36; the difference is the whole column.
+   *
+   * Only for an icon that names itself (a bookmark, three dots). If you have to
+   * ask what the drawing means, it is not a candidate: an icon with no text and
+   * no name is a button nobody can use.
+   */
+  iconOnly?: boolean;
   testID?: string;
 }
 
@@ -40,6 +54,7 @@ export function Button({
   fullWidth = true,
   style,
   accessibilityHint,
+  iconOnly = false,
   testID,
 }: ButtonProps) {
   const theme = useTheme();
@@ -88,6 +103,19 @@ export function Button({
     <>
       {loading ? (
         <ActivityIndicator size="small" color={colors.text} />
+      ) : iconOnly ? (
+        /*
+         * The label is gone from the screen and **not** from the control:
+         * `accessibilityLabel` below still says the whole thing, so a screen
+         * reader announces "Quitar de favorita, botón" and a person with a
+         * magnifying glass reads a bookmark. The drawing is 16 points and
+         * nothing else, which is the whole point.
+         */
+        <Ionicons
+          name={(icon ?? "ellipsis-horizontal") as never}
+          size={iconSize + 4}
+          color={colors.text}
+        />
       ) : (
         <View style={[styles.row, { gap: sizeConfig.gap }]}>
           {icon && iconPosition === 'leading' ? (
@@ -108,6 +136,10 @@ export function Button({
     <>
       <Pressable
         accessibilityRole="button"
+        // Set even when the label is off screen, and it is the whole contract of
+        // `iconOnly`: a button that shows a drawing and says nothing is a button
+        // with two different names depending on how you ask.
+        accessibilityLabel={label}
         accessibilityState={{ disabled: isDisabled, busy: loading }}
         {...pista.props}
         testID={testID}
@@ -116,7 +148,9 @@ export function Button({
         style={({ pressed }) => [
           {
             height: sizeConfig.height,
-            paddingHorizontal: sizeConfig.paddingHorizontal,
+            // A square, not a pill with a word missing from it.
+            minWidth: iconOnly ? sizeConfig.height : undefined,
+            paddingHorizontal: iconOnly ? 0 : sizeConfig.paddingHorizontal,
             borderRadius: theme.radius.md,
             backgroundColor: colors.background,
             borderWidth: StyleSheet.hairlineWidth * 2,

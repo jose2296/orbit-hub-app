@@ -38,7 +38,7 @@ export interface DuplicableItem {
   tags: string[];
   externalId: string | null;
   metadata: Record<string, unknown> | null;
-  notes: string | null;
+  annotation: string | null;
   deletedAt: string | null;
 }
 
@@ -102,7 +102,7 @@ export function planDuplication(
     tags: [...item.tags],
     externalId: item.externalId,
     metadata: item.metadata ? { ...item.metadata } : null,
-    notes: item.notes,
+    annotation: item.annotation,
     version: 0 as const,
     createdAt: now,
     updatedAt: now,

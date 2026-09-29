@@ -40,7 +40,7 @@ const items = [
     tags: [] as string[],
     externalId: 'movie:603',
     metadata: { provider: 'tmdb', year: '1999' },
-    notes: 'reverla',
+    annotation: 'reverla',
     deletedAt: null,
   },
   {
@@ -55,7 +55,7 @@ const items = [
     tags: [] as string[],
     externalId: 'movie:329865',
     metadata: { provider: 'tmdb' },
-    notes: null,
+    annotation: null,
     deletedAt: null,
   },
   {
@@ -70,7 +70,7 @@ const items = [
     tags: [] as string[],
     externalId: null,
     metadata: null,
-    notes: null,
+    annotation: null,
     deletedAt: '2026-01-01T00:00:00.000Z',
   },
   {
@@ -85,7 +85,7 @@ const items = [
     tags: [] as string[],
     externalId: null,
     metadata: null,
-    notes: null,
+    annotation: null,
     deletedAt: null,
   },
 ];
@@ -115,7 +115,7 @@ describe('planDuplication', () => {
     expect(plan.items.map((item) => item.id)).toEqual(['new-1', 'new-2']);
   });
 
-  it('keeps the completed state, the priority and the notes', () => {
+  it('keeps the completed state, the priority and the annotation', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
@@ -125,7 +125,7 @@ describe('planDuplication', () => {
     const first = plan.items[0];
     expect(first?.completed).toBe(true);
     expect(first?.priority).toBe('high');
-    expect(first?.notes).toBe('reverla');
+    expect(first?.annotation).toBe('reverla');
   });
 
   it('keeps the provider record so a catalog item stays recognisable', () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { DASHBOARD_PAGES } from "@orbit-hub/contracts";
+
 import { DEFAULT_LAYOUT, normaliseLayout } from "../src/lib/dashboard/layout";
 
 /**
@@ -52,6 +54,34 @@ describe("normaliseLayout", () => {
     const before = JSON.stringify(input);
     normaliseLayout(input);
     expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it("puts a card written before there were screens on the first one", () => {
+    // Everybody who used this before the panel had screens has a stored layout
+    // with no `page` on any card. Reading those as screen one is the difference
+    // between opening the app and finding your panel and opening it and finding
+    // it empty.
+    const [card] = normaliseLayout([
+      { id: "a", kind: "recent_lists", x: 0, y: 0, w: 3, h: 1, pinned: true },
+    ]);
+    expect(card?.page).toBe(0);
+  });
+
+  it("keeps which screen a card is on", () => {
+    const result = normaliseLayout([
+      { id: "a", kind: "recent_lists", x: 0, y: 0, w: 3, h: 1, page: 2, pinned: true },
+    ]);
+    expect(result[0]?.page).toBe(2);
+  });
+
+  it("pulls a card off a screen that does not exist", () => {
+    // A screen past the end is a card on a screen you cannot get to, which is
+    // the same failure as a card drawn on top of a neighbour: pinned, and
+    // unreachable.
+    const result = normaliseLayout([
+      { id: "a", kind: "recent_lists", x: 0, y: 0, w: 3, h: 1, page: 9000, pinned: true },
+    ]);
+    expect(result[0]?.page).toBe(DASHBOARD_PAGES - 1);
   });
 });
 

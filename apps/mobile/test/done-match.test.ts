@@ -19,7 +19,7 @@ const fila = (title: string, completed: boolean): ListItem =>
     tags: [],
     externalId: null,
     metadata: null,
-    notes: null,
+    annotation: null,
     version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

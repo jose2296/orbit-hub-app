@@ -3,10 +3,11 @@ import { useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import type { Folder, List } from "@orbit-hub/contracts";
+import type { Folder, List, WorkspaceWash } from "@orbit-hub/contracts";
 
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { LIST_KIND_ICON } from "@/lib/lists/kind";
+import { spacePaint, spaceTint } from "@/lib/workspace/color";
 import { useTheme } from "@/theme";
 
 import { AppText } from "../ui/text";
@@ -27,6 +28,33 @@ export interface FolderBrowserProps {
   /** Only the lists of this folder. */
   lists: List[];
   isLoading: boolean;
+  /**
+   * The colour of the space this folder is in.
+   *
+   * It is a prop and not something the browser works out, because a folder record
+   * does not know which space it is in: the screen above has both and the folder
+   * is only ever shown inside one of them. Every row below is drawn in it, so a
+   * folder and the lists inside it are the same colour as the space they are in
+   * and not a row of identical grey cards with the space named in a header.
+   */
+  colorKey?: string | null;
+  /**
+   * Which of the five ways the space is painted.
+   *
+   * A prop beside the colour and not something this file derives: the browser
+   * draws the space's wash on every row, and a default here would repaint every
+   * space that chose a style in the diagonal the rows underneath the band no
+   * longer match.
+   */
+  wash?: WorkspaceWash | null;
+  /**
+   * The colour the space ends in, which is the person's own second choice.
+   *
+   * Beside the wash and not derived here, for the reason the wash is a prop: a
+   * browser that only knows the first colour paints the derived pair, and the
+   * rows underneath the band then disagree with the picker that set it.
+   */
+  colorTo?: string | null;
   /** Opens the menu of a folder. */
   onFolderMenu: (folder: FolderBrowserProps["folders"][number]) => void;
   /** Opens the menu of a list. */
@@ -50,12 +78,39 @@ export function FolderBrowser({
   folders,
   lists,
   isLoading,
+  colorKey,
+  wash,
+  colorTo,
   onFolderMenu,
   onListMenu,
 }: FolderBrowserProps) {
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
+
+  /**
+   * The wash of the space, for the rows below.
+   *
+   * A wash and not a solid colour on every row: forty rows of full-strength space
+   * colour is a wall, and a space you can no longer read anything on is a space
+   * that has stopped being a way of telling things apart. The mark is at full
+   * strength and the row itself is barely tinted.
+   */
+  // `undefined` and not `null` because the paint layer takes "no choice made" as
+  // absent and falls back to the default; a prop that is optional has to be able
+  // to say the same thing the screen it came from says.
+  const paint = spacePaint(colorKey, wash ?? undefined, colorTo);
+
+  /*
+   * The flat steps of that same colour, for the rows and for the icon tiles.
+   *
+   * Two, and not one, because a tile behind a sixteen-point glyph is read against
+   * the glyph and a row is read against a line of text: the tile can carry more of
+   * the colour before it stops being a backdrop and starts competing with what is
+   * on it. The wash was doing neither job, which is why it went.
+   */
+  const tint = spaceTint(colorKey, 0.13);
+  const iconTint = spaceTint(colorKey, 0.24);
 
   const children = useMemo(
     () =>
@@ -122,7 +177,7 @@ export function FolderBrowser({
                     {
                       backgroundColor: pressed
                         ? theme.colors.surfaceMuted
-                        : theme.colors.surface,
+                        : tint,
                       borderColor: theme.colors.border,
                       borderRadius: theme.radius.lg,
                       gap: theme.spacing.md,
@@ -131,12 +186,45 @@ export function FolderBrowser({
                     },
                   ]}
                 >
-                  <AppText variant="body">{folder.emoji ?? ""}</AppText>
+                  {/*
+                    The kind of thing this is, on the colour of the space it is
+                    in, and drawn like the list rows below it.
+
+                    It was a 📁 emoji in this circle and an `Ionicons` glyph in
+                    the list rows, which made the folder the only row on the
+                    screen with a picture in it: multicoloured, filled, a
+                    different optical weight from the line icons around it, and
+                    the one row whose colour had nothing to do with the space. A
+                    folder is a place and not a kind of thing, so it gets the
+                    plain outline — the same one the drawer and the "where does
+                    this go" sheet already use for a folder, which is the point:
+                    one symbol, three screens.
+                  */}
+                  <View
+                    style={[
+                      styles.icon,
+                      { borderRadius: theme.radius.md, backgroundColor: iconTint },
+                    ]}
+                  >
+                    <Ionicons
+                      name="folder-outline"
+                      size={16}
+                      color={paint.foreground}
+                    />
+                  </View>
+                  {/*
+                    The person's own emoji, beside the name and not instead of
+                    it — which is where a list puts it too, so the two kinds of
+                    row read as the same kind of row. A folder that only ever
+                    looked like a folder would quietly throw away the name
+                    somebody gave it to look like something else.
+                  */}
                   <AppText
                     variant="bodyStrong"
                     style={styles.flex}
                     numberOfLines={1}
                   >
+                    {folder.emoji ? `${folder.emoji} ` : ""}
                     {folder.name}
                   </AppText>
                 </Pressable>
@@ -169,7 +257,7 @@ export function FolderBrowser({
                     {
                       backgroundColor: pressed
                         ? theme.colors.surfaceMuted
-                        : theme.colors.surface,
+                        : tint,
                       borderColor: theme.colors.border,
                       borderRadius: theme.radius.lg,
                       gap: theme.spacing.md,
@@ -178,21 +266,20 @@ export function FolderBrowser({
                     },
                   ]}
                 >
+                  {/* The kind of the list, on the colour of the space it is in.
+                      It was the accent, and the accent is the colour of *this
+                      app's* actions: two lists of the same kind in two spaces
+                      looked identical, and a list is a thing you find by the
+                      space it is in. */}
                   <View
-                    style={[
-                      styles.icon,
-                      {
-                        backgroundColor: theme.colors.accentSoft,
-                        borderRadius: theme.radius.md,
-                      },
-                    ]}
-                  >
-                    <Ionicons
+                      style={[styles.icon, { borderRadius: theme.radius.md, backgroundColor: iconTint }]}
+                    >
+                      <Ionicons
                       name={KIND_ICON[list.kind] ?? "list-outline"}
                       size={16}
-                      color={theme.colors.accentSoftText}
+                      color={paint.foreground}
                     />
-                  </View>
+                    </View>
                   <View style={[styles.flex, { gap: 2 }]}>
                     <AppText variant="bodyStrong" numberOfLines={1}>
                       {list.emoji ? `${list.emoji} ` : ""}
@@ -205,11 +292,7 @@ export function FolderBrowser({
                     </AppText>
                   </View>
                   {list.favorite ? (
-                    <Ionicons
-                      name="bookmark"
-                      size={14}
-                      color={theme.colors.accent}
-                    />
+                    <Ionicons name="bookmark" size={14} color={paint.color} />
                   ) : null}
                 </Pressable>
                 <MenuButton

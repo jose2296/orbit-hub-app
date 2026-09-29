@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 
+import { isWideWidth } from "@/lib/layout/measure";
+
 /**
  * Whether there is room for the wide version of this app.
  *
@@ -13,6 +15,9 @@ import { Platform } from "react-native";
  * Only the web resizes in a way worth listening to, and only the web has a wide
  * layout worth having: a tablet in the hand is a big phone, and a bottom tab bar
  * under the thumb is still the right place for it.
+ *
+ * The numbers are in `measure`, which is the module that can be asked a question
+ * without a window. This one is the window.
  */
 export function useIsWide(): boolean {
   const [wide, setWide] = useState(() => measure());
@@ -28,23 +33,8 @@ export function useIsWide(): boolean {
   return wide;
 }
 
-/**
- * Where the drawer appears.
- *
- * 900 points and not 768: at 768 a drawer and its margin leave under 500 for
- * the content, which is a phone-width column with a third of the screen spent
- * on four words.
- */
-export const DRAWER_BREAKPOINT = 900;
-
-/** How wide the content of a screen is allowed to get, for reading. */
-export const READING_WIDTH = 720;
-
-/** For grids: the panel of cards, and anything else laid out in columns. */
-export const GRID_WIDTH = 1000;
-
 function measure(): boolean {
   if (Platform.OS !== "web") return false;
   const width = (globalThis as { innerWidth?: number }).innerWidth ?? 0;
-  return width >= DRAWER_BREAKPOINT;
+  return isWideWidth(width);
 }

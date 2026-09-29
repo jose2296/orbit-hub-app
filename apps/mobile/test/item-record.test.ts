@@ -37,7 +37,7 @@ describe('newListItem', () => {
       tags: [],
       externalId: null,
       metadata: null,
-      notes: null,
+      annotation: null,
       deletedAt: null,
     });
   });
@@ -118,7 +118,7 @@ describe('withListItemDefaults', () => {
       priority: 'none',
       externalId: null,
       metadata: null,
-      notes: null,
+      annotation: null,
       deletedAt: null,
     });
 

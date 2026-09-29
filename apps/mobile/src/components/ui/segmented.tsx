@@ -27,6 +27,8 @@ export function Segmented<T extends string>({ options, value, onChange, label }:
         </AppText>
       ) : null}
       <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel={label}
         style={[
           styles.container,
           {
@@ -43,6 +45,22 @@ export function Segmented<T extends string>({ options, value, onChange, label }:
             <Pressable
               key={option.value}
               accessibilityRole="radio"
+              /*
+                `aria-checked`, and not only `accessibilityState={{ selected }}`.
+
+                A radio says which one is chosen with `aria-checked`; `aria-selected`
+                belongs to a tab or to an option inside a list, and a segmented
+                control is neither. React Native Web writes
+                `accessibilityState.selected` out as `aria-selected` whatever the
+                role is, so on the web this announced itself as a radio and then
+                never said which one was chosen — checked in the browser, with
+                neither `aria-checked` nor `aria-selected` on the element, which is
+                a row of unmarked radios to anything reading it.
+
+                Both are set, and deliberately: the state prop is what the native
+                platforms read and this is what the web reads.
+              */
+              aria-checked={selected}
               accessibilityState={{ selected }}
               onPress={() => onChange(option.value)}
               style={({ pressed }) => [

@@ -7,6 +7,7 @@ import type {
   Workspace,
   WorkspaceMember,
 } from "@orbit-hub/contracts";
+import { dashboardLayoutSchema } from "@orbit-hub/contracts";
 import { and, asc, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 
 import { getDatabase } from "../../db/client.js";
@@ -52,6 +53,8 @@ export class WorkspaceQueryService {
         description: workspaces.description,
         emoji: workspaces.emoji,
         color: workspaces.color,
+        colorTo: workspaces.colorTo,
+        wash: workspaces.wash,
         version: workspaces.version,
         createdAt: workspaces.createdAt,
         updatedAt: workspaces.updatedAt,
@@ -74,6 +77,8 @@ export class WorkspaceQueryService {
       description: row.description,
       emoji: row.emoji,
       color: row.color,
+      colorTo: row.colorTo,
+      wash: row.wash,
       version: row.version,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -109,6 +114,8 @@ export class WorkspaceQueryService {
         description: workspaces.description,
         emoji: workspaces.emoji,
         color: workspaces.color,
+        colorTo: workspaces.colorTo,
+        wash: workspaces.wash,
         version: workspaces.version,
         createdAt: workspaces.createdAt,
         updatedAt: workspaces.updatedAt,
@@ -140,6 +147,8 @@ export class WorkspaceQueryService {
       description: row.description,
       emoji: row.emoji,
       color: row.color,
+      colorTo: row.colorTo,
+      wash: row.wash,
       version: row.version,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -305,7 +314,12 @@ export class WorkspaceQueryService {
 
     return {
       userId: row.userId,
-      layout: row.layout,
+      // Through the schema, and not straight out of the column: a layout stored
+      // before the panel had screens has no `page` on any card, and the schema's
+      // default is what turns that into screen one. Returning the column as it is
+      // would answer with a layout the response type says is wrong, and the
+      // client would be the one repairing it.
+      layout: dashboardLayoutSchema.shape.layout.parse(row.layout),
       version: row.version,
       updatedAt: row.updatedAt.toISOString(),
     };

@@ -54,7 +54,7 @@ export default function SignUpScreen() {
       });
 
       if (status === 'authenticated') {
-        router.replace('/(app)/(tabs)');
+        router.replace('/(app)');
         return;
       }
 

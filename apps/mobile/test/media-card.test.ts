@@ -23,7 +23,7 @@ function makeItem(partial: Partial<ListItem> & { externalId: string | null }): L
     icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [],
     metadata: null,
-    notes: null,
+    annotation: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,

@@ -34,7 +34,7 @@ function item(partial: Partial<ListItem> & { id: string }): ListItem {
     tags: [],
     externalId: null,
     metadata: null,
-    notes: null,
+    annotation: null,
     ...partial,
   };
 }

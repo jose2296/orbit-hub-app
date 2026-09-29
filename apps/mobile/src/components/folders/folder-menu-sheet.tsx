@@ -19,11 +19,16 @@ export interface FolderMenuSheetProps {
     name: string;
     parentId: string | null;
     version: number;
+    emoji?: string | null;
   } | null;
   /** The space it is in, which is where its lists go when the folder goes. */
   workspaceId: string | undefined;
   /** How many lists are inside, so the delete says what goes with it. */
   listCount: number;
+  /** Whether the folder already has a card on the panel, so the option says so. */
+  onPanel?: boolean;
+  /** Puts a card for this folder on the panel, or takes it off again. */
+  onTogglePin?: () => void;
   onClose: () => void;
   /** Opens the create panel already set to this folder and this kind. */
   onCreateInside: (kind: ListKind) => void;
@@ -33,9 +38,13 @@ export interface FolderMenuSheetProps {
  * What can be done with a folder.
  *
  * A folder is a place and not a record of anything, so it has fewer actions
- * than a list: it can be renamed, it can have a new list put inside it, and it
- * can go away. It cannot be duplicated, because a copy of a place is another
- * place with nothing in it and nobody has ever wanted one.
+ * than a list: it can be renamed, it can have a new list put inside it, it can be
+ * put on the panel, and it can go away. It cannot be duplicated, because a copy of
+ * a place is another place with nothing in it and nobody has ever wanted one.
+ *
+ * "Put it on the panel" is here and not only on the home screen, because that is
+ * where somebody is *looking at* a folder. Reaching the panel to find a folder,
+ * and only then finding the option to pin it, is two steps where one was obvious.
  *
  * Deleting a folder does not delete what is inside. The lists in it are the
  * work, and losing a folder because it was in the wrong place would throw away
@@ -46,6 +55,8 @@ export function FolderMenuSheet({
   folder,
   workspaceId,
   listCount,
+  onPanel = false,
+  onTogglePin,
   onClose,
   onCreateInside,
 }: FolderMenuSheetProps) {
@@ -72,6 +83,50 @@ export function FolderMenuSheet({
     [onCreateInside, t],
   );
 
+  const options: SheetOption[] = useMemo(
+    () => [
+      {
+        key: "new-list",
+        label: t("lists.createHere"),
+        icon: "add-circle-outline",
+        onPress: () => setCreatingKind("tasks"),
+      },
+      // Only offered when somebody wired it up. The menu is also used where the
+      // panel is not in play, and an option that silently does nothing is worse
+      // than an option that is not there.
+      ...(onTogglePin
+        ? [
+            {
+              key: "pin",
+              label: onPanel ? t("dashboard.takeOffPanel") : t("dashboard.putOnPanel"),
+              icon: (onPanel ? "remove-circle-outline" : "apps-outline") as SheetOption["icon"],
+              // The menu closes: the panel is a different screen, and staying open
+              // over a screen that just changed somewhere else is disorienting.
+              onPress: () => {
+                onTogglePin();
+                onClose();
+              },
+            },
+          ]
+        : []),
+      {
+        key: "rename",
+        label: t("common.rename"),
+        icon: "create-outline",
+        onPress: () => setRenaming(true),
+      },
+      {
+        key: "delete",
+        label: t("common.delete"),
+        icon: "trash-outline",
+        tone: "danger",
+        description: t("lists.deleteFolderBody"),
+        onPress: () => setConfirmDelete(true),
+      },
+    ],
+    [onClose, onPanel, onTogglePin, t],
+  );
+
   if (!folder) return null;
 
   return (
@@ -89,30 +144,7 @@ export function FolderMenuSheet({
             paddingBottom: theme.spacing.sm,
           }}
         >
-          <SheetOptions
-            options={[
-              {
-                key: "new-list",
-                label: t("lists.createHere"),
-                icon: "add-circle-outline",
-                onPress: () => setCreatingKind("tasks"),
-              },
-              {
-                key: "rename",
-                label: t("common.rename"),
-                icon: "create-outline",
-                onPress: () => setRenaming(true),
-              },
-              {
-                key: "delete",
-                label: t("common.delete"),
-                icon: "trash-outline",
-                tone: "danger",
-                description: t("lists.deleteFolderBody"),
-                onPress: () => setConfirmDelete(true),
-              },
-            ]}
-          />
+          <SheetOptions options={options} />
         </View>
       </Sheet>
 

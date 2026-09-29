@@ -40,7 +40,7 @@ export interface NewListItemInput {
   tags?: string[];
   externalId?: string | null;
   metadata?: Record<string, unknown> | null;
-  notes?: string | null;
+  annotation?: string | null;
 }
 
 /**
@@ -73,7 +73,7 @@ export function newListItem(input: NewListItemInput): ListItem {
     iconColor: iconColorOf(input.iconColor),
     externalId: input.externalId ?? null,
     metadata: input.metadata ?? null,
-    notes: input.notes ?? null,
+    annotation: input.annotation ?? null,
     deletedAt: null,
   };
 }
@@ -122,7 +122,7 @@ export function withListItemDefaults(value: unknown): ListItem {
       record.metadata && typeof record.metadata === "object"
         ? (record.metadata as Record<string, unknown>)
         : null,
-    notes: typeof record.notes === "string" ? record.notes : null,
+    annotation: typeof record.annotation === "string" ? record.annotation : null,
     deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
   };
 }

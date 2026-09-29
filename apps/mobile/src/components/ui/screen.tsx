@@ -9,7 +9,7 @@ import {
 import type { StyleProp, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { READING_WIDTH } from "@/lib/layout/width";
+import { READING_WIDTH } from "@/lib/layout/measure";
 import { useTheme } from "@/theme";
 
 export interface ScreenProps {
@@ -26,6 +26,17 @@ export interface ScreenProps {
    * something rather than a list of it.
    */
   width?: "reading" | "grid" | "full";
+  /**
+   * Whether the content keeps the usual gap at the bottom of the page.
+   *
+   * The gap is for a column of things that ends before the bottom of the window —
+   * a list, a form — so the last line is not glued to the home indicator. A screen
+   * whose content is a board that fills the space has no such ending, and the gap
+   * becomes a strip of nothing underneath it: on the panel that is both a row of
+   * the screen the cards are not using and a reason for the page to scroll when it
+   * has been promised not to.
+   */
+  edgeToEdge?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -50,6 +61,7 @@ export function Screen({
   scroll = true,
   bottomInset = 0,
   width = "reading",
+  edgeToEdge = false,
   style,
   testID,
 }: ScreenProps) {
@@ -57,7 +69,13 @@ export function Screen({
 
   const padding = {
     padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.xxl + bottomInset,
+    // Zero and not a smaller gap: the panel's promise is that the six rows of the
+    // grid are exactly the height it was given, and any padding left underneath is
+    // a strip of screen the cards are not using — which on the one screen that
+    // does not scroll is the difference between filling the page and nearly
+    // filling it. The left, right and top padding stay, so the grid still does not
+    // touch the edges of the phone.
+    paddingBottom: edgeToEdge ? 0 : theme.spacing.xxl + bottomInset,
     gap: theme.spacing.lg,
   };
 

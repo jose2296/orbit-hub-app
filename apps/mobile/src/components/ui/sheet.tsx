@@ -162,6 +162,45 @@ export interface SheetOption {
   description?: string;
   tone?: "default" | "danger" | "accent";
   disabled?: boolean;
+  /**
+   * The option is a choice and this one is the chosen one: a tick on the right.
+   *
+   * A menu option does not need it, because pressing it *is* choosing it. An
+   * option that toggles something the sheet then leaves open does: a picker of
+   * what is on the panel has to say which things are on it, and the only place
+   * that can be said is the row itself. Without it the state lives in the
+   * description, where it is one sentence of every row and the first thing to be
+   * read past.
+   */
+  selected?: boolean;
+  /**
+   * The option is a door and not a switch: a chevron, and pressing it goes
+   * somewhere instead of changing something.
+   *
+   * The same shape `ListRow` already has, because a row that goes somewhere and
+   * a row that does a thing are told apart the same way everywhere in the app.
+   */
+  chevron?: boolean;
+  /**
+   * A second control on the right, for the row that is both.
+   *
+   * A folder in the panel picker is the only thing in the app that is a door and
+   * a switch at the same time: pressing the row goes into the folder, and the
+   * circle beside it puts the folder on the panel. Folding that into the one
+   * pressable is what it was doing before, and one pressable can only answer one
+   * question — so the row went into the folder when the folder was not pinned and
+   * pinned it when it was, and the chevron and the tick took turns being the
+   * right one. A control that changes what it means depending on its own state is
+   * a control nobody can predict.
+   *
+   * So the two are two controls: the row is the door, the circle is the switch,
+   * and the circle says in its label which of the two it is doing.
+   */
+  trailingAction?: {
+    accessibilityLabel: string;
+    selected: boolean;
+    onPress: () => void;
+  };
   onPress: () => void;
 }
 
@@ -189,6 +228,7 @@ export function SheetOptions({ options }: { options: SheetOption[] }) {
  */
 function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean }) {
   const theme = useTheme();
+  const t = useTranslation();
 
   // Optional: an option without a description has nothing to describe.
   /*
@@ -211,6 +251,15 @@ function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean
       ? theme.colors.accent
       : theme.colors.text;
 
+  /**
+   * The second control, read once.
+   *
+   * A local and not `option.trailingAction` at each use, because the style is a
+   * callback that TypeScript will not narrow across: it checks the property on
+   * the way in and then cannot promise it is still there inside the closure.
+   */
+  const trailing = option.trailingAction;
+
   return (
     <View>
       {first ? null : (
@@ -223,7 +272,17 @@ function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={option.label}
+        /*
+          The state in words, and not only as `accessibilityState.selected`.
+          That attribute has no valid form on a button on the web — a button is
+          not an option, so there is no `aria-selected` for it and it is not
+          written at all — and what is left telling a chosen row from an
+          unchosen one is a tick, which is invisible to a screen reader and to
+          anybody who cannot separate the accent from the border.
+        */
+        accessibilityLabel={
+          option.selected ? `${option.label}, ${t("dashboard.pinned")}` : option.label
+        }
         disabled={option.disabled}
         onPress={option.onPress}
         style={({ pressed }) => [
@@ -249,6 +308,57 @@ function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean
             </AppText>
           ) : null}
         </View>
+        {option.selected ? (
+          <Ionicons name="checkmark" size={18} color={theme.colors.accent} />
+        ) : option.chevron ? (
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color={theme.colors.textSubtle}
+          />
+        ) : null}
+        {/*
+          The second control, when the row has two things to be.
+
+          Nested inside the row's own `Pressable` on purpose: the circle is the
+          switch and the rest of the row is the door, and a finger on the circle
+          has to reach the circle and not the row behind it. The circle is bigger
+          than the glyph inside it, because it is a target and not an icon, and it
+          stops its own press from also opening the folder.
+        */}
+        {trailing ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={trailing.accessibilityLabel}
+            hitSlop={8}
+            onPress={(event) => {
+              event.stopPropagation();
+              trailing.onPress();
+            }}
+            style={({ pressed }) => [
+              styles.trailing,
+              {
+                borderColor: trailing.selected
+                  ? theme.colors.accent
+                  : theme.colors.border,
+                backgroundColor: trailing.selected
+                  ? theme.colors.accent
+                  : "transparent",
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Ionicons
+              name="checkmark"
+              size={12}
+              color={
+                trailing.selected
+                  ? theme.colors.onAccent
+                  : theme.colors.textSubtle
+              }
+            />
+          </Pressable>
+        ) : null}
       </Pressable>
     </View>
   );
@@ -324,6 +434,14 @@ const styles = StyleSheet.create({
   },
   optionText: {
     flex: 1,
+  },
+  trailing: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
   },
   separator: {
     height: 1,

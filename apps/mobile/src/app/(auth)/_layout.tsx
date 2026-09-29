@@ -15,7 +15,7 @@ export default function AuthLayout() {
   // particular sets the session without navigating anywhere, so without this it
   // looked like the login had done nothing.
   if (status === 'loading') return null;
-  if (status === 'authenticated') return <Redirect href="/(app)/(tabs)" />;
+  if (status === 'authenticated') return <Redirect href="/(app)" />;
 
   return (
     <Stack

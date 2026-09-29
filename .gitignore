@@ -54,6 +54,10 @@ coverage/
 .nyc_output/
 test-results/
 playwright-report/
+# Artefactos del navegador de pruebas: capturas, trazas y ficheros subidos para
+# comprobar un flujo a mano.
+.playwright-mcp/
+verify/
 
 # Local databases and dumps
 .data/

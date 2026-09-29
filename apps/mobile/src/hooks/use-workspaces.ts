@@ -1,6 +1,8 @@
 import type { Folder, Workspace } from "@orbit-hub/contracts";
 
 import { DEFAULT_WORKSPACE_COLOR } from "@/lib/workspace/color";
+import { DEFAULT_WASH } from "@/lib/workspace/wash";
+import type { WorkspaceWash } from "@orbit-hub/contracts";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -59,7 +61,19 @@ export function useWorkspaces() {
   const updateWorkspace = useCallback(
     async (
       workspace: Workspace,
-      changes: { name?: string; description?: string | null; color?: string },
+      // An explicit list and not `Partial<Workspace>`: a pick that says "here are
+      // the fields you may change on a space" is a sentence about what is
+      // writable, and `Partial` would quietly make `id` and `createdAt` writable
+      // too. It has to be widened when a field becomes writable, on purpose.
+      changes: {
+        name?: string;
+        description?: string | null;
+        color?: string;
+        /** The colour the wash ends in, or `null` to go back to deriving it. */
+        colorTo?: string | null;
+        /** Which of the two ways the colour is painted. */
+        wash?: WorkspaceWash;
+      },
     ) => {
       await localUpdate("workspace", workspace.id, changes);
       await load();
@@ -73,6 +87,8 @@ export function useWorkspaces() {
       emoji?: string;
       description?: string;
       color?: string;
+      colorTo?: string | null;
+      wash?: WorkspaceWash;
     }) => {
       const { randomUUID } = await import("expo-crypto");
       const id = randomUUID();
@@ -96,6 +112,14 @@ export function useWorkspaces() {
             // a space created without one would be a card with no colour to read
             // until somebody remembered to pick it.
             color: input.color ?? DEFAULT_WORKSPACE_COLOR,
+            // Null and not derived here: the app derives it, so there is one place
+            // that decides what "no second colour" looks like.
+            colorTo: input.colorTo ?? null,
+            // And the way it is painted, for the same reason: a record written
+            // here without the field has no `wash` in it at all, and everything
+            // downstream has to cope with `undefined` forever after. It is
+            // written so the cache is a complete row from the first frame.
+            wash: input.wash ?? DEFAULT_WASH,
             version: 0,
             createdAt: now,
             updatedAt: now,
@@ -173,6 +197,43 @@ export function useWorkspaces() {
     updateWorkspace,
     deleteWorkspace,
   };
+}
+
+/**
+ * The folders of every space, in one list.
+ *
+ * The panel is the one screen that is not inside a space, so it cannot ask "the
+ * folders of *this* space" the way every other screen does — it needs all of them
+ * to show the folders a person has pinned. One hook that takes the list of spaces
+ * and reads them all, rather than a hook per space: hooks cannot be called in a
+ * loop, and a panel that only ever offered the folders of whichever space
+ * happened to be first would be a panel where a folder you cannot see is a folder
+ * you cannot pin.
+ */
+export function useAllFolders(workspaceIds: string[]): Folder[] {
+  const [folders, setFolders] = useState<Folder[]>([]);
+  // The ids as one string, so the effect below does not re-run every render on an
+  // array the caller built fresh, and so two calls with the same spaces in a
+  // different order are the same effect.
+  const key = workspaceIds.join(",");
+
+  const load = useCallback(async () => {
+    const ids = key.length === 0 ? [] : key.split(",");
+    const found: Folder[] = [];
+    for (const id of ids) {
+      found.push(...(await readCachedFolders(id)));
+    }
+    setFolders(found);
+  }, [key]);
+
+  useEffect(() => {
+    void load();
+    return subscribeToLocalStore(() => {
+      void load();
+    });
+  }, [load]);
+
+  return folders;
 }
 
 export function useFolders(workspaceId: string | undefined) {

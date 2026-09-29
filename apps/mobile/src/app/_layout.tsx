@@ -72,7 +72,20 @@ function Navigation() {
           animation: 'fade',
         }}
       >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
+        {/*
+          No screen for `/` of its own any more.
+
+          There was an `app/index.tsx` whose whole job was to look at the session
+          and send you to the panel or to the welcome, and the panel is now
+          `app/(app)/index.tsx` — so that file and this one both wanted the root
+          path, and two routes for `/` is one of them silently losing.
+
+          The decision did not go away with the file: the layout above already
+          refuses to draw anything for somebody who is not signed in and sends
+          them to the welcome, and it holds still while the session is being
+          restored, so the flash of the wrong stack the old entry route existed to
+          prevent is already prevented — by the guard, which has to run anyway.
+        */}
         <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(app)" options={{ headerShown: false }} />

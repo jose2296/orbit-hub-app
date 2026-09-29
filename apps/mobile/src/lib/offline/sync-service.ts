@@ -9,6 +9,7 @@ import type {
   SyncPullResponse,
   Workspace,
 } from "@orbit-hub/contracts";
+import { coalescePendingOperations, foldIntoCreate } from './coalesce';
 import { SYNC_DEFAULTS } from "@orbit-hub/config";
 
 import { api, toApiError } from "@/lib/api";
@@ -86,6 +87,26 @@ export async function enqueueOperation(input: EnqueueInput): Promise<string> {
     lastAttemptAt: null,
     lastError: null,
   };
+
+  // An edit to a row whose create has not gone out yet goes *into* that create
+  // instead of becoming a second operation.
+  //
+  // The two are almost never in the same batch: the create leaves about a second
+  // and a half after it is written, and the first keystroke after that is an
+  // update in a later flush. Sent separately, the update carries `baseVersion: 0`
+  // because the cache has not seen the answer, the server has the row at 1, and a
+  // document nobody else touched comes back as a conflict. Found by running the
+  // app: every test passed, because every test either created through the API or
+  // waited for the create to be acknowledged first.
+  if (input.kind !== 'create') {
+    const pending = await store.listPending(SYNC_DEFAULTS.batchSize);
+    const folded = foldIntoCreate(pending, record);
+    if (folded) {
+      await store.remove(folded.operationId);
+      await store.enqueue({ ...folded, operationId: folded.operationId });
+      return folded.operationId;
+    }
+  }
 
   await store.enqueue(record);
   return operationId;
@@ -175,10 +196,54 @@ function toConflict(
  * Pushes queued operations. Operations are idempotent (`operationId`), so a
  * retry after a network drop is safe.
  */
+/**
+ * Writes the version the server answered with back into the cached row.
+ *
+ * A cache that does not know what the server already has makes every later edit
+ * look like a stale one. That is invisible until something is created and then
+ * edited, which is what a note is.
+ */
+async function adoptServerVersion(
+  store: Awaited<ReturnType<typeof getLocalStoreReady>>,
+  record: PendingOperationRecord,
+  version: number,
+): Promise<void> {
+  const cached = await store.getCached(record.entity, record.entityId);
+  if (!cached || cached.deletedAt) return;
+
+  const payload = safeParse(cached.payload);
+  payload["version"] = version;
+
+  await store.upsertCached([
+    {
+      entity: cached.entity,
+      entityId: cached.entityId,
+      version,
+      updatedAt: new Date().toISOString(),
+      deletedAt: cached.deletedAt,
+      payload: JSON.stringify(payload),
+      pending: null,
+    },
+  ]);
+}
+
+function safeParse(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function flushOutbox(): Promise<FlushResult> {
   const store = await getLocalStoreReady();
   const pending = await store.listPending(SYNC_DEFAULTS.batchSize);
   const clientId = await store.getClientId();
+  const { operations, folded } = coalescePendingOperations(pending);
 
   const result: FlushResult = {
     attempted: pending.length,
@@ -204,7 +269,7 @@ export async function flushOutbox(): Promise<FlushResult> {
     }>("/sync/push", {
       deviceId: clientId,
       lastPulledAt: null,
-      operations: pending.map(toOperation),
+      operations: operations.map(toOperation),
     });
 
     for (const outcome of response.results) {
@@ -215,12 +280,21 @@ export async function flushOutbox(): Promise<FlushResult> {
 
       switch (outcome.status) {
         case "applied":
-          await store.remove(record.operationId);
-          result.applied += 1;
-          break;
         case "duplicate":
           await store.remove(record.operationId);
-          result.duplicates += 1;
+          if (outcome.status === "duplicate") result.duplicates += 1;
+          else result.applied += 1;
+          // The version the server now holds, written back into the cache.
+          //
+          // Without this the cached row keeps the version it had when it was
+          // written locally — 0 for a row just created — so the next edit is sent
+          // with `baseVersion: 0` while the server is at 1, and a note that was
+          // created and typed into in one breath comes back as a conflict. The
+          // operation is gone from the outbox but its answer is nowhere, which is
+          // the same class of bug as an operation that is never sent.
+          if (outcome.version !== null) {
+            await adoptServerVersion(store, record, outcome.version);
+          }
           break;
         case "conflict":
           await store.saveConflict(
@@ -238,6 +312,14 @@ export async function flushOutbox(): Promise<FlushResult> {
           result.failed += 1;
           break;
       }
+    }
+
+    // The operations that were folded into a create are finished either way. Their
+    // values went out inside it, so replaying them would send the same edit again
+    // against a version the client does not know about — which is the conflict
+    // this folding exists to prevent, caused a second time by the fix.
+    for (const id of folded) {
+      await store.remove(id);
     }
   } catch (error) {
     const apiError = toApiError(error);

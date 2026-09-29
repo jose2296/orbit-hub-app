@@ -3,9 +3,11 @@ import type {
   ListItem,
   ListKind,
   ListOrderMode,
+  Note,
   Priority,
   SearchResult,
 } from "@orbit-hub/contracts";
+import { notePreviewBelowTitle } from "@orbit-hub/contracts";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -247,7 +249,7 @@ export function useLists(filters: ListFilters = {}) {
               ...(item.priority !== "none" ? { priority: item.priority } : {}),
               ...(item.externalId ? { externalId: item.externalId } : {}),
               ...(item.metadata ? { metadata: item.metadata } : {}),
-              ...(item.notes ? { notes: item.notes } : {}),
+              ...(item.annotation ? { annotation: item.annotation } : {}),
             },
           })),
         );
@@ -398,7 +400,7 @@ export function useListItems(listId: string | undefined) {
       externalId?: string | null;
       metadata?: Record<string, unknown> | null;
       /** The rest of what the item panel offers, when it created the row. */
-      notes?: string | null;
+      annotation?: string | null;
       icon?: ListItem["icon"];
       iconStyle?: ListItem["iconStyle"];
       iconColor?: ListItem["iconColor"];
@@ -424,7 +426,7 @@ export function useListItems(listId: string | undefined) {
         createdAt: now,
         updatedAt: now,
         priority: input.priority,
-        notes: input.notes ?? null,
+        annotation: input.annotation ?? null,
         icon: input.icon ?? null,
         iconStyle: input.iconStyle,
         iconColor: input.iconColor,
@@ -458,7 +460,7 @@ export function useListItems(listId: string | undefined) {
           ...(input.icon ? { icon: input.icon } : {}),
           ...(input.iconStyle ? { iconStyle: input.iconStyle } : {}),
           ...(input.iconColor ? { iconColor: input.iconColor } : {}),
-          ...(input.notes ? { notes: input.notes } : {}),
+          ...(input.annotation ? { annotation: input.annotation } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
           // The provider id travels with the item so the same title is
           // recognisable later, and so a future import can tell them apart.
@@ -570,7 +572,7 @@ export function useListItems(listId: string | undefined) {
         tags?: string[];
         /** The name, the description and how urgent it is. */
         title?: string;
-        notes?: string | null;
+        annotation?: string | null;
         priority?: Priority;
       },
     ) => {
@@ -743,11 +745,12 @@ export function useLocalSearch() {
 
     setIsSearching(true);
     const store = await getLocalStoreReady();
-    const [workspaces, folders, lists, items] = await Promise.all([
+    const [workspaces, folders, lists, items, notes] = await Promise.all([
       store.listCached("workspace"),
       store.listCached("folder"),
       store.listCached("list"),
       store.listCached("list_item"),
+      store.listCached("note"),
     ]);
 
     const workspacesById = new Map(
@@ -842,6 +845,34 @@ export function useLocalSearch() {
       });
     }
 
+    for (const row of notes) {
+      const record = readRecord<Note>(row);
+      if (record.deletedAt !== null) continue;
+      // The body as well as the title, because a note is searched by what is
+      // written inside it. `plain_text` is what the server derived, and a cached
+      // note that has never been pushed has it derived locally, so both are here.
+      const inTitle = record.title.toLowerCase().includes(query);
+      const inBody = record.plainText.toLowerCase().includes(query);
+      if (!inTitle && !inBody) continue;
+
+      found.push({
+        scope: "note",
+        id: record.id,
+        workspaceId: record.workspaceId,
+        // A note is not in a list, so there is nothing to point at. Null and not
+        // the note's own id, which would make the app try to open a list that
+        // does not exist.
+        listId: null,
+        kind: null,
+        title: record.title,
+        subtitle: notePreviewBelowTitle(record.document, record.title) || null,
+        // A note is not a row, so there is nothing to tick. Null and not false,
+        // because false would draw an empty checkbox next to a document.
+        completed: null,
+        updatedAt: record.updatedAt,
+      });
+    }
+
     found.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     setResults(found.slice(0, 50));
     setIsSearching(false);
@@ -855,6 +886,7 @@ export function useLocalSearch() {
       lists: results.filter((item) => item.scope === "list"),
       items: results.filter((item) => item.scope === "list_item"),
       folders: results.filter((item) => item.scope === "folder"),
+      notes: results.filter((item) => item.scope === "note"),
     };
   }, [results]);
 

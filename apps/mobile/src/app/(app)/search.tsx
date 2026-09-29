@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { DrawerButton } from '@/components/layout/drawer';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -20,6 +19,7 @@ const SCOPE_ICON: Record<SearchResult['scope'], keyof typeof Ionicons.glyphMap> 
   folder: 'folder-outline',
   list: 'list-outline',
   list_item: 'document-text-outline',
+  note: 'document-text-outline',
 };
 
 /**
@@ -51,6 +51,12 @@ export default function SearchScreen() {
       router.push(`/(app)/list/${result.listId ?? result.id}`);
       return;
     }
+    if (result.scope === 'note') {
+      // Straight to the note. A hit you cannot open is a search that found
+      // something it will not show you.
+      router.push(`/(app)/note/${result.id}`);
+      return;
+    }
     if (result.workspaceId) {
       router.push(`/(app)/workspace/${result.workspaceId}`);
     }
@@ -59,10 +65,9 @@ export default function SearchScreen() {
   return (
     <Screen>
       <View style={{ gap: theme.spacing.xs }}>
-        <View style={styles.header}>
-          <DrawerButton />
-          <AppText variant="title">{t('tabs.search')}</AppText>
-        </View>
+        {/* No header of its own: the title and the menu button come from the
+            header the layout above owns, which is the same one every other
+            screen uses. */}
         <TextField
           value={query}
           onChangeText={onChange}
@@ -98,6 +103,7 @@ export default function SearchScreen() {
               ['workspaces', t('search.group.workspaces')],
               ['lists', t('search.group.lists')],
               ['items', t('search.group.items')],
+              ['notes', t('search.group.notes')],
             ] as const
           ).map(([group, label]) => {
             const hits = grouped[group];
@@ -172,11 +178,6 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
 
   row: {
     flexDirection: 'row',

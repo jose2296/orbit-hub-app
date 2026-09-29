@@ -45,7 +45,7 @@ export interface ItemEditSheetProps {
 /** What a row being written looks like before it exists. */
 interface Draft {
   title: string;
-  notes: string | null;
+  annotation: string | null;
   priority: Priority;
   icon: ListItem["icon"];
   iconStyle: ListItem["iconStyle"];
@@ -55,7 +55,7 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = {
   title: "",
-  notes: null,
+  annotation: null,
   priority: "none",
   icon: null,
   iconStyle: "outline",
@@ -97,7 +97,7 @@ export function ItemEditSheet({
   const isNew = mode === "create";
   const [page, setPage] = useState<Page>(startOn);
   const [title, setTitle] = useState(item?.title ?? "");
-  const [notes, setNotes] = useState(item?.notes ?? "");
+  const [annotation, setAnnotation] = useState(item?.annotation ?? "");
   const [newTag, setNewTag] = useState("");
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
@@ -107,7 +107,7 @@ export function ItemEditSheet({
     if (item) {
       setPage(startOn);
       setTitle(item.title);
-      setNotes(item.notes ?? "");
+      setAnnotation(item.annotation ?? "");
       setNewTag("");
     }
   }, [item, startOn]);
@@ -117,7 +117,7 @@ export function ItemEditSheet({
     if (isNew) {
       setPage("edit");
       setTitle("");
-      setNotes("");
+      setAnnotation("");
       setNewTag("");
       setDraft(EMPTY_DRAFT);
     }
@@ -125,10 +125,10 @@ export function ItemEditSheet({
 
   /** What the panel is showing, whether the row exists yet or not. */
   const shown: Draft = isNew
-    ? { ...draft, title, notes: notes || null }
+    ? { ...draft, title, annotation: annotation || null }
     : {
         title: item?.title ?? "",
-        notes: item?.notes ?? null,
+        annotation: item?.annotation ?? null,
         priority: item?.priority ?? "none",
         icon: item?.icon ?? null,
         iconStyle: item?.iconStyle ?? "outline",
@@ -179,12 +179,12 @@ export function ItemEditSheet({
   };
 
   const saveNotes = () => {
-    const trimmed = notes.trim();
+    const trimmed = annotation.trim();
     if (isNew) {
-      setDraft((current) => ({ ...current, notes: trimmed || null }));
+      setDraft((current) => ({ ...current, annotation: trimmed || null }));
       return;
     }
-    if (trimmed !== (item!.notes ?? "")) save({ notes: trimmed || null });
+    if (trimmed !== (item!.annotation ?? "")) save({ annotation: trimmed || null });
   };
 
   const addTag = () => {
@@ -213,7 +213,7 @@ export function ItemEditSheet({
     if (!trimmed) return;
     await addItem({
       title: trimmed,
-      notes: notes.trim() || null,
+      annotation: annotation.trim() || null,
       priority: draft.priority,
       icon: draft.icon,
       iconStyle: draft.iconStyle,
@@ -270,8 +270,8 @@ export function ItemEditSheet({
 
             <TextField
               label={t("itemEdit.description")}
-              value={notes}
-              onChangeText={setNotes}
+              value={annotation}
+              onChangeText={setAnnotation}
               onBlur={saveNotes}
               placeholder={t("itemEdit.descriptionPlaceholder")}
               multiline

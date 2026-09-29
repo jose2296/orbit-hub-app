@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { usePathname, useRouter } from "expo-router";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -28,24 +29,47 @@ import type {
 } from "@orbit-hub/contracts";
 
 import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
+import { SyncBadge } from "@/components/sync/sync-badge";
+import { SyncRow } from "@/components/sync/sync-row";
 import { useA11yHint } from "@/components/ui/a11y-hint";
+import { expandedProps, selectedProps } from "@/components/ui/a11y-state";
 import { AppText } from "@/components/ui/text";
+import { SpaceDot } from "@/components/ui/wash";
 import { useListItems } from "@/hooks/use-lists";
+import { useSession } from "@/hooks/use-session";
 import { useShares } from "@/hooks/use-shares";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
-import { useSyncStatus } from "@/hooks/use-sync-status";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { pluralKey, useTranslation } from "@/lib/i18n";
-import { colorOf } from "@/lib/workspace/color";
+import { drawerWidth } from "@/lib/layout/measure";
 import { useTheme } from "@/theme";
 
 import type { SpacesTree } from "@/hooks/use-spaces-tree";
 
+/**
+ * The three destinations, with **two** addresses each.
+ *
+ * `route` is where pressing it goes, and it is a router href: it says which
+ * screen, groups included. `path` is what the browser's address bar shows, and it
+ * is what `usePathname` hands back.
+ *
+ * They are not the same string, and comparing one against the other is how the
+ * row for the panel stopped saying where you are: the href for the index screen
+ * of a group is `/(app)`, the path is `/`, and `"/" === "/(app)"` is false. The
+ * row was never marked while you were on it and there was no way to tell whether
+ * that was intended. Two fields, compared to the right one.
+ */
 const DESTINATIONS = [
-  { route: "/(app)/(tabs)", icon: "home", labelKey: "tabs.home" },
-  { route: "/(app)/(tabs)/search", icon: "search", labelKey: "tabs.search" },
+  { route: "/(app)", path: "/", icon: "home", labelKey: "tabs.home" },
   {
-    route: "/(app)/(tabs)/settings",
+    route: "/(app)/search",
+    path: "/search",
+    icon: "search",
+    labelKey: "tabs.search",
+  },
+  {
+    route: "/(app)/settings",
+    path: "/settings",
     icon: "settings",
     labelKey: "tabs.settings",
   },
@@ -63,19 +87,28 @@ const LIST_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 const ITEMS_SHOWN = 12;
 
 /**
- * The menu of the left, and on a phone it *pushes* the app instead of covering
- * it.
+ * The menu of the left, and what it does to the app beside it.
  *
- * A push and not a curtain: the menu comes in from the left and the screen
- * moves to the right, so the app you were looking at is still there, still lit,
- * and one tap away. A drawer that covers what you opened it to see is a drawer
- * you have to close again before you learn anything, and a curtain over a screen
- * you are in a hurry to leave is one more thing between you and the thing you
- * came for.
+ * **One component and two placements, not two menus.** A phone and a wide screen
+ * show the same rows in the same order because they are the same panel,
+ * `DrawerPanel`, in the same order. A menu that lists a space on a phone and also
+ * lists its folders on a laptop is a menu you have to learn twice, and it is a
+ * menu that silently stops being the navigation on whichever screen somebody
+ * forgets — which is how every folder, list and item ended up reachable only on
+ * a phone, the one place you cannot have a sidebar.
  *
- * That also means the menu is not a modal. It is part of the app, always
- * mounted, sliding — so it is there in a frame when you tap the button instead
- * of appearing out of nothing, and a screen reader is in it before you ask.
+ * **The difference is only what happens to the app next to it.** On a phone the
+ * menu *pushes*: it comes in from the left and the screen moves to the right, so
+ * the app you were looking at is still there, still lit, and one tap away. A
+ * drawer that covers what you opened it to see is a drawer you have to close
+ * again before you learn anything, and a curtain over a screen you are in a hurry
+ * to leave is one more thing between you and the thing you came for. On a wide
+ * screen there is room for both, so nothing moves and the app takes what the
+ * column is not using.
+ *
+ * That also means the menu is not a modal. It is part of the app, always mounted,
+ * sliding — so it is there in a frame when you tap the button instead of appearing
+ * out of nothing, and a screen reader is in it before you ask.
  *
  * It is a file tree: a space, its folders inside folders as deep as they go, the
  * lists in the folder they are in, and the items in their list. A menu that
@@ -83,30 +116,26 @@ const ITEMS_SHOWN = 12;
  * other one: four taps to reach a film that is in the second folder of the
  * second list.
  */
-export function Drawer({ children }: { children: React.ReactNode }) {
+export function Drawer({
+  wide,
+  children,
+}: {
+  /** Whether there is room to leave the app where it is instead of pushing it. */
+  wide: boolean;
+  children: React.ReactNode;
+}) {
   const t = useTranslation();
   const { width } = useWindowDimensions();
   const { open, setOpen } = useDrawer();
-  // Empuja siempre. Se midio que en un movil deja 146 px de app y que ahi los
-  // nombres de los items no caben, y la respuesta fue que se quiere el empuje de
-  // todos modos: se cambia entonces lo que se rompe, que es la fila al estrecharse
-  // (ver `degrada`), y no el empuje.
-  const push = true;
   const closeLabel = t("drawer.closeByTapping");
 
-  // Two thirds, and medido: con tres cuartos la app se quedaba en 110 px de un
-  // movil de 430, y en 90 de uno de 360. Una franja de 110 px no reconoce la
-  // pantalla que interrumpes, y las filas se salen de ella.
+  // One width for both placements, so the row you aim at on a phone is the same
+  // row on a laptop. Two menus that are nearly the same are two menus: the
+  // indentation of the tree stops lining up with the edge of the column and the
+  // column is a few pixels somewhere else than the muscle memory says.
   //
-  // Que aun asi no haya una respuesta buena aqui: en un movil de 430, un menu de
-  // 284 deja 146 de app, y 146 tampoco se lee. O el menu tapa, o la app se
-  // estrecha de mas, y las dos son故答案为. En un movil el menu deberia tapar y
-  // empujar solo en pantallas anchas, que es lo de la app vieja; esto es el
-  // compromiso hasta que se decida, y esta medido para que se pueda decidir con
-  // numeros y no de memoria.
-  // Covering: the menu takes most of the screen because there is nothing to see
-  // behind it. Pushing: a strip, so the screen you interrupted is still a screen.
-  const drawerWidth = Math.min(288, Math.round(width * 0.66));
+  // The numbers behind the fraction are in `drawerWidth`, in `lib/layout/measure`.
+  const menuWidth = drawerWidth(width);
   const progress = useRef(new Animated.Value(open ? 1 : 0)).current;
 
   useEffect(() => {
@@ -123,66 +152,103 @@ export function Drawer({ children }: { children: React.ReactNode }) {
     }).start();
   }, [open, progress]);
 
-  // When the menu covers, the column it would push with is always zero: the app
-  // is never narrowed, and what moves is the menu itself over the top of it.
-  const columnWidth = push
-    ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, drawerWidth] })
-    : 0;
+  // The same column either way: it grows from nothing to the width of the menu.
+  // What sits next to it is the only thing that decides what that means.
+  const columnWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, menuWidth],
+  });
 
   return (
     <View style={styles.root}>
       {/*
-        The menu takes the space it needs and the app takes the rest, in a row.
-        So the app really is pushed: it is narrower and to the right, and every
-        pixel of it is still on the screen.
+        The menu takes the space it needs and the app takes the rest, in a row, so
+        on a phone the app really is pushed: it is narrower and to the right, and
+        every pixel of it is still on the screen.
 
-        Sliding the app sideways instead — a transform — was the obvious thing
-        and it is wrong twice over: the app goes off the right edge, and it ends
-        up *over* the menu, so the last thing in the menu, the arrow that opens
-        a space, ends up under the screen you were reading.
+        Sliding the app sideways instead — a transform — was the obvious thing and
+        it is wrong twice over: the app goes off the right edge, and it ends up
+        *over* the menu, so the last thing in the menu, the arrow that opens a
+        space, ends up under the screen you were reading.
       */}
       <Animated.View style={[styles.column, { width: columnWidth }]}>
         {/* A fixed width inside, so the lines of the menu do not re-wrap sixty
             times while the column grows. */}
-        <View style={[styles.columnInner, { width: drawerWidth }]}>
-          <DrawerPanel onNavigate={() => setOpen(false)} />
+        <View style={[styles.columnInner, { width: menuWidth }]}>
+          {/*
+            Navigating closes the menu on a phone and not on a wide screen, and
+            that is the whole difference between a panel and a column.
+
+            On a phone you opened the menu, you tapped where you wanted to go, and
+            the menu is in the way of the thing you asked for. On a wide screen
+            the column is not in the way of anything: it is beside the app, the
+            app is still there, and closing it means that going from one folder
+            to another — or from one space to another and back — takes two clicks
+            every time, because the first one takes the navigation away. A sidebar
+            that closes when you use it is not a sidebar.
+          */}
+          <DrawerPanel onNavigate={wide ? undefined : () => setOpen(false)} />
         </View>
       </Animated.View>
 
-      {/*
-        `minWidth: 0` y no es un detalle. Un hijo de un `flex` no baja de su
-        contenido por defecto, y con el menu abierto la app se negaba a
-        estrecharse: las filas seguian midiendo 366 px dentro de una columna de
-        284, y lo que se veia era una franja de 146 px de una pantalla entera.
-        Eso es lo de "se queda todo en una linea fea", y no era un problema de
-        ancho del menu.
-      */}
-      <View
+      <Animated.View
         testID="drawer-app"
         style={[
-          styles.app,
-          {
-            // Su propio ancho, siempre, y no el que le sobra: al empujar, la app
-            // se desplaza y su derecha se sale de la pantalla. Estrecharla es lo
-            // que hacia que todo dentro se reordenara para caber en un trozo —la
-            // fila apilada, la cabecera partida— y una app cortada se lee mejor
-            // que una app encogida.
-            width,
-            transform: [
-              {
-                translateX: progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, drawerWidth],
-                }),
+          wide
+            ? // What is left over, and nothing moves: on a wide screen the menu is
+              // a column *beside* the app, so collapsing it hands the space back
+              // rather than sliding the app off the right edge. The app is not
+              // given a hard width here, and that is the point: see `app` for why
+              // the opposite is what a push needs.
+              styles.appWide
+            : {
+                // Su propio ancho, siempre, y no el que le sobra: al empujar, la
+                // app se desplaza y su derecha se sale de la pantalla.
+                // Estrecharla es lo que hacia que todo dentro se reordenara para
+                // caber en un trozo —la fila apilada, la cabecera partida— y
+                // una app cortada se lee mejor que una app encogida.
+                //
+                // `minWidth: 0` y no es un detalle. Un hijo de un `flex` no baja
+                // de su contenido por defecto, y con el menu abierto la app se
+                // negaba a estrecharse: las filas seguian midiendo 366 px dentro
+                // de una columna de 284, y lo que se veia era una franja de 146
+                // px de una pantalla entera. Eso es lo de "se queda todo en una
+                // linea fea", y no era un problema de ancho del menu.
+                ...styles.app,
+                width,
+                // This is an `Animated.View` and not a `View`, and that is the
+                // whole fix for the crash this used to be. `progress.interpolate`
+                // hands back an animated node, not a number, and a plain `View`
+                // passes style straight to the native layer, which reads the node
+                // as a transform value and refuses it:
+                // `Transform with key of "translateX" must be number or a
+                // percentage. Passed value: {"translateX":0}`. The object in the
+                // message is the animated node itself. Only `Animated.View`
+                // resolves the node to the number the transform needs, and the
+                // app is unwrappable on a phone — this screen is where the whole
+                // app lives.
+                transform: [
+                  {
+                    translateX: progress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, menuWidth],
+                    }),
+                  },
+                ],
               },
-            ],
-          },
         ]}
       >
         {children}
         {/* It is there to be pressed and not to be seen: closing by tapping the
-            screen you interrupted, which is what a push means. */}
-        {open ? (
+            screen you interrupted, which is what a push means.
+
+            Nothing on a wide screen. The menu is beside the app there, not over
+            it, so a curtain would be a layer of nothing on top of content that
+            is already fully visible — and a transparent `Pressable` over it
+            eats every tap under it, which is a worse bug than the one this
+            would be fixing. The hamburger is the way out, and it is on every
+            screen. */}
+        {open && !wide ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={closeLabel}
@@ -190,12 +256,26 @@ export function Drawer({ children }: { children: React.ReactNode }) {
             style={styles.scrim}
           />
         ) : null}
-      </View>
+      </Animated.View>
     </View>
   );
 }
 
-/** The panel's contents. The same ones the wide screen shows in its column. */
+/**
+ * The contents of the menu. All of it, and it is the same contents everywhere.
+ *
+ * This is the panel on a phone and the column on a wide screen, one component
+ * and not two that were meant to match. It used to be two: a phone got the file
+ * tree, and a desktop got a flat list of the spaces with their dots, which meant
+ * that every folder, every list and every item was reachable only on the one
+ * screen where you cannot have a sidebar — and the two of them drifted, because
+ * two lists of rows that are supposed to look alike are two lists to keep in step.
+ *
+ * It also carries its own surface and its own right-hand edge, for the same
+ * reason. A column that is transparent over the app is a column you cannot read
+ * where the two surfaces happen to be the same colour, and the hairline is what
+ * says "this is a separate thing" without a shadow.
+ */
 export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
   const theme = useTheme();
   const t = useTranslation();
@@ -203,7 +283,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { workspaces } = useWorkspaces();
-  const { status } = useSyncStatus();
+  const { status } = useSession();
   const tree = useSpacesTree();
 
   // What has been shared with this person and not filed yet. The section is in
@@ -213,9 +293,17 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
   const { inbox, load: reloadInbox } = useShares();
   const [colocando, setColocando] = useState<Share | null>(null);
 
+  // Asked only once there is a session to ask with.
+  //
+  // The menu is mounted from the first frame, including the frames where the
+  // session is still being restored, and the inbox is a network call that needs a
+  // token. Asking before the token exists is a 401 on every drawer open, forever,
+  // and it was the only thing the browser console had to say when this screen was
+  // verified for the first time.
   useEffect(() => {
+    if (status !== "authenticated") return;
     void reloadInbox();
-  }, [reloadInbox]);
+  }, [reloadInbox, status]);
 
   const go = (href: string) => {
     onNavigate?.();
@@ -225,11 +313,15 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <View
       testID="drawer-panel"
-      style={{
-        flex: 1,
-        paddingTop: insets.top + 8,
-        paddingBottom: insets.bottom + 8,
-      }}
+      style={[
+        styles.panel,
+        {
+          backgroundColor: theme.colors.tabBar,
+          borderRightColor: theme.colors.border,
+          paddingTop: insets.top + 8,
+          paddingBottom: insets.bottom + 8,
+        },
+      ]}
     >
       <View style={[styles.top, { padding: theme.spacing.md }]}>
         <View style={{ gap: 2, flex: 1 }}>
@@ -248,13 +340,13 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
         showsVerticalScrollIndicator={false}
       >
         {DESTINATIONS.map((destination) => {
-          const focused = pathname === destination.route;
+          const focused = pathname === destination.path;
           const tint = focused ? theme.colors.accent : theme.colors.textMuted;
           return (
             <Pressable
               key={destination.route}
               accessibilityRole="button"
-              accessibilityState={{ selected: focused }}
+              {...selectedProps(focused)}
               accessibilityLabel={t(destination.labelKey)}
               onPress={() => go(destination.route)}
               style={({ pressed }) => [
@@ -282,6 +374,20 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
             </Pressable>
           );
         })}
+
+        <View style={[styles.rule, { backgroundColor: theme.colors.border }]} />
+
+        {/*
+          The sync centre goes here, above the spaces, and it used to be at the
+          bottom of the list of spaces.
+
+          Below the spaces it was invisible: a drawer with three or four of them
+          is taller than the screen, and the row that the dot on the menu button
+          is pointing at was the one thing you had to scroll to find. A control
+          that an alert sends you to has to be where the alert sends you, and not
+          at the end of a list whose length you do not control.
+        */}
+        <SyncRow onPress={() => go("/(app)/sync")} />
 
         <View style={[styles.rule, { backgroundColor: theme.colors.border }]} />
 
@@ -332,39 +438,6 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
           </AppText>
         </Pressable>
 
-        {status.pendingOperations > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t(
-              pluralKey("drawer.pending", status.pendingOperations),
-              { count: status.pendingOperations },
-            )}
-            onPress={() => go("/(app)/sync")}
-            style={({ pressed }) => [
-              styles.item,
-              {
-                borderRadius: theme.radius.md,
-                backgroundColor: pressed
-                  ? theme.colors.surfaceMuted
-                  : theme.colors.accentSoft,
-                marginTop: theme.spacing.xs,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.sm,
-              },
-            ]}
-          >
-            <Ionicons
-              name="cloud-upload-outline"
-              size={16}
-              color={theme.colors.accent}
-            />
-            <AppText variant="caption" style={{ color: theme.colors.accent }}>
-              {t(pluralKey("drawer.pending", status.pendingOperations), {
-                count: status.pendingOperations,
-              })}
-            </AppText>
-          </Pressable>
-        ) : null}
         {/*
           Only when there is something. An empty "compartido conmigo" heading with
           a sentence explaining that it is empty is a thing the menu spends two
@@ -506,7 +579,7 @@ function SpaceBranch({
       <View style={[styles.item, { gap: 2 }]}>
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ expanded: open }}
+          {...expandedProps(open)}
           accessibilityLabel={workspace.name}
           {...pista.props}
           onPress={() => onOpen(`/(app)/workspace/${workspace.id}`)}
@@ -525,8 +598,14 @@ function SpaceBranch({
             },
           ]}
         >
-          <View
-            style={[styles.dot, { backgroundColor: colorOf(workspace.color) }]}
+          {/* The dot is a small copy of the space, so it takes the chosen end
+              colour too: without it the menu paints a derived pair beside the
+              picker preview of the same space. */}
+          <SpaceDot
+            colorKey={workspace.color}
+            colorToKey={workspace.colorTo}
+            wash={workspace.wash}
+            size={14}
           />
           <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {workspace.name}
@@ -648,7 +727,7 @@ function FolderBranch({
       <View style={[styles.item, { gap: 2 }]}>
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ expanded: open }}
+          {...expandedProps(open)}
           accessibilityLabel={folder.name}
           {...pista.props}
           onPress={() =>
@@ -748,7 +827,7 @@ function ListBranch({
       <View style={[styles.item, { gap: 2 }]}>
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ expanded: open }}
+          {...expandedProps(open)}
           accessibilityLabel={list.title}
           {...pista.props}
           onPress={() => onOpen(`/(app)/list/${list.id}`)}
@@ -918,12 +997,12 @@ function BranchToggle({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ expanded: open }}
       accessibilityLabel={
         open
           ? t("drawer.hide", { name: what })
           : t("drawer.show", { name: what })
       }
+      {...expandedProps(open)}
       onPress={onPress}
       hitSlop={8}
       style={({ pressed }) => [styles.arrow, { opacity: pressed ? 0.6 : 1 }]}
@@ -950,15 +1029,53 @@ export { useSpacesTree } from "@/hooks/use-spaces-tree";
  * module-level `let` would also connect them and would also let one screen's
  * state leak into another, which only shows up when two things happen in the
  * wrong order.
+ *
+ * `wide` is passed in and not read from `window` here, so there is one answer to
+ * "is this a wide layout" in the app and not one per hook that needs it.
  */
 const DrawerContext = createContext<{
   open: boolean;
   setOpen: (value: boolean) => void;
-}>({ open: false, setOpen: () => undefined });
+  toggle: () => void;
+}>({ open: false, setOpen: () => undefined, toggle: () => undefined });
 
-export function DrawerProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const value = useMemo(() => ({ open, setOpen }), [open]);
+export function DrawerProvider({
+  wide,
+  children,
+}: {
+  /** Whether there is room for the column to be there in the first place. */
+  wide: boolean;
+  children: React.ReactNode;
+}) {
+  // Open on a wide screen, closed on a phone. The same flag for both, because the
+  // flag is "is the menu showing", and the two screens disagree about what the
+  // answer should be before anybody has asked.
+  const [open, setOpenState] = useState(wide);
+
+  // The breakpoint owns the state only while it is moving. Growing the window
+  // into a wide layout brings the column in, and shrinking it back out closes
+  // the menu, because a column that is suddenly 146 px of a phone screen is the
+  // push again and the push is supposed to start closed. In between, the person
+  // owns it: collapse the drawer and drag the window a few pixels, and it stays
+  // collapsed, because a panel that reopens itself while you are reading is a
+  // panel you cannot get rid of.
+  useEffect(() => {
+    setOpenState(wide);
+  }, [wide]);
+
+  const setOpen = useCallback((value: boolean) => {
+    setOpenState(value);
+  }, []);
+
+  const toggle = useCallback(() => {
+    setOpenState((value) => !value);
+  }, []);
+
+  const value = useMemo(
+    () => ({ open, setOpen, toggle }),
+    [open, setOpen, toggle],
+  );
+
   return (
     <DrawerContext.Provider value={value}>{children}</DrawerContext.Provider>
   );
@@ -969,27 +1086,43 @@ export function useDrawer() {
 }
 
 /**
- * The button that opens it.
+ * The button that opens and closes it.
  *
  * The same control in the five places it goes — a header on the right, or the
  * left of a screen's own title — so it is one component with one look and one
  * name, and a person recognises it everywhere they find it.
+ *
+ * It **toggles**, and it is the only way out of the menu on a wide screen. That
+ * is why the hamburger is in the header of the screens that are not the three
+ * destinations, and not only in those three: collapse the column and then walk
+ * into an item, and a button that only existed on the tabs is a menu you cannot
+ * open again from where you are standing.
+ *
+ * The glyph is the same either way, and that is deliberate. A hamburger that
+ * turns into an X is a hamburger you have to look at twice to know what it does,
+ * and the two states are also two things that a screen reader announces with two
+ * different names for a button that does the same thing. What changes is what it
+ * *says*: the label and the hint follow the state, and `expanded` is what tells a
+ * screen reader it is a disclosure rather than a plain button.
  */
 export function DrawerButton() {
   const theme = useTheme();
   const t = useTranslation();
-  const { setOpen } = useDrawer();
+  const { open, toggle } = useDrawer();
 
-  const pista = useA11yHint(t("drawer.openHint"));
+  const pista = useA11yHint(
+    open ? t("drawer.closeHint") : t("drawer.openHint"),
+  );
 
   return (
     <>
       <Pressable
         accessibilityRole="button"
         testID="drawer-button"
-        accessibilityLabel={t("drawer.open")}
+        accessibilityLabel={open ? t("drawer.close") : t("drawer.open")}
+        {...expandedProps(open)}
         {...pista.props}
-        onPress={() => setOpen(true)}
+        onPress={toggle}
         style={({ pressed }) => [
           styles.button,
           {
@@ -1001,6 +1134,15 @@ export function DrawerButton() {
         ]}
       >
         <Ionicons name="menu" size={22} color={theme.colors.text} />
+        {/*
+          The dot, and why it is on this button and not on a card in the middle
+          of the screen: the sync centre used to be one, and it said itself out
+          loud on every visit whether anything had happened or not. By the third
+          visit it was furniture. Here it only appears when there is genuinely
+          something the app cannot do by itself, and the menu is already the way
+          into everything else that needs looking at.
+        */}
+        <SyncBadge />
       </Pressable>
       {pista.node}
     </>
@@ -1028,21 +1170,28 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexBasis: 'auto',
   },
-  overMenu: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    zIndex: 20,
-    // Un fondo opaco, y no solo cuando va en su propia capa. Empujado no hacia
-    // falta: no habia nada detras. Tapado, sin el, se ven las dos pantallas a la
-    // vez encima y las dos se leen mal.
+  // The other half of `app`, for a wide screen where the app is not pushed: it
+  // takes the width the column is not using, and it changes it when the column
+  // is collapsed. `flexGrow: 1` with a `0` basis and no `flexShrink`, which is
+  // what the opposite rule above is undoing — there the app must keep its width
+  // and be allowed off the screen, and here there is no off the screen to be.
+  appWide: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
   },
   column: {
     overflow: "hidden",
   },
   columnInner: {
     flex: 1,
+  },
+  panel: {
+    flex: 1,
+    // The panel's own right-hand edge, so the column reads as a column and not as
+    // a tint over whatever happens to be behind it. The same hairline in both
+    // placements.
+    borderRightWidth: StyleSheet.hairlineWidth,
   },
   scrim: {
     ...StyleSheet.absoluteFill,
@@ -1067,11 +1216,6 @@ const styles = StyleSheet.create({
   branch: {
     paddingLeft: 14,
   },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
   tick: {
     width: 11,
     height: 11,
@@ -1087,6 +1231,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: -8,
+    // The dot is absolutely positioned inside this, and a button without a
+    // position is not a containing block for one: the dot would land on the
+    // screen's own corner instead of the button's.
+    position: "relative",
   },
   rule: {
     height: StyleSheet.hairlineWidth,

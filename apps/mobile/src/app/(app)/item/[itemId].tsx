@@ -160,9 +160,9 @@ export default function ItemDetailsScreen() {
               {item.tags.join(" · ")}
             </AppText>
           ) : null}
-          {item.notes ? (
+          {item.annotation ? (
             <AppText variant="body" tone="muted">
-              {item.notes}
+              {item.annotation}
             </AppText>
           ) : null}
         </Card>

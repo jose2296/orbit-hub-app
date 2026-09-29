@@ -21,7 +21,7 @@ export default function SignInScreen() {
   // Where to go once inside. An invitation link sends the person here signed
   // out, and landing them on the home screen would throw the link away.
   const { next } = useLocalSearchParams<{ next?: string }>();
-  const destination = typeof next === 'string' && next.startsWith('/') ? next : '/(app)/(tabs)';
+  const destination = typeof next === 'string' && next.startsWith('/') ? next : '/(app)';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

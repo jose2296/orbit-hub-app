@@ -23,6 +23,7 @@ import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
+import { SpaceWash } from "@/components/ui/wash";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenTitle } from "@/hooks/use-screen-title";
@@ -35,6 +36,7 @@ import {
 } from "@/lib/lists/item-presentation";
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
 import { providerRefOf } from "@/lib/lists/provider-ref";
+import { spacePaint } from "@/lib/workspace/color";
 import { useTheme } from "@/theme";
 import type { Crumb } from "@/components/ui/breadcrumbs";
 
@@ -77,6 +79,16 @@ export default function ListScreen() {
     () => folders.find((item) => item.id === list?.folderId) ?? null,
     [folders, list?.folderId],
   );
+
+  /**
+   * The text colours for the band, asked of the space rather than of the theme.
+   *
+   * Theme text on a space colour is dark on dark half the time, and this band is
+   * the one thing on the screen that says which space you are working in.
+   */
+  // The second colour as well, because it is a choice the person made and a
+  // band that leaves it out paints a pair the picker never showed them.
+  const onWash = spacePaint(workspace?.color, workspace?.wash, workspace?.colorTo);
   const {
     items,
     isLoading,
@@ -377,6 +389,13 @@ export default function ListScreen() {
         </View>
         {list ? (
           <View style={[styles.headerActions, { gap: theme.spacing.xs }]}>
+            {/*
+              Icon-only, and measured: on a 430-point phone the two labelled
+              buttons took 307 of the 398 points of the content column and the
+              title was left 63, with the first icon drawn on top of it. A
+              bookmark and three dots say what they do, and the labels stay in
+              the control for anyone who asks.
+            */}
             <Button
               label={
                 list.favorite ? t("lists.unfavorite") : t("lists.favorite")
@@ -384,6 +403,10 @@ export default function ListScreen() {
               variant="ghost"
               size="sm"
               icon={list.favorite ? "bookmark" : "bookmark-outline"}
+              iconOnly
+              accessibilityHint={
+                list.favorite ? t("lists.unfavoriteHint") : t("lists.favoriteHint")
+              }
               fullWidth={false}
               onPress={() => void toggleFavorite(list)}
             />
@@ -395,12 +418,52 @@ export default function ListScreen() {
               variant="ghost"
               size="sm"
               icon="ellipsis-horizontal"
+              iconOnly
+              accessibilityHint={t("lists.menuHint")}
               fullWidth={false}
               onPress={() => setMenuOpen(true)}
             />
           </View>
         ) : null}
       </View>
+
+      {/*
+        The band of the list, in the colour of the space it is in.
+
+        Every list screen used to be the same neutral header, which made two lists
+        of the same kind in two spaces indistinguishable until you read the
+        breadcrumbs. The colour is the one thing that tells you which space you
+        are working in before you read anything, and it is the same wash the card
+        of that list is painted with on the panel.
+      */}
+      {list ? (
+        <SpaceWash
+          colorKey={workspace?.color}
+          // The same pair the panel card is painted with, so the two pictures of
+          // this list on this screen are the one pair the person chose.
+          colorToKey={workspace?.colorTo}
+          wash={workspace?.wash}
+          radius={theme.radius.lg}
+          style={[styles.band, { padding: theme.spacing.lg, gap: 2 }]}
+        >
+          <AppText
+            variant="title"
+            numberOfLines={2}
+            style={{ color: onWash.foreground }}
+          >
+            {list.emoji ? `${list.emoji} ` : ""}
+            {list.title}
+          </AppText>
+          <AppText
+            variant="caption"
+            numberOfLines={1}
+            style={{ color: onWash.muted }}
+          >
+            {workspace?.name ?? ""}
+            {folder ? ` · ${folder.name}` : ""}
+          </AppText>
+        </SpaceWash>
+      ) : null}
 
       {items.length > 0 ? (
         <View style={styles.badges}>
@@ -792,10 +855,17 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
   },
+  band: {
+    width: "100%",
+  },
   header: {},
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
+    // And it does not shrink. Measured: with the two buttons free to shrink they
+    // took the title's space instead of their own, and the title went to three
+    // letters. The actions have a fixed size; the title is what gives way.
+    flexShrink: 0,
   },
   headerTop: {
     flexDirection: "row",
@@ -849,6 +919,10 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+    // A child of a `flex` does not go below its content by default, so the
+    // title column would have stayed as wide as the longest word in it and
+    // pushed the two actions off the right edge instead of making room.
+    minWidth: 0,
   },
   strike: {
     textDecorationLine: "line-through",

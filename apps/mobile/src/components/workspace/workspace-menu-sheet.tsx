@@ -53,12 +53,18 @@ export function WorkspaceMenuSheet({
   const [name, setName] = useState(workspace?.name ?? "");
 
   // Reopening always starts at the options, whatever page it was left on.
+  //
+  // Keyed on the **id**, not on the object. Changing the name or the colour of a
+  // space makes a new object with the same id, and watching the object meant that
+  // every keystroke and every colour you picked threw you back to the options —
+  // so the panel closed itself at the exact moment you were using it. The id is
+  // what says "this is a different space".
   useEffect(() => {
     if (workspace) {
       setPage("options");
       setName(workspace.name);
     }
-  }, [workspace]);
+  }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const listCount = lists.length;
   const folderCount = folders.length;
@@ -123,7 +129,14 @@ export function WorkspaceMenuSheet({
       onClose={onClose}
       title={workspace.name}
       subtitle={subtitle}
-      scrollable={false}
+      /*
+       * Scrollable, and it used not to be. The edit page grew — a colour picker
+       * with twelve swatches, a square, a strip, a field and a preview is about
+       * 700 points tall — and a panel that cannot scroll shows the first 600 and
+       * puts the button that saves the thing below the fold. A control you cannot
+       * reach is not a control.
+       */
+      scrollable
     >
       <View
         style={{
@@ -164,7 +177,11 @@ export function WorkspaceMenuSheet({
                 change a space. */}
             <WorkspaceColorPicker
               value={workspace.color}
+              valueTo={workspace.colorTo}
+              wash={workspace.wash}
               onPick={(color) => void updateWorkspace(workspace, { color })}
+              onPickTo={(colorTo) => void updateWorkspace(workspace, { colorTo })}
+              onPickWash={(wash) => void updateWorkspace(workspace, { wash })}
             />
 
             <View style={{ gap: theme.spacing.sm }}>

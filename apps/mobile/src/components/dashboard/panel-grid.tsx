@@ -1,512 +1,1566 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
-import type { DashboardWidget } from "@orbit-hub/contracts";
+import type { DashboardWidget, WorkspaceWash } from "@orbit-hub/contracts";
 
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { useA11yHint } from "@/components/ui/a11y-hint";
+import { AddMenu, useAddMenu, type AddMenuOption } from "@/components/ui/add-menu";
+import { FloatingButton } from "@/components/ui/floating-button";
 import { AppText } from "@/components/ui/text";
-import { pluralKey, useTranslation } from "@/lib/i18n";
 import {
+  MAX_PAGES,
   PANEL_COLUMNS,
+  PANEL_ROWS,
   cardSize,
-  moveCard,
-  panelCards,
+  dropSpot,
+  moveCardTo,
+  pageCards,
+  pageCount,
+  pageOf,
+  panelCell,
+  panelHeightInPixels,
+  placeCards,
   resizeCard,
-} from "@/lib/dashboard/grid";
-import { cardColors } from "@/lib/workspace/color";
+} from "@/lib/dashboard/panel";
+import type { PlacedCard } from "@/lib/dashboard/panel";
+import type { CardMark } from "@/lib/dashboard/card-kind";
+import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
-/** How many cells wide and tall a card can be. */
-/**
- * How many rows the empty panel draws.
- *
- * Two, because the panel is a column of a phone and a band of a laptop, and one
- * row says nothing about either. Two rows of ghosts already show the shape
- * without turning a panel nobody has filled into a poster.
- */
-const EMPTY_ROWS = 2;
+import { AT_REST, PanelArrangeContext } from "./panel-arrange";
+import type { PanelArrangeValue } from "./panel-arrange";
+import { PanelCard } from "./panel-card";
 
 /**
- * How wide an empty cell is drawn, in the fine grid of twelve columns.
+ * How a card that is not under a finger gets to where it belongs.
  *
- * The panel is placed in a grid of twelve columns so a card can be one wide, two,
- * three or half, and that grid is for placing, not for looking at. Drawn as it
- * is, an empty panel is twenty-four slivers of 26 px: a spreadsheet, and nothing
- * like the panel you are about to fill. A card of three columns is a third of the
- * width, which is what a card actually is.
+ * A short ease-out that stops, and not a spring. A spring overshoots its target
+ * and comes back, and on a screen of a dozen cards that overshoot is a dozen
+ * cards each wobbling for a moment after you let go — which is noise, not motion.
+ * The OS moves an icon with an ease-out and stops dead, and once you have seen
+ * that, a spring on the same gesture reads as the panel being springy rather than
+ * as the card being moved.
+ *
+ * Long enough to see where a card went, short enough that the end of it is over
+ * before your hand is back where it started.
  */
-const EMPTY_CELL_COLUMNS = 3;
-const EMPTY_CELLS = 4;
+const MOVE = { duration: 170, easing: Easing.out(Easing.cubic) };
 
-const SIZES = [
-  { w: 3, h: 1 },
-  { w: 4, h: 1 },
-  { w: 4, h: 2 },
-  { w: 6, h: 2 },
-  { w: 6, h: 3 },
-  { w: 12, h: 2 },
-] as const;
+/**
+ * How far a finger has to travel, and how fast, to turn the screen.
+ *
+ * Both, and either is enough. A short fast flick counts — that is how everybody
+ * swipes — and a long slow drag counts too, for a thumb that moved a long way
+ * without hurry. A slow short drag does nothing, which is somebody pressing on
+ * the panel and changing their mind, and turning the page on it would be the app
+ * guessing.
+ */
+const SWIPE_DISTANCE = 56;
+const SWIPE_VELOCITY = 420;
+
+/**
+ * How much of a page comes back when there is no page to go to.
+ *
+ * The screen moves a third of the way and stops, rather than letting the end of
+ * the panel come into view. A page that will not go is a page you have tried
+ * already, and the resistance is what says so without a line of text.
+ */
+const EDGE_RESISTANCE = 3.4;
+
+/**
+ * How long the page takes to finish the gesture.
+ *
+ * Not a fixed number, and that is the whole point of it. The finger stopped
+ * somewhere; the page has to go from *there* to the page it is heading for, and
+ * the time that should take is the time the rest of the way takes. A fixed
+ * duration makes a page that had almost arrived crawl and a page that had barely
+ * started race past, and a swipe that changes speed depending on how much of it
+ * was left reads as two different gestures.
+ *
+ * So it is worked out from the distance still to travel, at a speed that is quick
+ * enough to feel like the hand taking over and slow enough to see where the page
+ * is going. The bounds are what stop a page from taking no time at all when it is
+ * nearly there, and from taking half a second when it has the whole panel to
+ * cross.
+ */
+const PAGE_SPEED = 2.6;
+const PAGE_MIN = 90;
+const PAGE_MAX = 320;
 
 export interface PanelGridProps {
   layout: DashboardWidget[];
-  /** Which space each card belongs to, so it can be painted with its colour. */
-  colorOfWidget: (widget: DashboardWidget) => string;
+  /** The colour of the space each card belongs to, so it is painted with it. */
+  colorKeyOf: (widget: DashboardWidget) => string | null | undefined;
+  /**
+   * The wash of that same space, for the same reason.
+   *
+   * Optional because the grid has no way to invent it: it holds widgets and not
+   * spaces, so the style lives with the colour in the screen that knows both.
+   */
+  washOf?: (widget: DashboardWidget) => WorkspaceWash | undefined;
+  /**
+   * The colour each space ends in, for the same reason the colour travels.
+   *
+   * A second choice the person made, and a card that does not get it paints the
+   * derived pair: the panel says one thing and the picker another about the same
+   * space.
+   */
+  colorToOf?: (widget: DashboardWidget) => string | null | undefined;
   /** The name of that space, for the card while the panel is being arranged. */
-  whereOfWidget: (widget: DashboardWidget) => string;
+  whereOf: (widget: DashboardWidget) => string;
   /** What each card says, and where it goes when it is tapped. */
   describe: (widget: DashboardWidget) => {
     title: string;
     subtitle: string;
     emoji: string | null;
     href: string | null;
+    /**
+     * What the card *is*, so a card can be told apart from a folder or from a
+     * different kind of list without reading it. A panel of cards is a grid of
+     * the same rectangle, and words alone leave "Cine" and the folder called
+     * "Cine" as the same thing.
+     */
+    mark: CardMark;
   };
-  /** The changes while the panel is being arranged, and the save at the end. */
-  onChange: (next: DashboardWidget[]) => void;
-  onSave: () => void;
-  saving?: boolean;
+  /** The write, once a drag or a resize is finished. */
+  /**
+   * The arrangement, and how many screens it claims.
+   *
+   * The count comes along in the same call and not in one of its own because the
+   * two are saved together or not at all: a layout written without its count is a
+   * panel whose screens are gone the next time it is read, which is the bug the
+   * count was added to fix arriving by a different road.
+   */
+  onChange: (next: DashboardWidget[], pages?: number) => void;
+  /**
+   * Whether the panel is being arranged, and how to stop.
+   *
+   * Lifted to the screen above, because the button that turns this on and off
+   * lives in the header there and not in here. A pencil drawn inside the panel
+   * that the header also has is two buttons that both mean "edit", and the one
+   * the eye lands on is the one that is easiest to reach — which is not the one
+   * that saves when you are done.
+   */
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  /**
+   * Where the header's "done" button finds the function that ends the
+   * arrangement. A ref rather than a callback, because the draft it saves is
+   * state in here and a parent that held it would re-render on every frame of a
+   * drag.
+   */
+  finishRef: { current: () => void };
   /** How many lists are not on the panel yet, for the add card. */
   availableCount: number;
+  /** How many screens the panel claims, which can be more than have cards on them. */
+  pages?: number;
   /** Opens the list of things that can be added. */
   onOpenEditor: () => void;
+  /**
+   * Adds a screen, and says how many there are now.
+   *
+   * A callback and not a number because the count is saved with the arrangement
+   * and not on its own: a screen that exists only in memory is a screen that is
+   * gone by the time you press Guardar, which is the same as not having added it.
+   */
+  onAddPage?: () => number;
   /** Goes where a card says when it is tapped. */
   onOpen: (href: string) => void;
 }
 
 /**
- * The panel: a grid of cards that the person arranges themselves.
+ * The panel: screens of cards that the person arranges themselves.
  *
- * The cards are the size of a number of grid cells and the order they are in is
- * the arrangement; where each one sits is worked out from those two things and
- * not stored, because the same panel is looked at on a phone and on a laptop and
- * a position in pixels is only true on the screen it was set on.
+ * A card is one of a fixed set of sizes and it sits on the grid where the person
+ * put it. Both are in cells and never in pixels, so the same arrangement is the
+ * same panel on a phone and on a laptop — an arrangement belongs to the person and
+ * not to the screen they made it on.
  *
- * Arranging is a mode, the way it is in the old app: a pencil in the corner
- * turns it on, and a Guardar button that was not there before turns it off and
- * writes. Outside the mode the cards are just cards and a tap goes where the
- * card says, because a panel you cannot tap your way through is a poster.
+ * More pinned things than fit is the normal case, not a mistake, so the panel has
+ * as many screens as it needs and a card that does not fit goes to the next one. A
+ * panel that hid what it could not draw would be a panel where somebody has things
+ * they cannot reach — and that is the failure the pagination exists to remove,
+ * not the other way round.
+ *
+ * Arranging is a mode, the way it is on the OS: the pencil in the header turns it
+ * on, cards wobble, and a Guardar that was not there before turns it off and
+ * writes. Outside the mode the cards are just cards and a tap goes where the card
+ * says, because a panel you cannot tap your way through is a poster.
+ *
+ * There is no title, no count and no explanation above the grid. The panel is the
+ * screen; a line of text saying that the cards can be moved is a line of text on a
+ * screen where you can already see the cards, and the only thing it does is push
+ * the panel down.
  */
 export function PanelGrid({
   layout,
-  colorOfWidget,
-  whereOfWidget,
+  colorKeyOf,
+  washOf,
+  colorToOf,
+  whereOf,
   describe,
   onChange,
-  onSave,
-  saving = false,
+  editing,
+  onEditingChange,
+  finishRef,
   availableCount,
+  pages = 1,
   onOpenEditor,
+  onAddPage,
   onOpen,
 }: PanelGridProps) {
   const theme = useTheme();
   const t = useTranslation();
-  const [editing, setEditing] = useState(false);
+
   const [draft, setDraft] = useState(layout);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  /**
+   * How many screens the arrangement claims, in the draft.
+   *
+   * In state and not read straight from the prop because a screen added while
+   * arranging is a change to the arrangement, and the arrangement is only real
+   * once Guardar has been pressed. A ref carries it into `commit`, which runs from
+   * a gesture and cannot afford to close over a value that is one render behind.
+   */
+  const [pagesDraft, setPagesDraft] = useState(() => pageCount(layout, pages));
+  const pagesDraftRef = useRef(pagesDraft);
+  pagesDraftRef.current = pagesDraft;
+
+  /**
+   * How many screens the stored panel claims, and what an arriving change sets it
+   * to.
+   *
+   * A number in the draft, so a change that arrives from elsewhere — another
+   * device, or the picker — only ever **grows** it. Setting it outright, as this
+   * did, meant a re-render carrying an equal-but-new array quietly undid a screen
+   * the person had just added, and the button they pressed did nothing with no
+   * way to tell that from the button being broken.
+   */
+  const declaradas = pageCount(layout, pages);
+  useEffect(() => {
+    setPagesDraft((previas) => Math.max(previas, declaradas));
+  }, [declaradas]);
+  const [dragging, setDragging] = useState<string | null>(null);
+  /** The cell the card is over, in grid cells. The arrangement, not a list order. */
+  const [drop, setDrop] = useState<{ x: number; y: number } | null>(null);
+
+  /**
+   * How far the screen has been pushed sideways, while a finger is on it.
+   *
+   * A shared value and not state, because it changes on every frame of a swipe
+   * and state would re-render the whole panel sixty times a second to move
+   * something by a few pixels. Read only in an animated style, so nothing else
+   * in the panel has to care.
+   */
+  /**
+   * Where the track is, in points, and where the gesture that is touching it
+   * found it.
+   *
+   * A *position* and not a displacement, and that distinction is the whole of a
+   * pager. While a finger is down the finger says "this far from where we were",
+   * so the origin is remembered and the two are added; when the finger lets go the
+   * track is given the position it is going to. One number for where the track is,
+   * so there is nothing that can be added up twice.
+   *
+   * It was a displacement, and the resting place was added to it in the style —
+   * which is right while a finger is down and wrong the instant the page changes,
+   * because the resting place moves with the page and the displacement does not.
+   * The panel counted the page twice and overshot it by one: a swipe from the
+   * first screen landed on the third.
+   */
+  const trackX = useSharedValue(0);
+  const origin = useSharedValue(0);
+
+  /**
+   * Whether a finger is on the track right now.
+   *
+   * The rubber band is a thing a *finger* meets, so it is applied only while there
+   * is one. It used to be applied whenever the track sat outside the room it had,
+   * and that is wrong in a way that only shows after a page turn: `origin` is
+   * where the gesture found the track, and `settle` then animates `trackX` away
+   * from it, so at rest `trackX - origin` is not zero but the width of a whole
+   * page. The style read that as "past the end", divided it by
+   * `EDGE_RESISTANCE`, and left the panel a third of a page short of where the
+   * page indicator said it was — a swipe from the first screen to the second
+   * ended 105px out, and one back ended 253px out, with the dots saying page one
+   * and the cards sitting halfway to page two.
+   *
+   * A number that is only wrong between gestures is the hardest kind to catch:
+   * the page indicator, the cards and the next swipe all agree with each other
+   * and disagree with the truth, and the next swipe is answered from `origin`,
+   * which the finger resets on the way down. So the panel is right again the
+   * moment it is touched, and wrong the whole time anybody is looking at it.
+   */
+  const fingerDown = useSharedValue(false);
+
+  /**
+   * Whether the gesture that is finishing has already decided where the track goes.
+   *
+   * A `Pan` calls `onEnd` and then `onFinalize`, in that order, every time. Both
+   * used to animate the track, and they disagreed: the first asked for the next
+   * page and the second parked it on the old one, so the page indicator and the
+   * screen on display ended up saying different things. One of them has to know
+   * the other has been here.
+   */
+  const settled = useSharedValue(false);
+
+  const setEditing = onEditingChange;
+
+  /**
+   * The cell the card is over, readable from a callback that must not re-run.
+   *
+   * A ref and not the state, for the same reason as `draftRef` above: a callback
+   * that closes over state re-runs whenever the state changes, and this one is
+   * called by a gesture that is already in flight. A ref is read at the moment it
+   * is used, which is the moment the finger is at.
+   */
+  const dropRef = useRef<{ x: number; y: number } | null>(null);
+  dropRef.current = drop;
+
+  /**
+   * The last layout this grid adopted or wrote, so a change from *outside* can be
+   * told from the echo of one of its own.
+   *
+   * The picker is outside: it writes the saved layout directly, through the
+   * screen above, and the grid has no way of knowing. Comparing by identity is
+   * enough because the echo of our own write comes back as the same array we
+   * handed over, and a write from the picker comes back as an array this grid has
+   * never seen.
+   */
+  const adopted = useRef(layout);
 
   // Arranging starts from what is saved, so leaving without saving throws the
   // experiment away instead of leaving a panel nobody meant to change.
+  //
+  // And while arranging, a layout that changed *underneath* is adopted rather than
+  // ignored. It used to be ignored for as long as the mode was on, and the picker
+  // is why that cost something real: it removes a card from the saved layout, the
+  // grid keeps its own draft, `finish` writes the draft, and the card is back —
+  // so unpicking something in the sheet and pressing Guardar did nothing at all,
+  // silently, which is the worst way for a write to fail.
+  //
+  // A drag in flight is the one thing that outranks it: the card under the finger
+  // is the truth, and the write is made again on the way out, so a layout that
+  // lands mid-drag waits rather than pulling the panel out from under the hand.
   useEffect(() => {
-    if (!editing) setDraft(layout);
-  }, [layout, editing]);
+    if (!editing) {
+      setDraft(layout);
+      adopted.current = layout;
+      return;
+    }
+    if (adopted.current !== layout && dragging === null) {
+      setDraft(layout);
+      adopted.current = layout;
+    }
+  }, [dragging, editing, layout]);
 
-  const { cards, hidden } = useMemo(() => panelCards(draft), [draft]);
-  const selectedCard = selected
-    ? (draft.find((widget) => widget.id === selected) ?? null)
-    : null;
-  const indexOf = (id: string) => draft.findIndex((widget) => widget.id === id);
+  // A card on a screen that no longer exists is a card on a screen you cannot get
+  // to, so the page shown is always clamped to what there is.
+  /**
+   * How many screens there are, from the **draft** and not from the prop.
+   *
+   * It read the prop, and the prop only changes when the arrangement is saved —
+   * so adding a screen while arranging changed nothing at all: the bar did not
+   * appear, the dots did not, and the button looked like it had done nothing. The
+   * number a person is looking at has to be the number they are editing.
+   */
+  const screens = useMemo(() => pageCount(draft, pagesDraft), [draft, pagesDraft]);
+  const current = Math.min(page, screens - 1);
+  useEffect(() => {
+    if (current !== page) setPage(current);
+  }, [current, page]);
+
   const gap = theme.spacing.sm;
-  const [width, setWidth] = useState(0);
-  const cellWidth =
-    width > 0 ? (width - gap * (PANEL_COLUMNS - 1)) / PANEL_COLUMNS : 0;
-  // A cell is a little taller than it is wide, which is what makes a card a
-  // block of a sensible shape on a phone and a wide band on a laptop. Taller
-  // than that and a card of four rows is a column of empty colour.
-  const cellHeight = Math.max(64, Math.round(cellWidth * 1.1));
 
-  const apply = useCallback(
+  /**
+   * The space the board gets, in points, measured rather than worked out.
+   *
+   * This is what makes a card a *fraction* of the screen. The board takes the
+   * height that is left under the header, `panelCell` divides that height between
+   * six rows, and a card of one row is a sixth of the screen, three rows is half
+   * of it, four is two thirds. Nothing here is a fixed number of points, so a card
+   * is the same *proportion* of a phone and of a laptop — and because six rows of
+   * the cell add up to exactly the board, the panel fills the screen and has
+   * nothing to scroll to.
+   *
+   * The width starts at zero and the height starts at a guess taken from the
+   * window, because `panelCell` divides: a board of no height would make every
+   * card zero tall for the frame before the measurement arrives, which is a flash
+   * of an empty panel every time the screen opens.
+   */
+  const window = useWindowDimensions();
+  const [board, setBoard] = useState({
+    width: 0,
+    height: Math.round(window.height * 0.72),
+  });
+
+  const cell = useMemo(() => panelCell(board, gap), [board, gap]);
+
+  const onPage = useMemo(
+    () => draft.filter((widget) => pageOf(widget) === current),
+    [draft, current],
+  );
+  const placed = useMemo(() => pageCards(onPage), [onPage]);
+  const hidden = placed.hidden;
+
+  /**
+   * The screens either side of this one, and what is on them.
+   *
+   * The neighbours and not only the one being looked at, because a swipe has to
+   * have something to swipe *to*. The track is as wide as every screen side by
+   * side and a card's placement is a position on that track, so the screen being
+   * turned to is painted next to this one the whole time and comes in from the
+   * side the finger is going. Before this there was one screen and a translation:
+   * the cards slid away, the next screen appeared under them already in place, and
+   * every swipe looked the same however it was made — the one thing a pager must
+   * not do.
+   *
+   * Only the immediate neighbours, and never more than the screens that exist, so
+   * a panel of six screens draws two and a panel of one draws one.
+   */
+  const neighbours = useMemo(() => {
+    const take = (index: number) =>
+      index >= 0 && index < screens
+        ? {
+            index,
+            drawn: draft.filter((widget) => pageOf(widget) === index),
+          }
+        : null;
+    return {
+      before: take(current - 1),
+      after: take(current + 1),
+    };
+  }, [current, draft, screens]);
+
+
+  // The two things "done" needs: which screen is being looked at, and what did
+  // not fit on it. Read at the moment the button is pressed, which is the only
+  // moment they matter — a ref assigned during render, so the callback that saves
+  // does not have to be rebuilt every time either of them changes.
+  const currentRef = useRef(0);
+  currentRef.current = current;
+  const hiddenRef = useRef<string[]>([]);
+  hiddenRef.current = hidden;
+
+  /**
+   * The layout as it is *drawn*, which is not always the layout as it is stored.
+   *
+   * A card that does not fit on this screen is drawn on the next one while the
+   * panel is being looked at, and only lands there for real when Guardar is
+   * pressed. Without that, pinning a card onto a full screen would move every
+   * card below it the moment it was pinned, and a panel that rearranges itself
+   * under a finger that is dragging a card in it is a panel nobody can drag in.
+   */
+  const spilled = useMemo(
+    () => (hidden.length === 0 ? draft : spillToNextPage(draft, current, hidden)),
+    [current, draft, hidden],
+  );
+  const drawn = useMemo(
+    () => spilled.filter((widget) => pageOf(widget) === current),
+    [current, spilled],
+  );
+
+  /**
+   * How wide and how tall the track is.
+   *
+   * One width per screen, every screen side by side, and the tallest screen sets
+   * the height for all of them. The height has to be shared: a screen of two cards
+   * is shorter than a screen of six, and if the track took the height of whichever
+   * screen happened to be nearest, the cards on the shorter one would be measured
+   * against a board that changed as it slid, and every card would change size on
+   * the way past. The board's own height is the floor, which is what keeps the
+   * promise that the panel does not scroll.
+   */
+  const gridHeight = useMemo(() => {
+    const tallest = [current, neighbours.before?.index, neighbours.after?.index]
+      .filter((index): index is number => index !== undefined)
+      .reduce((most, index) => {
+        const cards = index === current
+          ? placed.cards
+          : pageCards(draft.filter((widget) => pageOf(widget) === index)).cards;
+        return Math.max(most, panelHeightInPixels(cards, cell));
+      }, 0);
+    return Math.max(tallest, board.height);
+  }, [board.height, cell, current, draft, neighbours, placed.cards]);
+
+  const commit = useCallback(
     (next: DashboardWidget[]) => {
       setDraft(next);
-      onChange(next);
+      // Our own write, recorded so the effect above does not come back and adopt
+      // it as if the picker had sent it.
+      adopted.current = next;
+      onChange(next, pagesDraftRef.current);
     },
     [onChange],
   );
 
-  const sizeOf = useCallback(
-    (id: string) =>
-      cardSize(
-        draft.find((widget) => widget.id === id) ?? ({} as DashboardWidget),
-      ),
-    [draft],
+  /**
+   * The resize.
+   *
+   * It writes the draft but not the store, and the difference is the point: a
+   * corner drag fires an update per frame and a write per frame is one operation
+   * per frame in the outbox, syncing nothing. So the size follows the finger and
+   * the neighbours move with it, and one write happens when the finger lifts.
+   */
+  /**
+   * The draft as it is right now, readable from a callback that must not re-run.
+   *
+   * The corner drag needs the size the finger is at *and* the layout it is being
+   * applied to, and the layout is state — and a callback that closes over state
+   * re-runs on every change, which recreates the gesture the finger is holding.
+   * So the latest draft is kept in a ref and read from there.
+   */
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  const resize = useCallback(
+    (id: string, size: { w: number; h: number } | null) => {
+      if (size) {
+        // Still dragging: the size follows the finger and the neighbours move
+        // with it. Nothing is written, because a write per frame is one
+        // operation per frame in the outbox and syncs nothing.
+        setDraft((current) => resizeCard(current, id, size));
+        return;
+      }
+      // The finger lifted. Whatever the last size that fitted was is now the
+      // layout, and a size that was refused has already been dropped by
+      // `resizeCard`, so there is nothing to put back.
+      commit(draftRef.current);
+    },
+    [commit],
   );
 
-  const pistaEdit = useA11yHint(t("dashboard.editLayoutHint"));
+  /**
+   * The screen as it is drawn, without the card being dragged, in cells.
+   *
+   * Kept in a ref and assigned during render rather than in a `useMemo`, because
+   * the drag reads it from a callback that must not re-create itself per frame: a
+   * callback that closes over a `useMemo` re-runs whenever the memo does, and the
+   * memo depends on the cell, which a resize changes sixty times a second. A ref
+   * is read at the moment it is used, which is the moment the finger is at.
+   */
+  const others = useRef<PlacedCard[]>([]);
+  others.current = placed.cards.filter((card) => card.id !== dragging);
+
+  /** Where the card being dragged is, in cells, so that its centre can be followed. */
+  const held = useRef<PlacedCard | null>(null);
+  held.current = dragging
+    ? (placed.cards.find((card) => card.id === dragging) ?? null)
+    : null;
+
+  /**
+   * Where every card will be if the finger lifted right now.
+   *
+   * This is the thing that makes a drag feel like a drag. The dragged card
+   * follows the finger on its own, and the *others* have to make room as it goes
+   * past them — if they only move once you let go, the drop is a guess, and a
+   * grid you cannot watch rearrange under your hand is a grid that feels broken
+   * however correct the result is.
+   *
+   * The dragged card is placed **first, at the cell it is over**, and the rest
+   * keep their own stored positions and only go to the nearest free cell when
+   * those are taken. That is the whole difference between this and the version
+   * that felt wrong: the neighbours move as little as they can, one cell at a
+   * time, and the gap opens where the finger is instead of everybody leaping
+   * aside to make room for a hole that was never really there.
+   */
+  const preview = useMemo(() => {
+    if (!dragging || drop === null) return null;
+    const widget = onPage.find((row) => row.id === dragging);
+    if (!widget) return null;
+    const size = cardSize(widget);
+
+    const packed = placeCards(
+      [
+        { id: dragging, w: size.w, h: size.h, x: drop.x, y: drop.y },
+        ...onPage
+          .filter((row) => row.id !== dragging)
+          .map((row) => ({ id: row.id, w: row.w, h: row.h, x: row.x, y: row.y })),
+      ],
+      PANEL_COLUMNS,
+      PANEL_ROWS,
+      dragging,
+    );
+    return new Map(packed.map((card) => [card.id, card]));
+  }, [dragging, drop, onPage]);
+
+  const onDragStart = useCallback((id: string) => setDragging(id), []);
+
+  /**
+   * Where the card would land, as the finger moves.
+   *
+   * A state change per frame, and it is the one place in the panel that accepts
+   * that cost: the answer has to be somewhere for the neighbours to move out of
+   * the way, and that is what turns a drop into a decision rather than a guess.
+   * What is *not* per frame is the layout — nothing is written until the finger
+   * lifts.
+   */
+  const onDragMove = useCallback(
+    (_id: string, dx: number, dy: number) => {
+      const card = held.current;
+      if (!card) return;
+      const stepX = cell.width + cell.gap;
+      const stepY = cell.height + cell.gap;
+      setDrop(
+        dropSpot(
+          others.current,
+          card,
+          {
+            x: card.x * stepX + dx + (card.w * stepX) / 2,
+            y: card.y * stepY + dy + (card.h * stepY) / 2,
+          },
+          cell,
+        ),
+      );
+    },
+    [cell],
+  );
+
+  const onDragEnd = useCallback(
+    (id: string) => {
+      // Read from the ref, and not from the argument of a state updater.
+      //
+      // A `setState` updater runs *during* the render that applies it, so calling
+      // `commit` — which sets state again — from inside one is a second state
+      // change in the middle of somebody else's render. React says so out loud
+      // ("Cannot update a component while rendering a different component") and
+      // the write can be dropped. The value is the same either way; doing it this
+      // way just does not make React shout about it.
+      const landed = dropRef.current;
+      setDragging(null);
+      setDrop(null);
+      if (landed === null) return;
+      // Only this screen moves, and only the card that was held: the cards of the
+      // other screens keep their place, so coming back to a screen finds it as it
+      // was left rather than shuffled by a drag that happened two screens away.
+      commit(moveCardTo(draftRef.current, id, landed));
+    },
+    [commit],
+  );
+
+  const unpin = useCallback(
+    (id: string) => commit(draft.filter((widget) => widget.id !== id)),
+    [commit, draft],
+  );
+
+  /**
+   * Ends the arrangement: writes what is on screen and stops editing.
+   *
+   * The button that does this lives in the header of the screen above, and the
+   * draft it saves lives here. So the function is published through a ref the
+   * parent owns and calls on tap.
+   *
+   * A ref and not a callback prop with the parent calling back in: a parent that
+   * stored this in state and passed it down would be doing a `setState` in a
+   * `useEffect` on every render, which is the "Cannot update a component while
+   * rendering" warning all over again. A ref is written during render and read on
+   * tap, which is what a ref is for.
+   */
+  /**
+   * One more screen, and go to it.
+   *
+   * Going to it is not a convenience: a screen added and not looked at is a dot at
+   * the end of the bar that nobody can tell from the ones with cards on them, so
+   * the bar would be showing a screen and the panel would not.
+   */
+  const addPage = useCallback(() => {
+    if (!editing) return pagesDraft;
+    const siguiente = Math.min(pagesDraft + 1, MAX_PAGES);
+    if (siguiente === pagesDraft) return pagesDraft;
+    setPagesDraft(siguiente);
+    setPage(siguiente - 1);
+    onAddPage?.();
+    return siguiente;
+  }, [editing, onAddPage, pagesDraft]);
+
+  const finish = useCallback(() => {
+    // Whatever could not be shown here goes to the next screen for real, so a card
+    // pinned on a full screen is somewhere and not nowhere.
+    commit(spillToNextPage(draftRef.current, currentRef.current, hiddenRef.current));
+    setDragging(null);
+    setDrop(null);
+    setEditing(false);
+  }, [commit, setEditing]);
+
+  useEffect(() => {
+    finishRef.current = finish;
+  });
+
+  const arrange = useMemo(
+    () => ({ editing, dragging, onDragStart, onDragMove, onDragEnd }),
+    [dragging, editing, onDragEnd, onDragMove, onDragStart],
+  );
+
+  /**
+   * The sideways movement of the whole screen during a swipe.
+   *
+   * A *track*, not a single screen: the board is as wide as all its screens
+   * side by side and this says how much of that is showing. That is the
+   * difference between a panel you swipe and a panel that changes, and it is why
+   * the next screen comes in from the side the finger is heading for instead of
+   * appearing in place. Rubber-banded at the ends, so pulling on the first screen
+   * drags it a third of the way and stops rather than letting a screen that does
+   * not exist come into view.
+   */
+  const trackStyle = useAnimatedStyle(() => {
+    // How far the finger has gone from where it found the track, and how far it
+    // could go before there was no page left to show: going left there is
+    // `current` screens of room and going right there are the rest.
+    const travel = trackX.value - origin.value;
+    const roomLeft = current * board.width;
+    const roomRight = (screens - 1 - current) * board.width;
+    // Past the end, only the part past the end is resisted, and by a third. Not
+    // the whole travel: resisting the whole thing would make a legal swipe feel
+    // heavy for its entire length, which is a different complaint from the one
+    // this is fixing.
+    //
+    // And only while a finger is down. `settle` animates `trackX` away from
+    // `origin`, so at rest the two sit a whole page apart and this would read a
+    // correct resting place as a pull past the end of the panel and shrink it by
+    // `EDGE_RESISTANCE` — which is how every page turn used to end with the cards
+    // a third of a page from where the dots said they were. See `fingerDown`.
+    let moved = travel;
+    if (fingerDown.value) {
+      if (travel > roomLeft) moved = roomLeft + (travel - roomLeft) / EDGE_RESISTANCE;
+      if (travel < -roomRight) moved = -roomRight + (travel + roomRight) / EDGE_RESISTANCE;
+    }
+    return { width: board.width * screens, transform: [{ translateX: origin.value + moved }] };
+  });
+
   const pistaAdd = useA11yHint(t("dashboard.addCardHint"));
 
+  /*
+    What the panel's plus can do, which is two things: a card, or a screen.
+
+    It was one, so the plus went straight to the picker. That was right while it
+    was one — a sheet with a single row in it is a tap that could have gone
+    straight where it was going — and the moment there is a second thing, that
+    same button has to choose. The rule that does it is `useAddMenu`: one option
+    does the thing, two open a menu. So the panel went from one row to two
+    without the button moving, changing shape, or gaining a twin somewhere else.
+  */
+  const opcionesAnadir = useMemo<AddMenuOption[]>(
+    () => [
+      {
+        key: "cards",
+        label: t("dashboard.addMenu.item"),
+        description: t("dashboard.addMenu.itemHint"),
+        icon: "apps-outline",
+        onPress: onOpenEditor,
+      },
+      {
+        key: "page",
+        label: t("dashboard.addMenu.page"),
+        description: t("dashboard.addMenu.pageHint"),
+        icon: "albums-outline",
+        onPress: addPage,
+      },
+    ],
+    [addPage, onOpenEditor, t],
+  );
+  const { directo, abrir, cerrar, abierto, menu } = useAddMenu(opcionesAnadir);
+
+  const turnPage = useCallback(
+    (wanted: number) => setPage(Math.min(Math.max(wanted, 0), screens - 1)),
+    [screens],
+  );
+
+  /**
+   * Finishing a swipe, wherever the finger let go of it.
+   *
+   * The gesture stops the track under the finger and this hands it to an
+   * animation that continues from *there* to the page it was going to. That is
+   * the difference between a swipe and a button, and it has two parts.
+   *
+   * Which page it goes to: far enough, or fast enough, in the direction of the
+   * travel — with the direction taken from the velocity when the finger was moving
+   * at the end, because a flick that is still travelling when it is let go of is
+   * the clearest statement of intent a hand can make, and from the distance when
+   * it had already stopped, because then the distance is all there is.
+   *
+   * How long it takes: from the distance that is left, not a fixed number. See
+   * `PAGE_SPEED` — a fixed duration makes a page that had nearly arrived crawl
+   * and one that had barely started race past.
+   *
+   * And the page is set first, before the animation runs, because the track draws
+   * the *neighbouring* screens as well as this one. The cards that are coming into
+   * view have to already be on the track or there is nothing for the animation to
+   * move, and the page state is what says which cards those are.
+   */
+  const settle = (from: number, velocity: number) => {
+    'worklet';
+    const roomLeft = from;
+    const roomRight = screens - 1 - from;
+    const travel = trackX.value - origin.value;
+    const far = Math.abs(travel) > SWIPE_DISTANCE;
+    const fast = Math.abs(velocity) > SWIPE_VELOCITY;
+    // The finger's own direction decides, and the velocity only breaks the tie of
+    // a finger that had already come back before it lifted.
+    const forward = Math.abs(velocity) > 40 ? velocity < 0 : travel < 0;
+
+    let target = from;
+    if ((far || fast) && forward && roomRight > 0) target = from + 1;
+    else if ((far || fast) && !forward && roomLeft > 0) target = from - 1;
+
+    // Where it comes to rest, and how long the rest of the way should take: from
+    // the distance still to travel, so a page that had nearly arrived does not
+    // crawl and one that had barely started does not race.
+    const resting = -target * board.width;
+    const left = Math.abs(resting - trackX.value);
+    trackX.value = withTiming(resting, {
+      duration: Math.min(Math.max(left / PAGE_SPEED, PAGE_MIN), PAGE_MAX),
+      easing: Easing.out(Easing.cubic),
+    });
+    return target;
+  };
+
+  /**
+   * Turning the screen with a swipe.
+   *
+   * Horizontal, and it claims the gesture only once the finger has clearly gone
+   * sideways: `activeOffsetX` is what stops a tap on a card from turning into half
+   * a page turn, and `failOffsetY` is what lets a vertical drag through to the
+   * scroll — without it the panel eats the scroll on a phone, which is a much
+   * worse thing to break than a gesture that needs a moment.
+   *
+   * One gesture, built twice: once for the whole board and once for the board's
+   * background, and only one of the two is ever enabled. It used to be a single
+   * gesture wrapped around everything and switched off while arranging, on the
+   * reasoning that a horizontal drag there is dragging a card. But the person
+   * arranging a panel is the one most likely to want to see another screen, and
+   * the reason it was switched off is not true: a drag that starts on a card never
+   * reaches the background, because the card is on top of it. So the swipe comes
+   * back for the background, and only for the background.
+   */
+  const buildTurn = (enabled: boolean) =>
+    Gesture.Pan()
+      .enabled(enabled)
+      .activeOffsetX([-14, 14])
+      .failOffsetY([-12, 12])
+      .onStart(() => {
+        // The gesture found the track here, wherever a page turn that is still
+        // animating had left it. Without this a swipe that interrupts the
+        // animation of the previous one measures from the page the finger is
+        // looking at instead of from where the track actually is.
+        //
+        // `current` and not `currentRef.current`. A ref read from a worklet is a
+        // copy of the object as it was when the worklet was made, and the copy is
+        // one render behind: a swipe that began on the last screen measured from
+        // the one before it, and the track came off the end of the panel. The
+        // gesture is built on the JavaScript thread during render, so closing over
+        // the number directly is both correct and one frame fresher.
+        origin.value = -current * board.width;
+        trackX.value = origin.value;
+        settled.value = false;
+        fingerDown.value = true;
+      })
+      .onUpdate((event) => {
+        // The track goes with the finger, and the page it is showing comes with it
+        // because the track holds every screen side by side. Not a nicety: a page
+        // that appears only once the finger has let go makes the panel feel like it
+        // decided on its own, and there is no way to stop halfway and change your
+        // mind.
+        trackX.value = origin.value + event.translationX;
+      })
+      .onEnd((event) => {
+        // `onEnd` is followed by `onFinalize` every single time, so the two must
+        // not both decide where the track ends up. It is this one that decides,
+        // and `onFinalize` below knows it has.
+        //
+        // It used to be the other way round, and it was a bug that looked like
+        // something else: `onFinalize` animated back to `currentRef`, which is the
+        // page *before* this one, and this callback had already asked React for the
+        // next one. So the page said two and the track was parked on one, and the
+        // panel answered the next swipe from a screen that was not the one on
+        // display.
+        const target = settle(current, event.velocityX);
+        settled.value = true;
+        if (target !== current) runOnJS(turnPage)(target);
+      })
+      .onFinalize(() => {
+        // The finger is off the track, so the band stops: whatever is still
+        // moving is the animation finishing, and a band applied to that would
+        // drag a correct resting place back towards where the finger let go.
+        fingerDown.value = false;
+        if (settled.value) {
+          // `onEnd` already sent the track where it was going.
+          settled.value = false;
+          return;
+        }
+        // Cancelled, or the gesture lost to something else before it ever became
+        // a swipe. Back to the page that is actually current, from wherever the
+        // track happens to be.
+        trackX.value = withTiming(-current * board.width, {
+          duration: PAGE_MIN,
+          easing: Easing.out(Easing.cubic),
+        });
+      });
+
+  const turn = buildTurn(screens > 1 && !editing);
+  const turnFromBackground = buildTurn(screens > 1 && editing);
+
   return (
-    <View style={{ gap: theme.spacing.md }}>
-      <View style={[styles.row, { gap: theme.spacing.sm }]}>
-        <View style={styles.flex}>
-          <AppText variant="callout" tone="muted">
-            {editing ? t("dashboard.editingHint") : t("dashboard.subtitle")}
-          </AppText>
-        </View>
+    <View style={[styles.root, { gap: theme.spacing.sm }]}>
+      {/*
+        Where you are, always.
 
-        {editing ? (
-          <Button
-            label={t("dashboard.saveLayout")}
-            icon="checkmark"
-            size="sm"
-            fullWidth={false}
-            loading={saving}
-            onPress={() => {
-              setEditing(false);
-              setSelected(null);
-              onSave();
-            }}
-          />
+        It used to appear only while arranging, on the reasoning that it is part
+        of the editing. It is not: a panel with three screens and nothing to say
+        you are on the first of them is three panels, and the only hint that there
+        is more is that a card is missing. The dots are the answer, and they are
+        the same height in both modes so the panel does not jump when you start
+        arranging it.
+      */}
+      {screens > 1 ? (
+        <PageBar
+          page={current}
+          screens={screens}
+          onChange={setPage}
+          canAddPage={editing && pagesDraft < MAX_PAGES}
+          onAddPage={addPage}
+        />
+      ) : null}
+
+      {/*
+        The board: everything that is left under the header, measured.
+
+        This is the whole of how the panel fills the screen. It is a sibling of
+        the header with `flex: 1`, so it takes the space the header did not ask
+        for, and `onLayout` says how much that was. Everything below — the cell,
+        every card — is a fraction of that number, so there is nothing to scroll
+        and the six rows are the screen.
+      */}
+      <View
+        style={styles.board}
+        onLayout={(event) => {
+          const next = {
+            width: event.nativeEvent.layout.width,
+            height: event.nativeEvent.layout.height,
+          };
+          // Only when it really changed: a layout callback that sets state on
+          // every call re-renders the screen forever, and on a panel that is
+          // measured against its own content that is a loop.
+          setBoard((current) =>
+            current.width === next.width && current.height === next.height
+              ? current
+              : next,
+          );
+        }}
+      >
+        {drawn.length === 0 ? (
+          <Ghosts cell={cell} radius={theme.radius.lg} height={board.height} />
         ) : (
-          <>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("dashboard.editLayout")}
-              {...pistaEdit.props}
-              onPress={() => setEditing(true)}
-              style={({ pressed }) => [
-                styles.iconButton,
-                { opacity: pressed ? 0.6 : 1 },
-              ]}
+          <GestureDetector gesture={turn}>
+            {/*
+              An `Animated.View` and not a `View`, which is not a detail: an
+              animated style on a plain view is quietly ignored, so the swipe
+              would have turned the page with no movement under the finger —
+              working, and feeling like the panel had changed its mind on its
+              own. TypeScript said as much, which is the good kind of saying.
+            */}
+            <Animated.View
+              testID="panel-grid"
+              style={[styles.track, trackStyle, { height: gridHeight }]}
             >
-              <Ionicons
-                name="create-outline"
-                size={18}
-                color={theme.colors.text}
-              />
-            </Pressable>
-            {pistaEdit.node}
-          </>
+              {/*
+                The background, and the only thing under the finger while the panel
+                is being arranged.
+
+                It is the first child so that every card is painted over it, and a
+                card is a card: a drag that begins on one never arrives here, which
+                is what lets the two gestures be two gestures and not one gesture
+                that has to guess. Outside the arranging mode there is nothing to
+                disambiguate and the whole board turns, so this is not even mounted.
+              */}
+              {editing && screens > 1 ? (
+                <GestureDetector gesture={turnFromBackground}>
+                  <View
+                    testID="panel-background"
+                    style={StyleSheet.absoluteFill}
+                  />
+                </GestureDetector>
+              ) : null}
+
+              <>
+                {/*
+                  Every screen that can be seen, each one at its own place on the
+                  track. The one being looked at is in the middle of what is
+                  mounted, its neighbours to either side, so a swipe has the next
+                  screen to bring in and does not have to invent it at the end.
+
+                  A screen that is not the current one is drawn plainly and is not
+                  arranged: it is either arriving or leaving, and a card under a
+                  finger on a screen nobody is arranging is not a card anybody can
+                  be holding.
+                */}
+                {[neighbours.before, { index: current, drawn }, neighbours.after]
+                  .filter((screen): screen is { index: number; drawn: DashboardWidget[] } => screen !== null)
+                  .map((screen) => (
+                    <ScreenOfPanel
+                      key={screen.index}
+                      offset={screen.index * board.width}
+                      width={board.width}
+                      height={gridHeight}
+                      live={screen.index === current}
+                      cell={cell}
+                      widgets={screen.drawn}
+                      preview={screen.index === current ? preview : undefined}
+                      dragging={dragging}
+                      arrange={arrange}
+                      describe={describe}
+                      colorKeyOf={colorKeyOf}
+                      washOf={washOf}
+                      colorToOf={colorToOf}
+                      whereOf={whereOf}
+                      onOpen={onOpen}
+                      onResize={resize}
+                      onUnpin={unpin}
+                    />
+                  ))}
+              </>
+            </Animated.View>
+          </GestureDetector>
         )}
-      </View>
 
-      {/* El panel se dibuja siempre, y vacio se dibuja con su forma. Antes, sin
-          tarjetas, no habia nada: un aviso de que estaba vacio y ya. Pero lo que
-          se va a anadir es una rejilla, y una rejilla que solo se ve cuando ya
-          tiene algo dentro no explica nada —ni como queda, ni cuanto cabe, ni
-          por donde se empieza a poner. La casilla fantasia dice las tres cosas
-          sin una palabra. */}
-      {cards.length === 0 ? (
-        <View style={{ gap: theme.spacing.sm }}>
-          <View
-            testID="panel-empty-grid"
-            accessibilityLabel={t("dashboard.empty")}
-            style={[
-              styles.grid,
-              {
-                // Las casillas son absolutas, asi que el contenedor no crece con
-                // ellas: sin esta altura, la leyenda de abajo se monta encima de
-                // la primera fila.
-                height: EMPTY_ROWS * (cellHeight + gap) - gap,
-              },
-            ]}
-            onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-          >
-            {Array.from({ length: EMPTY_CELLS }).map((_, index) => (
-              <View
-                key={`fantasia-${index}`}
-                style={[
-                  styles.cell,
-                  {
-                    left:
-                      (index % 2) *
-                      (EMPTY_CELL_COLUMNS * cellWidth +
-                        (EMPTY_CELL_COLUMNS - 1) * gap),
-                    top: Math.floor(index / 2) * (cellHeight + gap),
-                    width:
-                      EMPTY_CELL_COLUMNS * cellWidth +
-                      (EMPTY_CELL_COLUMNS - 1) * gap,
-                    height: cellHeight,
-                    borderRadius: theme.radius.lg,
-                    borderWidth: 1,
-                    borderColor: theme.colors.border,
-                    backgroundColor: theme.colors.surfaceMuted,
-                  },
-                ]}
-              />
-            ))}
-          </View>
-        </View>
-      ) : null}
-
-      {cards.length > 0 ? (
-        <View
-          style={styles.grid}
-          onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-        >
-          {cards.map((card) => {
-            const widget = draft.find((row) => row.id === card.id);
-            if (!widget) return null;
-            const info = describe(widget);
-            const colors = cardColors(colorOfWidget(widget));
-            const isSelected = selected === widget.id;
-
-            return (
-              <View
-                key={widget.id}
-                style={[
-                  styles.cell,
-                  {
-                    left: card.x * (cellWidth + gap),
-                    top: card.y * (cellHeight + gap),
-                    width: card.w * cellWidth + (card.w - 1) * gap,
-                    height: card.h * cellHeight + (card.h - 1) * gap,
-                  },
-                ]}
-              >
-                <PanelCard
-                  title={info.title}
-                  subtitle={info.subtitle}
-                  emoji={info.emoji}
-                  colors={colors}
-                  where={whereOfWidget(widget)}
-                  editing={editing}
-                  selected={isSelected}
-                  compact={card.h < 2}
-                  onPress={() => {
-                    if (editing) setSelected(isSelected ? null : widget.id);
-                    else if (info.href) onOpen(info.href);
-                  }}
-                />
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
-
-      {editing && selectedCard ? (
-        <Card variant="muted" style={{ gap: theme.spacing.sm }}>
-          <AppText variant="bodyStrong" numberOfLines={1}>
-            {describe(selectedCard).title}
+        {editing && hidden.length > 0 ? (
+          <AppText variant="caption" tone="subtle">
+            {t("dashboard.movedToNext", { count: hidden.length })}
           </AppText>
+        ) : null}
 
-          <View style={{ gap: theme.spacing.xxs }}>
-            <AppText variant="caption" tone="subtle">
-              {t("dashboard.sizeLabel")}
-            </AppText>
-            <View
-              style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}
-            >
-              {SIZES.map((size) => {
-                const current = sizeOf(selectedCard.id);
-                const active = current.w === size.w && current.h === size.h;
-                return (
-                  <Pressable
-                    key={`${size.w}x${size.h}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("dashboard.setSize", {
-                      w: size.w,
-                      h: size.h,
-                    })}
-                    accessibilityState={{ selected: active }}
-                    onPress={() =>
-                      apply(resizeCard(draft, selectedCard.id, size))
-                    }
-                    style={({ pressed }) => [
-                      styles.sizePill,
-                      {
-                        backgroundColor: active
-                          ? theme.colors.accent
-                          : theme.colors.surface,
-                        borderColor: theme.colors.border,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <AppText
-                      variant="caption"
-                      style={{
-                        color: active
-                          ? theme.colors.onAccent
-                          : theme.colors.text,
-                      }}
-                    >
-                      {size.w}×{size.h}
-                    </AppText>
-                  </Pressable>
-                );
-              })}
+        {/*
+          The one button that adds something, in the corner the thumb reaches,
+          and only while the panel is being arranged.
+
+          It was a panel-filling dashed block with a line of text under it, which
+          pushed the cards up to make room for itself and said "there are six
+          things left to add" to somebody who was trying to move a card. The app
+          already has this button, in this corner, on every screen that creates
+          something — so this is that one, and a second button in a different
+          place doing a different thing is how you end up looking for the other
+          one.
+
+          And only while arranging: outside the mode there is nothing to add to,
+          because everything can already be reached by tapping what is on it.
+        */}
+        {editing && availableCount > 0 ? (
+          <>
+            <View style={styles.fabSlot} pointerEvents="box-none">
+              <FloatingButton {...pistaAdd.props} onPress={directo ?? abrir} />
             </View>
-          </View>
-
-          <View style={[styles.row, { gap: theme.spacing.sm }]}>
-            <Button
-              label={t("dashboard.moveEarlier")}
-              icon="arrow-back"
-              size="sm"
-              variant="secondary"
-              fullWidth={false}
-              onPress={() =>
-                apply(
-                  moveCard(
-                    draft,
-                    selectedCard.id,
-                    indexOf(selectedCard.id) - 1,
-                  ),
-                )
-              }
+            {pistaAdd.node}
+            <AddMenu
+              visible={abierto}
+              onClose={cerrar}
+              title={t("dashboard.addMenu.title")}
+              subtitle={t("dashboard.addMenu.subtitle")}
+              options={menu ?? []}
             />
-            <Button
-              label={t("dashboard.moveLater")}
-              icon="arrow-forward"
-              size="sm"
-              variant="secondary"
-              fullWidth={false}
-              onPress={() =>
-                apply(
-                  moveCard(
-                    draft,
-                    selectedCard.id,
-                    indexOf(selectedCard.id) + 1,
-                  ),
-                )
-              }
-            />
-            <View style={styles.flex} />
-            <Button
-              label={t("common.done")}
-              size="sm"
-              onPress={() => setSelected(null)}
-            />
-          </View>
-        </Card>
-      ) : null}
-
-      {availableCount > 0 ? (
-        <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("dashboard.addCard")}
-            {...pistaAdd.props}
-            onPress={onOpenEditor}
-            style={({ pressed }) => [
-              styles.addCard,
-              {
-                borderColor: theme.colors.border,
-                backgroundColor: theme.colors.surfaceMuted,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}
-          >
-            <Ionicons name="add" size={20} color={theme.colors.textMuted} />
-            <AppText variant="bodyStrong" tone="muted">
-              {t("dashboard.addCard")}
-            </AppText>
-            <AppText variant="caption" tone="subtle">
-              {t(pluralKey("dashboard.cardsAvailable", availableCount), {
-                count: availableCount,
-              })}
-            </AppText>
-          </Pressable>
-          {pistaAdd.node}
-        </>
-      ) : null}
-
-      {hidden.length > 0 ? (
-        <AppText variant="caption" tone="subtle">
-          {t("dashboard.tooBig", { count: hidden.length })}
-        </AppText>
-      ) : null}
+          </>
+        ) : null}
+      </View>
     </View>
   );
 }
 
-function PanelCard({
-  title,
-  subtitle,
-  emoji,
-  colors,
-  where,
-  editing,
-  selected,
-  compact,
-  onPress,
+/**
+ * The layout with the cards that did not fit moved to the next screen.
+ *
+ * Drawn, not stored, and the difference is the whole reason this is a function
+ * rather than a change in the commit: what the panel shows has to be the panel
+ * plus a fallback, and the fallback has to be reversible the moment there is room
+ * again. Doing it on write would make a resize that is refused on one screen
+ * permanently move cards to another one.
+ */
+function spillToNextPage(
+  layout: DashboardWidget[],
+  page: number,
+  hidden: string[],
+): DashboardWidget[] {
+  if (hidden.length === 0) return layout;
+  const ids = new Set(hidden);
+  return layout.map((widget) =>
+    ids.has(widget.id) && pageOf(widget) === page
+      ? { ...widget, page: Math.min(page + 1, MAX_PAGES - 1) }
+      : widget,
+  );
+}
+
+/**
+ * One screen of the panel, at its own place on the track.
+ *
+ * Absolute and placed by hand rather than in a flex row, because the card inside
+ * is already absolutely positioned in cells and a screen that is a flex child
+ * would be a flex child whose width depends on its contents. The track is
+ * `board.width` per screen and every screen claims exactly one of those slots, so
+ * the arithmetic of "which page is showing" is one multiplication.
+ *
+ * `live` is the screen being looked at, and it is the only one that is arranged:
+ * a card being dragged or resized on a screen that is arriving would be a gesture
+ * on a card that is not there yet. The screen that is not live gets its own
+ * context with the arranging switched off, which is what keeps the resize corners
+ * and the unpin buttons of the *next* screen out of the page: they are off screen
+ * so nobody can press them, but they are in the document, and a screen reader
+ * reads a button it cannot see as a button anybody can press.
+ */
+function ScreenOfPanel({
+  offset,
+  width,
+  height,
+  live,
+  cell,
+  widgets,
+  preview,
+  dragging,
+  arrange,
+  describe,
+  colorKeyOf,
+  washOf,
+  colorToOf,
+  whereOf,
+  onOpen,
+  onResize,
+  onUnpin,
 }: {
-  title: string;
-  subtitle: string;
-  emoji: string | null;
-  colors: {
-    background: string;
-    foreground: string;
-    border: string;
-    muted: string;
-  };
-  /** Which space it is in, shown while the panel is being arranged. */
-  where: string;
-  editing: boolean;
-  selected: boolean;
-  /** A card of one row has room for the name and nothing else. */
-  compact: boolean;
-  onPress: () => void;
+  offset: number;
+  width: number;
+  height: number;
+  live: boolean;
+  cell: { width: number; height: number; gap: number };
+  widgets: DashboardWidget[];
+  preview?: Map<string, PlacedCard> | null;
+  dragging: string | null;
+  arrange: PanelArrangeValue;
+  describe: PanelGridProps["describe"];
+  colorKeyOf: PanelGridProps["colorKeyOf"];
+  washOf: PanelGridProps["washOf"];
+  colorToOf: PanelGridProps["colorToOf"];
+  whereOf: PanelGridProps["whereOf"];
+  onOpen: (href: string) => void;
+  onResize: (id: string, size: { w: number; h: number } | null) => void;
+  onUnpin: (id: string) => void;
 }) {
-  // The hint is the space while the panel is being arranged and the subtitle
-  // otherwise, and the node is a sibling rather than a wrapper: the `Pressable`
-  // is the root of this component and it is `flex: 1` inside an absolutely
-  // positioned cell, which a `View` around it would take away.
-  const pista = useA11yHint(editing ? where : subtitle);
+  const placed = useMemo(() => pageCards(widgets), [widgets]);
+  const context = useMemo(
+    () => (live ? arrange : AT_REST),
+    [live, arrange],
+  );
 
   return (
-    <>
+    <PanelArrangeContext.Provider value={context}>
+      <View
+        testID={`panel-screen-${offset}`}
+        /*
+          `box-none`, and this is what makes the swipe work while the panel is
+          being arranged.
+
+          A screen is a full-page box, so with the default `auto` it is a touch
+          target everywhere, including the empty board between the cards — and the
+          background that owns the swipe is painted *underneath* it, being the
+          first child of the track. So the screen took every touch on the panel
+          and the background gesture never fired once: a swipe across the free
+          board moved nothing at all, and the only way to change page while
+          arranging was the dots. The card drag kept working, which is exactly
+          what made it read as the swipe being switched off on purpose rather
+          than as a layer in the wrong order.
+
+          `box-none` is the shape the arrangement actually has: the screen is not
+          a thing you touch, it is the space the cards are in, and a touch in the
+          gaps between them belongs to the board. The cards are children, so they
+          keep their touches — the drag, the resize corner and the tap that opens
+          the list all still land on the card under the finger, and only the
+          emptiness falls through to the background underneath.
+        */
+        pointerEvents="box-none"
+        style={[styles.screen, { left: offset, width, height }]}
+      >
+      {placed.cards.map((card) => {
+        const widget = widgets.find((row) => row.id === card.id);
+        if (!widget) return null;
+        const info = describe(widget);
+        // While a drag is in flight the *other* cards are placed as if the drop
+        // had already happened. The dragged one keeps its own place, because the
+        // finger is deciding where it is.
+        const target = preview?.get(widget.id) ?? card;
+
+        return (
+          <PlacedCardView
+            key={widget.id}
+            card={target}
+            cell={cell}
+            lifted={live && dragging === widget.id}
+          >
+            <PanelCard
+              id={widget.id}
+              title={info.title}
+              subtitle={info.subtitle}
+              emoji={info.emoji}
+              colorKey={colorKeyOf(widget)}
+              wash={washOf?.(widget)}
+              colorToKey={colorToOf?.(widget)}
+              where={whereOf(widget)}
+              compact={card.h < 2}
+              size={cardSize(widget)}
+              cell={cell}
+              mark={info.mark}
+              onPress={() => {
+                if (info.href) onOpen(info.href);
+              }}
+              onResize={onResize}
+              onUnpin={() => onUnpin(widget.id)}
+            />
+          </PlacedCardView>
+        );
+      })}
+      </View>
+    </PanelArrangeContext.Provider>
+  );
+}
+
+/**
+ * One card, placed, and the motion that takes it to where it belongs.
+ *
+ * A resize re-places every card, and doing that in a `useEffect` is a render of
+ * the screen per change, sixty times a second. So the placement is read inside an
+ * animated style and animated to: the card moves, the screen does not re-render.
+ *
+ * **Every** card animates, including the one under the corner, and it used not to.
+ * The reasoning was that a card being resized is being resized *by the finger*,
+ * so it has to be exactly where the finger is and anything with momentum is
+ * latency. That is true of moving a card, where the finger's position is the
+ * answer, and it is not true of resizing one: the size is a step, not a position,
+ * so the finger is choosing between a handful of sizes and the card cannot be
+ * under the finger at all — it is as many cells across as the size says. Set
+ * without animating, a resize was the one thing on the panel that teleported: the
+ * card jumped a whole cell, and the neighbours glided to their new places while
+ * it did, which reads as the card being the wrong shape rather than as the card
+ * having been resized. It eases like everything else.
+ */
+function PlacedCardView({
+  card,
+  cell,
+  lifted,
+  children,
+}: {
+  card: { x: number; y: number; w: number; h: number };
+  cell: { width: number; height: number; gap: number };
+  lifted: boolean;
+  children: React.ReactNode;
+}) {
+  const x = useSharedValue(card.x);
+  const y = useSharedValue(card.y);
+  const w = useSharedValue(card.w);
+  const h = useSharedValue(card.h);
+
+  useEffect(() => {
+    // They ease into place and stop. A card that overshoots and comes back is fine
+    // when there is one of it; with a screen of them, every card in the panel rings
+    // for a moment after you let go, and the panel reads as nervous rather than as
+    // responsive.
+    x.value = withTiming(card.x, MOVE);
+    y.value = withTiming(card.y, MOVE);
+    w.value = withTiming(card.w, MOVE);
+    h.value = withTiming(card.h, MOVE);
+  }, [card.h, card.w, card.x, card.y, h, w, x, y]);
+
+  const box = useAnimatedStyle(() => ({
+    left: x.value * (cell.width + cell.gap),
+    top: y.value * (cell.height + cell.gap),
+    width: w.value * cell.width + (w.value - 1) * cell.gap,
+    height: h.value * cell.height + (h.value - 1) * cell.gap,
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.cell,
+        // The lifted card is above the others and lifts a little off the page.
+        // Enough to tell which card you are holding once two of them overlap,
+        // and not so much that the panel looks like it has come apart.
+        lifted ? styles.lifted : null,
+        box,
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+/**
+ * The pages, as dots between arrows.
+ *
+ * Dots and not a count, because the question is not which page you are on but how
+ * many there are, and a "3 / 7" on a panel you are arranging is a number to count
+ * rather than a place to aim. The arrows are there because a dot is a target too
+ * small for a finger that is also dragging a card around.
+ */
+function PageBar({
+  page,
+  screens,
+  onChange,
+  canAddPage,
+  onAddPage,
+}: {
+  page: number;
+  screens: number;
+  onChange: (page: number) => void;
+  /** Only while arranging: outside it there is nothing to arrange onto. */
+  canAddPage: boolean;
+  onAddPage: () => void;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  /**
+   * How many dots to draw: exactly as many as there are screens.
+   *
+   * It was `screens + 1`, and a dot more than there are screens is worse than no
+   * dots at all: the last one is a promise the panel cannot keep. Pressing it sets
+   * a page that does not exist, the clamp puts you back where you were, and the
+   * only evidence anybody gets is a dot that does nothing — which reads as the app
+   * being broken rather than as the dot being wrong.
+   *
+   * The number comes from `pageCount`, which is the highest screen that has
+   * something on it, so every dot is a screen somebody's cards are on and every
+   * one of them is somewhere you can get to.
+   */
+  const total = Math.min(Math.max(screens, 1), MAX_PAGES);
+
+  return (
+    <View style={[styles.row, styles.pages, { gap: theme.spacing.md }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={title}
-        {...pista.props}
-        onPress={onPress}
+        accessibilityLabel={t("dashboard.previousPage")}
+        disabled={page === 0}
+        hitSlop={10}
+        onPress={() => onChange(Math.max(page - 1, 0))}
         style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: colors.background,
-            borderColor: selected ? colors.foreground : colors.border,
-            borderWidth: selected ? 3 : 1,
-            opacity: pressed ? 0.85 : 1,
-          },
+          styles.pageArrow,
+          { opacity: pressed || page === 0 ? 0.5 : 1 },
         ]}
       >
-        {/* The emoji when the list has one, nothing when it does not: the card is
-            already painted with the colour of the space, so a dot of that same
-            colour beside the name would say nothing at all. A card of one row has
-            not even room for the emoji. */}
-        {emoji && !compact ? <AppText variant="title">{emoji}</AppText> : null}
-
-        <AppText
-          variant="bodyStrong"
-          numberOfLines={compact ? 1 : 3}
-          style={{ color: colors.foreground, flexShrink: 1 }}
-        >
-          {title}
-        </AppText>
-
-        {/* A card of one row has room for the name and nothing else, and a second
-            line in it is a line cut in half. */}
-        {compact ? null : (
-          <>
-            <View style={styles.spacer} />
-            <AppText
-              variant="caption"
-              style={{ color: colors.muted }}
-              numberOfLines={1}
-            >
-              {editing ? where : subtitle}
-            </AppText>
-          </>
-        )}
+        <Ionicons
+          name="chevron-back"
+          size={18}
+          color={page === 0 ? theme.colors.textSubtle : theme.colors.text}
+        />
       </Pressable>
-      {pista.node}
-    </>
+
+      <View style={[styles.row, { gap: theme.spacing.sm }]}>
+        {Array.from({ length: total }, (_, index) => (
+          <Pressable
+            key={index}
+            accessibilityRole="button"
+            accessibilityState={{ selected: index === page }}
+            /*
+              Which screen you are on, in the label, and not only in the colour.
+              `accessibilityState.selected` does not reach the web: a button is not
+              an option, so there is no valid `aria-selected` for it and the
+              attribute is simply not written. The only thing left telling the two
+              dots apart was a background colour, which is invisible to a screen
+              reader and to anybody who cannot separate the accent from the border.
+              The label says which screen it is and whether it is the one being
+              looked at, in words, and it is the same words whether or not you can
+              see the dot.
+            */
+            accessibilityLabel={
+              index === page
+                ? t("dashboard.herePage", { page: index + 1 })
+                : t("dashboard.goToPage", { page: index + 1 })
+            }
+            hitSlop={8}
+            onPress={() => onChange(index)}
+            testID={index === page ? "panel-page-current" : `panel-page-${index}`}
+          >
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor:
+                    index === page ? theme.colors.accent : theme.colors.border,
+                },
+              ]}
+            />
+          </Pressable>
+        ))}
+      </View>
+
+      {
+        /*
+          A screen that can be added, at the end of the bar, and only while
+          arranging.
+
+          It is a plus and not a fourth kind of arrow because it is the only one of
+          the four that makes something rather than going somewhere, and a bar where
+          three keys move and one creates is a bar you read twice. Disabled at the
+          cap and for the same reason the last dot is not a promise: a plus that does
+          nothing is worse than a plus that is not there.
+        */
+      }
+      {canAddPage ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("dashboard.addPage")}
+          hitSlop={10}
+          onPress={onAddPage}
+          testID="panel-add-page"
+          style={({ pressed }) => [
+            styles.pageArrow,
+            { opacity: pressed ? 0.5 : 1 },
+          ]}
+        >
+          <Ionicons
+            name="add-circle-outline"
+            size={18}
+            color={theme.colors.textSubtle}
+          />
+        </Pressable>
+      ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("dashboard.nextPage")}
+        disabled={page >= total - 1}
+        hitSlop={10}
+        onPress={() => onChange(Math.min(page + 1, total - 1))}
+        style={({ pressed }) => [
+          styles.pageArrow,
+          { opacity: pressed || page >= total - 1 ? 0.5 : 1 },
+        ]}
+      >
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={
+            page >= total - 1 ? theme.colors.textSubtle : theme.colors.text
+          }
+        />
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * What an empty panel draws.
+ *
+ * The shape of the thing you are about to fill, and not a message saying it is
+ * empty. What goes on it is a grid, and a grid that only appears once it has
+ * something in it explains nothing: not how it looks, not how much fits, not
+ * where to start. Four ghosts say all three without a word.
+ */
+function Ghosts({
+  cell,
+  radius,
+  height,
+}: {
+  cell: { width: number; height: number; gap: number };
+  radius: number;
+  /** The space the board was given, which the ghosts fill like cards would. */
+  height: number;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+  // A third of the width rather than one cell: a card of one cell is a
+  // spreadsheet, and what a card actually is, before anything is on it, is about a
+  // third of the screen.
+  const span = Math.max(2, Math.round(PANEL_COLUMNS / 3));
+  const cardWidth = span * cell.width + (span - 1) * cell.gap;
+
+  return (
+    <View
+      testID="panel-empty-grid"
+      accessibilityLabel={t("dashboard.empty")}
+      style={[
+        styles.screen,
+        {
+          left: 0,
+          // The ghosts are absolute, so the container does not grow with them:
+          // without this height the legend below lands on top of the first row. The
+          // board's own height, so an empty panel is the same size as a full one
+          // and nothing moves when the first card is pinned.
+          height,
+          // And the board's own width, for the same reason. `styles.screen` is an
+          // absolute box with no width of its own, because a screen on the track is
+          // given one by the track. An empty panel is not on the track.
+          width: "100%",
+        },
+      ]}
+    >
+      {Array.from({ length: 4 }, (_, index) => (
+        <View
+          key={`fantasia-${index}`}
+          style={[
+            styles.cell,
+            {
+              left: (index % 2) * (cardWidth + cell.gap),
+              top: Math.floor(index / 2) * (cell.height + cell.gap),
+              width: cardWidth,
+              height: cell.height,
+              borderRadius: radius,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+              backgroundColor: theme.colors.surfaceMuted,
+            },
+          ]}
+        />
+      ))}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /**
+   * The panel takes the whole page.
+   *
+   * Not a column of things that ends somewhere: a board. It is the one screen
+   * where the content *is* the screen, and the rest of the space is what a card
+   * gets.
+   */
+  root: {
+    flex: 1,
+  },
+  /**
+   * The board: the space under the header, measured on the way in.
+   *
+   * `flex: 1` so it takes exactly what the header left and no more. A board
+   * taller than the space it was given is a board with a scroll, and the whole
+   * point is that there is not one.
+   *
+   * `position: relative` so the absolutely positioned things inside it are placed
+   * against the board and not against whatever happens to be further up. The
+   * ghosts of an empty panel are one of them, and without this they come out zero
+   * wide — a panel that looks like it has not drawn.
+   *
+   * `overflow: hidden`, and it is the **board** that has to be the one clipping.
+   * The track is as wide as every screen side by side, so its own `overflow`
+   * clips at three screens and lets the other two through — which is why a panel
+   * of three screens showed sixteen pixels of the next one sitting at the right
+   * edge, on a panel that had not been touched. The clip has to be a box one
+   * screen wide, and this is the only one that is.
+   *
+   * It costs the shadow on a card being dragged against the right or the left
+   * edge, which is clipped at the panel's own border. That is the cheaper half of
+   * the trade: a shadow that stops at the edge of the screen reads as a card at
+   * the edge of the screen, and a sliver of a page you have not asked for reads as
+   * a page that is already there.
+   */
+  board: {
+    flex: 1,
+    width: "100%",
+    position: "relative",
+    overflow: "hidden",
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -520,32 +1574,68 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  grid: {
+  pages: {
+    justifyContent: "center",
+  },
+  pageArrow: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  /**
+   * The track: every screen of the panel, side by side.
+   *
+   * Its width is set by the animated style and is the board's width times the
+   * number of screens, because the position of a screen on it is that width times
+   * the screen's number.
+   *
+   * `overflow: hidden` here does **not** clip the screens either side of the one
+   * being looked at, and the comment used to say it did. It cannot: the clip is
+   * at this box's own border, and this box is every screen side by side, so the
+   * far side of it is off the panel. The clip that does that is on `board`, which
+   * is one screen wide. This stays because a screen's own painting still has to
+   * stay inside it — the `lifted` card's shadow, mostly — and because removing it
+   * would be a change with nothing to gain.
+   */
+  track: {
     position: "relative",
-    width: "100%",
+    overflow: "hidden",
+  },
+  /** One screen, at its slot on the track. */
+  screen: {
+    position: "absolute",
+    top: 0,
   },
   cell: {
     position: "absolute",
   },
-  card: {
-    flex: 1,
-    gap: 4,
-    padding: 10,
-    borderRadius: 12,
+  lifted: {
+    zIndex: 20,
+    // The CSS form, because the `shadow*` family was dropped on the web and this
+    // is the one that works on all three targets.
+    boxShadow: "0px 6px 16px rgba(0, 0, 0, 0.22)",
   },
-  spacer: {
-    flex: 1,
-    minHeight: 2,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  badge: {
+  /**
+   * Where the floating button lives.
+   *
+   * Absolute to the bottom right of the panel, the same corner it is in on every
+   * other screen. `pointerEvents: "box-none"` on the wrapper so the corner of the
+   * panel under the button still belongs to the panel: a card you are dragging
+   * *into* that corner has to be able to land there, and a wrapper that ate the
+   * touches would make the last cell of the panel impossible to drop anything on.
+   */
+  fabSlot: {
     position: "absolute",
-    top: 6,
-    right: 6,
+    right: 0,
+    bottom: 0,
+    width: 78,
+    height: 82,
   },
   addCard: {
     gap: 4,
@@ -554,15 +1644,5 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderRadius: 14,
-  },
-  sizePill: {
-    minWidth: 40,
-    height: 30,
-    paddingHorizontal: 8,
-    borderRadius: 15,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

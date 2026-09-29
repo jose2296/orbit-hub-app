@@ -157,12 +157,35 @@ decisión, no como descuido.
 
 ## Fase 4 — Notas y adjuntos
 
-- [ ] Esquema de documento portable y su validador
-- [ ] Editor rico web
-- [ ] Editor nativo
-- [ ] Autoguardado con control de versión
-- [ ] Adjuntos: escritura local, subida encolada, descarga autorizada
-- [ ] Búsqueda sobre `plain_text`
+Un solo editor en las tres plataformas, HTML como formato, en
+[ADR 0009](architecture/adr/0009-one-native-editor.md) y
+[notes-editor.md](architecture/notes-editor.md). Sustituye a la
+[ADR 0007](architecture/adr/0007-notes-editor.md), que era dos editores.
+
+- [x] Resolver si la nota es entidad propia o columna de un elemento
+      ([ADR 0008](architecture/adr/0008-note-entity.md): entidad propia; `list_items.notes`
+      pasa a llamarse `annotation`)
+- [x] Migrar `list_items.notes` a `annotation` y anadir `note` y `note_template` a
+      `shareNodeTypeSchema`, con su CHECK y su autorizacion
+- [x] Validador del documento: lista blanca estricta de etiquetas, sin DOM
+- [x] `noteDocumentSchema` pasa de JSON ProseMirror a HTML validado
+- [x] Tabla `notes` + `attachments`, con su migración, e índices de búsqueda
+- [x] `note` en `SYNC_ENTITIES` y en `SYNC_WRITABLE_FIELDS`
+- [x] API de notas: crear, leer, listar, editar, borrar, con versionado y por papel
+- [x] Editor en pantalla con `react-native-enriched-html` y su barra de formato
+- [x] Cliente: `note-record`, `useNotes`/`useNote`, caché local y outbox
+- [x] `note` en el `pull`, con su rama para compartir una nota
+- [x] Pantalla de nota y autoguardado con rebote de 800 ms
+- [x] Atajos de markdown (`- `, `## `, `[] `, `> `, ` ``` `) en el editor
+- [x] Un `update` se funde en su `create` pendiente, y la respuesta del servidor
+      actualiza la versión en la caché
+- [x] Plantillas: entidad, ámbitos personal/workspace/público y catálogo de 12
+- [x] Búsqueda sobre `plain_text`, en el servidor y en la caché local
+- [x] Adjuntos: cola de subida propia, descarga autorizada por nota, `attachment_count` contado
+- [x] Verificado en Android (API 35) con dev build: editor, atajos, plantillas, adjuntos,
+      sin conexión y ambos temas
+- [ ] Publicar una plantilla en el catálogo público (responde `501` a propósito)
+- [ ] Verificar en iOS
 
 ---
 
@@ -492,6 +515,12 @@ Tres cosas que se decidieron al escribirlas, no antes:
 
 - **Una nota no es una tabla.** La nota es la columna `notes` de un elemento, asi que
   compartir una nota es compartir ese elemento. No hay un cuarto tipo de nodo.
+  > **Corregido por [ADR 0008](architecture/adr/0008-note-entity.md).** Era una decision
+  > sobre compartir escrita como una afirmacion sobre el modelo de datos, y la Fase 4 la
+  > contradice: una nota es un documento ProseMirror y no cabe en un `varchar(2000)`. La
+  > nota **si** es una tabla y **si** es un tipo de nodo compartible. La columna del
+  > elemento se llama ahora `annotation` y es una anotacion corta, no una nota. El texto
+  > de arriba se deja como estaba porque en su momento era la decision que se tomo.
 - **`revoked_at` y no borrar la fila.** El que lo recibio tiene que enterarse de que
   dejo de estar, y un movil que estaba sin conexion necesita algo que leer en su
   proximo `pull`. Una fila desaparecida es indistinguible de una concesion que nunca
@@ -774,6 +803,349 @@ solo que el id exista):
   mismo orden, que es lo único que hace que la lista que ordenó otro siga significando
   algo. Decidido y hecho.
 - **Si se puede arrastrar en otro orden:** no. Solo en manual, y la lista lo avisa.
+
+---
+
+## Tanda del 28 de septiembre — interfaz 🟡
+
+Todo lo pedido de una vez el 28 de septiembre de 2026, en el orden en que se puede
+comprobar. Se trabaja **de una en una** y cada una se cierra conduciendo la app, no
+leyéndola.
+
+Dos decisiones van antes que nada, porque **cambian la forma del header** y por lo tanto
+invalidan el trabajo de la fila 1 y la 2 si se elige mal:
+
+- **D1. ¿Se quitan las tres pestañas de abajo?** Si el panel pasa a ser pantalla del
+  `Stack`, su cabecera hecha a mano deja de tener sentido y unificarla es natural. Si
+  las pestañas se quedan, la unificación se hace sobre las dos cabeceras que hay hoy.
+- **D2. El `+` con submenú, ¿genérico desde el principio?** Va a decir "lo reutilizaremos
+  en más sitios", y genérico de verdad es decidir la API antes del primer uso.
+
+Leyenda: ✅ hecho y comprobado · 🟡 en curso · ⬜ sin empezar · ⛔ esperando decisión
+
+| # | Qué se pidió | Dónde | Estado | Cómo se comprueba |
+| --- | --- | --- | --- | --- |
+| 1 | La hamburguesa en todas las pantallas, **con márgenes**, no pegada al borde | `app/(app)/_layout.tsx` | ✅ **ver abajo** | Margen del botón de menú en las 8 rutas: **12 px en las ocho** |
+| 2 | Toda pantalla con acciones las tiene **en el header** | `components/ui/header-action.tsx`, `app/(app)/_layout.tsx` | ✅ **ver abajo** | El lápiz del panel está en la cabecera: medido 40×40, a 12 del borde, a 20 del margen |
+| 3 | En espacio y carpetas los items **sin degradado**, color plano | `lib/workspace/color.ts` (`spaceTint`), `folders/folder-browser.tsx` | ✅ | `scripts/verify-app-regression.mjs`, y contando `LinearGradient`: solo queda el de la cabecera del espacio |
+| 4 | En listas de películas/series: al pasar por recomendados o colecciones, **añadir a la lista** y **ver siempre** tráiler y proveedores | `components/catalog/catalog-result-row.tsx`, `item/[itemId].tsx` | ⬜ | Navegar el carrusel y comprobar que el botón de añadir y el de "dónde verlo" están sin entrar a la ficha |
+| 5 | **Revisión visual** de todas las pantallas | todas | ⬜ | Capturas de las 19 rutas en claro/oscuro y móvil/escritorio, revisadas a ojo |
+| 6 | El selector de workspace: en **"Termina en"** los colores no enseñan el degradado | `workspace/workspace-color-picker.tsx` | 🟡 **ver abajo** | Comparar las muestras con la previsualización grande, con los dos extremos en colores **distintos** |
+| 7 | **Quitar el input de texto** del color (ya hay picker) | `workspace/workspace-color-picker.tsx` | ✅ | El campo de hexadecimal no está |
+| 8 | **Colores recientes** en cada tab, sobre todo en el otro para poder hacer degradado a partir de ahí | `lib/workspace/recent-colors.ts`, `workspace/workspace-color-picker.tsx` | ✅ | Poner un color a mano, cerrar, reabrir: está en recientes de los dos tabs |
+| 9 | **Quitar las pestañas de abajo** | `app/(app)/_layout.tsx` | ✅ **ver abajo** | No hay barra inferior; panel, buscar y ajustes se llegan por el cajón |
+| 10 | En workspaces: el `+` abre el **formulario de editar/crear** abajo a la derecha, como el resto | `app/(app)/workspaces.tsx`, `components/workspace/workspace-create-sheet.tsx` | ✅ | El `+` de la esquina abre un formulario con nombre y color; al guardar aparece el espacio y se entra en él |
+| 11 | Icono de carpeta con **solo trazo**, como en el resto | `app/(app)/workspaces.tsx` | ✅ | Un espacio sin emoji propio se dibuja con `folder-outline`, no con el emoji `📁` |
+| 12 | En workspaces, **quitar título y descripción** (la cabecera ya tiene el título) | `app/(app)/workspaces.tsx` | ✅ | El título sale **una vez**, en la cabecera; la pantalla empieza por la lista |
+| 13 | Botón de **añadir página** en el panel | `components/dashboard/panel-grid.tsx`, `db/constants.ts`, migración `0014` | ✅ **ver abajo** | El ⊕ de la barra añade una pantalla y **sobrevive al guardado**: `pages` sale en caché y en el *outbox* |
+| 14 | El `+` del panel abre **submenú** de añadir item o página | `components/ui/add-menu.tsx`, `panel-grid.tsx` | ✅ **ver abajo** | El `+` ofrece «Tarjetas» y «Una pantalla», y cada una hace lo suyo |
+| 15 | En el picker dentro de un bottom sheet, **arrastrar no cierra el sheet** | `workspace/workspace-color-picker.tsx` | ✅ | Arrastrar la pista de saturación y comprobar que el sheet sigue abierto |
+| 16 | Cabeceras de carpetas y módulos **sin color de fondo**, e identificar el espacio de otra manera | `folder/[folderId].tsx`, `list/[listId].tsx` | ⬜ | Decisión de producto abierta: punto de color en el título, espacio en las migas, chip de espacio, o tinte en la cabecera |
+
+### Las ideas de la fila 16
+
+Ninguna vuelve a poner el degradado en una cabecera, que es lo que estorba. De menos a
+más invasiva:
+
+1. **Un punto del color del espacio** junto al título. Lo más barato: cero layout, se lee
+   a cualquier tamaño, y `SpaceDot` ya está hecho.
+2. **El espacio en las migas, con su color**: "Regresion / Personas", donde *Regresion* va
+   en el tinte del espacio. Informa y ya existe el componente.
+3. **Un chip de espacio** pulsable junto al título, que abra el selector de espacios.
+   Además de identificar, sirve de navegación rápida.
+4. **Tinte sutil del `surfaceMuted` del espacio** en el fondo de la cabecera. Delata el
+   espacio sin gritar, pero tiñe toda la barra.
+5. **El emoji del espacio** —que ya es un campo— junto al título.
+
+**Recomendación: 1 + 3.** Identifican sin ruido, no pelean con el tema, y el chip resuelve
+además "estoy en un espacio de doce y no sé cuál".
+
+### La fila 6, lo que se sabe y lo que no
+
+No se ha cerrado y **no se va a cerrar a ojo**. Lo que se ha medido:
+
+- El código pasa `colorKey={par.desde}` y `colorToKey={par.hasta}` a las dos muestras
+  **igual en los dos tabs**. No hay ninguna ruta en la que un tab enseñe el degradado
+  y el otro no: es el mismo componente con el mismo `par`.
+- Con los dos extremos en el **mismo** color el degradado no se ve, y no se ve en
+  ninguna parte: tampoco en "Así se verá" cuando los dos extremos son iguales. Eso no
+  es un fallo, es una resta de un color consigo mismo.
+- Donde **sí** se ha visto una discrepancia de verdad: con los dos extremos iguales,
+  las muestras "Diagonal" y "Vertical" salen **planas** y la previsualización grande
+  "Así se verá" sale **degradada**. Las dos deberían enseñar lo mismo, y no lo enseñan.
+
+Lo que hace falta para cerrarlo: un caso concreto. Con los dos extremos en colores
+distintos, una captura de cada tab, y decir cuál de las dos muestras es la que falta.
+
+### La fila 7 y la 8, hechas
+
+El campo de hexadecimal fuera, y los recientes por extremo con **los dos en la misma
+fila**: en "Termina en" se ofrecen los colores que se usaron en "Empieza en", que es lo
+que permite hacer un degradado *desde* un color en vez de buscarlo dos veces.
+
+Comprobado en el navegador: la fila no aparece hasta que se usa un color (un
+encabezado sobre cuatro círculos vacíos es algo que leer sin motivo), aparece en el
+primer tab al pulsar una muestra, y aparece en el segundo con lo del primero.
+
+**Un bug que salió al hacerlo, y es de los que no se ven:** las muestras de la paleta
+llaman a `escribir(color.key)` — `"rose"`, no un hexadecimal — y `rememberColor`
+descarta en silencio lo que no tiene forma de color. La fila no aparecía nunca y
+parecía un problema de estado. El tipo del parámetro era `string` en los dos sitios y
+los dos eran correctos: lo que no se podía saber leyendo es que una de las dos
+vocablos es una clave y la otra un color.
+
+### Las filas 1 y 2: una sola cabecera en toda la app
+
+Había **dos cabeceras**: la que dibuja el `Stack` y la que las tres pestañas se
+hacían a mano. De ahí el margen que se veía, que medido era peor de lo que parecía:
+
+| Pantalla | Margen del botón de menú |
+| --- | --- |
+| Pestañas (panel, buscar, ajustes) | 8 px |
+| Stack (espacios, listas, sync, dispositivos, catálogo) | **−8 px** |
+
+En las pantallas del `Stack` el botón **empezaba en −8 con 40 de ancho**: ocho píxeles
+fuera de la ventana, no pegados al borde sino cortados. Dos implementaciones de la
+misma idea y nada que las mantuviera de acuerdo.
+
+Las tres pestañas ahora usan la cabecera del `Stack` — sin la suya — así que hay
+**una sola** en la app, y las ocho rutas miden lo mismo: **12 px de margen, botón de
+40, a 12 del borde**.
+
+Tres cosas que salieron al hacerlo, y ninguna la enseña el typecheck:
+
+1. **El margen no es un `padding`, es una corrección.** `headerLeft` no empieza en
+   cero: coloca su contenedor en **x = −8**. El `paddingLeft` vale `xs + lg` (4 + 16)
+   y no un 12 redondo, porque tiene que restar 8 de voladizo más el margen que se
+   quiere. Un 12 a secas deja el botón en 4.
+2. **Dentro de una pestaña, `setOptions` va a la pestaña.** `useNavigation()` es el
+   navegador de pestañas, así que el título se puso en la **etiqueta del icono** —la
+   barra de abajo decía «Hola, Regresion»— y el `headerRight` se perdió entero: el
+   lápiz no aparecía. `useScreenTitle` y el panel ahora suben al `Stack` con
+   `getParent()`.
+3. **La flecha de atrás no tenía a dónde ir.** En las tres raíces `canGoBack()` es
+   falso y el botón se dibujaba igualmente, junto a una hamburguesa que sí funciona.
+   Un flecha muerta al lado de una viva hace desconfiar de las dos.
+
+La fila 2 queda a medias y por una razón concreta: el pencil y el Guardar del panel
+ya están en la cabecera, pero **quitar las pestañas de abajo (fila 9) sigue sin
+decidirse**, y hasta que se decida hay pantallas que llevan a un sitio y a otro.
+
+### Las filas 10, 11 y 12
+
+**La 12** era la más fácil y la más vista: la cabecera ya decía «Espacios de trabajo» y
+la pantalla lo repetía debajo, con su línea de «cada proyecto tiene su propio sitio»,
+antes de haber mirado un solo espacio. Medido después del cambio: el título aparece
+**una vez** en la página entera.
+
+**La 10** era un formulario entero al final de la lista. Es decir: la única manera de
+crear un espacio era bajar más allá de la lista de los que ya tienes, y el formulario
+no tenía color, así que un espacio nacía gris y había que visitarlo y editarlo para
+que dejara de serlo. Ahora el `+` de la esquina —el mismo botón y en el mismo sitio
+que en el resto de pantallas— abre un formulario con el nombre y el color juntos, que
+es lo que hace el menú de un espacio que ya existe.
+
+Comprobado de punta a punta: se abre la hoja, se escribe el nombre, se elige un color
+por su nombre accesible («Rosa»), se pulsa Crear, **la hoja se cierra, el espacio
+aparece en la lista y se entra en su pantalla**. El badge dice «1 cambio sin subir»,
+que es la conducta local-first funcionando y además la prueba de que la escritura
+quedó en cola en vez de evaporarse.
+
+**Un texto que se quedó colgando:** el pie de esa pantalla decía «usa el campo de arriba
+para crear otro». Ese campo ya no existe, así que la instrucción apuntaba al vacío.
+Ahora dice «el botón + para crear otro». Borrar una cosa y no sus referencias es la
+mitad del trabajo de borrar una cosa.
+
+**La 11** era un emoji 📁: relleno, multicoloreado y del sistema, la única marca
+rellena de la app y la única de la pantalla cuyo color no tenía que ver con el
+espacio. Las filas de carpeta ya usaban `folder-outline`; el que quedaba era la
+reserva de la lista de espacios, y ahora es el mismo glifo de trazo. Un espacio con
+emoji propio lo conserva, que ese es de la persona.
+
+### D1: fuera las pestañas, y lo que salió al hacerlo
+
+Las tres destinos —panel, buscar y ajustes— son ahora pantallas del `Stack` de la app, y
+la barra de abajo no existe. Comprobado en las tres: **no hay barra**, el menú las tiene
+las tres, y pulsar «Buscar» en el menú lleva a `/search`.
+
+De paso: **el indicador de la ruta activa del cajón nunca funcionó**, y ahora sí. Se
+comparaba `usePathname()` —la URL— con la ruta del router, y para el panel eso es `/`
+contra `/(app)`, que nunca son iguales. Ahora cada destino lleva las dos direcciones y se
+compara con la correcta.
+
+Y al quitar las pestañas desapareció **el segundo navegador entre la cabecera y la
+pantalla**, que es lo que de verdad estaba costando. Y destapó tres bugs que estaban
+escondidos detrás:
+
+### Una pantalla no puede escribir en la cabecera que dibuja el layout
+
+`navigation.setOptions({ title, headerRight })` desde la pantalla **no funciona en esta
+app**, y no es culpa de la pantalla. Un `<Stack.Screen>` del layout que lleve cualquier
+`options` las vuelve a aplicar en cada render del layout, y volver a aplicarlas
+**reemplaza el objeto entero** de opciones de esa pantalla. El layout gana siempre.
+
+Medido, tres veces distintas según lo que se le quitara al layout:
+
+| El layout declara | Lo que se ve |
+| --- | --- |
+| `title: "Inicio"` | La cabecera dice «Inicio» y el saludo se pierde |
+| nada | La cabecera dice **`index`**, el nombre de la ruta |
+| `headerShown` | El saludo tampoco aparece |
+
+Y la ranura derecha —que existe, 297 px de ancho— salía **vacía** en todas.
+
+**La solución va al revés de lo natural:** el layout dibuja la cabecera y llena sus
+ranuras, y la pantalla *publica* lo que va en la derecha. `components/ui/header-action.tsx`
+es esa pieza: un proveedor en el layout, `useHeaderAction` en la pantalla, y el valor es
+una **función** y no un elemento, para que nada se compare por identidad.
+
+Tres cosas que salen al hacerlo y que ninguna está en el typecheck:
+
+1. **Un componente no puede proveerse un contexto a sí mismo.** El layout leía el valor
+   que él mismo publicaba, y como está *fuera* de su propio proveedor le llegaba el valor
+   por defecto: ranura vacía y un `setAction` que no hacía nada. Por eso ahora son dos
+   componentes, el que provee y el que navega.
+2. **`useCallback` con `useA11yHint` en las dependencias no es estable.** Ese hook
+   construye su objeto en cada render, así que la función que se publica era nueva
+   siempre, el efecto se re-disparaba, y la app entraba en
+   `Maximum update depth exceeded` con la pantalla en blanco. La referencia va **dentro
+   del hook**, no en el `useCallback` de quien lo llama: una cabecera que solo se puede
+   llenar acertando las dependencias no es una cabecera, es una trampa.
+3. **Una función pasada a un setter de `useState` no es un valor: es un actualizador.**
+   `setAction(estable)` guardaba lo que la función **devuelve** —el elemento del botón— y
+   la cabecera acababa intentando llamar a un elemento. El error salía de dentro de la
+   cabecera, con la pantalla en blanco y sin nada en el árbol que señalara el sitio.
+   `setAction(() => estable)` lo arregla y **no se ve ni revisando la línea**: es un
+   carácter más y nada más.
+
+### D2 y las filas 13 y 14: un `+` que decide, y pantallas que existen
+
+**El submenú** (`components/ui/add-menu.tsx`) no es un panel con dos filas: es la regla
+completa. **Una opción hace la cosa; dos abren un menú.** El panel tenía una, así que su
+`+` iba directo al selector de tarjetas — que era lo correcto mientras fuera una — y en
+cuanto hubo una segunda cosa, ese mismo botón tuvo que elegir. Comprobado: el `+` ofrece
+«Tarjetas» y «Una pantalla», y cada una hace lo suyo. La regla está en un hook y no en
+cada pantalla, así que añadir una tercera cosa no mueve el botón ni le da un gemelo en
+otra esquina.
+
+**La fila 13 no era un botón: era un dato que no existía.** El número de pantallas se
+*derivaba* —la más alta con una tarjeta, más una—, así que una pantalla sin tarjetas no
+existía, y un botón que añadía una añadía una que se borraba al guardar. Es el peor
+género de botón: hace algo, y luego no lo ha hecho.
+
+Ahora el número **se guarda**. De punta a punta:
+
+- una **migración** (`0014_dashboard_pages.sql`) con la columna, y el esquema, el
+  repositorio y el servicio guardándola y saneándola **entre 1 y 8**;
+- `SYNC_WRITABLE_FIELDS.dashboard` pasa a admitir `pages` — el servidor solo guardaba
+  `layout` y tiraba el resto del payload;
+- `pageCount(layout, pages)` en el panel, y `useDashboard` lo lee de la fila en vez de
+  tenerlo en estado, porque una fila que llega de un *pull* o de otro dispositivo deja
+  obsoleto un número guardado en memoria.
+
+Comprobado de punta a punta: sembradas dos pantallas, el ⊕ de la barra lleva a **tres
+puntos**, se pulsa Guardar, y **`pages: 3` sale en la caché y en la operación del
+*outbox***. La escritura existe, que es la parte que antes fallaba en silencio.
+
+Tres cosas que salieron, ninguna en el typecheck:
+
+1. **La ranura de la derecha era una fotografía.** El valor que publica la pantalla es
+   una función estable, así que el layout **no se vuelve a dibujar** cuando el estado de
+   la pantalla cambia: el lápiz se quedaba puesto con `editing` ya a `true`. Medido
+   así: el clic sí funcionaba —la pantalla se re-renderizaba y el log lo decía— y la
+   cabecera seguía diciendo «Colocar las tarjetas» sin Guardar en ninguna parte. El
+   contexto lleva ahora una `version` que la pantalla invalida cuando su botón cambia, y
+   el layout la lee **para eso**, sin usarla. Se ve como una línea leída y tirada, y es
+   todo el arreglo.
+2. **`screens` leía la prop, no el borrador.** Añadir una pantalla no cambiaba nada hasta
+   guardar, y el botón parecía no hacer nada. El número que estás mirando tiene que ser
+   el que estás editando.
+3. **La sincronía con lo que llega de fuera solo puede crecer.** Poner el recuento
+   «a lo que dice la fila» deshacía en silencio la pantalla que alguien acababa de
+   añadir, en cuanto un re-render pasaba un array nuevo e igual por delante.
+
+### El sync que se había perdido: no se había perdido
+
+Dos rondas marcando `y llega al servidor` en rojo, con un item que salía en la lista y
+no aparecía en el servidor. Estaba anotado como «la mitad de un bug» y como posible
+pérdida de datos. **Era la comprobación.** `verify-app-regression.mjs` pedía
+`{ since: null, limit: 500 }` y grepeaba la respuesta, pero el pull contesta
+`{ changes, nextCursor, hasMore }`: con más de 500 cambios en la base devuelve solo la
+**página más antigua**. El item recién creado es el cambio más nuevo, se cae por el
+final, y el test informaba de un sync que funcionaba como de uno que perdía la
+escritura.
+
+Medido: la base tenía **501 cambios**, el item estaba en la **página 2**, y el servidor
+sí lo tenía. La comprobación ahora pagina por `nextCursor` hasta el final.
+
+El error era el criterio, y la lección es de las que ya están en este documento: la
+fila en pantalla y el `pull` son dos cosas, pero un `pull` que no se pagina **no** es
+el servidor, es un trozo del servidor. Faltaba una comprobación que preguntara
+«dónde está» y acabó preguntando «existe».
+
+### Un bug de verdad que salió al mirar esto
+
+Buscando por qué se perdía, se salió del item y se miró el *outbox* mientras un create
+era rechazado. El camino de pérdida que la comprobación **no** estaba midiendo:
+
+| t | outbox | servidor |
+| --- | --- | --- |
+| 0,0 s | `list_item create, attempts 0` | |
+| 1,6 s | `attempts 1, "The operation failed"` | `rejected` |
+| 4,8 s | `attempts 3` | `rejected` |
+| 9,2 s | `attempts 6` | `rejected` |
+| **12,0 s** | **`[]`** — borrado | `rejected` ×8 |
+
+Un `rejected` del servidor es **permanente** por definición: repetir la misma
+operación ocho veces no la va a arreglar. Y aun así `sync-service.ts` la reintenta
+cada 1,5 s, y al 8º intento hace `store.remove()` y desaparece. Sin más rastro:
+
+- `result.failed` **no lo lee nadie** — ni el motor ni el centro de sincronización.
+- El rechazo **no cuenta como error** (`result.error` queda `null`), así que el
+  *backoff* que crece con los fallos de transporte se queda en `0` y la siguiente
+  espera es la de siempre.
+- La fila en caché no se toca, así que **el item sigue en la lista** para siempre.
+- `sync_conflicts` no se toca, porque eso solo pasa con `conflict`, no con `rejected`.
+
+Es decir: el peor caso —el servidor dice que no, para siempre— es exactamente el que
+borra la escritura y no dice nada. Con datos válidos no se ha podido provocar: el
+`rejected` que se ha visto aquí era de una lista que el propio script no llegó a
+sembrar. Queda como **fallo latente**, y se arregla aparte de esta tanda.
+
+Ninguno de los de esta lista era una opinión sobre el aspecto: eran cosas que no
+funcionaban, y se encontraron conduciendo la app.
+
+| Qué pasaba | Por qué no lo veía el typecheck |
+| --- | --- |
+| La página siguiente se veía en reposo, 16 px, sin haber hecho swipe | El `overflow: hidden` estaba en el track, que es tan ancho como todas las pantallas; el que recorta es el tablero, que es de una |
+| El panel se quedaba a un tercio de página de donde decía la barra de puntos | `origin` se fijaba al empezar el gesto y `settle` aleja `trackX` de ahí; en reposo la goma se comía la distancia correcta |
+| El swipe de fondo no cambiaba de página estando en modo edición | La capa de fondo es el primer hijo del track, debajo de las pantallas, y las pantallas se comían todos los toques |
+| **Los cambios del selector se perdían al pulsar Guardar** | El panel guarda su propio `draft` y solo lo re-sincroniza al salir de edición; el selector escribía en el layout guardado y `finish` lo sobrescribía |
+| `<body>` seguía al SO, no al tema | `+html.tsx` lo pinta con una media query; el tema de la app va en `Screen`, no en el body |
+| `Segmented` no decía qué opción estaba marcada | `accessibilityState.selected` sale como `aria-selected`, que no es válido en `role="radio"`; no salía ni `aria-checked` ni `aria-selected` |
+| Una operación rechazada se culpaba al panel | `readEntity(raw) ?? 'dashboard'`: mandar `item` en vez de `list_item` volvía como quince rechazos del **dashboard** |
+| `verify-panel.mjs` contaba pantallas como tarjetas | `[...grid.children]` son las pantallas del track; por eso comparaba dos tarjetas con una pantalla |
+| **Arrastrar en el picker de color cerraba el bottom sheet** | Los dos gestos eran `PanResponder`, y en web el navegador decide el gesto antes que el responder: sin `touch-action: none` se queda con el dedo. **`touchAction: "none"` en el `StyleSheet` no sirve** — react-native-web se lo come y medido seguía en `auto`. Convertidos a `Gesture.Pan`, que sí lo pone |
+
+### El picker de color, dos bugs en el mismo sitio
+
+El arrastre **tampoco cambiaba el color**, y no se veía mirando la captura porque el
+cuadrado se ve igual de lleno antes y después. Los dos eran la misma línea:
+
+- Los gestos eran `PanResponder`, el camino que en web **no reclama el gesto** sin
+  `touch-action: none`. Es el mismo fallo que el arrastre de la lista, documentado
+  más abajo en "Arrastrar en vivo", y ya tenía la misma causa.
+- Poner `touchAction: "none"` en el estilo **no lo arregla**: react-native-web valida
+  las propiedades y la descarta. Medido antes y después, `touch-action` seguía en
+  `auto`.
+- Con `Gesture.Pan` el `touch-action: none` lo pone la librería, y los dos gestos
+  funcionan: el anillo se mueve, el color cambia, y el sheet no se cierra.
+
+**Medido, no mirado.** Con eventos táctiles reales y con ratón, por etapas: el anillo
+va de (131, 591) a (133, 637) y el `sheet` sigue en `true` en las cuatro. Antes el
+color no se movía en absoluto. El hex del campo de texto **no sirve** para comprobar
+esto: es el campo donde se escribe a mano, y se vacía solo al cambiar de color —que es
+como se pierde una comprobación que parece estar midiendo lo que no mide.
 
 ---
 

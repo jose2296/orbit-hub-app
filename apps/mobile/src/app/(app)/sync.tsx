@@ -62,7 +62,11 @@ export default function SyncScreen() {
           title={t('sync.pending.title')}
           subtitle={
             status.pendingOperations > 0
-              ? t(pluralKey('home.sync.pending', status.pendingOperations), { count: status.pendingOperations })
+              // `drawer.pending`, not the `home.sync.*` key this used. The home
+              // screen no longer carries a sync card, so its wording is gone and
+              // the count is said the same way the menu says it: one phrase for a
+              // number of pending changes, in one place.
+              ? t(pluralKey('drawer.pending', status.pendingOperations), { count: status.pendingOperations })
               : undefined
           }
         />

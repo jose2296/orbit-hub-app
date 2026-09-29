@@ -1,0 +1,475 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
+
+import { useSession } from "@/hooks/use-session";
+import { useScreenTitle } from "@/hooks/use-screen-title";
+
+import { PanelGrid } from "@/components/dashboard/panel-grid";
+import { PanelPicker } from "@/components/dashboard/pin-picker";
+import { Button } from "@/components/ui/button";
+import { Screen } from "@/components/ui/screen";
+import { Sheet } from "@/components/ui/sheet";
+import { useA11yHint } from "@/components/ui/a11y-hint";
+import { useHeaderAction } from "@/components/ui/header-action";
+import { useDashboard } from "@/hooks/use-dashboard";
+import { useLists } from "@/hooks/use-lists";
+import { useAllFolders, useWorkspaces } from "@/hooks/use-workspaces";
+import {
+  withPinnedFolder,
+  withPinnedList,
+  withoutPinnedFolder,
+  withoutPinnedList,
+} from "@/lib/dashboard/pin";
+import { cardMark } from "@/lib/dashboard/card-kind";
+import type { ListKind } from "@orbit-hub/contracts";
+import { pluralKey, useTranslation } from "@/lib/i18n";
+import { useTheme } from "@/theme";
+
+/**
+ * The home screen: the panel, and nothing else.
+ *
+ * It used to answer two questions above the panel — what is left to do, and where
+ * my things are. Both were answered elsewhere already, and both were answered
+ * worse here: the spaces are in the menu and on the spaces screen, and "what is
+ * left" was a fixed three items from three lists, which is not the list you were
+ * working on. A screen that answers a question badly is worse than a screen that
+ * does not answer it, because you have to look at it to find out.
+ *
+ * So this is the panel and only the panel: the pinned lists as cards, in the
+ * colour of the space each one is in, arranged by the person. Tapping one opens
+ * it. The pencil in the corner is the whole editing interface, and it is the same
+ * one the old app had, down to the wobble.
+ */
+export default function HomeScreen() {
+  const theme = useTheme();
+  const t = useTranslation();
+  const router = useRouter();
+  const { user } = useSession();
+  const { layout, pages, save, saving } = useDashboard();
+  const { workspaces } = useWorkspaces();
+  const { lists } = useLists({});
+  // The panel is not inside a space, so it needs the folders of all of them.
+  const folders = useAllFolders(workspaces.map((space) => space.id));
+  const [picking, setPicking] = useState(false);
+  /**
+   * Whether the panel is being arranged.
+   *
+   * Here and not in the panel, because the button that starts and ends it lives in
+   * the header below. Two pencils — one in the header, one in the panel — is two
+   * buttons that mean the same thing in two places, and the one you press is
+   * whichever you press first, not the one that saves when you are done.
+   */
+  const [editing, setEditing] = useState(false);
+  /**
+   * Where the header's "done" button reaches the panel to finish the arrangement.
+   *
+   * A ref, so the panel can publish the function that saves without the header
+   * having to re-render every time the arrangement changes under it.
+   */
+  const finishPanel = useRef<() => void>(() => {});
+
+  const colorByWorkspace = useMemo(
+    () => new Map(workspaces.map((space) => [space.id, space.color])),
+    [workspaces],
+  );
+
+  /** The wash of each space, so a card is painted like the screen behind it. */
+  const washByWorkspace = useMemo(
+    () => new Map(workspaces.map((space) => [space.id, space.wash])),
+    [workspaces],
+  );
+
+  /**
+   * The end colour of each space, for the same reason as the wash.
+   *
+   * A third lookup and not a field of the first, because the second colour is a
+   * decision the person made and can undo: a card painted without it shows the
+   * derived pair, which is not the pair the picker teaches.
+   */
+  const colorToByWorkspace = useMemo(
+    () => new Map(workspaces.map((space) => [space.id, space.colorTo])),
+    [workspaces],
+  );
+
+  /** A card is looked up by its list, once per render, and not by a search. */
+  const listById = useMemo(
+    () => new Map(lists.map((list) => [list.id, list])),
+    [lists],
+  );
+
+  /** And by its folder, for the same reason. */
+  const folderById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
+    [folders],
+  );
+
+  /*
+    What is on the panel, by id.
+
+    A card with no `listId` or no `folderId` — one whose list was deleted, or a
+    card of a kind this version does not know — is not an id, and a set of
+    `unknown` makes every `has(id)` call a lie the compiler is happy with. The
+    guard is on the *type*, not on truthiness: `filter(Boolean)` narrows nothing,
+    so a picker that asks "is this one already pinned?" would be asking about a
+    value the set cannot name.
+  */
+  const onPanel = useMemo(
+    () =>
+      new Set<string>(
+        layout
+          .map((widget) => widget.settings?.["listId"])
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    [layout],
+  );
+
+  const folderOnPanel = useMemo(
+    () =>
+      new Set<string>(
+        layout
+          .map((widget) => widget.settings?.["folderId"])
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    [layout],
+  );
+
+  /**
+   * Which space a card belongs to, and the thing the card points at.
+   *
+   * One lookup for both because they are one lookup: a list knows its space and a
+   * folder knows its space, and a card knows which of the two it is. Resolving
+   * them separately is how a folder card ends up painted in no colour at all
+   * while the list next to it is painted correctly.
+   */
+  const subject = useCallback(
+    (widget: { settings?: Record<string, unknown> }) => {
+      const folderId = widget.settings?.["folderId"] as string | undefined;
+      if (folderId) {
+        const folder = folderById.get(folderId);
+        // The space a folder is in, from the folder when it is still there and
+        // from the card when it is not. The card carries it precisely so that a
+        // folder that has been deleted still says which space it was in while
+        // somebody is deciding whether to take the card off the panel.
+        const workspaceId =
+          folder?.workspaceId ?? (widget.settings?.["workspaceId"] as string | undefined);
+        return { workspaceId, kind: "folder" as const };
+      }
+      const list = listById.get(widget.settings?.["listId"] as string);
+      return { workspaceId: list?.workspaceId, kind: "list" as const };
+    },
+    [folderById, listById],
+  );
+
+  /** The colour of the space a card belongs to, so the card is painted with it. */
+  const colorKeyOf = useCallback(
+    (widget: { settings?: Record<string, unknown> }) => {
+      const { workspaceId } = subject(widget);
+      return workspaceId ? colorByWorkspace.get(workspaceId) : undefined;
+    },
+    [colorByWorkspace, subject],
+  );
+
+  /**
+   * The wash of the space a card belongs to.
+   *
+   * The same lookup as `colorKeyOf` and not folded into it, because the two travel
+   * separately: a colour is always there, a wash is a choice that predates the
+   * field, and a space without one has to keep painting as it did.
+   */
+  const washOf = useCallback(
+    (widget: { settings?: Record<string, unknown> }) => {
+      const { workspaceId } = subject(widget);
+      return workspaceId ? washByWorkspace.get(workspaceId) : undefined;
+    },
+    [washByWorkspace, subject],
+  );
+
+  /**
+   * The end colour of the space a card belongs to.
+   *
+   * The same lookup as the wash and for the same reason: the pair the card is
+   * painted with has to be the pair the person chose, not the one the maths
+   * derives from the first colour alone.
+   */
+  const colorToOf = useCallback(
+    (widget: { settings?: Record<string, unknown> }) => {
+      const { workspaceId } = subject(widget);
+      return workspaceId ? colorToByWorkspace.get(workspaceId) : undefined;
+    },
+    [colorToByWorkspace, subject],
+  );
+
+  /** Which space a card belongs to, said while the panel is being arranged. */
+  const whereOf = useCallback(
+    (widget: { settings?: Record<string, unknown> }) => {
+      const { workspaceId } = subject(widget);
+      const name = workspaces.find((space) => space.id === workspaceId)?.name;
+      return name ? t("dashboard.spaceOf", { name }) : "";
+    },
+    [subject, t, workspaces],
+  );
+
+  /**
+   * The kind of list a card points at, from the card itself.
+   *
+   * From the card and not only from the list, because a card outlives its list:
+   * the kind was written into the card when it was pinned, so a card whose list
+   * has been deleted still knows what it was. The mark is the one thing on a
+   * panel that is worth having after the thing it points at is gone.
+   */
+  const kindOf = (widget: { settings?: Record<string, unknown> }) =>
+    (widget.settings?.["kind"] as ListKind | null | undefined) ?? null;
+
+  const describe = useCallback(
+    (widget: { id: string; kind?: string; settings?: Record<string, unknown> }) => {
+      const title =
+        (widget.settings?.["title"] as string) ?? t("lists.title");
+
+      // A folder. It opens the folder, and it says how much is in it, which is the
+      // only thing about a folder worth putting on a card.
+      const folderId = widget.settings?.["folderId"] as string | undefined;
+      if (folderId) {
+        const folder = folderById.get(folderId);
+        if (!folder) {
+          return {
+            title,
+            subtitle: t("dashboard.deletedFolder"),
+            emoji: (widget.settings?.["emoji"] as string) ?? null,
+            href: null,
+            // Still a folder's card, even though the folder is gone: the mark says
+            // what it was, and a card that changes its mark when its subject is
+            // deleted is a card that lies about itself.
+            mark: cardMark({ folder: true }),
+          };
+        }
+        const inside = lists.filter((list) => list.folderId === folder.id).length;
+        return {
+          title: folder.name,
+          subtitle: t(pluralKey("dashboard.listsInside", inside), {
+            count: inside,
+          }),
+          emoji: folder.emoji,
+          href: `/(app)/workspace/${folder.workspaceId}/folder/${folder.id}`,
+          mark: cardMark({ folder: true }),
+        };
+      }
+
+      const list = listById.get(widget.settings?.["listId"] as string);
+      if (!list) {
+        // A card whose list is gone. It says so instead of opening nothing, and
+        // it can still be taken off the panel while the panel is being arranged.
+        return {
+          title,
+          subtitle: t("dashboard.deletedList"),
+          emoji: (widget.settings?.["emoji"] as string) ?? null,
+          href: null,
+          // What it was, from the card itself. The list is gone but the kind was
+          // written into the card when it was pinned, and a film list that has
+          // been deleted still looks like a film list rather than like nothing.
+          mark: cardMark({ kind: kindOf(widget) }),
+        };
+      }
+      return {
+        title: list.title,
+        subtitle: t(pluralKey("lists.itemCount", list.itemCount), {
+          count: list.itemCount,
+        }),
+        emoji: list.emoji,
+        href: `/(app)/list/${list.id}`,
+        mark: cardMark({ kind: list.kind }),
+      };
+    },
+    [folderById, listById, lists, t],
+  );
+
+  const addList = useCallback(
+    (listId: string) => {
+      const list = listById.get(listId);
+      if (!list) return;
+      void save(withPinnedList(layout, list));
+    },
+    [layout, listById, save],
+  );
+
+  const removeList = useCallback(
+    (listId: string) => void save(withoutPinnedList(layout, listId)),
+    [layout, save],
+  );
+
+  const addFolder = useCallback(
+    (folderId: string) => {
+      const folder = folderById.get(folderId);
+      if (!folder) return;
+      void save(withPinnedFolder(layout, folder));
+    },
+    [folderById, layout, save],
+  );
+
+  const removeFolder = useCallback(
+    (folderId: string) => void save(withoutPinnedFolder(layout, folderId)),
+    [layout, save],
+  );
+
+  const available = useMemo(
+    () =>
+      lists.filter((list) => !onPanel.has(list.id)).length +
+      folders.filter((folder) => !folderOnPanel.has(folder.id)).length,
+    [folderOnPanel, folders, lists, onPanel],
+  );
+
+  const pistaEdit = useA11yHint(t("dashboard.editLayoutHint"));
+
+  /*
+    The panel's one button, in the header — the pencil while you are looking and
+    Guardar while you are arranging, from one declaration and one place, so the
+    corner of the screen always means the same thing.
+
+    A `useCallback` and not an element, because what is published is a way to
+    draw the button rather than the button: the header asks for it every time it
+    is drawn, which is what lets it follow `editing` without the layout and the
+    screen writing to the same slot.
+  */
+  const botonCabecera = useCallback(
+    () => (
+      <View
+        style={[
+          styles.headerRight,
+          { paddingRight: theme.spacing.xs + theme.spacing.lg },
+        ]}
+      >
+        {editing ? (
+          <Button
+            testID="panel-done"
+            label={t("dashboard.saveLayout")}
+            icon="checkmark"
+            size="sm"
+            fullWidth={false}
+            loading={saving}
+            onPress={() => finishPanel.current()}
+          />
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("dashboard.editLayout")}
+            {...pistaEdit.props}
+            onPress={() => setEditing(true)}
+            style={({ pressed }) => [styles.editButton, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Ionicons name="create-outline" size={20} color={theme.colors.text} />
+          </Pressable>
+        )}
+        {pistaEdit.node}
+      </View>
+    ),
+    [
+      editing,
+      pistaEdit,
+      saving,
+      t,
+      theme.colors.text,
+      theme.spacing.lg,
+      theme.spacing.xs,
+    ],
+  );
+  /*
+    The redraw, on purpose and by hand.
+
+    `botonCabecera` closes over `pistaEdit`, and that hook builds a new object on
+    every render, so depending on it would redraw the header on every render.
+    The dependencies that actually change what the button *is* are these three:
+    the pencil and Guardar swap on `editing`, Guardar spins on `saving`, and the
+    words come from `t`.
+  */
+  useHeaderAction(botonCabecera, [editing, saving, t]);
+
+  // And the title, for the same reason: nothing in the layout claims this
+  // screen's header options, so what the screen says is what is drawn.
+  useScreenTitle(t("home.greeting", { name: user?.displayName ?? "" }));
+
+  return (
+    /*
+      `scroll={false}` and `edgeToEdge`, and both are the panel filling the screen.
+
+      The scroll view is what makes the space the panel gets unpredictable: it
+      measures its content and the content is the panel, so the panel would be
+      asking for the space it is trying to fill. Without it the layout below the
+      header has a real height, the panel measures it, and six rows of the cell
+      are exactly that height — so the page has nothing to scroll, which is the
+      whole point of the grid being a fraction of the screen rather than a number
+      of points.
+
+      And `edgeToEdge`, because the gap `Screen` normally leaves at the bottom is
+      for a column of things that ends before the window does. The panel does not
+      end, and with the gap left in, the bottom of the screen is a strip of
+      nothing — a scroll that goes nowhere, on the one screen where nothing is
+      allowed to scroll.
+    */
+    <Screen width="grid" scroll={false} edgeToEdge>
+      {/*
+        No header of its own. It drew one, and so did the other two destinations,
+        and that is why the menu button sat at x = 8 on these three screens and at
+        x = -8 on every other screen: two implementations of the same idea, and
+        nothing kept them in agreement. The greeting is the title now and the
+        pencil is the header's action, both set on the screen above, so there is
+        one header in the app and one place to change it.
+      */}
+
+      <PanelGrid
+        layout={layout}
+        colorKeyOf={colorKeyOf}
+        washOf={washOf}
+        colorToOf={colorToOf}
+        whereOf={whereOf}
+        describe={describe}
+        onChange={save}
+        editing={editing}
+        onEditingChange={setEditing}
+        finishRef={finishPanel}
+        availableCount={available}
+        pages={pages}
+        onOpenEditor={() => setPicking(true)}
+        onOpen={(href) => router.push(href as never)}
+      />
+
+      <Sheet
+        visible={picking}
+        onClose={() => setPicking(false)}
+        title={t("dashboard.pickLists")}
+        subtitle={t(pluralKey("dashboard.cardsAvailable", available), {
+          count: available,
+        })}
+      >
+        <PanelPicker
+          workspaces={workspaces}
+          folders={folders}
+          lists={lists}
+          pinnedLists={onPanel}
+          pinnedFolders={folderOnPanel}
+          onToggleList={(listId) =>
+            onPanel.has(listId) ? removeList(listId) : addList(listId)
+          }
+          onToggleFolder={(folderId) =>
+            folderOnPanel.has(folderId)
+              ? removeFolder(folderId)
+              : addFolder(folderId)
+          }
+        />
+      </Sheet>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  headerRight: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

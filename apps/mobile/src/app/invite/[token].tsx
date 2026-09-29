@@ -120,7 +120,7 @@ export default function InvitationScreen() {
             label={t("common.back")}
             variant="secondary"
             fullWidth
-            onPress={() => router.replace("/(app)/(tabs)")}
+            onPress={() => router.replace("/(app)")}
           />
         </Card>
       </Screen>
@@ -138,7 +138,7 @@ export default function InvitationScreen() {
             label={t("common.back")}
             variant="secondary"
             fullWidth
-            onPress={() => router.replace("/(app)/(tabs)")}
+            onPress={() => router.replace("/(app)")}
           />
         </Card>
       </Screen>
