@@ -73,7 +73,6 @@ export default function WorkspaceScreen() {
   const [noteFor, setNoteFor] = useState<Note | null>(null);
   const [templateFor, setTemplateFor] = useState<Note | null>(null);
 
-
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === workspaceId) ?? null,
     [workspaces, workspaceId],
@@ -89,7 +88,11 @@ export default function WorkspaceScreen() {
    */
   // The second colour goes with it because it is the person's own choice, and a
   // band that drops it paints a different pair from the one the picker shows.
-  const onWash = spacePaint(workspace?.color, workspace?.wash, workspace?.colorTo);
+  const onWash = spacePaint(
+    workspace?.color,
+    workspace?.wash,
+    workspace?.colorTo,
+  );
 
   useScreenTitle(workspace?.name ?? t("workspaces.title"));
 
@@ -149,13 +152,14 @@ export default function WorkspaceScreen() {
   if (!workspaceId) {
     return (
       <Screen>
+        overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
         <AppText variant="body">{t("workspaces.notFound")}</AppText>
       </Screen>
     );
   }
 
   return (
-    <Screen>
+    <Screen overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}>
       {/*
         The band with the name of the space on it, in the colour of the space.
 
@@ -178,7 +182,10 @@ export default function WorkspaceScreen() {
         ]}
       >
         <View style={[styles.bandTop, { gap: theme.spacing.md }]}>
-          <AppText variant="title" style={[styles.flex, { color: onWash.foreground }]}>
+          <AppText
+            variant="title"
+            style={[styles.flex, { color: onWash.foreground }]}
+          >
             {workspace?.emoji ? `${workspace.emoji} ` : ""}
             {workspace?.name ?? t("workspaces.title")}
           </AppText>
@@ -235,8 +242,6 @@ export default function WorkspaceScreen() {
         </View>
       </SpaceWash>
 
-
-
       <WorkspaceMenuSheet
         workspace={menuOpen ? workspace : null}
         onClose={closeSheets}
@@ -277,7 +282,6 @@ export default function WorkspaceScreen() {
         onClose={() => setTemplateFor(null)}
       />
 
-
       <ListMenuSheet
         list={menuFor?.kind === "list" ? menuFor.list : null}
         folder={menuFor?.kind === "list" ? folderOf(menuFor.list) : null}
@@ -291,9 +295,7 @@ export default function WorkspaceScreen() {
           menuFor?.kind === "folder" ? menuFor.folder : null,
         )}
         onPanel={
-          menuFor?.kind === "folder"
-            ? folderOnPanel(menuFor.folder.id)
-            : false
+          menuFor?.kind === "folder" ? folderOnPanel(menuFor.folder.id) : false
         }
         onTogglePin={() => {
           const folder =
@@ -339,8 +341,6 @@ export default function WorkspaceScreen() {
         }}
         creating={false}
       />
-
-      <FloatingButton onPress={() => setCreateOpen(true)} />
     </Screen>
   );
 }

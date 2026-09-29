@@ -166,13 +166,15 @@ function MediaCard({
           )}
 
           {item.completed ? (
-            <View
-              style={[
-                styles.seen,
-                { backgroundColor: theme.colors.accent, borderRadius: theme.radius.sm },
-              ]}
-            >
-              <Ionicons name="checkmark" size={14} color={theme.colors.onAccent} />
+            <View style={styles.seen}>
+              <View
+                style={[
+                  styles.seenGlifo,
+                  { backgroundColor: theme.colors.accent, borderRadius: theme.radius.sm },
+                ]}
+              >
+                <Ionicons name="checkmark" size={14} color={theme.colors.onAccent} />
+              </View>
             </View>
           ) : null}
         </View>
@@ -194,14 +196,17 @@ function MediaCard({
           style={({ pressed }) => [
             styles.corta,
             styles.abajoIzquierda,
-            {
-              backgroundColor: theme.colors.accent,
-              borderRadius: theme.radius.sm,
-              opacity: pressed ? 0.75 : 1,
-            },
+            { opacity: pressed ? 0.75 : 1 },
           ]}
         >
-          <Ionicons name="add" size={16} color={theme.colors.onAccent} />
+          <View
+            style={[
+              styles.cortaGlifo,
+              { backgroundColor: theme.colors.accent, borderRadius: theme.radius.sm },
+            ]}
+          >
+            <Ionicons name="add" size={16} color={theme.colors.onAccent} />
+          </View>
         </Pressable>
       ) : null}
       {pistaAdd.node}
@@ -216,14 +221,14 @@ function MediaCard({
           style={({ pressed }) => [
             styles.corta,
             styles.abajoDerecha,
-            {
-              backgroundColor: "rgba(0, 0, 0, 0.72)",
-              borderRadius: theme.radius.sm,
-              opacity: pressed ? 0.75 : 1,
-            },
+            { opacity: pressed ? 0.75 : 1 },
           ]}
         >
-          <Ionicons name="play" size={14} color="#ffffff" />
+          <View
+            style={[styles.cortaGlifo, { backgroundColor: 'rgba(0, 0, 0, 0.72)' }]}
+          >
+            <Ionicons name="play" size={14} color="#ffffff" />
+          </View>
         </Pressable>
       ) : null}
       {pistaWatch.node}
@@ -241,16 +246,19 @@ function MediaCard({
             {...pistaMenu.props}
             hitSlop={8}
             onPress={item.onMenu}
-            style={({ pressed }) => [
-              styles.menu,
-              {
-                backgroundColor: theme.colors.surfaceMuted,
-                borderRadius: theme.radius.sm,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}
+            style={({ pressed }) => [styles.menu, { opacity: pressed ? 0.7 : 1 }]}
           >
-            <Ionicons name="ellipsis-horizontal" size={14} color={theme.colors.text} />
+            <View
+              style={[
+                styles.menuGlifo,
+                {
+                  backgroundColor: theme.colors.surfaceMuted,
+                  borderRadius: theme.radius.sm,
+                },
+              ]}
+            >
+              <Ionicons name="ellipsis-horizontal" size={14} color={theme.colors.text} />
+            </View>
           </Pressable>
           {pistaMenu.node}
         </>
@@ -306,10 +314,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  /*
+    El menu de la tarjeta, con el mismo tratamiento: circulo de 24, blanco de 40.
+
+    Antes era un `Pressable` de 24 con el glifo dentro, y media 24. Con `hitSlop` el
+    blanco crecia hacia los dos botones de abajo, que estan a cuatro pixeles, y un
+    dedo que apuntaba al menu se activaba a veces el de al lado.
+  */
   menu: {
     position: 'absolute',
-    top: 6,
-    right: 6,
+    top: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuGlifo: {
     width: 24,
     height: 24,
     alignItems: 'center',
@@ -318,25 +339,55 @@ const styles = StyleSheet.create({
   area: {
     position: 'relative',
   },
+  /*
+    Cuarenta de alto y de ancho, y no 26.
+    
+    El circulo sigue siendo de 26 porque asi cabe en la esquina de una portada de
+    120, pero **el blanco que se puede pulsar es de 40**: los dos botones van
+    superpuestos sobre el cartel, asi que un blanco de 26 se solapaba con el otro y
+    con el menu, y pulsando al lado de uno se pulsaba el de al lado. Medido en web:
+    28 objetivos de 26 en la ficha, 14 de ellos los dos botones de las tarjetas.
+  */
   corta: {
     position: 'absolute',
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cortaGlifo: {
     width: 26,
     height: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // El blanco mide 40 y el circulo 26: el desplazamiento deja el circulo a 4 del
+  // borde de la portada, que es donde se espera un boton de esquina.
   abajoIzquierda: {
-    left: 4,
-    bottom: 4,
+    left: -7,
+    bottom: -7,
   },
   abajoDerecha: {
-    right: 4,
-    bottom: 4,
+    right: -7,
+    bottom: -7,
   },
+  /*
+    El circulo de 24 se queda; el blanco pasa a 40.
+
+    Es el mismo tratamiento que los dos botones de la esquina: lo que se ve no
+    cambia de sitio y lo que se puede pulsar se agranda. Y sale de una medicion, no
+    de una regla: la marca de "vista" de cada tarjeta media 24x24.
+  */
   seen: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seenGlifo: {
     width: 24,
     height: 24,
     alignItems: 'center',

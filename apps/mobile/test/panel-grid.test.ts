@@ -13,6 +13,10 @@ import {
   PANEL_COLUMNS,
   PANEL_ROWS,
   arrangeCard,
+  carryCard,
+  carryDirection,
+  carryFits,
+  carryTarget,
   cardSize,
   dropSpot,
   fits,
@@ -698,6 +702,128 @@ describe("moveCardToPage", () => {
     expect(moveCardToPage(layout, "a", 99).find((w) => w.id === "a")?.page).toBe(
       MAX_PAGES - 1,
     );
+  });
+});
+
+describe("the push of a card that is being carried", () => {
+  /**
+   * The mark the panel uses, spelled out here rather than imported.
+   *
+   * The panel's own number is a decision about how a hand moves and not about the
+   * grid, and a test that imported it would only be testing that the constant is
+   * the constant. What matters is that a push which has not reached the mark is
+   * not a turn and one that has is.
+   */
+  const MARK = 56;
+
+  it("says nothing for a push that has not reached the mark", () => {
+    expect(carryDirection(0, MARK)).toBe(0);
+    expect(carryDirection(MARK - 1, MARK)).toBe(0);
+    expect(carryDirection(-(MARK - 1), MARK)).toBe(0);
+  });
+
+  it("says which way once the push is past the mark", () => {
+    expect(carryDirection(MARK, MARK)).toBe(1);
+    expect(carryDirection(MARK + 90, MARK)).toBe(1);
+    expect(carryDirection(-MARK, MARK)).toBe(-1);
+  });
+
+  it("treats the mark itself as far enough", () => {
+    // `>` instead of `>=` and a hand that pushed exactly one thumb of travel gets
+    // nothing at all, for a reason no person can see.
+    expect(carryDirection(MARK, MARK)).toBe(carryDirection(MARK + 0.5, MARK));
+  });
+});
+
+describe("carryTarget", () => {
+  it("is the screen next to the one the card was on", () => {
+    expect(carryTarget(1, 1, 3)).toBe(2);
+    expect(carryTarget(1, -1, 3)).toBe(0);
+  });
+
+  it("is nothing at the edges of the panel", () => {
+    // Not the page it is already on: "there is nowhere to go" and "go where you
+    // are" are different answers, and a caller that cannot tell them apart spends
+    // the push on a page turn that does not happen.
+    expect(carryTarget(0, -1, 3)).toBeNull();
+    expect(carryTarget(2, 1, 3)).toBeNull();
+    expect(carryTarget(0, -1, 1)).toBeNull();
+  });
+
+  it("never sends a card to a screen that does not exist", () => {
+    // The panel's own count and not `DASHBOARD_PAGES`: carrying moves a card
+    // between screens somebody can get to, and a screen with nothing on it is
+    // somewhere to put a card and not somewhere to take one from.
+    expect(carryTarget(1, 1, 2)).toBeNull();
+    expect(carryTarget(0, 1, 2)).toBe(1);
+  });
+});
+
+describe("carryCard", () => {
+  it("puts the card on the screen it was carried to", () => {
+    const from = [widget("a", 2, 2, 0, { x: 0, y: 0 }), widget("c", 2, 2, 1, { x: 2, y: 0 })];
+    const next = carryCard(from, "a", 1, null);
+    expect(next.find((w) => w.id === "a")).toMatchObject({ page: 1, x: 0, y: 0 });
+  });
+
+  it("lands it on the cell the hand let go of it", () => {
+    // The screen first and the cell second: the cell is applied to the placement
+    // the screen gave the card, so the neighbours of the screen it arrives at
+    // move out of the way once and not twice.
+    const from = [
+      widget("a", 2, 2, 0, { x: 0, y: 0 }),
+      widget("c", 2, 2, 1, { x: 2, y: 0 }),
+      widget("d", 2, 2, 1, { x: 2, y: 2 }),
+    ];
+    const next = carryCard(from, "a", 1, { x: 0, y: 4 });
+    expect(next.find((w) => w.id === "a")).toMatchObject({ page: 1, x: 0, y: 4 });
+    // And the card that was in the way is somewhere else, not underneath it.
+    const { cards } = pageCards(next.filter((w) => pageOf(w) === 1));
+    expect(new Set(cards.map((c) => `${c.x},${c.y}`)).size).toBe(cards.length);
+  });
+
+  it("returns the layout untouched when the carry went nowhere", () => {
+    // A pick-up and a put-down with no push: the same array back, so the panel can
+    // see there is nothing to write. It is the same object and not an equal one,
+    // because an equal array would put an operation in the outbox for a card that
+    // was held and released without moving.
+    const from = [widget("a", 2, 2, 0, { x: 2, y: 2 })];
+    expect(carryCard(from, "a", 0, null)).toBe(from);
+  });
+});
+
+describe("carryFits", () => {
+  const full = [
+    widget("c", 2, 2, 1, { x: 0, y: 0 }),
+    widget("d", 2, 2, 1, { x: 2, y: 0 }),
+    widget("e", 2, 2, 1, { x: 0, y: 2 }),
+    widget("f", 2, 2, 1, { x: 2, y: 2 }),
+    widget("g", 4, 2, 1, { x: 0, y: 4 }),
+  ];
+
+  it("is true for a screen with room on it", () => {
+    const layout = [widget("a", 2, 2, 0), widget("c", 2, 2, 1, { x: 2, y: 4 })];
+    expect(carryFits(layout, "a", 1)).toBe(true);
+  });
+
+  it("is false for a screen that is full", () => {
+    // The one reason the panel can refuse to turn. `moveCardToPage` never says
+    // no: the card it is placing goes in before the cards already there, so a full
+    // screen would give up its first cell and shuffle the rest — which is the
+    // right answer for a card under a finger and the wrong one for a hand asking
+    // at the edge of the panel.
+    expect(carryFits([widget("a", 2, 2, 0), ...full], "a", 1)).toBe(false);
+  });
+
+  it("is true for a screen the card is already on", () => {
+    // The card is not in the way of itself: a carry that went nowhere is measured
+    // as a carry that could have happened, so the panel does not answer a
+    // different question depending on the direction the hand is pushing.
+    expect(carryFits([widget("a", 2, 2, 0), ...full], "a", 0)).toBe(true);
+  });
+
+  it("is false for a card that is not on the panel", () => {
+    expect(carryFits([widget("a", 2, 2, 0)], "nope", 1)).toBe(false);
   });
 });
 

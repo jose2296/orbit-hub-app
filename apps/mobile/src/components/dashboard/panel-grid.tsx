@@ -20,9 +20,14 @@ import {
   MAX_PAGES,
   PANEL_COLUMNS,
   PANEL_ROWS,
+  carryCard,
+  carryDirection,
+  carryFits,
+  carryTarget,
   cardSize,
   dropSpot,
   moveCardTo,
+  moveCardToPage,
   pageCards,
   pageCount,
   pageOf,
@@ -95,6 +100,30 @@ const EDGE_RESISTANCE = 3.4;
 const PAGE_SPEED = 2.6;
 const PAGE_MIN = 90;
 const PAGE_MAX = 320;
+
+/**
+ * How far a card being carried has to be pushed before the panel turns.
+ *
+ * Far enough that it cannot be a thumb resting on the card, near enough that it
+ * does not need a swipe. It is a thumb's width: a hand that has decided to carry a
+ * card to the next screen is already moving sideways, and a mark that needed a
+ * quarter of the panel would make carrying slower than the swipe that turns the
+ * same screen without moving anything.
+ */
+const CARRY_MARK = 56;
+
+/**
+ * How long the push has to be held at the mark before the screen turns.
+ *
+ * Not zero, because a carry is a hold and a drag is a move, and this is where the
+ * two are told apart a second time: a hand that brushes across a card on its way
+ * somewhere else must not leave a screen behind it.
+ *
+ * And not long enough to feel like a mode. It is roughly the time it takes to
+ * notice that the panel did not do anything and to push a little further, which is
+ * the right length for a pause that means "keep going".
+ */
+const CARRY_TURN_HOLD = 230;
 
 export interface PanelGridProps {
   layout: DashboardWidget[];
@@ -272,6 +301,66 @@ export function PanelGrid({
   const [drop, setDrop] = useState<{ x: number; y: number } | null>(null);
 
   /**
+   * The card in the person's hand, and the layout it was picked up from.
+   *
+   * `from` and not the draft, because a carry is a change to the card's own page
+   * and to nothing else: the screens it travelled through only ever had that one
+   * widget re-pointed, and they are already in `from`. Writing the turn from the
+   * draft would take the placement of the screen it is standing on — where the
+   * card was *before* anybody picked it up — and apply it to the screen it is
+   * arriving at.
+   *
+   * A ref and not state, because it is read and written from inside a gesture, at
+   * sixty moves a second, and the one thing a callback may not do here is capture
+   * a value that is one frame behind.
+   */
+  const carry = useRef<{
+    id: string;
+    from: DashboardWidget[];
+    /**
+     * The cell the hand is over, and the one it started from.
+     *
+     * Both, because a card that is being carried is drawn at `spot` and not at the
+     * cell it is stored in: the whole point of carrying it is that it is in the
+     * hand, and a card that springs back to its own cell every time the panel
+     * turns under it is a card being put down and picked up again sixty times a
+     * second.
+     *
+     * `home` is where it was picked up from, and it is what every cell is measured
+     * against — which is what makes the push mean the same thing on the second
+     * screen as on the first. Without it the cell is read from the card's *current*
+     * position, which the turn has just changed, and a card carried two screens
+     * ends up at a cell that has nothing to do with where the hand is.
+     */
+    spot: { x: number; y: number } | null;
+    home: { x: number; y: number };
+  } | null>(null);
+  /** The card being carried, in state, because the card has to *see* it. */
+  const [carried, setCarried] = useState<string | null>(null);
+  /**
+   * The push, measured from where the hand was the last time the panel turned.
+   *
+   * Not from where the finger went down. Every turn spends the push: the mark is
+   * measured from the turn, not from the touch, so carrying across three screens
+   * is three pushes and not one long one — and it is what makes a held finger stop
+   * turning pages. Without it, a hand that ends a carry at the edge of the panel
+   * is past the mark forever, the turn re-arms on every move, and the panel walks
+   * to the last screen by itself.
+   */
+  const pushBase = useRef(0);
+  /**
+   * The side the last turn spent, which has to come back before it can be spent
+   * again.
+   *
+   * The half of the rule that re-measuring the push cannot do on its own: the
+   * push has to go *below* the mark and past it again, so a finger held at one
+   * place turns one screen and then nothing, whatever it is doing.
+   */
+  const spent = useRef<-1 | 0 | 1>(0);
+  /** The turn that is waiting out its hold, and the side it is waiting for. */
+  const turnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
    * How far the screen has been pushed sideways, while a finger is on it.
    *
    * A shared value and not state, because it changes on every frame of a swipe
@@ -398,6 +487,18 @@ export function PanelGrid({
   }, [current, page]);
 
   /**
+   * The same two numbers, readable from a callback a gesture is holding.
+   *
+   * The carry reads them from a timeout and the drag reads them from a frame, and
+   * neither can close over a value that is one render behind — a turn that
+   * measured the screens of the panel before the card was picked up has no screen
+   * to go to. Assigned during render, like every other ref here, which is the
+   * moment there is one version worth reading.
+   */
+  const screensRef = useRef(screens);
+  screensRef.current = screens;
+
+  /**
    * Told upwards which screen this is, and only when it changes.
    *
    * The screen needs it to pin a card where somebody is standing, and the panel
@@ -436,12 +537,32 @@ export function PanelGrid({
 
   const cell = useMemo(() => panelCell(board, gap), [board, gap]);
 
-  const onPage = useMemo(
-    () => draft.filter((widget) => pageOf(widget) === current),
-    [draft, current],
-  );
+  /**
+   * The cards of the screen being looked at, plus the one being carried.
+   *
+   * The carried card goes in **first** and on the screen being looked at, whatever
+   * page its own widget still says, and both of those are the whole point of this
+   * line:
+   *
+   *  - first, because the placement gives a card the place it asks for and moves
+   *    the others. A card that arrives last is told to fit round what is already
+   *    there, which is the opposite: it is the card in the hand and the screen it
+   *    is arriving at is what gives way.
+   *  - and on the screen being looked at because the draft has not changed yet. A
+   *    carry is not written until the finger lifts, and the drawing is of the
+   *    draft.
+   */
+  const onPage = useMemo(() => {
+    const suyas = draft.filter((widget) => pageOf(widget) === current);
+    if (!carried) return suyas;
+    const enEsta = suyas.some((widget) => widget.id === carried);
+    if (enEsta) return suyas;
+    const enLaMano = draft.find((widget) => widget.id === carried);
+    if (!enLaMano) return suyas;
+    return [{ ...enLaMano, page: current }, ...suyas];
+  }, [carried, current, draft]);
   const placed = useMemo(() => pageCards(onPage), [onPage]);
-  const hidden = placed.hidden;
+  const hidden = placed.hidden.filter((id) => id !== carried);
 
   /**
    * The screens either side of this one, and what is on them.
@@ -628,6 +749,155 @@ export function PanelGrid({
 
   const onDragStart = useCallback((id: string) => setDragging(id), []);
 
+  /* ------------------------------------------------------------- carrying a card -- */
+
+  /**
+   * Where the panel puts the track when it turns a screen on purpose.
+   *
+   * A swipe moves the track itself and only has to tell React which screen it
+   * landed on; this is the other direction, where nothing has touched the track
+   * and the track has to be sent there before the cards can be seen arriving.
+   *
+   * Which is what the dots were not doing. They called `setPage` and nothing else,
+   * so the panel drew the cards of the screen that had been asked for at the
+   * place of the screen the track was parked on — a dot that moved the page bar and
+   * left the panel showing the previous one, which is the same panel three
+   * disagreeing views: the dots, the cards and the next swipe.
+   *
+   * With the same easing and the same `PAGE_MIN` as a swipe that had only just
+   * begun, because that is how long the last of it takes to arrive.
+   */
+  const goTo = useCallback(
+    (wanted: number) => {
+      const target = Math.min(Math.max(wanted, 0), screensRef.current - 1);
+      const resting = -target * board.width;
+      origin.value = resting;
+      trackX.value = withTiming(resting, {
+        duration: PAGE_MIN,
+        easing: Easing.out(Easing.cubic),
+      });
+      setPage(target);
+    },
+    [board.width],
+  );
+
+  /**
+   * The card has been held still long enough to be picked up.
+   *
+   * It is lifted and nothing else: no cell moves, nothing is written, and the
+   * panel has not changed. A pick-up that already decided where the card was
+   * going would be a drag that happened to be slow, and the difference between
+   * the two is the whole of the gesture — one places a card on this screen and
+   * the other puts it in a hand that can go to another one.
+   *
+   * And it is refused on a panel of one screen, before the card is even told:
+   * there is nothing on the far side of it.
+   */
+  const pickUp = useCallback((id: string) => {
+    if (screensRef.current < 2) return;
+    carry.current = { id, from: draftRef.current };
+    pushBase.current = 0;
+    spent.current = 0;
+    setCarried(id);
+    setDragging(id);
+  }, []);
+
+  /**
+   * A turn that is waiting out its hold, called off.
+   *
+   * Called on every release and every time the push comes back inside the mark.
+   * A timer that outlived either of those would turn a screen with nobody's finger
+   * on it, which is the one thing a pager must never do on its own.
+   */
+  const cancelTurn = useCallback(() => {
+    if (turnTimer.current !== null) {
+      clearTimeout(turnTimer.current);
+      turnTimer.current = null;
+    }
+  }, []);
+
+  /**
+   * The screen turns, with the card on it.
+   *
+   * The card's page is changed in the **draft** and not written, so the card is
+   * drawn on the screen it is being carried to and travels there with the rest of
+   * the page — and if the hand changes its mind and carries it back, there is
+   * nothing to undo. The write happens once, when the finger lifts.
+   *
+   * A screen with no room for the card is a screen the card cannot be put on, and
+   * the turn is refused rather than taken: the panel would show a screen that
+   * cannot show the thing in your hand, and the card would be nowhere at all for
+   * as long as the finger stayed down.
+   */
+  const carriedTurn = useCallback(
+    (id: string, dir: -1 | 1, dx: number) => {
+      turnTimer.current = null;
+      // The push has been spent, from here rather than from the mark: see
+      // `pushBase`. And the side is spent too, so a hand held at one place turns
+      // one screen and then nothing, however much it is still pushing.
+      pushBase.current = dx;
+      spent.current = dir;
+
+      const target = carryTarget(currentRef.current, dir, screensRef.current);
+      if (target === null) return;
+      // And asked before the turn, because `moveCardToPage` never says no: the
+      // card it is placing goes in before the cards already there, so a full
+      // screen would give up its first cell and shuffle the rest. See `carryFits`.
+      if (!carryFits(draftRef.current, id, target)) return;
+      const next = moveCardToPage(draftRef.current, id, target);
+      setDraft(next);
+      // The cell was worked out against the screen the card came from, so it is
+      // dropped and the next move works it out again against the new one.
+      setDrop(null);
+      goTo(target);
+    },
+    [goTo],
+  );
+
+  /**
+   * The push of a card that is being carried, read once per move of the finger.
+   *
+   * Three things in order, and the order is the rule:
+   *
+   * 1. Inside the mark, the side is unspent again. This is what lets a second
+   *    screen be carried to — push, push back, push — and what makes a hand that
+   *    wandered out past the mark and came back able to try again.
+   * 2. A side that is already spent is not armed, however far the finger has gone
+   *    since. Without this a card carried to the last screen and released there
+   *    would keep turning screens by itself, since its push stays past the mark
+   *    for as long as the finger is down.
+   * 3. Otherwise the turn is armed — once, and not re-armed on every frame, so a
+   *    finger held past the mark waits out one hold rather than a hold per frame.
+   */
+  const carriedMove = useCallback(
+    (id: string, dx: number) => {
+      if (carry.current?.id !== id) return;
+      const push = dx - pushBase.current;
+      const dir = carryDirection(push, CARRY_MARK);
+      if (dir === 0) {
+        spent.current = 0;
+        cancelTurn();
+        return;
+      }
+      if (spent.current === dir || turnTimer.current !== null) return;
+      turnTimer.current = setTimeout(() => carriedTurn(id, dir, dx), CARRY_TURN_HOLD);
+    },
+    [cancelTurn, carriedTurn],
+  );
+
+  useEffect(() => {
+    /*
+      A turn that is waiting when the arrangement ends is a turn with nothing to
+      carry. Not a leak — the timer would fire and find no card — but a panel that
+      changes screen after the pencil is gone is a panel answering a gesture that
+      was never finished.
+    */
+    if (!editing) {
+      cancelTurn();
+      carry.current = null;
+    }
+  }, [cancelTurn, editing]);
+
   /**
    * Where the card would land, as the finger moves.
    *
@@ -638,7 +908,12 @@ export function PanelGrid({
    * lifts.
    */
   const onDragMove = useCallback(
-    (_id: string, dx: number, dy: number) => {
+    (id: string, dx: number, dy: number) => {
+      // A card that is being carried reads the same travel as a push towards
+      // another screen. It still falls through to the cell below, because a card
+      // that has been carried to a screen lands *somewhere on it*, and the place
+      // the hand let go of it is the only opinion anybody has about where.
+      if (carry.current?.id === id) carriedMove(id, dx);
       const card = held.current;
       if (!card) return;
       const stepX = cell.width + cell.gap;
@@ -655,7 +930,7 @@ export function PanelGrid({
         ),
       );
     },
-    [cell],
+    [cell, carriedMove],
   );
 
   const onDragEnd = useCallback(
@@ -668,16 +943,52 @@ export function PanelGrid({
       // ("Cannot update a component while rendering a different component") and
       // the write can be dropped. The value is the same either way; doing it this
       // way just does not make React shout about it.
+      /*
+        The drop is taken **and emptied** here, in one line, and that is not a
+        tidy-up: a `Pan` calls `onEnd` and then `onFinalize`, so this runs twice for
+        one release.
+
+        Before the carry, running twice was harmless because both calls did the same
+        thing to the same draft. A carry is not: the first call is the one that
+        moves the card to another screen, and a second call that still had a drop
+        cell and a draft from before the turn would take that card and put it back
+        on the screen it came from — so the card arrived, was drawn on the next
+        screen, and was then written back where it started. It looked perfect until
+        the page was reloaded.
+
+        So the second call finds nothing to do, which is the truth: the release has
+        already been answered.
+      */
       const landed = dropRef.current;
+      dropRef.current = null;
+      const held = carry.current;
+      const carried = held?.id === id;
+      carry.current = null;
+      cancelTurn();
+      setCarried(null);
       setDragging(null);
       setDrop(null);
+
+      if (carried && held) {
+        // The write a carry owes: the card goes to the screen it is on now, and
+        // then to the cell it was let go over. Both from the layout as it was when
+        // the card was picked up, which is the only one that has not been edited
+        // underneath the carry.
+        const next = carryCard(held.from, id, currentRef.current, landed);
+        // A carry that went nowhere changed nothing, and writing the layout anyway
+        // is one operation in the outbox to record that a hand picked a card up
+        // and put it down again.
+        if (next !== held.from) commit(next);
+        return;
+      }
+
       if (landed === null) return;
       // Only this screen moves, and only the card that was held: the cards of the
       // other screens keep their place, so coming back to a screen finds it as it
       // was left rather than shuffled by a drag that happened two screens away.
       commit(moveCardTo(draftRef.current, id, landed));
     },
-    [commit],
+    [cancelTurn, commit],
   );
 
   const unpin = useCallback(
@@ -727,18 +1038,44 @@ export function PanelGrid({
     // Whatever could not be shown here goes to the next screen for real, so a card
     // pinned on a full screen is somewhere and not nowhere.
     commit(spillToNextPage(draftRef.current, currentRef.current, hiddenRef.current));
+    // And the carry ends with the arrangement: whatever the draft says is what is
+    // written, so a card that was on its way to another screen stays there, and a
+    // card that was only being carried to look at goes home.
+    cancelTurn();
+    carry.current = null;
+    setCarried(null);
     setDragging(null);
     setDrop(null);
     setEditing(false);
-  }, [commit, setEditing]);
+  }, [cancelTurn, commit, setEditing]);
 
   useEffect(() => {
     finishRef.current = finish;
   });
 
   const arrange = useMemo(
-    () => ({ editing, dragging, onDragStart, onDragMove, onDragEnd }),
-    [dragging, editing, onDragEnd, onDragMove, onDragStart],
+    () => ({
+      editing,
+      dragging,
+      carried,
+      // Only a panel with somewhere to go can answer a hold, and the card asks
+      // before it lifts rather than lifting and being told there is nowhere.
+      canCarry: editing && screens > 1,
+      onPickUp: pickUp,
+      onDragStart,
+      onDragMove,
+      onDragEnd,
+    }),
+    [
+      carried,
+      dragging,
+      editing,
+      onDragEnd,
+      onDragMove,
+      onDragStart,
+      pickUp,
+      screens,
+    ],
   );
 
   /**
@@ -965,7 +1302,10 @@ export function PanelGrid({
         <PageBar
           page={current}
           screens={screens}
-          onChange={setPage}
+          // And not a bare `setPage`: the dots and the arrows are the panel
+          // turning a screen on purpose, which is the same thing a carry does and
+          // the same thing a swipe finishes by doing. See `goTo`.
+          onChange={goTo}
           canAddPage={editing && pagesDraft < MAX_PAGES}
           onAddPage={addPage}
         />

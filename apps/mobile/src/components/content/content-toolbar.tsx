@@ -106,6 +106,14 @@ export function ContentToolbar({
           gap: theme.spacing.xs,
           paddingVertical: theme.spacing.xs,
           paddingHorizontal: theme.spacing.sm,
+          // 40 puntos de alto, medidos y no puestos por costumbre: la pastilla
+          // media 25. Y `hitSlop` no lo arregla, porque `hitSlop` agranda donde se
+          // puede pulsar **sin** agrandar el elemento, y el elemento es lo que un
+          // lector de pantalla anuncia y lo que alcanza un dedo. La fila se
+          // desplaza a lo ancho, asi que una pastilla mas alta no cuesta sitio.
+          minHeight: 40,
+          minWidth: 40,
+          justifyContent: "center",
           borderRadius: theme.radius.md,
           backgroundColor: activo ? theme.colors.accent : theme.colors.surfaceMuted,
           opacity: pressed ? 0.7 : 1,
@@ -170,6 +178,9 @@ export function ContentToolbar({
               gap: theme.spacing.xxs,
               paddingHorizontal: theme.spacing.sm,
               paddingVertical: theme.spacing.xs,
+              // El mismo 40 que las pastillas, y por el mismo motivo: media 25.
+              minHeight: 40,
+              justifyContent: "center",
               borderRadius: theme.radius.md,
               backgroundColor: theme.colors.surfaceMuted,
               borderColor: theme.colors.border,

@@ -1,27 +1,27 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 
-import type { Workspace } from '@orbit-hub/contracts';
+import type { Workspace } from "@orbit-hub/contracts";
 
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
-import { FloatingButton } from '@/components/ui/floating-button';
-import { Screen } from '@/components/ui/screen';
-import { SectionHeader } from '@/components/ui/list-row';
-import { AppText } from '@/components/ui/text';
-import { SpaceWash } from '@/components/ui/wash';
-import { WorkspaceCreateSheet } from '@/components/workspace/workspace-create-sheet';
-import { useWorkspaces } from '@/hooks/use-workspaces';
-import { pluralKey, useTranslation } from '@/lib/i18n';
-import { useTheme } from '@/theme';
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FloatingButton } from "@/components/ui/floating-button";
+import { Screen } from "@/components/ui/screen";
+import { SectionHeader } from "@/components/ui/list-row";
+import { AppText } from "@/components/ui/text";
+import { SpaceWash } from "@/components/ui/wash";
+import { WorkspaceCreateSheet } from "@/components/workspace/workspace-create-sheet";
+import { useWorkspaces } from "@/hooks/use-workspaces";
+import { pluralKey, useTranslation } from "@/lib/i18n";
+import { useTheme } from "@/theme";
 
-const ROLE_TONE: Record<Workspace['role'], 'accent' | 'neutral'> = {
-  owner: 'accent',
-  editor: 'accent',
-  viewer: 'neutral',
+const ROLE_TONE: Record<Workspace["role"], "accent" | "neutral"> = {
+  owner: "accent",
+  editor: "accent",
+  viewer: "neutral",
 };
 
 export default function WorkspacesScreen() {
@@ -43,7 +43,15 @@ export default function WorkspacesScreen() {
   );
 
   return (
-    <Screen width="grid">
+    <Screen
+      width="grid"
+      overlay={
+        <FloatingButton
+          label={t("workspaces.create")}
+          onPress={() => setCreating(true)}
+        />
+      }
+    >
       {/*
         No title and no description of its own. The header above says what this
         is, and saying it again one centimetre lower is the screen talking over
@@ -53,21 +61,23 @@ export default function WorkspacesScreen() {
       */}
       <View style={{ gap: theme.spacing.md }}>
         <SectionHeader
-          title={t('workspaces.yours')}
-          subtitle={t(pluralKey('workspaces.count', workspaces.length), { count: workspaces.length })}
+          title={t("workspaces.yours")}
+          subtitle={t(pluralKey("workspaces.count", workspaces.length), {
+            count: workspaces.length,
+          })}
         />
 
         {isLoading ? (
           <Card variant="muted">
             <AppText variant="callout" tone="muted" align="center">
-              {t('common.loading')}
+              {t("common.loading")}
             </AppText>
           </Card>
         ) : workspaces.length === 0 ? (
           <Card padded={false}>
             <EmptyState
-              title={t('workspaces.empty.title')}
-              description={t('workspaces.empty.body')}
+              title={t("workspaces.empty.title")}
+              description={t("workspaces.empty.body")}
             />
           </Card>
         ) : (
@@ -132,25 +142,33 @@ export default function WorkspacesScreen() {
                         tone={ROLE_TONE[workspace.role]}
                       />
                       <AppText variant="caption" tone="muted">
-                        {t(pluralKey('workspaces.members', workspace.memberCount), { count: workspace.memberCount })}
+                        {t(
+                          pluralKey(
+                            "workspaces.members",
+                            workspace.memberCount,
+                          ),
+                          { count: workspace.memberCount },
+                        )}
                       </AppText>
                     </View>
                   </View>
 
-                  <Ionicons name="chevron-forward" size={18} color={theme.colors.textSubtle} />
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={theme.colors.textSubtle}
+                  />
                 </Card>
               </Pressable>
             ))}
           </View>
         )}
       </View>
-
-      {Platform.OS === 'web' ? (
+      {Platform.OS === "web" ? (
         <AppText variant="caption" tone="subtle" align="center">
-          {t('workspaces.webHint')}
+          {t("workspaces.webHint")}
         </AppText>
       ) : null}
-
       {/*
         The plus, in the corner every other screen keeps it in, and it opens the
         form instead of being one. Creating a space was the last card of this
@@ -160,15 +178,12 @@ export default function WorkspacesScreen() {
         itself. Now the name and the colour are asked together, the way the menu
         of a space asks for them.
       */}
-      <FloatingButton
-        label={t('workspaces.create')}
-        onPress={() => setCreating(true)}
-      />
-
       <WorkspaceCreateSheet
         visible={creating}
         onClose={() => setCreating(false)}
-        onCreated={(workspaceId) => router.push(`/(app)/workspace/${workspaceId}`)}
+        onCreated={(workspaceId) =>
+          router.push(`/(app)/workspace/${workspaceId}`)
+        }
       />
     </Screen>
   );
@@ -176,8 +191,8 @@ export default function WorkspacesScreen() {
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   flex: {
     flex: 1,
@@ -185,11 +200,11 @@ const styles = StyleSheet.create({
   emoji: {
     width: 44,
     height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
 });

@@ -713,6 +713,111 @@ export function moveCardTo(
   return arrangeCard(layout, id, spot);
 }
 
+/* ---------------------------------------------------------------- carrying a card -- */
+
+/**
+ * Which way a card that is being carried is being pushed, if far enough to count.
+ *
+ * A card is carried from one screen to another by being held and pushed to one
+ * side, the way an icon is dragged off the edge of a home screen. The push is
+ * measured in points and *not* in cells: it is how far the hand has travelled,
+ * not where the card would land, and the two are different questions — the cell
+ * says where it goes and this says whether the person meant to go there at all.
+ *
+ * Zero is the answer for a push that has not reached the mark, and it is a real
+ * answer rather than a missing one: a card that is being carried sideways inside
+ * its own screen is being placed, and a panel that turned the screen because a
+ * thumb drifted is a panel nobody can arrange in.
+ */
+export function carryDirection(push: number, mark: number): -1 | 0 | 1 {
+  if (push >= mark) return 1;
+  if (push <= -mark) return -1;
+  return 0;
+}
+
+/**
+ * The screen a push carries a card to, or `null` when the panel ends that way.
+ *
+ * `null` and not the page it is already on, because "there is nowhere to go" and
+ * "go where you are" are different answers and the caller has to be able to tell
+ * them apart: the first one leaves the hand where it is, the second one would
+ * spend the push on a page turn that does not happen.
+ *
+ * The panel's own edges, and not `DASHBOARD_PAGES`: carrying is a move between
+ * screens that exist, and a screen nobody has been to is a screen with nothing
+ * on it, which is somewhere to put a card and not somewhere to take one from.
+ */
+export function carryTarget(
+  page: number,
+  dir: -1 | 1,
+  screens: number,
+): number | null {
+  const target = page + dir;
+  if (target < 0 || target > screens - 1) return null;
+  return target;
+}
+
+/**
+ * Whether a screen has room for a card that is being carried to it.
+ *
+ * Asked *before* the panel turns, and it is the only reason the turn can be
+ * refused. `moveCardToPage` never says no: the card it is placing goes into the
+ * placement before the cards already on that screen, so a full screen would give
+ * up its first cell and shuffle the rest around it. That is the right answer for a
+ * card being dragged onto a full part of the grid — the card under the finger wins
+ * and its neighbours get out of the way — and it is the wrong one here, because a
+ * carry is nobody pointing at a cell: the hand is at the edge of the panel asking
+ * a different question, and the panel would answer it by rearranging a screen
+ * somebody had already arranged.
+ *
+ * So the answer is asked first, the way `pageForNewCard` asks it before pinning
+ * something onto a screen: a screen that is full is somewhere to put a card once
+ * there is room, and not somewhere to take one to.
+ */
+export function carryFits(
+  layout: DashboardWidget[],
+  id: string,
+  page: number,
+): boolean {
+  const card = layout.find((widget) => widget.id === id);
+  if (!card) return false;
+  const there = layout.filter((widget) => pageOf(widget) === page && widget.id !== id);
+  return fits(there.map(cellsOf), id, card.w, card.h);
+}
+
+/**
+ * The layout after a card has been carried to another screen and let go.
+ *
+ * Two rules in one place because a card that is carried is subject to both and
+ * the order matters. **The screen first**: a card that arrives carrying its
+ * position lands on top of whatever is at those cells of the screen it is
+ * arriving at, which is why `moveCardToPage` drops the position and places it
+ * where there is room. **Then the cell**: the drop cell is where the hand let
+ * go of it, and applying it to a card that has just been placed somewhere would
+ * throw the placement away and move its new neighbours a second time.
+ *
+ * `from` is the layout as it was when the card was **picked up**, not as it is
+ * when the hand lets go. The screens it travelled through only ever had its own
+ * page changed, so they are already in that array; reading the live draft
+ * instead would take the placement of the screen it is standing on and apply it
+ * to the one it is going to.
+ *
+ * And the same array comes back when the carry went nowhere, which is how the
+ * panel knows there is nothing to write: a hand that picked a card up and put it
+ * down again has not arranged anything, and an operation in the outbox for that
+ * is a write nobody asked for.
+ */
+export function carryCard(
+  from: DashboardWidget[],
+  id: string,
+  page: number,
+  spot: { x: number; y: number } | null,
+): DashboardWidget[] {
+  const moved = moveCardToPage(from, id, page);
+  if (!spot) return moved;
+  return moveCardTo(moved, id, spot);
+}
+
 /** The layout of a card, or a sensible default for a card that has none. */
 export function cardSize(widget: DashboardWidget): { w: number; h: number } {
   return snapSize(widget.w, widget.h);

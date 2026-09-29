@@ -39,6 +39,22 @@ import { useTheme } from "@/theme";
  */
 export interface NoteAttachmentsProps {
   noteId: string;
+  /**
+   * Whether the server has this note, and the only thing that decides it.
+   *
+   * A note is written on the phone first and reaches the server when the queue
+   * drains, so for the first seconds of a new note the server has never heard of
+   * it. Asking anyway produced a 404 in the console on **every** note ever
+   * created, which is a lie told twice: to the person reading the console, and to
+   * whoever looks at the server logs afterwards and finds a client hitting a
+   * resource that cannot exist. Nothing was broken and the answer was correct —
+   * there are no attachments on a note that does not exist — but a 404 is the one
+   * answer that is not allowed to be the right one.
+   *
+   * A local note is `version: 0` and the server counts from 1, so the version is
+   * the question already answered by the row. See `hasReachedServer`.
+   */
+  onServer?: boolean;
   /** The ceilings the server told the client about, so the answer matches its own. */
   maxBytes: number;
   /** Picks a picture. `null` when the person cancelled or refused the permission. */
@@ -50,6 +66,7 @@ export interface NoteAttachmentsProps {
 
 export function NoteAttachments({
   noteId,
+  onServer = true,
   maxBytes,
   onPickImage,
   onPickFile,
@@ -69,6 +86,16 @@ export function NoteAttachments({
     // with a photo on the phone and no connection still has to say the photo is
     // only on the phone.
     setPending(pendingFor(noteId, keyValueStore));
+
+    // The server has never heard of this note yet. The answer would be an empty
+    // list, which is the truth, and it would be reached by asking a question that
+    // cannot have an answer — so the empty list is put there without asking. See
+    // `onServer` for why this was a 404 on every new note.
+    if (!onServer) {
+      setItems([]);
+      return;
+    }
+
     try {
       const list = await listAttachments(noteId);
       setItems(list);
@@ -78,7 +105,7 @@ export function NoteAttachments({
       // Saying "could not load" over a note somebody is writing is noise.
       setItems([]);
     }
-  }, [noteId, onCountChanged]);
+  }, [noteId, onCountChanged, onServer]);
 
   useEffect(() => {
     void reload();

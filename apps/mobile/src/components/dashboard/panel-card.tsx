@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useContext, useEffect } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -77,6 +77,35 @@ function phaseOf(id: string): number {
 const LIFT = 1.02;
 const MOVE = { duration: 170, easing: Easing.out(Easing.cubic) };
 const WOBBLE_OUT = { duration: 200, easing: Easing.out(Easing.cubic) };
+
+/**
+ * How long a finger has to rest on a card before the card is in your hand.
+ *
+ * A hold and not a distance, because there are two gestures on this card and only
+ * one finger. A few points of movement place the card on this screen — that is the
+ * grid everybody already knows, and it is why the panel has no drag threshold to
+ * learn — and pushing a card sideways to another screen is a *different* intent
+ * that can only be told from the first one by the hand going still first. So the
+ * movement that places the card wins whenever it happens, and the card is only
+ * picked up by waiting.
+ *
+ * Short enough that it does not feel like a mode, long enough that nobody sets a
+ * finger down and pushes before the card answers. About the same as the hold the
+ * OS uses to pick an icon off a home screen, which is the gesture this is copying.
+ */
+const CARRY_AFTER = 280;
+
+/**
+ * How much bigger a card is while it is being carried.
+ *
+ * More than the drag lift, and for the same reason the drag lift is more than
+ * nothing: the two states have to be told apart from the shape of the card alone.
+ * A card being dragged is being placed and a card being carried is in a hand, and
+ * the second one is the only state in which the panel turns screens under you — so
+ * if the two look the same, a panel turning a screen is a panel reacting to
+ * something the person cannot see.
+ */
+const CARRY_LIFT = 1.07;
 
 export interface PanelCardProps {
   id: string;
@@ -178,6 +207,8 @@ export function PanelCard({
   const paint = spacePaint(colorKey, wash ?? undefined, colorToKey);
   const arrange = useContext(PanelArrangeContext);
   const editing = arrange?.editing ?? false;
+  /** Whether this card is the one in the person's hand, and not just being placed. */
+  const carried = arrange?.carried === id;
 
   const scale = useSharedValue(1);
   const wobble = useSharedValue(0);
@@ -246,6 +277,28 @@ export function PanelCard({
     scale.value = withTiming(1, MOVE);
   };
 
+  /**
+   * The hold that puts the card in the person's hand.
+   *
+   * Armed when the finger goes down and disarmed the moment the gesture activates,
+   * so a card is either being placed or being picked up and never both: the two
+   * read the same travel differently, and a card that answered a push to the right
+   * with a new screen *and* with a new column is a panel that answers two questions
+   * at once and gets one of them wrong.
+   *
+   * A `setTimeout` and not a gesture of its own, because a gesture cannot be armed
+   * for "the finger has stopped moving" without also owning the movement, and the
+   * movement belongs to the drag.
+   */
+  const pickUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearPickUp = useCallback(() => {
+    if (pickUp.current === null) return;
+    clearTimeout(pickUp.current);
+    pickUp.current = null;
+  }, []);
+  // A timer outliving the card would lift a card that is not on the panel any more.
+  useEffect(() => clearPickUp, [clearPickUp]);
+
   useEffect(() => {
     if (!editing) {
       cancelAnimation(wobble);
@@ -278,12 +331,36 @@ export function PanelCard({
     // old app started on a few pixels of movement, and that is what a hand
     // already expects from a grid.
     .minDistance(6)
+    .onBegin(() => {
+      clearPickUp();
+      if (!arrange?.canCarry) return;
+      pickUp.current = setTimeout(() => {
+        pickUp.current = null;
+        // The corner got the finger and not the card. Read here and not when the
+        // timer was armed because the two handlers are told about a touch in no
+        // order anybody should depend on, and a resize that also picked the card
+        // up is a card that is in your hand and being resized at the same time.
+        if (resizing.value) return;
+        // The card straightens up and comes off the page further than a drag
+        // does, because it is being carried and not placed. See `CARRY_LIFT`.
+        cancelAnimation(wobble);
+        wobble.value = withTiming(0, WOBBLE_OUT);
+        scale.value = withTiming(CARRY_LIFT, MOVE);
+        arrange.onPickUp(id);
+      }, CARRY_AFTER);
+    })
     .onStart(() => {
+      // Movement beats the hold, so the hold is off from here: this is a drag.
+      clearPickUp();
       // The card straightens up as it is picked up. A card that keeps leaning
       // while it is being carried looks broken, not alive.
       cancelAnimation(wobble);
       wobble.value = withTiming(0, WOBBLE_OUT);
-      scale.value = withTiming(LIFT, MOVE);
+      // Never smaller than what it is: a card that was picked up and then moved
+      // within its screen is still in a hand, and dropping it back to the drag
+      // lift on the first frame would say it had been put down while it is being
+      // carried to another one.
+      scale.value = withTiming(Math.max(scale.value, LIFT), MOVE);
       runOnJS(arrange?.onDragStart ?? noop)(id);
     })
     .onUpdate((event) => {
@@ -298,10 +375,15 @@ export function PanelCard({
       );
     })
     .onEnd(() => {
+      clearPickUp();
       runOnJS(arrange?.onDragEnd ?? noop)(id);
       settle();
     })
     .onFinalize(() => {
+      // Every release ends here, including a release of a finger that never moved:
+      // the hold has to be disarmed by a tap as much as by a drag, or a card lifts
+      // itself a quarter of a second after being tapped.
+      clearPickUp();
       runOnJS(arrange?.onDragEnd ?? noop)(id);
       settle();
     });
@@ -309,6 +391,13 @@ export function PanelCard({
   const resize = Gesture.Pan()
     .enabled(editing)
     .minDistance(2)
+    .onBegin(() => {
+      // The corner is not the card. `resizing` is what the pick-up timer checks,
+      // and it has to be set here and not at activation: a corner that is held
+      // rather than pulled is still the corner.
+      resizing.value = true;
+      clearPickUp();
+    })
     .onStart(() => {
       resizing.value = true;
       startSize.value = size;
@@ -345,7 +434,23 @@ export function PanelCard({
     transform: [{ scale: scale.value }, { rotate: `${wobble.value}deg` }],
   }));
 
-  const pista = useA11yHint(editing ? where : subtitle);
+  /*
+    The hint while arranging, which is the only screen where the card is not a
+    link.
+
+    It used to be the name of the space the card is in, which the card already
+    says in its own last line while arranging — so a screen reader heard the same
+    sentence twice and learned nothing about what the card can *do*. The space goes
+    first because it is on the card, and the carry goes with it because it is the
+    one thing about this mode that is not visible anywhere: there is no button that
+    pushes a card to another screen, and a gesture nobody is told about is a
+    gesture nobody does.
+  */
+  const pista = useA11yHint(
+    editing
+      ? `${where ? `${where}. ` : ""}${t("dashboard.carryCard")}`
+      : subtitle,
+  );
 
   return (
     /*
@@ -442,8 +547,13 @@ export function PanelCard({
             complains about on the console and that a screen reader reads as one
             control with two names. It is also why the two work at all: nested, the
             tap lands on the outer one and nothing can be unpinned.
+
+            Not while it is being carried, for the reason the corner is not either:
+            a card in a hand is a card being moved somewhere, and the two buttons on
+            it would be about a third of the area the hand is trying to travel
+            across — on the corner the finger has to be anyway.
           */}
-          {editing ? (
+          {editing && !carried ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("dashboard.unpinCard", { name: title })}
@@ -457,8 +567,11 @@ export function PanelCard({
 
           {/* The corner you pull. Bottom right, because that is the corner whose
             movement a hand already knows how to make, and 44 across, because 44
-            is about a fingertip. */}
-          {editing ? (
+            is about a fingertip. Gone while the card is being carried, and for the
+            same reason as the unpin: it is 44 of hand to cross on the way to
+            another screen, and a corner that resizes the card being carried would
+            resize it on the way past. */}
+          {editing && !carried ? (
             <GestureDetector gesture={resize}>
               <View
                 accessibilityRole="button"

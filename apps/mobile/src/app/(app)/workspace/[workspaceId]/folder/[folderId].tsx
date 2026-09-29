@@ -255,7 +255,7 @@ export default function FolderScreen() {
   }, [menuFor, t]);
 
   return (
-    <Screen>
+    <Screen overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}>
       {/*
         The band of the space, on the folder screen too.
 
@@ -271,8 +271,6 @@ export default function FolderScreen() {
         spaceHref={`/(app)/workspace/${workspaceId}`}
         crumbs={crumbs}
       />
-
-
       <ContentList
         workspaceId={workspaceId}
         folderId={folderId}
@@ -290,7 +288,6 @@ export default function FolderScreen() {
         }
         onListMenu={(target) => setMenuFor({ kind: "list", list: target })}
       />
-
       {/* The menu of a thing. A long press opens it on a phone, which is where
           the action is not a button anyone sees all the time. */}
       <Sheet
@@ -304,7 +301,6 @@ export default function FolderScreen() {
       >
         <SheetOptions options={menuOptions} />
       </Sheet>
-
       <CreateSheet
         open={createOpen}
         onClose={closeSheets}
@@ -328,8 +324,6 @@ export default function FolderScreen() {
         }}
         creating={false}
       />
-
-      <FloatingButton onPress={() => setCreateOpen(true)} />
     </Screen>
   );
 }
@@ -341,4 +335,3 @@ type CarpetaDeEsteNivel = {
   parentId: string | null;
   position: number;
 };
-

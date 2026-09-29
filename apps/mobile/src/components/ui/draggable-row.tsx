@@ -312,7 +312,7 @@ export function DraggableRow({
  * here as `right: 8` plus the padding of the glyph, and once in the row as a
  * guess — and the two of them only agreed because somebody typed 28.
  */
-export const DRAG_HANDLE_WIDTH = 28;
+export const DRAG_HANDLE_WIDTH = 40;
 
 const ROW_HEIGHT_DEFAULT = 64;
 
@@ -323,12 +323,24 @@ const styles = StyleSheet.create({
   dragging: {
     opacity: 0.98,
   },
+  /*
+    40 de ancho y no 26, medido en web: el asa media 18 de glifo mas 4 de relleno a
+    cada lado, y 26 es por debajo de lo que un dedo alcanza con fiabilidad. El alto
+    ya era el de la fila entera, que es lo que hacia el blanco util en vertical.
+
+    El glifo se queda donde estaba: el blanco crece **hacia dentro** y el icono se
+    centra, asi que a simple vista el asa no se ha movido y lo unico que cambia es
+    lo que se puede pulsar. Por eso `DRAG_HANDLE_WIDTH` pasa a 40: el hueco que la
+    fila reserva a la derecha tiene que medir lo que el asa ocupa de verdad, o el
+    nombre del titular acabaria debajo del asa.
+  */
   handle: {
     position: 'absolute',
-    right: 8,
+    right: 0,
     top: 0,
     bottom: 0,
+    width: DRAG_HANDLE_WIDTH,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
   },
 });

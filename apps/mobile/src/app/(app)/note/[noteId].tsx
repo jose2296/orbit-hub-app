@@ -38,9 +38,53 @@ import {
   createAutosave,
   storableDocument,
 } from "@/lib/notes/autosave";
+import { hasReachedServer } from "@/lib/notes/placement";
 import { useTheme } from "@/theme";
 
 type Status = "idle" | "saving" | "saved" | "failed" | "invalid";
+
+/**
+ * How long the editor will wait for the pictures before opening without them.
+ *
+ * Long enough to cover a list of attachments on a slow connection — that request
+ * is one small JSON — and short enough that a person tapping a note sees words
+ * rather than a blank screen. The API client would allow fifteen seconds, which
+ * is the right number for a request whose answer nothing is waiting for and far
+ * too long for one that a whole screen is.
+ */
+const MIME_WAIT_MS = 2_500;
+
+/**
+ * Which of a note's attachments is a picture, and which is not.
+ *
+ * The mime is what says how a reference becomes a local file, so the pass that
+ * draws the note cannot start without it. It matters beyond the extension: a
+ * reference that resolves to a PDF is a file the editor cannot draw, and a note
+ * with a broken image in the middle of a sentence reads as a bug in the app
+ * rather than as a file that happens to be beside the text.
+ *
+ * **It gives up.** A note whose attachments cannot be listed is a note whose
+ * pictures are not on this device, and the app's client allows a request fifteen
+ * seconds; a screen that waits for all of that is a screen that never opens. So
+ * the answer after the wait is an empty map, which is not a lie — it says the
+ * same thing a note with no attachments says, and the effect of that is the
+ * references staying references and the editor drawing its placeholder for them.
+ */
+function attachmentMimes(noteId: string): Promise<ReadonlyMap<string, string>> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(new Map()), MIME_WAIT_MS);
+    void listAttachments(noteId).then(
+      (list) => {
+        clearTimeout(timer);
+        resolve(new Map(list.map((a) => [a.id, a.mimeType])));
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(new Map());
+      },
+    );
+  });
+}
 
 /**
  * One note, and almost nothing else.
@@ -98,35 +142,6 @@ export default function NoteScreen() {
   const [templateFor, setTemplateFor] = useState<{ name: string; document: string } | null>(
     null,
   );
-  /**
-   * Which of the note's attachments is a picture, and which is not.
-   *
-   * The note carries no attachments of its own — they are a separate list, and
-   * the separator under the editor is what shows them — so this has to be asked
-   * for. It matters because a reference that resolves to a PDF is a file the
-   * editor cannot draw: it would sit in the text for ever as a broken image, and
-   * a note with a broken image in it looks like a bug in the app rather than a
-   * file that happens to be beside the text.
-   */
-  const [imageMime, setImageMime] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
-  );
-  /**
-   * Whether the attachments have been asked for and answered, one way or the other.
-   *
-   * The extension of a cached picture is decided by its attachment's MIME type, so
-   * the list has to be in hand before the pictures can be resolved. And the editor
-   * is only given one document, ever, so that first one has to be the right one: fed
-   * a document whose pictures are still references, it draws a placeholder that
-   * never resolves, because by the time the types arrive nobody is going to hand it
-   * a second document.
-   *
-   * Set on failure too, and not left false: a note whose attachments cannot be
-   * listed is a note whose pictures are not on this device, and waiting for ever
-   * would be a screen that never opens.
-   */
-  const [mimeSettled, setMimeSettled] = useState(false);
-
   const titleRef = useRef(title);
   titleRef.current = title;
 
@@ -171,43 +186,41 @@ export default function NoteScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note?.id]);
 
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    void listAttachments(id).then(
-      (list) => {
-        if (cancelled) return;
-        setImageMime(new Map(list.map((a) => [a.id, a.mimeType])));
-        setMimeSettled(true);
-      },
-      // No attachments, or no connection. The note still opens and the text still
-      // reads; only a picture stays where it is, and the separator says so.
-      () => {
-        if (!cancelled) setMimeSettled(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
   /**
-   * Draws the note the editor will show, which is the stored one with its
-   * pictures on this device.
+   * Draws the note the editor will show: the stored document with its pictures on
+   * this device.
    *
-   * A reference the device cannot resolve stays a reference, and the editor draws
-   * its own placeholder for a `src` it cannot read — which is a true picture of a
-   * note whose picture has not been downloaded yet, and a better one than an
-   * `src` that points at nothing.
+   * One pass, and it is the one that knows the mimes.
+   *
+   * The mime is what says how a reference becomes a local file, so a pass that
+   * runs before the list of attachments has arrived resolves nothing and hands
+   * back the references unchanged. That was harmless while the editor mounted
+   * after `mimeSettled`, because a second pass a moment later produced the
+   * pictures — except the two flags are set by two different requests, and the
+   * render that sees `mimeSettled` already true can still be holding the *first*
+   * pass's draft: `draft` was set, it was just the un-localised one. The editor
+   * mounted with `attachment:` strings, could not resolve them, and on the web
+   * the sanitiser then emptied the `src` altogether, so `getHTML` wrote
+   * `<img src="">` and the note refused to save. Separating the mimes from the
+   * pass is what allowed that; the two belong in one function.
+   *
+   * So the pass asks for the mimes itself, and the editor waits for the pass and
+   * for nothing else. Waiting is bounded, because a note that is a blank screen
+   * for as long as a slow request takes is a note that looks broken — the app's
+   * own client gives a request fifteen seconds, which is far too long to stare
+   * at. Past the bound the pass goes on without the mimes: the references stay
+   * where they were, the editor draws its own placeholder for them, and the note
+   * is readable and editable while the picture is not.
    */
   useEffect(() => {
-    if (!note) return;
+    if (!note || !id) return;
     let cancelled = false;
 
     void (async () => {
+      const mimes = await attachmentMimes(id);
       const localised = await localiseDocumentImages(
         note.document,
-        (id) => imageMime.get(id) ?? null,
+        (attachmentId) => mimes.get(attachmentId) ?? null,
       );
       if (cancelled) return;
       // Never handed to an editor that is already drawing something else: the
@@ -219,7 +232,7 @@ export default function NoteScreen() {
     return () => {
       cancelled = true;
     };
-  }, [imageMime, note?.document, note?.id]);
+  }, [id, note?.document, note?.id]);
 
   // Leaving the screen must not leave a save behind. The back button, the
   // browser bar, a swipe and a call all arrive here.
@@ -361,21 +374,12 @@ export default function NoteScreen() {
    * below only ever goes from null to a string, and after that the editor is left
    * alone while the person types.
    *
-   * The editor also waits, for exactly as long as the note has a picture whose
-   * local copy is being found. A note with no pictures waits for nothing: a
-   * document with nothing to resolve is already the document it should have.
+   * The editor also waits for the one pass above, which is bounded, and only when
+   * the note has a picture to resolve. A note with no pictures waits for nothing:
+   * a document with nothing to resolve is already the document it should have.
    */
-  const hasPictures = note !== null && imageReferences(note.document).length > 0;
-  const documentForEditor = !note
-    ? null
-    : hasPictures
-      ? // With pictures, nothing goes to the editor until the attachments have been
-        // asked for, because that list is what says how a reference becomes a path.
-        mimeSettled
-        ? draft
-        : null
-      : // Without them the stored document is already the document it should have.
-        note.document;
+  const hasPictures = imageReferences(note.document).length > 0;
+  const documentForEditor = hasPictures ? draft : note.document;
 
   if (documentForEditor !== null && editorDocument === null) {
     setEditorDocument(documentForEditor);
@@ -450,6 +454,7 @@ export default function NoteScreen() {
 
       <NoteAttachments
         noteId={id as string}
+        onServer={hasReachedServer(note)}
         maxBytes={ATTACHMENT_IMAGE_MAX_BYTES_DEFAULT}
         onPickImage={pickImage}
         onPickFile={pickAnyFile}

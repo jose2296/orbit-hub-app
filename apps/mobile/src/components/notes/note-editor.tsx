@@ -11,6 +11,7 @@ import { Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
+import { NOTE_SANITIZATION } from "@/lib/notes/sanitization";
 import { useTheme } from "@/theme";
 
 /**
@@ -31,6 +32,22 @@ export interface NoteEditorProps extends Pick<
   EnrichedTextInputProps,
   "defaultValue" | "placeholder" | "autoFocus" | "textShortcuts"
 > {
+  /**
+   * Which URIs survive the editor's sanitiser.
+   *
+   * The library runs every document through DOMPurify before handing it to
+   * tiptap, and DOMPurify's default allow-list has no `blob:` in it. The browser
+   * is the only platform where a picture is a `blob:` URL — a phone has a file in
+   * its cache — so the default silently emptied every `src` on the web: the note
+   * opened with a picture-shaped hole in it, and saving it wrote `<img src="">`,
+   * which `note-document` rejects. The pictures were never broken; the editor
+   * was refusing to be told where they were.
+   *
+   * It has to be spelled out rather than extended: `ALLOWED_URI_REGEXP` replaces
+   * the default instead of adding to it, so the standard protocols are written
+   * out again here. Anything not on this list is still refused.
+   */
+  sanitizationConfig?: EnrichedTextInputProps["sanitizationConfig"];
   /** Called when the person types. Cheap: this is the plain text, not the HTML. */
   onChanged: () => void;
   /**
@@ -175,6 +192,7 @@ export function NoteEditor({
   onInsertImage,
   editorRef,
   readOnly = false,
+  sanitizationConfig = NOTE_SANITIZATION,
 }: NoteEditorProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -354,6 +372,7 @@ export function NoteEditor({
         placeholder={placeholder}
         autoFocus={autoFocus}
         editable={!readOnly}
+        sanitizationConfig={sanitizationConfig}
         htmlStyle={htmlStyle}
         textShortcuts={textShortcuts}
         onChangeText={onChanged}

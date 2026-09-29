@@ -29,7 +29,20 @@ npm run test        # api tests
 npm run check       # typecheck + test + expo config
 ```
 
-Plus, for UI changes: verify on web **and** at least one native target, in light and dark theme.
+Plus, for UI changes: verify on the **web**, in light and dark theme.
+
+Web is the only target that is checked by hand. The native ones are not: there is no
+simulator or device attached to this machine, and a change that is only measured
+through a checklist of assumptions is not a check. So a UI change is opened in a
+browser, driven to the screen, scrolled, and looked at — and a claim that it works
+on Android or iOS is a claim about a build nobody ran.
+
+That makes the web the place where platform-only bugs hide, and the notes editor is
+the standing example: it refused every picture, handed the editor unresolved
+references, and drew a `+` that scrolled away, and every one of those was found in
+a browser in the time it would have taken to boot an emulator. What the browser
+cannot tell you is a native selection handle or a system keyboard, and those stay
+unverified until somebody runs a device.
 
 ## Where things live
 

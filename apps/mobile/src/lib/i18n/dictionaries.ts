@@ -375,6 +375,8 @@ const es = {
     "Mover y cambiar el tamaño de las tarjetas del panel.",
   "dashboard.resizeCard": "Cambiar el tamaño de {name}",
   "dashboard.unpinCard": "Quitar {name} del panel",
+  "dashboard.carryCard":
+    "Mantén pulsada la tarjeta y empújala hacia un lado para llevarla a otra pantalla.",
   "dashboard.dropHere": "La tarjeta se suelta aquí",
   "dashboard.previousPage": "Pantalla anterior del panel",
   "dashboard.nextPage": "Pantalla siguiente del panel",
@@ -1215,6 +1217,8 @@ const en: Record<TranslationKey, string> = {
   "dashboard.editLayoutHint": "Move and resize the cards on the panel.",
   "dashboard.resizeCard": "Resize {name}",
   "dashboard.unpinCard": "Take {name} off the panel",
+  "dashboard.carryCard":
+    "Hold the card and push it sideways to move it to another screen.",
   "dashboard.dropHere": "The card is dropped here",
   "dashboard.previousPage": "Previous panel screen",
   "dashboard.nextPage": "Next panel screen",

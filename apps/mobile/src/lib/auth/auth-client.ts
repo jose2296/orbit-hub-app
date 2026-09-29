@@ -7,6 +7,7 @@ import { SYNC_DEFAULTS } from '@orbit-hub/config';
 import { api, configureApiClient, toApiError } from '@/lib/api';
 import type { ApiError } from '@/lib/api';
 
+import { forgetEverything } from './forget-everything';
 import { sessionStorage } from './session-storage';
 import type { StoredSession } from './session-storage';
 
@@ -291,8 +292,31 @@ class AuthClient {
       // Signing out locally must always succeed, even offline.
     }
     await this.clear();
+    await forgetEverything();
   }
 
+  /**
+   * Forgets the tokens and nothing else.
+   *
+   * The cache is **not** touched here, and that is the bug this is next to.
+   *
+   * `signOut` used to end at `this.clear()`, which removed the session and left
+   * everything that session had written: the cache of workspaces, folders, lists
+   * and notes, the outbox with whatever had not been pushed yet, and the pull
+   * cursor. So the next person to sign in on that browser opened the app and was
+   * shown the previous one's spaces — their names, their folders, their note
+   * titles — while `/workspaces` answered `items: []`, because the server had
+   * never heard of them either.
+   *
+   * The screen was not wrong to render what it read, and the data was not in the
+   * wrong place: the two halves disagreed, and the half the person could see was
+   * somebody else's.
+   *
+   * On a phone that is a shared device at a desk. On the web it is worse, because
+   * the browser profile outlives the session and the next sign-in is a different
+   * person typing their own password. Either way the fix is the same: the local
+   * data belongs to the session that wrote it.
+   */
   async clear(): Promise<void> {
     await sessionStorage.clear();
     this.stored = null;

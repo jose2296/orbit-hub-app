@@ -75,3 +75,22 @@ export function notePlacement(
     folderId: context.folderId ? context.folderId : null,
   };
 }
+
+/**
+ * Whether the server has this note yet.
+ *
+ * A note is written on the device first, and the server counts versions from 1,
+ * so a note the server has never seen is `version: 0` and a note it has is 1 or
+ * more. That makes the version the answer, and it is the row's own field — there
+ * is no extra flag to keep in step with it.
+ *
+ * It matters for one request: the files on the note. Asking the server about a
+ * note it does not have is a 404, and it was one on every note the app ever
+ * created, because the editor mounts and asks before the outbox has drained.
+ *
+ * `null` is `false` and not an optimistic true: a note nobody can see the value
+ * of is a note we have no evidence the server has.
+ */
+export function hasReachedServer(note: { version: number } | null | undefined): boolean {
+  return typeof note?.version === "number" && note.version > 0;
+}

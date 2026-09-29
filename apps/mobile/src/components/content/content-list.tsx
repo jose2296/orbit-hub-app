@@ -437,12 +437,18 @@ function BotonMenu({
       style={({ pressed }) => [
         styles.menu,
         {
-          top: theme.spacing.md,
+          top: theme.spacing.sm,
           // The handle is `right: 8` and about 32 wide, so stepping by its width
           // plus its own margin puts the menu clear of it rather than a few
           // pixels to the side of it.
           right: theme.spacing.sm + offset,
-          padding: theme.spacing.xs,
+          // 40 de blanco y el icono dentro: media 26, por debajo de lo que un
+          // dedo alcanza con fiabilidad. Con `hitSlop` el blanco crecia hacia el
+          // asa de arrastrar, que esta al lado.
+          minWidth: 40,
+          minHeight: 40,
+          alignItems: 'center',
+          justifyContent: 'center',
           borderRadius: theme.radius.sm,
           backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
         },

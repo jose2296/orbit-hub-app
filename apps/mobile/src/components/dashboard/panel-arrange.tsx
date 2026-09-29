@@ -24,6 +24,34 @@ export interface PanelArrange {
    * the value is kept upstairs where the placement is worked out.
    */
   dragging: string | null;
+  /**
+   * The card being carried from one screen to another.
+   *
+   * Not the same as `dragging`: a card is being dragged for as long as a finger is
+   * moving it on its own screen, and it is being *carried* from the moment it was
+   * held still until it is let go. The difference is what the push to one side
+   * means — on a drag it is a cell, and on a carry it is another screen — and the
+   * handles go away on a carry, because a card in your hand is not a card with a
+   * corner to pull.
+   */
+  carried: string | null;
+  /**
+   * Whether a card can be carried at all.
+   *
+   * False on a panel of one screen, and it is the panel that says so rather than
+   * the card: there is nothing on the far side of a one-screen panel, so a card
+   * that answered the hold with a lift would be promising a move it cannot make.
+   */
+  canCarry: boolean;
+  /**
+   * The card has been held still long enough to be picked up.
+   *
+   * Told apart from `onDragStart` because they answer different questions. The
+   * drag starts on a few points of movement and places a card on this screen; the
+   * pick-up starts on a hold and puts the card in the person's hand, which is the
+   * only state in which pushing it sideways means another screen.
+   */
+  onPickUp: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, dx: number, dy: number) => void;
   onDragEnd: (id: string) => void;
@@ -47,6 +75,9 @@ export type PanelArrangeValue = PanelArrange;
 export const AT_REST: PanelArrange = {
   editing: false,
   dragging: null,
+  carried: null,
+  canCarry: false,
+  onPickUp: () => {},
   onDragStart: () => {},
   onDragMove: () => {},
   onDragEnd: () => {},
