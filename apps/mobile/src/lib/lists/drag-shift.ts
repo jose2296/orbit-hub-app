@@ -18,6 +18,7 @@ export function rowShift(args: {
   to: number;
   rowHeight: number;
 }): number {
+  'worklet';
   const { draggingId, id, index, from, to, rowHeight } = args;
   // Nothing is being dragged, or this is the row doing the dragging: it does
   // not move out of its own way.
@@ -46,6 +47,7 @@ export function dropIndex(args: {
   translationY: number;
   rowHeight: number;
 }): number {
+  'worklet';
   const { index, total, translationY, rowHeight } = args;
   const alto = rowHeight > 0 ? rowHeight : 1;
   const desplazamiento = Math.round(translationY / alto);

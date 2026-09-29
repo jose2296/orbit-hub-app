@@ -273,6 +273,8 @@ export function catalogKindsFor(listKind: string): CatalogKind[] {
 
 /* ----------------------------------------------------------------- details -- */
 
+import { elegirTrailer, tmdbVideosSchema } from './trailer.js';
+
 const tmdbGenreSchema = z.object({ id: z.number(), name: z.string() });
 
 const tmdbMovieDetailSchema = tmdbMovieSchema.extend({
@@ -290,6 +292,7 @@ const tmdbMovieDetailSchema = tmdbMovieSchema.extend({
       poster_path: z.string().nullable().optional(),
     })
     .nullish(),
+  videos: tmdbVideosSchema,
 });
 
 const tmdbSeriesDetailSchema = z.object({
@@ -306,6 +309,7 @@ const tmdbSeriesDetailSchema = z.object({
   number_of_seasons: z.number().optional(),
   number_of_episodes: z.number().optional(),
   episode_run_time: z.array(z.number()).optional(),
+  videos: tmdbVideosSchema,
 });
 
 /** A poster-sized reference to another title, for collections and similar. */
@@ -346,9 +350,11 @@ async function fetchTmdbDetails(
   const url = new URL(`https://api.themoviedb.org/3/${path}/${encodeURIComponent(raw)}`);
   url.searchParams.set('api_key', env.TMDB_API_KEY as string);
   url.searchParams.set('language', 'es-ES');
-  // The cast, the franchise and the "more like this" list all come back on the
-  // same call. Asking for them separately would be three round trips per title.
-  url.searchParams.append('append_to_response', 'credits,similar,recommendations');
+  // The cast, the franchise, the "more like this" list and the trailer all come
+  // back on the same call. Asking for them separately would be four round trips
+  // per title, and a title that is opened in a carousel is opened by somebody
+  // who is already scrolling.
+  url.searchParams.append('append_to_response', 'credits,similar,recommendations,videos');
 
   const rawPayload = (await fetchJson(url, 'application/json')) as Record<string, unknown>;
   const payload = (kind === 'tv' ? tmdbSeriesDetailSchema : tmdbMovieDetailSchema).parse(rawPayload);
@@ -467,6 +473,7 @@ async function fetchTmdbDetails(
     ...(cast.length > 0 ? { cast } : {}),
     ...(related.length > 0 ? { related } : {}),
     ...(collection ? { collection } : {}),
+    trailer: elegirTrailer(payload.videos?.results),
   };
 
   return details;
@@ -494,6 +501,9 @@ async function fetchGoogleBookDetails(externalId: string): Promise<CatalogDetail
     provider: 'google-books',
     externalId,
     kind: 'books',
+    // Un libro no tiene HIMAN y no deja que se le imponga: la hoja de donde verlo
+    // se queda sin Hitchcock, y no con un boton que abre una pagina vacia.
+    trailer: null,
     title: info.title,
     imageUrl: httpsImage(info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail),
     backdropUrl: null,

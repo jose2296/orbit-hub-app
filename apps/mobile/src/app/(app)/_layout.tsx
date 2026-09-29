@@ -167,6 +167,10 @@ function AppNavigation() {
       <Stack.Screen name="item/[itemId]" options={{ title: "" }} />
       <Stack.Screen name="notes" options={{ title: t("notes.title") }} />
       <Stack.Screen name="templates" options={{ title: t("note.templates") }} />
+      {/* The template's own name, not the route: this screen draws it under the
+          header, where a note draws its title, and a caption of
+          "templates/[templateId]" is developer text in a person's face. */}
+      <Stack.Screen name="templates/[templateId]" options={{ title: "" }} />
       <Stack.Screen name="note/[noteId]" options={{ title: "" }} />
     </Stack>
   );

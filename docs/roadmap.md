@@ -103,8 +103,11 @@ dispositivos, los ve en Ajustes, revoca uno y cierra sesión en todos, con tests
 - [x] Pantallas de workspaces y carpetas, con árbol e indentación
 - [x] Home conectada a los workspaces reales
 - [x] Dashboard: editor de widgets con layout validado y autorreparado
-- [ ] Mover y reordenar carpetas con arrastrar (ahora hay subir/bajar en el panel)
-- [ ] Renombrar en línea y hoja de acciones por carpeta
+- [x] Una sola lista de carpetas, listas y notas, sin secciones
+- [x] Orden a mano con arrastrar, sobre las tres clases de fila a la vez
+- [x] Filtro por tipo, por carpeta y por texto, y los tres a la vez
+- [x] Renombrar en línea y hoja de acciones por carpeta
+- [ ] Ordenar las tarjetas del panel con arrastrar (hoy se ordenan con subir/bajar)
 - [ ] Invitaciones y transferencia de propiedad (fase de colaboración)
 
 **Criterio de salida:** crear, renombrar, mover y borrar un workspace y una carpeta desde dos
@@ -114,8 +117,32 @@ dispositivos, online y offline, sin duplicados ni sobrescrituras silenciosas.
 probados (106 tests). Las escrituras van siempre por el outbox, también estando online: hay un
 único camino de escritura, con versión, permisos y conflictos.
 
-**Pendiente:** arrastrar para mover carpetas (hoy se ordenan con botones) y las invitaciones,
-que llegan con la fase de colaboración.
+**Pendiente:** las invitaciones, que llegan con la fase de colaboración.
+
+### 2.1 Una lista, no tres
+
+El navegador de una carpeta era **tres inventarios**: las carpetas hijas, las listas de aquí, y
+una fila que abría otra pantalla con las notas. Tres rótulos, tres cuentas, y quien buscaba «las
+notas de esta carpeta» tenía que saber en cuál de los tres estaba para poder mirar. Una carpeta, una
+lista y una nota son tres cosas para la base de datos y **una para quien está de pie en una
+carpeta**, y las secciones dibujaban la diferencia por él.
+
+Ahora es una lista, y las dos cosas que sostenían la estructura se mudan a donde toca: un
+**filtro** para qué hay, y un **orden** para cómo. El espacio sigue siendo un árbol —entrar en
+una carpeta sigue siendo otra pantalla, que es lo que hace que el botón de atrás signifique una
+sola pulsación— pero el nivel que miras ya no son tres inventario.
+
+| Decisión | Por qué |
+| --- | --- |
+| `position` en las notas (migración `0015`) | Sin ella el orden a mano no se guarda entre notas y listas, y las otras dos ya lo tenían |
+| Cero = «sin colocar», y va al final | Casi todas las notas de cualquier cuenta son un cero; ordenarlas primero las pondría encima de todo lo que alguien ha colocado |
+| Empate por fecha, y no por tipo | Agrupar por tipo volvería a dibujar las tres secciones sin rótulo |
+| Renumerar solo las filas que cambian | Un arrastre de cuarenta filas son dos escrituras, no cuarenta |
+| Filtro por tipo = todo el espacio | Un filtro que solo mira el nivel en el que estás es un filtro que casi siempre no encuentra nada |
+| El arrastre no abre la fila | En web el gesto toma el puntero y el clic final es un clic: la fila se abría al final de cada arrastre |
+
+`apps/mobile/src/lib/content-order.ts` es el sitio donde el orden y el filtro están escritos y
+probados, sin nada de interfaz. `content-list.tsx` lo dibuja y `content-order-save.ts` lo guarda.
 
 ---
 
@@ -828,9 +855,9 @@ Leyenda: ✅ hecho y comprobado · 🟡 en curso · ⬜ sin empezar · ⛔ esper
 | 1 | La hamburguesa en todas las pantallas, **con márgenes**, no pegada al borde | `app/(app)/_layout.tsx` | ✅ **ver abajo** | Margen del botón de menú en las 8 rutas: **12 px en las ocho** |
 | 2 | Toda pantalla con acciones las tiene **en el header** | `components/ui/header-action.tsx`, `app/(app)/_layout.tsx` | ✅ **ver abajo** | El lápiz del panel está en la cabecera: medido 40×40, a 12 del borde, a 20 del margen |
 | 3 | En espacio y carpetas los items **sin degradado**, color plano | `lib/workspace/color.ts` (`spaceTint`), `folders/folder-browser.tsx` | ✅ | `scripts/verify-app-regression.mjs`, y contando `LinearGradient`: solo queda el de la cabecera del espacio |
-| 4 | En listas de películas/series: al pasar por recomendados o colecciones, **añadir a la lista** y **ver siempre** tráiler y proveedores | `components/catalog/catalog-result-row.tsx`, `item/[itemId].tsx` | ⬜ | Navegar el carrusel y comprobar que el botón de añadir y el de "dónde verlo" están sin entrar a la ficha |
-| 5 | **Revisión visual** de todas las pantallas | todas | ⬜ | Capturas de las 19 rutas en claro/oscuro y móvil/escritorio, revisadas a ojo |
-| 6 | El selector de workspace: en **"Termina en"** los colores no enseñan el degradado | `workspace/workspace-color-picker.tsx` | 🟡 **ver abajo** | Comparar las muestras con la previsualización grande, con los dos extremos en colores **distintos** |
+| 4 | En listas de películas/series: al pasar por recomendados o colecciones, **añadir a la lista** y **ver siempre** tráiler y proveedores | `components/catalog/catalog-result-row.tsx`, `components/lists/providers-sheet.tsx`, `components/ui/media-carousel.tsx`, `item/[itemId].tsx` | ✅ **ver abajo** | En Matrix: botón de tráiler en la ficha, 14 `+` y 14 play en los dos carruseles, y la hoja con "Ver el tráiler" **y** los proveedores por grupos |
+| 5 | **Revisión visual** de todas las pantallas | todas | ✅ **ver abajo** | 76 capturas (19 rutas × claro/oscuro × móvil/escritorio): **cero excepciones, cero desbordes, cero objetivos menores de 28 px**. A ojo, un defecto: una carpeta salía marcada como favorita |
+| 6 | El selector de workspace: en **"Termina en"** los colores no enseñan el degradado | `workspace/workspace-color-picker.tsx` | ✅ **ver abajo** | Hecho el caso que faltaba, con los dos extremos **distintos**: las dos muestras y «Así se verá» salen degradadas **igual en las dos pestañas**. No había fallo |
 | 7 | **Quitar el input de texto** del color (ya hay picker) | `workspace/workspace-color-picker.tsx` | ✅ | El campo de hexadecimal no está |
 | 8 | **Colores recientes** en cada tab, sobre todo en el otro para poder hacer degradado a partir de ahí | `lib/workspace/recent-colors.ts`, `workspace/workspace-color-picker.tsx` | ✅ | Poner un color a mano, cerrar, reabrir: está en recientes de los dos tabs |
 | 9 | **Quitar las pestañas de abajo** | `app/(app)/_layout.tsx` | ✅ **ver abajo** | No hay barra inferior; panel, buscar y ajustes se llegan por el cajón |
@@ -840,42 +867,145 @@ Leyenda: ✅ hecho y comprobado · 🟡 en curso · ⬜ sin empezar · ⛔ esper
 | 13 | Botón de **añadir página** en el panel | `components/dashboard/panel-grid.tsx`, `db/constants.ts`, migración `0014` | ✅ **ver abajo** | El ⊕ de la barra añade una pantalla y **sobrevive al guardado**: `pages` sale en caché y en el *outbox* |
 | 14 | El `+` del panel abre **submenú** de añadir item o página | `components/ui/add-menu.tsx`, `panel-grid.tsx` | ✅ **ver abajo** | El `+` ofrece «Tarjetas» y «Una pantalla», y cada una hace lo suyo |
 | 15 | En el picker dentro de un bottom sheet, **arrastrar no cierra el sheet** | `workspace/workspace-color-picker.tsx` | ✅ | Arrastrar la pista de saturación y comprobar que el sheet sigue abierto |
-| 16 | Cabeceras de carpetas y módulos **sin color de fondo**, e identificar el espacio de otra manera | `folder/[folderId].tsx`, `list/[listId].tsx` | ⬜ | Decisión de producto abierta: punto de color en el título, espacio en las migas, chip de espacio, o tinte en la cabecera |
+| 16 | Cabeceras de carpetas y módulos **sin color de fondo**, e identificar el espacio de otra manera | `components/workspace/space-header.tsx`, `folder/[folderId].tsx`, `list/[listId].tsx` | ✅ **ver abajo** | Las tres variantes photographicadas y **elegida la 4ª idea, el tinte**: el degradado fuera de la cabecera y un lavado a 1/16 con filete |
 
-### Las ideas de la fila 16
+### La fila 5, la revisión de las 19 rutas
 
-Ninguna vuelve a poner el degradado en una cabecera, que es lo que estorba. De menos a
-más invasiva:
+`/private/tmp/orbit/fila5/`, 19 rutas × claro y oscuro × móvil (390) y escritorio (1280).
 
-1. **Un punto del color del espacio** junto al título. Lo más barato: cero layout, se lee
-   a cualquier tamaño, y `SpaceDot` ya está hecho.
-2. **El espacio en las migas, con su color**: "Regresion / Personas", donde *Regresion* va
-   en el tinte del espacio. Informa y ya existe el componente.
-3. **Un chip de espacio** pulsable junto al título, que abra el selector de espacios.
-   Además de identificar, sirve de navegación rápida.
-4. **Tinte sutil del `surfaceMuted` del espacio** en el fondo de la cabecera. Delata el
-   espacio sin gritar, pero tiñe toda la barra.
-5. **El emoji del espacio** —que ya es un campo— junto al título.
+**Lo que se midió, en las 76:** ninguna excepción en consola, ningún desbordamiento horizontal
+(`scrollWidth` siempre igual a `clientWidth`) y ningún objetivo táctil por debajo de 28 puntos.
 
-**Recomendación: 1 + 3.** Identifican sin ruido, no pelean con el tema, y el chip resuelve
-además "estoy en un espacio de doce y no sé cuál".
+**Un aviso sobre esa medición**, porque la primera vez dio falsos positivos: contando 28
+elementos fuera de la ventana en la ficha del título, y en una carga limpia son cero. La causa
+es que el navegador se reutilizaba de ruta a ruta y **el cajón se quedaba abierto**, así que se
+estaban contando como desbordados los elementos del propio cajón, que está fuera de la pantalla
+a propósito. Un número de «elementos fuera» solo vale si cada ruta se mide en una carga limpia.
 
-### La fila 6, lo que se sabe y lo que no
+**Lo que se vio a ojo, y estaba mal:**
 
-No se ha cerrado y **no se va a cerrar a ojo**. Lo que se ha medido:
+1. **La carpeta salía con el marcador de favorita.** Yo leía «tiene emoji» como «es favorita»,
+   que no es lo mismo: no existe el concepto de carpeta favorita, y el icono no tenía ninguna
+   pantalla donde deshacerse. Un icono que afirma algo que la app no puede retirar es peor que
+   ningún icono.
+2. **Un «parece» que no era un defecto: el panel «duplica» las tarjetas.** La captura
+   `light-movil-01-panel` enseña ocho tarjetas con cuatro títulos repetidos y parece un doble
+   dibujado. No lo es: son **ocho listas distintas** con cuatro títulos, porque el usuario de la
+   verificación se ha sembrado muchas veces y cada siembra deja sus cuatro listas. Los
+   identificadores lo dicen: ocho `listId` diferentes, cuatro a `x: 0` y cuatro a `x: 2`. Lo que
+   fallaba en `verify-app-regression.mjs` («el panel dibuja la rejilla», «fijar desde el
+   selector…») era la misma causa de red que las otras dos comprobaciones, no el dibujo.
 
-- El código pasa `colorKey={par.desde}` y `colorToKey={par.hasta}` a las dos muestras
-  **igual en los dos tabs**. No hay ninguna ruta en la que un tab enseñe el degradado
-  y el otro no: es el mismo componente con el mismo `par`.
-- Con los dos extremos en el **mismo** color el degradado no se ve, y no se ve en
-  ninguna parte: tampoco en "Así se verá" cuando los dos extremos son iguales. Eso no
-  es un fallo, es una resta de un color consigo mismo.
-- Donde **sí** se ha visto una discrepancia de verdad: con los dos extremos iguales,
-  las muestras "Diagonal" y "Vertical" salen **planas** y la previsualización grande
-  "Así se verá" sale **degradada**. Las dos deberían enseñar lo mismo, y no lo enseñan.
+### La fila 4, el tráiler y los dos botones de la tarjeta
 
-Lo que hace falta para cerrarlo: un caso concreto. Con los dos extremos en colores
-distintos, una captura de cada tab, y decir cuál de las dos muestras es la que falta.
+No había tráiler en ninguna capa: ni en el contrato, ni en la respuesta de TMDB, ni en la app.
+Es una columna y un botón, pero también una decisión sobre **qué** de los cinco vídeos que
+envía TMDB es el tráiler — y el orden de subida no significa nada. En `catalogs/trailer.ts`,
+que es una función pura con sus ocho pruebas: primero lo de YouTube (la app no reproduce Vimeo),
+después lo que TMDB marca como oficial, después un tráiler antes que un adelanto, y si no hay
+ninguno de los dos, el primero que quede antes que dejar la película sin botón.
+
+Con el dato, tres cosas en la interfaz:
+
+| Dónde | Qué | Por qué |
+| --- | --- | --- |
+| Ficha del título | Botón **Ver el tráiler** | «Enséñamelo» y «quién lo tiene» son dos preguntas, y la del tráiler se hace mientras se decide otra cosa |
+| Tarjeta de relacionados y de colección | `+` abajo a la izquierda | Es la única forma de **quedarse** con un título que la pantalla puso ahí a propósito sin abrirlo |
+| Tarjeta de relacionados y de colección | ▶ abajo a la derecha | Abre una sola hoja con el tráiler y los proveedores, porque en 120 puntos de ancho no caben dos botones más |
+| Hoja de proveedores | **Ver el tráiler**, arriba del todo | Pide el tráiler por su cuenta y **no bloquea la hoja**: la lista de plataformas llega igual mientras YouTube no contesta |
+| Fila del catálogo | El `+` es un botón de verdad | Era un dibujo dentro del `Pressable` de la fila: seemed un botón y abría la ficha |
+
+Lo que **no** se ha cambiado: la fila del catálogo sigue añadiendo al pulsar en la fila, porque esa
+es la razón de ser de esa pantalla.
+
+**El fallo que salir de aquí**: un `useState` debajo de un `return` temprano, que rompe el orden de
+hooks y deja la ficha en blanco. TypeScript no lo dice y `npm run check` tampoco: solo se ve
+mirando los errores de la consola del navegador.
+
+### La fila 16, elegida: el tinte
+
+Las tres se implementaron y se fotografiaron en claro y en oscuro (`/private/tmp/orbit/fila16/`),
+y la elegida es **el tinte**, que era la cuarta idea de la lista y la única que no estaba entre
+las tres candidatas de la fila. Se probaron también el punto de color y el espacio en las migas.
+
+**Por qué el tinte y no las otras dos.** No es que diga más: es que lo dice desde **toda** la
+pantalla y no desde una esquina. Un punto se lee cuando miras el punto y un rastro se lee cuando
+miras el rastro, y los dos están en una pantalla que por lo demás es una lista de filas en gris
+neutro. El tinte es lo único que está detrás de la lista también, así que una mirada que nunca
+llega a la cabecera sabe igual de qué espacio está.
+
+**Lo que se paga.** La fila pedía "sin color de fondo" y el tinte **es** un fondo. Es un lavado a
+una parte de dieciséis con un filete del mismo color, que a esa concentración en oscuro era
+invisible y por eso lleva el filete: el borde es lo que sostiene la forma y el relleno solo tiene
+que entibar la superficie. Y el texto sigue con los colores del tema, porque un contraste que
+depende del espacio es un contraste que hay que comprobar con cada color que se le deja elegir a
+alguien. Es un fondo muy suave, pero sigue siendo un fondo, y conviene decirlo en vez de
+llamarlo "sin color".
+
+Las tres variantes siguen vivas en `space-header.tsx` y las dos pantallas eligen con una
+constante. Las otras dos no se usan: si en algún momento hay que quitar código muerto, son
+esas dos ramas.
+
+### Los quince segundos de blanco (fuera de la tanda)
+
+No estaba en ninguna fila, y se llevaba arrastrando desde el principio: **con la API
+inalcanzable, la app tarda quince segundos en blanco** antes de decidir. En iOS y Android el
+splash lo tapa; en el navegador es una página blanca y no hay manera de distinguir una app que
+piensa de una página rota.
+
+**Por qué eran quince.** `SessionProvider` espera a `authClient.restore()`, y `restore()` espera
+a `/auth/me` con el tiempo límite por defecto de `packages/config` — quince segundos. Su fallo
+ya estaba tratado dos líneas más abajo (el `catch` conserva el perfil guardado), así que la
+espera no compraba nada.
+
+**Son dos mitades y hacía falta las dos:**
+
+1. **La espera no debe ser de quince segundos.** Las dos llamadas del arranque, `/auth/me` y el
+   refresco anticipado del token, van ahora con un reloj de **cuatro segundos**
+   (`BOOT_CHECK_TIMEOUT_MS`). Es la cuarta parte del límite general, y suficiente para una
+   respuesta real de una API de verdad.
+2. **La espera tiene que verse.** La raíz no pintaba nada mientras `status === 'loading'`. Ahora
+   pinta la espera, con el fondo de la app y un «Cargando…».
+
+Un aparato revocado sigue dejando de funcionar enseguida: la petición siguiente recibe el mismo
+401 y es el camino del refresco quien limpia la sesión. Lo que se ha quitado es la espera, no la
+comprobación.
+
+**Medido, con la red colgada en el navegador (que no contesta ni falla):**
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| Primera pintura | 15 s, en blanco | **0,8 s**, con «Cargando…» |
+| El panel aparece | 15 s | **4,7 s** |
+
+**Y un fallo del arreglo, que salió en la foto:** la espera se renderizaba **antes** del `Stack`,
+así que la navegación la tapaba — el layout de abajo devuelve `null` mientras espera, pero `null`
+no es transparente. El elemento estaba en el DOM con su texto dentro y la captura era un color
+plano. Va **después** del `Stack`, y está escrito en el sitio para que nadie lo vuelva a poner
+delante.
+
+### La fila 6, cerrada con el caso que faltaba
+
+Se cierra con un caso, no a ojo. Las capturas están en `/private/tmp/orbit/fila6/`.
+
+**Lo que faltaba era un color distinto en cada extremo**, y eso ya se puede hacer sin pedir nada:
+se abre «Crear espacio», se elige un color en un extremo y **otro** en el otro, y se mira.
+
+**El resultado: no hay fallo.** Con «Termina en» en índigo, las muestras «Diagonal» y «Vertical» y
+la previsualización «Así se verá» salen **degradadas y con los mismos dos colores** en las dos
+pestañas. Medido en el estilo calculado y no a ojo: de 24 elementos con degradado en la pantalla,
+**23 tienen dos colores distintos y ninguno es plano**.
+
+**Por qué se veía plano, entonces.** Por el estado **sin color en ningún extremo**, que es como
+está la hoja de «Crear espacio» al abrirla: los dos puntos de los extremos salen grises y no hay
+nada que pintar, así que las muestras enseñan la superficie. Con un color de los dos puesto, el
+degradado aparece. Y con los dos extremos **iguales** tampoco puede verse, que es un color menos
+sí mismo.
+
+**Lo que no se ha cambiado**, y conviene que quede escrito: el degradado de verdad tampoco se ve en
+la esquina de la caja de colores, que es casi negra. Eso es la caja, no el selector, y no es un
+fallo del selector. El componente ya deriva el segundo extremo cuando nadie lo ha elegido
+(`elOtro`), así que la previsualización enseña el lavado real en vez del primer color dos veces.
 
 ### La fila 7 y la 8, hechas
 

@@ -428,8 +428,21 @@ export const notes = pgTable(
     document: text('document').notNull().default(''),
     /** Denormalised from the document for search, so search is an index hit. */
     plainText: text('plain_text').notNull().default(''),
-    favorite: boolean('favorite').notNull().default(false),
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    /**
+     * Where this note sits among the things in its folder, when somebody has
+     * put them in an order by hand.
+     *
+     * A column and not something derived from the date, for the same reason the
+     * folders and the lists have one: a folder browser that shows the notes, the
+     * lists and the folders together has to be able to say which order those
+     * three are in, and a date cannot be dragged.
+     *
+     * Default zero, and the browser treats every note with zero as "not placed",
+     * so a note written before this column existed lands at the end instead of at
+     * the top of somebody's hand-made order.
+     */
+    position: integer('position').notNull().default(0),
     /**
      * How many files hang off this note. Counted, not derived, so a list of
      * notes does not become a query per note; the writer keeps it true.

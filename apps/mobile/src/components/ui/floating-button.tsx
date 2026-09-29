@@ -17,6 +17,19 @@ import { useTheme } from "@/theme";
  * It lives in `ui` and not next to the thing that happens to use it most: on the
  * folders screen it creates a list, on the panel it adds a card, and importing it
  * from `folders` would be the panel depending on folders to say "plus".
+ *
+ * **Fixed to the corner, not to the page.** It was `absolute`, which means it
+ * travelled with the content: scroll a long list and the plus went up and off the
+ * screen, so the thing that creates something disappeared exactly when you had
+ * scrolled to look for something to create it from. On a long note, on a long
+ * space, on a long day. It is in the same corner on every screen in the app, which
+ * is the point of it being one component, and it is in the same corner when the
+ * page is scrolled to the middle.
+ *
+ * The one thing that can undo a `fixed` on the web is an ancestor with a
+ * `transform`, because a transformed element becomes the containing block for its
+ * fixed descendants. The drawer is the one animated ancestor this button ever sits
+ * under, and it is verified on both targets with the list scrolled.
  */
 export function FloatingButton({
   onPress,
@@ -68,7 +81,7 @@ export function FloatingButton({
 
 const styles = StyleSheet.create({
   fab: {
-    position: "absolute",
+    position: "fixed",
     right: 20,
     bottom: 24,
     alignItems: "center",

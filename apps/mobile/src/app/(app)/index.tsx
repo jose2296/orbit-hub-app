@@ -15,10 +15,14 @@ import { useA11yHint } from "@/components/ui/a11y-hint";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { useLists } from "@/hooks/use-lists";
+import { useNotes } from "@/hooks/use-notes";
+import { notePreview } from "@/lib/notes/note-record";
 import { useAllFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import {
   withPinnedFolder,
   withPinnedList,
+  withPinnedNote,
+  withoutPinnedNote,
   withoutPinnedFolder,
   withoutPinnedList,
 } from "@/lib/dashboard/pin";
@@ -48,8 +52,38 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useSession();
   const { layout, pages, save, saving } = useDashboard();
+  /**
+   * Which panel screen the person is looking at.
+   *
+   * Read by the panel, which is the only thing that draws one, and used so that a
+   * card pinned from here lands on the screen somebody is standing on. Page zero
+   * to begin with, which is the page a panel with one screen is on.
+   */
+  const [currentPage, setCurrentPage] = useState(0);
   const { workspaces } = useWorkspaces();
   const { lists } = useLists({});
+  /**
+   * Every note, and not the ones of one space.
+   *
+   * The panel is not inside a space, the same as the folders below it: a note is
+   * something you wrote and not something that belongs to one place, and a panel
+   * that only offered the notes of whichever space you happened to be in would
+   * be a panel where your own notes come and go.
+   */
+  const { notes } = useNotes({});
+  const notesById = useMemo(
+    () => new Map(notes.map((note) => [note.id, note])),
+    [notes],
+  );
+  const noteOnPanel = useMemo(
+    () =>
+      new Set(
+        layout
+          .map((widget) => widget.settings?.["noteId"])
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    [layout],
+  );
   // The panel is not inside a space, so it needs the folders of all of them.
   const folders = useAllFolders(workspaces.map((space) => space.id));
   const [picking, setPicking] = useState(false);
@@ -156,6 +190,13 @@ export default function HomeScreen() {
           folder?.workspaceId ?? (widget.settings?.["workspaceId"] as string | undefined);
         return { workspaceId, kind: "folder" as const };
       }
+      // A note has no place, so `whereOf` has nothing to say about one: a card
+      // that opens a note is not "in" the space the note was written in, and
+      // saying it was would move the card when the note was filed somewhere else.
+      if (widget.settings?.["noteId"]) {
+        return { workspaceId: undefined, kind: "note" as const };
+      }
+
       const list = listById.get(widget.settings?.["listId"] as string);
       return { workspaceId: list?.workspaceId, kind: "list" as const };
     },
@@ -256,6 +297,29 @@ export default function HomeScreen() {
         };
       }
 
+      // A note. It says how much writing is on it, which is the one thing about a
+      // note worth putting on a card, and it opens the note.
+      const noteId = widget.settings?.["noteId"] as string | undefined;
+      if (noteId) {
+        const note = notesById.get(noteId);
+        if (!note) {
+          return {
+            title,
+            subtitle: t("dashboard.deletedNote"),
+            emoji: null,
+            href: null,
+            mark: cardMark({ note: true }),
+          };
+        }
+        return {
+          title: note.title.length > 0 ? note.title : t("note.untitled"),
+          subtitle: notePreview(note).slice(0, 80),
+          emoji: null,
+          href: `/(app)/note/${note.id}`,
+          mark: cardMark({ note: true }),
+        };
+      }
+
       const list = listById.get(widget.settings?.["listId"] as string);
       if (!list) {
         // A card whose list is gone. It says so instead of opening nothing, and
@@ -288,13 +352,27 @@ export default function HomeScreen() {
     (listId: string) => {
       const list = listById.get(listId);
       if (!list) return;
-      void save(withPinnedList(layout, list));
+      void save(withPinnedList(layout, list, currentPage));
     },
-    [layout, listById, save],
+    [currentPage, layout, listById, save],
   );
 
   const removeList = useCallback(
     (listId: string) => void save(withoutPinnedList(layout, listId)),
+    [layout, save],
+  );
+
+  const addNote = useCallback(
+    (noteId: string) => {
+      const note = notesById.get(noteId);
+      if (!note) return;
+      void save(withPinnedNote(layout, note, currentPage));
+    },
+    [currentPage, layout, notesById, save],
+  );
+
+  const removeNote = useCallback(
+    (noteId: string) => void save(withoutPinnedNote(layout, noteId)),
     [layout, save],
   );
 
@@ -312,11 +390,22 @@ export default function HomeScreen() {
     [layout, save],
   );
 
+  /*
+   * What could still be added, and the panel's plus is drawn only when there is
+   * something.
+   *
+   * Notes were missing from this sum, and a person whose account had notes and no
+   * lists — which is the ordinary account of somebody who writes rather than
+   * collects — got a panel they could arrange and no way to put anything on it.
+   * The button hides itself when there is nothing to add, which is right, and it
+   * has to be right about *everything* that can be added.
+   */
   const available = useMemo(
     () =>
       lists.filter((list) => !onPanel.has(list.id)).length +
-      folders.filter((folder) => !folderOnPanel.has(folder.id)).length,
-    [folderOnPanel, folders, lists, onPanel],
+      folders.filter((folder) => !folderOnPanel.has(folder.id)).length +
+      notes.filter((note) => !noteOnPanel.has(note.id)).length,
+    [folderOnPanel, folders, lists, noteOnPanel, notes, onPanel],
   );
 
   const pistaEdit = useA11yHint(t("dashboard.editLayoutHint"));
@@ -429,6 +518,8 @@ export default function HomeScreen() {
         finishRef={finishPanel}
         availableCount={available}
         pages={pages}
+        onPageChange={setCurrentPage}
+        onAddPage={(count, draft) => void save(draft, count)}
         onOpenEditor={() => setPicking(true)}
         onOpen={(href) => router.push(href as never)}
       />
@@ -447,6 +538,11 @@ export default function HomeScreen() {
           lists={lists}
           pinnedLists={onPanel}
           pinnedFolders={folderOnPanel}
+          notes={notes}
+          pinnedNotes={noteOnPanel}
+          onToggleNote={(noteId) =>
+            noteOnPanel.has(noteId) ? removeNote(noteId) : addNote(noteId)
+          }
           onToggleList={(listId) =>
             onPanel.has(listId) ? removeList(listId) : addList(listId)
           }

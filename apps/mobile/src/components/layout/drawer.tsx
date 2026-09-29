@@ -62,6 +62,25 @@ import type { SpacesTree } from "@/hooks/use-spaces-tree";
 const DESTINATIONS = [
   { route: "/(app)", path: "/", icon: "home", labelKey: "tabs.home" },
   {
+    /*
+     * Notes, between the panel and the search.
+     *
+     * They were not here at all, and the screen existed: `/notes` was reachable
+     * by nothing, so the `+` that creates a note from a template — and the one
+     * that creates a blank one — were on a screen nobody could get to. A feature
+     * that is one tap away from a menu entry and zero taps away from any is not
+     * finished, it is filed.
+     *
+     * It is here and not inside a space because it is not inside one: it is every
+     * note the person has written, which is the same reason the templates follow
+     * them rather than sitting in a folder.
+     */
+    route: "/(app)/notes",
+    path: "/notes",
+    icon: "document-text-outline",
+    labelKey: "notes.title",
+  },
+  {
     route: "/(app)/search",
     path: "/search",
     icon: "search",

@@ -3,14 +3,16 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import type { Folder, List } from "@orbit-hub/contracts";
+import type { Folder, List, Note } from "@orbit-hub/contracts";
 
 import { CreateSheet } from "@/components/folders/create-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
-import { FolderBrowser } from "@/components/folders/folder-browser";
+import { ContentList } from "@/components/content/content-list";
 import { FolderMenuSheet } from "@/components/folders/folder-menu-sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
+import { NoteMenuSheet } from "@/components/notes/note-menu-sheet";
+import { SaveTemplateSheet } from "@/components/notes/save-template-sheet";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { SpaceWash } from "@/components/ui/wash";
@@ -53,7 +55,7 @@ export default function WorkspaceScreen() {
     [layout],
   );
   const { lists, createList } = useLists({ workspaceId });
-  const { createNote } = useNotes({ workspaceId });
+  const { notes, createNote } = useNotes({ workspaceId });
 
   const [menuFor, setMenuFor] = useState<
     { kind: "folder"; folder: Folder } | { kind: "list"; list: List } | null
@@ -63,6 +65,14 @@ export default function WorkspaceScreen() {
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  /*
+    A note acted on from its row, and the template sheet it can lead to.
+    Both live here rather than in the list because the list is drawn by three
+    screens and a note's menu does not care which of them opened it.
+  */
+  const [noteFor, setNoteFor] = useState<Note | null>(null);
+  const [templateFor, setTemplateFor] = useState<Note | null>(null);
+
 
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === workspaceId) ?? null,
@@ -233,11 +243,12 @@ export default function WorkspaceScreen() {
         onDeleted={() => router.replace("/(app)/workspaces")}
       />
 
-      <FolderBrowser
+      <ContentList
         workspaceId={workspaceId}
         folderId={null}
         folders={folders}
         lists={lists}
+        notes={notes}
         isLoading={isLoading}
         colorKey={workspace?.color}
         // Los dos colores y el sentido, o este sitio pinta un par distinto del que
@@ -247,7 +258,25 @@ export default function WorkspaceScreen() {
         colorTo={workspace?.colorTo}
         onFolderMenu={(folder) => setMenuFor({ kind: "folder", folder })}
         onListMenu={(list) => setMenuFor({ kind: "list", list })}
+        onNoteMenu={(note) => setNoteFor(note)}
       />
+      <NoteMenuSheet
+        note={noteFor}
+        onClose={() => setNoteFor(null)}
+        onSaveAsTemplate={(target) => {
+          setNoteFor(null);
+          setTemplateFor(target);
+        }}
+      />
+
+      <SaveTemplateSheet
+        visible={templateFor !== null}
+        workspaceId={workspaceId}
+        initialName={templateFor?.title ?? ""}
+        document={templateFor?.document ?? ""}
+        onClose={() => setTemplateFor(null)}
+      />
+
 
       <ListMenuSheet
         list={menuFor?.kind === "list" ? menuFor.list : null}
@@ -298,6 +327,16 @@ export default function WorkspaceScreen() {
         title={title}
         onTitle={setTitle}
         onCreate={() => void onCreate()}
+        // The other way to start a note, and the reason the sheet offers four
+        // things and not three: a template is a note somebody already wrote, and
+        // it belongs in this space because that is where the sheet is.
+        onFromTemplate={() => {
+          closeSheets();
+          router.push({
+            pathname: "/(app)/templates",
+            params: { workspaceId },
+          });
+        }}
         creating={false}
       />
 

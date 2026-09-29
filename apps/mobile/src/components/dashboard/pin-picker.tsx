@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import type { Folder, List, Workspace } from "@orbit-hub/contracts";
+import type { Folder, List, Note, Workspace } from "@orbit-hub/contracts";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/list-row";
@@ -10,6 +10,7 @@ import { SheetOptions } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { pluralKey, useTranslation } from "@/lib/i18n";
+import { notePreview } from "@/lib/notes/note-record";
 import { useTheme } from "@/theme";
 
 /**
@@ -65,6 +66,10 @@ export interface PanelPickerProps {
   /** Adds or takes off a list. A tap, not a draft to be confirmed. */
   onToggleList: (listId: string) => void;
   onToggleFolder: (folderId: string) => void;
+  /** The notes that can go on the panel, all of them and unfiled. */
+  notes?: Note[];
+  pinnedNotes?: ReadonlySet<string>;
+  onToggleNote?: (noteId: string) => void;
 }
 
 export function PanelPicker({
@@ -75,6 +80,9 @@ export function PanelPicker({
   pinnedFolders,
   onToggleList,
   onToggleFolder,
+  notes = [],
+  pinnedNotes,
+  onToggleNote,
 }: PanelPickerProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -259,6 +267,7 @@ export function PanelPicker({
             <SheetOptions options={loose.map((list) => listOption(list))} />
           </>
         ) : null}
+
       </View>
     );
   }, [
@@ -327,6 +336,36 @@ export function PanelPicker({
       ) : null}
 
       {body}
+
+      {/*
+        The notes, in their own section at the end and not among the lists.
+
+        A note is not a folder's list and putting it among them meant going into
+        a folder to find one that had no business being filed — which is every
+        note somebody ever wrote. They are here, in one place, whatever folder
+        they are in, and that is the whole of the rule: a list belongs somewhere
+        and a note does not.
+
+        **Outside the memo above**, which is the whole of why it is here and not
+        there: every branch of that memo ends in a `return`, so anything written
+        after them is code that never runs. A picker that counted nine notes and
+        offered none of them is what that looks like from the outside.
+      */}
+      {notes.length > 0 && onToggleNote ? (
+        <>
+          <SectionHeader title={t("dashboard.notes")} style={SHEET_SECTION} />
+          <SheetOptions
+            options={notes.map((note) => ({
+              key: note.id,
+              label: note.title.length > 0 ? note.title : t("note.untitled"),
+              description: notePreview(note).slice(0, 70),
+              icon: "document-text-outline" as const,
+              selected: pinnedNotes?.has(note.id) ?? false,
+              onPress: () => onToggleNote(note.id),
+            }))}
+          />
+        </>
+      ) : null}
     </View>
   );
 }

@@ -11,7 +11,6 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DoneTray } from "@/components/lists/done-tray";
 import { ItemIcon } from "@/components/lists/icon-picker";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
@@ -23,7 +22,10 @@ import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
-import { SpaceWash } from "@/components/ui/wash";
+import {
+  SpaceHeader,
+  type SpaceHeaderVariant,
+} from "@/components/workspace/space-header";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenTitle } from "@/hooks/use-screen-title";
@@ -36,7 +38,6 @@ import {
 } from "@/lib/lists/item-presentation";
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
 import { providerRefOf } from "@/lib/lists/provider-ref";
-import { spacePaint } from "@/lib/workspace/color";
 import { useTheme } from "@/theme";
 import type { Crumb } from "@/components/ui/breadcrumbs";
 
@@ -88,7 +89,28 @@ export default function ListScreen() {
    */
   // The second colour as well, because it is a choice the person made and a
   // band that leaves it out paints a pair the picker never showed them.
-  const onWash = spacePaint(workspace?.color, workspace?.wash, workspace?.colorTo);
+  /*
+   * Which of the three ways of naming the space this screen uses.
+   *
+   * It is a constant and not a preference because it is a decision about the shape
+   * of a screen, not about a person: the three answer different questions and only
+   * one of them can be true at a time. `dot` says which space, `crumbs` says where
+   * you are inside it, and `tint` says only that you are in one.
+   *
+   * **`tint`, de las tres.** The other two say it well and the tint says it best,
+   * and not because it says more: because it says it from the **whole** screen and
+   * not from a corner. A dot is read when you look at the dot and a trail is read
+   * when you look at the trail, and both live on a screen that is otherwise a list
+   * of rows in neutral grey. The tint is the only thing behind the list too, so a
+   * glance that never reaches the header still knows which space it is in.
+   *
+   * The price is that it is a background, and the row asked for none. It is a wash
+   * at one part in sixteen with a hairline of the same colour: enough to warm the
+   * surface, not enough for the screen to be a colour. And the text keeps the
+   * theme's own colours, because a contrast that depends on the space is one that
+   * has to be checked against every colour a person is allowed to pick.
+   */
+  const VARIANTE: SpaceHeaderVariant = "tint";
   const {
     items,
     isLoading,
@@ -376,9 +398,8 @@ export default function ListScreen() {
     <View style={[styles.header, { gap: theme.spacing.sm }]}>
       <View style={styles.headerTop}>
         <View style={[styles.flex, { gap: theme.spacing.xxs }]}>
-          {/* The header carries the name of the list; this says what kind of
-              list it is and where it lives. */}
-          <Breadcrumbs crumbs={crumbs} />
+          {/* The header carries the name of the list; this says what kind of list
+              it is. The trail is the header's now, in the variant that shows it. */}
           {/* A list called "Tareas" of kind tasks does not need to be told twice
               what it is. */}
           {kindLabel !== list?.title ? (
@@ -410,19 +431,6 @@ export default function ListScreen() {
               fullWidth={false}
               onPress={() => void toggleFavorite(list)}
             />
-            {/* Lo que se puede hacer con la lista entera, aqui arriba. Abajo
-                ocupaba media pantalla y empujaba las filas hacia arriba. */}
-            <Button
-              testID="list-menu-button"
-              label={t("lists.menu")}
-              variant="ghost"
-              size="sm"
-              icon="ellipsis-horizontal"
-              iconOnly
-              accessibilityHint={t("lists.menuHint")}
-              fullWidth={false}
-              onPress={() => setMenuOpen(true)}
-            />
           </View>
         ) : null}
       </View>
@@ -436,34 +444,25 @@ export default function ListScreen() {
         are working in before you read anything, and it is the same wash the card
         of that list is painted with on the panel.
       */}
-      {list ? (
-        <SpaceWash
-          colorKey={workspace?.color}
-          // The same pair the panel card is painted with, so the two pictures of
-          // this list on this screen are the one pair the person chose.
-          colorToKey={workspace?.colorTo}
-          wash={workspace?.wash}
-          radius={theme.radius.lg}
-          style={[styles.band, { padding: theme.spacing.lg, gap: 2 }]}
-        >
-          <AppText
-            variant="title"
-            numberOfLines={2}
-            style={{ color: onWash.foreground }}
-          >
-            {list.emoji ? `${list.emoji} ` : ""}
-            {list.title}
-          </AppText>
-          <AppText
-            variant="caption"
-            numberOfLines={1}
-            style={{ color: onWash.muted }}
-          >
-            {workspace?.name ?? ""}
-            {folder ? ` · ${folder.name}` : ""}
-          </AppText>
-        </SpaceWash>
-      ) : null}
+      <SpaceHeader
+        space={workspace}
+        variant={VARIANTE}
+        spaceHref={`/(app)/workspace/${workspace?.id ?? list?.workspaceId ?? ""}`}
+        crumbs={crumbs}
+        right={list ? (
+          <Button
+            testID="list-menu-button"
+            label={t("lists.menu")}
+            variant="ghost"
+            size="sm"
+            icon="ellipsis-horizontal"
+            iconOnly
+            accessibilityHint={t("lists.menuHint")}
+            fullWidth={false}
+            onPress={() => setMenuOpen(true)}
+          />
+        ) : null}
+      />
 
       {items.length > 0 ? (
         <View style={styles.badges}>

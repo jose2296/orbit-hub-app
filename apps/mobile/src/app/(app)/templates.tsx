@@ -1,28 +1,46 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow } from "@/components/ui/list-row";
 import { Screen } from "@/components/ui/screen";
-import { templateSubtitle, titleForTemplate, useNoteTemplates } from "@/hooks/use-note-templates";
+import {
+  canEditTemplate,
+  templateSubtitle,
+  useNoteTemplates,
+} from "@/hooks/use-note-templates";
+import { useSession } from "@/hooks/use-session";
 import { useTranslation } from "@/lib/i18n";
-import { createNoteAction } from "@/lib/notes/actions";
 import { useTheme } from "@/theme";
 
 /**
- * The templates, and making a note out of one.
+ * The templates, and the way into them.
  *
  * The list mixes the catalogue with whatever the space has, and says which is
  * which, because a recipe you cannot tell from a recipe somebody in your team
  * wrote is one you will overwrite by accident.
  *
- * Applying one writes the note **locally**, like everything else this app
- * creates, and the template only supplies the document. It was a server call
- * first, and the consequence was a note screen showing an empty page: the note
- * existed on the server and the editor reads from the cache, which had never
- * heard of it. A note this app creates is in the cache from the moment it is
- * named, and it reaches the server when the queue drains.
+ * **Tapping one opens it.** It used to make a note straight away, and that was
+ * wrong in a way that only showed up after the fact: the one way to see what was
+ * inside a template was to make a note out of it, and there was no way back —
+ * the note is a copy and the template is exactly as it was, unchanged. So a
+ * template is opened, read, and — if it is yours — changed, and the button that
+ * makes the note is on that screen. One extra tap, and in exchange the person
+ * knows what they are starting from.
+ *
+ * The templates are read from the API rather than bundled, so twelve recipes
+ * arrive in one request instead of twelve that have to be updated with every
+ * build. A device that cannot reach the API says so rather than pretending there
+ * is nothing to offer: an empty picker and a picker that failed look the same on
+ * a phone, and only one of them is true.
+ *
+ * This is also the only place templates are offered, and not a row in every list.
+ * A row in each of the workspace and folder listings was a second route to the
+ * same screen, in a place somebody has to look for it, saying the same word four
+ * times on a screen that is mostly lists. It is here instead, and it is reached
+ * from the `+`, which is where somebody who wants to start a note from a shape
+ * already is.
  */
 export default function TemplatesScreen() {
   const { workspaceId, folderId } = useLocalSearchParams<{
@@ -34,30 +52,22 @@ export default function TemplatesScreen() {
   const t = useTranslation();
 
   const { templates, isLoading, failed } = useNoteTemplates(workspaceId);
-  const [applyingId, setApplyingId] = useState<string | null>(null);
+  const { user } = useSession();
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
-  const onUse = useCallback(
-    async (template: (typeof templates)[number]) => {
-      if (!workspaceId || applyingId) return;
-      setApplyingId(template.id);
-      try {
-        const noteId = await createNoteAction({
-          workspaceId,
-          folderId: folderId ?? null,
-          title: titleForTemplate(template),
-          document: template.document,
-        });
-        router.replace({
-          pathname: "/note/[noteId]",
-          params: { noteId },
-        });
-      } catch {
-        Alert.alert(t("note.templates.failedTitle"), t("note.templates.failedBody"));
-      } finally {
-        setApplyingId(null);
-      }
+  const onOpen = useCallback(
+    (templateId: string) => {
+      setOpeningId(templateId);
+      router.push({
+        pathname: "/templates/[templateId]",
+        params: {
+          templateId,
+          ...(workspaceId ? { workspaceId } : {}),
+          ...(folderId ? { folderId } : {}),
+        },
+      });
     },
-    [applyingId, folderId, router, t, workspaceId],
+    [folderId, router, workspaceId],
   );
 
   const items = useMemo(
@@ -67,14 +77,19 @@ export default function TemplatesScreen() {
         title: template.name,
         subtitle: template.description || templateSubtitle(template),
         icon: (template.icon || "document-text-outline") as never,
-        // The one thing that has to be readable here: a catalogue entry and a
-        // template somebody in your team wrote are not the same thing to edit.
-        rightLabel:
-          template.builtInKey === null ? t("note.templateScopeWorkspace") : undefined,
-        busy: applyingId === template.id,
+        // The one thing that has to be readable here: a catalogue entry, a
+        // template somebody in your team wrote and a recipe a stranger published
+        // are three different things to edit, and a list that did not say so
+        // would offer a change that is refused.
+        rightLabel: !canEditTemplate(template, user?.id)
+          ? template.builtInKey
+            ? t("note.template.builtIn")
+            : t("note.template.someoneElses")
+          : undefined,
+        busy: openingId === template.id,
         template,
       })),
-    [applyingId, templates, t],
+    [openingId, templates, t, user?.id],
   );
 
   if (isLoading) return <View style={{ flex: 1 }} />;
@@ -114,8 +129,8 @@ export default function TemplatesScreen() {
             icon={item.icon}
             rightLabel={item.rightLabel}
             chevron={!item.busy}
-            disabled={applyingId !== null}
-            onPress={() => void onUse(item.template)}
+            disabled={openingId !== null}
+            onPress={() => onOpen(item.template.id)}
           />
         ))}
       </View>

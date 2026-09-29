@@ -535,19 +535,43 @@ export function pageCount(
 /**
  * The screen a new card goes on.
  *
- * The first one that still has room, and past that the last one there is. A panel
- * that quietly dropped a pin because the screen somebody was looking at was full
- * would lose the card with nothing said, and a card on the last screen is a card
- * somebody can go and find.
+ * The one the person is looking at, when it has room. That is the rule and it is
+ * the whole change: adding a card while looking at the third screen and finding
+ * it on the first is not a surprise, it is the app having answered a different
+ * question than the one that was asked.
+ *
+ * The page you are on comes first, then the same search as before — the first
+ * with room, and past that the last there is. A screen that is full is a screen
+ * that cannot take another card, and quietly landing it somewhere else anyway
+ * would be a card that vanishes. The fallback is unchanged for that reason.
  */
 export function pageForNewCard(
   layout: DashboardWidget[],
   size: { w: number; h: number },
+  preferred?: number,
 ): number {
   const screens = pageCount(layout);
-  for (let page = 0; page < screens; page += 1) {
+
+  const roomOn = (page: number): boolean => {
     const onPage = layout.filter((widget) => pageOf(widget) === page);
-    if (fits(onPage.map(cellsOf), "__new__", size.w, size.h)) return page;
+    return fits(onPage.map(cellsOf), "__new__", size.w, size.h);
+  };
+
+  // Only a page that exists. A preferred page beyond the last one is a caller
+  // that has not caught up, and clamping it to the end would put the card on a
+  // screen the person cannot reach.
+  if (
+    preferred !== undefined &&
+    Number.isInteger(preferred) &&
+    preferred >= 0 &&
+    preferred < screens &&
+    roomOn(preferred)
+  ) {
+    return preferred;
+  }
+
+  for (let page = 0; page < screens; page += 1) {
+    if (roomOn(page)) return page;
   }
   // Every screen that exists is full. A new one, because the alternative is a
   // card pinned to a panel that cannot show it — which is how a list somebody

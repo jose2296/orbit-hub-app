@@ -107,6 +107,19 @@ export const catalogDetailsSchema = z.object({
   identifiers: z
     .array(z.object({ type: z.string().optional(), identifier: z.string().optional() }))
     .optional(),
+  /**
+   * The YouTube key of the trailer, or `null` when there is not one worth showing.
+   *
+   * A **key and not a URL**, and that is not a detail: the app decides where to
+   * send it, so one title's trailer is not played inside another app's player
+   * because a string arrived complete. And `null` is a real answer that the
+   * button has to respect — a title with no trailer shows no button rather than
+   * a button that opens nothing.
+   *
+   * A book never has one, and that is why this is nullable instead of absent:
+   * "there is no trailer for a book" and "nobody looked" are the same field.
+   */
+  trailer: z.string().nullable().default(null),
   /** What else to watch, already merged from recommendations and similar. */
   related: z.array(catalogRelatedSchema).optional(),
   /** The franchise, when the title belongs to one. */

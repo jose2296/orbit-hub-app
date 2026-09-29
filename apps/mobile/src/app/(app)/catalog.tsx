@@ -148,6 +148,7 @@ export default function CatalogSearchScreen() {
                 result={hit}
                 disabled={addingId !== null}
                 onPress={(selected) => void onAdd(selected.externalId)}
+                onAdd={(selected) => void onAdd(selected.externalId)}
               />
             </View>
           ))}

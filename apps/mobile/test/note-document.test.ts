@@ -45,6 +45,46 @@ describe('validateNoteDocument — what the editor produces is accepted', () => 
     expect(reasons('<p><img src="file-1" alt="Un plato" /></p>')).toEqual([]);
   });
 
+  /**
+   * A picture as the editor actually writes it.
+   *
+   * `setImage` takes a width and a height and the native parser writes both on
+   * every `getHTML`, so a real image is three attributes: `src`, `width`,
+   * `height`. The test above uses one, which is why the shape of the limit went
+   * untested — and the limit was two, so **every picture in a note was refused**
+   * and the note said the document was not valid. The image sat in the text of a
+   * note that could not be written, and nothing in the suite noticed because no
+   * test had ever put three attributes on a tag.
+   */
+  it('accepts the shape the editor gives a picture, and not one attribute more', () => {
+    // Byte for byte what the Android parser emits.
+    expect(
+      reasons('<p>ajo<img src="attachment:1f87e32a" width="1200" height="800"/></p>'),
+    ).toEqual([]);
+    // A picture inside a list item is the common case: the cursor is in the text.
+    expect(
+      reasons(
+        '<ul><li>Cebolla<img src="attachment:1f87e32a" width="1200" height="800"/></li></ul>',
+      ),
+    ).toEqual([]);
+    expect(
+      reasons(
+        '<p>La receta<img src="attachment:1f87e32a" width="2" height="2"/>con dos dientes de ajo</p>',
+      ),
+    ).toEqual([]);
+
+    // And the limit is still a limit: five is not a shape a picture has.
+    expect(reasons('<p><img src="a" alt="b" width="1" height="1" data-x="c" /></p>')).not.toEqual(
+      [],
+    );
+  });
+
+  it('refuses a picture with a size that is not a number of pixels', () => {
+    expect(reasons('<p><img src="a" width="0" height="8"/></p>')).not.toEqual([]);
+    expect(reasons('<p><img src="a" width="999999" height="8"/></p>')).not.toEqual([]);
+    expect(reasons('<p><img src="a" width="wide" height="8"/></p>')).not.toEqual([]);
+  });
+
   it('accepts an empty document, because a new note starts as one', () => {
     expect(reasons('')).toEqual([]);
   });

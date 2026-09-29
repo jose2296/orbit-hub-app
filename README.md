@@ -66,8 +66,10 @@ scan the QR, and the app talks to the API over the WiFi. Phone and computer must
 same network; use `make device-tunnel` when they are not.
 
 The address is detected per run rather than written to `apps/mobile/.env`, so the web
-target and the simulators keep working when the router hands out a different address. To
-see what a phone would use:
+target and the simulators keep working when the router hands out a different address. The
+Android emulator needs no setup either: `apps/mobile/src/lib/api/host.ts` retargets a
+loopback host to `10.0.2.2` at runtime, which is why there is no emulator variant to
+remember. To see what a phone would use:
 
 ```bash
 make device-url

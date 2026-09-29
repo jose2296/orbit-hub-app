@@ -51,10 +51,23 @@ export async function resolveDashboardRow(
     .filter((layout): layout is DashboardWidget[] => layout !== null);
   const merged = dedupeById(layouts.flat());
 
+  /*
+   * The whole payload, and not just the layout.
+   *
+   * Writing `{ layout }` threw away the page count, so a merge turned a panel of
+   * four screens into one — and a merge happens the first time a row arrives from
+   * a pull on a device that had made its own, which is the first run of a new
+   * phone. The count is the part of the panel people notice losing, because the
+   * cards are all still there on screen one and quietly gone from the other three.
+   */
   await store.upsertCached([
     {
       ...keep,
-      payload: JSON.stringify({ layout: merged }),
+      payload: JSON.stringify({
+        ...readPayload(keep),
+        layout: merged,
+        pages: widestPageCount(keep, others),
+      }),
       pending: keep.pending,
     },
   ]);
@@ -80,6 +93,30 @@ export async function dashboardRow(): Promise<{
   row: CachedEntity | null;
 }> {
   return resolveDashboardRow(await getLocalStoreReady());
+}
+
+function readPayload(row: CachedEntity): Record<string, unknown> {
+  try {
+    const payload = JSON.parse(row.payload) as unknown;
+    return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * How many screens survive the merge: the most any of the rows claimed.
+ *
+ * The most rather than the server's, because a person who made four screens on a
+ * phone has four screens whether or not the laptop knows about them yet, and a
+ * merge is not the moment to tell them they have one.
+ */
+function widestPageCount(keep: CachedEntity, others: CachedEntity[]): number {
+  const counts = [keep, ...others].map((row) => {
+    const n = Math.trunc(Number(readPayload(row).pages));
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  });
+  return Math.max(...counts);
 }
 
 function readLayout(row: CachedEntity): DashboardWidget[] | null {

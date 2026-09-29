@@ -39,6 +39,8 @@ const CARD_MARK_GLYPH = {
   books: "book-outline",
   /** A card about a list whose kind is not one of these. */
   list: "list-outline",
+  /** A card about a note, which is a page of writing and not a list of things. */
+  note: "document-text-outline",
 } as const satisfies Record<string, keyof typeof Ionicons.glyphMap>;
 
 /**
@@ -49,10 +51,13 @@ const CARD_MARK_GLYPH = {
  * somehow claims to be both.
  */
 export function cardMark(
-  subject: { kind?: ListKind | null; folder?: boolean } | null | undefined,
+  subject: { kind?: ListKind | null; folder?: boolean; note?: boolean } | null | undefined,
 ): CardMark {
   if (!subject) return "list";
   if (subject.folder) return "folder";
+  // A note before a list's kind: a card about a note has no kind of list, and
+  // falling through would draw it as a tasks list, which it is not.
+  if (subject.note) return "note";
   const kind = subject.kind;
   if (!kind) return "list";
   return kind in CARD_MARK_GLYPH ? (kind as CardMark) : "list";

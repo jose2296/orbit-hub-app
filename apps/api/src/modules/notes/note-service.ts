@@ -23,8 +23,10 @@ function toNote(row: typeof notes.$inferSelect): Note {
     title: row.title,
     document: row.document,
     plainText: row.plainText,
-    favorite: row.favorite,
     tags: row.tags ?? [],
+    // Zero means "not placed", and the browser sorts those last: a note written
+    // before there was an order has no place in somebody's hand-made one.
+    position: row.position,
     attachmentCount: row.attachmentCount,
     version: row.version,
     createdAt: row.createdAt.toISOString(),
@@ -154,9 +156,6 @@ export class NoteService {
         filters.folderId === null ? sql`${notes.folderId} is null` : eq(notes.folderId, filters.folderId),
       );
     }
-    if (filters.favorite !== undefined) {
-      conditions.push(eq(notes.favorite, filters.favorite));
-    }
     if (filters.tag !== undefined) {
       // A tag is an array, so containment is the question. The GIN index over
       // `tags` is what answers it without reading the rows.
@@ -205,8 +204,10 @@ export class NoteService {
         // Derived, never taken from the client, so the note and the string that
         // search matches on cannot be two different things.
         plainText: noteDocumentToPlainText(document),
-        favorite: false,
         tags: input.tags,
+        // At the end by default, not at the top: a new note that arrived in a
+        // folder somebody has arranged should not land in the middle of it.
+        position: input.position ?? 0,
         attachmentCount: 0,
         version: 1,
       })
@@ -243,8 +244,8 @@ export class NoteService {
       .set({
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
-        ...(input.favorite === undefined ? {} : { favorite: input.favorite }),
         ...(input.tags === undefined ? {} : { tags: input.tags }),
+        ...(input.position === undefined ? {} : { position: input.position }),
         ...(document === undefined
           ? {}
           : { document, plainText: noteDocumentToPlainText(document) }),

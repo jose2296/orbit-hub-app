@@ -29,6 +29,15 @@ export interface CreateSheetProps {
   onTitle: (value: string) => void;
   onCreate: () => void;
   creating: boolean;
+  /**
+   * Opens the templates, which is the other way to start a note.
+   *
+   * A prop and not a route this sheet knows about, because the sheet is drawn by
+   * three screens and only the two inside a space have somewhere to send the
+   * person: a note made from a template belongs in a space, and asking for a space
+   * the sheet does not have would be promising something it cannot deliver.
+   */
+  onFromTemplate?: () => void;
 }
 
 /**
@@ -54,6 +63,7 @@ export function CreateSheet({
   title,
   onTitle,
   onCreate,
+  onFromTemplate,
   creating,
 }: CreateSheetProps) {
   const theme = useTheme();
@@ -99,8 +109,18 @@ export function CreateSheet({
           onStep("details");
         },
       },
+      {
+        key: "template",
+        label: t("note.templates"),
+        icon: "documents-outline",
+        description: t("create.fromTemplateHint"),
+        // Not a third step of this sheet. The templates screen is where they are
+        // listed, and a sheet that opened a sheet to open a list is three taps to
+        // a thing that is one.
+        onPress: () => onFromTemplate?.(),
+      },
     ],
-    [onKind, onStep, t],
+    [onFromTemplate, onKind, onStep, t],
   );
 
   return (

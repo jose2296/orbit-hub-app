@@ -61,7 +61,7 @@ export default function ItemDetailsScreen() {
    * it, whether they want to take it out. Those live in the item, and the
    * screen is a dead end without them.
    */
-  const { items, toggleCompleted } = useListItems(itemId);
+  const { items, toggleCompleted, addItem } = useListItems(itemId);
   const item = useMemo(
     () =>
       items.find((row) =>
@@ -69,8 +69,30 @@ export default function ItemDetailsScreen() {
       ) ?? null,
     [items, itemKey, externalId],
   );
+  /**
+   * Which related title is being added from a card, and not a boolean.
+   *
+   * It is a title and not a flag for the same reason `dondeVer` is: two cards of
+   * the same carousel are two different titles, and a flag that only says
+   * "somebody is adding" would leave the `+` of the other one live while its own
+   * add is in flight — which is how a list ends up with a duplicate.
+   */
+  const [anadiendo, setAnadiendo] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [whereOpen, setWhereOpen] = useState(false);
+  /**
+   * Whose sheet is open: a title, and not a boolean.
+   *
+   * It used to be a flag, because there was only one thing it could mean — the
+   * title of this screen. Now the carousels open the same sheet about **another**
+   * title, and a flag cannot say which: opening the sheet from a poster would
+   * have shown the current film's providers, which is worse than not having the
+   * button.
+   */
+  const [dondeVer, setDondeVer] = useState<{
+    externalId: string;
+    title: string;
+    kind: "books" | "tv" | "movies";
+  } | null>(null);
 
   /**
    * The kind of list the row came from.
@@ -198,22 +220,54 @@ export default function ItemDetailsScreen() {
   const collection = details.collection ?? null;
   const related = details.related ?? [];
 
-  /** A poster reference rendered as a carousel card, which opens on tap. */
-  const toCarouselItem = (item: CatalogRelated) => ({
-    key: item.externalId,
-    title: item.title,
-    imageUrl: item.imageUrl,
-    released: item.released,
+  /**
+   * A poster reference rendered as a carousel card.
+   *
+   * Three ways in, and the two new ones are the whole point of the row: the card
+   * opens the title, the `+` keeps it in the list this screen came from, and the
+   * play opens the trailer and the providers of **that** title without leaving
+   * the row somebody was scrolling. Before, the only way to do either of the
+   * last two was to open the card and come back, and the card is a suggestion
+   * the screen put there on purpose.
+   *
+   * The `+` adds to **this** list, and not to one out of a picker: somebody who
+   * is inside a list of films and taps `+` on a poster of another film is asking
+   * for that film to be in the list they are looking at.
+   */
+  const toCarouselItem = (related: CatalogRelated) => ({
+    key: related.externalId,
+    title: related.title,
+    imageUrl: related.imageUrl,
+    released: related.released,
     badge: null,
     onPress: () =>
       router.push({
         pathname: "/(app)/item/[itemId]",
         params: {
-          itemId: item.externalId,
+          itemId: related.externalId,
           kind: details.kind,
-          externalId: item.externalId,
-          title: item.title,
+          externalId: related.externalId,
+          title: related.title,
         },
+      }),
+    onAdd: itemId
+      ? () => {
+          if (anadiendo) return;
+          setAnadiendo(related.externalId);
+          void addItem({
+            title: related.title,
+            externalId: related.externalId,
+            metadata: { provider: 'tmdb', imageUrl: related.imageUrl },
+          })
+            .catch(() => undefined)
+            .finally(() => setAnadiendo(null));
+        }
+      : undefined,
+    onWatch: () =>
+      setDondeVer({
+        externalId: related.externalId,
+        title: related.title,
+        kind: isBook ? 'books' : isSeries ? 'tv' : 'movies',
       }),
   });
 
@@ -467,6 +521,32 @@ export default function ItemDetailsScreen() {
           </View>
         ) : null}
 
+        {/*
+          The trailer, next to the provider's own site and not inside a menu with
+          it. These are two different questions — "show me the film" and "who has
+          it" — and the answer to the first is a thing you watch in ninety
+          seconds while you are deciding about something else. A trailer behind
+          two taps in a sheet is a trailer nobody sees.
+        */}
+        {details.trailer ? (
+          <Button
+            testID="item-trailer"
+            label={t("itemDetails.trailer")}
+            variant="secondary"
+            icon="play-circle-outline"
+            onPress={() => {
+              /*
+               * A watch URL and not the embed one. The embed is a player inside
+               * somebody else's page, and it wants a rectangle, a permission and a
+               * cookie banner: on a phone that is a web view with a video in it,
+               * which is a worse trailer than the one the person already has an
+               * app for.
+               */
+              void Linking.openURL(`https://www.youtube.com/watch?v=${details.trailer}`);
+            }}
+          />
+        ) : null}
+
         {details.homepage ? (
           <Button
             label={t("itemDetails.openProvider")}
@@ -507,24 +587,18 @@ export default function ItemDetailsScreen() {
         }
         onWhereToWatch={
           item && item.externalId
-            ? () => setWhereOpen(true)
+            ? () =>
+                setDondeVer({
+                  externalId: item.externalId as string,
+                  title: item.title,
+                  kind: isBook ? "books" : isSeries ? "tv" : "movies",
+                })
             : undefined
         }
         onClose={() => setMenuOpen(false)}
       />
 
-      <ProvidersSheet
-        item={
-          whereOpen && item && item.externalId
-            ? {
-                externalId: item.externalId,
-                title: item.title,
-                kind: isBook ? "books" : isSeries ? "tv" : "movies",
-              }
-            : null
-        }
-        onClose={() => setWhereOpen(false)}
-      />
+      <ProvidersSheet item={dondeVer} onClose={() => setDondeVer(null)} />
     </Screen>
   );
 }

@@ -1,26 +1,24 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { StyleSheet } from "react-native";
 
 import type { List } from "@orbit-hub/contracts";
 
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { CreateSheet } from "@/components/folders/create-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
-import { FolderBrowser } from "@/components/folders/folder-browser";
+import { ContentList } from "@/components/content/content-list";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
 import type { SheetOption } from "@/components/ui/sheet";
 import { Screen } from "@/components/ui/screen";
-import { AppText } from "@/components/ui/text";
-import { SpaceWash } from "@/components/ui/wash";
+import {
+  SpaceHeader,
+  type SpaceHeaderVariant,
+} from "@/components/workspace/space-header";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useLists } from "@/hooks/use-lists";
 import { useNotes } from "@/hooks/use-notes";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
-import { spacePaint } from "@/lib/workspace/color";
-import { useTheme } from "@/theme";
 
 /**
  * A folder inside a space, seen as a screen of its own.
@@ -31,7 +29,6 @@ import { useTheme } from "@/theme";
  * with a different folder.
  */
 export default function FolderScreen() {
-  const theme = useTheme();
   const t = useTranslation();
   const { workspaceId, folderId } = useLocalSearchParams<{
     workspaceId: string;
@@ -41,11 +38,11 @@ export default function FolderScreen() {
   const { workspaces } = useWorkspaces();
   const { folders, isLoading, createFolder } = useFolders(workspaceId);
   const { lists, createList } = useLists({ workspaceId });
-  const { createNote } = useNotes({ workspaceId });
+  const { notes, createNote } = useNotes({ workspaceId, folderId });
   const router = useRouter();
 
   const [menuFor, setMenuFor] = useState<
-    | { kind: "folder"; folder: FolderBrowserFolder }
+    | { kind: "folder"; folder: CarpetaDeEsteNivel }
     | { kind: "list"; list: List }
     | null
   >(null);
@@ -74,7 +71,28 @@ export default function FolderScreen() {
    */
   // The second colour travels with the first: it is the person's own choice, and
   // a band painted without it is a different pair from the one the picker shows.
-  const onWash = spacePaint(workspace?.color, workspace?.wash, workspace?.colorTo);
+  /*
+   * Which of the three ways of naming the space this screen uses.
+   *
+   * It is a constant and not a preference because it is a decision about the shape
+   * of a screen, not about a person: the three answer different questions and only
+   * one of them can be true at a time. `dot` says which space, `crumbs` says where
+   * you are inside it, and `tint` says only that you are in one.
+   *
+   * **`tint`, de las tres.** The other two say it well and the tint says it best,
+   * and not because it says more: because it says it from the **whole** screen and
+   * not from a corner. A dot is read when you look at the dot and a trail is read
+   * when you look at the trail, and both live on a screen that is otherwise a list
+   * of rows in neutral grey. The tint is the only thing behind the list too, so a
+   * glance that never reaches the header still knows which space it is in.
+   *
+   * The price is that it is a background, and the row asked for none. It is a wash
+   * at one part in sixteen with a hairline of the same colour: enough to warm the
+   * surface, not enough for the screen to be a colour. And the text keeps the
+   * theme's own colours, because a contrast that depends on the space is one that
+   * has to be checked against every colour a person is allowed to pick.
+   */
+  const VARIANTE: SpaceHeaderVariant = "tint";
 
   /** The path from the space down to here, each step a link. */
   const crumbs = useMemo(() => {
@@ -247,38 +265,20 @@ export default function FolderScreen() {
         are in is exactly the thing you lose track of when you are three folders
         deep in something you cannot name.
       */}
-      <SpaceWash
-        colorKey={workspace?.color}
-        // Same pair as the text above: the end colour is part of the choice, not
-        // an extra, so the band and the picker have to agree on both ends.
-        colorToKey={workspace?.colorTo}
-        wash={workspace?.wash}
-        radius={theme.radius.lg}
-        style={[
-          styles.band,
-          { padding: theme.spacing.lg, gap: theme.spacing.xxs },
-        ]}
-      >
-        <AppText
-          variant="title"
-          numberOfLines={1}
-          style={{ color: onWash.foreground }}
-        >
-          {folder?.emoji ? `${folder.emoji} ` : ""}
-          {folder?.name ?? t("folders.title")}
-        </AppText>
-        <AppText variant="caption" numberOfLines={1} style={{ color: onWash.muted }}>
-          {workspace?.name ?? t("workspaces.title")}
-        </AppText>
-      </SpaceWash>
+      <SpaceHeader
+        space={workspace}
+        variant={VARIANTE}
+        spaceHref={`/(app)/workspace/${workspaceId}`}
+        crumbs={crumbs}
+      />
 
-      <Breadcrumbs crumbs={crumbs} />
 
-      <FolderBrowser
+      <ContentList
         workspaceId={workspaceId}
         folderId={folderId}
         folders={folders}
         lists={lists}
+        notes={notes}
         isLoading={isLoading}
         colorKey={workspace?.color}
         wash={workspace?.wash}
@@ -316,6 +316,16 @@ export default function FolderScreen() {
         title={title}
         onTitle={setTitle}
         onCreate={() => void onCreate()}
+        // The other way to start a note, and the reason the sheet offers four
+        // things and not three: a template is a note somebody already wrote, and
+        // it belongs in this space because that is where the sheet is.
+        onFromTemplate={() => {
+          closeSheets();
+          router.push({
+            pathname: "/(app)/templates",
+            params: { workspaceId },
+          });
+        }}
         creating={false}
       />
 
@@ -324,7 +334,7 @@ export default function FolderScreen() {
   );
 }
 
-type FolderBrowserFolder = {
+type CarpetaDeEsteNivel = {
   id: string;
   name: string;
   emoji: string | null;
@@ -332,8 +342,3 @@ type FolderBrowserFolder = {
   position: number;
 };
 
-const styles = StyleSheet.create({
-  band: {
-    width: "100%",
-  },
-});

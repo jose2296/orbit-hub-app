@@ -13,6 +13,8 @@ export interface TestServer {
   request: (path: string, init?: RequestInit) => Promise<{ status: number; body: any }>;
   post: (path: string, body?: unknown, token?: string) => Promise<{ status: number; body: any }>;
   get: (path: string, token?: string) => Promise<{ status: number; body: any }>;
+  patch: (path: string, body?: unknown, token?: string) => Promise<{ status: number; body: any }>;
+  delete: (path: string, token?: string) => Promise<{ status: number; body: any }>;
   close: () => Promise<void>;
 }
 
@@ -72,6 +74,17 @@ export async function startTestServer(): Promise<TestServer> {
       }),
     get: (path, token) =>
       request(path, token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+    patch: (path, body, token) =>
+      request(path, {
+        method: 'PATCH',
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      }),
+    delete: (path, token) =>
+      request(path, {
+        method: 'DELETE',
+        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      }),
     close: async () => {
       await new Promise<void>((resolvePromise, reject) => {
         server.close((error) => (error ? reject(error) : resolvePromise()));

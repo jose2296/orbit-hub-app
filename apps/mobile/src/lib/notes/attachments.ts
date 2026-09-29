@@ -108,7 +108,7 @@ export async function uploadAttachment(
   const ticket = await api.post<TicketResponse>(`/notes/${noteId}/attachments`, meta);
   onProgress?.(0, draft.sizeBytes);
 
-  await putBytes(absoluteUploadUrl(ticket.uploadUrl), draft, ticket.headers, onProgress);
+  await putBytes(absoluteStorageUrl(ticket.uploadUrl), draft, ticket.headers, onProgress);
 
   return api.post<Attachment>(`/notes/${noteId}/attachments/confirm`, {
     ...meta,
@@ -189,18 +189,33 @@ async function putBytes(
  * would be posted to the dev server, which answers 404, and the person is told the
  * upload failed for reasons that have nothing to do with their file.
  */
-function absoluteUploadUrl(uploadUrl: string): string {
-  if (/^https?:\/\//i.test(uploadUrl)) {
-    return uploadUrl;
+function absoluteStorageUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
   }
-  return `${API_ORIGIN}${uploadUrl.startsWith('/') ? '' : '/'}${uploadUrl}`;
+  return `${API_ORIGIN}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
-/** A link that works for a while, for reading a file already on the server. */
+/**
+ * A link that works for a while, for reading a file already on the server.
+ *
+ * **Absolute, and that is the whole point.** The storage driver hands out a path
+ * — the local one does, because it is this same API serving the bytes — and a
+ * relative URL given to `fetch` is resolved against *the page*, not against the
+ * API. In a browser that means a picture in a note is asked for at
+ * `localhost:8082/api/v1/attachments/file/…` while the API is on 4000, and the
+ * answer is a 404 from the dev server: a note whose pictures are all missing on
+ * the web, with nothing in the app to say why. The upload path had this fixed and
+ * written down; the read path was the one that missed it.
+ */
 export async function attachmentLink(
   attachmentId: string,
 ): Promise<{ url: string; fileName: string; mimeType: string }> {
-  return api.post(`/notes/attachments/${attachmentId}/link`, {});
+  const link = await api.post<{ url: string; fileName: string; mimeType: string }>(
+    `/notes/attachments/${attachmentId}/link`,
+    {},
+  );
+  return { ...link, url: absoluteStorageUrl(link.url) };
 }
 
 export async function listAttachments(noteId: string): Promise<Attachment[]> {

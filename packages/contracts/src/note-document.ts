@@ -43,6 +43,18 @@ const LIST_TAGS = ['ul', 'ol'] as const;
 /** Never has a closing tag. */
 const VOID_TAGS = ['img', 'br'] as const;
 
+/** The two attributes that say how big a picture is. */
+const IMAGE_DIMENSIONS = ['width', 'height'] as const;
+
+/**
+ * How wide an image may claim to be, in pixels.
+ *
+ * A cap, not a rule about pictures: the number is read by the layout and used to
+ * size a view, and a note is a field a person types into. 16384 is wider than any
+ * screen and taller than any camera, so nothing real is refused and a document
+ * that is trying to describe the size of the moon is turned away.
+ */
+const MAX_IMAGE_EDGE = 16384;
 const INLINE_SET: ReadonlySet<string> = new Set<string>([...INLINE_TAGS, 'img', 'br']);
 const PARAGRAPH_SET: ReadonlySet<string> = new Set<string>(PARAGRAPH_TAGS);
 const LIST_SET: ReadonlySet<string> = new Set<string>([...LIST_TAGS, 'ul']);
@@ -56,8 +68,22 @@ const ATTRIBUTE_FREE: ReadonlySet<string> = new Set<string>([
   'ol',
 ]);
 
-/** The most attributes a single tag may carry. */
+/**
+ * The most attributes a single tag may carry.
+ *
+ * Two for nearly everything, and four for a picture.
+ *
+ * The two is a guard against attribute stuffing: there is nothing in a note that
+ * needs three, so a fourth is either noise or an attempt. The picture is the
+ * exception and always was — `src` says which file, `width` and `height` say
+ * its shape, and the editor writes all three on every image it inserts and the
+ * native parser writes all three on every read. With the cap at two, **no picture
+ * could be saved at all**: the document was refused, the note said "the document
+ * is not valid", and the image was left in the text of a note that could not be
+ * written. One number, and a feature that looked like it worked.
+ */
 const MAX_ATTRIBUTES = 2;
+const MAX_IMAGE_ATTRIBUTES = 4;
 
 /* ------------------------------------------------------------------ tokens -- */
 
@@ -245,8 +271,9 @@ function checkAttributes(
       ok = false;
     }
   }
-  if (Object.keys(attributes).length > MAX_ATTRIBUTES) {
-    fail(context, path, `<${name}> has more attributes than the format allows`);
+  const limit = name === 'img' ? MAX_IMAGE_ATTRIBUTES : MAX_ATTRIBUTES;
+  if (Object.keys(attributes).length > limit) {
+    fail(context, path, `<${name}> has more than ${limit} attributes`);
     ok = false;
   }
   return ok;
@@ -257,7 +284,12 @@ function allowedAttributesFor(
   attributes: Record<string, string>,
 ): readonly string[] {
   if (name === 'a') return ['href'];
-  if (name === 'img') return ['src', 'alt'];
+  // `width` and `height` are the picture's shape, not its presentation. The
+  // editor writes them on every image it inserts — `setImage` takes both and the
+  // native parser emits them on every `getHTML` — so without them a note with a
+  // picture in it cannot be saved at all. They are checked as numbers below,
+  // because a note is text and "999999" is not a size a picture can be.
+  if (name === 'img') return ['src', 'alt', 'width', 'height'];
   if (name === 'ul') return attributes['data-type'] === 'checkbox' ? ['data-type'] : [];
   if (name === 'li') return ['checked'];
   if (ATTRIBUTE_FREE.has(name)) return [];
@@ -334,6 +366,20 @@ function walk(tokens: Token[], context: Context): void {
     }
     if (name === 'img' && !token.attributes['src']) {
       fail(context, here, '<img> needs a src');
+    }
+    if (name === 'img') {
+      for (const key of IMAGE_DIMENSIONS) {
+        const raw = token.attributes[key];
+        if (raw === undefined) continue;
+        const size = Number(raw);
+        if (!Number.isInteger(size) || size <= 0 || size > MAX_IMAGE_EDGE) {
+          fail(
+            context,
+            here,
+            `<img> ${key} has to be a whole number of pixels between 1 and ${MAX_IMAGE_EDGE}, and "${raw}" is not`,
+          );
+        }
+      }
     }
     if (name === 'li' && token.attributes['checked'] !== undefined) {
       const owner = stack[stack.length - 1];

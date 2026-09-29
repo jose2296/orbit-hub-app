@@ -368,9 +368,15 @@ export const noteSchema = syncableEntitySchema.extend({
   title: z.string().trim().min(1).max(200),
   document: noteDocumentSchema,
   plainText: z.string().default(""),
-  favorite: z.boolean().default(false),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   attachmentCount: z.int().min(0).default(0),
+  /**
+   * Where this note sits among the things in its folder when somebody has put
+   * them in an order by hand. Zero means not placed, and the browser sorts those
+   * last so a note written before the order existed never jumps to the top of
+   * somebody's arrangement.
+   */
+  position: z.number().int().min(0).default(0),
 });
 export type Note = z.infer<typeof noteSchema>;
 
@@ -893,6 +899,20 @@ export type ListItemsResponse = z.infer<typeof listItemsResponseSchema>;
  * never produce a note the editor cannot open. There is no second format and no
  * second editor: saving a note as a template is saving a note.
  */
+/**
+ * Who a template belongs to.
+ *
+ * - `personal` is the only scope that carries no space. A personal template is a
+ *   shape the person wrote, it is stored with `workspaceId: null`, and it follows
+ *   them into every space and onto every device. One that needed a space would be
+ *   a thing the space holds for them, and it would vanish when they leave.
+ * - `workspace` is a space's, and everybody in the space can use it. Editing it is
+ *   an editor's right, because a team template only its author may repair is a
+ *   template the team cannot maintain.
+ * - `public` is the catalogue anybody can read. Nothing in this app creates one
+ *   yet: publishing needs somebody to decide what is allowed in a catalogue
+ *   everybody sees, and that decision has not been made.
+ */
 export const noteTemplateScopeSchema = z.enum(['personal', 'workspace', 'public']);
 export type NoteTemplateScope = z.infer<typeof noteTemplateScopeSchema>;
 
@@ -953,6 +973,76 @@ export const listNoteTemplatesResponseSchema = z.object({
 });
 export type ListNoteTemplatesResponse = z.infer<typeof listNoteTemplatesResponseSchema>;
 
+/**
+ * Changing a template.
+ *
+ * The same shape as `updateNoteRequestSchema`, and every field optional for the
+ * same reason: the name and the document are two separate things people change,
+ * and a body that made both mandatory would mean resending the whole document to
+ * correct a typo in the title — which is a document that has to be validated, has
+ * to be sent, and can be out of date by the time it arrives.
+ *
+ * `scope` is deliberately absent. Moving a template between a person and a space
+ * changes who can see it, which is not a change to the template but a change to
+ * who is allowed to have it, and there is a copy for that: save it again.
+ */
+export const updateNoteTemplateRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().max(300).optional(),
+    icon: z.string().max(40).optional(),
+    /** Validated against the editor's tag set, on the way in. */
+    document: noteDocumentSchema.optional(),
+    expectedVersion: z.number().int().min(0),
+  })
+  .refine((body) => {
+    const { expectedVersion: _version, ...changes } = body;
+    return Object.keys(changes).length > 0;
+  }, { message: 'Nothing to change', path: ['expectedVersion'] });
+export type UpdateNoteTemplateRequest = z.infer<typeof updateNoteTemplateRequestSchema>;
+
+/**
+ * Giving a template to somebody else, or taking it back.
+ *
+ * A separate verb and not a field on `updateNoteTemplateRequestSchema`, because
+ * it is a different question with different rules. A rename is about the words; a
+ * share is about who may read them, and the answer has to be the server's — a
+ * client that could set `scope` by itself would be a client that could publish
+ * somebody else's recipe to the whole app.
+ *
+ * Only the author may share. Not an editor of the space: a colleague who can fix
+ * a typo in the team's template has no business moving it into their own space.
+ */
+export const shareNoteTemplateRequestSchema = z
+  .object({
+    scope: z.enum(['personal', 'workspace']),
+    /** Required for `workspace`, and refused for `personal`. */
+    workspaceId: uuidSchema.optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.scope === 'workspace' && !body.workspaceId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'A shared template needs a space',
+        path: ['workspaceId'],
+      });
+    }
+    if (body.scope === 'personal' && body.workspaceId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'A personal template belongs to its author, not to a space',
+        path: ['workspaceId'],
+      });
+    }
+  });
+export type ShareNoteTemplateRequest = z.infer<typeof shareNoteTemplateRequestSchema>;
+
+export const deleteNoteTemplateResponseSchema = z.object({
+  id: uuidSchema,
+  deleted: z.literal(true),
+});
+export type DeleteNoteTemplateResponse = z.infer<typeof deleteNoteTemplateResponseSchema>;
+
 /* ------------------------------------------------------------------ notas ---- */
 
 export const createNoteRequestSchema = z.object({
@@ -962,6 +1052,8 @@ export const createNoteRequestSchema = z.object({
   /** Validated against the editor's tag set. A document that fails is never stored. */
   document: noteDocumentSchema,
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  /** Optional, and absent means "the end of the folder's order". */
+  position: z.number().int().min(0).optional(),
 });
 export type CreateNoteRequest = z.infer<typeof createNoteRequestSchema>;
 
@@ -979,6 +1071,8 @@ export const updateNoteRequestSchema = z.object({
   document: noteDocumentSchema.optional(),
   favorite: z.boolean().optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  /** Moving a note within its folder's order, and nothing else. */
+  position: z.number().int().min(0).optional(),
   expectedVersion: z.number().int().min(0),
 });
 export type UpdateNoteRequest = z.infer<typeof updateNoteRequestSchema>;
@@ -986,10 +1080,6 @@ export type UpdateNoteRequest = z.infer<typeof updateNoteRequestSchema>;
 export const listNotesQuerySchema = z.object({
   workspaceId: uuidSchema.optional(),
   folderId: uuidSchema.optional(),
-  favorite: z
-    .enum(["true", "false"])
-    .transform((value) => value === "true")
-    .optional(),
   tag: z.string().trim().min(1).max(40).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().min(1).optional(),

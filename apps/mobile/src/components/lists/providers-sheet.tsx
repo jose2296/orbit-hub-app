@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
-import { Image, StyleSheet, View } from "react-native";
+import { Image, Linking, StyleSheet, View } from "react-native";
 
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
@@ -17,9 +17,9 @@ export interface ProvidersSheetProps {
 }
 
 /**
- * Where a title is, and where it is not.
+ * Where a title is, and where it is not — and the trailer, if it has one.
  *
- * Three things this does that a list of words does not:
+ * Five things this does that a list of words does not:
  *
  * - **It says which country it is answering for.** Netflix has different films in
  *   different countries, and a sheet that answers for the wrong one sends you to
@@ -29,6 +29,9 @@ export interface ProvidersSheetProps {
  *   nothing is a sheet that looks broken, so it says it in words.
  * - **It does not open before it knows.** An empty sheet that fills in is a sheet
  *   that looks empty and then not; it says it is looking.
+ * - **The trailer comes with it**, and on its own request, because somebody who
+ *   opens this sheet has a film in mind and wants ninety seconds of it, not a
+ *   list of subscriptions to read.
  *
  * The logos are the provider's own, from the same image host as the posters: a list
  * of names in a column is a list you have to read, and "Netflix" is a thing you
@@ -40,6 +43,7 @@ export function ProvidersSheet({ item, onClose }: ProvidersSheetProps) {
   const [datos, setDatos] = useState<CatalogProviders | null>(null);
   const [cargando, setCargando] = useState(false);
   const [fallo, setFallo] = useState(false);
+  const [trailer, setTrailer] = useState<string | null>(null);
 
   const region = regionDelIdioma();
 
@@ -56,10 +60,34 @@ export function ProvidersSheet({ item, onClose }: ProvidersSheetProps) {
       .finally(() => setCargando(false));
   }, [api, item, region]);
 
+  /**
+   * The trailer, asked for separately because it is a different question.
+   *
+   * The providers endpoint answers "who has it in this country" and the details
+   * endpoint answers "what is it", and the trailer is in the second one. They are
+   * two calls because they are two things, and **the trailer is not allowed to
+   * hold up the sheet**: it is set whenever it arrives, so somebody with a slow
+   * connection to YouTube's metadata still gets the list of providers in the
+   * meantime. A sheet that waits for the trailer to show where to watch it is a
+   * sheet about the trailer.
+   */
+  const cargarTrailer = useCallback(() => {
+    if (!item) return;
+    setTrailer(null);
+    api
+      .get<{ trailer?: string | null }>(
+        `/catalog/details?kind=${encodeURIComponent(item.kind)}&externalId=${encodeURIComponent(item.externalId)}`,
+      )
+      .then((detalle) => setTrailer(detalle.trailer ?? null))
+      // Sin tráiler no es un fallo: la hoja sigue answering lo otro.
+      .catch(() => setTrailer(null));
+  }, [api, item]);
+
   useEffect(() => {
     setDatos(null);
     cargar();
-  }, [cargar]);
+    cargarTrailer();
+  }, [cargar, cargarTrailer]);
 
   return (
     <Sheet
@@ -76,6 +104,24 @@ export function ProvidersSheet({ item, onClose }: ProvidersSheetProps) {
           paddingBottom: theme.spacing.sm,
         }}
       >
+        {/*
+          The trailer first, because it is the answer to the question people open
+          this sheet with. "Where can I watch it" is really "can I see it right
+          now", and a ninety-second trailer is what settles that; the list of
+          subscriptions is what you read once you have decided you want it.
+        */}
+        {trailer ? (
+          <Button
+            testID="providers-trailer"
+            label={t("itemDetails.trailer")}
+            variant="secondary"
+            icon="play-circle-outline"
+            onPress={() => {
+              void Linking.openURL(`https://www.youtube.com/watch?v=${trailer}`);
+            }}
+          />
+        ) : null}
+
         {cargando ? (
           <AppText variant="callout" tone="muted" align="center">
             {t("common.loading")}

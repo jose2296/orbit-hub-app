@@ -163,7 +163,7 @@ function sanitisePayload(
       continue;
     }
 
-    if (key === 'completed' || key === 'favorite') {
+    if (key === 'completed') {
       clean[key] = value === true;
       continue;
     }
@@ -597,7 +597,6 @@ export class SyncService {
             // Derived here rather than taken from the client, so the body and
             // the text that search matches on cannot drift apart.
             plainText: noteDocumentToPlainText(document),
-            favorite: payload['favorite'] === true,
             tags: Array.isArray(payload['tags']) ? (payload['tags'] as string[]) : [],
           });
           return { status: 'applied', version: row.version };

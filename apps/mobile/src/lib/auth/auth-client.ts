@@ -36,6 +36,14 @@ type AuthListener = (event: AuthEvent) => void;
  *  - requests always read the current token from this module, never from a
  *    closure captured when the screen was created.
  */
+/**
+ * How long the launch check waits before going on with what is stored.
+ *
+ * A fourth of the default fifteen. Long enough for a real answer from a real API
+ * and short enough that the person is not looking at nothing.
+ */
+const BOOT_CHECK_TIMEOUT_MS = 4_000;
+
 class AuthClient {
   private stored: StoredSession | null = null;
   private refreshInFlight: Promise<Session | null> | null = null;
@@ -81,10 +89,27 @@ class AuthClient {
       if (refreshed) return refreshed;
     }
 
-    // Validate the session against the API so the profile is never stale, and a
-    // revoked device stops working immediately.
+    /*
+     * Validate the session against the API so the profile is never stale, and a
+     * revoked device stops working.
+     *
+     * **On a short clock, and that is the whole change.** This is a boot check
+     * and not a request anybody is waiting on: the session is already in storage
+     * and the app could be drawing. Waiting the fifteen seconds of the default
+     * timeout for a call whose failure is already handled — the catch below
+     * keeps the cached profile, that is what it is for — bought nothing and cost
+     * a white screen on every launch with a slow or absent network. Four seconds
+     * is long enough for a real API on a normal connection and short enough that
+     * a person watching a dead network sees the app instead of a void.
+     *
+     * A device that was revoked still stops working, and still immediately from
+     * the person's side of it: the very next request the app makes is refused
+     * with the same 401, and the refresh path clears the session then.
+     */
     try {
-      const user = await api.get<Session['user']>('/auth/me');
+      const user = await api.get<Session['user']>('/auth/me', {
+        timeoutMs: BOOT_CHECK_TIMEOUT_MS,
+      });
       if (this.stored) {
         this.stored = { ...this.stored, session: { ...this.stored.session, user } };
         await sessionStorage.write(this.stored.session, this.stored.issuedAt);
@@ -222,7 +247,20 @@ class AuthClient {
         const payload = await api.post<Session>(
           '/auth/refresh',
           { refreshToken },
-          { anonymous: true, noRetryOnUnauthorized: true },
+          {
+            anonymous: true,
+            noRetryOnUnauthorized: true,
+            /*
+             * El mismo reloj corto, y por el mismo motivo que la comprobacion de
+             * arranque. Este `refresh` se dispara **antes de pintar nada**, y su
+             * fallo ya esta tratado dos lineas mas abajo: una red que no contesta
+             * devuelve la sesion guardada. Medido: con la red colgada, el token a
+             * punto de caducar dejaba la app en la pantalla de carga durante los
+             * quince segundos completos del tiempo limite, que es lo que este
+             * cambio quita.
+             */
+            timeoutMs: BOOT_CHECK_TIMEOUT_MS,
+          },
         );
 
         const session = sessionSchema.parse(payload);

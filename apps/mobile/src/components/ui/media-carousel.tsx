@@ -25,6 +25,25 @@ export interface MediaCarouselItem {
   onMenu?: () => void;
   /** The menu's own name, so it is not the same control twice on a screen. */
   menuLabel?: string;
+  /**
+   * Puts this title in the list, from the card.
+   *
+   * On a list's own carousel this is already a row in the list, so it is not
+   * offered there. It is offered in the **related** and **collection** carousels,
+   * where a poster is a suggestion: without it, the only way to keep a title the
+   * screen itself put in front of you is to open it, find the button and come
+   * back to where you were.
+   */
+  onAdd?: () => void;
+  /**
+   * Opens the trailer and the providers of this title, in one sheet.
+   *
+   * One button and not two, and the reason is the card: at 120 points wide there
+   * is room for the poster, a menu and one more control. And the two questions —
+   * "show me" and "who has it" — have the same answer, which is ninety seconds
+   * and then a list of names.
+   */
+  onWatch?: () => void;
 }
 
 export interface MediaCarouselProps {
@@ -83,6 +102,7 @@ function MediaCard({
   menuHint: string;
 }) {
   const theme = useTheme();
+  const t = useTranslation();
   const [failed, setFailed] = useState(false);
 
   // Two controls, two hints: the poster opens the title, the corner button
@@ -90,12 +110,24 @@ function MediaCard({
   // so there is nothing to point at when `onMenu` is absent.
   const pistaPoster = useA11yHint(labelAdd);
   const pistaMenu = useA11yHint(item.onMenu ? menuHint : null);
+  // Same rule for the two shortcuts: no button, no hint.
+  const pistaAdd = useA11yHint(item.onAdd ? t('catalog.addHint') : null);
+  const pistaWatch = useA11yHint(item.onWatch ? t('mediaActions.watchHint') : null);
 
   const showImage = item.imageUrl && !failed;
 
   return (
     <View style={{ width: CARD_WIDTH }}>
-      <Pressable
+      {/*
+        La portada y **sus** botones en un contenedor con posicion, y no sueltos
+        en la tarjeta. Posicionados contra la tarjeta, `bottom: 4` cae sobre la
+        fila de chapas que va **debajo** del cartel: el `+` salia encima de la
+        chapa y los dos se comian la mitad el uno del otro. El menu ya estaba en
+        la esquina de la portada porque su esquina coincidia con la de la tarjeta;
+        estos dos estan abajo y esa coincidencia no existe.
+      */}
+      <View style={styles.area}>
+        <Pressable
         accessibilityRole="button"
         accessibilityLabel={item.title}
         {...pistaPoster.props}
@@ -145,6 +177,56 @@ function MediaCard({
           ) : null}
         </View>
       </Pressable>
+
+      {/*
+        The two shortcuts. They are siblings of the poster and not children of it
+        for the same reason the menu is: a button inside a button is not valid
+        HTML, a screen reader reads the two as one, and the tap lands on the
+        outer one.
+      */}
+      {item.onAdd ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("catalog.add", { title: item.title })}
+          {...pistaAdd.props}
+          hitSlop={8}
+          onPress={item.onAdd}
+          style={({ pressed }) => [
+            styles.corta,
+            styles.abajoIzquierda,
+            {
+              backgroundColor: theme.colors.accent,
+              borderRadius: theme.radius.sm,
+              opacity: pressed ? 0.75 : 1,
+            },
+          ]}
+        >
+          <Ionicons name="add" size={16} color={theme.colors.onAccent} />
+        </Pressable>
+      ) : null}
+      {pistaAdd.node}
+
+      {item.onWatch ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("mediaActions.watchOf", { name: item.title })}
+          {...pistaWatch.props}
+          hitSlop={8}
+          onPress={item.onWatch}
+          style={({ pressed }) => [
+            styles.corta,
+            styles.abajoDerecha,
+            {
+              backgroundColor: "rgba(0, 0, 0, 0.72)",
+              borderRadius: theme.radius.sm,
+              opacity: pressed ? 0.75 : 1,
+            },
+          ]}
+        >
+          <Ionicons name="play" size={14} color="#ffffff" />
+        </Pressable>
+      ) : null}
+      {pistaWatch.node}
       {pistaPoster.node}
 
       {/* The menu is a sibling of the poster and not a child of it: a button
@@ -173,6 +255,9 @@ function MediaCard({
           {pistaMenu.node}
         </>
       ) : null}
+
+      
+      </View>
 
       <AppText variant="caption" numberOfLines={2} style={[styles.title, { marginTop: theme.spacing.xs }]}>
         {item.title}
@@ -229,6 +314,24 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  area: {
+    position: 'relative',
+  },
+  corta: {
+    position: 'absolute',
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  abajoIzquierda: {
+    left: 4,
+    bottom: 4,
+  },
+  abajoDerecha: {
+    right: 4,
+    bottom: 4,
   },
   seen: {
     position: 'absolute',

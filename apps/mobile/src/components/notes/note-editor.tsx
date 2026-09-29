@@ -27,23 +27,43 @@ import { useTheme } from "@/theme";
  * warns about exactly this: parsing HTML per keystroke is expensive.
  */
 
-export interface NoteEditorProps
-  extends Pick<
-    EnrichedTextInputProps,
-    "defaultValue" | "placeholder" | "autoFocus" | "htmlStyle" | "textShortcuts"
-  > {
+export interface NoteEditorProps extends Pick<
+  EnrichedTextInputProps,
+  "defaultValue" | "placeholder" | "autoFocus" | "textShortcuts"
+> {
   /** Called when the person types. Cheap: this is the plain text, not the HTML. */
   onChanged: () => void;
+  /**
+   * Puts a picture where the cursor is.
+   *
+   * The screen owns this and not the editor, because it owns the note: choosing
+   * the file, sending it, and deciding what happens when there is no connection
+   * are all things that need the note's id and the upload queue. The editor knows
+   * where the cursor is and nothing else.
+   */
+  onInsertImage?: () => void;
   /**
    * Reads the document. The same object the editor writes to, handed over rather
    * than copied, so the screen can call `getHTML()` on its own schedule — which
    * is not the same as the moment a keystroke happens.
    */
   editorRef: React.RefObject<EnrichedTextInputInstance | null>;
+  /**
+   * Shows the document and does not let anybody change it.
+   *
+   * For reading a template from the catalogue: it is the app's own text, an edit
+   * would be replaced by the next build, and a screen that let somebody type into
+   * it and then refused to save is worse than a screen that never let them start.
+   *
+   * The toolbar goes with it. Buttons that are pressed and do nothing are a bug
+   * report, so a read-only editor has no toolbar to press.
+   */
+  readOnly?: boolean;
 }
 
 /** A style the toolbar can turn on and off over the current selection. */
 type StyleKey =
+  | "image"
   | "bold"
   | "italic"
   | "underline"
@@ -63,6 +83,7 @@ interface ToolbarButton {
   icon: string;
   /** A screen reader cannot read "B", so every button has a name. */
   labelKey:
+    | "note.insertImage"
     | "note.bold"
     | "note.italic"
     | "note.underline"
@@ -107,6 +128,21 @@ const BLOCK_BUTTONS: ToolbarButton[] = [
 ];
 
 /**
+ * The one button that is not a style.
+ *
+ * Every other button turns something on or off over the selection. This one
+ * inserts a picture, which means choosing a file, sending it, and putting the
+ * result where the cursor is — so it cannot be a `StyleKey` and does not answer
+ * to `onChangeState`. It lives in a row of its own for the same reason: a
+ * toolbar that scrolls mixes the two and the person cannot tell which is which.
+ */
+const IMAGE_BUTTON: ToolbarButton = {
+  key: "image",
+  icon: "image-outline",
+  labelKey: "note.insertImage",
+};
+
+/**
  * Typing `- ` at the start of a line makes a bullet, and so on.
  *
  * This was an open question in `notes-editor.md`: the library has no markdown of
@@ -134,60 +170,70 @@ export function NoteEditor({
   defaultValue,
   placeholder,
   autoFocus,
-  htmlStyle,
   textShortcuts = NOTE_TEXT_SHORTCUTS,
   onChanged,
+  onInsertImage,
   editorRef,
+  readOnly = false,
 }: NoteEditorProps) {
   const theme = useTheme();
   const t = useTranslation();
   const [state, setState] = useState<OnChangeStateEvent | null>(null);
+  const { htmlStyle, bodyStyle } = useNoteHtmlStyle();
 
-  const command = useCallback((key: StyleKey) => {
-    const input = editorRef.current;
-    if (!input) return;
-    switch (key) {
-      case "bold":
-        input.toggleBold();
-        break;
-      case "italic":
-        input.toggleItalic();
-        break;
-      case "underline":
-        input.toggleUnderline();
-        break;
-      case "strike":
-        input.toggleStrikeThrough();
-        break;
-      case "code":
-        input.toggleInlineCode();
-        break;
-      case "h1":
-        input.toggleH1();
-        break;
-      case "h2":
-        input.toggleH2();
-        break;
-      case "h3":
-        input.toggleH3();
-        break;
-      case "quote":
-        input.toggleBlockQuote();
-        break;
-      case "codeblock":
-        input.toggleCodeBlock();
-        break;
-      case "ul":
-        input.toggleUnorderedList();
-        break;
-      case "ol":
-        input.toggleOrderedList();
-        break;
-      case "checkbox":
-        input.toggleCheckboxList(false);
-        break;
-    }
-  }, [editorRef]);
+  const command = useCallback(
+    (key: StyleKey) => {
+      const input = editorRef.current;
+      if (!input) return;
+      switch (key) {
+        case "image":
+          // Not a style, and not something the editor can be told to do on its own:
+          // a picture has to be chosen, sent and put somewhere first.
+          onInsertImage?.();
+          return;
+        case "bold":
+          input.toggleBold();
+          break;
+        case "italic":
+          input.toggleItalic();
+          break;
+        case "underline":
+          input.toggleUnderline();
+          break;
+        case "strike":
+          input.toggleStrikeThrough();
+          break;
+        case "code":
+          input.toggleInlineCode();
+          break;
+        case "h1":
+          input.toggleH1();
+          break;
+        case "h2":
+          input.toggleH2();
+          break;
+        case "h3":
+          input.toggleH3();
+          break;
+        case "quote":
+          input.toggleBlockQuote();
+          break;
+        case "codeblock":
+          input.toggleCodeBlock();
+          break;
+        case "ul":
+          input.toggleUnorderedList();
+          break;
+        case "ol":
+          input.toggleOrderedList();
+          break;
+        case "checkbox":
+          input.toggleCheckboxList(false);
+          break;
+      }
+    },
+    [editorRef, onInsertImage],
+  );
 
   /**
    * Whether a style is on, from what the editor reports.
@@ -203,7 +249,8 @@ export function NoteEditor({
       const entry = (
         state as unknown as Record<
           string,
-          { isActive: boolean; isBlocking: boolean; isConflicting: boolean } | undefined
+          | { isActive: boolean; isBlocking: boolean; isConflicting: boolean }
+          | undefined
         >
       )[key];
       if (!entry) return "off";
@@ -217,86 +264,96 @@ export function NoteEditor({
 
   return (
     <View style={{ flex: 1 }}>
-      <View
-        style={{
-          borderBottomWidth: 1,
-          borderBottomColor: theme.colors.border,
-          backgroundColor: theme.colors.background,
-        }}
-      >
-        {[INLINE_BUTTONS, BLOCK_BUTTONS].map((buttons, rowIndex) => (
-          <ScrollView
-            key={rowIndex}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              flexDirection: "row",
-              gap: theme.spacing.xs,
-              paddingHorizontal: theme.spacing.lg,
-              paddingVertical: theme.spacing.xs,
-              alignItems: "center",
-            }}
-          >
-            {buttons.map((button) => {
-              const status = statusOf(button.key);
-              const active = status === "on";
-              const dim = status === "blocked" || status === "conflicting";
-              return (
-                <Pressable
-                  key={button.key}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active, disabled: status === "blocked" }}
-                  accessibilityLabel={t(button.labelKey)}
-                  onPress={() => command(button.key)}
-                  style={{
-                    minWidth: 40,
-                    height: 40,
-                    borderRadius: theme.radius.sm,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: active ? theme.colors.accentSoft : "transparent",
-                  }}
-                >
-                  {button.glyph ? (
-                    <AppText
+      {readOnly ? null : (
+        <View
+          style={{
+            borderBottomWidth: 1,
+            borderBottomColor: theme.colors.border,
+            backgroundColor: theme.colors.background,
+          }}
+        >
+          {[INLINE_BUTTONS, BLOCK_BUTTONS, [IMAGE_BUTTON]].map(
+            (buttons, rowIndex) => (
+              <ScrollView
+                key={rowIndex}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{
+                  flexDirection: "row",
+                  gap: theme.spacing.xs,
+                  paddingHorizontal: theme.spacing.lg,
+                  paddingVertical: theme.spacing.xs,
+                  alignItems: "center",
+                }}
+              >
+                {buttons.map((button) => {
+                  const status = statusOf(button.key);
+                  const active = status === "on";
+                  const dim = status === "blocked" || status === "conflicting";
+                  return (
+                    <Pressable
+                      key={button.key}
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        selected: active,
+                        disabled: status === "blocked",
+                      }}
+                      accessibilityLabel={t(button.labelKey)}
+                      onPress={() => command(button.key)}
                       style={{
-                        fontSize: button.glyph,
-                        lineHeight: button.glyph + 2,
-                        fontWeight: "700",
-                        color: dim
-                          ? theme.colors.textSubtle
-                          : active
-                            ? theme.colors.accentSoftText
-                            : theme.colors.textMuted,
+                        minWidth: 40,
+                        height: 40,
+                        borderRadius: theme.radius.sm,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: active
+                          ? theme.colors.accentSoft
+                          : "transparent",
                       }}
                     >
-                      A
-                    </AppText>
-                  ) : (
-                    <Ionicons
-                      name={button.icon as never}
-                      size={19}
-                      color={
-                        dim
-                          ? theme.colors.textSubtle
-                          : active
-                            ? theme.colors.accentSoftText
-                            : theme.colors.textMuted
-                      }
-                    />
-                  )}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        ))}
-      </View>
+                      {button.glyph ? (
+                        <AppText
+                          style={{
+                            fontSize: button.glyph,
+                            lineHeight: button.glyph + 2,
+                            fontWeight: "700",
+                            color: dim
+                              ? theme.colors.textSubtle
+                              : active
+                                ? theme.colors.accentSoftText
+                                : theme.colors.textMuted,
+                          }}
+                        >
+                          A
+                        </AppText>
+                      ) : (
+                        <Ionicons
+                          name={button.icon as never}
+                          size={19}
+                          color={
+                            dim
+                              ? theme.colors.textSubtle
+                              : active
+                                ? theme.colors.accentSoftText
+                                : theme.colors.textMuted
+                          }
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ),
+          )}
+        </View>
+      )}
 
       <EnrichedTextInput
         ref={editorRef}
         defaultValue={defaultValue}
         placeholder={placeholder}
         autoFocus={autoFocus}
+        editable={!readOnly}
         htmlStyle={htmlStyle}
         textShortcuts={textShortcuts}
         onChangeText={onChanged}
@@ -305,9 +362,10 @@ export function NoteEditor({
           flex: 1,
           paddingHorizontal: theme.spacing.lg,
           paddingTop: theme.spacing.md,
-          color: theme.colors.text,
-          fontSize: theme.typography.body.fontSize,
-          lineHeight: theme.typography.body.lineHeight,
+          // The type comes from the hook and not from here. Written out again it
+          // would be the one place in the editor that could disagree with the
+          // scale, and it would be the place nobody looks.
+          ...bodyStyle,
         }}
       />
     </View>
@@ -324,13 +382,32 @@ export function NoteEditor({
  * that kept its own colours would be unreadable in a palette it was not written
  * for.
  */
+/**
+ * The type the editor draws with, and the only place it is decided.
+ *
+ * `htmlStyle` cannot reach the body text: it styles blocks by name, and a
+ * paragraph is not a block it names. The base size is a property of the input
+ * itself, and it arrives through `style` — the same prop that carries the flex
+ * box, because on the native side the view reads `fontSize` out of the flattened
+ * style. So the body is set here and the headings in `htmlStyle`, and both come
+ * from the same tokens.
+ *
+ * The three heading levels map onto the scale's own steps rather than onto
+ * numbers of their own: `title` for the first, `heading` for the second, and
+ * `bodyStrong`'s size for the third — the library can only make a heading a size
+ * and a weight, so a third invented size would be a number with nowhere to come
+ * from. Sixteen bold against sixteen regular is the difference you see, and it is
+ * the same difference `bodyStrong` already draws everywhere else in the app.
+ */
 export function useNoteHtmlStyle() {
   const theme = useTheme();
-  return useMemo(
+  const type = theme.typography;
+
+  const htmlStyle = useMemo(
     () => ({
-      h1: { fontSize: 26, bold: true },
-      h2: { fontSize: 21, bold: true },
-      h3: { fontSize: 18, bold: true },
+      h1: { fontSize: type.title.fontSize, bold: true },
+      h2: { fontSize: type.heading.fontSize, bold: true },
+      h3: { fontSize: type.bodyStrong.fontSize, bold: true },
       blockquote: {
         borderColor: theme.colors.borderStrong,
         borderWidth: 3,
@@ -345,11 +422,45 @@ export function useNoteHtmlStyle() {
         backgroundColor: theme.colors.surfaceSunken,
         color: theme.colors.text,
       },
-      a: { color: theme.colors.accent, textDecorationLine: "underline" as const },
+      a: {
+        color: theme.colors.accent,
+        textDecorationLine: "underline" as const,
+      },
       ul: { bulletColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },
       ol: { markerColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },
-      ulCheckbox: { boxColor: theme.colors.accent, marginLeft: theme.spacing.lg },
+      /**
+       * The same box the app draws in `ui/checkbox.tsx`: 22 px, square corners
+       * rounded to the small radius, in the accent. The editor draws its own and
+       * there is no way to hand it a component, so the numbers are copied rather
+       * than shared — which is the one thing in this file that can drift, and the
+       * test pins it to the checkbox's own size so a change to one is a change to
+       * both.
+       */
+      ulCheckbox: {
+        boxSize: 22,
+        gapWidth: theme.spacing.sm,
+        marginLeft: theme.spacing.sm,
+        boxColor: theme.colors.accent,
+      },
     }),
-    [theme],
+    [theme, type],
   );
+
+  /**
+   * The body's own type, for the `style` prop.
+   *
+   * Without this the editor draws at the platform's default, which is not what
+   * anything else in the app uses — the note read as a different app rather than
+   * as a screen of this one.
+   */
+  const bodyStyle = useMemo(
+    () => ({
+      fontSize: type.body.fontSize,
+      lineHeight: type.body.lineHeight,
+      color: theme.colors.text,
+    }),
+    [theme.colors.text, type.body],
+  );
+
+  return { htmlStyle, bodyStyle };
 }

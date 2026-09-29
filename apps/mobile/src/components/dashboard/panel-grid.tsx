@@ -142,6 +142,15 @@ export interface PanelGridProps {
    */
   onChange: (next: DashboardWidget[], pages?: number) => void;
   /**
+   * Which screen the person is looking at.
+   *
+   * Read by the screen when it pins something, so a card lands where somebody is
+   * standing rather than on the first screen with room. It is reported upwards
+   * rather than kept here because the panel is the only thing that knows: the
+   * screen cannot see a page it does not draw.
+   */
+  onPageChange?: (page: number) => void;
+  /**
    * Whether the panel is being arranged, and how to stop.
    *
    * Lifted to the screen above, because the button that turns this on and off
@@ -172,7 +181,15 @@ export interface PanelGridProps {
    * and not on its own: a screen that exists only in memory is a screen that is
    * gone by the time you press Guardar, which is the same as not having added it.
    */
-  onAddPage?: () => number;
+  /**
+   * Told the new number of screens, so it can be written.
+   *
+   * The panel draws the arrangement and the screen above it stores it, and the
+   * count is part of that: a screen nobody can get to is a screen that is not
+   * there. The draft comes with it so the write does not undo a card that was
+   * moved in the same sitting.
+   */
+  onAddPage?: (pages: number, draft: DashboardWidget[]) => void;
   /** Goes where a card says when it is tapped. */
   onOpen: (href: string) => void;
 }
@@ -216,6 +233,7 @@ export function PanelGrid({
   pages = 1,
   onOpenEditor,
   onAddPage,
+  onPageChange,
   onOpen,
 }: PanelGridProps) {
   const theme = useTheme();
@@ -378,6 +396,19 @@ export function PanelGrid({
   useEffect(() => {
     if (current !== page) setPage(current);
   }, [current, page]);
+
+  /**
+   * Told upwards which screen this is, and only when it changes.
+   *
+   * The screen needs it to pin a card where somebody is standing, and the panel
+   * is the only thing that knows — a screen it does not draw is a page number it
+   * could only guess at. The guard is the point: a callback that fires on every
+   * render is a `setState` on the parent on every render, and a panel that
+   * re-renders the screen it lives in is a panel that never settles.
+   */
+  useEffect(() => {
+    onPageChange?.(current);
+  }, [current, onPageChange]);
 
   const gap = theme.spacing.sm;
 
@@ -680,9 +711,17 @@ export function PanelGrid({
     if (siguiente === pagesDraft) return pagesDraft;
     setPagesDraft(siguiente);
     setPage(siguiente - 1);
-    onAddPage?.();
+    // Told upwards straight away, not held until the arrangement is finished.
+    //
+    // A screen that exists only in the draft is a screen that is gone the moment
+    // the panel is left without the Guardar button — which is what "no persists"
+    // meant: the dot was there, the arrow was there, and after a restart neither
+    // was. The write goes through the outbox like every other, so it is the same
+    // cost and the same wait, and it carries the current draft rather than the
+    // saved layout so a card moved in the same session is not undone by it.
+    onAddPage?.(siguiente, draftRef.current);
     return siguiente;
-  }, [editing, onAddPage, pagesDraft]);
+  }, [draftRef, editing, onAddPage, pagesDraft]);
 
   const finish = useCallback(() => {
     // Whatever could not be shown here goes to the next screen for real, so a card
@@ -959,7 +998,26 @@ export function PanelGrid({
         }}
       >
         {drawn.length === 0 ? (
-          <Ghosts cell={cell} radius={theme.radius.lg} height={board.height} />
+          /*
+            An empty page says it is empty.
+
+            The four dashed rectangles were the answer for a panel that has never
+            had anything in it: somewhere to put things, said in the shape things
+            will be. They were drawn for every screen with nothing on it, and that
+            is what made a page you had just added look broken — four placeholders
+            that were not cards, could not be moved, and disappeared the moment
+            anything real was on them.
+
+            So they are only drawn while arranging, which is the only time somebody
+            is about to put something there. Looking at an empty page, they are
+            just noise, and a page with nothing on it is a page somebody is still
+            thinking about.
+          */
+          editing ? (
+            <Ghosts cell={cell} radius={theme.radius.lg} height={board.height} />
+          ) : (
+            <EmptyPage label={t("dashboard.pageEmpty")} />
+          )
         ) : (
           <GestureDetector gesture={turn}>
             {/*
@@ -1459,6 +1517,29 @@ function PageBar({
  * something in it explains nothing: not how it looks, not how much fits, not
  * where to start. Four ghosts say all three without a word.
  */
+/**
+ * A screen with nothing on it, said once, in the middle.
+ *
+ * Not the ghosts and not a card-sized anything. A page that is empty is a real
+ * state — somebody made it, and it is waiting — and the only thing it needs is for
+ * that to be obvious without looking like something failed to load.
+ */
+function EmptyPage({ label }: { label: string }) {
+  const theme = useTheme();
+  return (
+    <View
+      testID="panel-empty-page"
+      accessibilityLabel={label}
+      style={[styles.screen, styles.emptyPage, { width: "100%" }]}
+    >
+      <Ionicons name="albums-outline" size={24} color={theme.colors.textSubtle} />
+      <AppText variant="callout" tone="subtle" style={styles.emptyPageText}>
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
 function Ghosts({
   cell,
   radius,
@@ -1555,6 +1636,18 @@ const styles = StyleSheet.create({
    * the edge of the screen, and a sliver of a page you have not asked for reads as
    * a page that is already there.
    */
+  /**
+   * The middle of an empty page: the icon over the line, both centred, and
+   * neither of them taking any space the cards would not have taken.
+   */
+  emptyPage: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  emptyPageText: {
+    textAlign: "center",
+  },
   board: {
     flex: 1,
     width: "100%",

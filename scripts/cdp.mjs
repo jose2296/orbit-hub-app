@@ -119,6 +119,71 @@ export async function openTab(debugPort) {
   await send("Log.enable");
   await send("Network.enable");
 
+  /**
+   * The browser talks to the API on this machine, whatever the app was built with.
+   *
+   * `apps/mobile/.env.local` points `EXPO_PUBLIC_API_URL` at `10.0.2.2:4000`,
+   * which is the alias the **Android emulator** uses to reach the host. It is the
+   * right value for a phone and the wrong one for a browser on this Mac, where
+   * the address simply does not resolve. The consequence is quiet and nasty: the
+   * app renders from its cache, the write lands locally, and the request never
+   * reaches the API — so the log of the API shows **no request at all** and a
+   * verification run reports a broken sync when the truth is that it never sent
+   * anything.
+   *
+   * Three things were tried before this and none of them work, which is why this
+   * is here and not a note in the README:
+   *
+   * - Exporting `EXPO_PUBLIC_API_URL` in the shell does not help. Measured, not
+   *   assumed: with the variable exported and a second Metro running, the API log
+   *   recorded zero requests from a browser.
+   * - Starting a second Metro does not help either, for the same reason.
+   * - Rewriting `.env.local` **would** work, and it would break the emulator,
+   *   which is the one thing that address is for. So the file is left alone and
+   *   the redirect goes where the wrong value is harmless: in the browser.
+   *
+   * `addScriptToEvaluateOnNewDocument` and not an `evaluate` after the fact,
+   * because the first request the app makes happens before anybody gets a chance
+   * to patch anything, and a patch installed after a `goto` is gone after the
+   * next one.
+   *
+   * Both hosts are this same machine, so nothing is faked: the app, the code and
+   * the API are the real ones, and only the address changes.
+   *
+   * **Y esto es un apaño de las comprobaciones, no la solución.** La solución es
+   * `apps/mobile/src/lib/api/host.ts`, que trabaja el host por plataforma y es lo
+   * que hace que la misma dirección sirva para el navegador, el simulador y el
+   * emulador. Con ese módulo, poner `EXPO_PUBLIC_API_URL=http://localhost:4000` en
+   * el `.env.local` lo arregla todo y este bloque sobra: se puede borrar entero.
+   * Está aquí porque el `.env.local` es de quien lo tiene y cambiarlo no es cosa
+   * de un script, y duplicar una solución buena en la herramienta de pruebas es
+   * peor que tener un apaño declarado como tal.
+   */
+  await send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `
+      (() => {
+        const real = window.fetch;
+        const url = (entrada) =>
+          typeof entrada === "string" ? entrada : (entrada && entrada.url) || "";
+        const mover = (destino) => (entrada, init) => {
+          if (typeof entrada === "string") {
+            return real(entrada.replace("10.0.2.2:4000", destino), init);
+          }
+          if (entrada && entrada.url && entrada.url.indexOf("10.0.2.2:4000") >= 0) {
+            return real(entrada.url.replace("10.0.2.2:4000", destino), init);
+          }
+          return real(entrada, init);
+        };
+        window.fetch = mover("localhost:4000");
+        // Y lo mismo para XHR, por si un camino usa el otro.
+        const abrir = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (metodo, ruta, ...resto) {
+          return abrir.call(this, metodo, String(ruta).replace("10.0.2.2:4000", "localhost:4000"), ...resto);
+        };
+      })();
+    `,
+  });
+
   return {
     targetId: target.id,
     send,

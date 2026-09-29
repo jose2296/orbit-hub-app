@@ -56,7 +56,6 @@ export interface NoteChanges {
   document?: string;
   folderId?: string | null;
   tags?: string[];
-  favorite?: boolean;
 }
 
 /**

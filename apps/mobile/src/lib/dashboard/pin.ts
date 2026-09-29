@@ -1,4 +1,4 @@
-import type { DashboardWidget, Folder, List } from "@orbit-hub/contracts";
+import type { DashboardWidget, Folder, List, Note } from "@orbit-hub/contracts";
 
 import { MIN_CARD_COLUMNS, MIN_CARD_ROWS, pageCount, pageForNewCard } from "./panel";
 
@@ -92,17 +92,18 @@ export function isFolderPinned(
 /**
  * The layout with a list pinned to it, or the same one when it already is.
  *
- * It goes on the first screen that still has room, and past that on the last
- * screen there is. A card that landed on top of another one hides it, and a
- * panel where half the cards are unreachable is worse than a long one.
+ * `preferred` is the screen the person is looking at, and it wins when it has
+ * room: pinning a list and finding it two screens away is the app having decided
+ * where your card goes instead of asking where you are. See `pageForNewCard`.
  */
 export function withPinnedList(
   layout: DashboardWidget[],
   list: List,
+  preferred?: number,
 ): DashboardWidget[] {
   if (isPinned(layout, list.id)) return layout;
 
-  const page = pageForNewCard(layout, NEW_CARD);
+  const page = pageForNewCard(layout, NEW_CARD, preferred);
   return [...layout, { ...listWidget(list), page }];
 }
 
@@ -116,11 +117,65 @@ export function withPinnedList(
 export function withPinnedFolder(
   layout: DashboardWidget[],
   folder: Folder,
+  preferred?: number,
 ): DashboardWidget[] {
   if (isFolderPinned(layout, folder.id)) return layout;
 
-  const page = pageForNewCard(layout, NEW_CARD);
+  const page = pageForNewCard(layout, NEW_CARD, preferred);
   return [...layout, { ...folderWidget(folder), page }];
+}
+
+/**
+ * The card for a note, which is a note on the panel.
+ *
+ * The same shape as a list's card and for the same reason: the card says which
+ * note it is and the panel reads it, so a note pinned from two places is one card
+ * and deleting the note takes the card with it.
+ *
+ * A note used to also have a star. It did not, as a feature: a star was a second
+ * way of saying "I want this near me" that nothing acted on, and there were two of
+ * them on screen — the star in the list and the card on the panel — saying the
+ * same thing differently. This is the one that puts it somewhere.
+ */
+export function noteWidget(note: Note): DashboardWidget {
+  return {
+    id: `note:${note.id}`,
+    kind: "recent_notes",
+    x: 0,
+    y: 0,
+    w: NEW_CARD.w,
+    h: NEW_CARD.h,
+    page: 0,
+    pinned: true,
+    settings: {
+      noteId: note.id,
+      title: note.title,
+    },
+  };
+}
+
+/** The layout with a note pinned to it, or the same one when it already is. */
+export function withPinnedNote(
+  layout: DashboardWidget[],
+  note: Note,
+  preferred?: number,
+): DashboardWidget[] {
+  if (isNotePinned(layout, note.id)) return layout;
+
+  const page = pageForNewCard(layout, NEW_CARD, preferred);
+  return [...layout, { ...noteWidget(note), page }];
+}
+
+export function isNotePinned(layout: DashboardWidget[], noteId: string): boolean {
+  return layout.some((widget) => widget.settings?.["noteId"] === noteId);
+}
+
+/** The layout without a note's card, and only that card. */
+export function withoutPinnedNote(
+  layout: DashboardWidget[],
+  noteId: string,
+): DashboardWidget[] {
+  return layout.filter((widget) => widget.settings?.["noteId"] !== noteId);
 }
 
 /** The layout without a list's card, and only that card. */

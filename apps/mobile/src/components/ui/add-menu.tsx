@@ -1,4 +1,4 @@
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useState, type ComponentProps, type ReactNode } from "react";
 
 import { Sheet, SheetOptions, type SheetOption } from "@/components/ui/sheet";
 
@@ -92,11 +92,28 @@ export function useAddMenu(options: AddMenuOption[]): {
   const [abierto, setAbierto] = useState(false);
   const solo = options.length === 1 ? options[0] : null;
 
+  /*
+   * Stable, and it is not a detail.
+   *
+   * These were two arrow functions written in the returned object literal, so
+   * `abrir` was a new function on every render. A screen that puts the plus in the
+   * header with `useHeaderAction` then had a new callback on every render, which
+   * redrew the header on every render, which re-rendered the layout — and the
+   * notes screen came up as `Maximum update depth exceeded` the first time
+   * anybody could actually reach it.
+   *
+   * `useCallback` with no dependencies is the whole fix, and it is exactly right
+   * here: `setAbierto` is stable for the life of the component and these two
+   * functions do nothing else.
+   */
+  const abrir = useCallback(() => setAbierto(true), []);
+  const cerrar = useCallback(() => setAbierto(false), []);
+
   return {
     directo: solo ? solo.onPress : null,
-    abrir: () => setAbierto(true),
-    cerrar: () => setAbierto(false),
-    abierto: abierto,
+    abrir,
+    cerrar,
+    abierto,
     menu: solo ? null : options,
   };
 }

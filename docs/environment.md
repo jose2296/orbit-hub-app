@@ -169,11 +169,39 @@ dashboard and check that `jrz-labs.com` shows **Verified** for both DKIM and SPF
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `EXPO_PUBLIC_API_URL` | no | `http://localhost:4000/api/v1` | Android emulator: `http://10.0.2.2:4000/api/v1`. Real phone: run `make device`, which injects the LAN address |
+| `EXPO_PUBLIC_API_URL` | no | `http://localhost:4000/api/v1` | One value for all three targets. Real phone: run `make device`, which injects the LAN address |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB` | no | unset | Web client id. Falls back to `EXPO_PUBLIC_GOOGLE_CLIENT_ID` |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID` | no | unset | Android client id. Public by design |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS` | no | unset | iOS client id. Public by design |
 | `EXPO_PUBLIC_GOOGLE_REDIRECT_URI` | no | `orbithub://auth/google` | Native only. On web the redirect is derived from the page origin |
+
+### Un solo `EXPO_PUBLIC_API_URL` para los tres targets
+
+Los tres targets no coinciden en qué es `localhost`:
+
+| Target | Dónde corre | Host correcto |
+| --- | --- | --- |
+| Web | en la máquina que sirve la API | `localhost:4000` |
+| Simulador iOS | en la máquina que sirve la API | `localhost:4000` |
+| Emulador Android | detrás de su router virtual | `10.0.2.2:4000` |
+| Teléfono físico | en otra máquina, por WiFi | IP LAN, la inyecta `make device` |
+
+`EXPO_PUBLIC_*` se compila dentro del bundle, así que **no** puede tener un valor distinto por
+target. Y Expo no tiene ficheros `.env` por plataforma: sólo `.env.<mode>` y `.env.local`, que
+aplican a todo por igual (`node_modules/@expo/env` es donde está la lista).
+
+Por eso la diferencia la resuelve `apps/mobile/src/lib/api/host.ts` en runtime: si la plataforma
+es Android y el host es un loopback (`localhost`, `127.0.0.1`, `[::1]`), lo cambia por
+`10.0.2.2` conservando puerto y ruta. Cualquier otro host se deja como está, así que una API
+desplegada, un túnel y la IP LAN de `make device` siguen funcionando sin tocar nada.
+
+**No pongas el host en `apps/mobile/.env.local`.** Tiene más prioridad que `.env` y sus valores
+valen para los tres targets a la vez: apuntar la API a `10.0.2.2` para el emulador rompe la web
+al mismo tiempo. El fallo es silencioso — la app arranca, lee la caché y cada petición se cae
+sin que se vea un solo error. Es el error que más caro sale, porque parece que la app funciona.
+
+Cambiar un `EXPO_PUBLIC_*` exige reiniciar con `npx expo start --clear`: Metro cachea el bundle
+y el valor está congelado dentro.
 
 ---
 

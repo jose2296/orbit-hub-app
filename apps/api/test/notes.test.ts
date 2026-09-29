@@ -97,7 +97,6 @@ describe('notes', () => {
     expect(response.body.data.plainText).toBe('Salsa de tomate\nSeis tomates maduros.\nSal');
     expect(response.body.data.version).toBe(1);
     expect(response.body.data.attachmentCount).toBe(0);
-    expect(response.body.data.favorite).toBe(false);
   });
 
   it('refuses a document with a tag the editor does not produce', async () => {
@@ -200,35 +199,41 @@ describe('notes', () => {
     expect(titles).toContain('Segunda');
   });
 
-  it('filters by favourite and by tag', async () => {
+  it('filters by tag', async () => {
+    // No longer by favourite: a note is not starred. What goes on the panel is a
+    // card, and a star was a second, worse way of saying the same thing that
+    // nothing acted on.
     const user = await createVerifiedUser(api);
     const workspaceId = await createWorkspace(user, 'Filtros');
-    const starred = await create(user, {
+    const etiquetada = await create(user, {
       workspaceId,
-      title: 'Con estrella',
+      title: 'Con etiqueta',
       document: '<p>1</p>',
       tags: ['cocina'],
     });
     await create(user, { workspaceId, title: 'Normal', document: '<p>2</p>' });
 
-    await api.request(`/notes/${starred.body.data.id}`, {
+    const tagged = await api.get(`/notes?workspaceId=${workspaceId}&tag=cocina`, user.accessToken);
+    expect(tagged.body.data.items.map((i: { title: string }) => i.title)).toEqual([
+      'Con etiqueta',
+    ]);
+
+    /*
+     * And there is no star to set.
+     *
+     * A client from before the removal still sends it, and the answer is 200 with
+     * the field gone: Zod drops what it does not know rather than refusing the
+     * whole request, which is what every other field in this API does. Pinning a
+     * note to the panel is the thing that replaced it, and that is a card and not
+     * a field on the note.
+     */
+    const starred = await api.request(`/notes/${etiquetada.body.data.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ favorite: true, expectedVersion: 1 }),
       headers: { 'content-type': 'application/json', authorization: `Bearer ${user.accessToken}` },
     });
-
-    const favourites = await api.get(
-      `/notes?workspaceId=${workspaceId}&favorite=true`,
-      user.accessToken,
-    );
-    expect(favourites.body.data.items.map((i: { title: string }) => i.title)).toEqual([
-      'Con estrella',
-    ]);
-
-    const tagged = await api.get(`/notes?workspaceId=${workspaceId}&tag=cocina`, user.accessToken);
-    expect(tagged.body.data.items.map((i: { title: string }) => i.title)).toEqual([
-      'Con estrella',
-    ]);
+    expect(starred.status).toBe(200);
+    expect(starred.body.data).not.toHaveProperty('favorite');
   });
 
   it('updates a note and moves its version forward', async () => {

@@ -39,6 +39,24 @@ export interface ScreenProps {
   edgeToEdge?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /**
+   * Something that has to stay put while the page scrolls.
+   *
+   * The floating button, and the reason it is a prop and not just a child.
+   *
+   * `position: fixed` means "fixed to the window", but that stops being true the
+   * moment an ancestor has a `transform`, because a transformed element becomes
+   * the containing block for its fixed descendants. On Android and iOS nothing in
+   * the tree does that and the button sits in the corner. On the web, React Native
+   * puts an identity `transform` on every `ScrollView`, so a button handed to a
+   * scrolling screen as a child is inside the scroller and the browser quietly
+   * makes it behave like `absolute` — the button scrolls away, and the measurement
+   * says it moved up by exactly the scroll.
+   *
+   * So the children go in the scroller and this goes beside it, in the same
+   * keyboard-avoiding view, where nothing transforms it.
+   */
+  overlay?: ReactNode;
 }
 
 /**
@@ -64,6 +82,7 @@ export function Screen({
   edgeToEdge = false,
   style,
   testID,
+  overlay,
 }: ScreenProps) {
   const theme = useTheme();
 
@@ -113,6 +132,12 @@ export function Screen({
         style={styles.flex}
       >
         {content}
+        {/*
+          A sibling of the scroller and not a child of it, and the comment on
+          `overlay` is the reason: a child of a `ScrollView` cannot be fixed to
+          the window on the web.
+        */}
+        {overlay}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

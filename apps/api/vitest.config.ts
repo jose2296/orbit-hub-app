@@ -9,6 +9,19 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.test.ts'],
     globals: false,
+    /**
+     * Booting the in-memory Postgres and replaying every migration is the
+     * `beforeAll` of twenty files, and vitest's ten seconds is a default nobody
+     * chose rather than a statement about how long a schema takes. Fifteen
+     * migrations across nine workers at once went over it, and the symptom was
+     * nine files reporting a hook timeout with no migration named — which reads
+     * as "the database is broken" and is not.
+     *
+     * It scales with the schema rather than being a number that has to be
+     * raised again on every migration: sixty seconds is not a budget for a
+     * test, it is room for the slowest worker on the slowest machine.
+     */
+    hookTimeout: 60_000,
     env: {
       NODE_ENV: 'test',
       // Captures emails in memory so tests can read the verification links.

@@ -3,9 +3,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppText } from '@/components/ui/text';
 import { SessionProvider, useSession } from '@/hooks/use-session';
 import { I18nProvider, useTranslation } from '@/lib/i18n';
 import { ThemeProvider, useTheme } from '@/theme';
@@ -93,6 +95,56 @@ function Navigation() {
             invitation is the person who is not signed in yet. */}
         <Stack.Screen name="invite/[token]" options={{ title: t('invite.title') }} />
       </Stack>
+      {/*
+        Something to look at while the session is being restored.
+
+        There was nothing here, and on the web that is a blank white page for as
+        long as the check takes — which, with a slow or absent API, was the full
+        fifteen seconds of the request timeout. On iOS and Android the splash
+        covers it, which is why this was never obviously a problem and is one
+        every time the app is opened in a browser: the person cannot tell an app
+        that is thinking from a page that is broken.
+
+        So the wait is drawn rather than assumed. The colour is the app's own
+        background, so this is the app arriving and not a dialog over it, and the
+        only thing on it is the word that names what is happening.
+
+        And it is **after** the stack, not before it: rendered first, the
+        navigation paints over it — the layout below returns `null` while it
+        waits, but `null` is not transparent, the stack's own background covers
+        the overlay and what is left on screen is the same empty page this was
+        written to remove. Measured, because the element was in the DOM with its
+        text in it and the screenshot was a flat colour.
+      */}
+      {status === 'loading' ? (
+        <View
+          testID="session-booting"
+          accessibilityRole="progressbar"
+          accessibilityLabel={t('common.loading')}
+          style={[
+            styles.booting,
+            { backgroundColor: theme.colors.background, padding: theme.spacing.xl },
+          ]}
+        >
+          <AppText variant="callout" tone="subtle" align="center">
+            {t('common.loading')}
+          </AppText>
+        </View>
+      ) : null}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  booting: {
+    // Las cuatro propiedades escritas, y no `absoluteFillObject`: ese nombre no
+    // existe en los tipos de esta version y se ve al compilar.
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

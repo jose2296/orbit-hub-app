@@ -1,5 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -112,6 +120,10 @@ export function DraggableRow({
     [id, index, onReorder, total],
   );
 
+  const marcarArrastrada = useCallback(() => {
+    recienArrastrado.current = true;
+  }, []);
+
   const setDraggingState = useCallback(
     (value: boolean) => {
       setDragging(value);
@@ -158,12 +170,47 @@ export function DraggableRow({
       isDragging.value = false;
       if (sort) sort.draggingId.value = null;
       runOnJS(setDraggingState)(false);
+      runOnJS(marcarArrastrada)();
     })
     .onFinalize(() => {
       translateY.value = withSpring(0, { damping: 18, stiffness: 220 });
       isDragging.value = false;
       if (sort) sort.draggingId.value = null;
     });
+
+  /**
+   * The row was just dropped, and the click that ends the drag must not count.
+   *
+   * On native the tap that follows a drag is cancelled by the responder system
+   * and none of this is needed. On the web it is not: a `Pressable` is a DOM
+   * `click`, the browser fires one whenever the press and the release land on
+   * the same element, and the gesture takes pointer capture on this row so they
+   * always do — however far the finger travelled. So the drop was a drag *and* a
+   * tap, and every row that opens on tap opened itself at the end of every drag.
+   *
+   * Which is why the symptom looked like the drag not working: the order did
+   * change, and the screen navigated away a moment later, so the arrangement was
+   * never seen to have held.
+   */
+  const recienArrastrado = useRef(false);
+  const wrapperRef = useRef<View>(null);
+
+  useEffect(() => {
+    const nodo = wrapperRef.current as unknown as HTMLElement | null;
+    // `addEventListener` only exists on a DOM node, which is the whole point:
+    // on iOS and Android this is not a branch, it is a no-op.
+    if (!nodo?.addEventListener) return;
+    const alPulsar = (event: Event) => {
+      if (!recienArrastrado.current) return;
+      recienArrastrado.current = false;
+      // In the capture phase and not the bubble one, because the row's own
+      // `onPress` has already been bound by the time anything could stop it.
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    nodo.addEventListener('click', alPulsar, true);
+    return () => nodo.removeEventListener('click', alPulsar, true);
+  }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -210,6 +257,7 @@ export function DraggableRow({
 
   return (
     <View
+      ref={wrapperRef}
       style={styles.wrapper}
       onLayout={(event) => {
         setAncho(event.nativeEvent.layout.width);
@@ -255,6 +303,16 @@ export function DraggableRow({
     </View>
   );
 }
+
+/**
+ * The room the handle takes on the right of a row.
+ *
+ * Exported because the row has to end before it, and a row that does not is a
+ * row whose name runs under the handle: the number was written down twice — once
+ * here as `right: 8` plus the padding of the glyph, and once in the row as a
+ * guess — and the two of them only agreed because somebody typed 28.
+ */
+export const DRAG_HANDLE_WIDTH = 28;
 
 const ROW_HEIGHT_DEFAULT = 64;
 

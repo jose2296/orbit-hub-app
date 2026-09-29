@@ -520,6 +520,43 @@ describe("pageForNewCard", () => {
     const full = Array.from({ length: MAX_PAGES }, (_, page) => fullScreen(page)).flat();
     expect(pageForNewCard(full, { w: 2, h: 2 })).toBe(MAX_PAGES - 1);
   });
+
+  it("puts the card on the screen the person is looking at", () => {
+    // The rule that changed. Both screens here have room, so the old answer —
+    // the first with room — and this one disagree, and the difference is the whole
+    // of it: pinning something while looking at the second screen and finding it
+    // on the first is the app answering a different question than the one asked.
+    const dosConHueco = [
+      widget("una", 2, 2, 0, { x: 0, y: 0 }),
+      widget("dos", 2, 2, 1, { x: 0, y: 0 }),
+    ];
+    expect(pageForNewCard(dosConHueco, { w: 2, h: 2 }, 1)).toBe(1);
+    // And with no screen named, the old answer stands: the first with room.
+    expect(pageForNewCard(dosConHueco, { w: 2, h: 2 })).toBe(0);
+  });
+
+  it("ignores a screen that is full, rather than landing the card on top of something", () => {
+    // Looking at a screen with no room. The search continues as it did, so the
+    // card goes somewhere it fits instead of on top of something.
+    const primeraLlena = [widget("suelta", 2, 2, 0, { x: 0, y: 0 })];
+    expect(pageForNewCard(primeraLlena, { w: 2, h: 2 }, 0)).toBe(0);
+    const todoLleno = [...fullScreen(0), ...fullScreen(1)];
+    expect(pageForNewCard(todoLleno, { w: 2, h: 2 }, 0)).toBe(2);
+  });
+
+  it("ignores a screen that does not exist", () => {
+    // A caller that has not caught up with a panel that lost a screen. Clamping
+    // the number would put the card on a screen the person cannot reach, and the
+    // alternative — returning the number as given — would name a screen that does
+    // not exist and the card would never be drawn.
+    const conHueco = [
+      widget("una", 2, 2, 0, { x: 0, y: 0 }),
+      widget("dos", 2, 2, 1, { x: 0, y: 0 }),
+    ];
+    expect(pageForNewCard(conHueco, { w: 2, h: 2 }, 5)).toBe(0);
+    expect(pageForNewCard(conHueco, { w: 2, h: 2 }, -1)).toBe(0);
+    expect(pageForNewCard(conHueco, { w: 2, h: 2 }, 1.5)).toBe(0);
+  });
 });
 
 describe("fits", () => {

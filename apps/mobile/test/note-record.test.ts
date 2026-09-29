@@ -27,9 +27,9 @@ const FULL: Note = {
   title: 'Salsa',
   document: '<p>Seis tomates</p>',
   plainText: 'Seis tomates',
-  favorite: true,
   tags: ['cocina'],
   attachmentCount: 2,
+  position: 4,
   deletedAt: null,
 };
 
@@ -55,9 +55,11 @@ describe('newNote', () => {
       title: 'Salsa',
       document: '<p>Seis tomates</p>',
       plainText: '',
-      favorite: false,
-      tags: [],
+        tags: [],
       attachmentCount: 0,
+      // Cero, y no "sin valor": una nota nueva no está colocada a mano en el
+      // orden de su carpeta y el navegador pone las de valor cero al final.
+      position: 0,
       deletedAt: null,
     });
   });
@@ -94,7 +96,6 @@ describe('withNoteDefaults', () => {
     expect(note.document).toBe('');
     expect(note.title).toBe('');
     expect(note.tags).toEqual([]);
-    expect(note.favorite).toBe(false);
     expect(note.attachmentCount).toBe(0);
     expect(note.deletedAt).toBeNull();
     expect(note.version).toBe(0);
@@ -152,7 +153,6 @@ describe('filtering and ordering', () => {
     workspaceId: 'w2',
     folderId: null,
     title: 'Pan',
-    favorite: false,
     tags: [],
     updatedAt: '2026-01-03T00:00:00.000Z',
   };
@@ -168,10 +168,6 @@ describe('filtering and ordering', () => {
     expect(applyNoteFilters(all, { folderId: 'f1' }).map((n) => n.id)).toEqual(['n1']);
     expect(applyNoteFilters(all, { folderId: null }).map((n) => n.id)).toEqual(['n2']);
     expect(applyNoteFilters(all, {}).map((n) => n.id)).toEqual(['n1', 'n2']);
-  });
-
-  it('by favourite', () => {
-    expect(applyNoteFilters(all, { favorite: true }).map((n) => n.id)).toEqual(['n1']);
   });
 
   it('by tag', () => {

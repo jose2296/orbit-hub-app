@@ -19,6 +19,8 @@ export interface NewNoteInput {
   title: string;
   document?: string;
   tags?: string[];
+  /** Where it sits in its folder's hand-made order. Absent means the end. */
+  position?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -39,7 +41,7 @@ export function newNote(input: NewNoteInput): Note {
     // the text that search matches on cannot be allowed to disagree. The server
     // derives it again on write, so this is the local copy of the same rule.
     plainText: "",
-    favorite: false,
+    position: input.position ?? 0,
     // A fresh array, not a shared constant: one note's labels must not appear on
     // every other note the moment somebody types one.
     tags: input.tags ? [...input.tags] : [],
@@ -78,12 +80,15 @@ export function withNoteDefaults(value: unknown): Note {
       typeof record.plainText === "string"
         ? record.plainText
         : noteDocumentToPlainText(document),
-    favorite: record.favorite === true,
     // An array and not just present: a payload carrying a string where the
     // contract says a list is a note that cannot be filtered or counted.
     tags: Array.isArray(record.tags) ? (record.tags as string[]) : [],
     attachmentCount:
       typeof record.attachmentCount === "number" ? record.attachmentCount : 0,
+    // Cero y no "sin valor": una nota guardada antes de que existiera el orden
+    // tiene que poder leerse igual, y el navegador pone las que valen cero al
+    // final para que no salten a la cabeza de un sitio ya colocado.
+    position: typeof record.position === "number" ? Math.max(0, record.position) : 0,
     deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
   };
 }
@@ -103,7 +108,6 @@ export function notePreview(note: Note): string {
 export interface NoteFilters {
   workspaceId?: string;
   folderId?: string | null;
-  favorite?: boolean;
   tag?: string;
 }
 
@@ -121,9 +125,6 @@ export function applyNoteFilters(notes: Note[], filters: NoteFilters): Note[] {
       return false;
     }
     if (filters.folderId !== undefined && note.folderId !== filters.folderId) {
-      return false;
-    }
-    if (filters.favorite !== undefined && note.favorite !== filters.favorite) {
       return false;
     }
     if (filters.tag !== undefined && !note.tags.includes(filters.tag)) {
