@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -109,9 +108,18 @@ export function AppHeader({ options, children }: AppHeaderProps) {
     >
       {espacio ? (
         /*
-          The wash fills the bar and stops at the bar. A gradient that ran down the
-          screen would tint every row behind it, and a list read against a colour
-          is a list somebody has to fight to read.
+          El lavado de la barra, y **llega hasta su borde sin apagarse**.
+
+          Antes se desvanecía dentro de la barra, con lo que en su borde de abajo ya
+          era el color del fondo; y entonces la banda de debajo, que vuelve a
+          empezar con el color entero, se találaba contra ella. Dos mitades que cada
+          una se apaga en su propio borde dejan un escalón de saturación justo
+          donde el ojo ya espera un cambio de pantalla.
+
+          Así que la barra **no se apaga**: pinta el color entero y lo corta en seco
+          en su borde, y la banda de `Screen` lo recoge desde ahí y es la única que
+          se desvanece, 100 puntos más abajo. Un solo lavado, un solo desvanecido y
+          una sola costura.
         */
         <View style={styles.fondo} pointerEvents="none">
           <SpaceWash
@@ -120,44 +128,12 @@ export function AppHeader({ options, children }: AppHeaderProps) {
             wash={espacio.wash ?? undefined}
             style={styles.lavado}
           />
-          {/*
-            El velo, y es lo que baja el saturado.
-
-            El lavado entero de la barra es **mucho** color: con un espacio teal o
-            indigo se ve bonito y con uno rojo la barra parece un aviso. Y no es
-            que el rojo sea feo, es que una barra es un sitio donde se dibuja texto
-            y una funcion, no un cartel.
-
-            Asi que el lavado se ve **atenuado**: un velo del color del fondo por
-            encima, que deja la forma del degradado —que es lo que identifica el
-            espacio— y se lleva la intensidad. Es el mismo washing que se llevo el
-            tinte de las cabeceras que se quitaron, y por el mismo motivo: la
-            intensity no es informacion, el color si.
-
-            Y por eso el titulo pasa al color del tema. El wash sabe que color va
-            **encima de el**, pero esa respuesta es para el lavado entero, y con el
-            velo de encima ya no es el fondo real del titulo: el color del tema es lo
-            unico que se puede prometer que se lee, porque es el color del fondo que
-            hay debajo del velo.
-          */}
+          {/* El velo, y es el **mismo** que el de la banda de `Screen`. */}
           <View
-            style={[styles.velo, { backgroundColor: theme.colors.background, opacity: VELO }]}
-          />
-
-          {/*
-            El corte de abajo, y esto es lo que lo quita.
-
-            Un lavado que llena la barra se acaba donde acaba la barra, y ahi hay un
-            borde recto de color contra el fondo del contenido: se ve, y más cuanto
-            más saturado es el color del espacio. La mitad baja del lavado se
-            desvanece **a transparente** antes de llegar al borde, asi que en el
-            ultimo pixel ya es el fondo del tema y el paso no existe. Y por eso el
-            filo de la barra se quita cuando hay lavado: una linea de un pixel
-            seria el corte que acabamos de borrar, dibujado encima.
-          */}
-          <LinearGradient
-            colors={['transparent', theme.colors.background]}
-            style={styles.desvanecido}
+            style={[
+              styles.velo,
+              { backgroundColor: theme.colors.background, opacity: VELO },
+            ]}
           />
         </View>
       ) : null}
@@ -236,18 +212,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  desvanecido: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    // **Dentro** de la barra, y por los dos tercios de abajo: el color tiene que
-    // apagarse antes del borde, no en el borde. Un desvanecido que sobresale hacia
-    // el contenido se lleva por delante la linea de la primera fila, y una linea
-    // de la primera fila que no esta donde esta en las demas pantallas es peor que
-    // un corte de un pixel.
-    bottom: 0,
-    height: '68%',
   },
   fila: {
     flexDirection: 'row',

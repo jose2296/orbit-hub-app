@@ -1,4 +1,3 @@
-import { LinearGradient } from "expo-linear-gradient";
 import type { ReactNode } from "react";
 import {
   KeyboardAvoidingView,
@@ -10,9 +9,8 @@ import {
 import type { StyleProp, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { SpaceWash } from "@/components/ui/wash";
 import { READING_WIDTH } from "@/lib/layout/measure";
-import { VELO, type WashVariant } from "@/lib/workspace/wash";
+import { SpaceBand, type SpaceBandProps } from "@/components/workspace/space-band";
 import { useTheme } from "@/theme";
 
 export interface ScreenProps {
@@ -61,26 +59,24 @@ export interface ScreenProps {
    */
   overlay?: ReactNode;
   /**
-   * The space's wash, behind the content, at the top of the screen.
+   * The space's wash, behind the content, continuing down from the header.
    *
-   * **The panel, and only the panel.** The header is 56 points on every screen and
-   * does not move; this is the other half of the same colour, the part that is big
-   * enough to be a background rather than a bar. Between the two, a space's colour
-   * is where it was before the bands came and went: a thin line of it on top and a
-   * wash that thins out under the first rows.
+   * **The other half of the same colour.** The header paints the first 56 points
+   * and this picks it up from exactly there and carries it 100 more before it is
+   * gone. One wash, two mitades, and they meet: which is why the header does not
+   * fade inside its own bar — if it faded there, the two halves would each end at
+   * their own edge and there would be a step of saturation right where the eye is
+   * already looking for a change of screen.
    *
-   * `null` — the default, and what the other screens pass — is no wash at all, and
-   * they did not have to be taught anything about it.
+   * **The header's height does not change.** The band is painted *behind* the
+   * content and not added to the bar, so the first row of every screen starts at
+   * 56 points whatever the space's colour is. Measured on three screens: 56, 56, 56.
+   *
+   * `null` — the default, and what the screens outside a space pass — is no wash at
+   * all, and they did not have to be taught anything about it.
    */
-  wash?: {
-    color?: string | null;
-    colorTo?: string | null;
-    wash?: WashVariant | null;
-  } | null;
+  wash?: SpaceBandProps | null;
 }
-
-/** How much of the screen the wash reaches down before it is gone. */
-const ALTO_LAVADO = 320;
 
 /**
  * Base screen: safe areas, background colour, an optional scroll container and
@@ -139,38 +135,16 @@ export function Screen({
     el. Y es un hermano, no un fondo del `SafeAreaView`, porque un fondo pinta detras
     de los hijos y no se puede desvanecer a algo que esta delante.
 
-    La altura es un numero y no un porcentaje a proposito: 320 puntos son casi la
-    mitad de un movil de 844 y menos de un tercio de una pantalla alta, asi que el
-    lavado llega mas alla de la primera fila —que es lo que lo hace un fondo y no
-    una barra— sin teñir una lista entera. Y como se desvanece a lo largo de esos
-    320, un alto equivocado se nota menos que un borde: se apaga antes o despues.
+    Empieza en `top: 0` de la pantalla, que es **justo** donde acaba la cabecera: el
+    navegador reserva la barra y pone la pantalla debajo, sin hueco. Asi que esta
+    banda y el lavado de la cabecera son el mismo lavado continuedo, no dos piezas
+    que se tocan.
+
+    Y son 100 puntos, no 320, porque el alto de la banda es una decision que se
+    nota: bastante para que el degradado se vea —que es lo que se pidio— y no tanto
+    que detrás de el haya una lista entera teñida.
   */
-  const fondo = wash ? (
-    <View pointerEvents="none" style={styles.lavado}>
-      <SpaceWash
-        colorKey={wash.color}
-        colorToKey={wash.colorTo}
-        wash={wash.wash ?? undefined}
-        style={styles.lavadoCaja}
-      />
-      {/*
-        El velo, y es el **mismo** que el de la cabecera y el del panel. No por
-        gusto: los dos se tocan, y dos sitio que cada uno atenua a su manera
-        dejan un escalon de saturacion justo donde el ojo ya espera un cambio de
-        pantalla, y un escalon se lee como un error aunque nadie sepa nombrarlo.
-      */}
-      <View
-        style={[
-          styles.lavadoVelo,
-          { backgroundColor: theme.colors.background, opacity: VELO },
-        ]}
-      />
-      <LinearGradient
-        colors={["transparent", theme.colors.background]}
-        style={styles.lavadoDesvanecido}
-      />
-    </View>
-  ) : null;
+  const fondo = wash ? <SpaceBand {...wash} /> : null;
 
   const content = scroll ? (
     <ScrollView
@@ -219,33 +193,6 @@ const styles = StyleSheet.create({
   full: {
     width: "100%",
     alignSelf: "center",
-  },
-  lavado: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: ALTO_LAVADO,
-    overflow: "hidden",
-  },
-  lavadoCaja: {
-    flex: 1,
-  },
-  lavadoVelo: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  lavadoDesvanecido: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // Se apaga en la mitad de abajo: el color tiene que estar cuando empieza el
-    // contenido —si no, esto no es un fondo— y no cuando se acaba.
-    height: "58%",
   },
 });
 

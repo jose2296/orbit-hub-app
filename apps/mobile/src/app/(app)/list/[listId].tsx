@@ -515,6 +515,12 @@ export default function ListScreen() {
   return (
     <Screen
       scroll={false}
+      /*
+        La banda del color del espacio: la mitad de abajo de un lavado que empieza
+        en la cabecera y la continua 100 puntos por debajo de su borde. La pinta la
+        pantalla y no la cabecera, y por eso el alto de la barra no cambia.
+      */
+      wash={{ color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }}
     >
       {/* El provider va alrededor de la lista y no en cada fila: las filas
           comparten el estado del arrastre por contexto, y son las tres cifras

@@ -1035,6 +1035,30 @@ entera.
 Va **detrás del scroller y no dentro**, por lo mismo que el botón flotante: en la web un hijo de un
 `ScrollView` está dentro de él y se va con el desplazamiento.
 
+#### La banda: 100 puntos por debajo de la cabecera, y un solo desvanecido
+
+El color de un espacio son **dos mitades y un solo desvanecido**. La barra de la cabecera pinta los
+primeros 56 puntos y **no se apaga**: llega entero a su borde y lo corta ahí. `SpaceBand` lo recoge
+desde ese mismo borde y lo lleva **100 puntos más abajo**, y es la única pieza que se desvanece.
+
+Lo contrario se veía: la barra se desvanecía dentro de sí misma y la banda volvía a empezar con el
+color entero, y las dos dejaban un **escalón de saturación justo en la frontera** — justo donde el
+ojo ya espera un cambio de pantalla. Un escalón se lee como un error aunque nadie sepa nombrarlo.
+Con una sola costura y un solo desvanecido no hay escalón: hay un degradado.
+
+**La banda no le añade alto a nada.** Va posicionada en el `top` de la pantalla con un alto propio y
+sin `bottom`, así que la primera fila de cada pantalla empieza donde empezaba antes de que la banda
+existiera. Medido en el panel, en una lista y fuera de un espacio: **56, 56, 56**.
+
+**Quién la pide.** Las cinco pantallas que dicen con `useScreenSpace` cuál es su espacio: panel,
+carpeta, lista, nota y plantilla. La nota no usa `Screen` —es un editor y lleva su contenedor
+propio—, así que monta `SpaceBand` a mano, que es la razón de que el componente exista suelto en
+vez de ser un prop y nada más. Las demás pantallas no pasan nada y no han tenido que aprender
+nada: `null` es la respuesta.
+
+Los 100 puntos son una decisión, no un redondeo: bastante para que el degradado **se vea** —que es
+lo que se pidió— y no tanto que detrás haya una lista entera teñida.
+
 #### Un velo, y por qué es un número solo
 
 El velo estaba en la cabecera con su propio 45%, y el fondo del panel lo he puesto sin él: se veía

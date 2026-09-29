@@ -40,6 +40,7 @@ import {
 } from "@/lib/notes/autosave";
 import { hasReachedServer } from "@/lib/notes/placement";
 import { useWorkspaces } from "@/hooks/use-workspaces";
+import { SpaceBand } from "@/components/workspace/space-band";
 import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useTheme } from "@/theme";
 
@@ -428,6 +429,17 @@ export default function NoteScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      {/*
+        La banda del color del espacio, como en las otras pantallas. Esta no usa
+        `Screen` —es un editor y lleva su propio contenedor— y el color del
+        espacio es el mismo aqui que en el panel: lo dice `useScreenSpace` y lo
+        dibuja el mismo componente, en las dos mitadas.
+      */}
+      <SpaceBand
+        color={espacio?.color}
+        colorTo={espacio?.colorTo}
+        wash={espacio?.wash}
+      />
       <TextField
         value={title}
         onChangeText={(value) => {

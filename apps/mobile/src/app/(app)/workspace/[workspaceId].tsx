@@ -180,13 +180,14 @@ export default function WorkspaceScreen() {
   return (
     <Screen
       /*
-        El lavado grande, aqui y en ningun otro sitio.
+        La banda del color del espacio: la mitad de abajo de un lavado que empieza
+        en la cabecera y la continua 100 puntos por debajo de su borde.
 
-        La cabecera lleva la linea fina del color y ocupa los mismos 56 puntos en
-        todas las pantallas; esto es la parte que es **grande**, la que llega por
-        debajo de la primera fila y se apaga. En el resto de pantallas no hay
-        nada: una lista con un tinte detras de cada fila es una lista que hay que
-        leer contra un color.
+        La pinta la pantalla y no la cabecera, y esa distincion es lo que deja el
+        alto de la barra quieto —56 en todas las pantallas, medido en el panel, en
+        una lista y fuera de un espacio—, porque anadir el desvanecido a la caja de
+        la cabecera Bajaba el contenido 28 puntos y hacia que dos pantallas con la
+        misma barra tuvieran la misma linea de titulo.
       */
       wash={
         workspace

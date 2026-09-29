@@ -305,7 +305,13 @@ export default function TemplateScreen() {
     return (
       <Screen
         width="reading"
-      >
+      /*
+        La banda del color del espacio: la mitad de abajo de un lavado que empieza
+        en la cabecera y la continua 100 puntos por debajo de su borde. La pinta la
+        pantalla y no la cabecera, y por eso el alto de la barra no cambia.
+      */
+      wash={{ color: espacio?.color, colorTo: espacio?.colorTo, wash: espacio?.wash }}
+>
         <EmptyState
           icon="cloud-offline-outline"
           title={t("note.templates.failedTitle")}

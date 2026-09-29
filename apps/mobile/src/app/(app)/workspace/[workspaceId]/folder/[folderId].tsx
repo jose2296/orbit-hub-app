@@ -205,6 +205,12 @@ export default function FolderScreen() {
 
   return (
     <Screen
+      /*
+        La banda del color del espacio: la mitad de abajo de un lavado que empieza
+        en la cabecera y la continua 100 puntos por debajo de su borde. La pinta la
+        pantalla y no la cabecera, y por eso el alto de la barra no cambia.
+      */
+      wash={{ color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }}
       overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
     >
       {/*
