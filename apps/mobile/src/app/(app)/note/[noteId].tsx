@@ -71,8 +71,18 @@ const MIME_WAIT_MS = 2_500;
  * the answer after the wait is an empty map, which is not a lie — it says the
  * same thing a note with no attachments says, and the effect of that is the
  * references staying references and the editor drawing its placeholder for them.
+ *
+ * **A note the server does not have is not asked about.** A note is written on the
+ * device first, so for the first seconds of its life there is nothing to ask and
+ * the answer is a 404. There is a second reason, and it is the one that decides:
+ * attachments hang off a note, so a note the server has never seen cannot have
+ * any. The answer is an empty map and no request — and the map is built here
+ * rather than by catching a failure, because this is not an interruption to
+ * recover from but a question that has no subject.
  */
-function attachmentMimes(noteId: string): Promise<ReadonlyMap<string, string>> {
+function attachmentMimes(noteId: string, onServer: boolean): Promise<ReadonlyMap<string, string>> {
+  if (!onServer) return Promise.resolve(new Map());
+
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(new Map()), MIME_WAIT_MS);
     void listAttachments(noteId).then(
@@ -100,25 +110,29 @@ export default function NoteScreen() {
   const { noteId } = useLocalSearchParams<{ noteId: string }>();
   const router = useRouter();
   const theme = useTheme();
-
-  /*
-    El color del espacio en la cabecera, y la nota es de un espacio aunque no lo
-    parezca: es una de las cinco pantallas que tienen algo que editar o borrar, y
-    la cabecera tiene que decir de que espacio es igual que dice el titulo de la
-    lista. Va despues de `note` porque el id del espacio sale de ella.
-  */
-  const { workspaces } = useWorkspaces();
-  useScreenSpace(
-    workspaces.find((item) => item.id === note?.workspaceId) ?? null,
-    theme.colors.text,
-    theme.colors.background,
-  );
-
   const t = useTranslation();
 
   const id = noteId ?? null;
   const { note, isLoading } = useNote(id);
   const { isOnline } = useNetworkStatus();
+
+  /*
+    El color del espacio en la cabecera, y la nota es de un espacio aunque no lo
+    parezca: es una de las cinco pantallas que tienen algo que editar o borrar, y
+    la cabecera tiene que decir de que espacio es igual que dice el titulo de la
+    lista.
+
+    **Despues de `note`, y no antes.** Lee `note?.workspaceId`, asi que tiene que
+    existir cuando esta linea corre. Estaba antes de la declaracion, y el fallo no
+    era de tipos: `note` es un `const` declarado mas abajo, y JavaScript lanza
+    `ReferenceError: Cannot access 'note' before initialization` — la pantalla
+    entera queda en blanco, sin editor y sin titulo, y en la consola sale el
+    nombre de una variable interna. El typecheck lo veia perfecto, porque el orden
+    de las lineas no es un tipo.
+  */
+  const { workspaces } = useWorkspaces();
+  const espacio = workspaces.find((item) => item.id === note?.workspaceId) ?? null;
+  useScreenSpace(espacio);
 
   const editorRef = useRef<EnrichedTextInputInstance | null>(null);
   const [title, setTitle] = useState("");
@@ -233,7 +247,9 @@ export default function NoteScreen() {
     let cancelled = false;
 
     void (async () => {
-      const mimes = await attachmentMimes(id);
+      // La misma pregunta que se le hace al componente de adjuntos, y por el mismo
+      // motivo: mientras el servidor no conozca la nota no hay nada que listar.
+      const mimes = await attachmentMimes(id, hasReachedServer(note));
       const localised = await localiseDocumentImages(
         note.document,
         (attachmentId) => mimes.get(attachmentId) ?? null,
@@ -248,7 +264,11 @@ export default function NoteScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id, note?.document, note?.id]);
+    // `note?.version` y no solo el documento, porque la version es lo que decide si
+    // hay algo que preguntar: una nota recien creada esta en 0 —no hay nada que
+    // listar— y al subir a 1 si, y sin esta dependencia la pasada se hacia una vez
+    // con la nota vacia y se quedaba ahi para siempre.
+  }, [id, note?.document, note?.id, note?.version]);
 
   // Leaving the screen must not leave a save behind. The back button, the
   // browser bar, a swipe and a call all arrive here.
@@ -368,6 +388,7 @@ export default function NoteScreen() {
   }, [onInsertImage]);
 
   if (isLoading) return <View style={{ flex: 1 }} />;
+
 
   if (!note) {
     return (
@@ -530,3 +551,4 @@ function statusLabel(
       return "";
   }
 }
+

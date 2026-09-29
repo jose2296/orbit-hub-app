@@ -14,7 +14,6 @@ import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useLists } from "@/hooks/use-lists";
 import { useNotes } from "@/hooks/use-notes";
 import { useScreenSpace } from "@/hooks/use-screen-space";
-import { useTheme } from "@/theme";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 
@@ -27,7 +26,6 @@ import { useTranslation } from "@/lib/i18n";
  * with a different folder.
  */
 export default function FolderScreen() {
-  const theme = useTheme();
   const t = useTranslation();
   const { workspaceId, folderId } = useLocalSearchParams<{
     workspaceId: string;
@@ -203,10 +201,12 @@ export default function FolderScreen() {
     se leen de dentro porque un hook que decide el color del fondo de la cabecera
     tambien tiene que poder decir con que texto se va a leer, y eso es del tema.
   */
-  useScreenSpace(workspace, theme.colors.text, theme.colors.background);
+  useScreenSpace(workspace);
 
   return (
-    <Screen overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}>
+    <Screen
+      overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
+    >
       {/*
         Sin banda. El color del espacio lo pone ahora la cabecera de la app, que
         es donde debe estar: una banda de color encima del contenido obligaba a

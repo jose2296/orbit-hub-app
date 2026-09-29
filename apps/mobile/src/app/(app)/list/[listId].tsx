@@ -130,10 +130,10 @@ export default function ListScreen() {
   );
 
   useScreenSpace(
-    list ? { id: list.workspaceId, color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash } : null,
-    theme.colors.text,
-    theme.colors.background,
-  );
+    list
+      ? { id: list.workspaceId, color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }
+      : null,
+  );;
 
   const {
     items,
@@ -513,7 +513,9 @@ export default function ListScreen() {
   const footer = null;
 
   return (
-    <Screen scroll={false}>
+    <Screen
+      scroll={false}
+    >
       {/* El provider va alrededor de la lista y no en cada fila: las filas
           comparten el estado del arrastre por contexto, y son las tres cifras
           que necesitan para apartarse. */}

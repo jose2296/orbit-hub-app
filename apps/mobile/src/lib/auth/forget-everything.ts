@@ -1,30 +1,64 @@
+import { STORAGE_KEYS } from '@/constants';
+import { keyValueStore } from '@/lib/storage/key-value';
+
 /**
- * Everything a session wrote, gone.
+ * Lo que una sesion dejo escrito, y que se va con ella.
  *
- * The cache, the outbox and the pull cursor belong to the session that wrote them.
- * `signOut` removed the tokens and left all three, so the next person to sign in
- * on that browser was shown the previous one's spaces, folders and note titles
- * while the server answered `items: []` — the two halves of the app disagreeing,
- * and the half a person could see belonged to somebody else.
+ * Todo lo que hay en `keyValueStore` no es de la persona: unas cosas son
+ * preferencias de *este* aparato y otras son de *esta sesion*, y la diferencia es
+ * la que decide lo que sobrevive a un cierre de sesion.
  *
- * It is its own module and not a line inside `auth-client` because the local store
- * is not the auth client's business: that module talks to the server and holds
- * tokens, and reaching into the outbox from there would make the two impossible to
- * change apart — or to test, since importing the store into the auth client drags
- * SQLite into every test that touches a token.
+ * Se van:
+ *
+ * - la cache, el outbox y los conflictos. La siguiente persona que entra en este
+ *   navegador se encontraba con los espacios, carpetas y titulos de la anterior
+ *   mientras el servidor contestaba `items: []` — dos mitades de la app
+ *   discrepando, y la que se veia era de otra persona.
+ *
+ * - **el cursor del pull**, y este no es solo datos que sobran: es un fallo de
+ *   correccion. El cursor es una marca de tiempo y el servidor devuelve solo lo
+ *   posterior a ella, asi que el siguiente login empieza a descargar *despues* de
+ *   donde acabo la sesion anterior. Todo lo que la cuenta nueva hubiera escrito
+ *   antes de ese instante — o que otro dispositivo suyo escribiera — no llega
+ *   nunca a ese navegador. No se ve como datos ajenos: se ve como una lista vacia
+ *   y un "todo al dia" que no es cierto, que es peor que no sincronizar.
+ *
+ * Se quedan:
+ *
+ * - `appearance` y `locale`. Son de la persona, pero de la persona *que usa este
+ *   aparato*, y volver a preguntar el tema en cada cierre de sesion es hacer que
+ *   alguien elija dos veces lo mismo.
+ *
+ * - `clientId`. Es la identidad del aparato y no de la cuenta: es justo lo que
+ *   tiene que sobrevivir para que el servidor reconozca el mismo telefono.
+ *
+ * Es su propio modulo y no una linea dentro de `auth-client` porque el store local
+ * no es asunto del cliente de auth: ese modulo habla con el servidor y guarda
+ * tokens, y llegar al outbox desde ahi haria que los dos fueran imposibles de
+ * cambiar por separado — o de probar, porque importar el store en el cliente de
+ * auth arrastra SQLite a cada test que toca un token.
  */
 export async function forgetEverything(): Promise<void> {
   try {
     const { getLocalStoreReady } = await import('@/lib/offline/local-store');
     const store = await getLocalStoreReady();
-    // `reset` for the outbox and the conflicts, `clearCache` for the rows and the
-    // app state. Both, and not one: the outbox is what would push the previous
-    // person's unsent writes under the *new* session's token.
+    // `reset` para el outbox y los conflictos, `clearCache` para las filas y el
+    // estado. Las dos, y no una: el outbox es lo que empujaria las escrituras sin
+    // enviar de la persona anterior bajo el token *nuevo*.
     await store.reset();
     await store.clearCache();
   } catch {
-    // Signing out has to work. The tokens are already gone by the time this runs,
-    // and that is the part that is a security matter; rows left behind are a mess
-    // the next sign-in can clean up.
+    // Cerrar sesion tiene que funcionar. Los tokens ya se fueron cuando esto
+    // corre, y esa es la parte que es un asunto de seguridad; las filas que queden
+    // las limpia el siguiente que entre.
   }
+
+  // El cursor y la marca de la ultima sincronizacion van aparte del store, que
+  // no los conoce: viven en el almacen de clave-valor, como las preferencias. Van
+  // fuera de su `try` porque no pueden fallar — `keyValueStore` ya se traga sus
+  // propios errores — y porque dejarlos atras por un fallo ajeno seria el
+  // silencio que este modulo existe para evitar.
+  keyValueStore.remove(STORAGE_KEYS.syncCursor);
+  keyValueStore.remove(STORAGE_KEYS.lastSyncedAt);
 }
+

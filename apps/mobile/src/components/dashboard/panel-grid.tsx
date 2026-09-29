@@ -832,13 +832,13 @@ export function PanelGrid({
    * next screen, was drawn there, and was still on the old one as soon as the page
    * was reloaded. Every check of the gesture said it worked.
    *
-   * So the card stays where its widget says it is and is drawn **on top of the
-   * screen, and a card that changes screen has to change component with it — so it
-   * does not change screen. It stays where the tree put it and moves by the width of
-   * a screen, which is what `pageOffset` is in `ScreenOfPanel`. Turning the screen
-   * moves the track under the card and the card stays under the hand, which is also
-   * how it is done on a home screen: the thing you are carrying is not on one of
-   * the pages yet.
+   * So the card stays where its widget says it is, and the screen that holds it
+   * draws it in the slot of the screen being looked at: a card that changes screen
+   * would have to change component with it, and it does not change screen. It stays
+   * where the tree put it and moves by the width of a screen, which is what
+   * `pageOffset` is in `ScreenOfPanel`. Turning the screen moves the track under the
+   * card and the card stays under the hand, which is also how it is done on a home
+   * screen: the thing you are carrying is not on one of the pages yet.
    *
    * The write happens once, when the finger lifts, and `carryCard` works out where
    * the card has got to from the draft as it was at the pick-up.

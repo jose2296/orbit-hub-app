@@ -70,11 +70,8 @@ export default function TemplateScreen() {
 
   /* La misma regla que en la nota: es de un espacio y su cabecera lo dice. */
   const { workspaces } = useWorkspaces();
-  useScreenSpace(
-    workspaces.find((item) => item.id === workspaceId) ?? null,
-    theme.colors.text,
-    theme.colors.background,
-  );
+  const espacio = workspaces.find((item) => item.id === workspaceId) ?? null;
+  useScreenSpace(espacio);
   const t = useTranslation();
 
   const { template, isLoading, failed } = useNoteTemplate(templateId);
@@ -306,7 +303,9 @@ export default function TemplateScreen() {
 
   if (failed || !current) {
     return (
-      <Screen width="reading">
+      <Screen
+        width="reading"
+      >
         <EmptyState
           icon="cloud-offline-outline"
           title={t("note.templates.failedTitle")}

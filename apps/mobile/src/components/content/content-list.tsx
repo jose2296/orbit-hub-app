@@ -436,7 +436,17 @@ function BotonMenu({
       style={({ pressed }) => [
         styles.menu,
         {
-          top: theme.spacing.sm,
+          /*
+            Centrado en vertical, y no pegado arriba con un `top` fijo.
+
+            El alto de una fila no es un numero —cambia con el titulo en dos
+            lineas, con el numero de elementos y con la escala de letra— y un
+            `top` de ocho puntos acertaba en unas filas y dejaba el icono por
+            encima del centro en las demas. Con `top: 0` y `bottom: 0` el centro lo
+            pone la propia fila y no hay ningun alto que adivinar.
+          */
+          top: 0,
+          bottom: 0,
           // The handle is `right: 8` and about 32 wide, so stepping by its width
           // plus its own margin puts the menu clear of it rather than a few
           // pixels to the side of it.
@@ -446,8 +456,8 @@ function BotonMenu({
           // asa de arrastrar, que esta al lado.
           minWidth: 40,
           minHeight: 40,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
           borderRadius: theme.radius.sm,
           backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
         },

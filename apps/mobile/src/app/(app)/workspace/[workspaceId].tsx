@@ -175,10 +175,12 @@ export default function WorkspaceScreen() {
     [t, workspace],
   );
 
-  useScreenSpace(workspace, theme.colors.text, theme.colors.background);
+  useScreenSpace(workspace);
 
   return (
-    <Screen overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}>
+    <Screen
+      overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
+    >
       {/*
         Lo que estaba dentro de la banda, sin la banda.
 

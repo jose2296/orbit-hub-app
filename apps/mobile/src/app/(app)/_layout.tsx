@@ -7,6 +7,7 @@ import {
   DrawerProvider,
 } from "@/components/layout/drawer";
 import { BackButton } from "@/components/ui/breadcrumbs";
+import { AppHeader } from "@/components/ui/app-header";
 import {
   HeaderActionProvider,
   useHeaderActionSlot,
@@ -76,10 +77,16 @@ function AppNavigation() {
   const stack = (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: theme.colors.background },
-        headerTintColor: theme.colors.text,
+        /*
+          La cabecera es nuestra, y por una razon que no es de estilo: la del
+          navegador solo admite un `backgroundColor` plano, y el color del espacio
+          va degradado — el mismo par con el que se pintan las tarjetas del panel.
+          Ponerlo plano aquieria decir que un espacio es de un color en el panel y
+          de otro en la cabecera, que es exactamente lo que se pretendia evitar.
+          `AppHeader` pinta el lavado y deja que el navegador mida el alto.
+        */
+        header: (props) => <AppHeader {...props} />,
         headerRight,
-        headerTitleStyle: { fontWeight: "600" },
         headerShadowVisible: false,
         contentStyle: { backgroundColor: theme.colors.background },
         // The browser bar is not a navigation control: on the web there is no

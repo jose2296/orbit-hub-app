@@ -55,6 +55,24 @@ export function TextField({
       >
         <TextInput
           {...rest}
+          /*
+            La etiqueta, como nombre del campo.
+
+            El `AppText` de arriba es una etiqueta *visual*: es un `div` con texto,
+            no un `<label for>`, asi que nada en el documento la conecta a este
+            input. Un lector de pantalla anuncia entonces "campo de texto", "correo",
+            "contraseña", "contraseña" — cuatro cajas seguidas sin nada que las
+            distinga, y quien rellena un registro no oye cual de las dos quiere la
+            contraseña repetida.
+
+            No es un problema solo de la web: en nativo lo lee igual TalkBack o
+            VoiceOver, asi que el campo no tiene nombre en ninguna plataforma.
+
+            Va **despues** de `{...rest}` para que un `accessibilityLabel` explicito
+            del que llama siga mandando. Que la etiqueta visible y la dicha fueran
+            distintas seria una segunda version de la misma confusion.
+          */
+          accessibilityLabel={rest.accessibilityLabel ?? label}
           secureTextEntry={isPassword && !revealed}
           onFocus={(event) => {
             setFocused(true);

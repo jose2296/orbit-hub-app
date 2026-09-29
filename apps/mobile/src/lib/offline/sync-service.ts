@@ -12,6 +12,7 @@ import type {
 import { coalescePendingOperations, foldIntoCreate } from './coalesce';
 import { SYNC_DEFAULTS } from "@orbit-hub/config";
 
+import { STORAGE_KEYS } from "@/constants";
 import { api, toApiError } from "@/lib/api";
 import { keyValueStore } from "@/lib/storage/key-value";
 
@@ -48,19 +49,17 @@ export interface PullResult {
   error: string | null;
 }
 
-const CURSOR_KEY = "sync:cursor";
-
 async function readCursor(): Promise<string | null> {
   void (await getLocalStoreReady());
-  return keyValueStore.get(CURSOR_KEY);
+  return keyValueStore.get(STORAGE_KEYS.syncCursor);
 }
 
 async function writeCursor(cursor: string | null): Promise<void> {
   if (cursor) {
-    keyValueStore.set(CURSOR_KEY, cursor);
+    keyValueStore.set(STORAGE_KEYS.syncCursor, cursor);
   } else {
     // A missing cursor only means a full resync next time.
-    keyValueStore.remove(CURSOR_KEY);
+    keyValueStore.remove(STORAGE_KEYS.syncCursor);
   }
 }
 

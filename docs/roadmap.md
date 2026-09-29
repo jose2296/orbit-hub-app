@@ -991,6 +991,40 @@ Tres cosas de esa decisión que conviene que queden escritas:
 en los colores del tema y sin fondo de color. Quitar el color de un rectángulo no puede
 costarle a alguien el dato de si es el propietario.
 
+#### El degradado en la cabecera, y por qué la cabecera es nuestra
+
+La cabecera del navegador solo admite un `backgroundColor` plano, y el color del espacio va
+degradado. Ponerlo plano ahí era un falsehood pequeño: las tarjetas del panel, la lista de espacios
+y la cabecera serían tres colores distintos del mismo espacio, y la regla de «un espacio es del
+mismo color en todas partes» se habría convertido en «cada sitio hace lo suyo».
+
+Así que la cabecera **es nuestra**: `AppHeader` la dibuja con el mismo `SpaceWash` y el mismo par
+que pintan las tarjetas. Un lavado en la app, dos cosas que lo usan, y no pueden separarse.
+
+Eso arregla además un problema que la cabecera del navegador no puede: con `headerTransparent` el
+contenido se cuela **debajo** — medido, el rótulo de la lista impreso encima del título de la
+pantalla—. Al dibujarla nosotros el navegador sigue reservando su sitio, porque mide lo que
+devolvemos, y así **no hay ninguna altura que acertar**: es la que mida la propia barra.
+
+**El corte de abajo, y cómo se quitó.** Un lavado que llena la barra se acaba donde acaba la barra,
+y ahí hay un borde recto de color contra el fondo del contenido. La mitad baja del lavado se
+desvanece **a transparente a partir del final de la barra**, y se come 28 puntos de la pantalla a
+propósito: el color se apaga en el hueco que ocupa, en vez de apagarse dentro de la barra y dejar
+el corte justo en su borde. Y el filo de un píxel de la barra **se quita cuando hay lavado**,
+porque sería el corte que acabamos de borrar dibujado encima.
+
+#### Los botones de la izquierda, y los tres puntitos
+
+El menú y el atrás van **uno al lado del otro** y los dos centrados en vertical, en ese orden: es
+donde el pulgar y el ojo ya los buscan. La fila que los contiene era una columna y por eso el
+atras se caía debajo.
+
+Los tres puntitos, en el centro de su fila y no con un `top` fijo. El alto de una fila no es un
+número —cambia con el título en dos líneas, con el número de elementos y con la escala de letra— y
+un `top` de ocho puntos acertaba en unas filas y dejaba el icono por encima del centro en las
+demás. Con `top: 0` y `bottom: 0` el centro lo pone la propia fila y no hay ningún alto que
+adivinar. Medido en web: desviación 0 en el de la cabecera y en los de las filas.
+
 #### Los tres puntitos
 
 Solo donde hay algo que editar o borrar, que es lo que se decidió: **espacio, carpeta, lista,
