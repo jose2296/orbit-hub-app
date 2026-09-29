@@ -1,7 +1,10 @@
 import type { SyncOperation } from '@orbit-hub/contracts';
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { getDatabase } from '../src/db/client.js';
+import { memberships } from '../src/db/content-schema.js';
 import { createVerifiedUser, startTestServer } from './helpers';
 import type { TestServer, TestUser } from './helpers';
 
@@ -56,6 +59,71 @@ async function createWorkspace(user: TestUser, name: string) {
   expect(result.status).toBe('applied');
   return { id, version: result.version as number };
 }
+
+/**
+ * A workspace whose owner membership is gone.
+ *
+ * The shape of the bug this covers: a space is created on a phone, the push does
+ * not get a membership, and from then on the space is a row the owner cannot
+ * see. Every read of it joins on the membership and 404s, so the app asks for
+ * the members of a workspace the server insists does not exist — and retrying
+ * the create, which is the only thing the client still has to try, used to be
+ * absorbed as a duplicate and change nothing.
+ *
+ * The membership is deleted straight from the database because there is no API
+ * that removes the last member of a workspace, which is itself the point: once
+ * it happens there is no way back through the API.
+ */
+describe('a workspace that lost its owner', () => {
+  async function orphan(workspaceId: string) {
+    const { db } = await getDatabase();
+    await db.delete(memberships).where(eq(memberships.workspaceId, workspaceId));
+  }
+
+  it('404s to its owner, and the create that should repair it is absorbed', async () => {
+    const user = await createVerifiedUser(api);
+    const { id } = await createWorkspace(user, 'Se queda sin dueño');
+    await orphan(id);
+
+    // The state the bug leaves behind: a workspace the client created that the
+    // API will not show the client.
+    expect((await api.get(`/workspaces/${id}/members`, user.accessToken)).status).toBe(404);
+    expect((await api.get(`/workspaces/${id}/invitations`, user.accessToken)).status).toBe(404);
+
+    // And the retry, which used to be a no-op.
+    const retried = await push(user, [
+      operation({ entity: 'workspace', kind: 'create', entityId: id, payload: { name: 'Se queda sin dueño' } }),
+    ]);
+    expect(retried.body.data.results[0].status).toBe('duplicate');
+
+    // Same retry, but now it repairs: the row is still theirs and the space is
+    // theirs again.
+    expect((await api.get(`/workspaces/${id}/members`, user.accessToken)).status).toBe(200);
+  });
+
+  it('is not a way into somebody else\'s workspace', async () => {
+    const owner = await createVerifiedUser(api);
+    const stranger = await createVerifiedUser(api);
+    const { id } = await createWorkspace(owner, 'Espacio ajeno');
+
+    // The stranger names it in a create. The row already exists and has an
+    // owner, so this is not an orphan and the repair must not touch it.
+    const attempt = await push(stranger, [
+      operation({ entity: 'workspace', kind: 'create', entityId: id, payload: { name: 'Mío ahora' } }),
+    ]);
+    expect(attempt.body.data.results[0].status).toBe('duplicate');
+
+    // Still closed to them, still owned by the other person, still their name.
+    expect((await api.get(`/workspaces/${id}/members`, stranger.accessToken)).status).toBe(404);
+    const members = await api.get(`/workspaces/${id}/members`, owner.accessToken);
+    expect(members.status).toBe(200);
+    // One member: theirs. The stranger's create did not add a second.
+    expect(members.body.data.items).toHaveLength(1);
+    expect(members.body.data.items[0].role).toBe('owner');
+    const pulled = await pull(stranger);
+    expect(pulled.body.data.changes.some((c: { entityId: string }) => c.entityId === id)).toBe(false);
+  });
+});
 
 describe('POST /sync/push', () => {
   it('rejects unauthenticated calls', async () => {
@@ -339,7 +407,18 @@ describe('POST /sync/push', () => {
   it('rejects entities this build does not sync yet', async () => {
     const user = await createVerifiedUser(api);
     const response = await push(user, [
-      operation({ entity: 'note', kind: 'create', payload: { title: 'Nota' } }),
+      /*
+        `attachment`, and not `note`.
+         *
+         * The point of this check is an entity the **contract** declares and this
+         * build does not store, and `note` stopped being one: it is in
+         * `SYNC_ENTITIES` now, so it gets as far as the note case and is turned
+         * away for a missing `workspaceId` instead — a different rejection, with a
+         * message about the right thing, and this check silently stopped checking
+         * what it is named after. `attachment` is declared in the contract and not
+         * stored, which is the shape this test needs.
+         */
+      operation({ entity: 'attachment', kind: 'create', payload: { title: 'Adjunto' } }),
     ]);
 
     expect(response.body.data.results[0].status).toBe('rejected');

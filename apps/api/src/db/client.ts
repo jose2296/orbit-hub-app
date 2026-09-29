@@ -1,4 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
+// PGlite ships Postgres core only. Search inside a note needs `pg_trgm`, which
+// is a contrib extension, so the embedded database has to be told to load it or
+// the migration that creates the trigram index fails in development and in the
+// tests while working perfectly in production. Loaded here rather than worked
+// around in the migration, because a migration that behaves differently per
+// driver is the kind of thing that only shows up on somebody else's machine.
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { drizzle as drizzleNodePg } from 'drizzle-orm/node-postgres';
@@ -39,7 +46,7 @@ async function createHandle(): Promise<DatabaseHandle> {
       mkdirSync(dirname(resolve(dataDir)), { recursive: true });
     }
 
-    const client = new PGlite(dataDir);
+    const client = new PGlite(dataDir, { extensions: { pg_trgm } });
     // PgliteDatabase and NodePgDatabase expose the same query surface; the cast
     // keeps one type for the whole application.
     const db = drizzlePglite(client, { schema }) as unknown as Database;

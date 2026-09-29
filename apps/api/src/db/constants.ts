@@ -40,6 +40,7 @@ export const SYNC_ENTITIES = [
   'folder',
   'list',
   'list_item',
+  'note',
   'dashboard',
 ] as const;
 export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
@@ -69,9 +70,10 @@ export type ListKindName = (typeof LIST_KINDS)[number];
  * colour it does not know, the app cannot draw one that is not here, and two
  * lists are two lists that are a step behind each other.
  */
-export { ITEM_ICON_COLORS, WORKSPACE_COLORS, isItemIcon } from '@orbit-hub/contracts';
+export { ITEM_ICON_COLORS, WORKSPACE_COLORS, WORKSPACE_WASHES, isItemIcon } from '@orbit-hub/contracts';
 export type { ItemIconColor as ItemIconColorName } from '@orbit-hub/contracts';
 export type { WorkspaceColor as WorkspaceColorName } from '@orbit-hub/contracts';
+export type { WorkspaceWash as WorkspaceWashName } from '@orbit-hub/contracts';
 
 /**
  * The ways a list can be read. `manual` is the order the items are in and the
@@ -100,7 +102,13 @@ export type ItemPriority = (typeof ITEM_PRIORITIES)[number];
  * not own (version, id, workspaceId, timestamps).
  */
 export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
-  workspace: ['name', 'description', 'emoji', 'color'],
+  // `wash` and `colorTo` are on this list and the comment is here because they
+  // were not, once. A field added to the table and to the contract but not to
+  // this list is dropped **in silence**: the push answers `applied` and bumps the
+  // version, so it looks like it worked and nothing changed. That is worse than a
+  // rejection, because a rejection at least tells the person their choice did not
+  // save, and this one looked like it saved for four whole rebuilds.
+  workspace: ['name', 'description', 'emoji', 'color', 'colorTo', 'wash'],
   folder: ['parentId', 'name', 'emoji', 'position'],
   list: [
     'folderId',
@@ -125,9 +133,16 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'tags',
     'externalId',
     'metadata',
-    'notes',
+    'annotation',
   ],
-  dashboard: ['layout'],
+  /**
+   * `document` is on this list and the client is expected to send it, but the
+   * server does not trust it: it re-derives `plainText` from the document it
+   * just validated, so a client cannot write a body and a search string that
+   * disagree. `plainText` and `attachmentCount` are absent on purpose.
+   */
+  note: ['title', 'document', 'folderId', 'favorite', 'tags'],
+  dashboard: ['layout', 'pages'],
 };
 
 export const AUDIT_EVENTS = [

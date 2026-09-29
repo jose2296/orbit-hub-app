@@ -41,13 +41,14 @@ orbit-hub/
 
 ```bash
 make install     # installs the workspaces and builds the shared packages
-make env-init     # creates apps/api/.env and apps/mobile/.env from the templates
-make env-check    # shows which variables are missing (names only)
+make env-init    # creates apps/api/.env and apps/mobile/.env from the templates
+make env-check   # shows which variables are missing (names only)
 
-make api          # API on http://localhost:4000, with watch
-make web          # app on the web
-make ios          # iOS simulator
-make android      # Android emulator
+make api         # API on http://localhost:4000, with watch
+make web         # app on the web
+make ios         # iOS simulator
+make android     # Android emulator
+make device      # app on a real phone with Expo Go, plus the API
 ```
 
 `make help` lists every target, and each workspace has its own:
@@ -55,6 +56,21 @@ make android      # Android emulator
 ```bash
 make -C apps/api help
 make -C apps/mobile help
+```
+
+### Running on a real phone
+
+`make device` starts the API, waits for `/health`, then starts the dev server with
+`EXPO_PUBLIC_API_URL` pointed at this machine's LAN address. Open Expo Go on the phone,
+scan the QR, and the app talks to the API over the WiFi. Phone and computer must be on the
+same network; use `make device-tunnel` when they are not.
+
+The address is detected per run rather than written to `apps/mobile/.env`, so the web
+target and the simulators keep working when the router hands out a different address. To
+see what a phone would use:
+
+```bash
+make device-url
 ```
 
 ### Database

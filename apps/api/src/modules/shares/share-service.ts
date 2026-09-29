@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 
+import type { ShareNodeType } from '@orbit-hub/contracts';
 import { users } from '../../db/auth-schema.js';
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
@@ -8,8 +9,16 @@ import { HttpError } from '../../lib/http-error.js';
 import { accessOf, canRevoke, canShare } from './access.js';
 import type { AccessFacts, ShareAccess } from './access.js';
 
-/** What can be shared. A note is the `notes` column of an item, not a table. */
-export type ShareNodeType = 'workspace' | 'folder' | 'list' | 'list_item';
+/**
+ * What can be shared, taken from the contract instead of restated here.
+ *
+ * It used to be written out in this file, with a comment saying a note is the
+ * `notes` column of an item and so is not a node of its own. Restating the union
+ * is what let it drift away from the contract without anybody noticing, which is
+ * how a note ended up unshareable and with no table. See
+ * `docs/architecture/adr/0008-note-entity.md`.
+ */
+export type { ShareNodeType };
 
 export interface ShareTarget {
   nodeType: ShareNodeType;

@@ -10,11 +10,13 @@ export * from './content-schema';
 
 import { auditLogs, authIdentities, emailTokens, sessions, users } from './auth-schema';
 import {
+  attachments,
   dashboardLayouts,
   folders,
   listItems,
   lists,
   memberships,
+  notes,
   syncConflicts,
   syncCursors,
   syncOperations,
@@ -35,6 +37,8 @@ export const schema = {
   folders,
   lists,
   listItems,
+  notes,
+  attachments,
   dashboardLayouts,
   workspaceInvitations,
   // sync

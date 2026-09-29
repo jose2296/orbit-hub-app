@@ -10,6 +10,7 @@ import {
   listItems,
   lists,
   memberships,
+  notes,
   shares,
   syncCursors,
   syncOperations,
@@ -22,6 +23,8 @@ interface CadenaCompartida {
   workspaceId: string;
   folderId: string | null;
   listId: string | null;
+  /** Set when the grant is a note. A note is not in a list, so it has no `listId`. */
+  noteId: string | null;
   role: 'editor' | 'viewer';
 }
 
@@ -37,6 +40,7 @@ function toEntityName(nodeType: string): SyncEntityName | null {
   if (nodeType === 'folder') return 'folder';
   if (nodeType === 'list') return 'list';
   if (nodeType === 'list_item') return 'list_item';
+  if (nodeType === 'note') return 'note';
   return null;
 }
 
@@ -92,8 +96,8 @@ export function changeDeRevocada(
 
 /** The ids of one kind out of the shared chains, for an `in` that has to be non-empty. */
 function cadenaDe(
-  cadenas: readonly { folderId: string | null; listId: string | null }[],
-  campo: 'folderId' | 'listId',
+  cadenas: readonly { folderId: string | null; listId: string | null; noteId: string | null }[],
+  campo: 'folderId' | 'listId' | 'noteId',
 ): string[] {
   return cadenas.map((c) => c[campo]).filter((v): v is string => Boolean(v));
 }
@@ -103,6 +107,7 @@ export type SyncEntityTable =
   | typeof folders
   | typeof lists
   | typeof listItems
+  | typeof notes
   | typeof dashboardLayouts;
 
 export interface StoredEntity {
@@ -128,6 +133,8 @@ export class SyncRepository {
         return lists;
       case 'list_item':
         return listItems;
+      case 'note':
+        return notes;
       case 'dashboard':
         return dashboardLayouts;
       default:
@@ -209,15 +216,20 @@ export class SyncRepository {
   }
 
   /** One row per user, created on first write. */
-  async upsertDashboard(userId: string, layout: unknown): Promise<StoredEntity> {
+  async upsertDashboard(
+    userId: string,
+    layout: unknown,
+    pages = 1,
+  ): Promise<StoredEntity> {
     const db = await this.db();
     const [row] = await db
       .insert(dashboardLayouts)
-      .values({ userId, layout: layout as never })
+      .values({ userId, layout: layout as never, pages })
       .onConflictDoUpdate({
         target: dashboardLayouts.userId,
         set: {
           layout: layout as never,
+          pages,
           version: sql`${dashboardLayouts.version} + 1`,
           updatedAt: new Date(),
         },
@@ -242,6 +254,24 @@ export class SyncRepository {
       .limit(1);
 
     return row?.role ?? null;
+  }
+
+  /**
+   * Whether anybody at all is a member of this workspace.
+   *
+   * Asked only to tell an orphaned row apart from somebody else's: a workspace
+   * with no members is a row whose owner membership was lost and is safe to
+   * re-give, and a workspace with members belongs to them and must stay closed.
+   */
+  async hasAnyMember(workspaceId: string): Promise<boolean> {
+    const db = await this.db();
+    const [row] = await db
+      .select({ one: sql<number>`1` })
+      .from(memberships)
+      .where(eq(memberships.workspaceId, workspaceId))
+      .limit(1);
+
+    return row !== undefined;
   }
 
   async addMembership(
@@ -308,6 +338,30 @@ export class SyncRepository {
           workspaceId: grant.nodeId,
           folderId: null,
           listId: null,
+          noteId: null,
+          role: grant.role,
+        });
+        continue;
+      }
+
+      if (grant.nodeType === 'note') {
+        // A note is not inside a list, so it cannot be resolved by walking up to
+        // one. It used to fall through to the item branch below, find no item
+        // with that id, and be dropped — which meant the grant appeared in the
+        // space, said you could edit, and delivered nothing at all.
+        const row = await db
+          .select({ workspaceId: notes.workspaceId })
+          .from(notes)
+          .where(eq(notes.id, grant.nodeId))
+          .limit(1);
+        const found = row[0];
+        if (!found) continue;
+        cadenas.push({
+          nodeType: 'note',
+          workspaceId: found.workspaceId,
+          folderId: null,
+          listId: null,
+          noteId: grant.nodeId,
           role: grant.role,
         });
         continue;
@@ -326,6 +380,7 @@ export class SyncRepository {
           workspaceId: found.workspaceId,
           folderId: found.parentId,
           listId: null,
+          noteId: null,
           role: grant.role,
         });
         continue;
@@ -352,6 +407,7 @@ export class SyncRepository {
         workspaceId: found.workspaceId,
         folderId: found.folderId,
         listId,
+        noteId: null,
         role: grant.role,
       });
     }
@@ -497,6 +553,7 @@ export class SyncRepository {
           entity: 'workspace',
           record: {
             ...(entry.row as Record<string, unknown>),
+            wash: entry.row.wash ?? 'diagonal',
             // The membership role when there is one, and the grant's role when there
             // is not. Never "owner": a space you were given is not a space you own.
             role: entry.role ?? porEspacio.get(entry.row.id) ?? 'viewer',
@@ -608,6 +665,36 @@ export class SyncRepository {
       for (const row of itemChanges) {
         changes.push({ entity: 'list_item', record: row.item as Record<string, unknown> });
         remember(row.item.updatedAt);
+      }
+    }
+
+    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
+      // Notes, in the same shape as items: the ones in a space the caller is in,
+      // plus the ones a share handed them.
+      //
+      // A share of a note points at the note, and a share of a folder or a list
+      // does not bring the notes filed under it. That is a decision about what a
+      // grant means, not an oversight: a note is a document somebody wrote, and
+      // being handed a shopping list is not consent to read the notes next to it.
+      // Sharing a note is an explicit act, on a node of its own.
+      const noteChanges = await db
+        .select({ row: notes })
+        .from(notes)
+        .where(
+          and(
+            or(
+              inArray(notes.workspaceId, memberWorkspaceIds),
+              inArray(notes.id, cadenaDe(cadenas, 'noteId')),
+            ),
+            gt(notes.updatedAt, after),
+          ),
+        )
+        .orderBy(asc(notes.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of noteChanges) {
+        changes.push({ entity: 'note', record: row.row as Record<string, unknown> });
+        remember(row.row.updatedAt);
       }
     }
 

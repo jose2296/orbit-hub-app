@@ -2,6 +2,11 @@ import { config as loadDotenv } from 'dotenv';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 
+import {
+  ATTACHMENT_IMAGE_MAX_BYTES_DEFAULT,
+  ATTACHMENT_MAX_BYTES_DEFAULT,
+} from '@orbit-hub/contracts';
+
 loadDotenv({ quiet: true });
 
 /**
@@ -45,6 +50,46 @@ const envSchema = z
     WEB_ORIGIN: z.string().url().default('https://app.orbithub.com'),
 
     /**
+     * Where a file goes.
+     *
+     * `local` writes under a directory and the API serves it, which is what makes
+     * an attachment work on a clean clone with nothing configured. `s3` is the real
+     * one and never serves a file itself: it hands out a presigned URL and the
+     * bytes go straight from the phone to the bucket, so a video does not pass
+     * through the API in memory.
+     */
+    STORAGE_DRIVER: z.enum(['local', 's3', 'noop']).default('local'),
+    /** Where the local driver writes, and where the API looks to serve from. */
+    STORAGE_LOCAL_DIR: z.string().default('.data/attachments'),
+    /** How long an upload or download link stays usable, in seconds. */
+    STORAGE_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+    S3_BUCKET: z.string().optional(),
+    S3_REGION: z.string().optional(),
+    S3_ENDPOINT: z.string().url().optional(),
+    S3_ACCESS_KEY_ID: z.string().optional(),
+    S3_SECRET_ACCESS_KEY: z.string().optional(),
+
+    /**
+     * What a note will accept, decided once and used by both sides.
+     *
+     * A limit the server does not enforce is a limit the client can ignore, and an
+     * image the editor renders is a file the server has already accepted — so the
+     * numbers live here rather than inside a request handler.
+     */
+    // The defaults come from the contract so the app and the server start from the
+    // same number; the server may raise them and the app asks before it refuses.
+    ATTACHMENT_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(ATTACHMENT_MAX_BYTES_DEFAULT),
+    ATTACHMENT_IMAGE_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(ATTACHMENT_IMAGE_MAX_BYTES_DEFAULT),
+
+    /**
      * External catalogs. Server side only: the keys are never exposed to the
      * app, which is the point of routing catalog search through the API.
      */
@@ -78,6 +123,30 @@ const envSchema = z
         code: 'custom',
         path: ['EMAIL_TRANSPORT'],
         message: 'EMAIL_TRANSPORT=console only logs emails; set it to resend in production',
+      });
+    }
+
+    if (value.STORAGE_DRIVER === 's3') {
+      for (const key of ['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
+        if (!value[key]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `STORAGE_DRIVER=s3 needs ${key}`,
+          });
+        }
+      }
+    }
+
+    if (value.NODE_ENV === 'production' && value.STORAGE_DRIVER === 'local') {
+      // A local directory is inside the container, and a container that restarts
+      // loses it. Saying so at boot is better than an attachment that was there
+      // yesterday and is a 404 today.
+      ctx.addIssue({
+        code: 'custom',
+        path: ['STORAGE_DRIVER'],
+        message:
+          'STORAGE_DRIVER=local keeps files on the disk of this process, which a restart loses; set it to s3 in production',
       });
     }
 

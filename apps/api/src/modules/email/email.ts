@@ -1,4 +1,4 @@
-import type { Locale } from '@orbit-hub/contracts';
+import type { Locale, ShareNodeType } from '@orbit-hub/contracts';
 
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
@@ -373,7 +373,7 @@ export function sharedWithYouEmail(input: {
   to: string;
   locale: Locale;
   nodeTitle: string;
-  nodeType: 'workspace' | 'folder' | 'list' | 'list_item';
+  nodeType: ShareNodeType;
   /** The space it lives in, when it is not the space itself. */
   spaceName: string | null;
   ownerName: string;

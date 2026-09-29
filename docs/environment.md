@@ -169,7 +169,7 @@ dashboard and check that `jrz-labs.com` shows **Verified** for both DKIM and SPF
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `EXPO_PUBLIC_API_URL` | no | `http://localhost:4000/api/v1` | On the Android emulator use `http://10.0.2.2:4000/api/v1` |
+| `EXPO_PUBLIC_API_URL` | no | `http://localhost:4000/api/v1` | Android emulator: `http://10.0.2.2:4000/api/v1`. Real phone: run `make device`, which injects the LAN address |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB` | no | unset | Web client id. Falls back to `EXPO_PUBLIC_GOOGLE_CLIENT_ID` |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID` | no | unset | Android client id. Public by design |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS` | no | unset | iOS client id. Public by design |

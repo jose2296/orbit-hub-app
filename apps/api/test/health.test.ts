@@ -78,12 +78,27 @@ describe('error envelope', () => {
   });
 
   it('returns not_implemented for planned endpoints', async () => {
-    const response = await fetch(`${baseUrl}/api/v1/notes`, { method: 'POST' });
+    // Publishing a template to the public catalogue. Notes, templates, attachments
+    // and the sync path all arrived; this one is still to come, and the point of
+    // the 501 is that the client can tell "not built yet" apart from "broken".
+    const response = await fetch(
+      `${baseUrl}/api/v1/notes/templates/00000000-0000-4000-8000-000000000000/publish`,
+      { method: 'POST' },
+    );
     const body = (await response.json()) as { error?: { code?: string; message?: string } };
 
     expect(response.status).toBe(501);
     expect(body.error?.code).toBe('not_implemented');
     expect(body.error?.message).toContain('next phase');
+  });
+
+  it('answers notes with authentication rather than with 501', async () => {
+    // A regression guard for the placeholder. While notes were still planned,
+    // this route answered 501 to everybody, including somebody with a session,
+    // so a client could not tell "not built" from "you are not logged in".
+    const response = await fetch(`${baseUrl}/api/v1/notes`, { method: 'GET' });
+
+    expect(response.status).toBe(401);
   });
 
   it('validates the payload of implemented endpoints', async () => {

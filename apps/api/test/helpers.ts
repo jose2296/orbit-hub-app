@@ -35,12 +35,26 @@ export async function startTestServer(): Promise<TestServer> {
   const url = `http://127.0.0.1:${address.port}/api/v1`;
 
   async function request(path: string, init: RequestInit = {}) {
+    // Header names are case insensitive, but a plain object is not: spreading
+    // `content-type` over `Content-Type` leaves two keys, fetch joins them, and
+    // the server sees `application/json, application/json`, which body-parser
+    // does not recognise. So the body is silently not parsed and a PATCH arrives
+    // as an empty object, which reads as a validation error about a field the
+    // test did send. Normalised here so that cannot happen.
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    for (const [key, value] of Object.entries(
+      (init.headers as Record<string, string> | undefined) ?? {},
+    )) {
+      const existing = Object.keys(headers).find(
+        (candidate) => candidate.toLowerCase() === key.toLowerCase(),
+      );
+      if (existing !== undefined) delete headers[existing];
+      headers[key] = value;
+    }
+
     const response = await fetch(`${url}${path}`, {
       ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init.headers as Record<string, string> | undefined),
-      },
+      headers,
     });
 
     const text = await response.text();

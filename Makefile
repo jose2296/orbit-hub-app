@@ -3,13 +3,15 @@
 #   make help
 #   make api      run the API with watch
 #   make web      run the app on the web
+#   make device   run the app on a phone over the LAN, with the API
 #   make test     run every test suite
 #   make check    typecheck + tests + Expo config
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install api api-test api-db-reset ios android web check test typecheck \
-        doctor env-list env-init env-check env-jwt env-import-legacy clean
+.PHONY: help install api api-test api-db-reset ios android web device \
+        device-tunnel device-url check test typecheck doctor env-list env-init \
+        env-check env-jwt env-import-legacy clean
 
 help: ## Show this help
 	@echo "OrbitHub"
@@ -42,6 +44,29 @@ android: ## Run the app on an Android emulator
 
 web: ## Run the app on the web
 	$(MAKE) -C apps/mobile web
+
+# Starts the API in its own process group, waits for it to answer, then hands
+# the terminal to Metro. The trap takes the API down again on ^C.
+device: ## Run the app on a real phone over the LAN, with the API
+	@set -m; \
+	$(MAKE) --no-print-directory -C apps/api dev & api_pid=$$!; \
+	trap 'kill -TERM -- -$$api_pid 2>/dev/null || true; sleep 1; \
+	      kill -KILL -- -$$api_pid 2>/dev/null || true' EXIT INT TERM; \
+	api_url="$$(node scripts/lan-ip.mjs api-url)"; \
+	printf 'Waiting for %s/health ... ' "$$api_url"; \
+	ready=0; \
+	for attempt in $$(seq 1 30); do \
+		if curl -fsS "$$api_url/health" > /dev/null 2>&1; then ready=1; break; fi; \
+		sleep 1; \
+	done; \
+	if [ $$ready -eq 1 ]; then echo "ready."; else echo "no answer, starting anyway."; fi; \
+	$(MAKE) --no-print-directory -C apps/mobile device
+
+device-tunnel: ## Run the app on a real phone through a public tunnel
+	@$(MAKE) --no-print-directory -C apps/mobile device-tunnel
+
+device-url: ## Print the API URL a phone on the LAN should use
+	@node scripts/lan-ip.mjs api-url
 
 check: ## Typecheck, tests and Expo config
 	npm run check

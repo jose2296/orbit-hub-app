@@ -33,7 +33,7 @@ workspaces ──< memberships >── users
 | `memberships` | `(workspace_id, user_id)` unique, role `owner`/`editor`/`viewer` |
 | `folders` | `parent_id` nullable; cycles are rejected by the API |
 | `lists` | `kind` = `tasks` \| `movies` \| `books`; one shape for all three |
-| `list_items` | Position, completed, priority, tags, `external_id`, `metadata` jsonb |
+| `list_items` | Position, completed, priority, tags, `external_id`, `metadata` jsonb, `annotation` |
 | `notes` | `document` jsonb (portable editor format) plus denormalised `plain_text` for search |
 | `attachments` | Storage key, never a public URL; size and mime type validated server side |
 | `invitations` | Token, role, expiry, status; single use |
@@ -41,6 +41,11 @@ workspaces ──< memberships >── users
 `list_items.external_id` points at the provider record (TheMovieDB, Google Books) and
 `metadata` keeps the raw provider payload, so a list renders offline without calling the
 provider again.
+
+`list_items.annotation` is a short plain-text remark on a row, and is not a note. It was called
+`notes` until [ADR 0008](adr/0008-note-entity.md), which settled that a note is an entity of its
+own: the name collision had led to a comment claiming notes had no table of their own, which
+Phase 4 makes false, because a note is a document and does not fit in a `varchar(2000)`.
 
 ## Sync support
 

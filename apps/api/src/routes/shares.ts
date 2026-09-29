@@ -5,6 +5,7 @@ import {
   createShareRequestSchema,
   placeShareRequestSchema,
 } from '@orbit-hub/contracts';
+import type { ShareNodeType } from '@orbit-hub/contracts';
 
 import { users } from '../db/auth-schema.js';
 import { getDatabase } from '../db/client.js';
@@ -12,6 +13,7 @@ import { sendData } from './respond.js';
 import { emailSender, sharedWithYouEmail } from '../modules/email/email.js';
 import { HttpError } from '../lib/http-error.js';
 import { logger } from '../lib/logger.js';
+import { requireAuth } from '../middleware/require-auth.js';
 import { shareService } from '../modules/shares/share-service.js';
 
 /**
@@ -25,6 +27,21 @@ import { shareService } from '../modules/shares/share-service.js';
  * reasoning that put invitations in their own table.
  */
 export const sharesRouter = Router();
+
+/**
+ * Everything below needs to know who is asking.
+ *
+ * It was missing, and the effect was that every endpoint on this router answered
+ * 401 to everybody: each handler reads `req.auth?.userId` and throws when it is
+ * absent, and with no `requireAuth` on the router it is *always* absent. Not even
+ * an empty inbox was reachable.
+ *
+ * The test suite did not catch it because it calls `shareService.inbox(userId)`
+ * directly rather than going through the route — a test that exercises the
+ * service proves the service, and says nothing about the door in front of it.
+ * That is why this line has a test of its own now, over HTTP.
+ */
+sharesRouter.use(requireAuth);
 
 /** "Shared with me": what has been given to this person and not filed yet. */
 sharesRouter.get('/inbox', async (req, res) => {
@@ -132,7 +149,7 @@ sharesRouter.get('/:nodeType/:nodeId/reach', async (req, res) => {
   const userId = req.auth?.userId;
   if (!userId) throw HttpError.unauthorized();
 
-  const nodeType = String(req.params['nodeType']) as 'workspace' | 'folder' | 'list' | 'list_item';
+  const nodeType = String(req.params['nodeType']) as ShareNodeType;
   const nodeId = String(req.params['nodeId']);
   const target = await shareService.resolveTarget(nodeType, nodeId);
 

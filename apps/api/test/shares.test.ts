@@ -60,6 +60,45 @@ async function conEspacio(nombre: string) {
 }
 
 describe('compartir', () => {
+  /**
+   * The door in front of the service.
+   *
+   * Every other test in this file calls `shareService` directly, which proves the
+   * service and says nothing about the route. The route was missing its
+   * `requireAuth`, so `req.auth` was always undefined and every endpoint on it
+   * answered 401 to everybody — including an empty inbox, which is the one request
+   * the app makes on every drawer open.
+   */
+  it('la bandeja se pide por HTTP y no solo por el servicio', async () => {
+    const otra = await createVerifiedUser(api, { displayName: 'Bandeja HTTP' });
+
+    const vacia = await api.get('/shares/inbox', otra.accessToken);
+    expect(vacia.status).toBe(200);
+    expect(vacia.body?.data?.items).toEqual([]);
+  });
+
+  it('la bandeja pide sesion y la rechaza sin ella', async () => {
+    const sinToken = await api.get('/shares/inbox');
+    expect(sinToken.status).toBe(401);
+  });
+
+  it('lo que le comparten a alguien sale por su bandeja HTTP', async () => {
+    const yo = await conEspacio('Dueño HTTP');
+    const otra = await createVerifiedUser(api, { displayName: 'Receptora HTTP' });
+
+    await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: 'Receptora HTTP' },
+      role: 'editor',
+    });
+
+    const bandeja = await api.get('/shares/inbox', otra.accessToken);
+    expect(bandeja.status).toBe(200);
+    expect(bandeja.body?.data?.items).toHaveLength(1);
+    expect(bandeja.body?.data?.items?.[0]?.title).toBe('Compra');
+  });
+
   it('le pasa una lista a alguien y la recibe en la bandeja', async () => {
     const yo = await conEspacio('Yo');
     const otra = await createVerifiedUser(api, { displayName: 'Otra' });

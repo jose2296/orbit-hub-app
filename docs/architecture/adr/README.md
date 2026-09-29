@@ -8,6 +8,9 @@
 | [0004](0004-external-postgresql.md) | External managed PostgreSQL | Accepted |
 | [0005](0005-database-access.md) | Defer the ORM decision | Superseded by [0006](0006-drizzle-orm.md) |
 | [0006](0006-drizzle-orm.md) | Drizzle ORM with a dual driver | Accepted |
+| [0007](0007-notes-editor.md) | Two note editors over one document format | Superseded by [0009](0009-one-native-editor.md) |
+| [0008](0008-note-entity.md) | A note is an entity, a list row has an annotation | Accepted |
+| [0009](0009-one-native-editor.md) | One native note editor everywhere, HTML as the format | Accepted |
 
 ## Format
 

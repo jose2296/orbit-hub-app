@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -18,6 +18,7 @@ import type {
   ListKindName,
   ListOrderModeName,
   WorkspaceColorName,
+  WorkspaceWashName,
   MembershipRoleName,
   SyncEntityName,
 } from './constants';
@@ -37,6 +38,13 @@ export const workspaces = pgTable(
     // from the eight and the app draws them, so there is no colour nobody can
     // read on a card.
     color: varchar('color', { length: 16 }).$type<WorkspaceColorName>().notNull().default('slate'),
+    // Which of the two ways that colour is painted. Separate from the colour
+    // because it is a second decision the person made, and folding it into the
+    // colour would mean a colour key that means a colour *and* a style.
+    wash: varchar('wash', { length: 16 }).$type<WorkspaceWashName>().notNull().default('diagonal'),
+    // The colour the wash ends in, chosen like the first one. Null until it has
+    // been, and the app falls back to the darker version of `color` meanwhile.
+    colorTo: varchar('color_to', { length: 16 }).$type<WorkspaceColorName>(),
     /** Optimistic concurrency token, compared against the client's baseVersion. */
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -155,6 +163,15 @@ export const dashboardLayouts = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     layout: jsonb('layout').$type<DashboardWidget[]>().notNull().default([]),
+    /*
+      How many screens the panel has, and **not** derived from the cards.
+      Derived it was: the count was the highest screen a card sat on, plus one,
+      so a screen nobody had put anything on yet did not exist. A button that adds
+      a screen therefore added a screen that vanished on the next save, which is
+      worse than not having the button: you press it, it does something, and then
+      it did not.
+    */
+    pages: integer('pages').notNull().default(1),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -162,6 +179,16 @@ export const dashboardLayouts = pgTable(
   (table) => [uniqueIndex('dashboard_layouts_user_unique').on(table.userId)],
 );
 
+/**
+ * The widget grid as it sits in the database.
+ *
+ * A *structural* copy of the contract's `DashboardWidget` and not the imported
+ * type, and the reason is that this column is written by whatever arrives over the
+ * sync endpoint. `page` is therefore optional here and required by the contract:
+ * a layout written before the panel had screens has no `page` on it, and the
+ * column has to be able to hold one of those without the type saying otherwise.
+ * The contract's default is what turns it into a page on the way out.
+ */
 export interface DashboardWidget {
   id: string;
   kind: 'recent_lists' | 'recent_notes' | 'tasks' | 'quick_actions' | 'calendar' | 'stats';
@@ -170,6 +197,8 @@ export interface DashboardWidget {
   y: number;
   w: number;
   h: number;
+  /** Which screen of the panel. Absent on layouts written before there were any. */
+  page?: number;
   pinned: boolean;
   settings?: Record<string, unknown>;
 }
@@ -341,7 +370,9 @@ export const listItems = pgTable(
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     externalId: varchar('external_id', { length: 120 }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
-    notes: varchar('notes', { length: 2000 }),
+    // A short remark on the row, not a note. Renamed from `notes` so the column
+    // name stops implying a note is a column. See adr/0008-note-entity.md.
+    annotation: varchar('annotation', { length: 2000 }),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -367,6 +398,159 @@ export type ListRow = typeof lists.$inferSelect;
 export type ListItemRow = typeof listItems.$inferSelect;
 
 /**
+ * A note is a document, and a note is an entity.
+ *
+ * It used to be argued that a note was the `notes` column of a list item, which
+ * would have made this table unnecessary. That was a decision about sharing
+ * written as a claim about the data model, and Phase 4 makes it false: the
+ * editor writes HTML, a document does not fit in a `varchar(2000)`, and the
+ * legacy app had a `notes` table too. See `adr/0008-note-entity.md`.
+ */
+export const notes = pgTable(
+  'notes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Where it is filed, or null for a note that lives only in its space. */
+    folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 200 }).notNull(),
+    /**
+     * The HTML the editor produces, and the format is the tag set the editor
+     * accepts. Validated in the contract before it gets here, because the
+     * editor does not sanitise HTML on iOS or Android and this column is what
+     * it later reads. See `packages/contracts/src/note-document.ts`.
+     *
+     * `text` and not `varchar`: a document is not a length we can pick, and
+     * truncating one is the one failure this column must not have.
+     */
+    document: text('document').notNull().default(''),
+    /** Denormalised from the document for search, so search is an index hit. */
+    plainText: text('plain_text').notNull().default(''),
+    favorite: boolean('favorite').notNull().default(false),
+    tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    /**
+     * How many files hang off this note. Counted, not derived, so a list of
+     * notes does not become a query per note; the writer keeps it true.
+     */
+    attachmentCount: integer('attachment_count').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    index('notes_workspace_updated_at_idx').on(table.workspaceId, table.updatedAt),
+    index('notes_folder_idx').on(table.folderId),
+    index('notes_deleted_at_idx').on(table.deletedAt),
+    // Written by hand below: a GIN index over the tags array and a trigram index
+    // over the plain text, which is what a search for a word inside a note needs
+    // and what a btree on a column of sentences cannot answer.
+  ],
+);
+
+export const notesRelations = relations(notes, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [notes.workspaceId], references: [workspaces.id] }),
+  folder: one(folders, { fields: [notes.folderId], references: [folders.id] }),
+  attachments: many(attachments),
+}));
+
+/**
+ * A file hung off a note.
+ *
+ * `storageKey` is a key and not a URL on purpose: a URL in a document is
+ * something that can be pasted somewhere else, and access has to be decided per
+ * note or it is decided by whoever holds the link.
+ *
+ * Not a sync entity yet. Uploads are queued separately from note writes so a
+ * failed upload never blocks a text edit, and that queue is its own piece of
+ * work; a device pulls attachments with the note that owns them, not as
+ * operations of their own.
+ */
+export const attachments = pgTable(
+  'attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    noteId: uuid('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    mimeType: varchar('mime_type', { length: 120 }).notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    storageKey: varchar('storage_key', { length: 512 }).notNull(),
+    width: integer('width'),
+    height: integer('height'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('attachments_note_idx').on(table.noteId),
+    uniqueIndex('attachments_storage_key_unique').on(table.storageKey),
+  ],
+);
+
+export const attachmentsRelations = relations(attachments, ({ one }) => ({
+  note: one(notes, { fields: [attachments.noteId], references: [notes.id] }),
+}));
+
+/**
+ * A template is a note you keep for later.
+ *
+ * `document` is the same column, the same format and the same validation as a
+ * note's, on purpose. A template stored as something else would be a second
+ * format to keep in step with the editor, and the day somebody added a block the
+ * editor could write and the template store could not, every template would
+ * quietly stop opening.
+ *
+ * `workspace_id` is nullable: a public template and a personal one that follows
+ * its author are not in a space. `built_in_key` is what makes the catalogue
+ * replaceable — an update recognises the template it is replacing instead of
+ * adding a second copy — and it is null for everything a person made.
+ */
+export const noteTemplates = pgTable(
+  'note_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    description: varchar('description', { length: 300 }).notNull().default(''),
+    icon: varchar('icon', { length: 40 }).notNull().default('document-text-outline'),
+    scope: varchar('scope', { length: 16 })
+      .$type<'personal' | 'workspace' | 'public'>()
+      .notNull()
+      .default('workspace'),
+    document: text('document').notNull().default(''),
+    plainText: text('plain_text').notNull().default(''),
+    builtInKey: varchar('built_in_key', { length: 60 }),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    index('note_templates_workspace_idx').on(table.workspaceId),
+    index('note_templates_scope_idx').on(table.scope),
+    index('note_templates_deleted_at_idx').on(table.deletedAt),
+    // One template per key, not two: an update has to replace the built-in rather
+    // than sit next to it, and a duplicate would mean the picker shows the same
+    // recipe twice and nobody can tell which one is current.
+    uniqueIndex('note_templates_built_in_key_unique')
+      .on(table.builtInKey)
+      .where(sql`${table.builtInKey} is not null`),
+  ],
+);
+
+export const noteTemplatesRelations = relations(noteTemplates, ({ one }) => ({
+  workspace: one(workspaces, { fields: [noteTemplates.workspaceId], references: [workspaces.id] }),
+  author: one(users, { fields: [noteTemplates.createdBy], references: [users.id] }),
+}));
+
+export type NoteRow = typeof notes.$inferSelect;
+export type AttachmentRow = typeof attachments.$inferSelect;
+export type NoteTemplateRow = typeof noteTemplates.$inferSelect;
+
+/**
  * A grant: this person, this node, this role.
  *
  * Not a membership. A membership says "this is one of my spaces"; a grant says
@@ -376,9 +560,13 @@ export type ListItemRow = typeof listItems.$inferSelect;
  * disappear from a folder somebody else filed it in.
  *
  * `nodeType` and `nodeId` rather than a `workspace_id`, because what is shared is
- * a folder, a list or a single item, and all three live in somebody else's space.
- * A note is not a table of its own — it is the `notes` column of an item — so
- * sharing a note is sharing that item.
+ * a folder, a list, a single item, a note or a template, and all of them live in
+ * somebody else's space.
+ *
+ * It used to say here that a note is the `notes` column of an item and so is not
+ * a node of its own. A note is a document and is its own table; the column on a
+ * list row is a short remark called `annotation`. See
+ * `docs/architecture/adr/0008-note-entity.md`.
  *
  * `revokedAt` and not a delete: the grantee is told it stopped, and a device that
  * was offline when it happened has something to read on its next pull. A row that
@@ -391,7 +579,7 @@ export const shares = pgTable(
     /** Who shared it. A tombstone too, so a deleted account does not hide it. */
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     nodeType: varchar('node_type', { length: 16 })
-      .$type<'workspace' | 'folder' | 'list' | 'list_item'>()
+      .$type<'workspace' | 'folder' | 'list' | 'list_item' | 'note' | 'note_template'>()
       .notNull(),
     nodeId: uuid('node_id').notNull(),
     granteeUserId: uuid('grantee_user_id')

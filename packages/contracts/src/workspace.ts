@@ -4,6 +4,7 @@ import { ITEM_ICON_COLORS, ITEM_ICONS } from "./item-icons.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
 import { userSchema } from "./auth";
+import { noteDocumentSchema } from "./note-document";
 
 export const membershipRoleSchema = z.enum(["owner", "editor", "viewer"]);
 export type MembershipRole = z.infer<typeof membershipRoleSchema>;
@@ -30,11 +31,16 @@ export const membershipSchema = z.object({
 export type Membership = z.infer<typeof membershipSchema>;
 
 /**
- * The colours a space can be painted with.
+ * The named colours a space can be painted with.
  *
  * They live in the contract because the server refuses a colour it does not know
  * and the app cannot draw one that is not here, and neither of them can be a
  * step behind the other.
+ *
+ * Twelve, and the list used to be eight. A person who wants "the purple one" and
+ * gets the indigo one is not choosing a colour, and the answer to that is not to
+ * add forty shades — it is the custom colour below, which is unbounded and is
+ * the reason this list can stay short enough to pick from on a phone.
  */
 export const WORKSPACE_COLORS = [
   "teal",
@@ -45,9 +51,81 @@ export const WORKSPACE_COLORS = [
   "sky",
   "violet",
   "slate",
+  "plum",
+  "crimson",
+  "forest",
+  "copper",
 ] as const;
-export const workspaceColorSchema = z.enum(WORKSPACE_COLORS);
+export const workspaceColorKeySchema = z.enum(WORKSPACE_COLORS);
+export type WorkspaceColorKey = z.infer<typeof workspaceColorKeySchema>;
+
+/**
+ * A colour a person made up, as `#RRGGBB`.
+ *
+ * Upper case and exactly seven characters, and the strictness is the point: this
+ * goes straight into a style, and `#abc`, `#ABCDEF`, `red` and `javascript:` are
+ * all things a text field will happily accept and none of them is a colour this
+ * app can draw. Normalising here means the app and the API never have to be the
+ * ones deciding whether a string is a colour.
+ */
+export const workspaceColorHexSchema = z
+  .string()
+  .regex(/^#[0-9A-F]{6}$/, "A custom space colour is written as #RRGGBB");
+
+/**
+ * A named colour from the list, or a custom one.
+ *
+ * Both, because the choice a person makes is "one of these" or "this exact
+ * shade", and a model with two fields has to decide which one wins. One field
+ * with two shapes has no such question: the string is either a name the app knows
+ * or a colour it can draw, and everything downstream asks that first.
+ */
+export const workspaceColorSchema = z.union([
+  workspaceColorKeySchema,
+  workspaceColorHexSchema,
+]);
 export type WorkspaceColor = z.infer<typeof workspaceColorSchema>;
+
+/**
+ * How a space's colour is painted, over and above which colours it is.
+ *
+ * **Two, and there were five.** The complementary and the triadic rotated the
+ * hue, which is a lot of cleverness for something whose text has to stay
+ * readable on every part of it, and in use the results were bad rather than
+ * bold: a triadic on a mid-blue is three colours that do not look like a space
+ * of that blue. The split was a hard edge down the middle of a card, which is a
+ * thing a design does once and not a thing a person chooses for their own list
+ * of films.
+ *
+ * What is left is the two that are honestly two: the same two colours, drawn in
+ * two directions. Everything interesting is in *which two colours*, and that is
+ * what `colorTo` is for.
+ */
+export const WORKSPACE_WASHES = [
+  /** The first colour into the second, corner to corner. */
+  "diagonal",
+  /** The first colour into the second, top to bottom. */
+  "vertical",
+] as const;
+export const workspaceWashSchema = z.enum(WORKSPACE_WASHES);
+export type WorkspaceWash = z.infer<typeof workspaceWashSchema>;
+
+/** The shape a wash is drawn in, which is not the same as which one it is. */
+export const workspaceWashShapeSchema = z.enum(["diagonal", "vertical"]);
+export type WorkspaceWashShape = z.infer<typeof workspaceWashShapeSchema>;
+
+/** Whether a value is one of the names the app offers, and not a custom colour. */
+export function isWorkspaceColorKey(value: unknown): value is WorkspaceColorKey {
+  return (
+    typeof value === "string" &&
+    (WORKSPACE_COLORS as readonly string[]).includes(value)
+  );
+}
+
+/** Whether a value is a custom `#RRGGBB`, and not one of the names. */
+export function isWorkspaceColorHex(value: unknown): value is string {
+  return typeof value === "string" && workspaceColorHexSchema.safeParse(value).success;
+}
 
 export const workspaceSchema = syncableEntitySchema.extend({
   name: z.string().trim().min(1).max(80),
@@ -76,6 +154,30 @@ export const workspaceSchema = syncableEntitySchema.extend({
    * put that symbol on spaces that are simply not shared.
    */
   shared: z.boolean().default(false),
+  /**
+   * Which of the two ways this space's colour is painted.
+   *
+   * A field and not something the app works out from the colours: the whole point
+   * of offering a choice is that the person made it, and a derived style is a
+   * style that cannot be chosen.
+   */
+  wash: workspaceWashSchema.default("diagonal"),
+  /**
+   * The colour the wash ends in, as its own field.
+   *
+   * A second colour and not a "how much darker" step, because that is what
+   * "change the colour of each side" means: the person picks the two ends the way
+   * they pick the first one, from the same twelve or from their own hex. A
+   * lightness slider is a different product and a worse one — it can only ever
+   * make the second end a version of the first, and the pairs worth having are
+   * not versions of each other.
+   *
+   * Null is the honest default and not a copy of `color`: it says "the second
+   * end has not been chosen", and the app falls back to the darker version of the
+   * first until it has. A row that lies by default is a row somebody has to open
+   * the app to check.
+   */
+  colorTo: workspaceColorSchema.nullable().default(null),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
@@ -240,19 +342,26 @@ export const listItemSchema = syncableEntitySchema.extend({
   tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
   externalId: z.string().max(120).nullable().default(null),
   metadata: z.record(z.string(), z.unknown()).nullable().default(null),
-  notes: z.string().max(2000).nullable().default(null),
+  /**
+   * A short remark on the row itself, in words. "Buy milk, *bring your own*".
+   *
+   * Named `annotation` and not `notes` on purpose. It was called `notes`, and the
+   * name was read as a claim that a note is this column rather than an entity of
+   * its own, which is how a note ended up with no table, no attachments and no
+   * way to be shared. This is a remark on a row; a note is a document and lives
+   * in `noteSchema`. See [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
+   */
+  annotation: z.string().max(2000).nullable().default(null),
 });
 export type ListItem = z.infer<typeof listItemSchema>;
 
 /**
- * Notes store a portable document (BlockNote/ProseMirror compatible JSON) so the
- * native editor and the web editor can both read and write the same payload.
+ * Notes store the HTML the editor produces, validated against the closed tag set
+ * it accepts. It was a ProseMirror document when the plan was a block editor on
+ * the web too; there is one editor now, so the stored format is exactly what the
+ * editor writes and nothing has to be converted. See `./note-document.ts` and
+ * `docs/architecture/adr/0009-one-native-editor.md`.
  */
-export const noteDocumentSchema = z.object({
-  type: z.literal("doc"),
-  content: z.array(z.unknown()),
-});
-
 export const noteSchema = syncableEntitySchema.extend({
   workspaceId: uuidSchema,
   folderId: uuidSchema.nullable().default(null),
@@ -278,6 +387,122 @@ export const attachmentSchema = z.object({
   createdAt: isoDateTimeSchema,
 });
 export type Attachment = z.infer<typeof attachmentSchema>;
+
+/* ------------------------------------------------------------- adjuntos ---- */
+
+/**
+ * What a note will accept.
+ *
+ * A list and not a regex at the point of use, because the client asks the server
+ * what it will take and the server is the one that has to be believed. `svg` is on
+ * the list and is also the reason the list exists: an SVG is a document that runs
+ * code, so it is only ever shown as a file and never rendered inside a note.
+ */
+export const ATTACHMENT_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+  'application/pdf',
+  'text/plain',
+] as const;
+export type AttachmentMimeType = (typeof ATTACHMENT_MIME_TYPES)[number];
+
+/** Types the editor will draw inside the document rather than offer as a file. */
+export const INLINE_IMAGE_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+] as const;
+
+export function isAllowedAttachmentMime(value: string): boolean {
+  return (ATTACHMENT_MIME_TYPES as readonly string[]).includes(value);
+}
+
+export function isInlineImageMime(value: string): boolean {
+  return (INLINE_IMAGE_MIME_TYPES as readonly string[]).includes(value);
+}
+
+/** Whether it is a picture at all, which is what picks the size ceiling. */
+export function isImageMime(value: string): boolean {
+  return value.startsWith('image/');
+}
+
+/**
+ * The size ceilings, in one place.
+ *
+ * The server may raise them with configuration, and the client uses these to
+ * answer before it sends anything. A number copied into the app would be a number
+ * that drifts, and the failure is a person told a file is too big when it is not.
+ */
+export const ATTACHMENT_MAX_BYTES_DEFAULT = 20 * 1024 * 1024;
+export const ATTACHMENT_IMAGE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
+
+/**
+ * Step one of an upload: the client says what it has and gets a place to put it.
+ *
+ * The key comes from the server and the bytes go straight there, so nothing is
+ * buffered here. The row does not exist yet: a file nobody finished uploading is
+ * not an attachment, it is a row somebody has to clean up.
+ */
+export const createAttachmentTicketRequestSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1).max(120).refine(isAllowedAttachmentMime, {
+    message: 'That kind of file is not accepted',
+  }),
+  sizeBytes: z.number().int().positive(),
+  width: z.number().int().positive().nullable().default(null),
+  height: z.number().int().positive().nullable().default(null),
+});
+export type CreateAttachmentTicketRequest = z.infer<
+  typeof createAttachmentTicketRequestSchema
+>;
+
+export const createAttachmentTicketResponseSchema = z.object({
+  uploadUrl: z.string(),
+  headers: z.record(z.string(), z.string()).default({}),
+  storageKey: z.string().min(1),
+  expiresAt: z.iso.datetime(),
+});
+export type CreateAttachmentTicketResponse = z.infer<
+  typeof createAttachmentTicketResponseSchema
+>;
+
+/**
+ * Step two: the bytes are in storage and now the file is part of the note.
+ *
+ * The server checks the key is one it handed out and that the object is really
+ * there. A client that confirms a key it was not given gets a 404 rather than a
+ * row pointing at somebody else's file.
+ */
+export const confirmAttachmentRequestSchema = z.object({
+  storageKey: z.string().min(1).max(512),
+  sizeBytes: z.number().int().positive(),
+  /**
+   * Repeated on purpose rather than remembered from the ticket.
+   *
+   * The ticket is about bytes and this is about a row, and a server that trusted
+   * what it said half a request ago would have two sources of truth for the same
+   * file. Re-sending is three fields, and the values are validated again here the
+   * same way they were there — a client cannot describe a file one way to be let
+   * in and another way to be stored.
+   */
+  fileName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().min(1).max(120).refine(isAllowedAttachmentMime, {
+    message: 'That kind of file is not accepted',
+  }),
+  width: z.number().int().positive().nullable().default(null),
+  height: z.number().int().positive().nullable().default(null),
+});
+export type ConfirmAttachmentRequest = z.infer<typeof confirmAttachmentRequestSchema>;
+
+export const listAttachmentsResponseSchema = z.object({
+  items: z.array(attachmentSchema),
+});
+export type ListAttachmentsResponse = z.infer<typeof listAttachmentsResponseSchema>;
 
 export const invitationStatusSchema = z.enum([
   "pending",
@@ -442,12 +667,26 @@ export type PreviewInvitationResponse = z.infer<
   typeof previewInvitationResponseSchema
 >;
 
+/** How many screens of widgets the dashboard can have. */
+export const DASHBOARD_PAGES = 8;
+
 /** Dashboard widget grid. Mirrors the JSON stored in `dashboard_layouts`. */
 export const dashboardWidgetSchema = z.object({
   id: z.string().min(1).max(64),
+  /**
+   * What the card is.
+   *
+   * `folder` is here because a folder is a place you can jump to, exactly like a
+   * list is, and the panel shows places. The kinds that are not a thing anybody
+   * pins — `tasks`, `stats`, `calendar`, `quick_actions` — are what the panel
+   * started life with, before it showed the person's own lists; they are still
+   * accepted so that a layout written then is not emptied out of everything, and
+   * nothing creates them.
+   */
   kind: z.enum([
     "recent_lists",
     "recent_notes",
+    "folder",
     "tasks",
     "quick_actions",
     "calendar",
@@ -457,6 +696,16 @@ export const dashboardWidgetSchema = z.object({
   y: z.number().int().min(0),
   w: z.number().int().min(1).max(12),
   h: z.number().int().min(1).max(24),
+  /**
+   * Which screen of the panel this card is on.
+   *
+   * A phone cannot show twenty-four rows of cards, and a card that does not fit
+   * is a card nobody can reach. So the panel has as many screens as the person
+   * needs and the card carries which one it is on, the way it carries how big it
+   * is. It has a default, so a layout written before there were screens reads
+   * with every card on the first one instead of failing to parse.
+   */
+  page: z.number().int().min(0).max(DASHBOARD_PAGES - 1).default(0),
   pinned: z.boolean().default(false),
   settings: z.record(z.string(), z.unknown()).optional(),
 });
@@ -483,8 +732,23 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>;
 
 /* --------------------------------------------------------------- compartir -- */
 
-/** What can be shared. A note is the `notes` column of an item, not a table. */
-export const shareNodeTypeSchema = z.enum(['workspace', 'folder', 'list', 'list_item']);
+/**
+ * What can be shared. Six node types, and a note is one of them.
+ *
+ * It used to say here that a note is the `notes` column of an item and so is
+ * never a node of its own. That was a decision about sharing written as a claim
+ * about the data model, and Phase 4 made it false: a note is a document, and
+ * `list_items` has a short plain-text `annotation`. See
+ * [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
+ */
+export const shareNodeTypeSchema = z.enum([
+  'workspace',
+  'folder',
+  'list',
+  'list_item',
+  'note',
+  'note_template',
+]);
 export type ShareNodeType = z.infer<typeof shareNodeTypeSchema>;
 
 /**
@@ -552,8 +816,14 @@ export const shareReachSchema = z.object({
 export type ShareReach = z.infer<typeof shareReachSchema>;
 
 export const searchResultSchema = z.object({
-  /** What the hit belongs to, so the app can route to the right screen. */
-  scope: z.enum(["workspace", "folder", "list", "list_item"]),
+  /**
+   * What the hit belongs to, so the app can route to the right screen.
+   *
+   * `note` is here because a note is searched by what is written inside it, not
+   * by its title, and a search that finds "salsa" and cannot open the recipe it
+   * found is worse than not searching notes at all.
+   */
+  scope: z.enum(["workspace", "folder", "list", "list_item", "note"]),
   id: uuidSchema,
   workspaceId: uuidSchema.nullable().default(null),
   listId: uuidSchema.nullable().default(null),
@@ -613,3 +883,121 @@ export const listItemsResponseSchema = z.object({
   nextCursor: z.string().nullable().default(null),
 });
 export type ListItemsResponse = z.infer<typeof listItemsResponseSchema>;
+
+/* ------------------------------------------------------------ plantillas ---- */
+
+/**
+ * A template is a document you can copy.
+ *
+ * It is the same format as a note and validated the same way, so a template can
+ * never produce a note the editor cannot open. There is no second format and no
+ * second editor: saving a note as a template is saving a note.
+ */
+export const noteTemplateScopeSchema = z.enum(['personal', 'workspace', 'public']);
+export type NoteTemplateScope = z.infer<typeof noteTemplateScopeSchema>;
+
+export const noteTemplateSchema = syncableEntitySchema.extend({
+  /**
+   * The space it belongs to, or `null` for the ones that are not in a space: the
+   * public catalogue and a personal template that follows its author.
+   */
+  workspaceId: uuidSchema.nullable().default(null),
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(300).default(""),
+  icon: z.string().max(40).default('document-text-outline'),
+  scope: noteTemplateScopeSchema.default('workspace'),
+  document: noteDocumentSchema,
+  /** Denormalised like a note's, for the one line a picker shows. */
+  plainText: z.string().default(""),
+  /**
+   * Only for the templates that ship with the app. A stable key is what makes an
+   * update replace the built-in instead of adding a second copy of it, and it is
+   * what makes a built-in recognisable as one on a device that has been offline
+   * for a release.
+   */
+  builtInKey: z.string().max(60).nullable().default(null),
+  /** Who made it. Null for a public one, which has no single author. */
+  createdBy: uuidSchema.nullable().default(null),
+});
+export type NoteTemplate = z.infer<typeof noteTemplateSchema>;
+
+export const createNoteTemplateRequestSchema = z.object({
+  workspaceId: uuidSchema.nullable().default(null),
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(300).optional(),
+  icon: z.string().max(40).optional(),
+  scope: noteTemplateScopeSchema.default('workspace'),
+  document: noteDocumentSchema,
+});
+export type CreateNoteTemplateRequest = z.infer<typeof createNoteTemplateRequestSchema>;
+
+export const listNoteTemplatesQuerySchema = z.object({
+  workspaceId: uuidSchema.optional(),
+  /**
+   * The built-in ones are offered to everybody, including somebody who has not
+   * opened a space yet, so they are not scoped to one. Absent means yes: a picker
+   * that opened without the catalogue would look empty, and the reason would be
+   * invisible from the screen.
+   */
+  includeBuiltIn: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+  scope: noteTemplateScopeSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type ListNoteTemplatesQuery = z.infer<typeof listNoteTemplatesQuerySchema>;
+
+export const listNoteTemplatesResponseSchema = z.object({
+  items: z.array(noteTemplateSchema),
+});
+export type ListNoteTemplatesResponse = z.infer<typeof listNoteTemplatesResponseSchema>;
+
+/* ------------------------------------------------------------------ notas ---- */
+
+export const createNoteRequestSchema = z.object({
+  workspaceId: uuidSchema,
+  folderId: uuidSchema.nullable().default(null),
+  title: z.string().trim().min(1).max(200),
+  /** Validated against the editor's tag set. A document that fails is never stored. */
+  document: noteDocumentSchema,
+  tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+});
+export type CreateNoteRequest = z.infer<typeof createNoteRequestSchema>;
+
+/**
+ * Changing a note.
+ *
+ * `document` and `title` are optional so an edit can be one or the other, and
+ * `expectedVersion` is what makes a second device's save lose to the first
+ * instead of overwriting it. The document is validated here rather than in the
+ * route, so the client and the server agree on what a note may contain.
+ */
+export const updateNoteRequestSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  folderId: uuidSchema.nullable().optional(),
+  document: noteDocumentSchema.optional(),
+  favorite: z.boolean().optional(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  expectedVersion: z.number().int().min(0),
+});
+export type UpdateNoteRequest = z.infer<typeof updateNoteRequestSchema>;
+
+export const listNotesQuerySchema = z.object({
+  workspaceId: uuidSchema.optional(),
+  folderId: uuidSchema.optional(),
+  favorite: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  tag: z.string().trim().min(1).max(40).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional(),
+});
+export type ListNotesQuery = z.infer<typeof listNotesQuerySchema>;
+
+export const listNotesResponseSchema = z.object({
+  items: z.array(noteSchema),
+  nextCursor: z.string().nullable().default(null),
+});
+export type ListNotesResponse = z.infer<typeof listNotesResponseSchema>;

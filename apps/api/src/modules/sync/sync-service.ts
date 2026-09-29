@@ -1,4 +1,5 @@
 import type {
+  ShareNodeType,
   SyncConflict,
   SyncOperation,
   SyncOperationResult,
@@ -6,7 +7,12 @@ import type {
   SyncPullResponse,
   SyncPushResponse,
 } from '@orbit-hub/contracts';
-import { syncOperationSchema } from '@orbit-hub/contracts';
+import {
+  NOTE_DOCUMENT_MAX_BYTES,
+  noteDocumentSchema,
+  noteDocumentToPlainText,
+  syncOperationSchema,
+} from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
@@ -16,6 +22,7 @@ import {
   LIST_KINDS,
   LIST_ORDER_MODES,
   WORKSPACE_COLORS,
+  WORKSPACE_WASHES,
   MEMBERSHIP_ROLE_RANK,
   SYNC_ENTITIES,
   SYNC_WRITABLE_FIELDS,
@@ -42,6 +49,9 @@ import type { StoredEntity } from './sync-repository';
  * random one would make a rejected operation look like a different operation.
  */
 const UNKNOWN_OPERATION_ID = '00000000-0000-0000-0000-000000000000';
+
+/** The most screens a panel is allowed to claim, matching the client's own cap. */
+const DASHBOARD_MAX_PAGES = 8;
 
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 
@@ -78,6 +88,23 @@ function assertSupportedEntity(entity: string): SyncEntityName {
 }
 
 /**
+ * Re-derives the columns a client must not choose.
+ *
+ * `plain_text` is what search matches on and `document` is what a person reads,
+ * so a client that could write them separately could make them disagree, and the
+ * note would show one thing and be found by another. The document is re-validated
+ * here as well, because this is the write path a device takes when it is offline
+ * and syncing later, and it must not be the one place a document skips the check.
+ */
+function noteFieldsForWrite(
+  entity: SyncEntityName,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  if (entity !== 'note' || typeof values['document'] !== 'string') return values;
+  return { ...values, plainText: noteDocumentToPlainText(values['document']) };
+}
+
+/**
  * Keeps only the fields the sync protocol owns, coerced to the column types.
  * Anything else in the payload is dropped instead of being written.
  */
@@ -108,6 +135,16 @@ function sanitisePayload(
 
     if (key === 'layout') {
       clean[key] = Array.isArray(value) ? value : [];
+      continue;
+    }
+
+    if (key === 'pages') {
+      // How many screens the panel claims, between one and the most it can hold.
+      // A count of zero would erase the panel and a count of thousands would ask
+      // for a hundred dots in a bar, and neither is a number a device should be
+      // able to send.
+      const n = Math.trunc(Number(value));
+      clean[key] = Number.isFinite(n) ? Math.min(Math.max(n, 1), DASHBOARD_MAX_PAGES) : 1;
       continue;
     }
 
@@ -146,11 +183,45 @@ function sanitisePayload(
     }
 
     if (key === 'color') {
-      // A colour out of the eight the app offers. An unknown one falls back to
-      // the default rather than to nothing, because a space with no colour is a
-      // card with no colour to read.
-      const color = String(value);
-      clean[key] = (WORKSPACE_COLORS as readonly string[]).includes(color) ? color : 'slate';
+      // One of the names the app offers, or a custom `#RRGGBB`. An unknown one
+      // falls back to the default rather than to nothing, because a space with no
+      // colour is a card with no colour to read.
+      //
+      // The hex is checked, not just accepted: this value goes straight into a
+      // style on somebody else's phone, and the first version of the check was
+      // "is it in the list", which turned every custom colour into slate — and
+      // did it silently, so the picker looked like it worked and the space came
+      // back grey on every pull.
+      const color = String(value).trim();
+      const esNombre = (WORKSPACE_COLORS as readonly string[]).includes(color);
+      const esPropio = /^[#][0-9A-F]{6}$/.test(color.toUpperCase());
+      clean[key] = esNombre ? color : esPropio ? color.toUpperCase() : 'slate';
+      continue;
+    }
+
+    if (key === 'wash') {
+      // One of the two ways a space's colour can be painted. A space written by a
+      // build that knew a third gets the default, which is what it had before the
+      // field existed.
+      const wash = String(value);
+      clean[key] = (WORKSPACE_WASHES as readonly string[]).includes(wash) ? wash : 'diagonal';
+      continue;
+    }
+
+    if (key === 'colorTo') {
+      // The colour the wash ends in, chosen the same way as the first one. Null is
+      // a real value here and not a failure: it means "not chosen yet", and the app
+      // falls back to the darker version of `color` until it is. Anything that is
+      // neither null nor a colour this app can draw becomes null, so a broken
+      // string cannot become a style object.
+      if (value === null || value === undefined) {
+        clean[key] = null;
+        continue;
+      }
+      const segundo = String(value).trim();
+      const esNombre = (WORKSPACE_COLORS as readonly string[]).includes(segundo);
+      const esPropio = /^#[0-9A-F]{6}$/.test(segundo.toUpperCase());
+      clean[key] = esNombre ? segundo : esPropio ? segundo.toUpperCase() : null;
       continue;
     }
 
@@ -192,8 +263,24 @@ function sanitisePayload(
       continue;
     }
 
-    if (key === 'notes') {
+    if (key === 'annotation') {
+      // A short remark on the row. It was called `notes` until ADR 0008, and the
+      // rule here kept the old name, so every `annotation` a client sent fell
+      // through every branch below and was dropped without a word: the push
+      // answered `applied` and the remark was gone. A rule that names a field
+      // that no longer exists is worse than no rule, because the allow-list says
+      // the field is writable and this says otherwise.
       clean[key] = value === null ? null : String(value).slice(0, 2000);
+      continue;
+    }
+
+    if (key === 'document') {
+      // The body of a note. Cut to the format's own limit rather than to a
+      // number chosen here, so the two cannot drift apart. Validation happens
+      // after this, at the edge, and a document over the limit is refused
+      // rather than quietly shortened: a note that loses its last paragraph is
+      // the failure this whole design exists to prevent.
+      clean[key] = String(value).slice(0, NOTE_DOCUMENT_MAX_BYTES);
       continue;
     }
 
@@ -233,15 +320,29 @@ function merge(
   const clientValues = sanitisePayload(assertSupportedEntity(operation.entity), operation.payload);
   const baseValues = operation.base ?? null;
   const conflictingFields: string[] = [];
+  /** Only the fields that actually differ, so a no-op save stays a no-op. */
+  const values: Record<string, unknown> = {};
 
   for (const [key, rawClientValue] of Object.entries(clientValues)) {
     const clientValue = rawClientValue ?? null;
     const serverValue = server[key] ?? null;
+    const sameAsServer = JSON.stringify(serverValue) === JSON.stringify(clientValue);
+
+    // Both sides arrived at the same value, so nobody disagreed about anything.
+    //
+    // This is the case that made every note created and typed into arrive as a
+    // conflict. Two saves of one document, the first applied and the second sent
+    // with a base from before it: `serverChanged` and `clientChanged` are both
+    // true, and the field was reported as contested even though the two values
+    // were byte for byte the same. Asking somebody to choose between a value and
+    // itself is worse than doing nothing, because it is a question with no answer
+    // that still leaves a conflict in the sync centre.
+    if (sameAsServer) continue;
+
+    values[key] = clientValue;
 
     if (baseValues === null) {
-      if (JSON.stringify(serverValue) !== JSON.stringify(clientValue)) {
-        conflictingFields.push(key);
-      }
+      conflictingFields.push(key);
       continue;
     }
 
@@ -254,7 +355,7 @@ function merge(
     }
   }
 
-  return { values: clientValues, conflictingFields };
+  return { values, conflictingFields };
 }
 
 export class SyncService {
@@ -275,7 +376,7 @@ export class SyncService {
   private async assertCanWrite(
     workspaceId: string | null,
     userId: string,
-    target?: { nodeType: 'workspace' | 'folder' | 'list' | 'list_item'; nodeId: string },
+    target?: { nodeType: ShareNodeType; nodeId: string },
   ): Promise<void> {
     if (!workspaceId) {
       // Workspaces and dashboards are owned by the user; authorisation is the
@@ -315,6 +416,16 @@ export class SyncService {
    * Items inherit the workspace of their list. Resolving it here keeps the
    * permission check in one place and hides the list behind the same 404.
    */
+  /**
+   * The space a note belongs to, which is its own `workspace_id`.
+   *
+   * A list item has to look its list up because it does not carry one. A note
+   * does, so this reads the row it already has instead of a second query.
+   */
+  private workspaceOfNote(note: StoredEntity): string | null {
+    return (note['workspaceId'] as string | null) ?? null;
+  }
+
   private async workspaceOfListItem(item: StoredEntity, userId: string): Promise<string | null> {
     const listId = item['listId'] as string | null;
     if (!listId) return null;
@@ -333,8 +444,12 @@ export class SyncService {
     // The dashboard row is per user and created on first write, so it is
     // handled before the generic "record does not exist" path.
     if (entity === 'dashboard') {
-      const layout = sanitisePayload('dashboard', operation.payload)['layout'] ?? [];
-      const row = await syncRepository.upsertDashboard(userId, layout);
+      const limpio = sanitisePayload('dashboard', operation.payload);
+      const row = await syncRepository.upsertDashboard(
+        userId,
+        limpio['layout'] ?? [],
+        Number(limpio['pages'] ?? 1),
+      );
       return { status: 'applied', version: row.version };
     }
 
@@ -342,6 +457,20 @@ export class SyncService {
 
     if (operation.kind === 'create') {
       if (existing) {
+        // A workspace whose owner membership went missing is a row nobody can
+        // reach: every read of it joins on the membership and 404s, every child
+        // fails the write check, and retrying the create can never fix it because
+        // the retry is absorbed here. That is how a space somebody made on their
+        // phone ends up permanently invisible — the client asks for its members
+        // and the server says it does not exist, with nothing to recover from.
+        //
+        // Repaired only when the workspace has no members at all. A workspace that
+        // already has owners belongs to them, and a create naming somebody else's
+        // workspace is not a way in: the row stays closed, which is why the check
+        // is "orphan" and not "the caller is not a member".
+        if (entity === 'workspace' && !(await syncRepository.hasAnyMember(operation.entityId))) {
+          await syncRepository.addMembership(operation.entityId, userId, 'owner');
+        }
         // The client created something that already exists: the row wins and
         // the duplicate create is absorbed. This is the retry case.
         return { status: 'duplicate', version: existing.version };
@@ -439,6 +568,41 @@ export class SyncService {
           return { status: 'applied', version: row.version };
         }
 
+        case 'note': {
+          // The space comes from the raw payload, not the sanitised one, and it
+          // is named rather than spread in. The sanitiser drops `workspaceId`
+          // because on an *update* the server owns where a note lives; on a
+          // create the client has to say which space the note is for, which is
+          // what the `folder` case does above and for the same reason.
+          if (workspaceId.length === 0) {
+            throw HttpError.validation('A note needs a workspaceId');
+          }
+
+          await this.assertCanWrite(workspaceId, userId, {
+            nodeType: 'note',
+            nodeId: operation.entityId,
+          });
+
+          // Validated before it is written, not after: the editor does not
+          // sanitise HTML on iOS or Android, and this is the last place the
+          // document is ever checked before it reaches a device.
+          const document = noteDocumentSchema.parse(payload['document'] ?? '');
+
+          const row = await syncRepository.insertEntity('note', {
+            id: operation.entityId,
+            workspaceId,
+            folderId: (payload['folderId'] as string | null) ?? null,
+            title: (payload['title'] as string) ?? 'Note',
+            document,
+            // Derived here rather than taken from the client, so the body and
+            // the text that search matches on cannot drift apart.
+            plainText: noteDocumentToPlainText(document),
+            favorite: payload['favorite'] === true,
+            tags: Array.isArray(payload['tags']) ? (payload['tags'] as string[]) : [],
+          });
+          return { status: 'applied', version: row.version };
+        }
+
         default:
           throw HttpError.validation(`The entity "${entity}" cannot be created`);
       }
@@ -473,6 +637,11 @@ export class SyncService {
           nodeType: 'list_item',
           nodeId: operation.entityId,
         });
+      } else if (entity === 'note') {
+        await this.assertCanWrite(this.workspaceOfNote(existing), userId, {
+          nodeType: 'note',
+          nodeId: operation.entityId,
+        });
       }
 
       const row = await syncRepository.updateEntity(entity, operation.entityId, {}, {
@@ -494,13 +663,18 @@ export class SyncService {
         nodeType: 'list_item',
         nodeId: operation.entityId,
       });
+    } else if (entity === 'note') {
+      await this.assertCanWrite(this.workspaceOfNote(existing), userId, {
+        nodeType: 'note',
+        nodeId: operation.entityId,
+      });
     }
 
     if (operation.baseVersion === existing.version) {
       const row = await syncRepository.updateEntity(
         entity,
         operation.entityId,
-        sanitisePayload(entity, operation.payload),
+        noteFieldsForWrite(entity, sanitisePayload(entity, operation.payload)),
       );
       return { status: 'applied', version: row.version };
     }
@@ -508,6 +682,14 @@ export class SyncService {
     const { values, conflictingFields } = merge(operation, existing);
 
     if (conflictingFields.length === 0) {
+      if (Object.keys(values).length === 0) {
+        // Nothing to write: every field the client sent is already the server's
+        // value. Bumping the version anyway would tell every other device the
+        // note changed when it did not, and each of them would re-render and
+        // re-cache a document they already had. A save that changes nothing is
+        // answered, not performed.
+        return { status: 'applied', version: existing.version };
+      }
       // The client had stale data but touched nothing that changed: a safe merge.
       const row = await syncRepository.updateEntity(entity, operation.entityId, values);
       return { status: 'applied', version: row.version };
@@ -590,15 +772,39 @@ export class SyncService {
         // operation with no usable id has no id at all: the zero uuid is the
         // one the schema itself accepts as "nothing".
         const operationId = readUuid(raw) ?? UNKNOWN_OPERATION_ID;
-        logger.warn({ issues: parsed.error.issues.slice(0, 3) }, 'sync operation is not valid');
+        const issues = parsed.error.issues.slice(0, 3);
+        logger.warn({ issues }, 'sync operation is not valid');
+
+        /*
+         * What the client actually sent, in the message.
+         *
+         * The `entity` field of the result is part of the contract and has to be
+         * one the server knows, so an unrecognised name cannot be echoed back
+         * there — `dashboard` stands in. It used to stand in *silently*, and that
+         * is a trap rather than a fallback: sending `item` where the server knows
+         * `list_item` comes back as fifteen rejections of the **dashboard**, and
+         * whoever reads that goes to the panel to look for a bug that is in the
+         * items. Two things go in the message instead, because both are what the
+         * reader needs: the name that arrived, and the first of the validator's
+         * own complaints, which is the actual reason.
+         */
+        const sent = (raw as Record<string, unknown> | null)?.['entity'];
+        const from = typeof sent === 'string' ? ` (llega como "${sent}")` : '';
+        const why = issues
+          .map((issue) =>
+            issue.path.length ? `${issue.path.join('.')}: ${issue.message}` : issue.message,
+          )
+          .join('; ');
 
         results.push({
           operationId,
           status: 'rejected',
+          // The contract has no room for a name it does not know, so the field says
+          // the nearest thing it can and the message below says the truth.
           entity: readEntity(raw) ?? 'dashboard',
           entityId: readUuid(raw, 'entityId') ?? UNKNOWN_OPERATION_ID,
           version: null,
-          error: 'The operation is not valid and was not applied',
+          error: `The operation is not valid and was not applied${from}${why ? `: ${why}` : ''}`.slice(0, 500),
         });
         continue;
       }

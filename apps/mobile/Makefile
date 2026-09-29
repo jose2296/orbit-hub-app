@@ -4,9 +4,11 @@
 #   make web         start the web target
 #   make ios         start the iOS simulator
 #   make android     start an Android emulator
+#   make device      start the dev server for a phone on the LAN (Expo Go)
 #
 # Native targets need the platform tooling: Xcode for iOS, Android Studio for
-# Android. The web target needs nothing extra.
+# Android. The web target needs nothing extra. The device target needs neither,
+# but the phone and this machine must share a WiFi network.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -14,8 +16,12 @@ SHELL := /bin/bash
 NPM ?= npm
 ENV := $(NPM) run --workspace @orbit-hub/mobile
 
-.PHONY: help install ios android web start device prebuild-ios prebuild-android \
-        test typecheck export-web doctor env-init env-distribute env-check clean
+# Forwarded to `expo start`, e.g. `make device DEVICE_ARGS=--tunnel`
+DEVICE_ARGS ?=
+
+.PHONY: help install ios android web start device device-tunnel device-url \
+        prebuild-ios prebuild-android test typecheck export-web doctor \
+        env-init env-distribute env-check clean
 
 help: ## Show this help
 	@echo "OrbitHub app"
@@ -27,6 +33,7 @@ help: ## Show this help
 	@echo "    web      React Native Web, no extra tooling"
 	@echo "    ios      needs Xcode and a simulator"
 	@echo "    android  needs Android Studio and an emulator"
+	@echo "    device   Expo Go on a real phone; same WiFi as this machine"
 	@echo ""
 
 install: ## Install workspace dependencies
@@ -44,8 +51,14 @@ web: ## Start the web target
 start: ## Start the dev server and pick the platform interactively
 	$(ENV) start
 
-device: ## List the devices the dev server can see
-	@npx expo start --dev-client 2>/dev/null || npx expo start
+device: ## Start the dev server for a phone on the LAN (Expo Go)
+	@node ../../scripts/lan-ip.mjs exec $(ENV) device $(DEVICE_ARGS)
+
+device-tunnel: ## Same as device, but through a public tunnel
+	@$(MAKE) --no-print-directory device DEVICE_ARGS=--tunnel
+
+device-url: ## Print the API URL a phone on the LAN should use
+	@node ../../scripts/lan-ip.mjs api-url
 
 prebuild-ios: ## Generate the native iOS project (continuous native generation)
 	$(NPM) run --workspace @orbit-hub/mobile exec expo prebuild --platform ios

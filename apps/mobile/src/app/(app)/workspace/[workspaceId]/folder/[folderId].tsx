@@ -1,5 +1,6 @@
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
+import { StyleSheet } from "react-native";
 
 import type { List } from "@orbit-hub/contracts";
 
@@ -8,13 +9,18 @@ import { CreateSheet } from "@/components/folders/create-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
 import { FolderBrowser } from "@/components/folders/folder-browser";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
-import { FloatingCreateButton } from "@/components/folders/floating-create-button";
+import { FloatingButton } from "@/components/ui/floating-button";
 import type { SheetOption } from "@/components/ui/sheet";
 import { Screen } from "@/components/ui/screen";
+import { AppText } from "@/components/ui/text";
+import { SpaceWash } from "@/components/ui/wash";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useLists } from "@/hooks/use-lists";
+import { useNotes } from "@/hooks/use-notes";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
+import { spacePaint } from "@/lib/workspace/color";
+import { useTheme } from "@/theme";
 
 /**
  * A folder inside a space, seen as a screen of its own.
@@ -25,6 +31,7 @@ import { useTranslation } from "@/lib/i18n";
  * with a different folder.
  */
 export default function FolderScreen() {
+  const theme = useTheme();
   const t = useTranslation();
   const { workspaceId, folderId } = useLocalSearchParams<{
     workspaceId: string;
@@ -34,6 +41,8 @@ export default function FolderScreen() {
   const { workspaces } = useWorkspaces();
   const { folders, isLoading, createFolder } = useFolders(workspaceId);
   const { lists, createList } = useLists({ workspaceId });
+  const { createNote } = useNotes({ workspaceId });
+  const router = useRouter();
 
   const [menuFor, setMenuFor] = useState<
     | { kind: "folder"; folder: FolderBrowserFolder }
@@ -55,6 +64,17 @@ export default function FolderScreen() {
   );
 
   useScreenTitle(folder?.name ?? t("folders.title"));
+
+  /**
+   * The text colours for the band, asked of the space rather than of the theme.
+   *
+   * Same reason as the screen above: theme text on a space colour is dark on dark
+   * half the time, and the band is the one place a folder screen says which space
+   * it belongs to.
+   */
+  // The second colour travels with the first: it is the person's own choice, and
+  // a band painted without it is a different pair from the one the picker shows.
+  const onWash = spacePaint(workspace?.color, workspace?.wash, workspace?.colorTo);
 
   /** The path from the space down to here, each step a link. */
   const crumbs = useMemo(() => {
@@ -94,8 +114,20 @@ export default function FolderScreen() {
     if (!trimmed || !workspaceId) return;
     if (createKind === "folder") {
       await createFolder({ name: trimmed, parentId: folderId });
-    } else if (createKind && createKind !== "note") {
-      // 'note' is greyed out in the panel; it is not a kind of list.
+    } else if (createKind === "note") {
+      // A note is written locally and opened straight away. Going to the editor
+      // before the sync has happened is the whole point: the note exists in the
+      // cache from this moment, so there is nothing to wait for and nothing that
+      // can fail on the way.
+      const noteId = await createNote({
+        workspaceId,
+        folderId,
+        title: trimmed,
+      });
+      closeSheets();
+      router.push({ pathname: "/note/[noteId]", params: { noteId } });
+      return;
+    } else if (createKind) {
       await createList({
         workspaceId,
         folderId,
@@ -108,8 +140,10 @@ export default function FolderScreen() {
     closeSheets,
     createFolder,
     createList,
+    createNote,
     createKind,
     folderId,
+    router,
     title,
     workspaceId,
   ]);
@@ -204,6 +238,40 @@ export default function FolderScreen() {
 
   return (
     <Screen>
+      {/*
+        The band of the space, on the folder screen too.
+
+        The folder is a level of the space and not a space of its own, so the
+        colour of the space is what the screen is in. Without it, going into a
+        folder is a screen that looks like a different place — and the level you
+        are in is exactly the thing you lose track of when you are three folders
+        deep in something you cannot name.
+      */}
+      <SpaceWash
+        colorKey={workspace?.color}
+        // Same pair as the text above: the end colour is part of the choice, not
+        // an extra, so the band and the picker have to agree on both ends.
+        colorToKey={workspace?.colorTo}
+        wash={workspace?.wash}
+        radius={theme.radius.lg}
+        style={[
+          styles.band,
+          { padding: theme.spacing.lg, gap: theme.spacing.xxs },
+        ]}
+      >
+        <AppText
+          variant="title"
+          numberOfLines={1}
+          style={{ color: onWash.foreground }}
+        >
+          {folder?.emoji ? `${folder.emoji} ` : ""}
+          {folder?.name ?? t("folders.title")}
+        </AppText>
+        <AppText variant="caption" numberOfLines={1} style={{ color: onWash.muted }}>
+          {workspace?.name ?? t("workspaces.title")}
+        </AppText>
+      </SpaceWash>
+
       <Breadcrumbs crumbs={crumbs} />
 
       <FolderBrowser
@@ -212,6 +280,11 @@ export default function FolderScreen() {
         folders={folders}
         lists={lists}
         isLoading={isLoading}
+        colorKey={workspace?.color}
+        wash={workspace?.wash}
+        // Beside the colour and the wash, for the same reason: a browser that
+        // only got the first colour draws the derived pair, not the chosen one.
+        colorTo={workspace?.colorTo}
         onFolderMenu={(target) =>
           setMenuFor({ kind: "folder", folder: target })
         }
@@ -246,7 +319,7 @@ export default function FolderScreen() {
         creating={false}
       />
 
-      <FloatingCreateButton onPress={() => setCreateOpen(true)} />
+      <FloatingButton onPress={() => setCreateOpen(true)} />
     </Screen>
   );
 }
@@ -258,3 +331,9 @@ type FolderBrowserFolder = {
   parentId: string | null;
   position: number;
 };
+
+const styles = StyleSheet.create({
+  band: {
+    width: "100%",
+  },
+});

@@ -39,8 +39,9 @@ export interface CreateSheetProps {
  * straight to its name. One panel with two pages, because five kinds plus three
  * names plus a title field on one screen is a form nobody reads.
  *
- * A note is listed and disabled rather than left out: it is coming, and a
- * missing option looks like an oversight while a greyed out one says "not yet".
+ * A note is listed like the others and creates the same way: a name and then
+ * the document. It is the only one of the three that is not a container, and the
+ * panel does not treat it differently beyond not asking for a list kind.
  */
 export function CreateSheet({
   open,
@@ -58,6 +59,13 @@ export function CreateSheet({
   const theme = useTheme();
   const t = useTranslation();
   const isFolder = kind === "folder";
+  const isNote = kind === "note";
+  /**
+   * Only a list has a kind. Asking a note for one produced a panel with five
+   * buttons about films and books above a note, and the person who clicked "Nota"
+   * was handed a form for something else.
+   */
+  const isList = !isFolder && !isNote;
 
   const whatOptions: SheetOption[] = useMemo(
     () => [
@@ -86,8 +94,10 @@ export function CreateSheet({
         label: t("create.note"),
         icon: "document-text-outline",
         description: t("create.noteHint"),
-        disabled: true,
-        onPress: () => undefined,
+        onPress: () => {
+          onKind("note");
+          onStep("details");
+        },
       },
     ],
     [onKind, onStep, t],
@@ -102,7 +112,9 @@ export function CreateSheet({
           ? t("create.title")
           : isFolder
             ? t("folders.create")
-            : t("lists.create")
+            : isNote
+              ? t("create.note")
+              : t("lists.create")
       }
       subtitle={subtitle}
       scrollable={false}
@@ -113,7 +125,7 @@ export function CreateSheet({
         <View
           style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
         >
-          {!isFolder ? (
+          {isList ? (
             <Segmented
               label={t("lists.kindLabel")}
               value={(kind ?? "tasks") as ListKind}
@@ -126,13 +138,21 @@ export function CreateSheet({
           ) : null}
 
           <TextField
-            label={isFolder ? t("folders.nameLabel") : t("lists.titleLabel")}
+            label={
+              isFolder
+                ? t("folders.nameLabel")
+                : isNote
+                  ? t("note.titleLabel")
+                  : t("lists.titleLabel")
+            }
             value={title}
             onChangeText={onTitle}
             placeholder={
               isFolder
                 ? t("folders.namePlaceholder")
-                : t("lists.titlePlaceholder")
+                : isNote
+                  ? t("note.titlePlaceholder")
+                  : t("lists.titlePlaceholder")
             }
             autoCapitalize="sentences"
             autoFocus

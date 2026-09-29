@@ -1,4 +1,4 @@
-import { isItemIcon } from '@orbit-hub/contracts';
+import { isItemIcon, notePreviewBelowTitle } from '@orbit-hub/contracts';
 import type {
   List,
   ListItem,
@@ -11,7 +11,7 @@ import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql } from 'drizzle
 
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
-import { folders, listItems, lists, memberships, workspaces } from '../../db/schema.js';
+import { folders, listItems, lists, memberships, notes, workspaces } from '../../db/schema.js';
 import { HttpError } from '../../lib/http-error.js';
 
 import type { ListKindName } from '../../db/constants';
@@ -201,7 +201,7 @@ export class ContentQueryService {
       tags: row.tags ?? [],
       externalId: row.externalId,
       metadata: row.metadata,
-      notes: row.notes,
+      annotation: row.annotation,
       version: row.version,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -336,7 +336,7 @@ export class ContentQueryService {
             isNull(listItems.deletedAt),
             isNull(lists.deletedAt),
             ...(query.kind ? [eq(lists.kind, query.kind)] : []),
-            or(ilike(listItems.title, pattern), ilike(listItems.notes, pattern)),
+            or(ilike(listItems.title, pattern), ilike(listItems.annotation, pattern)),
           ),
         )
         .limit(query.limit - results.length);
@@ -352,6 +352,44 @@ export class ContentQueryService {
           subtitle: row.list.title,
           completed: row.item.completed,
           updatedAt: row.item.updatedAt.toISOString(),
+        });
+      }
+    }
+
+    if (results.length < query.limit) {
+      // Notes are searched by what is written inside them, not only by their
+      // title. That is the whole reason `plain_text` is denormalised on save: a
+      // note called "Salsa" holding "six tomatoes per onion" is found by either
+      // word, and the trigram index is what answers the second one.
+      const noteRows = await db
+        .select()
+        .from(notes)
+        .where(
+          and(
+            inArray(notes.workspaceId, workspaceIds),
+            isNull(notes.deletedAt),
+            or(ilike(notes.title, pattern), ilike(notes.plainText, pattern)),
+          ),
+        )
+        .limit(query.limit - results.length);
+
+      for (const row of noteRows) {
+        results.push({
+          scope: 'note',
+          id: row.id,
+          workspaceId: row.workspaceId,
+          // A note is not in a list, so there is nothing to point at. The field is
+          // null rather than the note's own id, which would make the app try to
+          // open a list that does not exist.
+          listId: null,
+          kind: null,
+          title: row.title,
+          // The body, with the title cut off the front: a note whose first block
+          // is its own heading would otherwise show the same words twice.
+          subtitle: notePreviewBelowTitle(row.document, row.title),
+          // `null` and not `false`: a note is not a row and cannot be ticked.
+          completed: null,
+          updatedAt: row.updatedAt.toISOString(),
         });
       }
     }
