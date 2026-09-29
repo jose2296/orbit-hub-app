@@ -291,9 +291,7 @@ export function FolderBrowser({
                       })}
                     </AppText>
                   </View>
-                  {list.favorite ? (
-                    <Ionicons name="bookmark" size={14} color={paint.color} />
-                  ) : null}
+                  
                 </Pressable>
                 <MenuButton
                   label={t("rowActions.menuOf", { name: list.title })}

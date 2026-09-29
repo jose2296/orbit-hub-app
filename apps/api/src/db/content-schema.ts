@@ -311,7 +311,6 @@ export const lists = pgTable(
     title: varchar('title', { length: 120 }).notNull(),
     description: varchar('description', { length: 1000 }),
     emoji: varchar('emoji', { length: 16 }),
-    favorite: boolean('favorite').notNull().default(false),
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     position: integer('position').notNull().default(0),
     // How the items are read. It never renumbers anything: the manual order is
@@ -347,7 +346,6 @@ export const listItems = pgTable(
     title: varchar('title', { length: 300 }).notNull(),
     position: integer('position').notNull().default(0),
     completed: boolean('completed').notNull().default(false),
-    favorite: boolean('favorite').notNull().default(false),
     priority: varchar('priority', { length: 8 })
       .$type<'none' | 'low' | 'medium' | 'high'>()
       .notNull()

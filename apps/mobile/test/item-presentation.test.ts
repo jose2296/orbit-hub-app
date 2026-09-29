@@ -28,7 +28,6 @@ function item(partial: Partial<ListItem> & { id: string }): ListItem {
     title: 'Tarea',
     position: 0,
     completed: false,
-    favorite: false,
     priority: 'none',
     icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [],

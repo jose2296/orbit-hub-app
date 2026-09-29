@@ -27,7 +27,6 @@ import {
   cardSize,
   dropSpot,
   moveCardTo,
-  moveCardToPage,
   pageCards,
   pageCount,
   pageOf,
@@ -318,21 +317,16 @@ export function PanelGrid({
     id: string;
     from: DashboardWidget[];
     /**
-     * The cell the hand is over, and the one it started from.
+     * The cell the card was picked up from, and the one every cell of the carry is
+     * measured against.
      *
-     * Both, because a card that is being carried is drawn at `spot` and not at the
-     * cell it is stored in: the whole point of carrying it is that it is in the
-     * hand, and a card that springs back to its own cell every time the panel
-     * turns under it is a card being put down and picked up again sixty times a
-     * second.
-     *
-     * `home` is where it was picked up from, and it is what every cell is measured
-     * against — which is what makes the push mean the same thing on the second
-     * screen as on the first. Without it the cell is read from the card's *current*
-     * position, which the turn has just changed, and a card carried two screens
-     * ends up at a cell that has nothing to do with where the hand is.
+     * Measured from there and not from where the card currently is, because the
+     * turn moves it: a cell read from the card's own position is a cell read from
+     * the first free spot of the screen it has just arrived at, which has nothing
+     * to do with where the hand is. From `home` the same finger is in the same
+     * place on every screen, which is what makes a push mean one thing however
+     * many screens it crosses.
      */
-    spot: { x: number; y: number } | null;
     home: { x: number; y: number };
   } | null>(null);
   /** The card being carried, in state, because the card has to *see* it. */
@@ -559,8 +553,14 @@ export function PanelGrid({
     if (enEsta) return suyas;
     const enLaMano = draft.find((widget) => widget.id === carried);
     if (!enLaMano) return suyas;
-    return [{ ...enLaMano, page: current }, ...suyas];
-  }, [carried, current, draft]);
+    // At the cell the hand is over and not at the one it is stored in: that stored
+    // cell belongs to the screen it came from, and putting it there would put the
+    // card on top of whatever is on that cell of the screen it is arriving at.
+    return [
+      drop ? { ...enLaMano, page: current, x: drop.x, y: drop.y } : { ...enLaMano, page: current },
+      ...suyas,
+    ];
+  }, [carried, current, draft, drop]);
   const placed = useMemo(() => pageCards(onPage), [onPage]);
   const hidden = placed.hidden.filter((id) => id !== carried);
 
@@ -759,10 +759,10 @@ export function PanelGrid({
    * and the track has to be sent there before the cards can be seen arriving.
    *
    * Which is what the dots were not doing. They called `setPage` and nothing else,
-   * so the panel drew the cards of the screen that had been asked for at the
-   * place of the screen the track was parked on — a dot that moved the page bar and
-   * left the panel showing the previous one, which is the same panel three
-   * disagreeing views: the dots, the cards and the next swipe.
+   * so the panel drew the cards of the screen that had been asked for at the place
+   * of the screen the track was parked on — a dot that moved the page bar and left
+   * the panel showing the previous one, which is the same panel three disagreeing
+   * views: the dots, the cards and the next swipe.
    *
    * With the same easing and the same `PAGE_MIN` as a swipe that had only just
    * begun, because that is how long the last of it takes to arrive.
@@ -785,29 +785,34 @@ export function PanelGrid({
    * The card has been held still long enough to be picked up.
    *
    * It is lifted and nothing else: no cell moves, nothing is written, and the
-   * panel has not changed. A pick-up that already decided where the card was
-   * going would be a drag that happened to be slow, and the difference between
-   * the two is the whole of the gesture — one places a card on this screen and
-   * the other puts it in a hand that can go to another one.
+   * panel has not changed. A pick-up that already decided where the card was going
+   * would be a drag that happened to be slow, and the difference between the two is
+   * the whole of the gesture — one places a card on this screen and the other puts
+   * it in a hand that can go to another one.
    *
-   * And it is refused on a panel of one screen, before the card is even told:
-   * there is nothing on the far side of it.
+   * And it is refused on a panel of one screen, before the card is even told: there
+   * is nothing on the far side of it.
    */
   const pickUp = useCallback((id: string) => {
     if (screensRef.current < 2) return;
-    carry.current = { id, from: draftRef.current };
+    const enEsta = placed.cards.find((card) => card.id === id);
+    carry.current = {
+      id,
+      from: draftRef.current,
+      home: enEsta ? { x: enEsta.x, y: enEsta.y } : { x: 0, y: 0 },
+    };
     pushBase.current = 0;
     spent.current = 0;
     setCarried(id);
     setDragging(id);
-  }, []);
+  }, [placed.cards]);
 
   /**
    * A turn that is waiting out its hold, called off.
    *
-   * Called on every release and every time the push comes back inside the mark.
-   * A timer that outlived either of those would turn a screen with nobody's finger
-   * on it, which is the one thing a pager must never do on its own.
+   * Called on every release and every time the push comes back inside the mark. A
+   * timer that outlived either of those would turn a screen with nobody's finger on
+   * it, which is the one thing a pager must never do on its own.
    */
   const cancelTurn = useCallback(() => {
     if (turnTimer.current !== null) {
@@ -817,17 +822,26 @@ export function PanelGrid({
   }, []);
 
   /**
-   * The screen turns, with the card on it.
+   * The screen turns, with the card still in the hand.
    *
-   * The card's page is changed in the **draft** and not written, so the card is
-   * drawn on the screen it is being carried to and travels there with the rest of
-   * the page — and if the hand changes its mind and carries it back, there is
-   * nothing to undo. The write happens once, when the finger lifts.
+   * And **the card does not change page here**, which is the whole of how this
+   * survives its own gesture. The draft is what every screen is drawn from, so
+   * moving the card's page moved it out of one `ScreenOfPanel` and into another
+   * one — and a component that unmounts under a finger takes the gesture with it.
+   * `onEnd` never arrived, so nothing was ever written: the card turned up on the
+   * next screen, was drawn there, and was still on the old one as soon as the page
+   * was reloaded. Every check of the gesture said it worked.
    *
-   * A screen with no room for the card is a screen the card cannot be put on, and
-   * the turn is refused rather than taken: the panel would show a screen that
-   * cannot show the thing in your hand, and the card would be nowhere at all for
-   * as long as the finger stayed down.
+   * So the card stays where its widget says it is and is drawn **on top of the
+   * screen, and a card that changes screen has to change component with it — so it
+   * does not change screen. It stays where the tree put it and moves by the width of
+   * a screen, which is what `pageOffset` is in `ScreenOfPanel`. Turning the screen
+   * moves the track under the card and the card stays under the hand, which is also
+   * how it is done on a home screen: the thing you are carrying is not on one of
+   * the pages yet.
+   *
+   * The write happens once, when the finger lifts, and `carryCard` works out where
+   * the card has got to from the draft as it was at the pick-up.
    */
   const carriedTurn = useCallback(
     (id: string, dir: -1 | 1, dx: number) => {
@@ -840,15 +854,12 @@ export function PanelGrid({
 
       const target = carryTarget(currentRef.current, dir, screensRef.current);
       if (target === null) return;
-      // And asked before the turn, because `moveCardToPage` never says no: the
-      // card it is placing goes in before the cards already there, so a full
-      // screen would give up its first cell and shuffle the rest. See `carryFits`.
+      // Asked before the turn, because a screen with no room is a screen the card
+      // cannot be put on, and `moveCardToPage` never says no: it places the card
+      // it is moving *before* the ones already there, so a full screen would give
+      // up its first cell and shuffle the rest to make space. Right for a card
+      // under a finger; wrong for a hand asking at the edge of the panel.
       if (!carryFits(draftRef.current, id, target)) return;
-      const next = moveCardToPage(draftRef.current, id, target);
-      setDraft(next);
-      // The cell was worked out against the screen the card came from, so it is
-      // dropped and the next move works it out again against the new one.
-      setDrop(null);
       goTo(target);
     },
     [goTo],
@@ -859,13 +870,13 @@ export function PanelGrid({
    *
    * Three things in order, and the order is the rule:
    *
-   * 1. Inside the mark, the side is unspent again. This is what lets a second
-   *    screen be carried to — push, push back, push — and what makes a hand that
-   *    wandered out past the mark and came back able to try again.
+   * 1. Inside the mark, the side is unspent again. This is what lets a second screen
+   *    be carried to — push, push back, push — and what makes a hand that wandered
+   *    out past the mark and came back able to try again.
    * 2. A side that is already spent is not armed, however far the finger has gone
    *    since. Without this a card carried to the last screen and released there
-   *    would keep turning screens by itself, since its push stays past the mark
-   *    for as long as the finger is down.
+   *    would keep turning screens by itself, since its push stays past the mark for
+   *    as long as the finger is down.
    * 3. Otherwise the turn is armed — once, and not re-armed on every frame, so a
    *    finger held past the mark waits out one hold rather than a hold per frame.
    */
@@ -889,8 +900,8 @@ export function PanelGrid({
     /*
       A turn that is waiting when the arrangement ends is a turn with nothing to
       carry. Not a leak — the timer would fire and find no card — but a panel that
-      changes screen after the pencil is gone is a panel answering a gesture that
-      was never finished.
+      changes screen after the pencil is gone is a panel answering a gesture that was
+      never finished.
     */
     if (!editing) {
       cancelTurn();
@@ -909,26 +920,34 @@ export function PanelGrid({
    */
   const onDragMove = useCallback(
     (id: string, dx: number, dy: number) => {
-      // A card that is being carried reads the same travel as a push towards
-      // another screen. It still falls through to the cell below, because a card
-      // that has been carried to a screen lands *somewhere on it*, and the place
-      // the hand let go of it is the only opinion anybody has about where.
-      if (carry.current?.id === id) carriedMove(id, dx);
       const card = held.current;
       if (!card) return;
       const stepX = cell.width + cell.gap;
       const stepY = cell.height + cell.gap;
-      setDrop(
-        dropSpot(
-          others.current,
-          card,
-          {
-            x: card.x * stepX + dx + (card.w * stepX) / 2,
-            y: card.y * stepY + dy + (card.h * stepY) / 2,
-          },
-          cell,
-        ),
+      // A card that is being carried reads the same travel as a push towards
+      // another screen. It still falls through to the cell below, because a card
+      // that has been carried to a screen lands *somewhere on it*, and the place the
+      // hand let go of it is the only opinion anybody has about where.
+      const enLaMano = carry.current?.id === id ? carry.current : null;
+      if (enLaMano) carriedMove(id, dx);
+      // And measured from the cell it was **picked up at**, not from the one it is
+      // in now. The difference only shows once the panel has turned a screen, and it
+      // shows as the card jumping: the turn moves the card to the first free cell of
+      // the screen it arrives at, so a cell measured from there is a cell that has
+      // nothing to do with where the hand is. From `home` the same finger is in the
+      // same place on every screen, which is what makes the gesture mean one thing
+      // however many screens it crosses.
+      const desde = enLaMano?.home ?? { x: card.x, y: card.y };
+      const destino = dropSpot(
+        others.current,
+        card,
+        {
+          x: desde.x * stepX + dx + (card.w * stepX) / 2,
+          y: desde.y * stepY + dy + (card.h * stepY) / 2,
+        },
+        cell,
       );
+      setDrop(destino);
     },
     [cell, carriedMove],
   );
@@ -961,24 +980,31 @@ export function PanelGrid({
       */
       const landed = dropRef.current;
       dropRef.current = null;
-      const held = carry.current;
-      const carried = held?.id === id;
+      const enLaMano = carry.current;
+      const lleva = enLaMano?.id === id;
       carry.current = null;
       cancelTurn();
       setCarried(null);
       setDragging(null);
       setDrop(null);
 
-      if (carried && held) {
-        // The write a carry owes: the card goes to the screen it is on now, and
-        // then to the cell it was let go over. Both from the layout as it was when
-        // the card was picked up, which is the only one that has not been edited
-        // underneath the carry.
-        const next = carryCard(held.from, id, currentRef.current, landed);
-        // A carry that went nowhere changed nothing, and writing the layout anyway
-        // is one operation in the outbox to record that a hand picked a card up
-        // and put it down again.
-        if (next !== held.from) commit(next);
+      if (lleva && enLaMano) {
+        /*
+          The write a carry owes, and the only one: the card goes to the screen it
+          has been carried to and then to the cell the hand let go over it.
+
+          Both worked out from the layout as it was when the card was picked up. The
+          live draft cannot answer it — the carry never wrote to the draft, and the
+          draft still says the card is on the screen it came from, which is the one
+          number the whole gesture exists to change.
+
+          And it returns the same array when the carry went nowhere, which is how
+          this knows there is nothing to write: a hand that picked a card up and
+          put it straight down has not arranged anything, and that should not put an
+          operation in the outbox for somebody to sync.
+        */
+        const next = carryCard(enLaMano.from, id, currentRef.current, landed);
+        if (next !== enLaMano.from) commit(next);
         return;
       }
 
@@ -995,6 +1021,7 @@ export function PanelGrid({
     (id: string) => commit(draft.filter((widget) => widget.id !== id)),
     [commit, draft],
   );
+
 
   /**
    * Ends the arrangement: writes what is on screen and stops editing.
@@ -1337,99 +1364,111 @@ export function PanelGrid({
           );
         }}
       >
-        {drawn.length === 0 ? (
-          /*
-            An empty page says it is empty.
+        {/*
+          The track is always mounted, and that is not a style choice: it is what
+          owns the swipe. It used to be drawn *instead of* the panel whenever the
+          screen being looked at had nothing on it — the empty page said so with a
+          block of its own — so on an empty screen there was no pager at all. The
+          dots still worked, which is why it read as a panel that had decided to
+          have one screen: a swipe across an empty screen did nothing, and the only
+          way off it was to aim at a dot the size of a grain of rice.
 
-            The four dashed rectangles were the answer for a panel that has never
-            had anything in it: somewhere to put things, said in the shape things
-            will be. They were drawn for every screen with nothing on it, and that
-            is what made a page you had just added look broken — four placeholders
-            that were not cards, could not be moved, and disappeared the moment
-            anything real was on them.
-
-            So they are only drawn while arranging, which is the only time somebody
-            is about to put something there. Looking at an empty page, they are
-            just noise, and a page with nothing on it is a page somebody is still
-            thinking about.
-          */
-          editing ? (
-            <Ghosts cell={cell} radius={theme.radius.lg} height={board.height} />
-          ) : (
-            <EmptyPage label={t("dashboard.pageEmpty")} />
-          )
-        ) : (
-          <GestureDetector gesture={turn}>
+          And the empty page is exactly when the swipe matters most. It is the
+          screen somebody arrives at to put something on, and the screen they leave
+          from having realised there is nothing to put there.
+        */}
+        <GestureDetector gesture={turn}>
+          {/*
+            An `Animated.View` and not a `View`, which is not a detail: an animated
+            style on a plain view is quietly ignored, so the swipe would have turned
+            the page with no movement under the finger — working, and feeling like
+            the panel had changed its mind on its own. TypeScript said as much, which
+            is the good kind of saying.
+          */}
+          <Animated.View
+            testID="panel-grid"
+            style={[styles.track, trackStyle, { height: gridHeight }]}
+          >
             {/*
-              An `Animated.View` and not a `View`, which is not a detail: an
-              animated style on a plain view is quietly ignored, so the swipe
-              would have turned the page with no movement under the finger —
-              working, and feeling like the panel had changed its mind on its
-              own. TypeScript said as much, which is the good kind of saying.
+              The background, and the only thing under the finger while the panel is
+              being arranged.
+
+              It is the first child so that every card is painted over it, and a card
+              is a card: a drag that begins on one never arrives here, which is what
+              lets the two gestures be two gestures and not one gesture that has to
+              guess. Outside the arranging mode there is nothing to disambiguate and
+              the whole board turns, so this is not even mounted.
             */}
-            <Animated.View
-              testID="panel-grid"
-              style={[styles.track, trackStyle, { height: gridHeight }]}
-            >
-              {/*
-                The background, and the only thing under the finger while the panel
-                is being arranged.
+            {editing && screens > 1 ? (
+              <GestureDetector gesture={turnFromBackground}>
+                <View testID="panel-background" style={StyleSheet.absoluteFill} />
+              </GestureDetector>
+            ) : null}
 
-                It is the first child so that every card is painted over it, and a
-                card is a card: a drag that begins on one never arrives here, which
-                is what lets the two gestures be two gestures and not one gesture
-                that has to guess. Outside the arranging mode there is nothing to
-                disambiguate and the whole board turns, so this is not even mounted.
-              */}
-              {editing && screens > 1 ? (
-                <GestureDetector gesture={turnFromBackground}>
-                  <View
-                    testID="panel-background"
-                    style={StyleSheet.absoluteFill}
-                  />
-                </GestureDetector>
-              ) : null}
+            {/*
+              Every screen that can be seen, each one at its own place on the track.
+              The one being looked at is in the middle of what is mounted, its
+              neighbours to either side, so a swipe has the next screen to bring in
+              and does not have to invent it at the end.
 
-              <>
-                {/*
-                  Every screen that can be seen, each one at its own place on the
-                  track. The one being looked at is in the middle of what is
-                  mounted, its neighbours to either side, so a swipe has the next
-                  screen to bring in and does not have to invent it at the end.
+              A screen that is not the current one is drawn plainly and is not
+              arranged: it is either arriving or leaving, and a card under a finger on
+              a screen nobody is arranging is not a card anybody can be holding.
+            */}
+            {[neighbours.before, { index: current, drawn }, neighbours.after]
+              .filter((screen): screen is { index: number; drawn: DashboardWidget[] } => screen !== null)
+              .map((screen) => (
+                <ScreenOfPanel
+                  key={screen.index}
+                  offset={screen.index * board.width}
+                  width={board.width}
+                  height={gridHeight}
+                  live={screen.index === current}
+                  cell={cell}
+                  widgets={screen.drawn}
+                  preview={screen.index === current ? preview : undefined}
+                  dragging={dragging}
+                  carried={carried}
+                  drop={drop}
+                  current={current}
+                  arrange={arrange}
+                  describe={describe}
+                  colorKeyOf={colorKeyOf}
+                  washOf={washOf}
+                  colorToOf={colorToOf}
+                  whereOf={whereOf}
+                  onOpen={onOpen}
+                  onResize={resize}
+                  onUnpin={unpin}
+              />
+            ))}
+          </Animated.View>
+        </GestureDetector>
 
-                  A screen that is not the current one is drawn plainly and is not
-                  arranged: it is either arriving or leaving, and a card under a
-                  finger on a screen nobody is arranging is not a card anybody can
-                  be holding.
-                */}
-                {[neighbours.before, { index: current, drawn }, neighbours.after]
-                  .filter((screen): screen is { index: number; drawn: DashboardWidget[] } => screen !== null)
-                  .map((screen) => (
-                    <ScreenOfPanel
-                      key={screen.index}
-                      offset={screen.index * board.width}
-                      width={board.width}
-                      height={gridHeight}
-                      live={screen.index === current}
-                      cell={cell}
-                      widgets={screen.drawn}
-                      preview={screen.index === current ? preview : undefined}
-                      dragging={dragging}
-                      arrange={arrange}
-                      describe={describe}
-                      colorKeyOf={colorKeyOf}
-                      washOf={washOf}
-                      colorToOf={colorToOf}
-                      whereOf={whereOf}
-                      onOpen={onOpen}
-                      onResize={resize}
-                      onUnpin={unpin}
-                    />
-                  ))}
-              </>
-            </Animated.View>
-          </GestureDetector>
-        )}
+        {/*
+          The empty page says it is empty — **over** the track and not instead of it.
+
+          The four dashed rectangles were the answer for a panel that has never had
+          anything in it: somewhere to put things, said in the shape things will be.
+          They were drawn for every screen with nothing on it, and that is what made
+          a page you had just added look broken — four placeholders that were not
+          cards, could not be moved, and disappeared the moment anything real was on
+          them. So they are only drawn while arranging, which is the only time
+          somebody is about to put something there.
+
+          And `pointerEvents="none"`, which is the other half of it: an empty page
+          that says so with a box that eats touches is an empty page you cannot
+          swipe away from, which is the bug this whole block was moved out for.
+        */}
+        {drawn.length === 0 ? (
+          <View style={styles.vacio} pointerEvents="none">
+            {editing ? (
+              <Ghosts cell={cell} radius={theme.radius.lg} height={board.height} />
+            ) : (
+              <EmptyPage label={t("dashboard.pageEmpty")} />
+            )}
+          </View>
+        ) : null}
 
         {editing && hidden.length > 0 ? (
           <AppText variant="caption" tone="subtle">
@@ -1521,6 +1560,9 @@ function ScreenOfPanel({
   widgets,
   preview,
   dragging,
+  carried,
+  drop,
+  current,
   arrange,
   describe,
   colorKeyOf,
@@ -1539,6 +1581,12 @@ function ScreenOfPanel({
   widgets: DashboardWidget[];
   preview?: Map<string, PlacedCard> | null;
   dragging: string | null;
+  /** The card in the person's hand, if it is on **this** screen. */
+  carried: string | null;
+  /** The cell the hand is over it. */
+  drop: { x: number; y: number } | null;
+  /** Which screen the panel is looking at, for the card in the hand. */
+  current: number;
   arrange: PanelArrangeValue;
   describe: PanelGridProps["describe"];
   colorKeyOf: PanelGridProps["colorKeyOf"];
@@ -1550,10 +1598,19 @@ function ScreenOfPanel({
   onUnpin: (id: string) => void;
 }) {
   const placed = useMemo(() => pageCards(widgets), [widgets]);
-  const context = useMemo(
-    () => (live ? arrange : AT_REST),
-    [live, arrange],
-  );
+  /**
+   * Whether this screen is arranged, which is not the same question as whether it
+   * is the one on display.
+   *
+   * A screen that holds the card in the hand is arranged even after the panel has
+   * turned and it is not the screen being looked at. It used to be handed
+   * `AT_REST` the moment that happened, and the card under the finger lost its
+   * gestures with it: a `Pan` that is disabled mid-gesture never ends, so the
+   * release had nowhere to arrive and the carry was never written. The card
+   * crossed the screen, was drawn on the other side, and was still on this one
+   * after a reload.
+   */
+  const context = useMemo(() => (live || carried ? arrange : AT_REST), [carried, live, arrange]);
 
   return (
     <PanelArrangeContext.Provider value={context}>
@@ -1592,12 +1649,34 @@ function ScreenOfPanel({
         // finger is deciding where it is.
         const target = preview?.get(widget.id) ?? card;
 
+        /*
+          The card in the hand is drawn in the slot of the screen being looked at,
+          from the screen that has it stored.
+
+          Both halves matter, and the reason is that it may not be moved. A card
+          drawn as the other screen's child is a different component, and swapping
+          the one under the finger half way through a gesture is what killed this
+          once already: the element the touch started on goes away and the touch
+          stops belonging to anybody. So the card stays exactly where it is in the
+          tree, and only its position changes — by the width of a screen, which is
+          what this offset is.
+
+          And it animates over the same `PAGE_MIN` the track does, in the same
+          easing. That is not decoration: the track's translation and this offset
+          cancel each other out exactly while both are moving, so the card stays
+          under the hand while the panel slides underneath it. Snap the offset and
+          the card jumps a whole screen to the right and comes back.
+        */
+        const enLaMano = carried === widget.id && drop !== null;
+        const donde = enLaMano ? { ...drop, w: target.w, h: target.h } : target;
+
         return (
           <PlacedCardView
             key={widget.id}
-            card={target}
+            card={donde}
             cell={cell}
-            lifted={live && dragging === widget.id}
+            pageOffset={enLaMano ? (current - offset / width) * width : 0}
+            lifted={enLaMano || (live && dragging === widget.id)}
           >
             <PanelCard
               id={widget.id}
@@ -1608,7 +1687,7 @@ function ScreenOfPanel({
               wash={washOf?.(widget)}
               colorToKey={colorToOf?.(widget)}
               where={whereOf(widget)}
-              compact={card.h < 2}
+              compact={donde.h < 2}
               size={cardSize(widget)}
               cell={cell}
               mark={info.mark}
@@ -1649,17 +1728,50 @@ function PlacedCardView({
   card,
   cell,
   lifted,
+  pageOffset = 0,
   children,
 }: {
   card: { x: number; y: number; w: number; h: number };
   cell: { width: number; height: number; gap: number };
   lifted: boolean;
+  /**
+   * How far along the track this card sits, for a card that is drawn above it.
+   *
+   * A card that belongs to a screen is placed at that screen's slot by the screen
+   * itself. A card being carried is drawn by the panel, on top of the track, and
+   * needs the same slot said out loud — without it the card stays on the slot of
+   * the screen it came from while the track slides under it, and it leaves the
+   * window with the screen it just left, which is a card that walked off the panel
+   * while it was being carried across it.
+   */
+  pageOffset?: number;
   children: React.ReactNode;
 }) {
   const x = useSharedValue(card.x);
   const y = useSharedValue(card.y);
   const w = useSharedValue(card.w);
   const h = useSharedValue(card.h);
+
+  /**
+   * The slot on the track, and it **moves with the same easing the track does**.
+   *
+   * That pairing is the whole of a card that is being carried across screens. The
+   * track slides a screen to the left and this slides a screen to the right over
+   * the same 90 milliseconds with the same curve, so the two cancel exactly and
+   * the card does not move at all while the panel turns under it.
+   *
+   * Snap it instead and the card jumps to the far side of the panel for a frame —
+   * and then slides back — which is the one thing that makes a carried card look
+   * like it is being thrown rather than held. A card whose page is not being turned
+   * has an offset of zero and this never runs.
+   */
+  const offset = useSharedValue(pageOffset);
+  useEffect(() => {
+    offset.value = withTiming(pageOffset, {
+      duration: PAGE_MIN,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [offset, pageOffset]);
 
   useEffect(() => {
     // They ease into place and stop. A card that overshoots and comes back is fine
@@ -1673,7 +1785,7 @@ function PlacedCardView({
   }, [card.h, card.w, card.x, card.y, h, w, x, y]);
 
   const box = useAnimatedStyle(() => ({
-    left: x.value * (cell.width + cell.gap),
+    left: offset.value + x.value * (cell.width + cell.gap),
     top: y.value * (cell.height + cell.gap),
     width: w.value * cell.width + (w.value - 1) * cell.gap,
     height: h.value * cell.height + (h.value - 1) * cell.gap,
@@ -1987,6 +2099,22 @@ const styles = StyleSheet.create({
   },
   emptyPageText: {
     textAlign: "center",
+  },
+  /**
+   * Where the empty page says so.
+   *
+   * Over the whole board and touching nothing: it is a sentence about the screen,
+   * not a thing on it. The first version of this drew it *instead* of the track,
+   * which is what took the swipe away from an empty screen.
+   */
+  vacio: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   board: {
     flex: 1,

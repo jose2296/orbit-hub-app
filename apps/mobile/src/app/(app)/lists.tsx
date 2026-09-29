@@ -15,7 +15,9 @@ import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useLists } from "@/hooks/use-lists";
+import { useWorkspaces } from "@/hooks/use-workspaces";
 import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
+import { listPlacement, needsSpaceChoice } from "@/lib/lists/placement";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 import type { TranslationKey } from "@/lib/i18n";
@@ -39,13 +41,22 @@ export default function ListsScreen() {
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
-  const { workspaceId } = useLocalSearchParams<{ workspaceId: string }>();
+  const { workspaceId } = useLocalSearchParams<{ workspaceId?: string }>();
 
   const [filter, setFilter] = useState<Filter>("all");
   const [title, setTitle] = useState("");
   const [newKind, setNewKind] = useState<ListKind>("tasks");
   const [creating, setCreating] = useState(false);
+  /**
+   * El espacio donde se creará la lista cuando la ruta no dijo uno.
+   *
+   * Se elige de una vez, y no en el momento de crear: el formulario enseña el
+   * destino antes de que nadie escriba el título, y una lista con el nombre
+   * puesto y en el espacio equivocado es un trabajo repetido.
+   */
+  const [destino, setDestino] = useState<string | null>(null);
 
+  const { workspaces } = useWorkspaces();
   const { lists, isLoading, createList } = useLists({ workspaceId });
 
   const visible = useMemo(
@@ -56,12 +67,15 @@ export default function ListsScreen() {
 
   async function onCreate() {
     const trimmed = title.trim();
-    if (trimmed.length === 0 || !workspaceId) return;
+    if (trimmed.length === 0) return;
+
+    const target = listPlacement({ workspaceId }, workspaces, destino);
+    if (!target) return;
 
     setCreating(true);
     try {
       const id = await createList({
-        workspaceId,
+        workspaceId: target.workspaceId,
         title: trimmed,
         kind: newKind,
       });
@@ -152,13 +166,7 @@ export default function ListsScreen() {
                   </View>
                 </View>
 
-                {list.favorite ? (
-                  <Ionicons
-                    name="bookmark"
-                    size={16}
-                    color={theme.colors.accent}
-                  />
-                ) : null}
+                
                 <Ionicons
                   name="chevron-forward"
                   size={18}
@@ -170,9 +178,25 @@ export default function ListsScreen() {
         </Card>
       )}
 
-      {/* A list belongs to a space, so the form only appears where there is one
-          to put it in. */}
-      {workspaceId ? (
+      {/*
+        A list belongs to a space, so the form needs one to put it in.
+
+        It used to appear only when the route carried a space, and the route the
+        menu uses — `/(app)/lists` — carries none: the menu is a flat list of
+        everything, across spaces. So the one way into this screen from the menu
+        had no form on it, and the screen said nothing about why. Somebody with
+        five spaces and nothing filed was told to create a list and given no way
+        to do it.
+
+        So the form is always here, and the space is asked for only when the route
+        did not say. One space is used without asking, the same rule as
+        `WhereNoteSheet`; several is a question with a real answer.
+      */}
+      {(() => {
+        // Sin ningún espacio no hay dónde ponerla, y el botón se apaga en vez de
+        // dejar que se pulse para no pasar nada.
+        const sinEspacio = !listPlacement({ workspaceId }, workspaces, destino);
+        return (
         <Card variant="muted" style={{ gap: theme.spacing.md }}>
           <AppText variant="callout" tone="muted">
             {t("lists.createHint")}
@@ -200,10 +224,34 @@ export default function ListsScreen() {
             icon="add"
             onPress={() => void onCreate()}
             loading={creating}
-            disabled={title.trim().length === 0}
+            disabled={title.trim().length === 0 || sinEspacio}
           />
+
+          {/*
+            Solo cuando la ruta no trajo un espacio y hay más de uno entre los que
+            elegir. Con uno solo se usa sin preguntar, porque preguntar por algo
+            que ya no tiene otra respuesta es un formulario vacío.
+          */}
+          {needsSpaceChoice({ workspaceId }, workspaces) ? (
+            <View style={{ gap: theme.spacing.xs }}>
+              <AppText variant="caption" tone="subtle">
+                {t("place.chooseSpace")}
+              </AppText>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs }}>
+                {workspaces.map((space) => (
+                  <Button
+                    key={space.id}
+                    label={space.name}
+                    variant={destino === space.id ? "primary" : "ghost"}
+                    onPress={() => setDestino(space.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
         </Card>
-      ) : null}
+        );
+      })()}
     </Screen>
   );
 }

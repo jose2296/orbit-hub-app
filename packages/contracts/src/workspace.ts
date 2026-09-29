@@ -271,7 +271,6 @@ export const listSchema = syncableEntitySchema.extend({
   title: z.string().trim().min(1).max(120),
   description: z.string().max(1000).nullable().default(null),
   emoji: z.string().max(16).nullable().default(null),
-  favorite: z.boolean().default(false),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   position: z.number().int().min(0),
   itemCount: z.int().min(0).default(0),
@@ -302,7 +301,6 @@ export const listItemSchema = syncableEntitySchema.extend({
   title: z.string().trim().min(1).max(300),
   position: z.number().int().min(0),
   completed: z.boolean().default(false),
-  favorite: z.boolean().default(false),
   /**
    * How urgent the row is, in words and not in a number: a number is something
    * to sort by and nothing to read, and "alta" on a shopping list says why you
@@ -859,10 +857,6 @@ export const listListsQuerySchema = z.object({
   workspaceId: uuidSchema.optional(),
   folderId: uuidSchema.optional(),
   kind: listKindSchema.optional(),
-  favorite: z
-    .enum(["true", "false"])
-    .transform((value) => value === "true")
-    .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().min(1).optional(),
 });
@@ -1069,7 +1063,6 @@ export const updateNoteRequestSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   folderId: uuidSchema.nullable().optional(),
   document: noteDocumentSchema.optional(),
-  favorite: z.boolean().optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   /** Moving a note within its folder's order, and nothing else. */
   position: z.number().int().min(0).optional(),

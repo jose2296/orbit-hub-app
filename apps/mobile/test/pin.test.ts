@@ -40,7 +40,6 @@ function list(partial: Partial<List> = {}): List {
     title: "Compra",
     description: null,
     emoji: null,
-    favorite: false,
     tags: [],
     position: 0,
     itemCount: 0,

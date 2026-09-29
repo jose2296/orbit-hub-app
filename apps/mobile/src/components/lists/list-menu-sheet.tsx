@@ -59,9 +59,7 @@ export function ListMenuSheet({
 }: ListMenuSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
-  const { updateList, deleteList, duplicateList, toggleFavorite } = useLists(
-    {},
-  );
+  const { updateList, deleteList, duplicateList } = useLists({});
   const { layout, save } = useDashboard();
   // Asked when the panel opens, and only then: the answer changes if somebody
   // shares the list in another tab, and there is no delete in flight to be wrong
@@ -100,15 +98,6 @@ export function ListMenuSheet({
         onPress: () => {
           setName(list.title);
           setPage("rename");
-        },
-      },
-      {
-        key: "favorite",
-        label: list.favorite ? t("lists.unfavorite") : t("lists.favorite"),
-        icon: list.favorite ? "star" : "star-outline",
-        onPress: () => {
-          onClose();
-          void toggleFavorite(list);
         },
       },
       {
@@ -157,7 +146,7 @@ export function ListMenuSheet({
         onPress: () => setPage("delete"),
       },
     ];
-  }, [list, pinned, layout, t, onClose, toggleFavorite, duplicateList, save]);
+  }, [list, pinned, layout, t, onClose, duplicateList, save]);
 
   if (!list) return null;
 

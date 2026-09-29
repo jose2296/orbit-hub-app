@@ -113,6 +113,13 @@
       "when": 1790679000000,
       "tag": "0016_note_no_favorite",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790765400000,
+      "tag": "0017_no_favorites",
+      "breakpoints": true
     }
   ]
 }

@@ -17,7 +17,6 @@ export interface DuplicationSource {
   title: string;
   description: string | null;
   emoji: string | null;
-  favorite: boolean;
   tags: string[];
   position: number;
   /** How the list is read, copied so the copy reads the same way. */
@@ -30,7 +29,6 @@ export interface DuplicableItem {
   title: string;
   position: number;
   completed: boolean;
-  favorite: boolean;
   priority: ListItemPriority;
   icon: ListItem["icon"];
   iconStyle: ListItem["iconStyle"];
@@ -45,7 +43,6 @@ export interface DuplicableItem {
 export interface DuplicationPlan {
   list: DuplicationSource & {
     id: string;
-    favorite: false;
     itemCount: number;
     version: 0;
     createdAt: string;
@@ -92,7 +89,6 @@ export function planDuplication(
     title: item.title,
     position: index,
     completed: item.completed,
-    favorite: item.favorite,
     priority: item.priority,
     icon: item.icon,
     // How it is drawn is part of how the row is, so a copy looks the same.
@@ -118,8 +114,7 @@ export function planDuplication(
       title,
       description: source.description,
       emoji: source.emoji,
-      favorite: false,
-      // Copied by value: a later push to the copy must not touch the original.
+        // Copied by value: a later push to the copy must not touch the original.
       tags: [...source.tags],
       position: source.position,
       // How the list is read is part of what the list is: a copy of a list

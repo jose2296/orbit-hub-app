@@ -946,6 +946,61 @@ Las tres variantes siguen vivas en `space-header.tsx` y las dos pantallas eligen
 constante. Las otras dos no se usan: si en algún momento hay que quitar código muerto, son
 esas dos ramas.
 
+### Favoritos fuera, y el color del espacio arriba
+
+Tres cosas de una vez, y las tres tocan lo mismo: qué se guarda y dónde se dibuja.
+
+#### Favoritos, eliminados
+
+`notes.favorite` ya se había ido con la migración `0016`; esta quita las dos que quedaban,
+`lists.favorite` y `list_items.favorite`, con la **`0017_no_favorites`**. Fuera también el
+filtro por favorito de la consulta de listas, el campo en los registros del móvil, la opción
+del menú de la lista, el botón de la cabecera de la lista, los marcadores de las filas, la
+opción al duplicar y doce claves de idioma en los dos idiomas.
+
+La columna se **borra** y no se marca: un favorito es un estado que puso una persona y que
+nadie más necesita. Se pierde poder preguntar por ellos, y no había ninguna pregunta que
+respondiera.
+
+#### El color del espacio vive en la cabecera
+
+Había tres pantallas dibujando el color del espacio en una banda encima de su contenido, cada
+una por su cuenta, y la cuarta regla —qué hacer en una pantalla que no está dentro de un
+espacio— no existía porque no hacía falta. Ahora hay un solo sitio: **la cabecera de la app**,
+y una pantalla dice únicamente de qué espacio es.
+
+`useScreenSpace` es el hook, por la misma razón que `useScreenTitle`: el espacio llega de la
+caché después del primer pintado, y volver a ponerlo cuando llegan los datos es el objeto.
+
+Tres cosas de esa decisión que conviene que queden escritas:
+
+- **El header es un color plano, no el degradado.** La cabecera es la vista del navegador y
+  toma un `backgroundColor`; un degradado obligaría a sustituirla por una a medida, y la
+  cabecera se unificó a propósito. El degradado se queda donde estaba, en las tarjetas del
+  panel.
+- **Decide el contraste, no el color.** El título se dibuja encima con el color de texto del
+  tema, y los dos no se ven entre si: un espacio claro en un tema oscuro da blanco sobre casi blanco.
+  Así que el color se usa **solo si el título se puede leer encima**, con un umbral de 4.5, y
+  si no se puede la cabecera usa el fondo del tema. Nadie tiene que elegir un color que
+  funcione por casualidad, ni recordar cuáles son.
+- **Las migas y el nombre del espacio repetido se van con la banda.** El nombre de la cosa ya
+  está en el título de la cabecera y el color dice de qué espacio es.
+
+**Lo que no se ha perdido, y a propósito:** la banda del espacio llevaba dentro el **rol**, el
+**número de miembros** y la **descripción**, que son datos y no adornos. Siguen en la pantalla,
+en los colores del tema y sin fondo de color. Quitar el color de un rectángulo no puede
+costarle a alguien el dato de si es el propietario.
+
+#### Los tres puntitos
+
+Solo donde hay algo que editar o borrar, que es lo que se decidió: **espacio, carpeta, lista,
+nota y plantilla**. Las demás no llevan menú, y no se pone un botón que abre una hoja vacía.
+
+El de la lista y el del espacio estaban **dentro de la banda de color**, así que con la banda
+fuera se quedaban sin sitio. Ahora los dos están en la cabecera, al lado del título y del botón
+de atrás, que es donde están las acciones de todas las pantallas. El `testID` del botón de la
+lista es el mismo de antes, a propósito: las comprobaciones siguen pulsando la misma cosa.
+
 ### Los quince segundos de blanco (fuera de la tanda)
 
 No estaba en ninguna fila, y se llevaba arrastrando desde el principio: **con la API

@@ -17,7 +17,6 @@ function source(overrides: Record<string, unknown> = {}) {
     title: 'Películas 2026',
     description: 'Lo que quiero ver',
     emoji: '🎬',
-    favorite: true,
     tags: ['pendiente'],
     position: 3,
     orderMode: 'manual' as const,
@@ -34,7 +33,6 @@ const items = [
     title: 'Matrix',
     position: 0,
     completed: true,
-    favorite: false,
     priority: 'high' as const,
     icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [] as string[],
@@ -49,7 +47,6 @@ const items = [
     title: 'Arrival',
     position: 1,
     completed: false,
-    favorite: true,
     priority: 'none' as const,
     icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [] as string[],
@@ -64,7 +61,6 @@ const items = [
     title: 'Borrada',
     position: 2,
     completed: false,
-    favorite: false,
     priority: 'none' as const,
     icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [] as string[],
@@ -79,7 +75,6 @@ const items = [
     title: 'De otra lista',
     position: 0,
     completed: false,
-    favorite: false,
     priority: 'none' as const,
     icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [] as string[],
@@ -139,17 +134,6 @@ describe('planDuplication', () => {
     expect(plan.items[0]?.metadata).toEqual({ provider: 'tmdb', year: '1999' });
   });
 
-  it('does not copy the favourite flag onto the new list', () => {
-    // A favourite is a personal shortcut. Duplicating one should not silently
-    // take it away from the original.
-    const plan = planDuplication(source(), items, {
-      newListId: 'list-2',
-      newItemId: () => 'new-1',
-      now: '2026-06-01T00:00:00.000Z',
-    });
-
-    expect(plan.list.favorite).toBe(false);
-  });
 
   it('stays in the same workspace, folder and position', () => {
     const plan = planDuplication(source(), items, {

@@ -60,7 +60,6 @@ export function newListItem(input: NewListItemInput): ListItem {
     title: input.title,
     position: input.position,
     completed: false,
-    favorite: false,
     priority: input.priority ?? "none",
     // A fresh array and not a shared constant: one row's labels must not appear
     // on every other row the moment somebody types one.
@@ -99,7 +98,6 @@ export function withListItemDefaults(value: unknown): ListItem {
     title: typeof record.title === "string" ? record.title : "",
     position: typeof record.position === "number" ? record.position : 0,
     completed: record.completed === true,
-    favorite: record.favorite === true,
     priority:
       record.priority === "low" ||
       record.priority === "medium" ||

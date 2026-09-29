@@ -28,6 +28,8 @@ import { updateNoteTemplate } from "@/hooks/use-note-templates";
 import { imageReferences } from "@/lib/notes/document-images";
 import { localiseDocumentImages } from "@/lib/notes/image-store";
 import { useSession } from "@/hooks/use-session";
+import { useWorkspaces } from "@/hooks/use-workspaces";
+import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useTheme } from "@/theme";
 
 type Status = "idle" | "saving" | "saved" | "failed" | "readOnly";
@@ -65,6 +67,14 @@ export default function TemplateScreen() {
   }>();
   const router = useRouter();
   const theme = useTheme();
+
+  /* La misma regla que en la nota: es de un espacio y su cabecera lo dice. */
+  const { workspaces } = useWorkspaces();
+  useScreenSpace(
+    workspaces.find((item) => item.id === workspaceId) ?? null,
+    theme.colors.text,
+    theme.colors.background,
+  );
   const t = useTranslation();
 
   const { template, isLoading, failed } = useNoteTemplate(templateId);

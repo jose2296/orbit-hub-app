@@ -15,7 +15,7 @@ import { SYNC_DEFAULTS } from "@orbit-hub/config";
 import { api, toApiError } from "@/lib/api";
 import { keyValueStore } from "@/lib/storage/key-value";
 
-import { resolveDashboardRow } from "./dashboard-row";
+import { applyDashboardChanges } from "./apply-panel";
 import { getLocalStoreReady } from "./local-store";
 import type {
   CachedEntity,
@@ -370,58 +370,41 @@ async function applyChanges(
   store: LocalStore,
   response: SyncPullResponse,
 ): Promise<void> {
-  const entities: CachedEntity[] = response.changes.map((change) => {
-    const record = change.record as Record<string, unknown>;
-    return {
-      entity: change.entity,
-      entityId: String(record["id"] ?? ""),
-      version: Number(record["version"] ?? 0),
-      updatedAt: new Date(
-        String(record["updatedAt"] ?? new Date().toISOString()),
-      ).toISOString(),
-      deletedAt: record["deletedAt"]
-        ? new Date(String(record["deletedAt"])).toISOString()
-        : null,
-      payload: JSON.stringify(record),
-      pending: null,
-    };
-  });
+  /*
+    The changes as cache rows, one shape for everything that is not the panel.
 
-  const usable = entities.filter((entity) => entity.entityId.length > 0);
-  const panel = usable.filter((entity) => entity.entity === "dashboard");
-  const rest = usable.filter((entity) => entity.entity !== "dashboard");
+    The panel is left out on purpose and goes through `apply-panel`, which cannot be
+    this mapping: its row has to land on the identifier that keeps coming back
+    instead of the one the server made up, and it has to carry both the layout and
+    the count of screens. Doing it here —which is where it was— meant a panel of one
+    piece, with the count dropped on the floor every single pull.
+  */
+  const cambios = response.changes.filter((change) => change.entity !== "dashboard");
+  const rows: CachedEntity[] = cambios.map((change) => filaDe(change));
+  const usable = rows.filter((row) => row.entityId.length > 0);
 
-  if (rest.length > 0) {
-    await store.upsertCached(rest);
+  if (usable.length > 0) {
+    await store.upsertCached(usable);
   }
 
-  // The panel is one row per person and the server gives it an identifier of its
-  // own, which is not the one this device wrote it under. Writing it as it
-  // arrives puts a second copy of the panel in the cache next to the first, and
-  // from then on every read takes whichever came first: a list pinned on the
-  // phone is gone on the laptop and back again on the phone. So it goes into the
-  // row that is already here, under the identifier that keeps coming back.
-  for (const change of panel) {
-    const { entityId } = await resolveDashboardRow(store);
-    await store.upsertCached([
-      {
-        ...change,
-        entityId,
-        payload: JSON.stringify({
-          layout: readLayoutOfPayload(change.payload),
-        }),
-      },
-    ]);
-  }
+  await applyDashboardChanges(store, response.changes);
 }
 
-function readLayoutOfPayload(payload: string): DashboardWidget[] {
-  try {
-    const record = JSON.parse(payload) as { layout?: DashboardWidget[] };
-    return Array.isArray(record.layout) ? record.layout : [];
-  } catch {
-    return [];
-  }
+function filaDe(change: { entity: SyncEntity; record: unknown }): CachedEntity {
+  const record = change.record as Record<string, unknown>;
+  return {
+    entity: change.entity,
+    entityId: String(record["id"] ?? ""),
+    version: Number(record["version"] ?? 0),
+    updatedAt: new Date(
+      String(record["updatedAt"] ?? new Date().toISOString()),
+    ).toISOString(),
+    deletedAt: record["deletedAt"]
+      ? new Date(String(record["deletedAt"])).toISOString()
+      : null,
+    payload: JSON.stringify(record),
+    pending: null,
+  };
 }
 
 export async function fetchRemoteConflicts(): Promise<SyncConflict[]> {

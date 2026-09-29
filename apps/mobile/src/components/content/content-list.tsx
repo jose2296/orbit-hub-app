@@ -367,7 +367,6 @@ function ContentRowView({
             {subtitulo(row, t)}
           </AppText>
         </View>
-        {row.favorite ? <Ionicons name="bookmark" size={14} color={foreground} /> : null}
       </Pressable>
       {/*
         The menu and the drag handle are both on the right of the row, and the

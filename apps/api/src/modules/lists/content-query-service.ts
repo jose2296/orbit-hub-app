@@ -20,7 +20,6 @@ interface ListFilters {
   workspaceId?: string;
   folderId?: string;
   kind?: ListKindName;
-  favorite?: boolean;
   limit: number;
   cursor: string | null;
 }
@@ -78,9 +77,6 @@ export class ContentQueryService {
     if (filters.kind) {
       conditions.push(eq(lists.kind, filters.kind));
     }
-    if (filters.favorite !== undefined) {
-      conditions.push(eq(lists.favorite, filters.favorite));
-    }
     if (filters.cursor) {
       conditions.push(gt(lists.updatedAt, new Date(filters.cursor)));
     }
@@ -100,7 +96,6 @@ export class ContentQueryService {
       title: row.title,
       description: row.description,
       emoji: row.emoji,
-      favorite: row.favorite,
       tags: row.tags,
       position: row.position,
       version: row.version,
@@ -147,7 +142,6 @@ export class ContentQueryService {
       title: row.title,
       description: row.description,
       emoji: row.emoji,
-      favorite: row.favorite,
       tags: row.tags,
       position: row.position,
       version: row.version,
@@ -189,7 +183,6 @@ export class ContentQueryService {
       title: row.title,
       position: row.position,
       completed: row.completed,
-      favorite: row.favorite,
       priority: row.priority,
       // An icon this build does not know is no icon, and not a broken row: the
       // column is free text and a future build can write a key this one has

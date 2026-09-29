@@ -51,13 +51,12 @@ export interface ListFilters {
   workspaceId?: string;
   folderId?: string;
   kind?: ListKind;
-  favorite?: boolean;
 }
 
 export function useLists(filters: ListFilters = {}) {
   const [lists, setLists] = useState<List[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { workspaceId, folderId, kind, favorite } = filters;
+  const { workspaceId, folderId, kind } = filters;
 
   const load = useCallback(async () => {
     const store = await getLocalStoreReady();
@@ -70,15 +69,12 @@ export function useLists(filters: ListFilters = {}) {
       .filter((list) =>
         folderId !== undefined ? list.folderId === folderId : true,
       )
-      .filter((list) => (kind ? list.kind === kind : true))
-      .filter((list) =>
-        favorite !== undefined ? list.favorite === favorite : true,
-      );
+      .filter((list) => (kind ? list.kind === kind : true));
 
     visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     setLists(visible);
     setIsLoading(false);
-  }, [favorite, folderId, kind, workspaceId]);
+  }, [folderId, kind, workspaceId]);
 
   useEffect(() => {
     void load();
@@ -117,7 +113,6 @@ export function useLists(filters: ListFilters = {}) {
             title: input.title,
             description: null,
             emoji: input.emoji ?? null,
-            favorite: false,
             tags: [],
             position: 0,
             version: 0,
@@ -178,7 +173,6 @@ export function useLists(filters: ListFilters = {}) {
           title: source.title,
           description: source.description,
           emoji: source.emoji,
-          favorite: source.favorite,
           tags: source.tags,
           position: source.position,
           // A copy of a list sorted by name that came out sorted by hand would
@@ -327,21 +321,12 @@ export function useLists(filters: ListFilters = {}) {
     [load],
   );
 
-  const toggleFavorite = useCallback(
-    async (list: List) => {
-      await localUpdate("list", list.id, { favorite: !list.favorite });
-      await load();
-    },
-    [load],
-  );
-
   return {
     lists,
     isLoading,
     createList,
     deleteList,
     duplicateList,
-    toggleFavorite,
     updateList,
     setOrderMode,
     reload: load,

@@ -39,6 +39,8 @@ import {
   storableDocument,
 } from "@/lib/notes/autosave";
 import { hasReachedServer } from "@/lib/notes/placement";
+import { useWorkspaces } from "@/hooks/use-workspaces";
+import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useTheme } from "@/theme";
 
 type Status = "idle" | "saving" | "saved" | "failed" | "invalid";
@@ -98,6 +100,20 @@ export default function NoteScreen() {
   const { noteId } = useLocalSearchParams<{ noteId: string }>();
   const router = useRouter();
   const theme = useTheme();
+
+  /*
+    El color del espacio en la cabecera, y la nota es de un espacio aunque no lo
+    parezca: es una de las cinco pantallas que tienen algo que editar o borrar, y
+    la cabecera tiene que decir de que espacio es igual que dice el titulo de la
+    lista. Va despues de `note` porque el id del espacio sale de ella.
+  */
+  const { workspaces } = useWorkspaces();
+  useScreenSpace(
+    workspaces.find((item) => item.id === note?.workspaceId) ?? null,
+    theme.colors.text,
+    theme.colors.background,
+  );
+
   const t = useTranslation();
 
   const id = noteId ?? null;

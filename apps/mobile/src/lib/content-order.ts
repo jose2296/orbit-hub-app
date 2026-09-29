@@ -19,7 +19,6 @@ export type ContentRow = {
   folderId: string | null;
   /** Only on a list, and only the filter reads it. */
   listKind?: List["kind"];
-  favorite?: boolean;
   itemCount?: number;
   notePreview?: string;
 };
@@ -32,17 +31,6 @@ export const toRow = {
     position: folder.position ?? 0,
     createdAt: String(folder.createdAt ?? ""),
     folderId: folder.parentId ?? null,
-    /*
-     * No favorite, and **not** "true when it has an emoji" as it was.
-     *
-     * A folder has no favourite: only a list has one, and the bookmark in the
-     * row is a bookmark of *that*. Reading an emoji as a favourite made every
-     * folder that had been given a mark look like a folder somebody had pinned,
-     * which is a thing the app does not have and cannot undo — there is no
-     * screen anywhere to un-pin it. An icon that says something the app cannot
-     * take back is worse than no icon, so the field stays out.
-     */
-    favorite: false,
   }),
   list: (list: List): ContentRow => ({
     kind: "list",

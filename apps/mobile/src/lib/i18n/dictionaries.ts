@@ -145,8 +145,6 @@ const es = {
 
   "lists.menu": "Menú de la lista",
   "lists.menuHint": "Renombrar, compartir, duplicar o eliminar la lista entera.",
-  "lists.favoriteHint": "La lista sale destacada en tu inicio.",
-  "lists.unfavoriteHint": "La lista deja de salir destacada en tu inicio.",
   "lists.duplicate": "Duplicar lista",
 
   "lists.kindTasks": "Tareas",
@@ -657,8 +655,6 @@ const es = {
   "note.templates.saveCurrent": "Guardar esta nota como plantilla",
   "note.menu": "Opciones de la nota",
   "note.rename": "Cambiar el nombre",
-  "note.favorite": "Fijar la nota",
-  "note.unfavorite": "Quitar de fijadas",
   "note.templateName": "Nombre de la plantilla",
   "note.templateScope": "Quién la ve",
   "note.templateScopePersonal": "Solo yo",
@@ -767,8 +763,6 @@ const es = {
   "lists.create": "Crear lista",
   "lists.createHint":
     "La lista se guarda aquí al instante y se sube al sincronizar.",
-  "lists.favorite": "Marcar favorita",
-  "lists.unfavorite": "Quitar de favoritas",
   "lists.delete": "Eliminar lista",
   "lists.showCompleted": "Mostrar los ya completados",
   "lists.notFound": "Esta lista ya no existe",
@@ -988,8 +982,6 @@ const en: Record<TranslationKey, string> = {
 
   "lists.menu": "List menu",
   "lists.menuHint": "Rename, share, duplicate or delete the whole list.",
-  "lists.favoriteHint": "The list shows up highlighted on your home.",
-  "lists.unfavoriteHint": "The list stops showing up highlighted on your home.",
   "lists.duplicate": "Duplicate list",
 
   "lists.kindTasks": "Tasks",
@@ -1499,8 +1491,6 @@ const en: Record<TranslationKey, string> = {
   "note.templates.saveCurrent": "Save this note as a template",
   "note.menu": "Note options",
   "note.rename": "Rename",
-  "note.favorite": "Pin the note",
-  "note.unfavorite": "Unpin",
   "note.templateName": "Template name",
   "note.templateScope": "Who can see it",
   "note.templateScopePersonal": "Only me",
@@ -1605,8 +1595,6 @@ const en: Record<TranslationKey, string> = {
   "lists.create": "Create list",
   "lists.createHint":
     "The list is stored here immediately and uploaded when syncing.",
-  "lists.favorite": "Mark as favourite",
-  "lists.unfavorite": "Remove from favourites",
   "lists.delete": "Delete list",
   "lists.showCompleted": "Show completed items",
   "lists.notFound": "This list no longer exists",

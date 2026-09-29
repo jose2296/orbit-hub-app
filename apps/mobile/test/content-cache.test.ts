@@ -21,7 +21,6 @@ function cached(overrides: Partial<CachedEntity> = {}): CachedEntity {
       id: 'l1',
       workspaceId: 'w1',
       title: 'Servidor',
-      favorite: false,
       version: 2,
       itemCount: 4,
     }),
@@ -45,14 +44,6 @@ function readRecord<T>(row: CachedEntity): T {
 }
 
 describe('content cache reads', () => {
-  it('prefers a pending favourite over the server value', () => {
-    const row = cached({ pending: JSON.stringify({ favorite: true }) });
-    const list = readRecord<List>(row);
-
-    expect(list.favorite).toBe(true);
-    expect(list.title).toBe('Servidor');
-    expect(list.itemCount).toBe(4);
-  });
 
   it('keeps the server version so the next push has a correct baseVersion', () => {
     const row = cached({ pending: JSON.stringify({ title: 'Local' }) });
@@ -87,20 +78,18 @@ describe('content cache reads', () => {
 
 describe('list filters', () => {
   const lists: List[] = [
-    { id: 'a', workspaceId: 'w1', title: 'Tareas', kind: 'tasks', favorite: true } as List,
-    { id: 'b', workspaceId: 'w1', title: 'Pelis', kind: 'movies', favorite: false } as List,
-    { id: 'c', workspaceId: 'w2', title: 'Otros', kind: 'books', favorite: false } as List,
+    { id: 'a', workspaceId: 'w1', title: 'Tareas', kind: 'tasks' } as List,
+    { id: 'b', workspaceId: 'w1', title: 'Pelis', kind: 'movies' } as List,
+    { id: 'c', workspaceId: 'w2', title: 'Otros', kind: 'books' } as List,
   ];
 
   const apply = (filters: {
     workspaceId?: string;
     kind?: List['kind'];
-    favorite?: boolean;
   }): string[] =>
     lists
       .filter((list) => (filters.workspaceId ? list.workspaceId === filters.workspaceId : true))
       .filter((list) => (filters.kind ? list.kind === filters.kind : true))
-      .filter((list) => (filters.favorite !== undefined ? list.favorite === filters.favorite : true))
       .map((list) => list.id);
 
   it('filters by workspace', () => {
@@ -111,9 +100,6 @@ describe('list filters', () => {
     expect(apply({ kind: 'movies' })).toEqual(['b']);
   });
 
-  it('filters by favourite', () => {
-    expect(apply({ favorite: true })).toEqual(['a']);
-  });
 
   it('combines filters', () => {
     expect(apply({ workspaceId: 'w1', kind: 'tasks' })).toEqual(['a']);

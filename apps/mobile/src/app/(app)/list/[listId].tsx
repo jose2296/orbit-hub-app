@@ -22,12 +22,10 @@ import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
-import {
-  SpaceHeader,
-  type SpaceHeaderVariant,
-} from "@/components/workspace/space-header";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
+import { useHeaderAction } from "@/components/ui/header-action";
+import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import {
@@ -39,7 +37,6 @@ import {
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
 import { providerRefOf } from "@/lib/lists/provider-ref";
 import { useTheme } from "@/theme";
-import type { Crumb } from "@/components/ui/breadcrumbs";
 
 /** The orders a list can be read in, in the order they are offered. */
 const ORDER_MODES: ListOrderMode[] = [
@@ -65,7 +62,7 @@ export default function ListScreen() {
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, toggleFavorite, setOrderMode } = useLists({});
+  const { lists, setOrderMode } = useLists({});
   const list = useMemo(
     () => lists.find((item) => item.id === listId) ?? null,
     [lists, listId],
@@ -76,10 +73,6 @@ export default function ListScreen() {
     [workspaces, list?.workspaceId],
   );
   const { folders } = useFolders(list?.workspaceId);
-  const folder = useMemo(
-    () => folders.find((item) => item.id === list?.folderId) ?? null,
-    [folders, list?.folderId],
-  );
 
   /**
    * The text colours for the band, asked of the space rather than of the theme.
@@ -110,7 +103,38 @@ export default function ListScreen() {
    * theme's own colours, because a contrast that depends on the space is one that
    * has to be checked against every colour a person is allowed to pick.
    */
-  const VARIANTE: SpaceHeaderVariant = "tint";
+  /*
+    El menu de la lista vive **en la cabecera de la app** y no en una banda dentro
+    de la pantalla. Y no es que se haya mudado de sitio: la banda desaparece, asi
+    que el boton que estaba en ella necesitaba un sitio de verdad, y el sitio de
+    verdad para las acciones de una pantalla es la cabecera, al lado del titulo y
+    del boton de atras. El `testID` es el mismo de antes, a proposito, para que
+    las comprobaciones sigan pulsando la misma cosa.
+  */
+  useHeaderAction(
+    () =>
+      list ? (
+        <Button
+          testID="list-menu-button"
+          label={t("lists.menu")}
+          variant="ghost"
+          size="sm"
+          icon="ellipsis-horizontal"
+          iconOnly
+          accessibilityHint={t("lists.menuHint")}
+          fullWidth={false}
+          onPress={() => setMenuOpen(true)}
+        />
+      ) : null,
+    [list, t],
+  );
+
+  useScreenSpace(
+    list ? { id: list.workspaceId, color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash } : null,
+    theme.colors.text,
+    theme.colors.background,
+  );
+
   const {
     items,
     isLoading,
@@ -271,21 +295,6 @@ export default function ListScreen() {
   // of list it is and where it lives.
   useScreenTitle(list?.title ?? t("lists.notFound"));
 
-  const crumbs = useMemo(() => {
-    const rows: Crumb[] = [];
-    if (workspace)
-      rows.push({
-        label: workspace.name,
-        href: `/(app)/workspace/${workspace.id}`,
-      });
-    if (folder)
-      rows.push({
-        label: folder.name,
-        href: `/(app)/workspace/${workspace?.id}`,
-      });
-    rows.push({ label: list?.title ?? t("lists.notFound") });
-    return rows;
-  }, [workspace, folder, list?.title, t]);
 
   /**
    * Opens the detail of a title.
@@ -408,61 +417,15 @@ export default function ListScreen() {
             </AppText>
           ) : null}
         </View>
-        {list ? (
-          <View style={[styles.headerActions, { gap: theme.spacing.xs }]}>
-            {/*
-              Icon-only, and measured: on a 430-point phone the two labelled
-              buttons took 307 of the 398 points of the content column and the
-              title was left 63, with the first icon drawn on top of it. A
-              bookmark and three dots say what they do, and the labels stay in
-              the control for anyone who asks.
-            */}
-            <Button
-              label={
-                list.favorite ? t("lists.unfavorite") : t("lists.favorite")
-              }
-              variant="ghost"
-              size="sm"
-              icon={list.favorite ? "bookmark" : "bookmark-outline"}
-              iconOnly
-              accessibilityHint={
-                list.favorite ? t("lists.unfavoriteHint") : t("lists.favoriteHint")
-              }
-              fullWidth={false}
-              onPress={() => void toggleFavorite(list)}
-            />
-          </View>
-        ) : null}
       </View>
 
       {/*
-        The band of the list, in the colour of the space it is in.
-
-        Every list screen used to be the same neutral header, which made two lists
-        of the same kind in two spaces indistinguishable until you read the
-        breadcrumbs. The colour is the one thing that tells you which space you
-        are working in before you read anything, and it is the same wash the card
-        of that list is painted with on the panel.
+        Sin banda. El color del espacio lo pone ahora la cabecera de la app y el
+        menu de la lista tambien esta ahi, al lado del titulo, que es donde estan
+        las acciones de todas las pantallas. Lo que la banda hacia y ya no hace
+        falta: decir de que espacio es esta lista, que la cabecera dice con su
+        color, y repetir el nombre del espacio debajo del nombre de la lista.
       */}
-      <SpaceHeader
-        space={workspace}
-        variant={VARIANTE}
-        spaceHref={`/(app)/workspace/${workspace?.id ?? list?.workspaceId ?? ""}`}
-        crumbs={crumbs}
-        right={list ? (
-          <Button
-            testID="list-menu-button"
-            label={t("lists.menu")}
-            variant="ghost"
-            size="sm"
-            icon="ellipsis-horizontal"
-            iconOnly
-            accessibilityHint={t("lists.menuHint")}
-            fullWidth={false}
-            onPress={() => setMenuOpen(true)}
-          />
-        ) : null}
-      />
 
       {items.length > 0 ? (
         <View style={styles.badges}>

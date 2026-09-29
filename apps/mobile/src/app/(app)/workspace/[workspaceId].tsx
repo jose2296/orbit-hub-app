@@ -1,7 +1,6 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import type { Folder, List, Note } from "@orbit-hub/contracts";
 
@@ -15,8 +14,6 @@ import { NoteMenuSheet } from "@/components/notes/note-menu-sheet";
 import { SaveTemplateSheet } from "@/components/notes/save-template-sheet";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
-import { SpaceWash } from "@/components/ui/wash";
-import { spacePaint } from "@/lib/workspace/color";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { WorkspaceMenuSheet } from "@/components/workspace/workspace-menu-sheet";
 import { useDashboard } from "@/hooks/use-dashboard";
@@ -27,6 +24,10 @@ import {
 } from "@/lib/dashboard/pin";
 import { useLists } from "@/hooks/use-lists";
 import { useNotes } from "@/hooks/use-notes";
+import { useHeaderAction } from "@/components/ui/header-action";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -86,14 +87,8 @@ export default function WorkspaceScreen() {
    * text on a dark space half the time. The accent has no say in it either — a
    * space is a category and the accent means "this is the action".
    */
-  // The second colour goes with it because it is the person's own choice, and a
+  // The second colour went with it because it is the person's own choice, and a
   // band that drops it paints a different pair from the one the picker shows.
-  const onWash = spacePaint(
-    workspace?.color,
-    workspace?.wash,
-    workspace?.colorTo,
-  );
-
   useScreenTitle(workspace?.name ?? t("workspaces.title"));
 
   /** The folder a list lives in, for the menu to say where it is. */
@@ -105,7 +100,6 @@ export default function WorkspaceScreen() {
     folder ? lists.filter((list) => list.folderId === folder.id).length : 0;
 
   const closeSheets = useCallback(() => {
-    setMenuFor(null);
     setMenuOpen(false);
     setCreateOpen(false);
     setCreateStep("what");
@@ -158,89 +152,71 @@ export default function WorkspaceScreen() {
     );
   }
 
+  /*
+    El menu del espacio, en la cabecera de la app. Estaba dentro de la banda de
+    color, y con la banda fuera se quedaba sin sitio; el sitio de las acciones de
+    una pantalla es la cabecera, y asi los tres puntitos de la lista, la carpeta y
+    el espacio están en el mismo lugar.
+  */
+  useHeaderAction(
+    () =>
+      workspace ? (
+        <Button
+          testID="workspace-menu-button"
+          label={t("workspaceMenu.open")}
+          variant="ghost"
+          size="sm"
+          icon="ellipsis-horizontal"
+          iconOnly
+          fullWidth={false}
+          onPress={() => setMenuOpen(true)}
+        />
+      ) : null,
+    [t, workspace],
+  );
+
+  useScreenSpace(workspace, theme.colors.text, theme.colors.background);
+
   return (
     <Screen overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}>
       {/*
-        The band with the name of the space on it, in the colour of the space.
+        Lo que estaba dentro de la banda, sin la banda.
 
-        It is here and not only in the menu because everything below it is *of*
-        that space: the folders, the lists inside them, the items in those. A band
-        in the colour of the space is what makes that obvious at a glance, and it
-        is the same gradient the cards on the panel are painted with, so a space
-        looks the same everywhere it appears.
+        La banda era un rectangulo de color del espacio con el nombre, el menu, la
+        descripcion, el rol y los miembros dentro. **El color se va a la
+        cabecera** y el nombre ya esta en el titulo, asi que sobra. Lo que **no**
+        se va son los tres hechos: el rol —que es lo que decide si puedes hacer
+        algo— y los miembros y la descripcion, que son los unicos sitios donde se
+        decia. Quitarlos sin querer porque estaban en un rectangulo bonito seria
+        perder informacion por un aesthetic, y esta pantalla es la que mas lo
+        necesita: es la puerta de un espacio.
+
+        Asi que el mismo contenido, en los colores del tema y sin fondo de color.
+        El menu del espacio se ha ido a la cabecera de la app, al lado del titulo,
+        que es donde estan las acciones de todas las pantallas.
       */}
-      <SpaceWash
-        colorKey={workspace?.color}
-        // The end colour too, for the same reason as the text above: the wash
-        // and the text on it are one decision about a pair the person picked.
-        colorToKey={workspace?.colorTo}
-        wash={workspace?.wash}
-        radius={theme.radius.lg}
-        style={[
-          styles.band,
-          { padding: theme.spacing.lg, gap: theme.spacing.sm },
-        ]}
-      >
-        <View style={[styles.bandTop, { gap: theme.spacing.md }]}>
-          <AppText
-            variant="title"
-            style={[styles.flex, { color: onWash.foreground }]}
-          >
-            {workspace?.emoji ? `${workspace.emoji} ` : ""}
-            {workspace?.name ?? t("workspaces.title")}
-          </AppText>
-          {/* The menu of the space is on the band rather than in the row below
-              it, so the control that belongs to the space is drawn on the space
-              and not floating next to it. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("workspaceMenu.open")}
-            hitSlop={8}
-            onPress={() => setMenuOpen(true)}
-            style={({ pressed }) => [
-              styles.more,
-              { opacity: pressed ? 0.6 : 1 },
-            ]}
-          >
-            <Ionicons
-              name="ellipsis-horizontal"
-              size={18}
-              color={onWash.foreground}
-            />
-          </Pressable>
-        </View>
-
-        {workspace?.description ? (
-          <AppText
-            variant="callout"
-            numberOfLines={2}
-            style={{ color: onWash.muted }}
-          >
-            {workspace.description}
-          </AppText>
-        ) : null}
-
-        <View style={[styles.bandMeta, { gap: theme.spacing.sm }]}>
-          {/* The role is a fact about who can change things, and it is written on
-              the colour of the space rather than in the accent: the accent means
-              "this is the action", and a role is not an action. */}
-          <View
-            style={[
-              styles.badge,
-              { borderRadius: theme.radius.md, backgroundColor: onWash.wash },
-            ]}
-          >
-            <AppText variant="caption" style={{ color: onWash.foreground }}>
-              {t(`workspaces.role.${workspace?.role ?? "viewer"}` as never)}
-            </AppText>
-          </View>
-          <AppText variant="caption" style={{ color: onWash.muted }}>
+      <View style={{ gap: theme.spacing.sm }}>
+        <View style={[styles.bandTop, { gap: theme.spacing.sm }]}>
+          {/* El rol es un hecho sobre quien puede cambiar cosas, y va escrito en
+              el tema y no en el acento: el acento significa "esto es la accion",
+              y un rol no es una accion. */}
+          <Badge
+            label={t(`workspaces.role.${workspace?.role ?? "viewer"}` as never)}
+          />
+          <AppText variant="caption" tone="muted">
             {t(pluralKey("workspaces.members", workspace?.memberCount ?? 0), {
               count: workspace?.memberCount ?? 0,
             })}
           </AppText>
         </View>
-      </SpaceWash>
+
+        {workspace?.description ? (
+          <AppText variant="callout" tone="muted" numberOfLines={2}>
+            {workspace.description}
+          </AppText>
+        ) : null}
+      </View>
+
 
       <WorkspaceMenuSheet
         workspace={menuOpen ? workspace : null}

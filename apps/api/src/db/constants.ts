@@ -115,7 +115,6 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'title',
     'description',
     'emoji',
-    'favorite',
     'tags',
     'position',
     'kind',
@@ -125,7 +124,6 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'title',
     'position',
     'completed',
-    'favorite',
     'priority',
     'icon',
     'iconStyle',
@@ -141,7 +139,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    * just validated, so a client cannot write a body and a search string that
    * disagree. `plainText` and `attachmentCount` are absent on purpose.
    */
-  note: ['title', 'document', 'folderId', 'favorite', 'tags', 'position'],
+  note: ['title', 'document', 'folderId', 'tags', 'position'],
   dashboard: ['layout', 'pages'],
 };
 
