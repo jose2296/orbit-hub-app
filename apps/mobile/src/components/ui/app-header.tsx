@@ -7,7 +7,7 @@ import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
 import { AppText } from '@/components/ui/text';
 import { SpaceWash } from '@/components/ui/wash';
-import type { WashVariant } from '@/lib/workspace/wash';
+import { VELO, type WashVariant } from '@/lib/workspace/wash';
 import { useTheme } from '@/theme';
 
 /** What a screen publishes about its space, read from the header options. */
@@ -205,34 +205,19 @@ export function AppHeader({ options, children }: AppHeaderProps) {
 /** The height of the bar, and the height its controls are centred within. */
 const ALTO = 56;
 
-/**
- * How much of the screen the fade eats.
- *
- * Enough that the colour is gone before the last pixel — a fade of ocho puntos es
- * un borde con pasos — and little enough that the header does not eat the list:
- * on a 844-point phone it takes a row and a half.
- */
-const FALSO = 28;
-
-/**
- * How much of the space's colour the header keeps.
- *
- * **A little under half.** Enough that the shape of the wash is still there —it
- * is what tells you which space you are in— and little enough that a strong colour
- * is a colour and not a warning. Measured against a red space, which is the one
- * that complains.
- */
-const VELO = 0.45;
 
 const styles = StyleSheet.create({
   caja: {
-    /* La barra **mas el desvanizado**, y por eso el contenido de la pantalla
-       empieza un poco mas abajo: el desvanecido se comepuntos de alto a propósito,
-       en vez de ser un recorte dentro de la barra. Un corte dibujado dentro de la
-       barra acaba justo en el borde de la barra, que es donde se nota; uno que
-       sobresale se apaga en el hueco que ha ocupado la pantalla y ahi ya no hay
-       borde que ver. */
-    minHeight: ALTO + FALSO,
+    /*
+      **Alto fijo, y el mismo en todas las pantallas.** Antes esta caja media la
+      barra **mas el desvanizado**, asi que el contenido de cada pantalla empezaba
+      28 puntos mas abajo y dos pantallas con la misma barra no tenian la misma
+      linea de titulo. Un alto que depende de otra cosa no es un alto: es un alto
+      que hay que acertar. La barra mide `ALTO` y el desvanizado va **dentro**, con
+      lo que el corte se apaga antes del borde sin mover el contenido.
+    */
+    minHeight: ALTO,
+    justifyContent: 'center',
     overflow: 'hidden',
   },
   fondo: {
@@ -256,11 +241,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    // Empieza **exactamente** donde acaba la barra, que es lo que se pidio: el
-    // color llena la cabecera entera y se apaga en el hueco de debajo, en vez de
-    // apagarse dentro de la cabecera y dejar el corte en su borde.
-    top: ALTO,
+    // **Dentro** de la barra, y por los dos tercios de abajo: el color tiene que
+    // apagarse antes del borde, no en el borde. Un desvanecido que sobresale hacia
+    // el contenido se lleva por delante la linea de la primera fila, y una linea
+    // de la primera fila que no esta donde esta en las demas pantallas es peor que
+    // un corte de un pixel.
     bottom: 0,
+    height: '68%',
   },
   fila: {
     flexDirection: 'row',

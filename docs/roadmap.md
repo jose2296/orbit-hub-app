@@ -1013,6 +1013,38 @@ propósito: el color se apaga en el hueco que ocupa, en vez de apagarse dentro d
 el corte justo en su borde. Y el filo de un píxel de la barra **se quita cuando hay lavado**,
 porque sería el corte que acabamos de borrar dibujado encima.
 
+#### El color del espacio, en dos mitades: la barra y el fondo
+
+El color de un espacio vive en **dos sitios y solo dos**: la barra de la cabecera y el fondo del
+panel. Es donde estaba antes de que las bandas aparecieran y desaparecieran, y ahora cada mitad
+tiene la forma que le toca en vez de la misma forma repetida dos veces.
+
+**La barra, con alto fijo.** Antes la caja de la cabecera medía la barra **más el desvanecido**, así
+que el contenido de cada pantalla empezaba 28 puntos más abajo y dos pantallas con la misma barra no
+tenían la misma línea de título. Un alto que depende de otra cosa no es un alto: es un alto que hay
+que acertar. La barra mide 56 y el desvanecido va **dentro**, por los dos tercios de abajo, con lo
+que el color se apaga antes del borde sin mover el contenido. Medido en tres pantallas — el panel,
+una lista y una que no está en un espacio—: **56 en las tres**.
+
+**El fondo, solo en el panel.** `Screen` acepta un `wash` y el panel se lo pasa; las otras trece
+pantallas no y no han tenido que aprender nada. Son 320 puntos: casi la mitad de un móvil de 844,
+menos de un tercio de una pantalla alta. Llega bastante más allá de la primera fila, que es lo que
+lo hace un fondo y no una barra, y se desvanece a lo largo de esos 320 sin llegar a teñir una lista
+entera.
+
+Va **detrás del scroller y no dentro**, por lo mismo que el botón flotante: en la web un hijo de un
+`ScrollView` está dentro de él y se va con el desplazamiento.
+
+#### Un velo, y por qué es un número solo
+
+El velo estaba en la cabecera con su propio 45%, y el fondo del panel lo he puesto sin él: se veía
+un **escalón de saturación justo en la frontera** entre los dos, que es donde el ojo ya espera un
+cambio de pantalla. Un escalón se lee como un error aunque nadie sepa nombrarlo.
+
+Así que el velo es **uno solo**, en el módulo del lavado, y los dos sitios lo usan. Mismo número,
+misma razón: la forma del degradado identifica el espacio y eso se conserva; la intensidad no es
+información y eso se va.
+
 #### El velo de la cabecera, y por qué el título ya no usa el color del lavado
 
 Una barra es un sitio donde se dibuja texto y una función, no un cartel. Con el lavado entero

@@ -179,6 +179,20 @@ export default function WorkspaceScreen() {
 
   return (
     <Screen
+      /*
+        El lavado grande, aqui y en ningun otro sitio.
+
+        La cabecera lleva la linea fina del color y ocupa los mismos 56 puntos en
+        todas las pantallas; esto es la parte que es **grande**, la que llega por
+        debajo de la primera fila y se apaga. En el resto de pantallas no hay
+        nada: una lista con un tinte detras de cada fila es una lista que hay que
+        leer contra un color.
+      */
+      wash={
+        workspace
+          ? { color: workspace.color, colorTo: workspace.colorTo, wash: workspace.wash }
+          : null
+      }
       overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
     >
       {/*

@@ -61,6 +61,23 @@ export type WashShape = "diagonal" | "vertical";
 
 export const DEFAULT_WASH: WashVariant = "diagonal";
 
+/**
+ * How much of a space's colour a wash is **allowed to show**.
+ *
+ * **One number for the whole app, and the reason is the seam.** The wash appears
+ * in two places — the bar of the header and the background of the panel — and they
+ * touch. Two places that each mute their own amount put a step of saturation right
+ * where the eye is already looking for a change of screen, and a step reads as a
+ * mistake even when nobody can say what it is.
+ *
+ * **Why under half at all.** A bar is a place where text and a function are drawn,
+ * not a poster: measured, a full-strength wash looked right on a teal space and
+ * like a warning on a red one, with the same component painting both. The shape of
+ * the wash is what says which space you are in, so that stays; the intensity is
+ * not information, so it goes.
+ */
+export const VELO = 0.45;
+
 export function isWashVariant(value: unknown): value is WashVariant {
   return (
     typeof value === "string" &&

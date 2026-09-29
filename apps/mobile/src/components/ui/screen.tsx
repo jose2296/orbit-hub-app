@@ -1,3 +1,4 @@
+import { LinearGradient } from "expo-linear-gradient";
 import type { ReactNode } from "react";
 import {
   KeyboardAvoidingView,
@@ -9,7 +10,9 @@ import {
 import type { StyleProp, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { SpaceWash } from "@/components/ui/wash";
 import { READING_WIDTH } from "@/lib/layout/measure";
+import { VELO, type WashVariant } from "@/lib/workspace/wash";
 import { useTheme } from "@/theme";
 
 export interface ScreenProps {
@@ -57,7 +60,27 @@ export interface ScreenProps {
    * keyboard-avoiding view, where nothing transforms it.
    */
   overlay?: ReactNode;
+  /**
+   * The space's wash, behind the content, at the top of the screen.
+   *
+   * **The panel, and only the panel.** The header is 56 points on every screen and
+   * does not move; this is the other half of the same colour, the part that is big
+   * enough to be a background rather than a bar. Between the two, a space's colour
+   * is where it was before the bands came and went: a thin line of it on top and a
+   * wash that thins out under the first rows.
+   *
+   * `null` — the default, and what the other screens pass — is no wash at all, and
+   * they did not have to be taught anything about it.
+   */
+  wash?: {
+    color?: string | null;
+    colorTo?: string | null;
+    wash?: WashVariant | null;
+  } | null;
 }
+
+/** How much of the screen the wash reaches down before it is gone. */
+const ALTO_LAVADO = 320;
 
 /**
  * Base screen: safe areas, background colour, an optional scroll container and
@@ -83,6 +106,7 @@ export function Screen({
   style,
   testID,
   overlay,
+  wash,
 }: ScreenProps) {
   const theme = useTheme();
 
@@ -106,6 +130,47 @@ export function Screen({
           maxWidth: width === "grid" ? 1000 : READING_WIDTH,
           alignSelf: "center",
         };
+
+  /*
+    El lavado, detras del contenido y sin tocarlo.
+
+    Va **antes** del scroller y no como hijo suyo por lo mismo que el boton
+    flotante: un hijo de un `ScrollView` en la web esta dentro de el y se va con
+    el. Y es un hermano, no un fondo del `SafeAreaView`, porque un fondo pinta detras
+    de los hijos y no se puede desvanecer a algo que esta delante.
+
+    La altura es un numero y no un porcentaje a proposito: 320 puntos son casi la
+    mitad de un movil de 844 y menos de un tercio de una pantalla alta, asi que el
+    lavado llega mas alla de la primera fila —que es lo que lo hace un fondo y no
+    una barra— sin teñir una lista entera. Y como se desvanece a lo largo de esos
+    320, un alto equivocado se nota menos que un borde: se apaga antes o despues.
+  */
+  const fondo = wash ? (
+    <View pointerEvents="none" style={styles.lavado}>
+      <SpaceWash
+        colorKey={wash.color}
+        colorToKey={wash.colorTo}
+        wash={wash.wash ?? undefined}
+        style={styles.lavadoCaja}
+      />
+      {/*
+        El velo, y es el **mismo** que el de la cabecera y el del panel. No por
+        gusto: los dos se tocan, y dos sitio que cada uno atenua a su manera
+        dejan un escalon de saturacion justo donde el ojo ya espera un cambio de
+        pantalla, y un escalon se lee como un error aunque nadie sepa nombrarlo.
+      */}
+      <View
+        style={[
+          styles.lavadoVelo,
+          { backgroundColor: theme.colors.background, opacity: VELO },
+        ]}
+      />
+      <LinearGradient
+        colors={["transparent", theme.colors.background]}
+        style={styles.lavadoDesvanecido}
+      />
+    </View>
+  ) : null;
 
   const content = scroll ? (
     <ScrollView
@@ -131,6 +196,7 @@ export function Screen({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.flex}
       >
+        {fondo}
         {content}
         {/*
           A sibling of the scroller and not a child of it, and the comment on
@@ -153,6 +219,33 @@ const styles = StyleSheet.create({
   full: {
     width: "100%",
     alignSelf: "center",
+  },
+  lavado: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: ALTO_LAVADO,
+    overflow: "hidden",
+  },
+  lavadoCaja: {
+    flex: 1,
+  },
+  lavadoVelo: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  lavadoDesvanecido: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    // Se apaga en la mitad de abajo: el color tiene que estar cuando empieza el
+    // contenido —si no, esto no es un fondo— y no cuando se acaba.
+    height: "58%",
   },
 });
 
