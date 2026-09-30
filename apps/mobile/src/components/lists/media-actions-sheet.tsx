@@ -1,14 +1,17 @@
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
+import { Image, StyleSheet } from "react-native";
 
 import type { List, ListItem } from "@orbit-hub/contracts";
 
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useTranslation } from "@/lib/i18n";
 import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
+import { mediaCardOf } from "@/lib/lists/media-card";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
+import { useTheme } from "@/theme";
 import type { SheetOption } from "@/components/ui/sheet";
 
 export interface MediaActionsSheetProps {
@@ -49,6 +52,7 @@ export function MediaActionsSheet({
   onClose,
 }: MediaActionsSheetProps) {
   const t = useTranslation();
+  const theme = useTheme();
   const router = useRouter();
 
   const { lists } = useLists({});
@@ -207,14 +211,44 @@ export function MediaActionsSheet({
     },
   ];
 
+  /*
+    The cover, in the header, **beside the title**.
+   *
+    Two sheets with the same title open at once and there is nothing to tell them
+    apart, and this sheet is reached by long-pressing a poster, so the poster is
+    literally the thing under the finger that opened it. Thirty-six points is the
+    width of a thumbnail: enough to recognise a film from its artwork, small
+    enough that the title still has the sheet to itself.
+   */
+  const cover = mediaCardOf(item)?.imageUrl;
+  const arte = cover ? (
+    <Image
+      source={{ uri: cover }}
+      style={[
+        styles.portada,
+        { borderRadius: theme.radius.sm, backgroundColor: theme.colors.surfaceMuted },
+      ]}
+      resizeMode="cover"
+      accessibilityIgnoresInvertColors
+    />
+  ) : null;
+
   return (
     <Sheet
       visible
       onClose={onClose}
       title={item.title}
       subtitle={t(LIST_KIND_LABEL[listKind])}
+      artwork={arte}
     >
       <SheetOptions options={options} />
     </Sheet>
   );
 }
+
+const styles = StyleSheet.create({
+  portada: {
+    width: 36,
+    height: 54,
+  },
+});

@@ -21,6 +21,18 @@ export interface SheetProps {
   title?: string;
   /** Short line under the title, for context. */
   subtitle?: string;
+  /**
+   * A picture beside the title.
+   *
+   * For the sheet of a film, where the title alone does not say which one: two
+   * sheets with "Salsa de la abuela" open at once and there is no way to tell them
+   * apart. It is the **cover**, and it sits on the left of the text because that
+   * is where a face goes.
+   *
+   * Drawn by the caller and not fetched here, so the sheet has no idea what a
+   * poster is: it gets a node of the right size and leaves it alone.
+   */
+  artwork?: ReactNode;
   children: ReactNode;
   /** Renders the content in a scroll view, for a long list of options. */
   scrollable?: boolean;
@@ -44,6 +56,7 @@ export function Sheet({
   onClose,
   title,
   subtitle,
+  artwork,
   children,
   scrollable = true,
   maxHeightRatio = 0.85,
@@ -108,15 +121,27 @@ export function Sheet({
                 ]}
               />
             )}
-            {title ? (
-              <View style={{ gap: 2 }}>
-                <AppText variant="heading" numberOfLines={1}>
-                  {title}
-                </AppText>
-                {subtitle ? (
-                  <AppText variant="caption" tone="muted" numberOfLines={1}>
-                    {subtitle}
-                  </AppText>
+            {/*
+              The header row, and **the artwork goes to the left of the text and
+              not above it**: a sheet whose title moves down half a line depending
+              *whether there is a cover* is a sheet whose close button and grabber
+              *move with it. One row, one height, the same whether there is a
+              picture or not.
+            */}
+            {artwork || title ? (
+              <View style={[styles.cabecera, { gap: theme.spacing.md }]}>
+                {artwork}
+                {title ? (
+                  <View style={{ gap: 2, flexShrink: 1 }}>
+                    <AppText variant="heading" numberOfLines={1}>
+                      {title}
+                    </AppText>
+                    {subtitle ? (
+                      <AppText variant="caption" tone="muted" numberOfLines={1}>
+                        {subtitle}
+                      </AppText>
+                    ) : null}
+                  </View>
                 ) : null}
               </View>
             ) : null}
@@ -403,6 +428,10 @@ const styles = StyleSheet.create({
     // form on native too, so one property covers the three targets.
     boxShadow: "0px 12px 30px rgba(0, 0, 0, 0.35)",
     elevation: 12,
+  },
+  cabecera: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   grabberArea: {
     flexDirection: "row",
