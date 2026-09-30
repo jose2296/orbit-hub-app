@@ -22,6 +22,15 @@ export interface CatalogResultRowProps {
    * out to do the thing they already asked for.
    */
   onAdd?: (result: CatalogResult) => void;
+  /**
+   * Whether this title is **already a row in the list being added to**.
+   *
+   * It replaces the `+` with a tick and a word, and that is the whole reason it is
+   * not just "do not let the `+` work": a button that does nothing and still looks
+   * like a button is a button somebody taps twice and then asks why. Saying "Ya
+   * está" costs one line and answers the question the tap was asking.
+   */
+  inList?: boolean;
 }
 
 /**
@@ -33,6 +42,7 @@ export function CatalogResultRow({
   onPress,
   onAdd,
   disabled,
+  inList,
 }: CatalogResultRowProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -96,7 +106,28 @@ export function CatalogResultRow({
         whole length of the screen, and a target that much smaller than its
         neighbours is a target that gets missed and then blamed.
       */}
-      {onAdd ? (
+      {inList ? (
+        /*
+          The tick, and it is **not a button**.
+         *
+          Same 40 points, so the column of controls does not move when a result
+          turns into a "you have it" — a row that reflows as the search comes back
+          is a row that moves under the finger that is reading it. What it is not
+          is pressable: there is nothing to press, and a control that does nothing
+          when pressed is worse than no control.
+        */
+        <View
+          style={[styles.add, styles.yaEsta]}
+          accessibilityRole="text"
+          accessibilityLabel={t('catalog.inList')}
+          testID={`catalog-in-list-${result.externalId}`}
+        >
+          <Ionicons name="checkmark-circle" size={22} color={theme.colors.success} />
+          <AppText variant="caption" style={{ color: theme.colors.success }}>
+            {t('catalog.inList')}
+          </AppText>
+        </View>
+      ) : onAdd ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('catalog.add', { title: result.title })}
@@ -104,6 +135,7 @@ export function CatalogResultRow({
           disabled={disabled}
           hitSlop={8}
           onPress={() => onAdd(result)}
+          testID={`catalog-add-${result.externalId}`}
           style={({ pressed }) => [
             styles.add,
             { opacity: disabled ? 0.4 : pressed ? 0.6 : 1 },
@@ -117,6 +149,11 @@ export function CatalogResultRow({
 }
 
 const styles = StyleSheet.create({
+  yaEsta: {
+    flexDirection: "row",
+    alignItems: "center",
+    opacity: 1,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

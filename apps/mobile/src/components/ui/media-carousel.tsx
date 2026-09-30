@@ -20,6 +20,16 @@ export interface MediaCarouselItem {
   onLongPress?: () => void;
   /** Marks a watched or read title without leaving the list. */
   completed?: boolean;
+  /**
+   * Whether the list this is being shown for **already has it**.
+   *
+   * For the collection and the recommendations in a detail: both are full of
+   * titles that are also rows in the list you are reading, and a `+` on one of
+   * those writes a duplicate. Drawing a tick instead of the button is the honest
+   * answer — the alternative is a button that does nothing, which is worse than
+   * no button, because it looks like the one that works.
+   */
+  inList?: boolean;
   onToggleCompleted?: () => void;
   /** Opens the menu of what can be done with this title. */
   onMenu?: () => void;
@@ -186,7 +196,31 @@ function MediaCard({
         HTML, a screen reader reads the two as one, and the tap lands on the
         outer one.
       */}
-      {item.onAdd ? (
+      {item.inList ? (
+        /*
+          The tick, **and not a button**.
+         *
+          It sits where the `+` was, so the card does not change size and the row
+          of cards does not reflow as the answer arrives. What it is not is
+          pressable: there is nothing to press, and a control that survives a tap
+          and does nothing is worse than no control at all.
+        */
+        <View
+          style={[styles.abajoIzquierda, styles.yaEsta]}
+          accessibilityRole="text"
+          accessibilityLabel={t("catalog.inList")}
+          testID={`in-list-${item.key}`}
+        >
+          <View
+            style={[
+              styles.cortaGlifo,
+              { backgroundColor: theme.colors.successSoft, borderRadius: theme.radius.sm },
+            ]}
+          >
+            <Ionicons name="checkmark" size={16} color={theme.colors.success} />
+          </View>
+        </View>
+      ) : item.onAdd ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("catalog.add", { title: item.title })}
@@ -304,6 +338,10 @@ function MediaCard({
 }
 
 const styles = StyleSheet.create({
+  yaEsta: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   poster: {
     width: CARD_WIDTH,
     height: CARD_WIDTH * 1.5,

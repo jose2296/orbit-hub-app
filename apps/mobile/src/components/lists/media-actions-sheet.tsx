@@ -59,6 +59,16 @@ export function MediaActionsSheet({
   const { toggleCompleted, removeItem, addItemTo } = useListItems(listId);
 
   const [pickingList, setPickingList] = useState(false);
+  /*
+    The target being written to right now.
+   *
+    `planAddToList` refuses a duplicate, and a refusal is no use against two taps
+    in a row: both calls read the list **before** either writes, so each one sees a
+    list that does not have the title yet and both say yes. The two rows then land
+    together, and the rule that was there to prevent exactly that is what let it
+    through. One name in flight is what closes that window.
+  */
+  const [anadiendoEn, setAnadiendoEn] = useState<string | null>(null);
 
   const isBook = listKind === "books";
   const seen = item?.completed ?? false;
@@ -103,7 +113,10 @@ export function MediaActionsSheet({
               key: list.id,
               label: list.title,
               icon: LIST_KIND_ICON[list.kind],
+              disabled: anadiendoEn !== null,
               onPress: () => {
+                if (anadiendoEn !== null) return;
+                setAnadiendoEn(list.id);
                 setPickingList(false);
                 void addItemTo(
                   {
@@ -114,7 +127,9 @@ export function MediaActionsSheet({
                     metadata: item.metadata,
                   },
                   list.id,
-                );
+                )
+                  .catch(() => undefined)
+                  .finally(() => setAnadiendoEn(null));
                 onClose();
               },
             }))}

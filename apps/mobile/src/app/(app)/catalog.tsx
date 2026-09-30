@@ -12,7 +12,7 @@ import { TextField } from '@/components/ui/text-field';
 import { AppText } from '@/components/ui/text';
 import { allowedCatalogKinds } from '@/lib/lists/catalog-kinds';
 import { CATALOG_MIN_QUERY, useCatalogSearch } from '@/hooks/use-catalog-search';
-import { useListItems, useLists } from '@/hooks/use-lists';
+import { useListExternalIds, useListItems, useLists } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 
@@ -65,9 +65,29 @@ export default function CatalogSearchScreen() {
     return () => clearTimeout(timer);
   }, [clear, kind, query, search]);
 
+  /**
+   * What the list already has, **read whole**.
+   *
+   * From the store and not from the `items` of the list hook, because that one
+   * hides the completed rows when the screen is set to — and a film somebody has
+   * already watched is exactly the one nobody wants to add a second time.
+   */
+  const enLaLista = useListExternalIds(listId);
+
   async function onAdd(externalId: string) {
     const hit = results.find((item) => item.externalId === externalId);
     if (!hit) return;
+
+    /*
+     * Asked before writing, not only refused by the write.
+     *
+     * `addItem` refuses a duplicate too, and that is the guarantee; this is what
+     * stops the screen from clearing the query and going back to the list as if
+     * something had been added, when what happened was that it was already there.
+     * Two checks doing two different jobs: one is a rule about the data and one is
+     * a rule about what the screen does.
+     */
+    if (enLaLista.has(externalId)) return;
 
     setAddingId(externalId);
     try {
@@ -147,6 +167,7 @@ export default function CatalogSearchScreen() {
               <CatalogResultRow
                 result={hit}
                 disabled={addingId !== null}
+                inList={enLaLista.has(hit.externalId)}
                 onPress={(selected) => void onAdd(selected.externalId)}
                 onAdd={(selected) => void onAdd(selected.externalId)}
               />

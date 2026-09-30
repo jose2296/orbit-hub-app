@@ -337,6 +337,52 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/**
+ * The provider ids of **every** row in a list, and not the ones on screen.
+ *
+ * **This exists because `useListItems` cannot answer the question.** That hook
+ * reads the list through `showCompleted`, so with the completed ones hidden a
+ * film somebody has already watched is not in its `items` — and a catalog search
+ * that decided "you already have this" from it would happily let a watched film
+ * be added a second time. Asking a store that is also the list you are looking at
+ * for "what is in this list" is the kind of question that gets a yes for the wrong
+ * reason.
+ *
+ * So it reads the list itself, always whole, and answers with a `Set` because the
+ * question is asked once per search result and a list array does that in linear
+ * time each time.
+ */
+export function useListExternalIds(listId: string | undefined): Set<string> {
+  const [ids, setIds] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    if (!listId) {
+      setIds(new Set());
+      return;
+    }
+    const store = await getLocalStoreReady();
+    const rows = await store.listCachedItems(listId, { includeCompleted: true });
+    setIds(
+      new Set(
+        rows
+          .map((row) => readRecord<ListItem>(row).externalId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    );
+  }, [listId]);
+
+  useEffect(() => {
+    void load();
+    // The store is what changes here, not a prop: another screen adds a row and
+    // this screen has to know without being told.
+    return subscribeToLocalStore(() => {
+      void load();
+    });
+  }, [load]);
+
+  return ids;
+}
+
 export function useListItems(listId: string | undefined) {
   const [items, setItems] = useState<ListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -377,6 +423,22 @@ export function useListItems(listId: string | undefined) {
     });
   }, [load]);
 
+  /**
+   * Add an item, **and refuse to add one that is already there**.
+   *
+   * This is the function both catalog paths go through — the `+` in the catalog
+   * search and the `+` on a related title in a detail — and **neither of them
+   * checked anything**: two films from the same list of recommended ones, tapped
+   * twice, were two rows. `planAddToList` has been in the codebase the whole time
+   * and answers exactly this, so it is called here rather than written again.
+   *
+   * **It says what happened** instead of returning an id that may or may not be
+   * real, because the callers need to tell somebody "you already have it" and an
+   * `undefined` is not an answer they can show. A hand written row has no
+   * `externalId` and is never a duplicate of anything: two rows called "leche" are
+   * two things somebody meant to buy, and a checklist that refuses the second one
+   * is a checklist that has thrown away a note.
+   */
   const addItem = useCallback(
     async (input: {
       title: string;
@@ -390,13 +452,20 @@ export function useListItems(listId: string | undefined) {
       iconStyle?: ListItem["iconStyle"];
       iconColor?: ListItem["iconColor"];
       tags?: string[];
-    }) => {
-      if (!listId) return;
+    }): Promise<{ added: boolean; itemId: string | null }> => {
+      if (!listId) return { added: false, itemId: null };
 
       const store = await getLocalStoreReady();
       const existing = (await store.listCachedItems(listId)).map((row) =>
         readRecord<ListItem>(row),
       );
+
+      const plan = planAddToList(existing, input);
+      if (!plan.added) {
+        const yaEsta = existing.find((row) => row.externalId === input.externalId) ?? null;
+        return { added: false, itemId: yaEsta?.id ?? null };
+      }
+
       const id = Crypto.randomUUID();
       const now = nowIso();
 
@@ -440,7 +509,7 @@ export function useListItems(listId: string | undefined) {
         payload: {
           listId,
           title: input.title,
-          position: existing.length,
+          position: nextPosition(existing),
           ...(input.priority ? { priority: input.priority } : {}),
           ...(input.icon ? { icon: input.icon } : {}),
           ...(input.iconStyle ? { iconStyle: input.iconStyle } : {}),
@@ -455,7 +524,7 @@ export function useListItems(listId: string | undefined) {
       });
 
       await load();
-      return id;
+      return { added: true, itemId: id };
     },
     [listId, load],
   );

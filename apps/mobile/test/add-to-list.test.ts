@@ -17,12 +17,19 @@ describe('planAddToList', () => {
   });
 
   it('refuses a title the list already has', () => {
+    /*
+     * `itemId` va en la asercion porque ahora **forma parte de lo que se
+     * responde**: un rechazo que dice que no, pero no cual fila, obliga a cada
+     * llamador a buscarla otra vez por su cuenta, y uno de ellos se olvidaba. Aqui
+     * la lista no trae id, asi que sale `null`: se sabe que hay una fila y no se
+     * sabe cual, que es exactamente lo que la lista dice.
+     */
     expect(
       planAddToList(
         [{ externalId: 'movie:1' }, { externalId: 'movie:2' }],
         { externalId: 'movie:1' },
       ),
-    ).toEqual({ added: false, reason: 'already-there' });
+    ).toEqual({ added: false, reason: 'already-there', itemId: null });
   });
 
   it('adds a title with no provider id, because nothing can match it', () => {
@@ -61,5 +68,40 @@ describe('nextPosition', () => {
 
   it('never returns a negative position from a corrupt list', () => {
     expect(nextPosition([{ position: -3 }])).toBe(1);
+  });
+});
+
+describe('planAddToList dice QUE fila es la que ya esta', () => {
+  /*
+   * "Ya lo tienes" es una frase que se puede leer. Poder abrir esa fila es lo que
+   * convierte la frase en algo accionable, y antes cada llamador volvia a buscar
+   * la misma fila por su cuenta.
+   */
+  const lista = [
+    { id: 'a', externalId: 'movie:1' },
+    { id: 'b', externalId: 'movie:2' },
+  ];
+
+  it('devuelve el id de la fila que coincide', () => {
+    const plan = planAddToList(lista, { externalId: 'movie:2' });
+    expect(plan).toEqual({ added: false, reason: 'already-there', itemId: 'b' });
+  });
+
+  it('no dice id cuando si anade', () => {
+    const plan = planAddToList(lista, { externalId: 'movie:3' });
+    expect(plan.added).toBe(true);
+    expect(plan.itemId).toBeUndefined();
+  });
+
+  it('una lista sin id sigue negando el duplicado, porque la regla no mira el id', () => {
+    /*
+     * La fila sin `id` es de las que llegan de la cache vieja o de un cliente que
+     * no manda el campo. La regla tiene que seguir valiendo: si por no tener id
+     * no negara el duplicado, un item importado entraria dos veces solo por venir
+     * de otra parte.
+     */
+    const plan = planAddToList([{ externalId: 'movie:1' }], { externalId: 'movie:1' });
+    expect(plan.added).toBe(false);
+    expect(plan.itemId).toBeNull();
   });
 });

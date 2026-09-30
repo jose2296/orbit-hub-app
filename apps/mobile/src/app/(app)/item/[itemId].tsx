@@ -264,42 +264,81 @@ export default function ItemDetailsScreen() {
    * is inside a list of films and taps `+` on a poster of another film is asking
    * for that film to be in the list they are looking at.
    */
-  const toCarouselItem = (related: CatalogRelated) => ({
-    key: related.externalId,
-    title: related.title,
-    imageUrl: related.imageUrl,
-    released: related.released,
-    badge: null,
-    onPress: () =>
-      router.push({
-        pathname: "/(app)/item/[itemId]",
-        params: {
-          itemId: related.externalId,
-          kind: details.kind,
+  /**
+   * A related title as a card, **with or without a way to add it**.
+   *
+   * **No `+` when the list already has it.** The collection and the recommendations
+   * are full of things that are also in the list you are reading the detail from —
+   * a film in its own collection, a recommendation somebody already saved — and a
+   * `+` there is a `+` that writes a second row. So membership is asked for each
+   * one and the button is simply not offered: the card says what it can do, and
+   * what it cannot do is not drawn.
+   *
+   * The membership is read from the list hook's `items`, which is what is on
+   * screen in this list, and it is why a watched title can be re-added from here:
+   * the fix for that is the same one the catalog uses, and it is in the write
+   * rather than here.
+   *
+   * **The row it opens keeps the real list id.** It used to push
+   * `itemId: related.externalId`, and this screen uses `itemId` as the *list* id,
+   * so a detail opened from a recommendation could add to a list that does not
+   * exist: the row went to the outbox and to the server and never showed up
+   * anywhere. An id that is empty is caught; an id that is *wrong* is not.
+   */
+  const toCarouselItem = (related: CatalogRelated) => {
+    const yaEsta = items.some((row) => row.externalId === related.externalId);
+    return {
+      key: related.externalId,
+      title: related.title,
+      imageUrl: related.imageUrl,
+      released: related.released,
+      badge: null,
+      inList: yaEsta,
+      onPress: () =>
+        router.push({
+          pathname: "/(app)/item/[itemId]",
+          params: {
+            itemId,
+            kind: details.kind,
+            externalId: related.externalId,
+            title: related.title,
+          },
+        }),
+      onAdd:
+        itemId && !yaEsta
+          ? () => {
+              if (anadiendo) return;
+              setAnadiendo(related.externalId);
+              void addItem({
+                title: related.title,
+                externalId: related.externalId,
+                /*
+                 * The provider is **this screen's**, not a literal "tmdb".
+                 *
+                 * A book reached through the recommendations was being written
+                 * down as a TMDB title, and that wrong provider is what
+                 * `providerRefOf` reads later to decide what to ask for and what
+                 * to call the thing. It is the kind of mistake that is invisible
+                 * on the row and shows up two screens away.
+                 */
+                metadata: {
+                  provider: isBook ? "google-books" : "tmdb",
+                  type: isBook ? "books" : details.kind === "tv" ? "tv" : "movie",
+                  imageUrl: related.imageUrl,
+                },
+              })
+                .catch(() => undefined)
+                .finally(() => setAnadiendo(null));
+            }
+          : undefined,
+      onWatch: () =>
+        setDondeVer({
           externalId: related.externalId,
           title: related.title,
-        },
-      }),
-    onAdd: itemId
-      ? () => {
-          if (anadiendo) return;
-          setAnadiendo(related.externalId);
-          void addItem({
-            title: related.title,
-            externalId: related.externalId,
-            metadata: { provider: 'tmdb', imageUrl: related.imageUrl },
-          })
-            .catch(() => undefined)
-            .finally(() => setAnadiendo(null));
-        }
-      : undefined,
-    onWatch: () =>
-      setDondeVer({
-        externalId: related.externalId,
-        title: related.title,
-        kind: isBook ? 'books' : isSeries ? 'tv' : 'movies',
-      }),
-  });
+          kind: isBook ? "books" : isSeries ? "tv" : "movies",
+        }),
+    };
+  };
 
   return (
     <Screen scroll>
