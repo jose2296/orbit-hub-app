@@ -1,15 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Animated, Image, Pressable, StyleSheet, View } from "react-native";
 import { useCallback, useRef, useState } from "react";
-import {
-  Animated,
-  Image,
-  Pressable,
-  StyleSheet,
-  View,
-  type LayoutChangeEvent,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from "react-native";
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText } from "@/components/ui/text";
@@ -38,38 +30,52 @@ export interface VerticalMediaCarouselProps {
   emptyBody: string;
 }
 
-/** The gap between two posters, and it is also what the snap counts. */
-const HUECO = 16;
+/**
+ * The breathing room between two posters, **inside the item and not between
+ * them**.
+ *
+ * This is the whole trick of the component, and it is why the scroll can never
+ * rest in between. A gap *between* items means the distance between one item's
+ * top and the next one's is not the item's height, so any snapping has to be told
+ * that number; and being told a number, it gets it wrong somewhere — the
+ * arithmetic is right in the types and wrong in the browser. A gap *inside* the
+ * item means the item is exactly a screen, and "snap one screen" needs no number
+ * at all.
+ */
+const AIRE = 24;
 
 /**
- * The list of films, series or books, **one at a time**.
+ * The list of films, series or books, **one at a time**, snapped the way a short
+ * video feed is.
  *
- * **Vertical, and snapped.** It is a `FlatList` con `snapToInterval` y
- * `decelerationRate="fast"`, de modo que un dedo llega a un item y se para: no
- * pasa de largo ni deja medio item en pantalla. El carrusel que habia antes era
- * horizontal y vivia en la cabecera de un `FlatList` vertical, asi que en una
- * lista de doscientos titulos se veian tres y el resto habia que buscarlos
- * desplazando hacia abajo. Aqui el carrusel **es** la pantalla.
+ * **`pagingEnabled`, and not `snapToInterval`.** Two reasons, and the second one
+ * is the interesting. The first is that it is what "one screen per item" means:
+ * `pagingEnabled` snaps to the size of the scroller, and an item *is* the size of
+ * the scroller, so there is no interval to compute and therefore no interval to
+ * get wrong. The second is that `snapToInterval` **does not exist on the web**:
+ * react-native-web 0.21 implements `pagingEnabled` as CSS scroll-snap
+ * (`scroll-snap-type: y mandatory`) and ignores `snapToInterval` and
+ * `disableIntervalMomentum` completely. A carousel built on `snapToInterval`
+ * snaps perfectly on a phone and scrolls like an ordinary list in a browser,
+ * which is exactly the kind of thing that only shows up in the one place it was
+ * measured.
  *
- * **El alto lo decide lo que hay, y no un numero.** El item mide lo que mide la
- * ventana, y el `snapToInterval` se calcula con ese alto, asi que el mismo
- * componente sirve en un movil, en una ventana estrecha y en una tablet sin
- * ningun alto escrito a mano. Un `snapToInterval` equivocado no se nota como
- * salto: se nota como que el dedo se pasa de largo, y es el fallo mas dificil de
- * leer de los que tienen.
+ * **You cannot stop between items, and that is structural.** The page *is* the
+ * item, so there is no half position to come to rest in: whatever the gesture,
+ * the scroll finishes on a boundary.
  *
- * **El item se levanta poco al pasar.** La escala y la opacidad de cada cartel
- * salen del desplazamiento, no de un estado: el que esta en el centro es el
- * grande y el de al lado esta mas pequeno y mas transparente. Es lo unico que
- * hace que se entienda que hay mas y que esto se desliza, y sin ellipsis la
- * postal siguiente asoma por debajo.
+ * **The item is the height it is given, measured.** The same component serves a
+ * phone, a short window and a tablet with no height written down anywhere.
  *
- * **Marcar como visto se puede hacer desde aqui**, pulsando el sello. Antes el
- * circulo de "visto" era decorativo: el `onToggleCompleted` existia en el tipo
- * del carrusel y no lo usaba nadie, de modo que un titulo visto seguia siendo
- * invisible en la lista y solo se podia cambiar entrando en su hoja. Un estado
- * que solo se cambia en un sitio al que hay que entrar de proposito no es un
- * estado que se pueda usar.
+ * **Each poster lifts a little as it goes past.** The scale and the opacity come
+ * from the scroll offset rather than from a state, so the one in the middle is
+ * the big one and the one leaving is smaller and fainter. It is the only thing
+ * that says "there is more of this and it slides".
+ *
+ * **Marking it seen is done from here.** The "seen" mark used to be a picture:
+ * `onToggleCompleted` was declared on the carousel's item type and nobody passed
+ * it, so the only way to move a title into the seen list was to open its sheet
+ * first. A state you can only change from one particular screen is a setting.
  */
 export function VerticalMediaCarousel({
   items,
@@ -79,23 +85,12 @@ export function VerticalMediaCarousel({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  /** The height one item gets, measured. The snap is built out of it. */
   const [alto, setAlto] = useState(0);
   const desplazamiento = useRef(new Animated.Value(0)).current;
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setAlto(Math.round(e.nativeEvent.layout.height));
   }, []);
-
-  /**
-   * The gap, **derived from the item height and not written down**.
-   *
-   * A literal `16` next to a literal `height` is a second place to be wrong: the
-   * two numbers have to agree or the list stops snapping, and nothing in the
-   * types says they have to. Deriving it means the one number that exists is the
-   * one the layout uses.
-   */
-  const altoItem = Math.max(alto - HUECO, 0);
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -106,35 +101,43 @@ export function VerticalMediaCarousel({
 
   const renderItem = useCallback(
     ({ item, index }: { item: VerticalMediaItem; index: number }) => {
-      /* How far this item is from the middle, 0 at the centre and 1 next door. */
-      const distancia = Animated.subtract(
-        desplazamiento,
-        index * (altoItem + HUECO),
-      );
-      const closeness = Animated.divide(distancia, altoItem || 1);
+      /* How far this item is from the page in the middle: 0 there, 1 next door. */
+      const distancia = Animated.subtract(desplazamiento, index * alto);
+      const closeness = Animated.divide(distancia, alto || 1);
       const escala = closeness.interpolate({
         inputRange: [-1, 0, 1],
-        outputRange: [0.86, 1, 0.86],
+        outputRange: [0.88, 1, 0.88],
         extrapolate: "clamp",
       });
-      const opacidad = Animated.multiply(
-        closeness.interpolate({
-          inputRange: [-1.6, -0.4, 0, 1],
-          outputRange: [0.25, 0.7, 1, 0.7],
-          extrapolate: "clamp",
-        }),
-        1,
-      );
+      const opacidad = closeness.interpolate({
+        inputRange: [-1.5, -0.4, 0, 1],
+        outputRange: [0.2, 0.65, 1, 0.65],
+        extrapolate: "clamp",
+      });
 
       return (
-        <View style={[styles.item, { height: altoItem || undefined }]}>
+        <View
+          style={[
+            styles.item,
+            {
+              height: alto || undefined,
+              paddingTop: AIRE / 2,
+              // The bottom inset goes **inside** the item, for the same reason the
+              // air between items does: adding it to the list instead would make
+              // the last page not reach the top and the last poster would be the
+              // one that cannot be scrolled into place.
+              paddingBottom: (insets.bottom ?? 0) + AIRE / 2,
+            },
+          ]}
+        >
           <Animated.View
             style={[
               styles.carta,
               {
+                height: alto ? alto - AIRE - (insets.bottom ?? 0) : undefined,
+                borderRadius: theme.radius.lg,
                 transform: [{ scale: escala }],
                 opacity: opacidad,
-                borderRadius: theme.radius.lg,
               },
             ]}
           >
@@ -151,7 +154,9 @@ export function VerticalMediaCarousel({
                   resizeMode="cover"
                 />
               ) : (
-                <View style={[styles.sinImagen, { backgroundColor: theme.colors.surfaceMuted }]}>
+                <View
+                  style={[styles.sinImagen, { backgroundColor: theme.colors.surfaceMuted }]}
+                >
                   <Ionicons
                     name={item.badge === "Libro" ? "book-outline" : "film-outline"}
                     size={56}
@@ -161,9 +166,9 @@ export function VerticalMediaCarousel({
               )}
             </Pressable>
 
-            {/* The menu, a sibling of the poster and not a child: a button
-                inside a button is not valid HTML, and on the web that is not a
-                style problem, it is a click that goes to the wrong thing. */}
+            {/* The menu, a sibling of the poster and not a child: a button inside a
+                button is not valid HTML, and on the web that is not a style
+                problem, it is a click that goes to the wrong thing. */}
             <Pressable
               onPress={item.onMenu}
               accessibilityRole="button"
@@ -200,12 +205,9 @@ export function VerticalMediaCarousel({
             </View>
 
             {/*
-              The seen mark, as a **button** and not as a badge.
-
-              It is the state the two lists are split by, and being able to only
-              read it meant that flipping a title meant opening its sheet. It also
-              says what it does: the label changes with the state, because "visto"
-              next to a title that is not seen is a claim and not a button.
+              The seen mark, as a **button** and not a badge, and it says what it
+              does. "Visto" next to a title that is not seen is a claim, and a
+              label that does not change is a control whose effect is a guess.
             */}
             {item.onToggleCompleted ? (
               <Pressable
@@ -245,7 +247,7 @@ export function VerticalMediaCarousel({
         </View>
       );
     },
-    [altoItem, desplazamiento, theme],
+    [alto, desplazamiento, insets.bottom, theme],
   );
 
   if (items.length === 0) {
@@ -269,35 +271,24 @@ export function VerticalMediaCarousel({
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
         /*
-          The snap, and the three things that go with it.
-
-          `snapToInterval` alone would let a fast flick run over several items, so
-          `disableIntervalMomentum` says that passing an interval is not allowed
-          and `decelerationRate="fast"` stops early: one flick, one item. Without
-          them this is a fast scroll and not a carousel.
+          The snap. One page is one item, and there is nothing between two pages.
         */
-        snapToInterval={altoItem + HUECO}
-        disableIntervalMomentum
-        decelerationRate="fast"
+        pagingEnabled
+        /*
+          The layout is known — a page is exactly `alto` — so the list can be told
+          where every item is without measuring anything, which is what makes a
+          long list of posters work on a phone.
+        */
+        getItemLayout={(_, index) => ({ length: alto, offset: alto * index, index })}
         onScroll={onScroll}
         scrollEventThrottle={32}
-        getItemLayout={(_, index) => ({
-          length: altoItem + HUECO,
-          offset: (altoItem + HUECO) * index,
-          index,
-        })}
-        /*
-          The last item has to reach the top. Without the tail padding it stops
-          short by a full item, and the last poster of the list is the one that
-          cannot be scrolled into place.
-        */
-        contentContainerStyle={{
-          paddingTop: HUECO / 2,
-          paddingBottom: (insets.bottom ?? 0) + 96 + HUECO / 2,
-        }}
-        ItemSeparatorComponent={() => <View style={{ height: HUECO }} />}
         initialNumToRender={2}
         windowSize={3}
+        /*
+          No padding and no separator on the container: either would move the first
+          item off the page boundary and the first flick would not land on it.
+        */
+        contentContainerStyle={styles.contenido}
       />
     </View>
   );
@@ -307,13 +298,12 @@ const styles = StyleSheet.create({
   raiz: {
     flex: 1,
   },
+  contenido: {},
   item: {
-    justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
   },
   carta: {
-    flex: 1,
     width: "100%",
     maxWidth: 420,
     overflow: "hidden",
@@ -341,8 +331,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   pie: {
-    paddingTop: 14,
-    gap: 8,
+    paddingTop: 12,
+    gap: 6,
     alignItems: "center",
     width: "100%",
     maxWidth: 420,

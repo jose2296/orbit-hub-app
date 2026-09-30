@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 
 import { useListItems, useLists } from "@/hooks/use-lists";
+import { useHeaderAction } from "@/components/ui/header-action";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { Image, Linking, Pressable, StyleSheet, View } from "react-native";
 
@@ -109,6 +110,35 @@ export default function ItemDetailsScreen() {
   // times while loading and once it has failed, and React stops believing the
   // order of the calls from then on.
   useScreenTitle(name ?? item?.title ?? title ?? t("itemDetails.loading"));
+
+  /*
+    The three dots, **in the app's header** and not beside the poster.
+   *
+    This screen's actions used to be a column next to the poster with a "more
+    actions" button at the bottom of it, which meant the same menu was in two
+    places on the same screen: the header already carries the actions of every
+    screen in this app, and a menu that is beside the title *and* in the header is
+    two doors to one room. Here the header is the one, and what stays next to the
+    poster is the decision — seen or not seen — which is a button with a word on
+    it and not a menu.
+   */
+  useHeaderAction(
+    () =>
+      item ? (
+        <Button
+          testID="item-menu-button"
+          label={t("mediaActions.menuOf", { name: item.title })}
+          variant="ghost"
+          size="sm"
+          icon="ellipsis-horizontal"
+          iconOnly
+          accessibilityHint={t("mediaActions.moreActions")}
+          fullWidth={false}
+          onPress={() => setMenuOpen(true)}
+        />
+      ) : null,
+    [item, t],
+  );
 
   // Also before them, and for the same reason. The backdrop only exists on a
   // wide screen, and asking "is this wide" is a hook and not a constant.
@@ -362,11 +392,6 @@ export default function ItemDetailsScreen() {
                           : t("mediaActions.markAsSeen")
                     }
                     onPress={() => void toggleCompleted(item)}
-                  />
-                  <ActionButton
-                    icon="ellipsis-horizontal"
-                    label={t("mediaActions.moreActions")}
-                    onPress={() => setMenuOpen(true)}
                   />
                 </View>
               ) : null}
