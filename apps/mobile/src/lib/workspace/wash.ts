@@ -78,6 +78,33 @@ export const DEFAULT_WASH: WashVariant = "diagonal";
  */
 export const VELO = 0.45;
 
+/**
+ * The three heights of a space's wash on a screen, in one place.
+ *
+ * **They are one number, and that is the whole point.** The wash is painted by
+ * two boxes in two different trees — the header's bar and the band behind the
+ * content — and if each box draws its own gradient they will not agree: the
+ * diagonal angle is computed from the box's own size, so a 56-tall bar and a
+ * 100-tall band get 82° and 76°, and each runs the whole first-colour-to-
+ * second-colour range over its own height, so the bar arrives at the final colour
+ * at its bottom edge and the band starts again at the first one. Measured: a line
+ * across the middle of the gradient, exactly on the join.
+ *
+ * So both boxes are given the height of the **whole** wash and are clipped to
+ * their own piece of it. One gradient, cut in two, and a cut that cannot show
+ * because there is nothing to cut.
+ *
+ * `ALTO_CABECERA` is the bar, which is 56 on every screen; `SOBRO_BANDA` is how
+ * far the colour reaches below it; and the sum is what both boxes are measured
+ * against.
+ */
+export const ALTO_CABECERA = 56;
+
+/** How far the wash reaches **below** the bar before it is gone. */
+export const SOBRO_BANDA = 100;
+
+export const ALTO_LAVADO = ALTO_CABECERA + SOBRO_BANDA;
+
 export function isWashVariant(value: unknown): value is WashVariant {
   return (
     typeof value === "string" &&

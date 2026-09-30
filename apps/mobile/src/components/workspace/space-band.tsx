@@ -2,18 +2,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { StyleSheet, View } from "react-native";
 
 import { SpaceWash } from "@/components/ui/wash";
-import { VELO, type WashVariant } from "@/lib/workspace/wash";
+import {
+  ALTO_CABECERA,
+  ALTO_LAVADO,
+  SOBRO_BANDA,
+  VELO,
+  type WashVariant,
+} from "@/lib/workspace/wash";
 import { useTheme } from "@/theme";
-
-/**
- * How far the wash reaches **below** the header before it is gone.
- *
- * **Enough that the gradient is there to be seen, and not so much that a list is
- * read against a colour.** 100 points is about a header and a half: the wash is
- * still visibly a band rather than a tint, and it is gone well before the fourth
- * row of anything.
- */
-const SOBRO = 100;
 
 /** What the band needs to know about the space. */
 export interface SpaceBandProps {
@@ -49,6 +45,18 @@ export function SpaceBand({ color, colorTo, wash }: SpaceBandProps) {
   return (
     <View pointerEvents="none" style={styles.banda}>
       <SpaceWash
+        /*
+          **La mitad de abajo del mismo degradado**, y por eso el `altoLavado` y el
+          desplazamiento negativo: la caja de este lavado mide lo que mide el
+          lavado entero y se sube lo que mide la barra, asi que de un total de 156
+          aqui solo se ven los ultimos 100. La barra pinta los 56 de arriba con la
+          misma caja y el mismo angulo.
+
+          Dibujando el rango entero en cada caja, las dos se cortarian solas: cada
+          una recorre de un color al otro en su propio alto, con lo que la barra
+          llega al color final en su borde y esta vuelve al inicial. Medido: una
+          linea recta en mitad del degradado, justo en la union.
+        */
         colorKey={color}
         // The second colour too, for the reason it always travels: a wash painted
         // with only the first is a different pair from the one the picker showed,
@@ -84,11 +92,15 @@ const styles = StyleSheet.create({
     right: 0,
     // A height of its own and no `bottom`: this box does **not** grow with the
     // content, which is what lets the bar above it stay the height it is.
-    height: SOBRO,
+    height: SOBRO_BANDA,
     overflow: "hidden",
   },
   lavado: {
-    flex: 1,
+    // El lavado entero, corrido hacia arriba lo que mide la barra. Lo que se ve
+    // de el es exactamente su tramo final, y es el mismo degradado que pinta la
+    // cabecera: mismo alto, mismo ancho, mismo angulo, mismos colores.
+    height: ALTO_LAVADO,
+    marginTop: -ALTO_CABECERA,
   },
   velo: {
     position: "absolute",

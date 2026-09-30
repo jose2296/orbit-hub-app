@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { PNG } from "pngjs";
 import { launchChrome, openTab, seedSession, collectProblems } from "./cdp.mjs";
 
 /**
@@ -224,6 +225,49 @@ const visit = async (tab, name, path, { viewport = "phone" } = {}) => {
 
 const setViewport = (tab, vp) =>
   tab.send("Emulation.setDeviceMetricsOverride", { ...vp, mobile: false });
+
+/**
+ * The seam in a space's wash, read off a screenshot.
+ *
+ * **The wash of a space is painted by two boxes**: the bar of the header and the
+ * band behind the content. They meet on a straight line, and when each one draws
+ * its own gradient they do not agree — the diagonal angle comes from the box's own
+ * size, so a 56-tall bar and a 100-tall band get different angles, and each runs
+ * the whole first-colour-to-second-colour range over its own height, so the bar
+ * arrives at the final colour at its bottom edge and the band starts again at the
+ * first one. Measured: a step of 14 in a single row, on a line, across the middle
+ * of the gradient. With one gradient cut in two it is 1, which is what every other
+ * row of the gradient does.
+ *
+ * **So it is the biggest step between neighbouring rows around the join, and it
+ * has to look like all the others.** Anything above 4 is a seam.
+ *
+ * And it first checks the wash is on the picture at all, comparing the bar against
+ * the background further down. Without that, a screenshot of the signed-out
+ * welcome screen — no session, no wash, no join — reads as "perfectly continuous",
+ * which is how the first run of this check passed on a screen that was not there.
+ */
+const costuraDelLavado = (png, escala) => {
+  const pixel = (y, x) => {
+    const i = (png.width * y + x) * 4;
+    return [png.data[i], png.data[i + 1], png.data[i + 2]];
+  };
+  const separacion = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+
+  // Right of the title and the menu, where the wash is and nothing is drawn on it.
+  const x = png.width - Math.round(60 * escala);
+  const cabecera = pixel(Math.round(20 * escala), x);
+  const fondo = pixel(Math.round(150 * escala), x);
+  if (separacion(cabecera, fondo) < 6) return { hayLavado: false };
+
+  const union = Math.round(56 * escala);
+  let peor = { salto: 0, y: 0 };
+  for (let y = union - Math.round(12 * escala); y <= union + Math.round(14 * escala); y += 1) {
+    const salto = separacion(pixel(y - 1, x), pixel(y, x));
+    if (salto > peor.salto) peor = { salto, y };
+  }
+  return { hayLavado: true, ...peor, union };
+};
 
 // ----------------------------------------------------------------------------- seed
 
@@ -705,6 +749,29 @@ try {
     folderCards > 0,
     `${pinned} · ${folderCards} tarjetas de carpeta en el layout guardado`,
   );
+
+  section("La union del lavado del espacio");
+  for (const [name, path] of [
+    ["espacio", `/workspace/${data.workspace}`],
+    ["carpeta", `/workspace/${data.workspace}/folder/${data.folder}`],
+  ]) {
+    const archivo = `${SHOTS}/lavado-${name}.png`;
+    await tab.goto(`${APP}${path}`);
+    await settle(tab, { label: `lavado-${name}` });
+    await sleep(700);
+    await tab.screenshot(archivo);
+    const costura = costuraDelLavado(
+      PNG.sync.read(await readFile(archivo)),
+      PHONE.deviceScaleFactor,
+    );
+    check(
+      `el lavado de ${name} no tiene costura en la union con la cabecera`,
+      costura.hayLavado && costura.salto <= 4,
+      !costura.hayLavado
+        ? "la captura no tiene lavado: session caducada o pantalla equivocada"
+        : `salto de ${costura.salto} en y=${costura.union} (la union esta en ${costura.union})`,
+    );
+  }
 
   section("Sin sesion");
   const anon = await openTab(chrome.port);

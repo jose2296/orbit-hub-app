@@ -6,7 +6,7 @@ import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
 import { AppText } from '@/components/ui/text';
 import { SpaceWash } from '@/components/ui/wash';
-import { VELO, type WashVariant } from '@/lib/workspace/wash';
+import { ALTO_LAVADO, VELO, type WashVariant } from '@/lib/workspace/wash';
 import { useTheme } from '@/theme';
 
 /** What a screen publishes about its space, read from the header options. */
@@ -204,7 +204,13 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   lavado: {
-    flex: 1,
+    /*
+      **La mitad de arriba del mismo degradado.** Mide el lavado entero, no la
+      barra, y la caja de la barra lo recorta: de los 156 puntos solo se ven los
+      56 de arriba. Por eso el angulo no depende de cuanto mida la barra y la
+      banda de debajo sigue el mismo degradado sin que haya nada que emparejar.
+    */
+    height: ALTO_LAVADO,
   },
   velo: {
     position: 'absolute',

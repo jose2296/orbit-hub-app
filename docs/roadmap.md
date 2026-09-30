@@ -1035,6 +1035,32 @@ entera.
 Va **detrás del scroller y no dentro**, por lo mismo que el botón flotante: en la web un hijo de un
 `ScrollView` está dentro de él y se va con el desplazamiento.
 
+#### La costura del lavado, que era un degradado dibujado dos veces
+
+Había **una línea recta en mitad del degradado de la cabecera**, justo donde la barra se encuentra
+con la banda. La causa era concreta y era de las que no se ven mirando la pantalla:
+
+`anguloDiagonal` calcula el ángulo **con el alto de su propia caja**. La barra mide 56 y la banda
+100, así que pintaban con 82° y 76° — el degradado **doblaba** en la unión. Y además cada caja
+recorría la gama entera de colores en su propio alto: la barra llegaba al color final en su borde
+y la banda volvía a empezar en el inicial. Un salto de **14** en una sola fila, medido.
+
+**Ahora es un solo degradado cortado en dos.** Las dos cajas miden el lavado **entero** (56 + 100 =
+156) y cada una se recorta a su trozo: la barra se queda con los 56 de arriba, la banda se sube
+56 y se queda con los 100 de abajo. Mismo alto, mismo ancho, mismo ángulo, mismos colores: no hay
+nada que emparejar porque no hay dos degradados. El salto pasa a **1**, que es lo que hace
+cualquier otra fila.
+
+Los tres números viven juntos en `lib/workspace/wash.ts` — `ALTO_CABECERA`, `SOBRO_BANDA` y su suma —
+porque la suma es el número que las dos cajas necesitan y separarlos es volver a dejarlos
+desacuerdo.
+
+**Y ahora hay una comprobación que lo vigila**, en la regresión: mide el salto mayor entre filas
+vecinas alrededor de la unión y exige que sea como el de cualquier otra fila (≤ 4). Antes de mirar
+el salto, comprueba que **el lavado está en la captura**, comparando la barra con el fondo más
+abajo. Ese segundo chequeo no es un detalle: la primera vez que corrió dio «continuo» con salto 0
+y era la pantalla de bienvenida, sin sesión y sin lavado, donde no hay unión porque no hay nada.
+
 #### La banda: 100 puntos por debajo de la cabecera, y un solo desvanecido
 
 El color de un espacio son **dos mitades y un solo desvanecido**. La barra de la cabecera pinta los
