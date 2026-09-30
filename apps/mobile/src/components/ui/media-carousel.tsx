@@ -24,10 +24,15 @@ export interface MediaCarouselItem {
    * Whether the list this is being shown for **already has it**.
    *
    * For the collection and the recommendations in a detail: both are full of
-   * titles that are also rows in the list you are reading, and a `+` on one of
-   * those writes a duplicate. Drawing a tick instead of the button is the honest
-   * answer — the alternative is a button that does nothing, which is worse than
-   * no button, because it looks like the one that works.
+   * titles that are also rows in the list you are reading. It was drawn as a mark
+   * on the poster, and a mark is the wrong place: a coloured circle in one corner
+   * is a fourth thing to look at on a card that already has a menu, a tick for
+   * "watched" and two shortcuts.
+   *
+   * So it is **data and not a picture**. The card's own menu reads it and writes
+   * the line that says so, where every other action already is — which is also
+   * why the cards that have it and the ones that do not now look **the same**:
+   * they differ in a word inside a menu instead of in a sticker on the poster.
    */
   inList?: boolean;
   onToggleCompleted?: () => void;
@@ -35,25 +40,6 @@ export interface MediaCarouselItem {
   onMenu?: () => void;
   /** The menu's own name, so it is not the same control twice on a screen. */
   menuLabel?: string;
-  /**
-   * Puts this title in the list, from the card.
-   *
-   * On a list's own carousel this is already a row in the list, so it is not
-   * offered there. It is offered in the **related** and **collection** carousels,
-   * where a poster is a suggestion: without it, the only way to keep a title the
-   * screen itself put in front of you is to open it, find the button and come
-   * back to where you were.
-   */
-  onAdd?: () => void;
-  /**
-   * Opens the trailer and the providers of this title, in one sheet.
-   *
-   * One button and not two, and the reason is the card: at 120 points wide there
-   * is room for the poster, a menu and one more control. And the two questions —
-   * "show me" and "who has it" — have the same answer, which is ninety seconds
-   * and then a list of names.
-   */
-  onWatch?: () => void;
 }
 
 export interface MediaCarouselProps {
@@ -91,7 +77,6 @@ export function MediaCarousel({ items, title }: MediaCarouselProps) {
           <MediaCard
             key={item.key}
             item={item}
-            labelAdd={t('lists.addToList')}
             menuHint={t('mediaActions.menuHint')}
           />
         ))}
@@ -104,25 +89,20 @@ const CARD_WIDTH = 140;
 
 function MediaCard({
   item,
-  labelAdd,
   menuHint,
 }: {
   item: MediaCarouselItem;
-  labelAdd: string;
   menuHint: string;
 }) {
   const theme = useTheme();
-  const t = useTranslation();
   const [failed, setFailed] = useState(false);
 
   // Two controls, two hints: the poster opens the title, the corner button
   // opens its menu. The menu's hint only exists while there is a menu button,
   // so there is nothing to point at when `onMenu` is absent.
-  const pistaPoster = useA11yHint(labelAdd);
+  const pistaPoster = useA11yHint(item.onMenu ? menuHint : null);
   const pistaMenu = useA11yHint(item.onMenu ? menuHint : null);
   // Same rule for the two shortcuts: no button, no hint.
-  const pistaAdd = useA11yHint(item.onAdd ? t('catalog.addHint') : null);
-  const pistaWatch = useA11yHint(item.onWatch ? t('mediaActions.watchHint') : null);
 
   const showImage = item.imageUrl && !failed;
 
@@ -190,88 +170,6 @@ function MediaCard({
         </View>
       </Pressable>
 
-      {/*
-        The two shortcuts. They are siblings of the poster and not children of it
-        for the same reason the menu is: a button inside a button is not valid
-        HTML, a screen reader reads the two as one, and the tap lands on the
-        outer one.
-      */}
-      {item.inList ? (
-        /*
-          The tick, **and not a button**.
-         *
-          It sits where the `+` was, so the card does not change size and the row
-          of cards does not reflow as the answer arrives. What it is not is
-          pressable: there is nothing to press, and a control that survives a tap
-          and does nothing is worse than no control at all.
-        */
-        <View
-          style={[styles.abajoIzquierda, styles.yaEsta]}
-          accessibilityRole="text"
-          accessibilityLabel={t("catalog.inList")}
-          testID={`in-list-${item.key}`}
-        >
-          <View
-            style={[
-              styles.cortaGlifo,
-              { backgroundColor: theme.colors.successSoft, borderRadius: theme.radius.sm },
-            ]}
-          >
-            <Ionicons name="checkmark" size={16} color={theme.colors.success} />
-          </View>
-        </View>
-      ) : item.onAdd ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("catalog.add", { title: item.title })}
-          {...pistaAdd.props}
-          hitSlop={8}
-          onPress={item.onAdd}
-          style={({ pressed }) => [
-            styles.corta,
-            styles.abajoIzquierda,
-            { opacity: pressed ? 0.75 : 1 },
-          ]}
-        >
-          <View
-            style={[
-              styles.cortaGlifo,
-              { backgroundColor: theme.colors.accent, borderRadius: theme.radius.sm },
-            ]}
-          >
-            <Ionicons name="add" size={16} color={theme.colors.onAccent} />
-          </View>
-        </Pressable>
-      ) : null}
-      {pistaAdd.node}
-
-      {item.onWatch ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("mediaActions.watchOf", { name: item.title })}
-          {...pistaWatch.props}
-          hitSlop={8}
-          onPress={item.onWatch}
-          style={({ pressed }) => [
-            styles.corta,
-            styles.abajoDerecha,
-            { opacity: pressed ? 0.75 : 1 },
-          ]}
-        >
-          <View
-            style={[styles.cortaGlifo, { backgroundColor: 'rgba(0, 0, 0, 0.72)' }]}
-          >
-            <Ionicons name="play" size={14} color="#ffffff" />
-          </View>
-        </Pressable>
-      ) : null}
-      {pistaWatch.node}
-      {pistaPoster.node}
-
-      {/* The menu is a sibling of the poster and not a child of it: a button
-          inside a button is not valid HTML, a screen reader reads the two as
-          one, and the tap lands on the outer one. It sits over the corner of
-          the poster, which is where a menu is expected. */}
       {item.onMenu ? (
         <>
           <Pressable
@@ -338,10 +236,6 @@ function MediaCard({
 }
 
 const styles = StyleSheet.create({
-  yaEsta: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
   poster: {
     width: CARD_WIDTH,
     height: CARD_WIDTH * 1.5,
@@ -386,29 +280,8 @@ const styles = StyleSheet.create({
     con el menu, y pulsando al lado de uno se pulsaba el de al lado. Medido en web:
     28 objetivos de 26 en la ficha, 14 de ellos los dos botones de las tarjetas.
   */
-  corta: {
-    position: 'absolute',
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cortaGlifo: {
-    width: 26,
-    height: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   // El blanco mide 40 y el circulo 26: el desplazamiento deja el circulo a 4 del
   // borde de la portada, que es donde se espera un boton de esquina.
-  abajoIzquierda: {
-    left: -7,
-    bottom: -7,
-  },
-  abajoDerecha: {
-    right: -7,
-    bottom: -7,
-  },
   /*
     El circulo de 24 se queda; el blanco pasa a 40.
 

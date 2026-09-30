@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 
 import type { Folder, List, ListItem, ListKind } from "@orbit-hub/contracts";
 
@@ -173,9 +173,19 @@ export function MediaListScreen({
     return out;
   }, []);
 
-  const etiquetaOrden = useMemo(
-    () => t((opcionesDeOrden.find((o) => o.mode === orderMode)?.key ?? "order.manual") as never),
-    [opcionesDeOrden, orderMode, t],
+  const claveOrden = opcionesDeOrden.find((o) => o.mode === orderMode)?.key ?? "order.manual";
+
+  /*
+    The same order with a word that fits in a button.
+   *
+    "Como yo lo pongo" is a good sentence and a terrible label: 167 points on a
+    phone that is 390 wide, which is half the row for the state of one control.
+    The sentence stays in the sheet, where it is a title with room to be one; the
+    button says the short thing.
+  */
+  const etiquetaCorta = useMemo(
+    () => t(`orderShort.${claveOrden.replace("order.", "")}` as never),
+    [claveOrden, t],
   );
 
   return (
@@ -203,13 +213,45 @@ export function MediaListScreen({
           onChange={setPestana}
           pendingCount={pendientes.length}
           seenCount={vistos.length}
-          pendingLabel={listKind === "books" ? t("mediaActions.markAsRead") : t("mediaActions.markAsSeen")}
-          seenLabel={listKind === "books" ? t("mediaActions.markAsReadShort") : t("mediaActions.markAsSeenShort")}
+          /*
+            The tabs are named after **what is in them**, and not after what you can
+            do to them.
+
+            They said "Marcar como vistos" and "Por ver" — a verb and its opposite,
+            swapped, so the tab you press to see what you have not watched was the
+            one that said "watched" and the other one was an instruction. A tab is a
+            place, and a place has a name; the verb belongs on the button inside
+            the film.
+          */
+          pendingLabel={
+            listKind === "books" ? t("mediaTabs.pendingBooks") : t("mediaTabs.pending")
+          }
+          seenLabel={listKind === "books" ? t("mediaTabs.seenBooks") : t("mediaTabs.seen")}
         />
 
-        <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
+        {/*
+          The three knobs, **on a row that scrolls and not on one that fits**.
+
+          Measured at 390: "Como yo lo pongo" is 167 points, "Filtrar" 87 and
+          "Ordenar" 102, and with the gaps that is 404 — fourteen past the edge of
+          the phone, with the last button cut in half and no way to know there is
+          one more. A row that does not fit is not a row that fits less; it is a
+          row that lies about what is in it.
+
+          So the row scrolls sideways, which is what a row of things that may or may
+          not fit is for, and the order button says **"A mano"** instead of the
+          sentence: a button whose label is the whole idea takes the space of three
+          buttons, and the sentence still says the same thing in the sheet, where it
+          is a title with room to be one.
+        */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: theme.spacing.sm, paddingRight: theme.spacing.lg }}
+          style={styles.filaBotones}
+        >
           <Button
-            label={etiquetaOrden}
+            label={etiquetaCorta}
             icon={isReleasedOrder(orderMode) ? "film-outline" : "swap-vertical-outline"}
             size="sm"
             variant="secondary"
@@ -241,7 +283,7 @@ export function MediaListScreen({
               testID="media-reorder-button"
             />
           ) : null}
-        </View>
+        </ScrollView>
       </View>
 
       {isLoading ? null : (
@@ -310,7 +352,13 @@ export function MediaListScreen({
         <SheetOptions
           options={opcionesDeOrden.map((o) => ({
             key: o.mode,
+            /*
+              La frase entera, y no la corta. Aqui hay sitio y el botulo de la fila
+              de arriba no: «Como yo lo pongo» es un titulo, y en un boton de 167
+              puntos es medio movil.
+            */
             label: t(o.key as never),
+            description: o.mode === orderMode ? t(claveOrden as never) : undefined,
             icon: o.mode === orderMode ? ("checkmark" as const) : ("ellipse-outline" as const),
             onPress: () => setOrdenAbierto(false),
           }))}
@@ -337,5 +385,11 @@ export function MediaListScreen({
 const styles = StyleSheet.create({
   cabecera: {
     paddingBottom: 8,
+  },
+  filaBotones: {
+    // Sin `flex: 1`: un `ScrollView` horizontal con el alto por su contenido se
+    // mide solo, y con el flex toma el alto de la pantalla y empuja el carrusel
+    // fuera de la vista.
+    flexGrow: 0,
   },
 });

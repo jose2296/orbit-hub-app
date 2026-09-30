@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, Easing, StyleSheet, View, type ViewStyle } from "react-native";
 
-import { cuartosDeProgreso } from "@/components/media/ring-geometry";
 import { AppText } from "@/components/ui/text";
 import { useTheme } from "@/theme";
 
@@ -24,30 +23,35 @@ const DURACION = 850;
  * The score as a ring that fills up, with the number in the middle.
  *
  * **It is the old app's ring**: a circle that fills in green, amber or red with
- * the score in the middle. The old one drew it with SVG; this draws it with four
- * clipped `View`s that rotate, because `react-native-svg` is not a dependency of
- * this app and adding a native module for one ring is not something to do without
- * a device to try it on. The angles come from `ring-geometry.ts` and have tests,
- * because the arithmetic is the whole difficulty here and a picture cannot show a
- * ring that is ten degrees out.
+ * the score in the middle, and it fills when it appears.
  *
- * **It fills when it appears, over most of a second.** A number that is simply
- * there when the screen opens is a label; one that arrives is the same
- * information with a direction, and the eye follows it round to the figure in the
- * middle.
+ * **How it is drawn, and why it is two halves that sweep and not a shape that
+ * turns.** The first attempt clipped the ring into four quadrants and turned each
+ * one, and it came out as four disconnected arcs with the number hanging outside:
+ * a ring is **rotationally symmetric**, so turning it inside a window that does
+ * not move shows exactly the same ring. You cannot reveal part of a circle by
+ * rotating the circle.
+ *
+ * What does work is turning the **window**. Two half-annuli, each a window of half
+ * the box with the ring's own colour inside it, sweep round on top of the ring and
+ * wipe it; the part neither has reached is the arc that is showing. Each window has
+ * a hole in the middle, which is why the number is never covered — and that is the
+ * only reason this is not just two half-discs.
+ *
+ * No drawing library: `react-native-svg` is what the old app used and it is not a
+ * dependency here, and adding a native module for one ring is not something to do
+ * without a device to try it on.
  *
  * **The number is never rescaled to a hundred to fill a shape.** A book rated
  * three out of five shown as "60%" is a book nobody liked wearing a nicer hat.
- * What is shown is the number the provider gave on the scale the provider uses,
- * with the scale under it; the ring fills to `score / outOf` and the digits are
- * not changed by that.
+ * The ring fills to `score / outOf` and the digits are not changed by that.
  */
 export function Rating({ score, outOf, size = 72 }: RatingProps) {
   const theme = useTheme();
 
   const ratio = Math.max(0, Math.min(1, outOf === 0 ? 0 : score / outOf));
   const color = colorFor(ratio, theme.colors);
-  const cuartos = cuartosDeProgreso(ratio);
+  const giroFinal = 360 * ratio;
 
   const progreso = useRef(new Animated.Value(0)).current;
 
@@ -57,47 +61,29 @@ export function Rating({ score, outOf, size = 72 }: RatingProps) {
 
       This screen is opened again and again on the same title, and a ring that
       starts where it was left means the animation happens the first time and
-      never again. Starting at zero makes the arrival part of the screen every
-      time.
+      never again.
     */
     progreso.setValue(0);
     const animacion = Animated.timing(progreso, {
-      toValue: 1,
+      toValue: giroFinal,
       duration: DURACION,
       easing: Easing.out(Easing.cubic),
-      // The only thing that moves is a rotation, and that can go off the JS
-      // thread; the colour is read from the score and not from the animation, so
-      // it does not need to.
+      // The only thing that moves is a rotation, and that can go off the JS thread.
       useNativeDriver: true,
     });
     animacion.start();
     return () => animacion.stop();
-  }, [ratio, progreso]);
+  }, [giroFinal, progreso]);
 
-  const radio = size / 2;
   const anillo: ViewStyle = {
+    position: "absolute",
+    top: 0,
+    left: 0,
     width: size,
     height: size,
-    borderRadius: radio,
+    borderRadius: size / 2,
     borderWidth: GROSOR,
   };
-
-  /*
-    The four quarters, clockwise from the top.
-
-    Each is a box the size of a quadrant with `overflow: hidden` — which is what
-    turns a whole ring into a piece of one — holding the full ring pulled back so
-    that the quadrant it clips is the one that piece belongs to, and turned by the
-    angle the geometry says. The two coloured borders are the ones that meet at
-    the end of the quarter: top and right for the first, then right and bottom,
-    bottom and left, left and top.
-  */
-  const cuadrantes = [
-    { izquierda: size / 2, arriba: 0, desplazX: -size / 2, desplazY: 0, bordes: ["borderTopColor", "borderRightColor"] },
-    { izquierda: size / 2, arriba: size / 2, desplazX: -size / 2, desplazY: -size / 2, bordes: ["borderRightColor", "borderBottomColor"] },
-    { izquierda: 0, arriba: size / 2, desplazX: 0, desplazY: -size / 2, bordes: ["borderBottomColor", "borderLeftColor"] },
-    { izquierda: 0, arriba: 0, desplazX: 0, desplazY: 0, bordes: ["borderLeftColor", "borderTopColor"] },
-  ] as const;
 
   return (
     <View
@@ -106,54 +92,55 @@ export function Rating({ score, outOf, size = 72 }: RatingProps) {
       accessibilityLabel={`${score} de ${outOf}`}
       testID="rating-ring"
     >
-      {/* The track: the same ring in the muted colour, under everything. */}
+      {/* The track: the same ring, in the muted colour, under everything. */}
       <View style={[anillo, { borderColor: theme.colors.surfaceMuted }]} />
 
-      {cuartos.map((giro, i) => {
-        const q = cuadrantes[i];
-        if (!giro || !q || !giro.visible) return null;
-        const colores = { borderColor: "transparent" } as ViewStyle;
-        for (const borde of q.bordes) {
-          (colores as Record<string, string>)[borde] = color;
-        }
-        return (
-          <View
-            key={i}
-            pointerEvents="none"
-            style={[
-              styles.cuadrante,
-              { width: size / 2, height: size / 2, left: q.izquierda, top: q.arriba, overflow: "hidden" },
-            ]}
-          >
-            <Animated.View
-              style={[
-                styles.anilloInterior,
-                anillo,
-                colores,
-                {
-                  transform: [
-                    { translateX: q.desplazX },
-                    { translateY: q.desplazY },
-                    {
-                      rotate: progreso.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, giro.giro],
-                        extrapolate: "clamp",
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            />
-          </View>
-        );
-      })}
+      {/* The fill, the whole ring, under the two windows that wipe it. */}
+      <View style={[anillo, { borderColor: color }]} />
 
+      {/*
+        The two windows, and **they turn and the ring does not**.
+
+        Each is the full box so its rotation is about the ring's centre, with a
+        half-inside that clips it to one side. Both are the ring's own colour: they
+        are paint, not a hole, so what they cover is gone and what they have not
+        reached is the score. The second one starts a half turn away, which is what
+        makes the two of them leave a wedge between them instead of covering the
+        circle twice.
+      */}
+      <Animated.View pointerEvents="none" style={styles.girador}>
+        <View style={[styles.ventana, { width: size / 2, height: size, left: 0 }]}>
+          <View
+            style={[anillo, { borderColor: theme.colors.background }]}
+          />
+        </View>
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.girador,
+          { transform: [{ rotate: progreso }, { rotate: "181.5deg" }] },
+        ]}
+      >
+        <View style={[styles.ventana, { width: size / 2, height: size, right: 0 }]}>
+          <View
+            style={[anillo, { borderColor: theme.colors.background }]}
+          />
+        </View>
+      </Animated.View>
+
+      {/*
+        And the score, on top of everything, in the middle the windows leave
+        alone. It is not in the ring's own coordinates: it is centred in the box,
+        which is the same point, and saying it that way is what makes it obvious
+        that the two rotations cannot reach it.
+      */}
       <View style={styles.centro} pointerEvents="none">
         <AppText variant="heading" style={{ color: theme.colors.text, fontSize: size * 0.26 }}>
           {score.toFixed(1)}
         </AppText>
-        <AppText variant="caption" tone="subtle" style={{ fontSize: size * 0.15 }}>
+        <AppText variant="caption" tone="subtle" style={{ fontSize: size * 0.14 }}>
           /{outOf}
         </AppText>
       </View>
@@ -166,15 +153,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  cuadrante: {
-    position: "absolute",
-  },
-  anilloInterior: {
+  girador: {
     position: "absolute",
     top: 0,
     left: 0,
+    width: "100%",
+    height: "100%",
+  },
+  ventana: {
+    position: "absolute",
+    top: 0,
+    overflow: "hidden",
   },
   centro: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: "center",
     justifyContent: "center",
   },

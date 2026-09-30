@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ExpandableText } from "@/components/media/expandable-text";
 import { Rating } from "@/components/media/rating";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
+import { Sheet, SheetOptions, type SheetOption } from "@/components/ui/sheet";
 import { ProvidersSheet } from "@/components/lists/providers-sheet";
 import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
@@ -79,6 +80,15 @@ export default function ItemDetailsScreen() {
    * add is in flight — which is how a list ends up with a duplicate.
    */
   const [anadiendo, setAnadiendo] = useState<string | null>(null);
+
+  /*
+    Which related title has its menu open, and it is a **title and not a
+    boolean**: the menu's options are about a title, and a boolean cannot say
+    which one. It is the same reason the "adding" guard above is a title: an id
+    cannot be false, so a list of booleans and a list of titles is a list that can
+    be wrong in a way nothing catches.
+  */
+  const [menuDe, setMenuDe] = useState<CatalogRelated | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   /**
    * Whose sheet is open: a title, and not a boolean.
@@ -264,80 +274,121 @@ export default function ItemDetailsScreen() {
    * is inside a list of films and taps `+` on a poster of another film is asking
    * for that film to be in the list they are looking at.
    */
+  /*
+    A related title as a card, **with one control on it**.
+
+    It had three stickers: a `+` in one corner, a `▶` in the other, and a tick for
+    "you already have it" when it applied. Two corners of a poster taken by round
+    buttons is a card you read the furniture of before the film, and the third one
+    made it worse rather than better: a card with the sticker and a card without it
+    were two different looking cards, and the only thing they said differently was
+    something the menu can say in a line.
+
+    So the card keeps the **three dots it already had** and the actions are lines
+    in a sheet, like every other action in the app.
+
+    **The row it opens keeps the real list id.** It used to push
+    `itemId: related.externalId`, and this screen uses `itemId` as the *list* id,
+    so a detail opened from a recommendation could add to a list that does not
+    exist: the row went to the outbox and to the server and never showed up
+    anywhere. An id that is empty is caught; an id that is *wrong* is not.
+  */
+  const toCarouselItem = (related: CatalogRelated) => ({
+    key: related.externalId,
+    title: related.title,
+    imageUrl: related.imageUrl,
+    released: related.released,
+    badge: null,
+    /** What the list already has, read here and drawn in the card's own menu. */
+    inList: items.some((row) => row.externalId === related.externalId),
+    onPress: () =>
+      router.push({
+        pathname: "/(app)/item/[itemId]",
+        params: {
+          itemId,
+          kind: details.kind,
+          externalId: related.externalId,
+          title: related.title,
+        },
+      }),
+    onMenu: () => setMenuDe(related),
+    /**
+     * El menu necesita **su propio nombre**, y no el del cartel.
+     *
+     * Sin esto el boton de tres puntitos se queda sin etiqueta y cae al nombre del
+     * cartel, con lo que en una tarjeta hay dos controles que se llaman igual: para
+     * un lector de pantalla son el mismo control dos veces, y para quien pulse sin
+     * mirar no hay forma de saber cual de los dos ha abierto el menu.
+     */
+    menuLabel: t("mediaActions.menuOf", { name: related.title }),
+  });
+
   /**
-   * A related title as a card, **with or without a way to add it**.
+   * The options of a related title, in **one menu on the card**.
    *
-   * **No `+` when the list already has it.** The collection and the recommendations
-   * are full of things that are also in the list you are reading the detail from —
-   * a film in its own collection, a recommendation somebody already saved — and a
-   * `+` there is a `+` that writes a second row. So membership is asked for each
-   * one and the button is simply not offered: the card says what it can do, and
-   * what it cannot do is not drawn.
+   * They were two stickers on the poster: a pink `+` in one corner and a black
+   * `▶` in the other, over the picture, in shapes nothing else in the app uses.
+   * Two corners of a poster taken by two round buttons is a card you read the
+   * furniture of before the film, and the third thing in the corner — the tick for
+   * "you already have it" — made it three.
    *
-   * The membership is read from the list hook's `items`, which is what is on
-   * screen in this list, and it is why a watched title can be re-added from here:
-   * the fix for that is the same one the catalog uses, and it is in the write
-   * rather than here.
-   *
-   * **The row it opens keeps the real list id.** It used to push
-   * `itemId: related.externalId`, and this screen uses `itemId` as the *list* id,
-   * so a detail opened from a recommendation could add to a list that does not
-   * exist: the row went to the outbox and to the server and never showed up
-   * anywhere. An id that is empty is caught; an id that is *wrong* is not.
+   * So the card carries **one** control, the three dots it already had, and the
+   * actions are lines in a sheet like every other action in the app. And the
+   * "already in the list" answer is a line too, with a tick and no add: a card
+   * that is in the list and a card that is not now look **the same**, and they
+   * differ in a word inside a menu instead of in a sticker on the poster.
    */
-  const toCarouselItem = (related: CatalogRelated) => {
-    const yaEsta = items.some((row) => row.externalId === related.externalId);
-    return {
-      key: related.externalId,
-      title: related.title,
-      imageUrl: related.imageUrl,
-      released: related.released,
-      badge: null,
-      inList: yaEsta,
-      onPress: () =>
-        router.push({
-          pathname: "/(app)/item/[itemId]",
-          params: {
-            itemId,
-            kind: details.kind,
-            externalId: related.externalId,
-            title: related.title,
-          },
-        }),
-      onAdd:
-        itemId && !yaEsta
-          ? () => {
+  const opcionesDe = (target: CatalogRelated): SheetOption[] => {
+    const yaEsta = items.some((row) => row.externalId === target.externalId);
+    return [
+      yaEsta
+        ? {
+            key: "ya-esta",
+            label: t("catalog.inList"),
+            icon: "checkmark-circle" as const,
+            // **Not pressable, and it says so.** A line that looks like the others
+            // and does nothing when pressed is a trap; being written as a state and
+            // not as an action is what makes the difference visible.
+            disabled: true,
+          }
+        : {
+            key: "anadir",
+            label: t("catalog.add"),
+            icon: "add-circle-outline" as const,
+            onPress: () => {
               if (anadiendo) return;
-              setAnadiendo(related.externalId);
+              setAnadiendo(target.externalId);
               void addItem({
-                title: related.title,
-                externalId: related.externalId,
+                title: target.title,
+                externalId: target.externalId,
                 /*
-                 * The provider is **this screen's**, not a literal "tmdb".
-                 *
-                 * A book reached through the recommendations was being written
-                 * down as a TMDB title, and that wrong provider is what
-                 * `providerRefOf` reads later to decide what to ask for and what
-                 * to call the thing. It is the kind of mistake that is invisible
-                 * on the row and shows up two screens away.
+                 * El provider es **el de esta pantalla**, y no un "tmdb" fijo: un
+                 * libro que llega por los recomendados se guardaba como titulo de
+                 * TMDB, y ese provider equivocado es lo que lee despues
+                 * `providerRefOf` para decidir que pedir y como llamar a la cosa.
                  */
                 metadata: {
                   provider: isBook ? "google-books" : "tmdb",
                   type: isBook ? "books" : details.kind === "tv" ? "tv" : "movie",
-                  imageUrl: related.imageUrl,
+                  imageUrl: target.imageUrl,
                 },
               })
                 .catch(() => undefined)
                 .finally(() => setAnadiendo(null));
-            }
-          : undefined,
-      onWatch: () =>
-        setDondeVer({
-          externalId: related.externalId,
-          title: related.title,
-          kind: isBook ? "books" : isSeries ? "tv" : "movies",
-        }),
-    };
+            },
+          },
+      {
+        key: "donde-ver",
+        label: t("mediaActions.watch"),
+        icon: "tv-outline" as const,
+        onPress: () =>
+          setDondeVer({
+            externalId: target.externalId,
+            title: target.title,
+            kind: isBook ? "books" : isSeries ? "tv" : "movies",
+          }),
+      },
+    ];
   };
 
   return (
@@ -632,6 +683,14 @@ export default function ItemDetailsScreen() {
           </Card>
         ) : null}
       </View>
+
+      <Sheet
+        visible={menuDe !== null}
+        onClose={() => setMenuDe(null)}
+        title={menuDe?.title}
+      >
+        {menuDe ? <SheetOptions options={opcionesDe(menuDe)} /> : null}
+      </Sheet>
 
       <MediaActionsSheet
         item={menuOpen ? item : null}

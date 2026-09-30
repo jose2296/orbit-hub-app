@@ -226,7 +226,17 @@ export interface SheetOption {
     selected: boolean;
     onPress: () => void;
   };
-  onPress: () => void;
+  /**
+   * What the line does, and **it is missing when the line is not a door**.
+   *
+   * A row that says "Ya está en la lista" is a state, and a state that answers to
+   * a press is a lie with a finger on it: it looks exactly like the ones that do
+   * something and it does nothing. So the type lets the two apart — with
+   * `disabled` and no `onPress` it is drawn as a state, and with both it is drawn
+   * as an action — instead of forcing the caller to pass a function that does
+   * nothing.
+   */
+  onPress?: () => void;
 }
 
 /**
@@ -295,6 +305,16 @@ function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean
           ]}
         />
       )}
+      {/*
+        The row, and **it is a `Pressable` only when there is something to press**.
+         *
+        A line that says "Ya está en la lista" is a state, and drawn as a button it
+        is a button that does nothing: the same size, the same place, the same
+        response to a tap as the ones that work, and the only way to tell is to tap
+        it and find out. So the two are different elements and not one element
+        with a flag.
+      */}
+      {option.onPress ? (
       <Pressable
         accessibilityRole="button"
         /*
@@ -313,16 +333,12 @@ function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean
         style={({ pressed }) => [
           styles.option,
           {
-            backgroundColor: pressed
-              ? theme.colors.surfaceMuted
-              : "transparent",
+            backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
             opacity: option.disabled ? 0.4 : 1,
           },
         ]}
       >
-        {option.icon ? (
-          <Ionicons name={option.icon} size={18} color={color} />
-        ) : null}
+        {option.icon ? <Ionicons name={option.icon} size={18} color={color} /> : null}
         <View style={[styles.optionText, { gap: 2 }]}>
           <AppText variant="body" style={{ color }}>
             {option.label}
@@ -336,11 +352,7 @@ function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean
         {option.selected ? (
           <Ionicons name="checkmark" size={18} color={theme.colors.accent} />
         ) : option.chevron ? (
-          <Ionicons
-            name="chevron-forward"
-            size={18}
-            color={theme.colors.textSubtle}
-          />
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textSubtle} />
         ) : null}
         {/*
           The second control, when the row has two things to be.
@@ -385,6 +397,28 @@ function SheetOptionRow({ option, first }: { option: SheetOption; first: boolean
           </Pressable>
         ) : null}
       </Pressable>
+      ) : (
+          /*
+            The same row without being a button, for the ones that are a state.
+             *
+            Same styles, same place, same height — a row that only says "Ya está en
+            la lista" and moves half a line when it stops being pressable is a row
+            that reflows a menu, and the menu is where you are reading.
+          */
+          <View style={[styles.option, { backgroundColor: "transparent", opacity: 0.7 }]}>
+            {option.icon ? <Ionicons name={option.icon} size={18} color={color} /> : null}
+            <View style={[styles.optionText, { gap: 2 }]}>
+              <AppText variant="body" style={{ color }}>
+                {option.label}
+              </AppText>
+              {option.description ? (
+                <AppText variant="caption" tone="subtle" numberOfLines={2}>
+                  {option.description}
+                </AppText>
+              ) : null}
+            </View>
+          </View>
+        )}
     </View>
   );
 }

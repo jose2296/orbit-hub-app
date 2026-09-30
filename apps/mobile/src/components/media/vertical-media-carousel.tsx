@@ -121,20 +121,31 @@ export function VerticalMediaCarousel({
             styles.item,
             {
               height: alto || undefined,
+              // `AIRE / 2` por arriba y por abajo, y no un separador entre items:
+              // un hueco entre items hace que la distancia entre la cabecera de
+              // uno y la del siguiente no sea su alto, y el `pagingEnabled` nece-
+              // sita que sea justo su alto para no poder parar a mitad.
               paddingTop: AIRE / 2,
-              // The bottom inset goes **inside** the item, for the same reason the
-              // air between items does: adding it to the list instead would make
-              // the last page not reach the top and the last poster would be the
-              // one that cannot be scrolled into place.
+              // El margen de abajo del sistema va **dentro** del item por lo mismo:
+              // puesto en la lista haria que la ultima pagina no llegara arriba.
               paddingBottom: (insets.bottom ?? 0) + AIRE / 2,
             },
           ]}
         >
+          {/*
+            The card takes **what is left** and does not ask for a height.
+           *
+            It asked for `alto - aire`, which is everything the item has, and then
+            the title and the "mark as watched" button underneath had nowhere to go
+            and were pushed out of the page: measured, an item 620 tall with a
+            poster 596 tall and no footer at all. The snap does not need the card
+            to be a number — it needs the **item** to be one screen, and the item
+            is the thing with the height on it.
+          */}
           <Animated.View
             style={[
               styles.carta,
               {
-                height: alto ? alto - AIRE - (insets.bottom ?? 0) : undefined,
                 borderRadius: theme.radius.lg,
                 transform: [{ scale: escala }],
                 opacity: opacidad,
@@ -304,6 +315,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   carta: {
+    /*
+      `flex: 1` y no un alto.
+     *
+      Se le quito el alto porque pedia `alto - aire`, que es todo lo que tiene el
+      item, y entonces el titulo y el boton de "marcar como visto" se quedaron sin
+      sitio y salieron de la pagina. Pero quitar el alto **sin** darle flex la deja
+      midiendo lo que mida su contenido, y su contenido es un `View` con `flex: 1`
+      dentro de una caja sin alto: cero. Medido, un item de 620 con la pelicula
+      invisible y las tres lineas de texto pegadas arriba.
+     *
+      El alto que importa para el snap es el del **item**, y ese lo tiene escrito en
+      la lista; la tarjeta solo ocupa lo que sobra.
+    */
+    flex: 1,
     width: "100%",
     maxWidth: 420,
     overflow: "hidden",
