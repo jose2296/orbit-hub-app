@@ -256,6 +256,19 @@ export const listOrderModeSchema = z.enum([
   "created_asc",
   "updated_desc",
   "priority",
+  /**
+   * By when the thing came out, and the two directions.
+   *
+   * These are for a list of films, series or books, where "which do I want first"
+   * is very often "which came out first" and there is no other answer. A shopping
+   * list has no release date and does not offer them: the orders are offered by
+   * the screens that have something to sort by, not by the contract as a whole.
+   *
+   * The column is a `varchar(24)`, so these needed no migration — only the
+   * contract and the two places that read them.
+   */
+  "released_asc",
+  "released_desc",
 ]);
 export type ListOrderMode = z.infer<typeof listOrderModeSchema>;
 

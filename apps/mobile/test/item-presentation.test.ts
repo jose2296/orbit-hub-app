@@ -182,3 +182,70 @@ describe('isItemIcon', () => {
     expect(isItemIcon(undefined)).toBe(false);
   });
 });
+
+/**
+ * Ordering by when a thing came out.
+ *
+ * Two things can go wrong here and both are quiet: an item with no date either
+ * floats to the top of a list of releases or lands in the middle of it, and a
+ * date read as a year gets compared as a date, where `"1994-01-01"` and
+ * `"1994-12-31"` are four hundred days apart instead of the same year.
+ */
+const estrenos = [
+  item({ id: 'n', title: 'Sin fecha', position: 0 }),
+  item({
+    id: 'm',
+    title: 'Matrix',
+    position: 1,
+    metadata: { releaseDate: '1999-03-31' },
+  }),
+  item({
+    id: 'v',
+    title: 'El-labro',
+    position: 2,
+    metadata: { publishedDate: '1994-06-01' },
+  }),
+  item({
+    id: 's',
+    title: 'Solo año',
+    position: 3,
+    metadata: { year: '1974' },
+  }),
+];
+
+describe('orderItems por estreno', () => {
+  it('de antes a despues, leyendo la fecha de cada uno donde este', () => {
+    const orden = orderItems(estrenos, 'released_asc' as ListOrderMode).map((r) => r.id);
+    expect(orden).toEqual(['s', 'v', 'm', 'n']);
+  });
+
+  it('de despues a antes, con el mismo criterio', () => {
+    const orden = orderItems(estrenos, 'released_desc' as ListOrderMode).map((r) => r.id);
+    expect(orden).toEqual(['m', 'v', 's', 'n']);
+  });
+
+  it('lo que no tiene fecha va al final en los dos sentidos, no al principio', () => {
+    /*
+     * The trap: a missing date read as 0 is older than 1974, so it comes first in
+     * "oldest first" and last in "newest first" — a title nobody dated appears at
+     * the head of a list of releases and at the tail of the same list, depending
+     * on which way the sort is pointing. There is no such thing as a release
+     * before 1970 just because nobody wrote it down.
+     */
+    for (const modo of ['released_asc', 'released_desc'] as ListOrderMode[]) {
+      const ids = orderItems(estrenos, modo).map((r) => r.id);
+      expect(ids[ids.length - 1]).toBe('n');
+    }
+  });
+
+  it('un año suelto cuenta como ese año, y no como enero', () => {
+    const orden = orderItems(estrenos, 'released_asc' as ListOrderMode).map((r) => r.id);
+    expect(orden.indexOf('s')).toBeLessThan(orden.indexOf('v'));
+  });
+
+  it('no renumera nada, como ningun otro orden', () => {
+    const antes = estrenos.map((r) => r.position);
+    orderItems(estrenos, 'released_asc' as ListOrderMode);
+    expect(estrenos.map((r) => r.position)).toEqual(antes);
+  });
+});

@@ -62,12 +62,76 @@ export function orderItems(items: ListItem[], mode: ListOrderMode): ListItem[] {
           PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority] ||
           a.position - b.position,
       );
+    case "released_asc":
+      return copy.sort((a, b) => porEstreno(a, b, false));
+    case "released_desc":
+      return copy.sort((a, b) => porEstreno(a, b, true));
     default:
       return copy.sort((a, b) => a.position - b.position);
   }
 }
 
 const PRIORITY_RANK = { none: 0, low: 1, medium: 2, high: 3 } as const;
+
+/**
+ * When a thing came out, as a number, or **`null` when nobody said**.
+ *
+ * Read off the same blob the poster comes from — `metadata.releaseDate` or
+ * `metadata.publishedDate`, and `metadata.year` if there is nothing else — because
+ * that is the only thing an item keeps about the title, and asking the network to
+ * sort a list would mean downloading two hundred details to place six posters.
+ *
+ * **A bare year becomes the first of January of that year**, and a year alone has
+ * to become a date before it can be compared at all: read as a string, `"1994"`
+ * sorts after `"1994-06-01"`, which puts a book from 1994 after another one from
+ * the same 1994. The month and the day are not known and January is not a claim
+ * about them; it is the earliest thing the year could have been, and it is the
+ * same choice for every item, so the order between them does not move.
+ *
+ * It is `null` and **not a huge number** because that is what sent the missing
+ * dates to the top of the descending order: a number bigger than every real date
+ * is the newest thing there is, so reversing the comparison put it first. There is
+ * a separate case in the comparator for this.
+ */
+function releasedOf(item: ListItem): number | null {
+  const metadata = (item.metadata ?? {}) as Record<string, unknown>;
+  const crudo =
+    typeof metadata.releaseDate === "string"
+      ? metadata.releaseDate
+      : typeof metadata.publishedDate === "string"
+        ? metadata.publishedDate
+        : typeof metadata.year === "string"
+          ? metadata.year
+          : null;
+  if (!crudo) return null;
+  const t = Date.parse(crudo.length <= 4 ? `${crudo}-01-01` : crudo);
+  return Number.isNaN(t) ? null : t;
+}
+
+/**
+ * The comparison for both release orders, and **the missing date is a group of its
+ * own that is always last**.
+ *
+ * Whichever way the list is sorted, a title nobody dated goes to the end. Not
+ * because that is where it "belongs", but because putting it anywhere else is
+ * saying something: at the top of "newest first" it claims to be the newest thing
+ * in a list of films, and at the top of "oldest first" it claims to be the oldest.
+ * Neither is known. Among themselves they keep the order they had, which is the
+ * manual order, so the tail of the list is not reshuffled by choosing an order.
+ */
+function porEstreno(a: ListItem, b: ListItem, descendente: boolean): number {
+  const va = releasedOf(a);
+  const vb = releasedOf(b);
+  if (va === null && vb === null) return a.position - b.position;
+  if (va === null) return 1;
+  if (vb === null) return -1;
+  return descendente ? vb - va : va - vb;
+}
+
+/** Whether an order only makes sense for a list of things that were released. */
+export function isReleasedOrder(mode: ListOrderMode): boolean {
+  return mode === "released_asc" || mode === "released_desc";
+}
 
 /**
  * Whether a row can be dragged.

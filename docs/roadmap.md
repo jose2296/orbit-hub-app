@@ -1035,6 +1035,81 @@ entera.
 Va **detrás del scroller y no dentro**, por lo mismo que el botón flotante: en la web un hijo de un
 `ScrollView` está dentro de él y se va con el desplazamiento.
 
+#### La lista de películas, que ahora es una pantalla con un carrusel vertical
+
+Una lista de films, series o libros **es una pantalla propia**: antes era la lista de tareas con una
+tira de carátulas en su cabecera, así que las carátulas se llevaban el alto que sobraba debajo de una
+cabecera que solo tiene sentido para el otro tipo de lista, y una lista de doscientos títulos
+mostraba tres.
+
+**El carrusel es vertical y hace *snap***: un `FlatList` con `snapToInterval` y
+`decelerationRate="fast"`, con `disableIntervalMomentum` para que un tirón no se pase de largo. El
+alto del item **se mide**, y el `snapToInterval` se deriva de ese alto con un hueco constante, así que
+el mismo componente sirve en un móvil, en una ventana estrecha y en una tableta sin un alto escrito a
+mano. Un `snapToInterval` equivocado no se nota como salto: se nota como que el dedo se pasa de largo,
+y es el fallo más difícil de leer de los que tienen.
+
+Cada cartel **se levanta un poco al pasar** —escala y opacidad salen del desplazamiento, no de un
+estado— que es lo único que deja entender que hay más y que esto se desliza.
+
+**Marcar como visto se puede desde el carrusel.** El `onToggleCompleted` existía en el tipo del
+item del carrusel y no lo usaba nadie: el círculo de visto era un dibujo, y la única forma de mover
+un título a la lista de vistos era abrir primero su hoja. Un estado que solo se cambia desde una
+pantalla concreta es un ajuste, no un estado.
+
+**Lo que había en la app antigua, y lo que no.** En los dos repos de referencia el carrusel era
+**horizontal** en todas partes: no hay `pagingEnabled`, ni `snapToOffsets`, ni un scroll vertical con
+paging en ninguno de los dos. El vertical es nuevo. Del otro lado sí se ha copiado: el interruptor de
+vistos/no vistos, los seis órdenes, el filtro por tipo y el rating.
+
+#### Vistos y no vistos: dos pestañas, y no un interruptor
+
+La app antigua lo tenía como un interruptor dentro de la hoja de filtros, y la consecuencia era que
+**el tamaño de lo que estabas mirando era un ajuste**: la misma lista enseñaba cuatro carátulas o dos
+cientas según un interruptor que había que ir a buscar. Dos pestañas dicen lo mismo y llevan la cuenta
+encima, así que «dónde están las que no he visto» se responde con una mirada.
+
+Las dos pestañas están **siempre**, incluso con cero en una. Una pestaña que aparece y desaparece
+mueve todo lo que hay debajo del dedo, y «Por ver» con un cero es un estado real: la lista está
+terminada.
+
+#### Los filtros: cinco, y solo los que el item tiene
+
+La lista está en el dispositivo, así que un filtro que necesita la red es un filtro que enseña un
+volante. Tipo (solo si la lista es de películas y series), década, etiquetas y texto. **Años y no
+décadas**: un filtro por año sobre una lista con cosas de 1974 a hoy son treinta y ocho pastillas para
+decir «los noventa», que es la pregunta que cualquiera le hace a una lista de películas.
+
+**El texto usa `includes` y no `compare`.** `compare` dice cómo se *ordenan* dos cadenas, no si una
+contiene a la otra, y un filtro construido sobre un comparador parece un filtro y filtra todo o nada:
+la condición que había era `!compare(...)`, que es cierta para toda pareja de cadenas distintas, así
+que la búsqueda solo enseñaba los títulos idénticos a la consulta.
+
+#### Los órdenes, y por qué el manual necesita una hoja
+
+Siete: manual, título asc y desc, añadido asc y desc, estreno asc y desc. Los dos últimos son **nuevos
+en el contrato** —la columna es un `varchar(24)`, así que no han necesitado migración— y solo se
+ofrecen en una lista de cosas que tienen estreno: una lista de la compra no tiene fecha de estreno y
+no se la offers. Por la misma razón `priority`, que es de la compra, no se ofrece aquí.
+
+El manual **no cabe en el carrusel**: un cartel por pantalla significa que no hay nada en pantalla
+hacia lo que mover algo, y un arrastre que tiene que pelear con el desplazamiento es un arrastre que
+a veces desplaza en vez de mover. Así que tiene su propia hoja con un asa por fila, el mismo
+`DraggableSort` que usa la lista de tareas, y escribe por el mismo `moveItemTo`. Al cerrarla **el
+carrusel sigue ahí**, con la lista de siempre, enseñando el orden que se acaba de dejar.
+
+#### Un test que encontró un bug que ya estaba en el código
+
+Ordenar por estreno leía «sin fecha» como `Number.MAX_SAFE_INTEGER`: un número mayor que cualquier
+fecha real, o sea **lo más nuevo que hay**, así que al invertir la comparación ese título salía
+**primero** en «de más nuevo a más viejo». El número gigante funcionaba en un sentido y en el otro
+mandaba los unknowns a la cabecera.
+
+Ahora «sin fecha» es `null` y tiene su propio caso en el comparador: **al final en los dos
+sentidos**, y entre ellos mantienen el orden que tenían. Ponerlo en otro sitio dice algo —arriba del
+«más nuevo» afirma que es la cosa más reciente de una lista de películas, arriba del «más viejo» que es
+la más antigua— y ninguna de las dos se sabe.
+
 #### El hueco de encima del buscador, que solo estaba en el espacio
 
 El buscador es lo primero que hay bajo la cabecera en una carpeta, y en el espacio iba debajo de la

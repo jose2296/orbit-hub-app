@@ -13,12 +13,12 @@ import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DoneTray } from "@/components/lists/done-tray";
 import { ItemIcon } from "@/components/lists/icon-picker";
+import { MediaListScreen } from "@/components/media/media-list-screen";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { FiltersSheet } from "@/components/lists/item-picker";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { DraggableRow, DraggableSort } from "@/components/ui/draggable-row";
-import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Screen } from "@/components/ui/screen";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
@@ -34,7 +34,7 @@ import {
   orderItems,
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
-import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
+import { isMediaList,  } from "@/lib/lists/media-card";
 import { providerRefOf } from "@/lib/lists/provider-ref";
 import { useTheme } from "@/theme";
 
@@ -256,33 +256,6 @@ export default function ListScreen() {
   }, [pending, completed, showCompleted, media]);
 
   /** Media lists show the carousel; anything else shows the task rows. */
-  const carouselItems = useMemo(
-    () =>
-      media
-        ? items.map((item) => {
-            const card = mediaCardOf(item);
-            return {
-              key: item.id,
-              title: item.title,
-              imageUrl: card?.imageUrl ?? null,
-              released: card?.released ?? null,
-              badge:
-                list?.kind === "books"
-                  ? t("itemDetails.book")
-                  : card?.mediaKind === "tv"
-                    ? t("itemDetails.series")
-                    : t("itemDetails.movie"),
-              completed: item.completed,
-              onPress: () => openDetails(item),
-              onMenu: () => setMenuFor(item),
-              menuLabel: t("mediaActions.menuOf", { name: item.title }),
-            };
-          })
-        : [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, media, list?.kind, t, toggleCompleted],
-  );
-
   const kindLabel = t(
     list?.kind === "movies"
       ? "lists.kindMovies"
@@ -458,9 +431,6 @@ export default function ListScreen() {
             description={t("items.empty.body")}
           />
         </Card>
-      ) : media ? (
-        /* Films and books: a carousel of covers, never mixed with plain rows. */
-        <MediaCarousel items={carouselItems} />
       ) : null}
 
       {/* The two knobs over a list: what it shows and how it is read. They are
@@ -511,6 +481,82 @@ export default function ListScreen() {
   // un boton rojo de pantalla completa debajo de la lista compite con las filas
   // por el sitio donde el dedo quiere ir.
   const footer = null;
+
+  /*
+    A media list is **its own screen**, and not a branch of this one.
+
+    The list of tasks is a `FlatList` of rows inside a scroller, with a header, a
+    footer and a drag sort around it. A list of films is a full-screen vertical
+    carousel with one poster per screen. Putting the second inside the first
+    meant a carousel whose height was whatever was left under a header that only
+    exists for the other kind of list — so it showed three covers and the rest had
+    to be found by scrolling down.
+
+    Two screens, then, and the shared thing they have is the header, which belongs
+    to the navigator and is the same one for both.
+  */
+  /**
+   * The create button, **once for both screens**.
+   *
+   * It was written inside the tasks markup, and a media list needs the same
+   * button: adding a film is adding an item, and the only difference is where it
+   * takes you. Two copies of a button means the one that gets the margin fixed is
+   * the one somebody was looking at.
+   */
+  const crear = (
+    <>
+      <Pressable
+        testID="item-create-button"
+        accessibilityRole="button"
+        accessibilityLabel={
+          media ? t("catalog.addFromCatalog") : t("itemCreate.title")
+        }
+        {...pistaCreate.props}
+        onPress={() => {
+          if (media) {
+            void router.push(`/(app)/catalog?listId=${listId}`);
+            return;
+          }
+          setEditing({ itemId: "", page: "edit" });
+        }}
+        style={({ pressed }) => [
+          styles.createButton,
+          {
+            bottom: theme.spacing.lg,
+            right: theme.spacing.lg,
+            borderRadius: theme.radius.pill,
+            backgroundColor: theme.colors.accent,
+            opacity: pressed ? 0.8 : 1,
+          },
+        ]}
+      >
+        <Ionicons name="add" size={26} color={theme.colors.onAccent} />
+      </Pressable>
+      {pistaCreate.node}
+    </>
+  );
+
+  if (media) {
+    return (
+      <MediaListScreen
+        list={list}
+        items={items}
+        isLoading={isLoading}
+        listKind={list?.kind ?? "movies"}
+        workspace={workspace}
+        onOpenDetails={openDetails}
+        onToggleCompleted={toggleCompleted}
+        onMenu={setMenuFor}
+        onMoveItem={moveItemTo}
+        crear={crear}
+        menuFor={menuFor}
+        listId={listId}
+        folders={folders}
+        onCloseItemMenu={() => setMenuFor(null)}
+        onCloseListMenu={() => setMenuOpen(false)}
+      />
+    );
+  }
 
   return (
     <Screen
@@ -654,34 +700,8 @@ export default function ListScreen() {
         onOpen={(item) => setEditing({ itemId: item.id, page: "edit" })}
       />
 
-      <Pressable
-        testID="item-create-button"
-        accessibilityRole="button"
-        accessibilityLabel={
-          media ? t("catalog.addFromCatalog") : t("itemCreate.title")
-        }
-        {...pistaCreate.props}
-        onPress={() => {
-          if (media) {
-            void router.push(`/(app)/catalog?listId=${listId}`);
-            return;
-          }
-          setEditing({ itemId: "", page: "edit" });
-        }}
-        style={({ pressed }) => [
-          styles.createButton,
-          {
-            bottom: theme.spacing.lg,
-            right: theme.spacing.lg,
-            borderRadius: theme.radius.pill,
-            backgroundColor: theme.colors.accent,
-            opacity: pressed ? 0.8 : 1,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={26} color={theme.colors.onAccent} />
-      </Pressable>
-      {pistaCreate.node}
+      {crear}
+
 
       <ItemEditSheet
         item={editingItem}
