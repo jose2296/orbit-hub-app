@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
 
 import type { Folder, List, Note } from "@orbit-hub/contracts";
 
@@ -26,11 +26,9 @@ import { useLists } from "@/hooks/use-lists";
 import { useNotes } from "@/hooks/use-notes";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
-import { pluralKey, useTranslation } from "@/lib/i18n";
-import { useTheme } from "@/theme";
+import { useTranslation } from "@/lib/i18n";
 
 /**
  * A space, seen as a folder.
@@ -41,7 +39,6 @@ import { useTheme } from "@/theme";
  * it is created, in the same three gestures wherever you are.
  */
 export default function WorkspaceScreen() {
-  const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
   const { workspaceId } = useLocalSearchParams<{ workspaceId: string }>();
@@ -197,60 +194,58 @@ export default function WorkspaceScreen() {
       overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
     >
       {/*
-        Lo que estaba dentro de la banda, sin la banda.
+        Lo que queda de la banda, y lo que no, y por que la descripcion y la lista
+        van juntas.
 
         La banda era un rectangulo de color del espacio con el nombre, el menu, la
-        descripcion, el rol y los miembros dentro. **El color se va a la
-        cabecera** y el nombre ya esta en el titulo, asi que sobra. Lo que **no**
-        se va son los tres hechos: el rol —que es lo que decide si puedes hacer
-        algo— y los miembros y la descripcion, que son los unicos sitios donde se
-        decia. Quitarlos sin querer porque estaban en un rectangulo bonito seria
-        perder informacion por un aesthetic, y esta pantalla es la que mas lo
-        necesita: es la puerta de un espacio.
+        descripcion, el rol y los miembros dentro. El color se fue a la cabecera y el
+        nombre ya esta en el titulo, asi que de la banda solo sobrevive la
+        descripcion.
 
-        Asi que el mismo contenido, en los colores del tema y sin fondo de color.
-        El menu del espacio se ha ido a la cabecera de la app, al lado del titulo,
-        que es donde estan las acciones de todas las pantallas.
+        **El rol y el numero de miembros tambien se han ido**, y hay que decir por
+        que, porque el comentario anterior de aqui defendia lo contrario: decia que
+        quitarlos por estar en un rectangulo bonito era perder informacion por un
+        estetica. Es cierto que eran los unicos sitios donde se decia, y tambien es
+        cierto que ahi no se decia nada: el rol se ve en lo que el menu deja hacer,
+        porque el menu de un espacio sin permiso de propietario no trae "salir del
+        espacio", y un "2 miembros" al lado no explica nada que los tres puntos de al
+        lado no expliquen mejor. Son dos etiquetas de metadatos antes de que empiece
+        la lista, y el sitio para eso es el menu, no la primera fila.
+
+        **Y van en un solo hijo de `Screen` y sin separacion.** Estaban en dos, y
+        `Screen` pone `gap` entre sus hijos: la descripcion acababa `lg` por encima
+        del buscador, y el buscador —que en una carpeta es lo primero que hay bajo
+        la cabecera— aqui no lo era. Dos pantallas del mismo arbol con el buscador
+        en sitios distintos, y el hueco no hacia nada: la descripcion y el buscador
+        son la entrada a la misma lista. Envolverlos en una caja sin `gap` hace que
+        la separacion sea la que hay dentro de la lista, que es la misma en las dos.
+
+        No se toca el `gap` de `Screen`, que separa el buscador de los filtros y los
+        filtros de las filas, y eso si se quiere igual en todas partes.
       */}
-      <View style={{ gap: theme.spacing.sm }}>
-        <View style={[styles.bandTop, { gap: theme.spacing.sm }]}>
-          {/* El rol es un hecho sobre quien puede cambiar cosas, y va escrito en
-              el tema y no en el acento: el acento significa "esto es la accion",
-              y un rol no es una accion. */}
-          <Badge
-            label={t(`workspaces.role.${workspace?.role ?? "viewer"}` as never)}
-          />
-          <AppText variant="caption" tone="muted">
-            {t(pluralKey("workspaces.members", workspace?.memberCount ?? 0), {
-              count: workspace?.memberCount ?? 0,
-            })}
-          </AppText>
-        </View>
-
+      <View>
         {workspace?.description ? (
           <AppText variant="callout" tone="muted" numberOfLines={2}>
             {workspace.description}
           </AppText>
         ) : null}
+
+        <ContentList
+          workspaceId={workspaceId}
+          folderId={null}
+          folders={folders}
+          lists={lists}
+          notes={notes}
+          isLoading={isLoading}
+          onFolderMenu={(folder) => setMenuFor({ kind: "folder", folder })}
+          onListMenu={(list) => setMenuFor({ kind: "list", list })}
+          onNoteMenu={(note) => setNoteFor(note)}
+        />
       </View>
-
-
       <WorkspaceMenuSheet
         workspace={menuOpen ? workspace : null}
         onClose={closeSheets}
         onDeleted={() => router.replace("/(app)/workspaces")}
-      />
-
-      <ContentList
-        workspaceId={workspaceId}
-        folderId={null}
-        folders={folders}
-        lists={lists}
-        notes={notes}
-        isLoading={isLoading}
-        onFolderMenu={(folder) => setMenuFor({ kind: "folder", folder })}
-        onListMenu={(list) => setMenuFor({ kind: "list", list })}
-        onNoteMenu={(note) => setNoteFor(note)}
       />
       <NoteMenuSheet
         note={noteFor}
@@ -332,29 +327,3 @@ export default function WorkspaceScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  band: {
-    width: "100%",
-  },
-  bandTop: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  bandMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  more: {
-    width: 34,
-    height: 34,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-});

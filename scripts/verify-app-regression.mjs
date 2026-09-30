@@ -290,7 +290,7 @@ const seed = async (session) => {
   );
 
   const operations = [
-    { operationId: randomUUID(), clientId: CLIENT, entity: "workspace", kind: "create", entityId: ws, baseVersion: 0, base: null, clientTimestamp: at, payload: { name: "Regresion", color: "teal" } },
+    { operationId: randomUUID(), clientId: CLIENT, entity: "workspace", kind: "create", entityId: ws, baseVersion: 0, base: null, clientTimestamp: at, payload: { name: "Regresion", description: "Lo de la regresion", color: "teal" } },
     { operationId: randomUUID(), clientId: CLIENT, entity: "folder", kind: "create", entityId: folder, baseVersion: 0, base: null, clientTimestamp: at, payload: { workspaceId: ws, name: "Personas", emoji: "👥" } },
   ];
   for (const s of spec) {
@@ -821,6 +821,42 @@ try {
       return out.sort();
     })()`);
   };
+  /*
+    La fila de filtros, **a la misma altura en el espacio y en la carpeta**.
+
+    El buscador es lo primero que hay bajo la cabecera en una carpeta, y en el
+    espacio va debajo de la descripcion. La diferencia entre las dos pantallas
+    deberia ser **la altura de esa linea y nada mas**: si es mas, hay un hueco
+    —el `gap` de `Screen` entre la descripcion y la lista— que en una pantalla no
+    esta y en la otra si.
+
+    Se mide la fila de filtros y no el buscador porque en la web el campo de texto
+    no deja atributo con su nombre: el placeholder se pinta con un pseudoelemento y
+    no hay nada que leer. Una linea de descripcion son 20 puntos.
+
+    Y el espacio que se siembra **lleva descripcion a proposito**: sin ella las dos
+    pantallas empiezan igual, el hueco sobrante no llega a existir y la comprobacion
+    pasa sin comprobar nada. Se vio pasar asi: la primera vez dio diferencia 0 y la
+    diferencia correcta tambien era 0, porque no habia linea que medir.
+  */
+  const altoDeFiltros = async (path, etiqueta) => {
+    await tab.goto(`${APP}${path}`);
+    await settle(tab, { label: etiqueta });
+    await sleep(500);
+    return tab.evaluate(`(() => {
+      const c = [...document.querySelectorAll('[role=checkbox]')]
+        .find((e) => (e.getAttribute('aria-label') || '') === 'Carpetas');
+      return c ? Math.round(c.getBoundingClientRect().top) : null;
+    })()`);
+  };
+  const altoEspacio = await altoDeFiltros(`/workspace/${data.workspace}`, "filtros:espacio");
+  const altoCarpeta = await altoDeFiltros(`/workspace/${data.workspace}/folder/${data.folder}`, "filtros:carpeta");
+  check(
+    "el buscador esta a la misma altura en el espacio y en la carpeta",
+    altoEspacio !== null && altoCarpeta !== null && altoEspacio - altoCarpeta <= 24,
+    `espacio y=${altoEspacio}, carpeta y=${altoCarpeta}, diferencia ${altoEspacio !== null && altoCarpeta !== null ? altoEspacio - altoCarpeta : "?"} (una linea de descripcion son 20)`,
+  );
+
   const enEspacio = await pastillasDe(`/workspace/${data.workspace}`, "pastillas:espacio");
   const enCarpeta = await pastillasDe(`/workspace/${data.workspace}/folder/${data.folder}`, "pastillas:carpeta");
   check(

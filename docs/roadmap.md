@@ -1035,6 +1035,44 @@ entera.
 Va **detrás del scroller y no dentro**, por lo mismo que el botón flotante: en la web un hijo de un
 `ScrollView` está dentro de él y se va con el desplazamiento.
 
+#### El hueco de encima del buscador, que solo estaba en el espacio
+
+El buscador es lo primero que hay bajo la cabecera en una carpeta, y en el espacio iba debajo de la
+descripción **con un `gap` por medio**: la descripción y la lista eran dos hijos de `Screen`, y
+`Screen` pone separación entre sus hijos. El hueco no hacía nada —la descripción y el buscador son
+la entrada a la misma lista— y hacía que dos pantallas del mismo árbol pusieran el buscador en sitios
+distintos.
+
+La descripción y la lista van ahora **en un solo hijo, sin separación**, así que lo que las separa es
+la separación que hay dentro de la lista, que es la misma en las dos pantallas. No se toca el `gap` de
+`Screen`, que separa el buscador de los filtros y los filtros de las filas, y eso sí se quiere igual
+en todas partes.
+
+**Medido en web a 390:** la fila de filtros está en y=148 en el espacio y en y=128 en la carpeta. La
+diferencia son **20 puntos, que es la altura de la línea de descripción y nada más**. Antes la
+diferencia era esa línea más el hueco.
+
+Hay una comprobación en la regresión que mide esas dos alturas y exige que la diferencia no pase de
+una línea de descripción. Y el espacio que se siembra **lleva descripción a propósito**: sin ella las
+dos pantallas empiezan igual, el hueco sobrante no llega a existir y la comprobación pasa sin
+comprobar nada. Se vio pasar así — la primera vez dio diferencia 0, y la correcta también era 0,
+porque no había línea que medir.
+
+#### El guion de siembra, que llevaba tiempo fallando por lo que no era
+
+La confirmación del correo daba 400 «el enlace no es válido o ha caducado» y el guion lo leía como
+que la sesión había caducado. No era eso. Dos cosas:
+
+**Leía el enlace del registro anterior**, ya confirmado y de un solo uso. Y el log que leía era una
+lista fija de ficheros, mientras que el log real rota cada vez que el API se reinicia —que se
+reinicia solo, con `tsx watch`, cada vez que se recompila `packages/contracts/dist`—. Ahora el log
+se descubre con `lsof` sobre el proceso que escucha en el puerto.
+
+**Y restringía la lectura a los bytes nuevos**, con lo que el token salía truncado o de otro
+registro. Tomando el último enlace del log entero, y a mano, el mismo token se confirmaba bien: la
+confirmación devolvía 200. La confirmación 200 es la prueba de que el problema estaba en qué token se
+leía, no en que la sesión caducara.
+
 #### La fila de filtros, que se estrecha en vez de crecer
 
 La fila son **tres pastillas y un icono**, todo en una línea: `Carpetas | Listas | Notas`, y el
