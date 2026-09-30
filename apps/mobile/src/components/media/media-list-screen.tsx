@@ -65,6 +65,7 @@ export function MediaListScreen({
   onToggleCompleted,
   onMenu,
   onMoveItem,
+  listOpen,
   onCloseItemMenu,
   onCloseListMenu,
 }: {
@@ -85,6 +86,8 @@ export function MediaListScreen({
   onToggleCompleted: (item: ListItem) => void;
   onMenu: (item: ListItem) => void;
   onMoveItem: (id: string, toIndex: number) => void;
+  /** Whether the list's own menu is open, which the header's dots toggle. */
+  listOpen: boolean;
   onCloseItemMenu: () => void;
   onCloseListMenu: () => void;
 }) {
@@ -275,7 +278,17 @@ export function MediaListScreen({
         onClose={onCloseItemMenu}
       />
 
-      {list ? (
+      {/*
+        The list's own menu, **gated on the state and not on the list**.
+         *
+        It was `list ? ... : null`, and a list on this screen is never null, so
+        the sheet came up on its own the moment the screen opened — and could not
+        be closed, because the thing it showed was not state anybody could set
+        back. `ListMenuSheet` takes the list or nothing as its "is it open" signal,
+        which is a trap: the same prop means "which list" and "is it open", and
+        passing a real one says yes for ever.
+       */}
+      {listOpen && list ? (
         <ListMenuSheet
           list={list}
           folder={list.folderId ? (folders.find((f) => f.id === list.folderId) ?? null) : null}

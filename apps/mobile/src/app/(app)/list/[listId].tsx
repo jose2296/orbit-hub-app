@@ -548,6 +548,7 @@ export default function ListScreen() {
         onToggleCompleted={toggleCompleted}
         onMenu={setMenuFor}
         onMoveItem={moveItemTo}
+        listOpen={menuOpen}
         crear={crear}
         menuFor={menuFor}
         listId={listId}
