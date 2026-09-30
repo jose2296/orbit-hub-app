@@ -829,6 +829,60 @@ try {
     `${enEspacio.join(", ") || "(ninguna)"} | carpeta: ${enCarpeta.join(", ") || "(ninguna)"}`,
   );
 
+  /*
+    Y ahora la fila **estrecha**: al pulsar "Listas" solo quedan los cinco tipos y el
+    icono de prohibido, con el icono el primero. Es una afirmacion sobre lo que *no*
+    esta, asi que se comparan las dos listas enteras y no que falte algo.
+
+    El icono va el primero porque la fila se desplaza a lo anchos: con los cinco
+    tipos encima, el final queda fuera de la pantalla y la salida —lo unico que
+    deshace lo hecho— era justo lo que no se veia.
+  */
+  const pulsarPastilla = async (etiqueta) => {
+    const p = await tab.evaluate(`(() => {
+      const b = [...document.querySelectorAll('[role=checkbox],[role=button]')]
+        .find((e) => (e.getAttribute('aria-label') || '') === ${JSON.stringify(etiqueta)});
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`);
+    if (!p) return false;
+    await tab.send("Input.dispatchMouseEvent", { type: "mousePressed", x: p.x, y: p.y, button: "left", clickCount: 1, buttons: 1 });
+    await tab.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p.x, y: p.y, button: "left", clickCount: 1, buttons: 0 });
+    await sleep(500);
+    return true;
+  };
+  const filaDeFiltros = () => tab.evaluate(`(() => {
+    const out = [];
+    for (const b of document.querySelectorAll('[role=checkbox]')) {
+      const r = b.getBoundingClientRect();
+      if (r.width > 0) out.push((b.getAttribute('aria-label') || '').trim());
+    }
+    const q = [...document.querySelectorAll('[role=button]')]
+      .find((e) => (e.getAttribute('aria-label') || '') === 'Quitar filtros');
+    if (q && q.getBoundingClientRect().width > 0) out.unshift('Quitar filtros');
+    return out;
+  })()`);
+
+  await pulsarPastilla("Listas");
+  const abierta = await filaDeFiltros();
+  const sinGenero = abierta.filter((l) => l === "Carpetas" || l === "Notas");
+  check(
+    "pulsar Listas deja solo los tipos de lista y el icono de quitar",
+    abierta[0] === "Quitar filtros" &&
+      abierta.length === 6 &&
+      sinGenero.length === 0 &&
+      abierta.every((l) => l === "Quitar filtros" || l.includes("·")),
+    abierta.join(", ") || "(vacia)",
+  );
+  await pulsarPastilla("Quitar filtros");
+  const cerrada = await filaDeFiltros();
+  check(
+    "el icono de quitar devuelve la fila entera",
+    cerrada.length === 3 && cerrada.includes("Carpetas") && cerrada.includes("Listas") && cerrada.includes("Notas"),
+    cerrada.join(", ") || "(vacia)",
+  );
+
   section("Sin sesion");
   const anon = await openTab(chrome.port);
   try {

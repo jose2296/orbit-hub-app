@@ -1035,6 +1035,37 @@ entera.
 Va **detrás del scroller y no dentro**, por lo mismo que el botón flotante: en la web un hijo de un
 `ScrollView` está dentro de él y se va con el desplazamiento.
 
+#### La fila de filtros, que se estrecha en vez de crecer
+
+La fila son **tres pastillas y un icono**, todo en una línea: `Carpetas | Listas | Notas`, y el
+icono de prohibido que solo aparece cuando hay algo que quitar.
+
+**No hay pastilla de «Todo».** Con cuatro, la de «todo» estaba encendida la mitad de las veces y
+decía lo que ya se veía: que no hay nada encendido. Sin ella, no hay nada encendido es la misma
+información y se ve sin leer. Y «todo» competía por el sitio con las otras tres siendo la que más se
+usa. El estado por defecto —`kind: "all"`— no se dibuja.
+
+**«Listas» se sustituye por los cinco tipos.** Al pulsarla desaparecen «Carpetas» y «Notas» y en la
+misma línea quedan solo `Tareas · N`, `Películas · N`, `Series · N`, `Películas y series · N` y
+`Libros · N`, con su cuenta. Antes eran una segunda fila que salía debajo: dos filas de pastillas que
+significan cosas distintas se leen como una sola lista larga, y la de abajo cambiaba de alto según lo
+que hubiera, con lo que el contenido saltaba al abrirla.
+
+**Y es la misma regla para las tres.** Al pulsar «Carpetas» o «Notas» también se queda sola la
+pastilla encendida y el icono. Si solo se estrechara «Listas», la fila se comportaría de dos maneras
+según qué pastilla se pulsara, y una fila de filtros que se comporta de dos maneras es una fila que
+hay que aprender. Con la regla sola, la fila es siempre lo mismo: lo que elegiste y cómo deshacerlo.
+
+Pulsar la pastilla que ya está encendida la apaga, que es la misma acción que el icono.
+
+**El icono va el primero, no el último.** La fila se desplaza a lo ancho y con los cinco tipos
+encima el final queda fuera de la pantalla: la salida —lo único que deshace lo hecho— era
+exactamente lo que no se veía.
+
+Medido paso a paso en web: al entrar `Carpetas | Listas | Notas` sin nada encendido; tras «Listas»,
+`Quitar filtros` y los cinco tipos; tras «Series · 1», solo esa encendida; tras el icono, la fila
+entera otra vez; tras «Carpetas», `Quitar filtros` y `Carpetas`.
+
 #### El color del espacio sale de las filas, y los filtros dejan de ser de cada sitio
 
 **Las filas ya no llevan el color del espacio.** La cabecera lo lleva y es lo único que lo lleva. Una

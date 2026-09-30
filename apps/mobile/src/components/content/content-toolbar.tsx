@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
@@ -125,12 +126,46 @@ export function ContentToolbar({
     </Pressable>
   );
 
+  /*
+    Las tres pastillas, y **no hay una cuarta que diga "todo"**.
+
+    Con cuatro, la de "todo" estaba encendida la mitad de las veces y decia lo que
+    ya se veia: que no hay nada encendido. Sin ella, no hay nada encendido es la
+    misma informacion y se ve sin leer. Ademas "todo" como pastilla compite por el
+    sitio con las otras tres, y la que mas se usa es la que no hace falta.
+
+    Asi que el estado por defecto —`kind: "all"`— no se dibuja, y el boton de quitar
+    es lo unico que se enciende cuando hay algo que quitar.
+  */
   const tipos: { kind: ContentFilter["kind"]; key: string }[] = [
-    { kind: "all", key: "content.filter.all" },
     { kind: "folder", key: "content.filter.folders" },
     { kind: "list", key: "content.filter.lists" },
     { kind: "note", key: "content.filter.notes" },
   ];
+
+  /*
+    Los tipos de lista, y **sustituyen a la fila entera**.
+
+    Cuando "Listas" esta encendida, en la fila no queda mas que los cinco tipos y el
+    icono de quitar. Las otras dos pastillas —"Carpetas" y "Notas"— desaparecen,
+    porque son otra manera de responder a la misma pregunta y la pregunta ya esta
+    contestada: se quiere una lista. Dejarlas invita a cambiar de genero sin volver
+    a empezar, que es justo lo que hace una fila de filtros que no se estrecha.
+
+    Antes eran una segunda fila debajo. Dos filas de pastillas que significan cosas
+    distintas se leen como una sola lista larga, y ademas la de abajo cambiaba de
+    alto segun lo que hubiera, con lo que el contenido saltaba al abrirla.
+
+    Y es **la misma regla para las tres**: al pulsar "Carpetas" o "Notas" tambien
+    se queda sola la pastilla encendida y el icono de quitar. Si solo se estrechara
+    "Listas", la fila se comportaria de dos maneras segun que pastilla se pulsara, y
+    una fila que se comporta de dos maneras es una fila que hay que aprender. Con la
+    regla sola la fila es siempre lo mismo: lo que elegiste, y como deshacerlo.
+  */
+  const tiposDeLista = listKindSchema.options.map((kind) => kind as string);
+
+  /** The kind that is open, or `null` when none is: the row is whole. */
+  const abierto = filter.kind === "all" ? null : filter.kind;
 
   const opcionesOrden: SheetOption[] = ORDENES.map((o) => ({
     key: o.mode,
@@ -195,64 +230,80 @@ export function ContentToolbar({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: theme.spacing.xs, paddingRight: theme.spacing.sm }}
       >
-        {tipos.map((tipo) =>
-          chip(
-            tipo.kind,
-            t(tipo.key as never),
-            filter.kind === tipo.kind,
-            // Cambiar de tipo suelta el tipo de lista: pedir "notas" y "de tipo
-            // peliculas" a la vez no tiene sentido, y un filtro invisible que
-            // sigue puesto despues de cambiar de tipo es un filtro invisible.
-            () =>
-              onFilterChange({
-                ...filter,
-                kind: tipo.kind,
-                listKind: undefined,
-              }),
-          ),
-        )}
-        {activos > 0
-          ? chip(
-              "limpiar",
-              t("content.clear"),
-              false,
-              () => onFilterChange(EMPTY_FILTER),
+        {/*
+          Quitar, y **un icono y no una palabra**, y **lo primero de la fila**.
+
+          "Quitar filtros" era la palabra mas larga de la fila y la unica que no era
+          el nombre de un tipo de cosa, asi que se leia como un boton de otra clase.
+          El icono de prohibido es el que ya se usa para "quitarlo de aqui" en el
+          menu de una lista, y en una fila donde todo lo demas son nombres, un icono
+          se distingue sin leerlo.
+
+          Y va **primero** y no el ultimo: la fila se desplaza a lo ancho y con los
+          cinco tipos encima el final queda fuera de la pantalla, con lo que la
+          salida —que es lo unico que deshace lo que se ha hecho— era justo lo que
+          no se veia. Al principio esta siempre, que es donde se busca la vuelta
+          atras.
+        */}
+        {activos > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("content.clear")}
+            onPress={() => onFilterChange(EMPTY_FILTER)}
+            style={({ pressed }) => [
+              styles.chip,
+              styles.limpiar,
+              {
+                paddingHorizontal: theme.spacing.sm,
+                justifyContent: "center",
+                minHeight: 40,
+                minWidth: 40,
+                borderRadius: theme.radius.md,
+                backgroundColor: theme.colors.surfaceMuted,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
+          </Pressable>
+        ) : null}
+
+        {/* Sin genero abierto, la fila entera. Con uno, solo el suyo. */}
+        {abierto === null
+          ? tipos.map((tipo) => chip(tipo.kind, t(tipo.key as never), false, () =>
+              onFilterChange({ ...filter, kind: tipo.kind, listKind: undefined }),
+            ))
+          : null}
+        {abierto === "list"
+          ? tiposDeLista.map((kind) =>
+              chip(
+                `lk:${kind}`,
+                `${t(`lists.kind.${kind === "movies_and_series" ? "moviesAndSeries" : kind}` as never)} · ${listKindCounts.get(kind) ?? 0}`,
+                filter.listKind === kind,
+                () =>
+                  onFilterChange({
+                    ...filter,
+                    // Pulsar el tipo que ya estaba puesto vuelve a "todas las
+                    // listas", no a "todo": el genero sigue siendo "Listas".
+                    listKind: filter.listKind === kind ? undefined : kind,
+                  }),
+              ),
             )
           : null}
+        {abierto === "folder" || abierto === "note"
+          ? (() => {
+              const tipo = tipos.find((x) => x.kind === abierto);
+              /*
+                Se queda solo la pastilla que esta encendida, y pulsarla la apaga.
+                Sin ella no habria forma de volver a "todo" sin el icono, y con ella
+                sola la fila dice exactamente lo que hay puesto.
+              */
+              return tipo
+                ? chip(tipo.kind, t(tipo.key as never), true, () => onFilterChange(EMPTY_FILTER))
+                : null;
+            })()
+          : null}
       </ScrollView>
-
-      {/*
-        Which kind of list, and it is a second row and not more chips in the first
-        one because the first row already has a "Listas" chip in it: two rows of
-        choices that mean different things read as one list of chips.
-
-        **The five are always the five.** They used to be the kinds that happened
-        to be in this folder, so the same row meant something different in every
-        space — and a filter that has to be learned again in each space is a
-        filter that takes a filter's job without doing it. The number on the chip
-        is what tells somebody there is nothing of that kind here, which is
-        something a chip that is simply missing cannot say.
-      */}
-      {filter.kind === "list" ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: theme.spacing.xs, paddingRight: theme.spacing.sm }}
-        >
-          {listKindSchema.options.map((kind) =>
-            chip(
-              `lk:${kind}`,
-              `${t(`lists.kind.${kind === "movies_and_series" ? "moviesAndSeries" : kind}` as never)} · ${listKindCounts.get(kind) ?? 0}`,
-              filter.listKind === kind,
-              () =>
-                onFilterChange({
-                  ...filter,
-                  listKind: filter.listKind === kind ? undefined : kind,
-                }),
-            ),
-          )}
-        </ScrollView>
-      ) : null}
 
       {/*
         What the filter is costing, said in words and not left to be deduced from
@@ -293,6 +344,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chip: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  limpiar: {
     flexDirection: "row",
     alignItems: "center",
   },
