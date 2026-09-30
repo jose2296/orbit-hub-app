@@ -62,7 +62,6 @@ export function MediaListScreen({
   menuFor,
   crear,
   onOpenDetails,
-  onToggleCompleted,
   onMenu,
   onMoveItem,
   listOpen,
@@ -83,7 +82,6 @@ export function MediaListScreen({
   menuFor: ListItem | null;
   crear: ReactNode;
   onOpenDetails: (item: ListItem) => void;
-  onToggleCompleted: (item: ListItem) => void;
   onMenu: (item: ListItem) => void;
   onMoveItem: (id: string, toIndex: number) => void;
   /** Whether the list's own menu is open, which the header's dots toggle. */
@@ -303,7 +301,6 @@ export function MediaListScreen({
                     : t("itemDetails.movie"),
               completed: item.completed,
               onPress: () => onOpenDetails(item),
-              onToggleCompleted: () => onToggleCompleted(item),
               onMenu: () => onMenu(item),
               menuLabel: t("mediaActions.menuOf", { name: item.title }),
             };
@@ -370,9 +367,22 @@ export function MediaListScreen({
         ) : null}
       </Sheet>
 
+      {/*
+        The **whole list**, and not the current tab's rows.
+         *
+        The manual order is a property of the list, not of a tab, and `moveItemTo`
+        renumbers positions across everything in it. Handing it the three "not
+        seen" rows when the list has four means the index of a row in the sheet is
+        not its index in the list, so a drag computed against the sheet's rows
+        lands somewhere else — and the one thing a manual order must be is honest
+        about where things are.
+
+        It is also the better thing to show: the order you are arranging is the
+        order the carousel will come back in, whatever tab you are on.
+      */}
       <MediaReorderSheet
         open={reordenarAbierto}
-        visible={pestana === "pending" ? sorted.filter((i) => !i.completed) : sorted.filter((i) => i.completed)}
+        visible={sorted}
         onMove={onMoveItem}
         onClose={() => setReordenarAbierto(false)}
         title={t("order.reorder")}

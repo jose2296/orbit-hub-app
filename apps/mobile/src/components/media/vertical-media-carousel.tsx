@@ -5,6 +5,7 @@ import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText } from "@/components/ui/text";
+import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
 /** One poster, one screen, one flick. */
@@ -18,7 +19,6 @@ export interface VerticalMediaItem {
   badge: string | null;
   completed: boolean;
   onPress?: () => void;
-  onToggleCompleted?: () => void;
   onMenu?: () => void;
   menuLabel: string;
 }
@@ -83,10 +83,35 @@ export function VerticalMediaCarousel({
   emptyBody,
 }: VerticalMediaCarouselProps) {
   const theme = useTheme();
+  const t = useTranslation();
   const insets = useSafeAreaInsets();
 
   const [alto, setAlto] = useState(0);
   const desplazamiento = useRef(new Animated.Value(0)).current;
+
+  /**
+   * Which poster failed to load, and it is a **Set and not a flag**.
+   *
+   * One flag for the whole carousel is a bug with a delay: the first poster that
+   * 404s puts every other poster on the screen to the fallback, including the ones
+   * that load fine, and there is no way to tell which one did it. Measured with a
+   * 404 in the seed: a card with a URL and no picture in it, which is the worst of
+   * both — it has the layout of a poster and none of the content.
+   *
+   * A row written by hand has no URL and gets the icon straight away; a row whose
+   * URL is dead gets it when the image says so.
+   */
+  const [fallidos, setFallidos] = useState<ReadonlySet<string>>(new Set());
+  const fallo = useCallback(
+    (key: string) =>
+      setFallidos((previos) => {
+        if (previos.has(key)) return previos;
+        const siguiente = new Set(previos);
+        siguiente.add(key);
+        return siguiente;
+      }),
+    [],
+  );
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setAlto(Math.round(e.nativeEvent.layout.height));
@@ -158,11 +183,12 @@ export function VerticalMediaCarousel({
               accessibilityLabel={item.title}
               style={styles.poster}
             >
-              {item.imageUrl ? (
+              {item.imageUrl && !fallidos.has(item.key) ? (
                 <Image
                   source={{ uri: item.imageUrl }}
                   style={styles.imagen}
                   resizeMode="cover"
+                  onError={() => fallo(item.key)}
                 />
               ) : (
                 <View
@@ -176,6 +202,46 @@ export function VerticalMediaCarousel({
                 </View>
               )}
             </Pressable>
+
+            {/*
+              Whether it has been seen, **in the top left corner**.
+
+              The menu is in the other one, so the two do not fight for the same
+              space and the card has one thing in each corner instead of three
+              things in two.
+
+              **A closed eye for seen and an open one for not.** A closed eye is a
+              thing you have finished with, which is what "watched" is; an open one
+              is a thing you have not, and the icon carries the state before the
+              colour does. The colours are two different ones and not one with
+              less opacity, because "less" of a colour is a shade and two shades of
+              the same colour are not a difference anybody can name.
+
+              It is a **mark and not a button**. Marking a title as seen happens in
+              the sheet, where the rest of what you can do with it is: a control on
+              the card that changes one thing and opens nothing is a card with a
+              trap in the corner, and the corner is the first place a finger goes.
+            */}
+            <View
+              style={[
+                styles.estado,
+                {
+                  backgroundColor: item.completed ? theme.colors.successSoft : theme.colors.surfaceMuted,
+                  borderRadius: theme.radius.md,
+                },
+              ]}
+              accessibilityRole="text"
+              accessibilityLabel={
+                item.completed ? t("mediaTabs.seen") : t("mediaTabs.pending")
+              }
+              testID={`visto-${item.key}`}
+            >
+              <Ionicons
+                name={item.completed ? "eye-off" : "eye-outline"}
+                size={18}
+                color={item.completed ? theme.colors.success : theme.colors.textMuted}
+              />
+            </View>
 
             {/* The menu, a sibling of the poster and not a child: a button inside a
                 button is not valid HTML, and on the web that is not a style
@@ -215,50 +281,11 @@ export function VerticalMediaCarousel({
               ) : null}
             </View>
 
-            {/*
-              The seen mark, as a **button** and not a badge, and it says what it
-              does. "Visto" next to a title that is not seen is a claim, and a
-              label that does not change is a control whose effect is a guess.
-            */}
-            {item.onToggleCompleted ? (
-              <Pressable
-                onPress={item.onToggleCompleted}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: item.completed }}
-                accessibilityLabel={item.title}
-                style={({ pressed }) => [
-                  styles.visto,
-                  {
-                    gap: theme.spacing.xs,
-                    paddingHorizontal: theme.spacing.md,
-                    paddingVertical: theme.spacing.xs,
-                    minHeight: 40,
-                    borderRadius: theme.radius.md,
-                    backgroundColor: item.completed
-                      ? theme.colors.accent
-                      : theme.colors.surfaceMuted,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={item.completed ? "checkmark-circle" : "ellipse-outline"}
-                  size={18}
-                  color={item.completed ? theme.colors.onAccent : theme.colors.textMuted}
-                />
-                <AppText
-                  variant="caption"
-                  style={{ color: item.completed ? theme.colors.onAccent : theme.colors.textMuted }}
-                >
-                  {item.completed ? "Visto" : "Marcar como visto"}
-                </AppText>
-              </Pressable>
-            ) : null}
           </View>
         </View>
       );
     },
-    [alto, desplazamiento, insets.bottom, theme],
+    [alto, desplazamiento, insets.bottom, theme, fallidos, fallo],
   );
 
   if (items.length === 0) {
@@ -343,6 +370,15 @@ const styles = StyleSheet.create({
   },
   sinImagen: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  estado: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    width: 40,
+    height: 40,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -545,7 +545,6 @@ export default function ListScreen() {
         listKind={list?.kind ?? "movies"}
         workspace={workspace}
         onOpenDetails={openDetails}
-        onToggleCompleted={toggleCompleted}
         onMenu={setMenuFor}
         onMoveItem={moveItemTo}
         listOpen={menuOpen}

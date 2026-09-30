@@ -1,4 +1,5 @@
-import { StyleSheet, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Image, StyleSheet, View } from "react-native";
 
 import { mediaCardOf } from "@/lib/lists/media-card";
 import type { ListItem } from "@orbit-hub/contracts";
@@ -6,6 +7,26 @@ import { DRAG_HANDLE_WIDTH, DraggableRow, DraggableSort } from "@/components/ui/
 import { AppText } from "@/components/ui/text";
 import { Sheet } from "@/components/ui/sheet";
 import { useTheme } from "@/theme";
+
+/**
+ * The year, on its own, without asking whether there is a poster.
+ *
+ * `mediaCardOf` returns `null` for anything without an image — deliberately, because
+ * a card *is* the picture — and this sheet was reading the year through it. So the
+ * year only appeared for rows that had a poster, and an item imported without one
+ * showed a bare title with nothing else, which read as "no data" rather than "no
+ * picture". The two are independent fields and they are read independently here.
+ */
+function releasedOf(item: ListItem): string | null {
+  const metadata = (item.metadata ?? {}) as Record<string, unknown>;
+  const raw =
+    metadata.releaseDate ?? metadata.publishedDate ?? metadata.year ?? null;
+  if (typeof raw !== "string") return null;
+  // A full date is cut to its year, which is all a list of films needs to say and
+  // is the only part that fits next to a title without pushing it.
+  const trimmed = raw.trim();
+  return trimmed.length === 0 ? null : trimmed.slice(0, 4);
+}
 
 /**
  * Reorder a list of films, **in a sheet, because the carousel has no room**.
@@ -38,8 +59,22 @@ export function MediaReorderSheet({
   open: boolean;
   /** The rows in the order they are being shown in. */
   visible: ListItem[];
-  /** The index the row was dropped at, and the same call a task list makes. */
-  onMove: (id: string, toIndex: number) => void;
+  /**
+   * Move a row, and it is a **displacement and not a place**.
+   *
+   * `moveItemTo` — the function every list in this app reorders with — takes a
+   * delta, because that is what survives the fact that positions are renumbered
+   * from zero and two rows moving at once is two deltas. This sheet was handing it
+   * the index the row was dropped at, which is a different number: dropping the
+   * first row on the third one moved it three places instead of two, and with four
+   * rows it walked off the end of the list. Measured in the browser: the drag
+   * moved nothing and the order did not change.
+   *
+   * So the subtraction happens here, **where both numbers are known**: the index
+   * it was dropped at, and the index it was in. The content list does exactly this
+   * for the same reason.
+   */
+  onMove: (id: string, delta: number) => void;
   onClose: () => void;
   title: string;
   body: string;
@@ -53,40 +88,85 @@ export function MediaReorderSheet({
       </AppText>
       <DraggableSort>
         <View style={{ gap: theme.spacing.xs }}>
-          {visible.map((item, index) => (
-            <DraggableRow
-              key={item.id}
-              id={item.id}
-              index={index}
-              total={visible.length}
-              onReorder={(movedId, toIndex) => onMove(movedId, toIndex)}
-            >
-              <View
-                style={[
-                  styles.fila,
-                  {
-                    gap: theme.spacing.sm,
-                    paddingLeft: theme.spacing.md,
-                    paddingRight: theme.spacing.sm,
-                    paddingVertical: theme.spacing.sm,
-                    minHeight: 56,
-                    borderRadius: theme.radius.md,
-                    backgroundColor: theme.colors.surfaceMuted,
-                  },
-                ]}
-                testID={`reorder-row-${item.id}`}
+          {visible.map((item, index) => {
+            const card = mediaCardOf(item);
+            const released = releasedOf(item);
+
+            return (
+              <DraggableRow
+                key={item.id}
+                id={item.id}
+                index={index}
+                total={visible.length}
+                onReorder={(movedId, toIndex) => onMove(movedId, toIndex - index)}
               >
-                <AppText variant="body" numberOfLines={1} style={styles.titulo}>
-                  {item.title}
-                </AppText>
-                {mediaCardOf(item)?.released ? (
-                  <AppText variant="caption" tone="subtle">
-                    {mediaCardOf(item)?.released}
-                  </AppText>
-                ) : null}
-              </View>
-            </DraggableRow>
-          ))}
+                <View
+                  style={[
+                    styles.fila,
+                    {
+                      gap: theme.spacing.md,
+                      paddingLeft: theme.spacing.sm,
+                      /*
+                        The room for the handle, counted **here and in one object**.
+                        It used to be in `styles.fila` and then overridden by an
+                        inline `paddingRight` further down the same array, and the
+                        inline one won — which silently gave back the exact room the
+                        handle needs. The year, being the rightmost thing in the row,
+                        then sat under the glyph. The comment on `DRAG_HANDLE_WIDTH`
+                        in `draggable-row.tsx` is about this number being written
+                        down twice and only agreeing by hand; writing it down twice
+                        in the *same* file is the same bug with less distance.
+                      */
+                      paddingRight: DRAG_HANDLE_WIDTH + theme.spacing.sm,
+                      paddingVertical: theme.spacing.sm,
+                      minHeight: 56,
+                      borderRadius: theme.radius.md,
+                      backgroundColor: theme.colors.surfaceMuted,
+                    },
+                  ]}
+                  testID={`reorder-row-${item.id}`}
+                >
+                  {/*
+                    The poster, because in a list of films the picture is what tells
+                    two rows apart and this sheet has no carousel behind it any more.
+                    A row without one keeps its place with the kind's glyph instead,
+                    so the column does not jump about as posters load.
+                  */}
+                  <View
+                    style={[
+                      styles.poster,
+                      { borderRadius: theme.radius.sm, backgroundColor: theme.colors.surface },
+                    ]}
+                  >
+                    {card?.imageUrl ? (
+                      <Image
+                        source={{ uri: card.imageUrl }}
+                        style={styles.posterImagen}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Ionicons
+                        name={item.metadata ? "film-outline" : "document-text-outline"}
+                        size={16}
+                        color={theme.colors.textSubtle}
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.texto}>
+                    <AppText variant="body" numberOfLines={1}>
+                      {item.title}
+                    </AppText>
+                    {released ? (
+                      <AppText variant="caption" tone="subtle" numberOfLines={1}>
+                        {released}
+                      </AppText>
+                    ) : null}
+                  </View>
+                </View>
+              </DraggableRow>
+            );
+          })}
         </View>
       </DraggableSort>
     </Sheet>
@@ -97,12 +177,31 @@ const styles = StyleSheet.create({
   fila: {
     flexDirection: "row",
     alignItems: "center",
-    // The handle sits on the right and the row leaves room for it, because the
-    // handle is drawn over the row and a title that runs under it is a title you
-    // cannot read to the end.
-    paddingRight: DRAG_HANDLE_WIDTH + 12,
   },
-  titulo: {
+  /*
+    The title and the year in one column, and the year inside it rather than
+    beside it.
+
+    Side by side, a long title and a four-digit year fight over the same row: the
+    year has nothing telling it to keep its size, so a title like "The Lord of the
+    Rings: The Fellowship of the Ring" squeezed it and the four digits wrapped onto
+    a second line under the handle — which is what put the year "below the drag
+    icon". Stacked, the title truncates and the year keeps its line, and the row
+    still says both things at the same height.
+  */
+  texto: {
     flex: 1,
+    gap: 2,
+  },
+  poster: {
+    width: 32,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  posterImagen: {
+    width: "100%",
+    height: "100%",
   },
 });
