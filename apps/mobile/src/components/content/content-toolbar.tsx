@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
-import type { ListOrderMode } from "@orbit-hub/contracts";
+import { listKindSchema, type ListOrderMode } from "@orbit-hub/contracts";
 
 import { Sheet, SheetOptions, type SheetOption } from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
@@ -29,19 +29,16 @@ export interface ContentToolbarProps {
   onFilterChange: (filter: ContentFilter) => void;
   order: ListOrderMode;
   onOrderChange: (order: ListOrderMode) => void;
-  /** The folders a person can narrow to, offered as their own chips. */
-  folders: { id: string; name: string }[];
   /**
-   * The kinds of list that are here, and only those.
+   * How many lists of each kind are here, for the number on the chip.
    *
-   * Offered **only while the list kind filter is on**, because they are a
-   * narrowing of it and not a filter of their own. A chip that only works if
-   * another chip is lit is a chip that is wrong two thirds of the time, and the
-   * second row is where it belongs: the first row says what kind of thing, the
-   * second says which kind of list, and the second row not being there is itself
-   * the answer to "y las listas, de que tipo".
+   * A `Map` and not a list of what is here, because **the kinds are not decided
+   * by this list**: they are the contract's five, offered the same on every
+   * space and in every folder. This map only says how many of each are in front of
+   * the person right now, so a chip that would come up empty says "0" instead of
+   * not being there.
    */
-  listKinds: { kind: string; count: number }[];
+  listKindCounts: ReadonlyMap<string, number>;
   /** How many rows the filter is leaving out, for the line that says so. */
   hiddenCount: number;
   totalCount: number;
@@ -67,8 +64,7 @@ export function ContentToolbar({
   onFilterChange,
   order,
   onOrderChange,
-  folders,
-  listKinds,
+  listKindCounts,
   hiddenCount,
   totalCount,
 }: ContentToolbarProps) {
@@ -215,20 +211,6 @@ export function ContentToolbar({
               }),
           ),
         )}
-        {folders.length > 0
-          ? folders.map((f) =>
-              chip(
-                `folder:${f.id}`,
-                f.name,
-                filter.folderId === f.id,
-                () =>
-                  onFilterChange({
-                    ...filter,
-                    folderId: filter.folderId === f.id ? null : f.id,
-                  }),
-              ),
-            )
-          : null}
         {activos > 0
           ? chip(
               "limpiar",
@@ -242,25 +224,30 @@ export function ContentToolbar({
       {/*
         Which kind of list, and it is a second row and not more chips in the first
         one because the first row already has a "Listas" chip in it: two rows of
-        choices that mean different things read as one list of chips, and the
-        second row disappearing is what tells them the first one is the one that
-        matters.
+        choices that mean different things read as one list of chips.
+
+        **The five are always the five.** They used to be the kinds that happened
+        to be in this folder, so the same row meant something different in every
+        space — and a filter that has to be learned again in each space is a
+        filter that takes a filter's job without doing it. The number on the chip
+        is what tells somebody there is nothing of that kind here, which is
+        something a chip that is simply missing cannot say.
       */}
-      {filter.kind === "list" && listKinds.length > 1 ? (
+      {filter.kind === "list" ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: theme.spacing.xs, paddingRight: theme.spacing.sm }}
         >
-          {listKinds.map((lk) =>
+          {listKindSchema.options.map((kind) =>
             chip(
-              `lk:${lk.kind}`,
-              `${t(`content.kind.${lk.kind}` as never)} · ${lk.count}`,
-              filter.listKind === lk.kind,
+              `lk:${kind}`,
+              `${t(`lists.kind.${kind === "movies_and_series" ? "moviesAndSeries" : kind}` as never)} · ${listKindCounts.get(kind) ?? 0}`,
+              filter.listKind === kind,
               () =>
                 onFilterChange({
                   ...filter,
-                  listKind: filter.listKind === lk.kind ? undefined : lk.kind,
+                  listKind: filter.listKind === kind ? undefined : kind,
                 }),
             ),
           )}

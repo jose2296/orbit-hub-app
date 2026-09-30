@@ -228,11 +228,6 @@ export default function FolderScreen() {
         lists={lists}
         notes={notes}
         isLoading={isLoading}
-        colorKey={workspace?.color}
-        wash={workspace?.wash}
-        // Beside the colour and the wash, for the same reason: a browser that
-        // only got the first colour draws the derived pair, not the chosen one.
-        colorTo={workspace?.colorTo}
         onFolderMenu={(target) =>
           setMenuFor({ kind: "folder", folder: target })
         }

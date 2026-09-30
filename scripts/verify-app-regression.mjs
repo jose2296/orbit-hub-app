@@ -760,10 +760,9 @@ try {
     await settle(tab, { label: `lavado-${name}` });
     await sleep(700);
     await tab.screenshot(archivo);
-    const costura = costuraDelLavado(
-      PNG.sync.read(await readFile(archivo)),
-      PHONE.deviceScaleFactor,
-    );
+    const png = PNG.sync.read(await readFile(archivo));
+    const escala = PHONE.deviceScaleFactor;
+    const costura = costuraDelLavado(png, escala);
     check(
       `el lavado de ${name} no tiene costura en la union con la cabecera`,
       costura.hayLavado && costura.salto <= 4,
@@ -771,7 +770,64 @@ try {
         ? "la captura no tiene lavado: session caducada o pantalla equivocada"
         : `salto de ${costura.salto} en y=${costura.union} (la union esta en ${costura.union})`,
     );
+
+    /*
+      Las dos cosas mas, **en la misma captura y sin volver a pintar**.
+
+      Pedir una navegacion y una captura mas por cada comprobacion fue como el
+      navegador se dejo de responder: `Page.captureScreenshot` se quedo sin
+      contestar en un bundle de doce megas, y las corridas anteriores se quedaron
+      colgadas en tres pantallas distintas. Asi que aqui se aprovecha lo que ya se
+      tiene —la misma pantalla, la misma captura— y solo se anaden medidas.
+
+      **Los filtros son los mismos en el espacio y en la carpeta.** La fila de
+      pastillas salia de lo que habia en pantalla —una pastilla por carpeta, con su
+      nombre—, asi que en un espacio con una carpeta "Personas" habia una pastilla
+      "Personas" y en otro no: un filtro que hay que aprender en cada sitio.
+
+      **Las filas no llevan el color del espacio.** Se mide el fondo de una fila
+      contra el color de la banda de arriba, que si es el del espacio: si la fila lo
+      llevara, los dos pixeles serian familia. Se lee en la captura y no en el DOM
+      porque el fondo de una fila lo pinta un `View` dentro de otro y el color del
+      DOM no es el que se ve.
+    */
+    if (name === "espacio") {
+      const pixeles = [
+        [Math.round(300 * escala), png.width - Math.round(60 * escala)],
+        [Math.round(20 * escala), png.width - Math.round(60 * escala)],
+      ].map(([y, x]) => {
+        const i = (png.width * y + x) * 4;
+        return [png.data[i], png.data[i + 1], png.data[i + 2]];
+      });
+      const diferencia = Math.max(...pixeles[0].map((v, k) => Math.abs(v - pixeles[1][k])));
+      check(
+        "una fila no lleva el color del espacio",
+        diferencia > 12,
+        `la banda es ${pixeles[1].join(",")} y la fila ${pixeles[0].join(",")}, diferencia ${diferencia}`,
+      );
+    }
   }
+
+  const pastillasDe = async (path, etiqueta) => {
+    await tab.goto(`${APP}${path}`);
+    await settle(tab, { label: etiqueta });
+    await sleep(500);
+    return tab.evaluate(`(() => {
+      const out = [];
+      for (const b of document.querySelectorAll('[role=checkbox]')) {
+        const r = b.getBoundingClientRect();
+        if (r.width > 0) out.push((b.getAttribute('aria-label') || '').trim());
+      }
+      return out.sort();
+    })()`);
+  };
+  const enEspacio = await pastillasDe(`/workspace/${data.workspace}`, "pastillas:espacio");
+  const enCarpeta = await pastillasDe(`/workspace/${data.workspace}/folder/${data.folder}`, "pastillas:carpeta");
+  check(
+    "los filtros son los mismos en el espacio y en la carpeta",
+    JSON.stringify(enEspacio) === JSON.stringify(enCarpeta) && enEspacio.length > 0,
+    `${enEspacio.join(", ") || "(ninguna)"} | carpeta: ${enCarpeta.join(", ") || "(ninguna)"}`,
+  );
 
   section("Sin sesion");
   const anon = await openTab(chrome.port);

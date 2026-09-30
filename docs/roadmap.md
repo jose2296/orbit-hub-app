@@ -1035,6 +1035,48 @@ entera.
 Va **detrás del scroller y no dentro**, por lo mismo que el botón flotante: en la web un hijo de un
 `ScrollView` está dentro de él y se va con el desplazamiento.
 
+#### El color del espacio sale de las filas, y los filtros dejan de ser de cada sitio
+
+**Las filas ya no llevan el color del espacio.** La cabecera lo lleva y es lo único que lo lleva. Una
+fila teñida con el color de donde estás, veinte filas seguidas, es una lista que hay que leer contra
+un color y además dice lo mismo veinte veces: el color de un espacio en la barra es información —dice
+dónde estás— y en cada fila es decoración. Los tres colores de una fila son del tema y son los
+mismos en todos los espacios: superficie, superficie apagada para el icono y texto atenuado para el
+menú.
+
+**Los filtros son los mismos en todas partes.** Antes la fila de pastillas salía de lo que había en
+pantalla: una pastilla por carpeta, con su nombre. En un espacio con una carpeta «Personas» había una
+pastilla «Personas» y en el de al lado no, y lo mismo con los tipos de lista. Medido: `Todo |
+Carpetas | Listas | Notas` en el espacio y en la carpeta, y los cinco tipos de lista abajo con su
+cuenta —incluido `Películas y series · 0`.
+
+Eso cambia un compromiso que estaba escrito en el código: se descartaba el tipo de lista que no
+tuviera nada, porque «una pastilla que solo puede vaciar la lista es un callejón sin salida». El
+compromiso nuevo es el contrario: la pastilla está siempre y **el número dice que no hay nada**,
+porque una pastilla que no está no puede decirlo. Un filtro que hay que aprender en cada espacio es
+un filtro que hace el trabajo de un filtro sin hacerlo.
+
+Se aprovechan las capturas que la comprobación de la costura ya hacía, y se mide en ellas: el fondo
+de una fila contra el color de la banda. **Medido: 255,255,255 contra 117,174,175.**
+
+#### `folder-browser.tsx`, que no lo montaba nadie
+
+Un componente entero —cuatrocientas lineas de filas teñidas con el color del espacio, con su propio
+`spacePaint`— que no importaba ninguna pantalla. Se ha borrado: era el mismo código que se acaba de
+quitar, y dejarlo ahí era dejar la regla nueva con una excepción escrito en un fichero que nadie
+mira.
+
+#### Las comprobaciones que se quedan colgadas, que es peor que fallar
+
+Tres corridas seguidas del guion de regresión se quedaron **paradas** en tres pantallas distintas, sin
+error y sin veredicto: un comando de CDP sin contestar deja la promesa pendiente, el `await` no
+vuelve, el `catch` no corre, y node no sale con un `await` pendiente de nivel superior — solo escribe
+«unsettled top-level await» y se marcha. Lo peor que puede tener un fallo es no parecerse a un fallo.
+
+Ahora **cada comando tiene reloj** y rechaza cuando pasa, y la captura tiene el doble de margen
+porque con el bundle de doce megas de la web se ha quedado sin contestar en 60 segundos. Cuando se
+atasca, el guion lo dice y sigue.
+
 #### La costura del lavado, que era un degradado dibujado dos veces
 
 Había **una línea recta en mitad del degradado de la cabecera**, justo donde la barra se encuentra

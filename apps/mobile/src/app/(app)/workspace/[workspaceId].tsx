@@ -248,12 +248,6 @@ export default function WorkspaceScreen() {
         lists={lists}
         notes={notes}
         isLoading={isLoading}
-        colorKey={workspace?.color}
-        // Los dos colores y el sentido, o este sitio pinta un par distinto del que
-        // ensena el selector: la banda de arriba con el elegido y las filas con el
-        // derivado, en la misma pantalla.
-        wash={workspace?.wash}
-        colorTo={workspace?.colorTo}
         onFolderMenu={(folder) => setMenuFor({ kind: "folder", folder })}
         onListMenu={(list) => setMenuFor({ kind: "list", list })}
         onNoteMenu={(note) => setNoteFor(note)}

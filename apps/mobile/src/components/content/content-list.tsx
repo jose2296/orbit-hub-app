@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
-import type { Folder, List, ListOrderMode, Note, WorkspaceWash } from "@orbit-hub/contracts";
+import type { Folder, List, ListOrderMode, Note } from "@orbit-hub/contracts";
 
 import { ContentToolbar } from "@/components/content/content-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -13,7 +13,6 @@ import {
   DraggableSort,
 } from "@/components/ui/draggable-row";
 import { AppText } from "@/components/ui/text";
-import { spacePaint, spaceTint } from "@/lib/workspace/color";
 import { LIST_KIND_ICON } from "@/lib/lists/kind";
 import {
   alcanceDe,
@@ -40,9 +39,6 @@ export interface ContentListProps {
   lists: List[];
   notes: Note[];
   isLoading: boolean;
-  colorKey?: string | null;
-  wash?: WorkspaceWash | null;
-  colorTo?: string | null;
   onFolderMenu?: (folder: Folder) => void;
   onListMenu?: (list: List) => void;
   /**
@@ -86,9 +82,6 @@ export function ContentList({
   lists,
   notes,
   isLoading,
-  colorKey,
-  wash,
-  colorTo,
   onFolderMenu,
   onListMenu,
   onNoteMenu,
@@ -100,9 +93,23 @@ export function ContentList({
   const [filter, setFilter] = useState<ContentFilter>(EMPTY_FILTER);
   const [order, setOrder] = useState<ListOrderMode>("manual");
 
-  const paint = spacePaint(colorKey, wash ?? undefined, colorTo);
-  const tint = spaceTint(colorKey, 0.13);
-  const iconTint = spaceTint(colorKey, 0.24);
+  /*
+    Los tres colores de una fila, y **ninguno es el del espacio**.
+
+    La cabecera ya lleva el color del espacio, y es lo unico que lo lleva: una
+    fila teñida con el color de donde estas, veinte filas seguidas, es una lista
+    que hay que leer contra un color y ademas dice lo mismo veinte veces. Que el
+    color de un espacio este en la barra es informacion —dice donde estas— y en
+    cada fila es decoracion.
+
+    Asi que son los del tema y son los mismos en todos los espacios: superficie
+    para la fila, superficie apagada para el icono, y texto atenuado para el menu.
+    La fila pulsada se distingue por `surfaceMuted`, que es justo lo que hay
+    debajo cuando no esta pulsada, asi que el estado se ve sin inventar un color.
+  */
+  const tint = theme.colors.surface;
+  const iconTint = theme.colors.surfaceMuted;
+  const foreground = theme.colors.textMuted;
 
   /**
    * Everything of this level, in one array.
@@ -135,40 +142,26 @@ export function ContentList({
     [filter, order, todo],
   );
 
-  /**
-   * The folder chips, and they are the folders of **this** level and not of the
-   * one being peeked into.
-   *
-   * That is what keeps the lit chip on screen: the chips come from where the
-   * person is, so choosing one of them and then another moves between siblings,
-   * and the one they chose is still there to go back to instead of only a
-   * "Quitar filtros" that throws away the kind filter and the search with it.
-   */
-  const carpetasParaFiltrar = useMemo(
-    () =>
-      folders
-        .filter((folder) => (folder.parentId ?? null) === folderId)
-        .map((folder) => ({ id: folder.id, name: folder.name })),
-    [folderId, folders],
-  );
 
   /**
-   * The kinds of list that are actually here, and only those.
+   * How many lists of each kind are here.
    *
-   * "Películas" on a folder of tasks and notes is a chip that can only ever
-   * empty the list, and it is offered with the same seriousness as one that
-   * shows things. A person who has never made a list of books in this space is
-   * not being offered a choice, they are being shown a dead end.
+   * **The kinds themselves are not decided here — they are the contract's five,
+   * always.** This is only the count that goes on the chip, so "Libros · 0" is
+   * honest instead of a chip that can only ever empty the list. The chips used to
+   * be only the kinds that happened to be here, which meant the same row of
+   * filters meant something different in every space: a space with no book list
+   * did not have a "Libros" chip, so the row was not a row of *kinds* but a list
+   * of what this space happened to contain. A filter you have to learn per space
+   * is a filter that has to be learned again.
    */
-  const tiposDeLista = useMemo(() => {
+  const cuentaDeKinds = useMemo(() => {
     const cuenta = new Map<string, number>();
     for (const row of todo) {
       if (row.kind !== "list" || !row.listKind) continue;
       cuenta.set(row.listKind, (cuenta.get(row.listKind) ?? 0) + 1);
     }
-    return [...cuenta.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([kind, count]) => ({ kind, count }));
+    return cuenta;
   }, [todo]);
 
   const abrir = useCallback(
@@ -229,8 +222,7 @@ export function ContentList({
           onFilterChange={setFilter}
           order={order}
           onOrderChange={setOrder}
-          folders={carpetasParaFiltrar}
-          listKinds={tiposDeLista}
+          listKindCounts={cuentaDeKinds}
           hiddenCount={todo.length - visible.length}
           totalCount={todo.length}
         />
@@ -273,7 +265,7 @@ export function ContentList({
                 }
                 tint={tint}
                 iconTint={iconTint}
-                foreground={paint.foreground}
+                foreground={foreground}
               />
             ))}
           </View>

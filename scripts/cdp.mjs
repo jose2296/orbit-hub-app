@@ -87,10 +87,38 @@ export async function openTab(debugPort) {
     }
   });
 
-  const send = (method, params = {}) =>
+  /**
+   * A command, with a clock on it.
+   *
+   * **Without the clock a check that goes wrong does not fail, it stops.** A CDP
+   * command that never gets its answer leaves the promise pending for ever, the
+   * `await` never returns, the `catch` never runs — and node does not exit on a
+   * pending top-level await either, it just prints "unsettled top-level await" and
+   * leaves. That is the worst shape a failure can have: three runs in a row stopped
+   * at three different screens with no error and no verdict, and nothing said which
+   * screen or why.
+   *
+   * So every command has a deadline and rejects when it passes. The default is
+   * generous because a first paint of this app on web is not quick, and a
+   * navigation may legitimately take a while; the point is only that it ends.
+   */
+  const send = (method, params = {}, { ms = 60000 } = {}) =>
     new Promise((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, { resolve, reject });
+      const reloj = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`el comando ${method} no respondio en ${ms} ms`));
+      }, ms);
+      pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(reloj);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(reloj);
+          reject(e);
+        },
+      });
       ws.send(JSON.stringify({ id, method, params }));
     });
 
@@ -204,10 +232,18 @@ export async function openTab(debugPort) {
      */
     async screenshot(path) {
       const { writeFile, mkdir } = await import("node:fs/promises");
-      const { data } = await send("Page.captureScreenshot", {
-        format: "png",
-        captureBeyondViewport: false,
-      });
+      /*
+        Mas margen que el de por defecto, y por un motivo concreto: con el bundle
+        de la web de esta app, que son doce megas, el navegador se ha quedado sin
+        contestar a esta llamada en 60 segundos. Un plazo mayor no arregla que se
+        atasque, pero hace que cuando se atasca el guion lo diga y siga, en vez de
+        colgarse sin decir nada.
+      */
+      const { data } = await send(
+        "Page.captureScreenshot",
+        { format: "png", captureBeyondViewport: false },
+        { ms: 120000 },
+      );
       await mkdir(path.replace(/\/[^/]+$/, ""), { recursive: true });
       await writeFile(path, Buffer.from(data, "base64"));
       return path;
@@ -223,7 +259,7 @@ export async function openTab(debugPort) {
      * checks it before it writes anything.
      */
     async goto(url, { readyExpression = "document.readyState === 'complete'" } = {}) {
-      await send("Page.navigate", { url });
+      await send("Page.navigate", { url }, { ms: 30000 });
       const deadline = Date.now() + 45000;
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 400));
