@@ -716,46 +716,116 @@ export function moveCardTo(
 /* ---------------------------------------------------------------- carrying a card -- */
 
 /**
- * Which way a card that is being carried is being pushed, if far enough to count.
+ * Which way a card that is being carried is being pushed.
  *
- * A card is carried from one screen to another by being held and pushed to one
- * side, the way an icon is dragged off the edge of a home screen. The push is
- * measured in points and *not* in cells: it is how far the hand has travelled,
- * not where the card would land, and the two are different questions — the cell
- * says where it goes and this says whether the person meant to go there at all.
+ * The second argument is **slop**, not a mark to cross: a couple of points of
+ * travel, enough to tell a finger that is going somewhere from a finger that is
+ * resting on a card. It used to be a distance to cross before the screen turned,
+ * and that was the wrong question — the question is not how far the hand has come
+ * but whether the thing in the hand is against the edge of the screen, which is
+ * what every mobile desktop does: you drag the icon to the edge of the screen and
+ * pause, and the icon's distance from the edge is the whole trigger.
  *
- * Zero is the answer for a push that has not reached the mark, and it is a real
- * answer rather than a missing one: a card that is being carried sideways inside
+ * Zero is a real answer and not a missing one. A card that is being carried around
  * its own screen is being placed, and a panel that turned the screen because a
  * thumb drifted is a panel nobody can arrange in.
  */
-export function carryDirection(push: number, mark: number): -1 | 0 | 1 {
-  if (push >= mark) return 1;
-  if (push <= -mark) return -1;
+export function carryDirection(push: number, slop: number): -1 | 0 | 1 {
+  if (push >= slop) return 1;
+  if (push <= -slop) return -1;
   return 0;
 }
 
 /**
- * The screen a push carries a card to, or `null` when the panel ends that way.
+ * How much of the panel the hand has to cross before a carry turns the screen, as a
+ * part of the panel's width.
  *
- * `null` and not the page it is already on, because "there is nowhere to go" and
- * "go where you are" are different answers and the caller has to be able to tell
- * them apart: the first one leaves the hand where it is, the second one would
- * spend the push on a page turn that does not happen.
+ * This is the margin, and it exists because without it there was no way to leave a
+ * card against a side. The test used to be "is the card in the outermost column",
+ * which is true the instant the card gets there, so the screen turned while the card
+ * was still arriving and the outermost column was a place you could pass through
+ * rather than a place you could put something. Nobody could arrange a card flush to
+ * the left or the right edge of their panel, which is one of the two positions a
+ * hand reaches for.
  *
- * The panel's own edges, and not `DASHBOARD_PAGES`: carrying is a move between
- * screens that exist, and a screen nobody has been to is a screen with nothing
- * on it, which is somewhere to put a card and not somewhere to take one from.
+ * Sixteen parts in a hundred is a bit less than two thirds of a cell on a phone: far
+ * enough that a card can rest in the outermost column for a good stretch of travel,
+ * near enough that pushing to the side of the panel still turns the page at once.
+ * Bigger and it stops feeling like the edge; smaller and the outermost column is
+ * still a place you pass through.
+ */
+export const CARRY_EDGE_MARGIN = 0.16;
+
+/** And a floor, so that a very narrow panel still has a margin at all. */
+export const CARRY_EDGE_MARGIN_MIN = 24;
+
+/**
+ * Whether a card being carried has been pushed far enough to turn the screen.
+ *
+ * Measured on **the hand**, in pixels across the panel, and not on the cell the card
+ * ended up in. Those are not the same thing and the difference is the whole margin: a
+ * card in the outermost column has stopped moving — there is nowhere further to go —
+ * while the finger keeps travelling, and it is that travel past the point where the
+ * card ran out of panel that asks for the next screen. That is what "drag it to the
+ * edge of the screen and pause" means: the edge is a place on the panel, not a cell.
+ *
+ * And measuring the hand is what lets a card of any width turn the page. A card as
+ * wide as the panel never leaves the first column however far it is pushed, so a rule
+ * about columns could only ever be answered "no" by the card you most wanted to move
+ * to another screen.
+ *
+ * The direction matters and is not decoration. A card at the right being pushed *left*
+ * is being placed back where it came from, and one at the left pushed *right* is being
+ * placed one column in. Reading the position without the direction turns the panel
+ * into a machine that flips screens while somebody is trying to move a card.
+ */
+export function carryAtEdge(
+  centre: number,
+  span: number,
+  dir: -1 | 0 | 1,
+  margin: number = span * CARRY_EDGE_MARGIN,
+): boolean {
+  if (dir === 1) return centre >= span - margin;
+  if (dir === -1) return centre <= margin;
+  return false;
+}
+
+/**
+ * Where a carry goes: another screen, a new one, or nowhere.
+ *
+ * **A new screen at the end**, and that is the behaviour every mobile desktop has
+ * and the one this panel did not have: dragging an icon off the last screen creates
+ * the next screen, because otherwise you have to stop, press a button, add a screen
+ * and go back to where you were — four steps to do the one thing the drag was
+ * already doing. Apple's own words for it are "if there are no dots to the right of
+ * the bright dot, dragging an app to that side of the screen makes a new page".
+ *
+ * Only to the right, and only while there is room. A panel is at most
+ * `DASHBOARD_PAGES` screens because a screen nobody can reach is a screen that does
+ * not exist, and inventing one past the end would be inventing a screen nobody can
+ * arrive at.
+ *
+ * `null` is the two ends that have nowhere to go, and it is one answer for both:
+ * the first screen has nothing behind it, and the last screen of a full panel has
+ * no room for a ninth. A caller that could not tell them apart would spend the edge
+ * on a screen turn that does not happen.
  */
 export function carryTarget(
   page: number,
-  dir: -1 | 1,
+  dir: -1 | 0 | 1,
   screens: number,
-): number | null {
-  const target = page + dir;
-  if (target < 0 || target > screens - 1) return null;
-  return target;
+  max: number = MAX_PAGES,
+): CarryTarget {
+  if (dir === 1) {
+    if (page < screens - 1) return { kind: "screen", page: page + 1 };
+    return screens < max ? { kind: "new" } : null;
+  }
+  if (dir === -1) return page > 0 ? { kind: "screen", page: page - 1 } : null;
+  return null;
 }
+
+/** Where a carry ends up. See `carryTarget`. */
+export type CarryTarget = { kind: "screen"; page: number } | { kind: "new" } | null;
 
 /**
  * Whether a screen has room for a card that is being carried to it.
@@ -766,8 +836,8 @@ export function carryTarget(
  * up its first cell and shuffle the rest around it. That is the right answer for a
  * card being dragged onto a full part of the grid — the card under the finger wins
  * and its neighbours get out of the way — and it is the wrong one here, because a
- * carry is nobody pointing at a cell: the hand is at the edge of the panel asking
- * a different question, and the panel would answer it by rearranging a screen
+ * carry is nobody pointing at a cell: the hand is at the edge of the panel asking a
+ * different question, and the panel would answer it by rearranging a screen
  * somebody had already arranged.
  *
  * So the answer is asked first, the way `pageForNewCard` asks it before pinning
@@ -788,24 +858,24 @@ export function carryFits(
 /**
  * The layout after a card has been carried to another screen and let go.
  *
- * Two rules in one place because a card that is carried is subject to both and
- * the order matters. **The screen first**: a card that arrives carrying its
- * position lands on top of whatever is at those cells of the screen it is
- * arriving at, which is why `moveCardToPage` drops the position and places it
- * where there is room. **Then the cell**: the drop cell is where the hand let
- * go of it, and applying it to a card that has just been placed somewhere would
- * throw the placement away and move its new neighbours a second time.
+ * Two rules in one place because a card that is carried is subject to both and the
+ * order matters. **The screen first**: a card that arrives carrying its position
+ * lands on top of whatever is at those cells of the screen it is arriving at, which
+ * is why `moveCardToPage` drops the position and places it where there is room.
+ * **Then the cell**: the drop cell is where the hand let go of it, and applying it
+ * to a card that has just been placed somewhere would throw the placement away and
+ * move its new neighbours a second time.
  *
- * `from` is the layout as it was when the card was **picked up**, not as it is
- * when the hand lets go. The screens it travelled through only ever had its own
- * page changed, so they are already in that array; reading the live draft
- * instead would take the placement of the screen it is standing on and apply it
- * to the one it is going to.
+ * `from` is the layout as it was when the card was **picked up**, not as it is when
+ * the hand lets go. The screens it travelled through only ever had its own page
+ * changed, so they are already in that array; reading the live draft instead would
+ * take the placement of the screen it is standing on and apply it to the one it is
+ * going to.
  *
- * And the same array comes back when the carry went nowhere, which is how the
- * panel knows there is nothing to write: a hand that picked a card up and put it
- * down again has not arranged anything, and an operation in the outbox for that
- * is a write nobody asked for.
+ * And the same array comes back when the carry went nowhere, which is how the panel
+ * knows there is nothing to write: a hand that picked a card up and put it down
+ * again has not arranged anything, and an operation in the outbox for that is a
+ * write nobody asked for.
  */
 export function carryCard(
   from: DashboardWidget[],
@@ -942,6 +1012,52 @@ export function resizeStartSize(
  * the card is already over, the drag has not moved, and nothing opens: which is
  * the honest answer for a finger that has not gone anywhere.
  */
+/**
+ * The cell under a finger, for a card that is being **held**.
+ *
+ * Not the first free one. A card in your hand does not ask for room: the finger
+ * says which cell it is over, the card goes there, and the neighbours move out of the
+ * way — which is what `placeCards` does with a held id and what every mobile desktop
+ * does with an icon you are dragging.
+ *
+ * The difference is not cosmetic and it is not an edge case. It is the difference
+ * between a card that can reach the edge of the panel and one that cannot: if the
+ * drop looks for a free cell, then the cell at the edge is occupied by whatever is
+ * already there, the card is sent to the middle instead, and the gesture that turns
+ * the screen never sees the edge. Which is exactly what happened here — a card that
+ * could never be pushed against the right of the panel, on a panel whose whole
+ * point is being pushed against the right of the panel.
+ */
+export function heldSpot(
+  size: { w: number; h: number },
+  center: { x: number; y: number },
+  cell: { width: number; height: number; gap: number },
+  columns: number = PANEL_COLUMNS,
+  rows: number = PANEL_ROWS,
+): { x: number; y: number } {
+  'worklet';
+  const limit = snapSize(size.w, size.h);
+  const stepX = cell.width + cell.gap;
+  const stepY = cell.height + cell.gap;
+  // Before the panel has been measured there are no cells to speak of. Top-left is
+  // where a card goes when nobody has said otherwise, and it is also the only answer
+  // that does not depend on a measurement that does not exist yet.
+  if (stepX <= 0 || stepY <= 0) return { x: 0, y: 0 };
+
+  // The cell the card is over, from its centre, so that the card lands *on* the
+  // spot being pointed at rather than beside it.
+  return {
+    x: clampCell(
+      Math.round((center.x - (limit.w * stepX) / 2) / stepX),
+      columns - limit.w,
+    ),
+    y: clampCell(
+      Math.round((center.y - (limit.h * stepY) / 2) / stepY),
+      rows - limit.h,
+    ),
+  };
+}
+
 export function dropSpot(
   others: PlacedCard[],
   size: { w: number; h: number },
@@ -965,22 +1081,16 @@ export function dropSpot(
     takeRect(occupied, other.x, other.y, other.w, other.h);
   }
 
-  // The cell the card is over, from its centre, so that the card lands *on* the
-  // spot being pointed at rather than beside it.
-  const nearX = clampCell(
-    Math.round((center.x - (limit.w * stepX) / 2) / stepX),
-    columns - limit.w,
-  );
-  const nearY = clampCell(
-    Math.round((center.y - (limit.h * stepY) / 2) / stepY),
-    rows - limit.h,
-  );
-
+  /*
+    Nearest **free** cell, and that is the only thing this adds on top of
+    `heldSpot`: it is for a card that has to fit round the others rather than take
+    the cell it is over. A card being carried does not use it — see `heldSpot` for
+    why that difference is the difference between reaching the edge of the panel and
+    never reaching it.
+  */
+  const near = heldSpot(limit, center, cell, columns, rows);
   return (
-    nearestFreeSpot(occupied, limit.w, limit.h, columns, rows, nearX, nearY) ?? {
-      x: nearX,
-      y: nearY,
-    }
+    nearestFreeSpot(occupied, limit.w, limit.h, columns, rows, near.x, near.y) ?? near
   );
 }
 

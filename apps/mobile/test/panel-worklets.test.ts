@@ -150,6 +150,7 @@ describe("worklets are declared after the worklets they call", () => {
       "placeCards",
       "sizeFromDrag",
       "oneStepTowards",
+      "heldSpot",
       "dropSpot",
     ]);
   });

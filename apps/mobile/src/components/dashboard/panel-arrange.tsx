@@ -38,21 +38,24 @@ export interface PanelArrange {
   /**
    * Whether a card can be carried at all.
    *
-   * False on a panel of one screen, and it is the panel that says so rather than
-   * the card: there is nothing on the far side of a one-screen panel, so a card
-   * that answered the hold with a lift would be promising a move it cannot make.
+   * Whether the hold is answered at all, and **not** whether there is another
+   * screen to carry to.
+   *
+   * Those came apart, and the wrong way round is the one that does the harm. On a
+   * panel of one screen — which is most people's panel — asking for another screen
+   * before allowing the hold meant the card could not be lifted, so it could not be
+   * moved either, and rearranging a single screen became impossible with a finger.
+   * And there was nothing wrong with the gesture: the hold puts a card in your hand
+   * on any page of any phone, and where it can be dropped is a question for after.
    */
-  canCarry: boolean;
+  canPickUp: boolean;
   /**
    * The card has been held still long enough to be picked up.
    *
-   * Told apart from `onDragStart` because they answer different questions. The
-   * drag starts on a few points of movement and places a card on this screen; the
-   * pick-up starts on a hold and puts the card in the person's hand, which is the
-   * only state in which pushing it sideways means another screen.
+   * The card has been still for long enough to be in a hand, which is the only
+   * state in which pushing it sideways means another screen.
    */
   onPickUp: (id: string) => void;
-  onDragStart: (id: string) => void;
   onDragMove: (id: string, dx: number, dy: number) => void;
   onDragEnd: (id: string) => void;
 }
@@ -76,9 +79,8 @@ export const AT_REST: PanelArrange = {
   editing: false,
   dragging: null,
   carried: null,
-  canCarry: false,
+  canPickUp: false,
   onPickUp: () => {},
-  onDragStart: () => {},
   onDragMove: () => {},
   onDragEnd: () => {},
 };

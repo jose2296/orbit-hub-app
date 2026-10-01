@@ -74,7 +74,6 @@ function phaseOf(id: string): number {
  * scale barely moves for the same reason — enough to say "this one is held", not
  * enough to announce it.
  */
-const LIFT = 1.02;
 const MOVE = { duration: 170, easing: Easing.out(Easing.cubic) };
 const WOBBLE_OUT = { duration: 200, easing: Easing.out(Easing.cubic) };
 
@@ -325,6 +324,45 @@ export function PanelCard({
     return () => cancelAnimation(wobble);
   }, [editing, id, wobble]);
 
+  /**
+   * The hold, and the timer that watches it — **on this side of the bridge**.
+   *
+   * It used to be a `setTimeout` inside the gesture's `onBegin`, and that is the one
+   * place a card was never really picked up. A worklet cannot call a React callback:
+   * what it captured is a copy, and calling the copy does nothing at all — no error,
+   * no warning, the panel simply never hears it. Wrapping it in `runOnJS` did not
+   * help either, because the call started from inside a timer the worklet had
+   * already handed off.
+   *
+   * What it looked like from outside was the worst kind of wrong: the card lifted,
+   * the drag moved it around the screen it was on, and the carry that every check
+   * depends on never happened — so a card could not get past the first screen and
+   * nothing in the app said so. The three lines of Reanimated around it *did* run,
+   * which is exactly why it looked alive.
+   *
+   * So the timer lives here, on the thread that owns the state, and the gesture only
+   * tells it to start and to stop. The gestures run on both platforms; this runs on
+   * JavaScript, and that is the whole point.
+   */
+  const coger = useCallback(() => {
+    clearPickUp();
+    if (!arrange?.canPickUp) return;
+    pickUp.current = setTimeout(() => {
+      pickUp.current = null;
+      // The corner got the finger and not the card. Read here and not when the timer
+      // was armed because the two handlers are told about a touch in no order anybody
+      // should depend on, and a resize that also picked the card up is a card that is
+      // in your hand and being resized at the same time.
+      if (resizing.value) return;
+      // The card straightens up and comes off the page further than a drag does,
+      // because it is being carried and not placed. See `CARRY_LIFT`.
+      cancelAnimation(wobble);
+      wobble.value = withTiming(0, WOBBLE_OUT);
+      scale.value = withTiming(CARRY_LIFT, MOVE);
+      arrange?.onPickUp?.(id);
+    }, CARRY_AFTER);
+  }, [arrange, clearPickUp, id, resizing, scale, wobble]);
+
   const drag = Gesture.Pan()
     .enabled(editing)
     // A card is also a link, so a drag has to beat a tap. Not a long press: the
@@ -332,36 +370,24 @@ export function PanelCard({
     // already expects from a grid.
     .minDistance(6)
     .onBegin(() => {
-      clearPickUp();
-      if (!arrange?.canCarry) return;
-      pickUp.current = setTimeout(() => {
-        pickUp.current = null;
-        // The corner got the finger and not the card. Read here and not when the
-        // timer was armed because the two handlers are told about a touch in no
-        // order anybody should depend on, and a resize that also picked the card
-        // up is a card that is in your hand and being resized at the same time.
-        if (resizing.value) return;
-        // The card straightens up and comes off the page further than a drag
-        // does, because it is being carried and not placed. See `CARRY_LIFT`.
-        cancelAnimation(wobble);
-        wobble.value = withTiming(0, WOBBLE_OUT);
-        scale.value = withTiming(CARRY_LIFT, MOVE);
-        arrange.onPickUp(id);
-      }, CARRY_AFTER);
+      runOnJS(coger)();
     })
     .onStart(() => {
       // Movement beats the hold, so the hold is off from here: this is a drag.
-      clearPickUp();
-      // The card straightens up as it is picked up. A card that keeps leaning
-      // while it is being carried looks broken, not alive.
-      cancelAnimation(wobble);
-      wobble.value = withTiming(0, WOBBLE_OUT);
-      // Never smaller than what it is: a card that was picked up and then moved
-      // within its screen is still in a hand, and dropping it back to the drag
-      // lift on the first frame would say it had been put down while it is being
-      // carried to another one.
-      scale.value = withTiming(Math.max(scale.value, LIFT), MOVE);
-      runOnJS(arrange?.onDragStart ?? noop)(id);
+      runOnJS(clearPickUp)();
+      /*
+        And the card does **not** lift, and it is not placed either.
+
+        This is the whole change: a card is picked up by the hold and by nothing
+        else. Before, the first few pixels of movement did it, which is the way a
+        list of things behaves and not the way a home screen behaves — on a phone
+        you press and hold an icon, and a drag that moves is a drag that knocks
+        your arrangement about while you meant to scroll past it.
+
+        So `onStart` only cancels the hold. There is no lift here and no
+        `onDragStart`, because without one of those the panel has nothing to draw
+        as held and nothing to move, which is the answer a brushed card should get.
+      */
     })
     .onUpdate((event) => {
       // The finger does not move the card. It says which cell the card is over,
@@ -375,7 +401,7 @@ export function PanelCard({
       );
     })
     .onEnd(() => {
-      clearPickUp();
+      runOnJS(clearPickUp)();
       runOnJS(arrange?.onDragEnd ?? noop)(id);
       settle();
     })
@@ -383,7 +409,7 @@ export function PanelCard({
       // Every release ends here, including a release of a finger that never moved:
       // the hold has to be disarmed by a tap as much as by a drag, or a card lifts
       // itself a quarter of a second after being tapped.
-      clearPickUp();
+      runOnJS(clearPickUp)();
       runOnJS(arrange?.onDragEnd ?? noop)(id);
       settle();
     });
@@ -396,7 +422,10 @@ export function PanelCard({
       // and it has to be set here and not at activation: a corner that is held
       // rather than pulled is still the corner.
       resizing.value = true;
-      clearPickUp();
+      // Through `runOnJS` like everywhere else the hold is disarmed: the timer it
+      // cancels is a JavaScript timer now, and a worklet holding a copy of it is
+      // cancelling a copy.
+      runOnJS(clearPickUp)();
     })
     .onStart(() => {
       resizing.value = true;

@@ -12,7 +12,10 @@ import {
   MIN_CARD_ROWS,
   PANEL_COLUMNS,
   PANEL_ROWS,
+  CARRY_EDGE_MARGIN,
+  CARRY_EDGE_MARGIN_MIN,
   arrangeCard,
+  carryAtEdge,
   carryCard,
   carryDirection,
   carryFits,
@@ -20,6 +23,7 @@ import {
   cardSize,
   dropSpot,
   fits,
+  heldSpot,
   moveCardTo,
   moveCardToPage,
   oneStepTowards,
@@ -706,89 +710,174 @@ describe("moveCardToPage", () => {
 });
 
 describe("the push of a card that is being carried", () => {
-  /**
-   * The mark the panel uses, spelled out here rather than imported.
-   *
-   * The panel's own number is a decision about how a hand moves and not about the
-   * grid, and a test that imported it would only be testing that the constant is
-   * the constant. What matters is that a push which has not reached the mark is
-   * not a turn and one that has is.
-   */
-  const MARK = 56;
+  /*
+    How far a finger has to travel before its direction means anything.
 
-  it("says nothing for a push that has not reached the mark", () => {
-    expect(carryDirection(0, MARK)).toBe(0);
-    expect(carryDirection(MARK - 1, MARK)).toBe(0);
-    expect(carryDirection(-(MARK - 1), MARK)).toBe(0);
+    A slop, not a distance to cross. Whether the screen turns is `carryAtEdge` — the
+    card being against the edge of the panel — and this only says which way the hand
+    is going. It was a mark to cross, and that made carrying mean "move this far"
+    instead of "take this to the edge", which is a rule nobody can see and the one
+    no mobile desktop has.
+  */
+  const SLOP = 6;
+
+  it("says nothing for a finger that is resting on a card", () => {
+    expect(carryDirection(0, SLOP)).toBe(0);
+    expect(carryDirection(SLOP - 1, SLOP)).toBe(0);
+    expect(carryDirection(-(SLOP - 1), SLOP)).toBe(0);
   });
 
-  it("says which way once the push is past the mark", () => {
-    expect(carryDirection(MARK, MARK)).toBe(1);
-    expect(carryDirection(MARK + 90, MARK)).toBe(1);
-    expect(carryDirection(-MARK, MARK)).toBe(-1);
+  it("says which way once the finger has moved", () => {
+    expect(carryDirection(SLOP, SLOP)).toBe(1);
+    expect(carryDirection(SLOP + 90, SLOP)).toBe(1);
+    expect(carryDirection(-SLOP, SLOP)).toBe(-1);
   });
 
-  it("treats the mark itself as far enough", () => {
-    // `>` instead of `>=` and a hand that pushed exactly one thumb of travel gets
-    // nothing at all, for a reason no person can see.
-    expect(carryDirection(MARK, MARK)).toBe(carryDirection(MARK + 0.5, MARK));
+  it("treats the slop itself as enough, because a finger does not stop exactly", () => {
+    // `>` instead of `>=` and a hand that pushed exactly one slop gets nothing at
+    // all, for a reason no person can see.
+    expect(carryDirection(SLOP, SLOP)).toBe(carryDirection(SLOP + 0.5, SLOP));
+  });
+});
+
+describe("carryAtEdge", () => {
+  /*
+    Measured on the **hand**, across the panel, in pixels — and not on the cell the
+    card ended up in, which is what it used to ask.
+
+    That change is the margin, and the margin is why a card can be left against a
+    side at all: the card stops at the outermost column and cannot go further, so a
+    question about its cell asked the same thing over and over while the card was
+    still arriving and turned the screen on the way in. The finger keeps travelling
+    past that point, and it is that travel — to the edge of the panel — that asks
+    for the next screen.
+  */
+  const PANEL = 400;
+
+  it("is the far side of the panel, with a margin left over", () => {
+    // A margin of 64 on a panel of 400: turning takes a hand at 336, not at 400.
+    const margin = PANEL * CARRY_EDGE_MARGIN;
+    expect(carryAtEdge(PANEL, PANEL, 1, margin)).toBe(true);
+    expect(carryAtEdge(380, PANEL, 1, margin)).toBe(true);
+    expect(carryAtEdge(330, PANEL, 1, margin)).toBe(false);
+  });
+
+  it("leaves room to leave a card against a side, which is the whole point", () => {
+    /*
+     * The bug this fixes, said as arithmetic.
+     *
+     * A panel of 400 and a card two columns wide: the card stops moving at the
+     * outermost column once the hand has gone 150 points, because from then on there
+     * is nowhere further to go. Turning needs the hand at 336, which is 236 points of
+     * travel. So between 150 and 236 — eighty-six points, more than half of what is
+     * left of the panel — the card sits flush against the right and nothing happens.
+     * That window did not exist before: the turn asked about the cell, and the cell
+     * said "outermost column" from the first point onwards.
+     *
+     * Measured from the cell it was picked up at, which is what the panel does, and
+     * so that the same finger means the same thing on every screen.
+     */
+    const step = 100;
+    const margin = PANEL * CARRY_EDGE_MARGIN;
+    const cardCentreAt = (homeX: number, w: number, dx: number) =>
+      homeX * step + dx + (w * step) / 2;
+
+    const sePara = 150; // the travel at which the card has run out of panel
+    const gira = PANEL - margin - step; // the travel at which the hand turns the screen
+    const alBorde = PANEL - step; // the travel at which the hand is at the panel's side
+
+    expect(cardCentreAt(0, 2, sePara)).toBe(250);
+    expect(carryAtEdge(cardCentreAt(0, 2, sePara), PANEL, 1, margin)).toBe(false);
+    expect(carryAtEdge(cardCentreAt(0, 2, gira - 1), PANEL, 1, margin)).toBe(false);
+    expect(carryAtEdge(cardCentreAt(0, 2, gira), PANEL, 1, margin)).toBe(true);
+    // And the hand can still get there: the turn is before the side of the panel.
+    expect(gira).toBeLessThan(alBorde);
+  });
+
+  it("is the near side when it is being pushed left", () => {
+    const margin = PANEL * CARRY_EDGE_MARGIN;
+    expect(carryAtEdge(0, PANEL, -1, margin)).toBe(true);
+    expect(carryAtEdge(20, PANEL, -1, margin)).toBe(true);
+    expect(carryAtEdge(90, PANEL, -1, margin)).toBe(false);
+  });
+
+  it("is nowhere in the middle, which is what stops a carry", () => {
+    // This is the latch. A hand that leaves the edge un-spends it, and one that
+    // stays at the edge keeps it spent however long it is held there — which is why
+    // holding an icon against the right of a phone walks you one page and not
+    // fifteen.
+    const margin = PANEL * CARRY_EDGE_MARGIN;
+    expect(carryAtEdge(200, PANEL, 1, margin)).toBe(false);
+    expect(carryAtEdge(200, PANEL, -1, margin)).toBe(false);
+    expect(carryAtEdge(400, PANEL, 0, margin)).toBe(false);
+  });
+
+  it("reads the direction, so a hand at one side only turns that way", () => {
+    // A card against the right pushed *left* is being put back where it came from.
+    // Reading the position without the direction turns the panel into a machine that
+    // flips screens while somebody is moving a card.
+    const margin = PANEL * CARRY_EDGE_MARGIN;
+    expect(carryAtEdge(390, PANEL, -1, margin)).toBe(false);
+    expect(carryAtEdge(10, PANEL, 1, margin)).toBe(false);
+  });
+
+  it("answers for a card as wide as the panel, which a rule about cells could not", () => {
+    /*
+     * A card that fills the panel never leaves the first column however far the hand
+     * goes, so "is the card in the outermost column" was only ever answered no by the
+     * card you most wanted to move to another screen.
+     */
+    const margin = PANEL * CARRY_EDGE_MARGIN;
+    expect(carryAtEdge(380, PANEL, 1, margin)).toBe(true);
+  });
+
+  it("has a margin even on a panel narrower than the floor", () => {
+    // Without the floor, a narrow panel gets a margin of a few points and the
+    // outermost column is a place you pass through again.
+    const estrecho = 100;
+    const margen = Math.max(CARRY_EDGE_MARGIN_MIN, estrecho * CARRY_EDGE_MARGIN);
+    expect(margen).toBe(CARRY_EDGE_MARGIN_MIN);
+    // Turning needs a hand at 76; anything short of that is still this screen.
+    expect(carryAtEdge(70, estrecho, 1, margen)).toBe(false);
+    expect(carryAtEdge(80, estrecho, 1, margen)).toBe(true);
   });
 });
 
 describe("carryTarget", () => {
   it("is the screen next to the one the card was on", () => {
-    expect(carryTarget(1, 1, 3)).toBe(2);
-    expect(carryTarget(1, -1, 3)).toBe(0);
+    expect(carryTarget(1, 1, 3)).toEqual({ kind: "screen", page: 2 });
+    expect(carryTarget(1, -1, 3)).toEqual({ kind: "screen", page: 0 });
   });
 
-  it("is nothing at the edges of the panel", () => {
-    // Not the page it is already on: "there is nowhere to go" and "go where you
-    // are" are different answers, and a caller that cannot tell them apart spends
-    // the push on a page turn that does not happen.
+  it("is a new screen off the end of the panel", () => {
+    // The behaviour every mobile desktop has and this panel did not: drag an icon
+    // off the last screen and the next screen appears. Apple's words for it are "if
+    // there are no dots to the right of the bright dot, dragging an app to that side
+    // of the screen makes a new page". Without it, arranging a panel of more than one
+    // screen is four steps for the thing the drag was already doing.
+    expect(carryTarget(2, 1, 3)).toEqual({ kind: "new" });
+    expect(carryTarget(0, 1, 1)).toEqual({ kind: "new" });
+  });
+
+  it("makes a new screen only while there is room for one", () => {
+    // Eight screens because a screen nobody can reach is a screen that does not
+    // exist, and a ninth would be exactly that.
+    // El tope son ocho pantallas porque una pantalla a la que no se llega es una
+    // pantalla que no existe, y una novena sería exactamente eso.
+    expect(carryTarget(MAX_PAGES - 1, 1, MAX_PAGES, MAX_PAGES)).toBeNull();
+    expect(carryTarget(MAX_PAGES - 2, 1, MAX_PAGES - 1, MAX_PAGES)).toEqual({
+      kind: "new",
+    });
+  });
+
+  it("is nothing behind the first screen", () => {
+    // A new screen is only ever made to the right, on both iOS and Android: a
+    // screen before the first one is not something either of them will do.
     expect(carryTarget(0, -1, 3)).toBeNull();
-    expect(carryTarget(2, 1, 3)).toBeNull();
-    expect(carryTarget(0, -1, 1)).toBeNull();
   });
 
-  it("never sends a card to a screen that does not exist", () => {
-    // The panel's own count and not `DASHBOARD_PAGES`: carrying moves a card
-    // between screens somebody can get to, and a screen with nothing on it is
-    // somewhere to put a card and not somewhere to take one from.
-    expect(carryTarget(1, 1, 2)).toBeNull();
-    expect(carryTarget(0, 1, 2)).toBe(1);
-  });
-});
-
-describe("carryCard", () => {
-  it("puts the card on the screen it was carried to", () => {
-    const from = [widget("a", 2, 2, 0, { x: 0, y: 0 }), widget("c", 2, 2, 1, { x: 2, y: 0 })];
-    const next = carryCard(from, "a", 1, null);
-    expect(next.find((w) => w.id === "a")).toMatchObject({ page: 1, x: 0, y: 0 });
-  });
-
-  it("lands it on the cell the hand let go of it", () => {
-    // The screen first and the cell second: the cell is applied to the placement
-    // the screen gave the card, so the neighbours of the screen it arrives at
-    // move out of the way once and not twice.
-    const from = [
-      widget("a", 2, 2, 0, { x: 0, y: 0 }),
-      widget("c", 2, 2, 1, { x: 2, y: 0 }),
-      widget("d", 2, 2, 1, { x: 2, y: 2 }),
-    ];
-    const next = carryCard(from, "a", 1, { x: 0, y: 4 });
-    expect(next.find((w) => w.id === "a")).toMatchObject({ page: 1, x: 0, y: 4 });
-    // And the card that was in the way is somewhere else, not underneath it.
-    const { cards } = pageCards(next.filter((w) => pageOf(w) === 1));
-    expect(new Set(cards.map((c) => `${c.x},${c.y}`)).size).toBe(cards.length);
-  });
-
-  it("returns the layout untouched when the carry went nowhere", () => {
-    // A pick-up and a put-down with no push: the same array back, so the panel can
-    // see there is nothing to write. It is the same object and not an equal one,
-    // because an equal array would put an operation in the outbox for a card that
-    // was held and released without moving.
-    const from = [widget("a", 2, 2, 0, { x: 2, y: 2 })];
-    expect(carryCard(from, "a", 0, null)).toBe(from);
+  it("is nothing without a direction", () => {
+    expect(carryTarget(1, 0, 3)).toBeNull();
   });
 });
 
@@ -824,6 +913,86 @@ describe("carryFits", () => {
 
   it("is false for a card that is not on the panel", () => {
     expect(carryFits([widget("a", 2, 2, 0)], "nope", 1)).toBe(false);
+  });
+});
+
+describe("carryCard", () => {
+  it("puts the card on the screen it was carried to", () => {
+    const from = [widget("a", 2, 2, 0, { x: 0, y: 0 }), widget("c", 2, 2, 1, { x: 2, y: 0 })];
+    const next = carryCard(from, "a", 1, null);
+    expect(next.find((w) => w.id === "a")).toMatchObject({ page: 1, x: 0, y: 0 });
+  });
+
+  it("lands it on the cell the hand let go of it", () => {
+    // The screen first and the cell second: the cell is applied to the placement the
+    // screen gave the card, so the neighbours of the screen it arrives at move out of
+    // the way once and not twice.
+    const from = [
+      widget("a", 2, 2, 0, { x: 0, y: 0 }),
+      widget("c", 2, 2, 1, { x: 2, y: 0 }),
+      widget("d", 2, 2, 1, { x: 2, y: 2 }),
+    ];
+    const next = carryCard(from, "a", 1, { x: 0, y: 4 });
+    expect(next.find((w) => w.id === "a")).toMatchObject({ page: 1, x: 0, y: 4 });
+    // And the card that was in the way is somewhere else, not underneath it.
+    const { cards } = pageCards(next.filter((w) => pageOf(w) === 1));
+    expect(new Set(cards.map((c) => `${c.x},${c.y}`)).size).toBe(cards.length);
+  });
+
+  it("returns the layout untouched when the carry went nowhere", () => {
+    // A pick-up and a put-down with no push: the same array back, so the panel can see
+    // there is nothing to write. It is the same object and not an equal one, because
+    // an equal array would put an operation in the outbox for a card that was held and
+    // released without moving.
+    const from = [widget("a", 2, 2, 0, { x: 2, y: 2 })];
+    expect(carryCard(from, "a", 0, null)).toBe(from);
+  });
+});
+
+describe("heldSpot", () => {
+  /*
+    The cell under the finger for a card that is being held, which is what every
+    drag in this panel is: the hold picks the card up and everything after that is a
+    hold.
+  */
+  const cell = { width: 100, height: 100, gap: 0 };
+  const dosPorDos = { w: 2, h: 2 };
+
+  it("is the cell the finger is over", () => {
+    expect(heldSpot(dosPorDos, { x: 100, y: 100 }, cell)).toEqual({ x: 0, y: 0 });
+    expect(heldSpot(dosPorDos, { x: 300, y: 300 }, cell)).toEqual({ x: 2, y: 2 });
+  });
+
+  it("puts the card there even when the cell is taken", () => {
+    // **This** is what lets a card reach the edge of the panel. Looking for a free
+    // cell means the cell at the edge is occupied by whatever is already there, the
+    // card is sent to the middle instead, and the gesture that turns the screen never
+    // sees the edge — on a panel whose whole point is being pushed against the edge.
+    // Seis filas y una tarjeta de dos: la última fila posible es la cuarta.
+    expect(heldSpot(dosPorDos, { x: 350, y: 350 }, cell)).toEqual({ x: 2, y: 3 });
+  });
+
+  it("never leaves the grid", () => {
+    expect(heldSpot(dosPorDos, { x: -400, y: -400 }, cell)).toEqual({ x: 0, y: 0 });
+    expect(heldSpot(dosPorDos, { x: 900, y: 900 }, cell)).toEqual({ x: 2, y: 4 });
+  });
+
+  it("is the only cell before the panel has been measured", () => {
+    expect(heldSpot(dosPorDos, { x: 40, y: 40 }, { width: 0, height: 0, gap: 0 })).toEqual({
+      x: 0,
+      y: 0,
+    });
+  });
+
+  it("agrees with dropSpot where there is room, which is the case that is not a bug", () => {
+    // The two differ **only** when the cell under the finger is taken, and that is
+    // the one difference, so a card dropped on empty space lands in the same place
+    // either way. Without this, the two could disagree about everything.
+    for (const centre of [{ x: 100, y: 100 }, { x: 300, y: 300 }]) {
+      expect(heldSpot(dosPorDos, centre, cell)).toEqual(
+        dropSpot([], dosPorDos, centre, cell),
+      );
+    }
   });
 });
 

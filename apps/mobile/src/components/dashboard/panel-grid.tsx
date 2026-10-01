@@ -20,12 +20,15 @@ import {
   MAX_PAGES,
   PANEL_COLUMNS,
   PANEL_ROWS,
+  CARRY_EDGE_MARGIN,
+  CARRY_EDGE_MARGIN_MIN,
+  carryAtEdge,
   carryCard,
   carryDirection,
   carryFits,
   carryTarget,
   cardSize,
-  dropSpot,
+  heldSpot,
   moveCardTo,
   pageCards,
   pageCount,
@@ -101,18 +104,38 @@ const PAGE_MIN = 90;
 const PAGE_MAX = 320;
 
 /**
- * How far a card being carried has to be pushed before the panel turns.
+ * How far a finger has to travel before its direction means anything.
  *
- * Far enough that it cannot be a thumb resting on the card, near enough that it
- * does not need a swipe. It is a thumb's width: a hand that has decided to carry a
- * card to the next screen is already moving sideways, and a mark that needed a
- * quarter of the panel would make carrying slower than the swipe that turns the
- * same screen without moving anything.
+ * A slop and not a mark: this does not decide whether the screen turns, it only
+ * says which way the hand is going. Whether the screen turns is `carryAtEdge` —
+ * the card being in your hand against the edge of the panel, which is what a phone
+ * does when you drag an icon to the edge of the screen and pause.
+ *
+ * Six points is a finger resting badly, not a finger deciding something. It was
+ * fifty-six and it decided the turns, and that made carrying mean "move this far"
+ * rather than "take this to the edge", which is a rule nobody could see and the OS
+ * does not have.
  */
-const CARRY_MARK = 56;
+const CARRY_SLOP = 6;
 
 /**
- * How long the push has to be held at the mark before the screen turns.
+ * How long the background has to be held to start arranging.
+ *
+ * On a phone this is what everybody already does: press and hold the wallpaper and
+ * the icons start jiggling. It was the pencil in the header here and only the
+ * pencil, so the gesture everybody arrives with did nothing at all — and the button
+ * in the header is not going away, because it is also how you *finish*, and half
+ * the users of a panel are rearranging rather than looking.
+ *
+ * Longer than the hold that picks a card up (`CARRY_AFTER` in the card), on
+ * purpose: picking up a card is a small decision you take with your thumb while
+ * your hand is already there, and entering the arrangement is a decision about the
+ * whole screen.
+ */
+const FONDO_ENTRA = 450;
+
+/**
+ * How long the push has to be held at the edge before the screen turns.
  *
  * Not zero, because a carry is a hold and a drag is a move, and this is where the
  * two are told apart a second time: a hand that brushes across a card on its way
@@ -123,6 +146,24 @@ const CARRY_MARK = 56;
  * the right length for a pause that means "keep going".
  */
 const CARRY_TURN_HOLD = 230;
+
+/*
+ * How far the hand has to go again after a turn before another one is armed.
+ *
+ * This is what replaced "come back to the middle of the screen", which is what used
+ * to stop a held icon from walking the whole panel — and which made a second screen
+ * unreachable. The distance back was measured from the cell the card was picked up
+ * on, on the screen it was picked up on, so after one turn the hand had to come back
+ * a **whole screen's worth** before it was allowed to ask again: a card got to page
+ * two and no further, and there was no gesture that could do more.
+ *
+ * A hand that has not moved cannot ask for anything, whatever side it is on, and that
+ * is the whole of what the old rule was for. So that is the rule: some movement.
+ *
+ * Twenty-four points is about half the margin, so it is a push rather than a twitch,
+ * and small enough that there is room for it at the side of a screen.
+ */
+const CARRY_TURN_NUDGE = 24;
 
 export interface PanelGridProps {
   layout: DashboardWidget[];
@@ -328,6 +369,16 @@ export function PanelGrid({
      * many screens it crosses.
      */
     home: { x: number; y: number };
+    /**
+     * The screen this carry is heading for, told by the turns and not by React.
+     *
+     * The turns are what moved the card, so the turns are what know where it is
+     * going. Read back from state when the finger lifts, the write lands on the screen
+     * *before* the last one whenever a turn and the release land close together — a
+     * carry that turns the page bar and puts the card somewhere else, which looks
+     * perfect and arranges the wrong thing.
+     */
+    pagina: number;
   } | null>(null);
   /** The card being carried, in state, because the card has to *see* it. */
   const [carried, setCarried] = useState<string | null>(null);
@@ -343,14 +394,6 @@ export function PanelGrid({
    */
   const pushBase = useRef(0);
   /**
-   * The side the last turn spent, which has to come back before it can be spent
-   * again.
-   *
-   * The half of the rule that re-measuring the push cannot do on its own: the
-   * push has to go *below* the mark and past it again, so a finger held at one
-   * place turns one screen and then nothing, whatever it is doing.
-   */
-  const spent = useRef<-1 | 0 | 1>(0);
   /** The turn that is waiting out its hold, and the side it is waiting for. */
   const turnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -424,6 +467,8 @@ export function PanelGrid({
    * called by a gesture that is already in flight. A ref is read at the moment it
    * is used, which is the moment the finger is at.
    */
+  /** Where the hand was at the last turn, so "moved again" has a reference. */
+  const giroEn = useRef(0);
   const dropRef = useRef<{ x: number; y: number } | null>(null);
   dropRef.current = drop;
 
@@ -562,6 +607,21 @@ export function PanelGrid({
     ];
   }, [carried, current, draft, drop]);
   const placed = useMemo(() => pageCards(onPage), [onPage]);
+
+  /*
+    The cards as they are drawn right now, through a ref.
+
+    `pickUp` needs to know which cell the card it is lifting is in, and reading it
+    from `placed` made the callback change identity on **every** render — `placed`
+    is a new object every time — and a callback that changes identity changes the
+    identity of the gesture that closes over it. That gesture is then rebuilt while
+    the finger is still down and the hold is halfway through, and a handler detached
+    and re-attached mid-gesture is a gesture that gets lost: the card lifts, and
+    then nothing else ever arrives. No movement, no drop, no write, and a panel that
+    looks like it ignored the finger.
+  */
+  const placedRef = useRef(placed.cards);
+  placedRef.current = placed.cards;
   const hidden = placed.hidden.filter((id) => id !== carried);
 
   /**
@@ -600,6 +660,21 @@ export function PanelGrid({
   // does not have to be rebuilt every time either of them changes.
   const currentRef = useRef(0);
   currentRef.current = current;
+
+  /*
+    The screen being looked at, unclamped, and `current` is not that.
+
+    `current` is `page` trimmed to the number of screens, which is right for drawing —
+    a page that does not exist is a page you cannot see — and wrong for writing. The
+    two go out of step exactly during a carry: the turn asks for the next screen, the
+    screen count is computed from the draft and the draft still says the card is on the
+    screen it came from, so the count can be a turn behind the page bar. And then the
+    card is written to the screen **before** the one it was carried to, which is a
+    carry that moves the page bar and puts the card somewhere else: the gesture looked
+    perfect and the arrangement was on the wrong screen.
+  */
+  const pageRef = useRef(0);
+  pageRef.current = page;
   const hiddenRef = useRef<string[]>([]);
   hiddenRef.current = hidden;
 
@@ -693,18 +768,6 @@ export function PanelGrid({
     [commit],
   );
 
-  /**
-   * The screen as it is drawn, without the card being dragged, in cells.
-   *
-   * Kept in a ref and assigned during render rather than in a `useMemo`, because
-   * the drag reads it from a callback that must not re-create itself per frame: a
-   * callback that closes over a `useMemo` re-runs whenever the memo does, and the
-   * memo depends on the cell, which a resize changes sixty times a second. A ref
-   * is read at the moment it is used, which is the moment the finger is at.
-   */
-  const others = useRef<PlacedCard[]>([]);
-  others.current = placed.cards.filter((card) => card.id !== dragging);
-
   /** Where the card being dragged is, in cells, so that its centre can be followed. */
   const held = useRef<PlacedCard | null>(null);
   held.current = dragging
@@ -747,8 +810,6 @@ export function PanelGrid({
     return new Map(packed.map((card) => [card.id, card]));
   }, [dragging, drop, onPage]);
 
-  const onDragStart = useCallback((id: string) => setDragging(id), []);
-
   /* ------------------------------------------------------------- carrying a card -- */
 
   /**
@@ -768,8 +829,8 @@ export function PanelGrid({
    * begun, because that is how long the last of it takes to arrive.
    */
   const goTo = useCallback(
-    (wanted: number) => {
-      const target = Math.min(Math.max(wanted, 0), screensRef.current - 1);
+    (wanted: number, hasta = screensRef.current) => {
+      const target = Math.min(Math.max(wanted, 0), hasta - 1);
       const resting = -target * board.width;
       origin.value = resting;
       trackX.value = withTiming(resting, {
@@ -782,6 +843,66 @@ export function PanelGrid({
   );
 
   /**
+   * One more screen, and go to it.
+   *
+   * Going to it is not a convenience: a screen added and not looked at is a dot at
+   * the end of the bar that nobody can tell from the ones with cards on them, so
+   * the bar would be showing a screen and the panel would not.
+   */
+  const addPage = useCallback(() => {
+    if (!editing) return pagesDraft;
+    const siguiente = Math.min(pagesDraft + 1, MAX_PAGES);
+    if (siguiente === pagesDraft) return pagesDraft;
+    setPagesDraft(siguiente);
+    /*
+      `goTo` y no `setPage`, y el motivo es el mismo que el de los puntos.
+
+      La pantalla se acaba de crear, así que todavía no está en `screens` y
+      `goTo` la recortaría a la última que ya existía —justo la de la que se ha
+      salido— y la pista no se movería. El segundo argumento es el tope con el que
+      sí existe la pantalla nueva: la cuenta que se acaba de escribir, no la que el
+      ref tenga todavía.
+
+      Con `setPage` la barra de puntos iba a la pantalla nueva y el panel se quedaba
+      donde estaba: el punto, las tarjetas y el siguiente swipe, tres vistas que ya
+      no contaban lo mismo. Y la tarjeta que se estaba llevando se quedaba a medio
+      camino, dibujada en una pantalla que nadie estaba mirando.
+    */
+    goTo(siguiente - 1, siguiente);
+    // Told upwards straight away, not held until the arrangement is finished.
+    //
+    // A screen that exists only in the draft is a screen that is gone the moment
+    // the panel is left without the Guardar button — which is what "no persists"
+    // meant: the dot was there, the arrow was there, and after a restart neither
+    // was. The write goes through the outbox like every other, so it is the same
+    // cost and the same wait, and it carries the current draft rather than the
+    // saved layout so a card moved in the same session is not undone by it.
+    onAddPage?.(siguiente, draftRef.current);
+    return siguiente;
+  }, [draftRef, editing, goTo, onAddPage, pagesDraft]);
+
+  /**
+   * Start arranging, from a hold on the background.
+   *
+   * A function and not the setter itself because the gesture runs on the interface
+   * thread and a `setState` called from there is a render nobody asked for. And a
+   * callback and not a ref because a ref read from a worklet is a copy of the object
+   * as it was when the worklet was made, which is one render behind.
+   */
+  const entrarEnColocacion = useCallback(() => setEditing(true), [setEditing]);
+
+  /**
+   * Finish arranging, from a tap on the background.
+   *
+   * Through the ref the screen above owns, so the draft it saves is the one this
+   * component is drawing — the same path the Guardar button in the header takes, and
+   * for the same reason: two ways out of the arrangement have to write the same
+   * arrangement.
+   */
+
+  const terminar = useCallback(() => finishRef.current(), []);
+
+  /**
    * The card has been held still long enough to be picked up.
    *
    * It is lifted and nothing else: no cell moves, nothing is written, and the
@@ -790,22 +911,32 @@ export function PanelGrid({
    * the whole of the gesture — one places a card on this screen and the other puts
    * it in a hand that can go to another one.
    *
-   * And it is refused on a panel of one screen, before the card is even told: there
-   * is nothing on the far side of it.
+   * And it happens on a panel of one screen as much as on a panel of eight. It used
+   * to ask first whether there was another screen to carry to, and that was the wrong
+   * question: it made the hold — and with it every way of moving a card with a finger
+   * — unavailable on the panel most people have. Where it may be dropped is a question
+   * for the drop.
    */
   const pickUp = useCallback((id: string) => {
-    if (screensRef.current < 2) return;
-    const enEsta = placed.cards.find((card) => card.id === id);
+
+    const enEsta = placedRef.current.find((card) => card.id === id);
     carry.current = {
       id,
       from: draftRef.current,
       home: enEsta ? { x: enEsta.x, y: enEsta.y } : { x: 0, y: 0 },
+      // The screen this carry is heading for, and it is the **gesture's** answer and
+      // not React's: the turns are what moved the card, so the turns are what say
+      // where it is going. Read back from state at the moment the finger lifts, the
+      // write lands on the screen before the last one whenever a turn and the release
+      // land close together — a carry that turns the page bar and puts the card
+      // somewhere else, which looks perfect and arranges the wrong thing.
+      pagina: (draftRef.current.find((w) => w.id === id)?.page ?? 0),
     };
     pushBase.current = 0;
-    spent.current = 0;
+    giroEn.current = 0;
     setCarried(id);
     setDragging(id);
-  }, [placed.cards]);
+  }, []);
 
   /**
    * A turn that is waiting out its hold, called off.
@@ -844,25 +975,65 @@ export function PanelGrid({
    * the card has got to from the draft as it was at the pick-up.
    */
   const carriedTurn = useCallback(
-    (id: string, dir: -1 | 1, dx: number) => {
+    (id: string, dir: -1 | 1, dx: number, donde: { x: number; y: number }) => {
       turnTimer.current = null;
-      // The push has been spent, from here rather than from the mark: see
-      // `pushBase`. And the side is spent too, so a hand held at one place turns
-      // one screen and then nothing, however much it is still pushing.
       pushBase.current = dx;
-      spent.current = dir;
+      giroEn.current = dx;
 
+      /*
+        And the card's cell on the **new** screen is where the next push is measured
+        from.
+
+        Without this a card could only ever travel one screen. The push is measured
+        from the cell it was picked up on, and that cell was on the screen it came
+        from, so the trip to the edge of the second screen was the trip to the edge of
+        the first one plus a whole screen's width — and the finger, already at the
+        side of the panel, had nowhere left to go. The panel turned once and then the
+        gesture was spent: from page one to page three there was no way, which is a
+        thing every phone has done since the first one had two screens.
+
+        So after every turn the reference is the card's cell **here**, and the next
+        push is a fresh journey from here — which is what it looks like, because the
+        track has just moved and this is where the card now is under the hand.
+      */
       const target = carryTarget(currentRef.current, dir, screensRef.current);
-      if (target === null) return;
+      if (!target) return;
+      if (target.kind === "new") {
+        /*
+          Off the end of the panel and it makes the next screen.
+
+          Which is what every mobile desktop does and what this panel could not do:
+          the `+` next to the dots, and a drag that could only move a card to a
+          screen that already existed. Arranging a panel of more than one screen was
+          therefore four steps — stop dragging, press the `+`, drag again, drop —
+          for the one thing the drag was already in the middle of. On a phone it is
+          "drag it off the end", and now it is that here too.
+
+          And it goes straight there, carrying the card, because a screen that
+          appears somewhere other than under the thing you are holding is a screen
+          that appears somewhere you are not looking.
+        */
+        // `addPage` answers how many there are now, so the screen the card is
+        // arriving at is the last of them. Outside the `if`, because a screen that is
+        // created only when somebody is carrying something is a screen that is not
+        // created.
+        const creada = addPage();
+        if (carry.current) {
+          carry.current.home = { x: donde.x, y: donde.y };
+          carry.current.pagina = Math.max(0, creada - 1);
+        }
+        return;
+      }
       // Asked before the turn, because a screen with no room is a screen the card
-      // cannot be put on, and `moveCardToPage` never says no: it places the card
-      // it is moving *before* the ones already there, so a full screen would give
-      // up its first cell and shuffle the rest to make space. Right for a card
-      // under a finger; wrong for a hand asking at the edge of the panel.
-      if (!carryFits(draftRef.current, id, target)) return;
-      goTo(target);
+      // cannot be put on. See `carryFits`.
+      if (!carryFits(draftRef.current, id, target.page)) return;
+      if (carry.current) {
+        carry.current.home = { x: donde.x, y: donde.y };
+        carry.current.pagina = target.page;
+      }
+      goTo(target.page);
     },
-    [goTo],
+    [addPage, goTo],
   );
 
   /**
@@ -870,30 +1041,86 @@ export function PanelGrid({
    *
    * Three things in order, and the order is the rule:
    *
-   * 1. Inside the mark, the side is unspent again. This is what lets a second screen
-   *    be carried to — push, push back, push — and what makes a hand that wandered
-   *    out past the mark and came back able to try again.
-   * 2. A side that is already spent is not armed, however far the finger has gone
-   *    since. Without this a card carried to the last screen and released there
-   *    would keep turning screens by itself, since its push stays past the mark for
-   *    as long as the finger is down.
-   * 3. Otherwise the turn is armed — once, and not re-armed on every frame, so a
-   *    finger held past the mark waits out one hold rather than a hold per frame.
+   * Three things in order, and the order is the rule:
+   *
+   * 1. No direction, or not at the edge, or the hand has not moved since the last
+   *    turn: nothing is armed and any turn waiting is called off.
+   * 2. A turn is armed **once** — not re-armed on every frame — so a hand at the edge
+   *    waits out one hold rather than a hold per frame.
+   * 3. Armed, it turns after `CARRY_TURN_HOLD`, with the card still in the hand.
    */
+  /*
+    The margin in pixels, once the panel has been measured.
+
+    `CARRY_EDGE_MARGIN` is a part of the panel's width so it grows with the panel, and
+    this floor is for a panel narrower than a hundred and fifty points: without it the
+    margin would be a handful of pixels and the outermost column would be a place you
+    pass through rather than a place you can leave something.
+
+    Here and not in `carryAtEdge` because it is the panel's width, and the panel
+    measures itself after the first render: a margin computed at module scope would be
+    a margin of a panel that does not exist yet.
+  */
+  const margenBorde = Math.max(CARRY_EDGE_MARGIN_MIN, board.width * CARRY_EDGE_MARGIN);
+
   const carriedMove = useCallback(
-    (id: string, dx: number) => {
+    (
+      id: string,
+      dx: number,
+      donde: { x: number; y: number },
+      size: { w: number; h: number },
+    ) => {
       if (carry.current?.id !== id) return;
       const push = dx - pushBase.current;
-      const dir = carryDirection(push, CARRY_MARK);
-      if (dir === 0) {
-        spent.current = 0;
+      const dir = carryDirection(push, CARRY_SLOP);
+      /*
+        Where the **hand** is across the panel, and not where the card is — and
+        measured with `push`, the travel since the last turn, not with `dx`, the
+        travel since the finger went down.
+
+        The card stops at the outermost column and stays there — `heldSpot` clamps it,
+        because there is no cell past the edge — while the finger keeps going. Asking
+        about the cell therefore asked the same question over and over once the card
+        had arrived, and the screen turned while the card was still on its way to the
+        side, which is why there was no way to leave anything flush against an edge.
+
+        And with `dx` instead of `push` the second turn could never come: `pushBase`
+        is re-based on every turn, so the turn resets one of the two numbers and not
+        the other, and the measure kept saying "at the edge" for the rest of the
+        gesture. A card got as far as page two and no further, and there was no gesture
+        anybody could do about it.
+      */
+      const stepX = cell.width + cell.gap;
+      const centre =
+        carry.current.home.x * stepX + push + (size.w * stepX) / 2;
+      // Two ways out, and both of them are the hand coming back from the edge: no
+      // direction because it has stopped, and a direction but not far enough because
+      // the card is somewhere that still belongs to this screen. That second one is
+      // the whole of the latch: a hand held at the edge walks one page and not
+      // fifteen, which is the behaviour on a phone too.
+      const enElBorde = carryAtEdge(centre, board.width, dir, margenBorde);
+      /*
+        Two reasons to wait, and they are different things.
+
+        The hand has to be **at the edge** — that is the margin, and it is what keeps
+        a card in the outermost column from being able to leave. And after a turn the
+        hand has to **move again** before it can ask for another one: a turn leaves the
+        finger at the side of the panel with the card already against it, so "at the
+        edge" on its own is true from the turn onwards and would turn page after page
+        on its own. A hand that has not moved is not asking for anything.
+      */
+      const movido = Math.abs(dx - giroEn.current);
+      if (dir === 0 || !enElBorde || movido < CARRY_TURN_NUDGE) {
         cancelTurn();
         return;
       }
-      if (spent.current === dir || turnTimer.current !== null) return;
-      turnTimer.current = setTimeout(() => carriedTurn(id, dir, dx), CARRY_TURN_HOLD);
+      if (turnTimer.current !== null) return;
+      turnTimer.current = setTimeout(
+        () => carriedTurn(id, dir, dx, donde),
+        CARRY_TURN_HOLD,
+      );
     },
-    [cancelTurn, carriedTurn],
+    [board.width, cancelTurn, carriedTurn, cell, margenBorde],
   );
 
   useEffect(() => {
@@ -929,7 +1156,6 @@ export function PanelGrid({
       // that has been carried to a screen lands *somewhere on it*, and the place the
       // hand let go of it is the only opinion anybody has about where.
       const enLaMano = carry.current?.id === id ? carry.current : null;
-      if (enLaMano) carriedMove(id, dx);
       // And measured from the cell it was **picked up at**, not from the one it is
       // in now. The difference only shows once the panel has turned a screen, and it
       // shows as the card jumping: the turn moves the card to the first free cell of
@@ -938,9 +1164,8 @@ export function PanelGrid({
       // same place on every screen, which is what makes the gesture mean one thing
       // however many screens it crosses.
       const desde = enLaMano?.home ?? { x: card.x, y: card.y };
-      const destino = dropSpot(
-        others.current,
-        card,
+      const destino = heldSpot(
+        { w: card.w, h: card.h },
         {
           x: desde.x * stepX + dx + (card.w * stepX) / 2,
           y: desde.y * stepY + dy + (card.h * stepY) / 2,
@@ -948,6 +1173,7 @@ export function PanelGrid({
         cell,
       );
       setDrop(destino);
+      if (enLaMano) carriedMove(id, dx, destino, { w: card.w, h: card.h });
     },
     [cell, carriedMove],
   );
@@ -1003,7 +1229,21 @@ export function PanelGrid({
           put it straight down has not arranged anything, and that should not put an
           operation in the outbox for somebody to sync.
         */
-        const next = carryCard(enLaMano.from, id, currentRef.current, landed);
+        /*
+          The page the carry got to **and** the page the panel is on, and the one the
+          panel is on wins when they disagree.
+
+          They can disagree, and the way they disagree is the whole of this gesture: a
+          turn moves the screen under the card without moving the card, so "which screen
+          is the card on" is two questions at once — where the card is being taken and
+          where the panel has got to. Asking only the first writes the card to the
+          screen it was on before the last turn whenever the two have drifted, and the
+          result looks like a carry that turned the page bar and put the card somewhere
+          else. The panel is what the person is looking at, so that is what decides.
+        */
+        const destino = Math.max(enLaMano.pagina, pageRef.current);
+        const next = carryCard(enLaMano.from, id, destino, landed);
+
         if (next !== enLaMano.from) commit(next);
         return;
       }
@@ -1036,30 +1276,6 @@ export function PanelGrid({
    * rendering" warning all over again. A ref is written during render and read on
    * tap, which is what a ref is for.
    */
-  /**
-   * One more screen, and go to it.
-   *
-   * Going to it is not a convenience: a screen added and not looked at is a dot at
-   * the end of the bar that nobody can tell from the ones with cards on them, so
-   * the bar would be showing a screen and the panel would not.
-   */
-  const addPage = useCallback(() => {
-    if (!editing) return pagesDraft;
-    const siguiente = Math.min(pagesDraft + 1, MAX_PAGES);
-    if (siguiente === pagesDraft) return pagesDraft;
-    setPagesDraft(siguiente);
-    setPage(siguiente - 1);
-    // Told upwards straight away, not held until the arrangement is finished.
-    //
-    // A screen that exists only in the draft is a screen that is gone the moment
-    // the panel is left without the Guardar button — which is what "no persists"
-    // meant: the dot was there, the arrow was there, and after a restart neither
-    // was. The write goes through the outbox like every other, so it is the same
-    // cost and the same wait, and it carries the current draft rather than the
-    // saved layout so a card moved in the same session is not undone by it.
-    onAddPage?.(siguiente, draftRef.current);
-    return siguiente;
-  }, [draftRef, editing, onAddPage, pagesDraft]);
 
   const finish = useCallback(() => {
     // Whatever could not be shown here goes to the next screen for real, so a card
@@ -1085,11 +1301,17 @@ export function PanelGrid({
       editing,
       dragging,
       carried,
-      // Only a panel with somewhere to go can answer a hold, and the card asks
-      // before it lifts rather than lifting and being told there is nowhere.
-      canCarry: editing && screens > 1,
+      /*
+        Only while arranging, and no more than that.
+
+        It used to also ask whether there was another screen, which is where it went
+        wrong: a panel of one screen answered no, the card never lifted, and moving a
+        card to another cell — the thing this gesture exists for — stopped working on
+        the panel most people have, for want of a second screen to move it to. Where
+        the card may be dropped is a question for the drop, not for the lift.
+      */
+      canPickUp: editing,
       onPickUp: pickUp,
-      onDragStart,
       onDragMove,
       onDragEnd,
     }),
@@ -1099,7 +1321,6 @@ export function PanelGrid({
       editing,
       onDragEnd,
       onDragMove,
-      onDragStart,
       pickUp,
       screens,
     ],
@@ -1311,7 +1532,56 @@ export function PanelGrid({
       });
 
   const turn = buildTurn(screens > 1 && !editing);
-  const turnFromBackground = buildTurn(screens > 1 && editing);
+
+  /**
+   * What a finger on the **background** of the panel can do, and it is three things.
+   *
+   * Holding it starts arranging, tapping it while arranging stops, and dragging it
+   * sideways changes screen. All three are the desktop's, and they are here for the
+   * same reason the pencil in the header is still here: everybody arrives at a home
+   * screen knowing two of them, and a panel that only answers the third is a panel
+   * where the gesture everybody already has does nothing at all.
+   *
+   * A **race**, and not three handlers, because they have to answer between them: a
+   * swipe moves, a tap does not, and a hold does not move. Which one wins is the
+   * whole question, and `Race` is that question asked once instead of in three
+   * places.
+   *
+   * The one that is not here is a long press *on a card*, which is the pick-up.
+   * That is not an omission but the shape of it: the card is not part of the
+   * background, so the background's handler is never told about a finger that went
+   * down on one. Holding a card picks the card up; holding the empty board beside
+   * it starts arranging.
+   */
+  const fondo = Gesture.Race(
+    Gesture.LongPress()
+      .enabled(!editing)
+      .minDuration(FONDO_ENTRA)
+      .onStart(() => {
+        runOnJS(entrarEnColocacion)();
+      }),
+    /*
+      El toque, que termina la colocación.
+
+      **Sin `maxDuration`.** Dentro de un `Race`, el gesto que llega a su plazo
+      *falla*, y el que falla se lleva por delante la composición entera. Con un plazo
+      de 400 ms el hold de 450 ms ya no tenía composición que ganar, y el gesto se
+      quedaba muerto sin decir nada. Los dos se distinguen por cuánto dura el dedo,
+      que es la pregunta que ya se estaban haciendo, así que el plazo no hace falta:
+      el hold gana primero, el toque sólo llega si el dedo se levantó antes.
+
+      Y ocho puntos, porque un toque que sobrevive a un dedo que ha viajado un poco
+      es un toque que se dispara después de que alguien ha empezado a arrastrar y
+      se ha arrepentido.
+    */
+    Gesture.Tap()
+      .enabled(editing)
+      .maxDistance(8)
+      .onEnd(() => {
+        runOnJS(terminar)();
+      }),
+    screens > 1 && editing ? buildTurn(true) : Gesture.Pan().enabled(false),
+  );
 
   return (
     <View style={[styles.root, { gap: theme.spacing.sm }]}>
@@ -1395,15 +1665,17 @@ export function PanelGrid({
 
               It is the first child so that every card is painted over it, and a card
               is a card: a drag that begins on one never arrives here, which is what
-              lets the two gestures be two gestures and not one gesture that has to
-              guess. Outside the arranging mode there is nothing to disambiguate and
-              the whole board turns, so this is not even mounted.
+              lets `fondo` be three gestures and not one that has to guess.
+
+              A sibling of the screens and not their parent, and that is also what
+              keeps holding a card from starting the arrangement: the background is
+              behind the cards rather than above them, so a finger that went down on
+              one never tells it anything. Hold a card and the card is picked up;
+              hold the empty board beside it and the panel starts to be arranged.
             */}
-            {editing && screens > 1 ? (
-              <GestureDetector gesture={turnFromBackground}>
-                <View testID="panel-background" style={StyleSheet.absoluteFill} />
-              </GestureDetector>
-            ) : null}
+            <GestureDetector gesture={fondo}>
+              <View testID="panel-background" style={StyleSheet.absoluteFill} />
+            </GestureDetector>
 
             {/*
               Every screen that can be seen, each one at its own place on the track.
@@ -1448,13 +1720,19 @@ export function PanelGrid({
         {/*
           The empty page says it is empty — **over** the track and not instead of it.
 
-          The four dashed rectangles were the answer for a panel that has never had
-          anything in it: somewhere to put things, said in the shape things will be.
-          They were drawn for every screen with nothing on it, and that is what made
-          a page you had just added look broken — four placeholders that were not
-          cards, could not be moved, and disappeared the moment anything real was on
-          them. So they are only drawn while arranging, which is the only time
-          somebody is about to put something there.
+          **Nothing but the message, always** — and that is a change, not a
+          formatting one. A page with nothing on it used to draw four dashed
+          rectangles the size of cards while it was being arranged: an empty panel
+          that looked like a panel waiting to be filled, said in the shape things
+          will be.
+
+          It read as four placeholders that were not cards. They could not be moved,
+          they were not cards, they were on every empty page — the one you had just
+          added, and the one you had just emptied by taking the last card off it —
+          and a person arranging their panel is looking at their cards. Empty now
+          says it is empty, which is a state somebody is in rather than a thing that
+          failed to load, and it is the same whether the panel is being arranged or
+          not.
 
           And `pointerEvents="none"`, which is the other half of it: an empty page
           that says so with a box that eats touches is an empty page you cannot
@@ -1462,11 +1740,7 @@ export function PanelGrid({
         */}
         {drawn.length === 0 ? (
           <View style={styles.vacio} pointerEvents="none">
-            {editing ? (
-              <Ghosts cell={cell} radius={theme.radius.lg} height={board.height} />
-            ) : (
-              <EmptyPage label={t("dashboard.pageEmpty")} />
-            )}
+            <EmptyPage label={t("dashboard.pageEmpty")} />
           </View>
         ) : null}
 
@@ -1962,19 +2236,11 @@ function PageBar({
 }
 
 /**
- * What an empty panel draws.
- *
- * The shape of the thing you are about to fill, and not a message saying it is
- * empty. What goes on it is a grid, and a grid that only appears once it has
- * something in it explains nothing: not how it looks, not how much fits, not
- * where to start. Four ghosts say all three without a word.
- */
-/**
  * A screen with nothing on it, said once, in the middle.
  *
- * Not the ghosts and not a card-sized anything. A page that is empty is a real
- * state — somebody made it, and it is waiting — and the only thing it needs is for
- * that to be obvious without looking like something failed to load.
+ * Not a grid of placeholders and not a card-sized anything. A page that is empty is
+ * a real state — somebody made it, and it is waiting — and the only thing it needs is
+ * for that to be obvious without looking like something failed to load.
  */
 function EmptyPage({ label }: { label: string }) {
   const theme = useTheme();
@@ -1988,66 +2254,6 @@ function EmptyPage({ label }: { label: string }) {
       <AppText variant="callout" tone="subtle" style={styles.emptyPageText}>
         {label}
       </AppText>
-    </View>
-  );
-}
-
-function Ghosts({
-  cell,
-  radius,
-  height,
-}: {
-  cell: { width: number; height: number; gap: number };
-  radius: number;
-  /** The space the board was given, which the ghosts fill like cards would. */
-  height: number;
-}) {
-  const theme = useTheme();
-  const t = useTranslation();
-  // A third of the width rather than one cell: a card of one cell is a
-  // spreadsheet, and what a card actually is, before anything is on it, is about a
-  // third of the screen.
-  const span = Math.max(2, Math.round(PANEL_COLUMNS / 3));
-  const cardWidth = span * cell.width + (span - 1) * cell.gap;
-
-  return (
-    <View
-      testID="panel-empty-grid"
-      accessibilityLabel={t("dashboard.empty")}
-      style={[
-        styles.screen,
-        {
-          left: 0,
-          // The ghosts are absolute, so the container does not grow with them:
-          // without this height the legend below lands on top of the first row. The
-          // board's own height, so an empty panel is the same size as a full one
-          // and nothing moves when the first card is pinned.
-          height,
-          // And the board's own width, for the same reason. `styles.screen` is an
-          // absolute box with no width of its own, because a screen on the track is
-          // given one by the track. An empty panel is not on the track.
-          width: "100%",
-        },
-      ]}
-    >
-      {Array.from({ length: 4 }, (_, index) => (
-        <View
-          key={`fantasia-${index}`}
-          style={[
-            styles.cell,
-            {
-              left: (index % 2) * (cardWidth + cell.gap),
-              top: Math.floor(index / 2) * (cell.height + cell.gap),
-              width: cardWidth,
-              height: cell.height,
-              borderRadius: radius,
-              borderWidth: 1,
-              borderColor: theme.colors.border,
-              backgroundColor: theme.colors.surfaceMuted,
-            },
-          ]}
-        />
-      ))}
     </View>
   );
 }

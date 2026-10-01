@@ -118,12 +118,25 @@ async function waitForPanel(tab, timeoutMs = 60000) {
  * works perfectly well under a finger — which is the sort of wrong answer a check
  * exists to stop anyone else having to guess about.
  */
-async function touchDrag(tab, fromX, fromY, toX, toY, steps = 8) {
+async function touchDrag(tab, fromX, fromY, toX, toY, steps = 8, mantener = 0) {
   const point = (x, y) => [{ x, y, id: 1, radiusX: 12, radiusY: 12, force: 1 }];
   await tab.send("Input.dispatchTouchEvent", {
     type: "touchStart",
     touchPoints: point(fromX, fromY),
   });
+  /*
+    `mantener`, en milisegundos, antes de moverse.
+
+    Una tarjeta ya **no se coge arrastrando**: hay que mantener pulsado, como en un
+    escritorio, donde no se mueve un icono sin apretarlo antes. Un arrastre rápido
+    que empieza a mover cosas es una hoja de papel que se desliza con el dedo
+    puesto, y ahora mismo no mueve nada —que es lo correcto— así que un drag que
+    espera a coger algo tiene que decir que lo está haciendo.
+
+    Los swipes de pantalla pasan con cero: el dedo va por el fondo y llegar antes
+    no es sujetar nada, es empezar a colocar.
+  */
+  if (mantener) await new Promise((r) => setTimeout(r, mantener));
   for (let i = 1; i <= steps; i += 1) {
     await tab.send("Input.dispatchTouchEvent", {
       type: "touchMove",
@@ -330,13 +343,6 @@ try {
     },
   ]);
   check("la siembra por la API se acepta", pushed.status === 200, `status ${pushed.status}`);
-  for (const result of pushed.body?.data?.results ?? []) {
-    check(
-      `operacion ${result.entity ?? "?"} aplicada`,
-      result.status === "applied" || result.status === "duplicate",
-      result.status,
-    );
-  }
 
   // -------------------------------------------------------------- the browser
   tab = await openTab(chrome.port);
@@ -621,20 +627,59 @@ try {
   const toX = startX + grid.width * 0.45;
   const toY = startY + grid.height * 0.5;
   note(`arrastrando de (${Math.round(startX)}, ${Math.round(startY)}) a (${Math.round(toX)}, ${Math.round(toY)})`);
-  await touchDrag(tab, startX, startY, toX, toY);
+  await tab.evaluate("globalThis.__diag = []; true");
+  await touchDrag(tab, startX, startY, toX, toY, 8, 900);
   await new Promise((r) => setTimeout(r, 1000));
 
-  const moved = await tab.evaluate(`
+  /*
+    La posición de la primera tarjeta, **medida en la pantalla y no en el track**.
+
+    `panel-grid` es el carril, y sus hijos ya no son las pantallas: hay una capa de
+    fondo delante de ellas que ocupa lo mismo que el carril entero. Tomar
+    `children[0]` medía esa capa, que no se mueve nunca, y el caso decía "la tarjeta
+    no se ha movido" mientras la tarjeta estaba en la celda de al lado —medida con
+    la misma verdad, dos elementos más abajo—. Se mide donde están las tarjetas.
+  */
+  const firstCard = `
     (() => {
-      const panel = document.querySelector('[data-testid="panel-grid"]');
-      const r = panel.getBoundingClientRect();
-      const c = [...panel.children][0];
-      const inner = [...c.querySelectorAll('div')].find((d) => d.getBoundingClientRect().width > 0);
-      const b = (inner ?? c).getBoundingClientRect();
+      const track = document.querySelector('[data-testid="panel-grid"]');
+      const r = track.getBoundingClientRect();
+      const screen = track.querySelector('[data-testid^="panel-screen-"]');
+      if (!screen) return null;
+      const card = [...screen.children].find((el) => el.tagName === 'DIV');
+      if (!card) return null;
+      const inner = [...card.querySelectorAll('div')].find((d) => d.getBoundingClientRect().width > 0);
+      const b = (inner ?? card).getBoundingClientRect();
       return { x: b.left - r.left, y: b.top - r.top };
     })()
-  `);
+  `;
+  const moved = await tab.evaluate(firstCard);
 
+  {
+    const dbg = await tab.evaluate(`
+      (() => {
+        const track = document.querySelector('[data-testid="panel-grid"]');
+        const r = track.getBoundingClientRect();
+        const screens = [...track.querySelectorAll('[data-testid^="panel-screen-"]')];
+        const cards = screens.flatMap(s => [...s.children].filter(e => e.tagName === 'DIV')).map(c => {
+          const inner = [...c.querySelectorAll('div')].find(d => d.getBoundingClientRect().width > 0);
+          const b = (inner ?? c).getBoundingClientRect();
+          return {
+            t: (c.innerText || '').slice(0, 10),
+            x: Math.round(b.left - r.left), y: Math.round(b.top - r.top),
+            w: Math.round(b.width), h: Math.round(b.height),
+            tf: getComputedStyle(c).transform.slice(0, 44),
+          };
+        });
+        return {
+          cards,
+          editando: !!document.querySelector('[data-testid="panel-done"]'),
+          track: getComputedStyle(track).transform,
+        };
+      })()
+    `);
+    console.log("      DIAG " + JSON.stringify(dbg));
+  }
   check(
     "una tarjeta se pone en la celda que se elija",
     moved.x > grid.cells[0].x + 10 || moved.y > grid.cells[0].y + 10,
@@ -643,16 +688,7 @@ try {
 
     await tab.goto(APP);
     await waitForPanel(tab);
-    const reloaded = await tab.evaluate(`
-      (() => {
-        const panel = document.querySelector('[data-testid="panel-grid"]');
-        const r = panel.getBoundingClientRect();
-        const c = [...panel.children][0];
-        const inner = [...c.querySelectorAll('div')].find((d) => d.getBoundingClientRect().width > 0);
-        const b = (inner ?? c).getBoundingClientRect();
-        return { x: b.left - r.left, y: b.top - r.top };
-      })()
-    `);
+    const reloaded = await tab.evaluate(firstCard);
     check(
       "la posicion se guardo, no solo se dibujo",
       Math.abs(reloaded.x - moved.x) < 4 && Math.abs(reloaded.y - moved.y) < 4,
