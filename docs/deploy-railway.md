@@ -33,8 +33,8 @@ servicio de Postgres sin copiar la contraseña a ningún sitio.
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | `env.ts` la exige en producción: el Postgres embebido está en memoria dentro del proceso |
 | `DATABASE_SSL` | `false` | Por la red privada de Railway el tráfico no sale de Railway |
 | `JWT_SECRET` | **generar** | 32 caracteres o más. Sin él el arranque falla |
-| `WEB_ORIGIN` | `https://app.jrz-labs.com` | Ver la sección siguiente: es de dónde salen los enlaces de los correos |
-| `CORS_ORIGINS` | `https://app.jrz-labs.com` | Origen del export web. Varios separados por coma |
+| `WEB_ORIGIN` | `https://orbithub-app.jrz-labs.com` | Ver la sección siguiente: es de dónde salen los enlaces de los correos |
+| `CORS_ORIGINS` | el origen de la web, ver abajo | Origen del export web. Varios separados por coma |
 | `EMAIL_TRANSPORT` | `resend` | `console` está rechazado en producción por `env.ts` |
 | `RESEND_API_KEY` | la clave (`re_...`) | `env.ts` comprueba prefijo y longitud al arrancar |
 | `EMAIL_FROM` | `no-reply@jrz-labs.com` | |
@@ -74,17 +74,55 @@ correo de verificación que saliera de producción llevaría un enlace a localho
 recibe no podría activarse la cuenta. Es la variable más fácil de dejar mal y la más difícil
 de notar desde el servidor: **el correo se envía sin errores y el enlace está roto**.
 
-Son tres valores distintos y no se pueden confundir:
+Son cuatro valores distintos y no se pueden confundir:
 
 | Variable | Qué es | Valor |
 | --- | --- | --- |
-| `WEB_ORIGIN` | La web, en la API, para los correos | `https://app.jrz-labs.com` |
-| `EXPO_PUBLIC_WEB_ORIGIN` | La web, en la app | La PWA y la app web |
-| `EXPO_PUBLIC_API_URL` | La API | `https://api.jrz-labs.com/api/v1` |
+| `WEB_ORIGIN` | La web, en la API, para los correos | `https://orbithub-app.jrz-labs.com` |
+| `EXPO_PUBLIC_WEB_ORIGIN` | La web, en la app | `https://orbithub-app.jrz-labs.com` |
+| `EXPO_PUBLIC_API_URL` | La API, **con `/api/v1` al final** | `https://orbithub-api.jrz-labs.com/api/v1` |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | El client id de Google (es público) | el de la aplicación web |
+
+Las cuatro `EXPO_PUBLIC_*` van en el **servicio web**, no en el de la API. Y no se pueden
+cambiar sin redesplegar, porque van horneadas dentro del JavaScript en tiempo de build.
 
 La web y la API son dos servicios con dos dominios. La alternativa —servirlas en el mismo
 origen, con la API bajo `/api/v1` detrás del nginx de la web— quita CORS y los dos
 certificados, a cambio de que el proxy tenga que aguantar también las subidas de adjuntos.
+
+### Por qué el prefijo `/api/v1` es obligatorio
+
+El router monta **todo** bajo `API_PREFIX`, y la app concatena las rutas encima de la base
+en vez de encima del origen. Con la base en `https://orbithub-api.jrz-labs.com` la app pide
+`https://orbithub-api.jrz-labs.com/auth/login`, que da **404** — y un 404 en una pantalla de
+login se lee como "contraseña incorrecta", no como "dirección equivocada".
+
+## CORS: qué origen se acepta
+
+`CORS_ORIGINS` es una lista separada por comas, y tiene que incluir **el origen desde el que
+se sirve la web**:
+
+```
+CORS_ORIGINS=https://orbithub-app.jrz-labs.com,https://<servicio-web>.up.railway.app
+```
+
+El segundo es el dominio de Railway, que sigue sirviendo la misma web. Con solo el dominio
+propio, un navegador que abra la URL de Railway manda ese `Origin` y la API lo rechaza.
+
+## Lo que comprueba el build de la web
+
+`scripts/assert-export-env.mjs` corre dos veces en `Dockerfile.web`: antes del export y
+**después, leyendo los ficheros del bundle**, porque "la variable estaba puesta" y "el
+empaquetador la usó" son dos afirmaciones distintas y solo la segunda se despliega.
+
+Las tres cosas que ha pillado, todas de la misma causa — *una variable de build que no llega
+al `RUN` porque Docker no la entrega sin `ARG`*:
+
+| Lo que faltaba | Cómo se manifestaba |
+| --- | --- |
+| `EXPO_PUBLIC_API_URL` | La web cargaba y **no tenía a quién llamar**: todo iba a `localhost:4000` |
+| El prefijo `/api/v1` | `404` en login, leído como contraseña incorrecta |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | Un **botón desactivado con su explicación debajo**, que además daba una causa que no era la real |
 
 ## Lo que ya está resuelto dentro de la imagen
 
@@ -189,8 +227,8 @@ Además: los `.html` van con `no-cache` porque un despliegue nuevo cambia lo que
 ## Comprobar que todo está vivo
 
 ```bash
-curl -fsS https://api.jrz-labs.com/api/v1/health    # database.status == "ok"
-curl -fsS https://app.jrz-labs.com/workspaces      # 200, y el body es el HTML de la app
+curl -fsS https://orbithub-api.jrz-labs.com/api/v1/health    # database.status == "ok"
+curl -fsS https://orbithub-app.jrz-labs.com/workspaces      # 200, y el body es el HTML de la app
 ```
 
 El health check abre la conexión a la base a propósito: si responde `ok` con
