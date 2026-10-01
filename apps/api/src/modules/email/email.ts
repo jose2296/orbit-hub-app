@@ -57,13 +57,16 @@ class NoopEmailSender implements EmailSender {
 }
 
 /**
- * The sender the whole API uses.
+ * Picks the transport named in the environment.
  *
- * One instance for the process, so a test that swaps the transport and the
- * verification mail and the invitation mail all go through the same door.
+ * Declared before the classes on purpose and called at the very bottom of this
+ * file, not here: a `class` is not hoisted, so calling this while
+ * `ResendEmailSender` is still in its temporal dead zone crashes the process at
+ * import time — and only for the one transport nobody was running. The tests
+ * use `noop` and development used `console`, so `resend` was the one line of
+ * this module that had never been executed. Order of declaration is not a
+ * style preference here; it was a bug.
  */
-export const emailSender: EmailSender = createEmailSender();
-
 export function createEmailSender(): EmailSender {
   if (env.EMAIL_TRANSPORT === 'noop') return new NoopEmailSender();
   if (env.EMAIL_TRANSPORT === 'resend') return new ResendEmailSender();
@@ -429,3 +432,16 @@ export function passwordResetEmail(input: TemplateInput): EmailMessage {
     html: layout(copy.resetTitle, copy.resetBody, copy.resetCta, href, copy.resetIgnore),
   };
 }
+
+/* --------------------------------------------------------------- singleton -- */
+
+/**
+ * The sender the whole API uses.
+ *
+ * One instance for the process, so a test that swaps the transport and the
+ * verification mail and the invitation mail all go through the same door.
+ *
+ * Built here, at the bottom, on purpose: see the note on `createEmailSender`.
+ * Putting it next to the factory is where it was, and that is a crash.
+ */
+export const emailSender: EmailSender = createEmailSender();
