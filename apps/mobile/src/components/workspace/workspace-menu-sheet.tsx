@@ -134,16 +134,22 @@ export function WorkspaceMenuSheet({
         onPress: () => setPage("share"),
       },
       {
+        /*
+         * A space you were given is not yours to erase, for the same reason as a list
+         * you were lent: the delete is global and it would take it from its owner.
+         */
         key: "delete",
-        label: t("common.delete"),
+        label: workspace.shared
+          ? t("common.deleteNotYours")
+          : t("common.delete"),
         icon: "trash-outline",
         tone: "danger",
-        description: t(
-          pluralKey("workspaceMenu.deleteHint", listCount + folderCount),
-          {
-            count: listCount + folderCount,
-          },
-        ),
+        description: workspace.shared
+          ? t("common.deleteNotYoursHint")
+          : t(pluralKey("workspaceMenu.deleteHint", listCount + folderCount), {
+              count: listCount + folderCount,
+            }),
+        disabled: workspace.shared,
         onPress: () => setPage("delete"),
       },
     ];
@@ -229,7 +235,9 @@ export function WorkspaceMenuSheet({
               valueTo={workspace.colorTo}
               wash={workspace.wash}
               onPick={(color) => void updateWorkspace(workspace, { color })}
-              onPickTo={(colorTo) => void updateWorkspace(workspace, { colorTo })}
+              onPickTo={(colorTo) =>
+                void updateWorkspace(workspace, { colorTo })
+              }
               onPickWash={(wash) => void updateWorkspace(workspace, { wash })}
             />
 

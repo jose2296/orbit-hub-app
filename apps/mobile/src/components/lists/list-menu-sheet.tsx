@@ -184,11 +184,18 @@ export function ListMenuSheet({
           ]
         : []),
       {
+        /*
+         * Same rule as the note menu: a list you were lent is not yours to erase, and
+         * a delete would take it from the person who made it rather than from you.
+         */
         key: "delete",
-        label: t("common.delete"),
+        label: list.shared ? t("common.deleteNotYours") : t("common.delete"),
         icon: "trash-outline",
         tone: "danger",
-        description: t("lists.deleteBody", { count: list.itemCount }),
+        description: list.shared
+          ? t("common.deleteNotYoursHint")
+          : t("lists.deleteBody", { count: list.itemCount }),
+        disabled: list.shared,
         onPress: () => setPage("delete"),
       },
     ];
@@ -311,7 +318,10 @@ export function ListMenuSheet({
                   borderColor: theme.colors.danger,
                 }}
               >
-                <AppText variant="callout" style={{ color: theme.colors.danger }}>
+                <AppText
+                  variant="callout"
+                  style={{ color: theme.colors.danger }}
+                >
                   {t("share.reachBody", { count: reach.count })}
                 </AppText>
                 <AppText variant="caption" tone="subtle">

@@ -135,8 +135,12 @@ export function FolderMenuSheet({
         ? [
             {
               key: "pin",
-              label: onPanel ? t("dashboard.takeOffPanel") : t("dashboard.putOnPanel"),
-              icon: (onPanel ? "remove-circle-outline" : "apps-outline") as SheetOption["icon"],
+              label: onPanel
+                ? t("dashboard.takeOffPanel")
+                : t("dashboard.putOnPanel"),
+              icon: (onPanel
+                ? "remove-circle-outline"
+                : "apps-outline") as SheetOption["icon"],
               // The menu closes: the panel is a different screen, and staying open
               // over a screen that just changed somewhere else is disorienting.
               onPress: () => {
@@ -152,11 +156,11 @@ export function FolderMenuSheet({
         icon: "create-outline",
         onPress: () => setRenaming(true),
       },
-          // Only the owner of the space may hand it on. See `canShare` in
-        // `apps/api/src/modules/shares/access.ts`: an editor of the space can write
-        // in it, and the folder belongs to whoever owns it, so `editor` here meant
-        // the owner could not take back what an editor shared.
-        ...(folder && (folder.role === "owner")
+      // Only the owner of the space may hand it on. See `canShare` in
+      // `apps/api/src/modules/shares/access.ts`: an editor of the space can write
+      // in it, and the folder belongs to whoever owns it, so `editor` here meant
+      // the owner could not take back what an editor shared.
+      ...(folder && folder.role === "owner"
         ? [
             {
               key: "share",
@@ -168,11 +172,18 @@ export function FolderMenuSheet({
           ]
         : []),
       {
+        /*
+         * A folder you were lent is not yours to erase: the delete is global and would
+         * take it from whoever made it. Same rule as the note, the list and the space.
+         */
         key: "delete",
-        label: t("common.delete"),
+        label: folder?.shared ? t("common.deleteNotYours") : t("common.delete"),
         icon: "trash-outline",
         tone: "danger",
-        description: t("lists.deleteFolderBody"),
+        description: folder?.shared
+          ? t("common.deleteNotYoursHint")
+          : t("lists.deleteFolderBody"),
+        disabled: folder?.shared,
         onPress: () => setConfirmDelete(true),
       },
     ],
@@ -232,7 +243,11 @@ export function FolderMenuSheet({
           }}
         >
           <ShareNodeForm
-            target={{ nodeType: "folder", nodeId: folder.id, title: folder.name }}
+            target={{
+              nodeType: "folder",
+              nodeId: folder.id,
+              title: folder.name,
+            }}
             onDone={() => {
               setSharing(false);
               onClose();

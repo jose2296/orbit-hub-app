@@ -3,7 +3,12 @@ import { View } from "react-native";
 
 import { ShareNodeForm } from "@/components/shares/share-node-sheet";
 import { SharedBadge } from "@/components/shares/shared-badge";
-import { Sheet, SheetOptions, type SheetOption, useLastValue } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetOptions,
+  type SheetOption,
+  useLastValue,
+} from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
 import type { Note } from "@orbit-hub/contracts";
 
@@ -222,10 +227,25 @@ export function NoteMenuSheet({
       : []),
     {
       key: "delete",
-      label: t("note.delete"),
+      /*
+       * On somebody else's note this does not say "Eliminar".
+       *
+       * It used to, and it was not only the wrong word. The action behind it pushed a
+       * delete, a delete is global, and it removed the note from the **person who
+       * wrote it** — from every space and every device they have. Verified before this
+       * was fixed: an `editor` — a role the share menu offers, and the one the badge
+       * calls "Puedes editarlo" — deleted a note they had been lent and the owner's
+       * copy came back with `deletedAt` set and `status: "applied"`.
+       *
+       * So the row now says what is true and does nothing, instead of offering to
+       * erase somebody's work. Editing the note is still on offer above, because
+       * editing is what the role actually means.
+       */
+      label: note.shared ? t("common.deleteNotYours") : t("note.delete"),
       icon: "trash-outline",
       tone: "danger",
-      disabled: busy,
+      disabled: busy || note.shared,
+      ...(note.shared ? { description: t("common.deleteNotYoursHint") } : {}),
       onPress: () => void remove(),
     },
   ];
@@ -239,7 +259,9 @@ export function NoteMenuSheet({
         subtitle={t("share.subtitle", { name: note.title })}
         scrollable
       >
-        <View style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}>
+        <View
+          style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
+        >
           <ShareNodeForm
             target={{ nodeType: "note", nodeId: note.id, title: note.title }}
             onDone={close}

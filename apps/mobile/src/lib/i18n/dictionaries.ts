@@ -170,6 +170,13 @@ const es = {
   "common.rename": "Renombrar",
   "common.share": "Compartir",
   "common.delete": "Eliminar",
+  /* Cuando lo que abriste no es tuyo. Antes decia "Eliminar" y pulsarlo borraba la
+     nota/lista/carpeta/espacio de QUIEN LO CREO, en todos sus sitios: un delete de
+     sync es global. Un editor -un rol que la app ofrece, y que la insignia llama
+     "Puedes editarlo"- podía hacerlo. Ver note-menu-sheet.tsx. */
+  "common.deleteNotYours": "No lo puedes eliminar",
+  "common.deleteNotYoursHint":
+    "Te lo compartieron. Editarlo sí puedes; borrarlo, sólo quien lo creó.",
   "common.create": "Crear",
   "mediaActions.menuHint": "Ver las acciones de este título.",
   "mediaActions.moreActions": "Más acciones",
@@ -320,11 +327,24 @@ const es = {
   "place.chooseFolder": "Y la carpeta, si quieres",
   "place.rootOfSpace": "Sin carpeta, en el espacio",
   "place.confirm": "Ponerlo aquí",
+  /* Cuando no tienes ningun espacio propio. No es un caso raro: es lo que le pasa a
+     la persona a la que le acaban de mandar su primera cosa, o sea lo primero que ve
+     alguien al empezar. El boton va a la pantalla que ya tiene el "+" en vez de abrir
+     otra hoja encima: dos hojas apiladas funcionan en un navegador y se portan de otra
+     manera en un movil. */
+  "place.noSpaces":
+    "Todavía no tienes ningún espacio propio, y sólo puedes guardar esto en uno que sea tuyo.",
+  "place.createSpace": "Crear un espacio",
   "place.saving": "Poniéndolo…",
   "place.chooseSpaceHint": "Elegir en qué espacio de los tuyos va a aparecer.",
   "share.subtitle": "Compartir «{name}»",
+  /* Sin sustantivo a proposito. Este mismo texto se pone debajo de la entrada de
+     compartir de una lista, de una nota y de una carpeta, y las tres son cosas
+     distintas: con "la misma lista" la nota de al lado ofrecia "la otra persona
+     vera la misma lista", que describe otra cosa y no la que se esta compartiendo.
+     "esto" aguanta las tres y no se equivoca en ninguna. */
   "share.isALink":
-    "No es una copia. La otra persona verá la misma lista y podrá cambiarla; si la borra, desaparece también de aquí.",
+    "No es una copia. La otra persona verá esto mismo y podrá cambiarlo; si lo borra, desaparece también de aquí.",
   "shared.yours": "Tuyo",
   "shared.fromThem": "Compartido contigo",
   "shared.canEdit": "Puedes editarlo",
@@ -564,6 +584,11 @@ const es = {
   "drawer.label": "Menú del espacio de trabajo",
   "drawer.goTo": "Ir a {what}",
   "drawer.sharedWithMe": "Compartido conmigo",
+  /* Lo que ha llegado y no has mirado. El numero va en el punto de la hamburguesa y
+     tambien junto a la lista, porque son dos preguntas: cuantos hay sin colocar (el
+     recuento) y cuantos son nuevos (el punto). */
+  "drawer.unseenLabel.one": "1 cosa nueva compartida contigo",
+  "drawer.unseenLabel.other": "{count} cosas nuevas compartidas contigo",
   "drawer.sharedWithMeEmpty":
     "Cuando alguien te comparta algo aparecerá aquí antes de decidir dónde va.",
   "drawer.sharedWithMeCount.one": "Compartido conmigo · 1",
@@ -1084,6 +1109,12 @@ const en: Record<TranslationKey, string> = {
   "common.rename": "Rename",
   "common.share": "Share",
   "common.delete": "Delete",
+  /* When what you opened is not yours. It used to say "Delete" and pressing it erased
+     the note/list/folder/space from whoever CREATED it, everywhere: a sync delete is
+     global. See note-menu-sheet.tsx. */
+  "common.deleteNotYours": "You cannot delete it",
+  "common.deleteNotYoursHint":
+    "It was shared with you. You can edit it; only the person who made it can delete it.",
   "common.create": "Create",
   "mediaActions.menuHint": "What can be done with this title.",
   "mediaActions.moreActions": "More actions",
@@ -1234,11 +1265,18 @@ const en: Record<TranslationKey, string> = {
   "place.chooseFolder": "And the folder, if you want",
   "place.rootOfSpace": "No folder, in the space",
   "place.confirm": "Put it here",
+  /* When you have no space of your own. Not an edge case: it is what happens to the
+     person who has just been sent their first thing. */
+  "place.noSpaces":
+    "You do not have a space of your own yet, and this can only be filed in one that is yours.",
+  "place.createSpace": "Create a space",
   "place.saving": "Putting it…",
   "place.chooseSpaceHint": "Choose which of your spaces it shows up in.",
   "share.subtitle": 'Share "{name}"',
+  /* With no noun on purpose: this sits under the share entry of a list, a note and a
+     folder alike, and naming any of them is wrong in the other two. */
   "share.isALink":
-    "It is not a copy. The other person sees the same list and can change it; if they delete it, it goes from here too.",
+    "It is not a copy. The other person sees this same thing and can change it; if they delete it, it goes from here too.",
   "shared.yours": "Yours",
   "shared.fromThem": "Shared with you",
   "shared.canEdit": "You can edit it",
@@ -1477,6 +1515,11 @@ const en: Record<TranslationKey, string> = {
   "drawer.label": "Workspace menu",
   "drawer.goTo": "Go to {what}",
   "drawer.sharedWithMe": "Shared with me",
+  /* What has arrived that you have not looked at. The count goes on the dot in the
+     menu button and again next to the list, because they are two questions: how much
+     there is to file (the count) and how much is new (the dot). */
+  "drawer.unseenLabel.one": "1 new thing shared with you",
+  "drawer.unseenLabel.other": "{count} new things shared with you",
   "drawer.sharedWithMeEmpty":
     "When somebody shares something with you it shows up here, before you decide where it goes.",
   "drawer.sharedWithMeCount.one": "Shared with me · 1",

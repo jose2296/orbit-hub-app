@@ -155,10 +155,31 @@ const GEOMETRY = `
     const app = document.querySelector('[data-testid="drawer-app"]');
     const panel = document.querySelector('[data-testid="drawer-panel"]');
     const r = app ? app.getBoundingClientRect() : null;
+    const pr = panel ? panel.getBoundingClientRect() : null;
+
+    // How much of the app is left on screen, and whether anything is actually
+    // painted in it. A number alone is not the claim: a push of 284 that lands the
+    // app at 568 on a 430 wide phone measures a real app with a real width, and
+    // the person looking at it sees nothing. That is what a second push looks like
+    // from here, so this counts boxes that fall inside the strip the menu left.
+    let strip = 0;
+    let boxes = 0;
+    if (r && pr) {
+      const x0 = pr.width;
+      const x1 = window.innerWidth;
+      strip = Math.round(Math.min(r.right, x1) - Math.max(r.x, x0));
+      boxes = [...app.querySelectorAll('*')]
+        .map((e) => e.getBoundingClientRect())
+        .filter((b) => b.width > 4 && b.height > 4 && b.x < x1 && b.right > x0)
+        .length;
+    }
+
     return {
       appX: r ? Math.round(r.x) : null,
       appWidth: r ? Math.round(r.width) : null,
       window: window.innerWidth,
+      strip,
+      boxes,
       panel: panel
         ? (panel.innerText || '').replace(/\\s+/g, ' ').trim()
         : null,
@@ -193,6 +214,35 @@ async function pressHamburger(tab) {
   `);
   // The column takes 260 ms to come in and 200 to go out, plus a frame.
   await sleep(1000);
+}
+
+/**
+ * Waits for the file tree to be in the menu, and not just the rows.
+ *
+ * The panel is mounted from the first frame, the spaces arrive from the local
+ * store a moment later, and the **arrow** arrives with them: a space whose tree
+ * has not been read yet draws no chevron, because an arrow that opens nothing is
+ * not drawn. So "the menu is there" and "the menu has something to open" are two
+ * different moments, and a check that goes looking for the arrow in the first one
+ * reports a tree that does not exist — which is how three runs in a row failed the
+ * same four checks on a menu that was correct, and only passed on the run where
+ * the bundle happened to arrive sooner.
+ */
+async function esperarArbol(tab, ms = 45000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const hay = await tab
+      .evaluate(
+        `!!document.querySelector('[data-testid="drawer-panel"] [aria-expanded]')`,
+      )
+      .catch(() => false);
+    if (hay) {
+      await sleep(600);
+      return true;
+    }
+    await sleep(600);
+  }
+  return false;
 }
 
 /**
@@ -528,6 +578,8 @@ try {
   // -------------------------------------------------- 2. the tree, on a desktop
   // The claim that was not true before: a wide screen showed a flat list of
   // spaces, so the lists and the folders were simply not there to click.
+  check("el arbol de espacios llega al menu", await esperarArbol(tab));
+
   const opened = await pressToggle(tab, "Casa");
   if (!opened) {
     const labels = await tab.evaluate(`
@@ -597,7 +649,10 @@ try {
 
   await pressHamburger(tab);
   const phoneOpen = await geometry(tab);
-  note(`movil abierto: app en ${phoneOpen.appX}, mide ${phoneOpen.appWidth}`);
+  note(
+    `movil abierto: app en ${phoneOpen.appX}, mide ${phoneOpen.appWidth}, ` +
+      `franja ${phoneOpen.strip}, ${phoneOpen.boxes} cajas dentro`,
+  );
   // The push: the app keeps its own width and is displaced to the right, so the
   // strip of app left behind is the same strip it always was.
   check(
@@ -609,6 +664,25 @@ try {
     "y la app no se encoge: se sale por la derecha",
     phoneOpen.appWidth === 430,
     `la app mide ${phoneOpen.appWidth} de 430`,
+  );
+  /**
+   * And the strip is the whole point of the push, so it is checked as a person
+   * sees it and not only as a number.
+   *
+   * The push was applied twice for a while — the column's width *and* a
+   * `translateX` — and every number here still passed except the position of the
+   * app, because a 430 wide app at x = 568 has a real width. What was missing was
+   * the claim this line is: that there is something of the screen left to look at.
+   */
+  check(
+    "y se ve la pantalla que se ha interrumpido",
+    phoneOpen.strip === 430 - 284,
+    `la franja mide ${phoneOpen.strip} de 146`,
+  );
+  check(
+    "y hay contenido de la app dibujado en ella",
+    phoneOpen.boxes > 0,
+    `${phoneOpen.boxes} cajas dentro de la franja`,
   );
 
   const panelMovil = phoneOpen.panel;
@@ -672,19 +746,9 @@ try {
 
   // The spaces arrive from the local store, so the chevrons are the last thing
   // to be there. A menu that is checked before they land is a menu checked
-  // against nothing.
-  const conArbolClaro = await (async () => {
-    for (let i = 0; i < 25; i += 1) {
-      const hay = await tab
-        .evaluate(`
-          !!document.querySelector('[data-testid="drawer-panel"] [aria-expanded]')
-        `)
-        .catch(() => false);
-      if (hay) return true;
-      await sleep(600);
-    }
-    return false;
-  })();
+  // against nothing. Same wait as in the dark, and it is a helper because it was
+  // written twice before it was written once.
+  const conArbolClaro = await esperarArbol(tab);
   check("el arbol de espacios llega en claro", conArbolClaro);
   await sleep(600);
 

@@ -29,9 +29,12 @@ import type {
 } from "@orbit-hub/contracts";
 
 import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
+import { SharesDot } from "@/components/shares/shares-dot";
+import { useUnseen } from "@/lib/shares/incoming-store";
 import { SyncBadge } from "@/components/sync/sync-badge";
 import { SyncRow } from "@/components/sync/sync-row";
 import { useA11yHint } from "@/components/ui/a11y-hint";
+import { Badge } from "@/components/ui/badge";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { expandedProps, selectedProps } from "@/components/ui/a11y-state";
 import { AppText } from "@/components/ui/text";
@@ -161,7 +164,6 @@ export function Drawer({
   wide: boolean;
   children: React.ReactNode;
 }) {
-
   const t = useTranslation();
   const { width } = useWindowDimensions();
   const { open, setOpen } = useDrawer();
@@ -192,6 +194,11 @@ export function Drawer({
 
   // The same column either way: it grows from nothing to the width of the menu.
   // What sits next to it is the only thing that decides what that means.
+  //
+  // **This is the push, and it is the only one.** The column is in the row, so its
+  // width *is* the displacement of everything to its right: on a phone the app is
+  // pushed to `menuWidth` by this and by nothing else. See the app below for what
+  // happens when something pushes it a second time.
   const columnWidth = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, menuWidth],
@@ -200,14 +207,17 @@ export function Drawer({
   return (
     <View style={styles.root}>
       {/*
-        The menu takes the space it needs and the app takes the rest, in a row, so
-        on a phone the app really is pushed: it is narrower and to the right, and
-        every pixel of it is still on the screen.
+        The menu takes the space it needs and the app is laid out after it, so on
+        a phone the app really is pushed: it is to the right and every pixel of it
+        is still on the screen.
 
-        Sliding the app sideways instead — a transform — was the obvious thing and
-        it is wrong twice over: the app goes off the right edge, and it ends up
-        *over* the menu, so the last thing in the menu, the arrow that opens a
-        space, ends up under the screen you were reading.
+        Sliding the app sideways *as well* — a transform — was in here, and it was
+        a second push of the same movement. Two pushes of the same 284 px add up
+        to 568: the app starts past the right edge of a 430 wide phone and nothing
+        of it is left to look at. The menu opens and the screen it interrupted is
+        gone, which is the one thing a push is not allowed to be. Neither half was
+        wrong on its own, which is why it survived a typecheck, the tests, and a
+        screenshot of the menu.
       */}
       <Animated.View style={[styles.column, { width: columnWidth }]}>
         {/* A fixed width inside, so the lines of the menu do not re-wrap sixty
@@ -229,7 +239,7 @@ export function Drawer({
         </View>
       </Animated.View>
 
-      <Animated.View
+      <View
         testID="drawer-app"
         style={[
           wide
@@ -240,39 +250,24 @@ export function Drawer({
               // the opposite is what a push needs.
               styles.appWide
             : {
-                // Su propio ancho, siempre, y no el que le sobra: al empujar, la
+                // **Sin transform.** El empuje lo hace la columna que tiene al lado
+                // —su ancho es el desplazamiento— y un `translateX` aqui lo
+                // empujaria otra vez: 284 de columna mas 284 de transform son 568,
+                // y en un movil de 430 la app entera queda fuera de la pantalla.
+                // Medido en `scripts/verify-drawer.mjs`: con el menu abierto la app
+                // empezaba en 568 en vez de en 284, y no se veia nada de ella.
+                //
+                // Por eso esto es un `View` y no un `Animated.View`: sin ningun
+                // nodo animado que resolver no hay nada que resolver. La
+                // columna de al lado si es animada, y ahi si hace falta.
+                //
+                // Su propio ancho, siempre, y no el que le sobra: al empujarla, la
                 // app se desplaza y su derecha se sale de la pantalla.
                 // Estrecharla es lo que hacia que todo dentro se reordenara para
                 // caber en un trozo —la fila apilada, la cabecera partida— y
                 // una app cortada se lee mejor que una app encogida.
-                //
-                // `minWidth: 0` y no es un detalle. Un hijo de un `flex` no baja
-                // de su contenido por defecto, y con el menu abierto la app se
-                // negaba a estrecharse: las filas seguian midiendo 366 px dentro
-                // de una columna de 284, y lo que se veia era una franja de 146
-                // px de una pantalla entera. Eso es lo de "se queda todo en una
-                // linea fea", y no era un problema de ancho del menu.
                 ...styles.app,
                 width,
-                // This is an `Animated.View` and not a `View`, and that is the
-                // whole fix for the crash this used to be. `progress.interpolate`
-                // hands back an animated node, not a number, and a plain `View`
-                // passes style straight to the native layer, which reads the node
-                // as a transform value and refuses it:
-                // `Transform with key of "translateX" must be number or a
-                // percentage. Passed value: {"translateX":0}`. The object in the
-                // message is the animated node itself. Only `Animated.View`
-                // resolves the node to the number the transform needs, and the
-                // app is unwrappable on a phone — this screen is where the whole
-                // app lives.
-                transform: [
-                  {
-                    translateX: progress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, menuWidth],
-                    }),
-                  },
-                ],
               },
         ]}
       >
@@ -294,7 +289,7 @@ export function Drawer({
             style={styles.scrim}
           />
         ) : null}
-      </Animated.View>
+      </View>
     </View>
   );
 }
@@ -321,15 +316,61 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { workspaces } = useWorkspaces();
-  const { status } = useSession();
+  const { status, user } = useSession();
+  // `open` comes from here and not from nowhere, and that is worth a line because of
+  // what it used to be: this component has no `open` of its own, so a bare `open` in
+  // the effect below compiled clean against **`window.open`** — a function, so always
+  // true, so `if (!open) return` never returned. The badge was stamped "seen" while
+  // the menu was shut, and it never appeared. A guard that cannot fail is not a guard.
+  const { open } = useDrawer();
   const tree = useSpacesTree();
 
   // What has been shared with this person and not filed yet. The section is in
   // the menu and not on its own screen because the thing to do with it is
   // one tap away from where you are already looking: a list that arrived in a
   // place you have to remember to visit is a list you never file.
-  const { inbox, load: reloadInbox } = useShares();
+  const { inbox, load: reloadInbox, markSeen } = useShares();
   const [colocando, setColocando] = useState<Share | null>(null);
+
+  /**
+   * What has arrived that this person has not seen yet.
+   *
+   * `null` and not `0` when there is no session: with nobody signed in there is
+   * nothing to have missed, and a badge left on screen by a sign-out is the sort of
+   * thing that needs a reload to go away.
+   */
+  const sinMirar = useUnseen(
+    status === "authenticated" ? (user?.id ?? null) : null,
+  );
+
+  /*
+   * Marked seen when the menu **closes**, and not when it opens.
+   *
+   * The first version stamped on open and it made a piece of the feature
+   * unreachable: the badge sits inside the menu, so the moment the menu is visible the
+   * count is already zero, and the number was never seen by anybody. A notification
+   * that cannot be seen is not a notification.
+   *
+   * Closing is the acknowledgement, which is also how a person reads it — you looked,
+   * you went away. And it is what makes the two numbers on that row mean different
+   * things: the count beside the list is how much there is to file and does not change
+   * until you act, and the badge is how much is new and goes away when you leave.
+   *
+   * Only after it has been open at least once, via the ref. Stamping on the first
+   * closed render would wipe the badge of somebody who has not opened the menu yet,
+   * which is the one case the badge exists for.
+   */
+  const abiertoAlgunaVez = useRef(false);
+  useEffect(() => {
+    if (open) abiertoAlgunaVez.current = true;
+  }, [open]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !user) return;
+    if (open) return;
+    if (!abiertoAlgunaVez.current) return;
+    markSeen(user.id);
+  }, [open, status, user, markSeen]);
 
   // Asked only once there is a session to ask with.
   //
@@ -484,19 +525,49 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
         */}
         {inbox.length > 0 ? (
           <>
-            <View style={[styles.rule, { backgroundColor: theme.colors.border }]} />
-            <AppText
-              variant="caption"
-              tone="subtle"
+            <View
+              style={[styles.rule, { backgroundColor: theme.colors.border }]}
+            />
+            {/*
+             * The count of what is waiting, and a badge of what has not been seen —
+             * two numbers on purpose, because they answer two different questions.
+             *
+             * "Compartido conmigo · 2" is how much there is to file, and it does not
+             * change until you do something. The badge is how much arrived since you
+             * last looked, and it goes to nothing when you open this list. Without the
+             * second one the menu says the same thing every day it is opened, which is
+             * what a menu does when it has nothing to tell you.
+             */}
+            <View
               style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: theme.spacing.xs,
                 paddingHorizontal: theme.spacing.sm,
                 paddingBottom: theme.spacing.xs,
               }}
             >
-              {t(pluralKey("drawer.sharedWithMeCount", inbox.length), {
-                count: inbox.length,
-              })}
-            </AppText>
+              <AppText
+                variant="caption"
+                tone="subtle"
+                style={{ flexShrink: 1 }}
+              >
+                {t(pluralKey("drawer.sharedWithMeCount", inbox.length), {
+                  count: inbox.length,
+                })}
+              </AppText>
+              {sinMirar > 0 ? (
+                <Badge
+                  label={String(sinMirar)}
+                  tone="accent"
+                  testID="drawer-unseen-badge"
+                  accessibilityLabel={t(
+                    pluralKey("drawer.unseenLabel", sinMirar),
+                    { count: sinMirar },
+                  )}
+                />
+              ) : null}
+            </View>
             {inbox.map((share) => (
               <InboxRow
                 key={share.id}
@@ -526,13 +597,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
  * One thing shared with this person that is not filed yet, in its own component
  * so the hint hook is not called once per share inside a map.
  */
-function InboxRow({
-  share,
-  onPress,
-}: {
-  share: Share;
-  onPress: () => void;
-}) {
+function InboxRow({ share, onPress }: { share: Share; onPress: () => void }) {
   const theme = useTheme();
   const t = useTranslation();
 
@@ -557,11 +622,7 @@ function InboxRow({
           },
         ]}
       >
-        <Ionicons
-          name="people-outline"
-          size={15}
-          color={theme.colors.accent}
-        />
+        <Ionicons name="people-outline" size={15} color={theme.colors.accent} />
         <View style={{ flex: 1 }}>
           <AppText variant="callout" numberOfLines={1}>
             {share.title}
@@ -650,7 +711,7 @@ function SpaceBranch({
             size={14}
           />
 
-                    <AppText variant="body" numberOfLines={1} style={styles.flex}>
+          <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {workspace.name}
           </AppText>
           {/*
@@ -800,7 +861,7 @@ function FolderBranch({
             color={theme.colors.textSubtle}
           />
 
-                    <AppText variant="callout" numberOfLines={1} style={styles.flex}>
+          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
             {folder.emoji ? `${folder.emoji} ` : ""}
             {folder.name}
           </AppText>
@@ -904,7 +965,7 @@ function ListBranch({
             color={theme.colors.textSubtle}
           />
 
-                    <AppText variant="callout" numberOfLines={1} style={styles.flex}>
+          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
             {list.title}
           </AppText>
           {list.itemCount > 0 ? (
@@ -973,13 +1034,7 @@ function ListBranch({
  * One row of a list opened from the drawer, in its own component so the hint
  * hook is not called once per row inside a map.
  */
-function ListItemRow({
-  item,
-  onOpen,
-}: {
-  item: ListItem;
-  onOpen: () => void;
-}) {
+function ListItemRow({ item, onOpen }: { item: ListItem; onOpen: () => void }) {
   const theme = useTheme();
   const t = useTranslation();
 
@@ -1199,6 +1254,12 @@ export function DrawerButton() {
           into everything else that needs looking at.
         */}
         <SyncBadge />
+        {/*
+          The other dot, for the other thing. It goes **next to** the sync one and not
+          on top of it: "something to resolve" and "something new" are different
+          signals, and one dot that means both is a dot about neither.
+        */}
+        <SharesDot />
       </Pressable>
       {pista.node}
     </>
@@ -1224,7 +1285,7 @@ const styles = StyleSheet.create({
     // su derecha se salga, no que se encoja para caber.
     flexGrow: 0,
     flexShrink: 0,
-    flexBasis: 'auto',
+    flexBasis: "auto",
   },
   // The other half of `app`, for a wide screen where the app is not pushed: it
   // takes the width the column is not using, and it changes it when the column

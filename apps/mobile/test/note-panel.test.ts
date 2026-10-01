@@ -18,6 +18,8 @@ function noteFor(over: Partial<Note> & { id: string }): Note {
     tags: [],
     attachmentCount: 0,
     position: 0,
+    role: "editor",
+    shared: false,
     ...over,
   };
 }
