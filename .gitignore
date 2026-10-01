@@ -57,10 +57,16 @@ playwright-report/
 # Artefactos del navegador de pruebas: capturas, trazas y ficheros subidos para
 # comprobar un flujo a mano. Son la evidencia de una comprobación, no la
 # comprobación: los scripts de `scripts/verify-*.mjs` son lo que se versiona.
+#
+# Playwright escribe con `--filename` relativo al directorio de trabajo, así que una
+# captura hecha a mano cae en la raíz del repositorio y no dentro de
+# `.playwright-mcp/`. Estos dos patrones cubren ese caso, que ya se coló en un commit.
 .playwright-mcp/
 verify/
 capturas/
 regresion/
+orbit-*.png
+*-prod.png
 
 # Local databases and dumps
 .data/
