@@ -347,6 +347,8 @@ const es = {
     "No es una copia. Se queda donde lo tiene quien te lo ha compartido, y si él lo borra, desaparece de aquí también.",
   "place.chooseSpace": "Elige el espacio",
   "place.chooseFolder": "Y la carpeta, si quieres",
+  "place.lookInside": "Mirar dentro de {name}",
+  "place.upOneLevel": "Subir un nivel",
   "place.rootOfSpace": "Sin carpeta, en el espacio",
   "place.confirm": "Ponerlo aquí",
   /* Cuando no tienes ningun espacio propio. No es un caso raro: es lo que le pasa a
@@ -421,6 +423,8 @@ const es = {
   "share.sent": "Ya está compartido",
   "share.sentBody":
     "Le llega un correo y aparece en su bandeja hasta que decide dónde ponerlo. Tú decides quién lo ve en cualquier momento: deja de compartir y desaparece de su móvil.",
+  "folders.menu": "Menú de la carpeta",
+  "folders.menuHint": "Renombrar, compartir o eliminar esta carpeta.",
   "folders.whatItHolds": "{count} listas dentro",
   "folders.whatTheyAre": "la carpeta",
   "folders.deleteTitle": "Eliminar «{what}»",
@@ -1302,6 +1306,8 @@ const en: Record<TranslationKey, string> = {
     "It is not a copy. It stays where the person who shared it has it, and if they delete it, it disappears from here too.",
   "place.chooseSpace": "Choose the space",
   "place.chooseFolder": "And the folder, if you want",
+  "place.lookInside": "Look inside {name}",
+  "place.upOneLevel": "Up one level",
   "place.rootOfSpace": "No folder, in the space",
   "place.confirm": "Put it here",
   /* When you have no space of your own. Not an edge case: it is what happens to the
@@ -1857,6 +1863,8 @@ const en: Record<TranslationKey, string> = {
   "items.priority.medium": "Medium",
   "items.priority.high": "High",
 
+  "folders.menu": "Folder menu",
+  "folders.menuHint": "Rename, share or delete this folder.",
   "folders.title": "Folders",
   "folders.count.one": "{count} folder",
   "folders.count.other": "{count} folders",

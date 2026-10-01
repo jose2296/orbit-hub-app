@@ -7,6 +7,15 @@ export interface SpacesTree {
   listsOf: (workspaceId: string, parentId: string | null) => List[];
   isEmpty: (workspaceId: string) => boolean;
   isFolderEmpty: (folderId: string) => boolean;
+  /**
+   * The folder this one hangs in, or `null` at the top of a space.
+   *
+   * Only here to be able to go **back up**. `foldersOf` walks down and nothing walked
+   * up, so a picker that let you step into a subfolder had no way out of it: you could
+   * see where you were and not change your mind, which is a dead end in a panel whose
+   * only question is *where*.
+   */
+  parentOf: (folderId: string) => Folder | null;
 }
 
 /**
@@ -93,6 +102,7 @@ export function useSpacesTree(): SpacesTree {
 
     const foldersByParent = new Map<string, Folder[]>();
     const listsByParent = new Map<string, List[]>();
+    const foldersById = new Map<string, Folder>();
     // Cuantas cosas cuelgan *directamente* de cada carpeta. Una cuenta y no un
     // recorrido: preguntar si una carpeta esta vacia es preguntarlo una vez por
     // cada fila del menu, y recorrer el arbol entero en cada pregunta es un menu
@@ -105,6 +115,7 @@ export function useSpacesTree(): SpacesTree {
       const parentKey = key(folder.workspaceId, folder.parentId);
       if (!foldersByParent.has(parentKey)) foldersByParent.set(parentKey, []);
       foldersByParent.get(parentKey)!.push(folder);
+      foldersById.set(folder.id, folder);
       if (folder.parentId) bump(folder.parentId);
     }
 
@@ -133,6 +144,11 @@ export function useSpacesTree(): SpacesTree {
         (foldersByParent.get(key(workspaceId, null))?.length ?? 0) === 0 &&
         (listsByParent.get(key(workspaceId, null))?.length ?? 0) === 0,
       isFolderEmpty: (folderId) => (childCount.get(folderId) ?? 0) === 0,
+      parentOf: (folderId) => {
+        const parentId = foldersById.get(folderId)?.parentId;
+        if (!parentId) return null;
+        return foldersById.get(parentId) ?? null;
+      },
     };
   }, [folders, lists, spaces]);
 }

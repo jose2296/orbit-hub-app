@@ -11,6 +11,7 @@ import {
   lists,
   memberships,
   notes,
+  shareMounts,
   shares,
   syncCursors,
   syncOperations,
@@ -19,7 +20,7 @@ import {
 import { accessOf } from '../shares/access.js';
 import { descendientesDeCarpetas } from '../shares/folder-subtree.js';
 import { montajesDe } from './mounts.js';
-import type { MontajesPorNodo } from './mounts.js';
+import type { MontajesPorNodo, MontajeProyectado } from './mounts.js';
 
 /** One live grant, resolved into the chain that holds the node it points at. */
 interface CadenaCompartida {
@@ -321,8 +322,26 @@ export class SyncRepository {
    */
   private async cadenasDeCompartido(userId: string): Promise<CadenaCompartida[]> {
     const db = await this.db();
+    /*
+      **A grant that has not been filed yet sends nothing.**
+
+      Until now every live grant produced a chain, so the space and the node came down
+      the moment it was shared. Which means somebody who was given one folder got the
+      space in their list of spaces, with that folder in it and nothing else — and read
+      it as "me han compartido el espacio entero". It is not that, and the difference
+      between the two is the whole thing: a space you are not in is not something you
+      can organise.
+
+      So a chain is only built for a grant that is **filed**, and a space is the
+      exception because there is nothing to file it in: it arrives whole, in the root,
+      and it is not a thing you put somewhere.
+
+      What the recipient has in the meantime is the inbox row, which carries the title and
+      the sender without any of this being in their tree. Nothing half-placed anywhere.
+    */
     const grants = await db
       .select({
+        id: shares.id,
         nodeType: shares.nodeType,
         nodeId: shares.nodeId,
         // The grant's own role, and not the node's: it is what the space has to
@@ -333,9 +352,29 @@ export class SyncRepository {
       .from(shares)
       .where(and(eq(shares.granteeUserId, userId), isNull(shares.revokedAt)));
 
+    /*
+      Which of these have been filed, asked once and answered as ids.
+
+      It was a correlated `exists` inside the select, which is one query instead of two and
+      a piece of raw SQL that has to be right on two dialects for no gain: the mounts are
+      already being read by `montajesDe` further down this same pull, and the ids are all
+      that is needed here.
+    */
+    const colocados = new Set(
+      (
+        await db
+          .select({ shareId: shareMounts.shareId })
+          .from(shareMounts)
+          .where(eq(shareMounts.userId, userId))
+      ).map((row) => row.shareId),
+    );
+
     const cadenas: CadenaCompartida[] = [];
 
     for (const grant of grants) {
+      // Not filed: the inbox has it, the tree does not. See the note above.
+      if (grant.nodeType !== 'workspace' && !colocados.has(grant.id)) continue;
+
       if (grant.nodeType === 'workspace') {
         cadenas.push({
           nodeType: 'workspace',
@@ -545,7 +584,39 @@ export class SyncRepository {
       montajes.get(`${entidad}:${id}`) ??
       (viaListaId ? montajes.get(`list:${viaListaId}`) : undefined);
     if (!montaje) return registro;
-    return { ...registro, workspaceId: montaje.workspaceId };
+
+    return { ...registro, ...this.punteroDeContencion(entidad, montaje) };
+  }
+
+  /**
+   * The two columns that decide where a row is drawn, for a filed node.
+   *
+   * Rewriting only `workspaceId` was half the fix and looked like the whole of it: the
+   * client keys its tree on `workspaceId:parentId` for folders and `workspaceId:folderId`
+   * for lists and notes (`useSpacesTree`), so a folder filed in Beto's space but still
+   * pointing at Ana's folder is looked up under `betoSpace:anaFolder` — a key nothing
+   * asks for. It is filed, it is in the pull, it is in the inbox no more, and it is
+   * **nowhere on screen**. Which is the worst of the three states: before it was visible
+   * under its owner, and after filing it is invisible.
+   *
+   * A row of a list has no such column: a row is inside its list, and the list is what
+   * was filed, so `viaListaId` has already found the mount and there is nothing to
+   * re-point.
+   */
+  private punteroDeContencion(
+    entidad: string,
+    montaje: MontajeProyectado,
+  ): Record<string, unknown> {
+    if (!montaje.esElMontado) {
+      return { workspaceId: montaje.workspaceId };
+    }
+    if (entidad === 'folder') {
+      return { workspaceId: montaje.workspaceId, parentId: montaje.folderId };
+    }
+    if (entidad === 'list' || entidad === 'note') {
+      return { workspaceId: montaje.workspaceId, folderId: montaje.folderId };
+    }
+    return { workspaceId: montaje.workspaceId };
   }
 
   private accesoDe(args: {
@@ -555,18 +626,41 @@ export class SyncRepository {
     noteId?: string | null;
     rolesPorEspacio: Map<string, MembershipRoleName>;
     cadenas: CadenaCompartida[];
+    /**
+     * Every folder a grant reaches, the granted ones **and everything under them**.
+     *
+     * The same set the row filters admit (`carpetasConcedidas`), passed in because it has
+     * already been walked and this is the same question asked a second time.
+     */
+    carpetasConcedidas?: Set<string>;
   }): { role: MembershipRoleName; shared: boolean } {
     const membershipRole = args.rolesPorEspacio.get(args.workspaceId) ?? null;
 
     // The strongest grant that reaches this node or anything above it, because
     // "reaches" is what makes a shared folder carry its lists and a shared list
     // carry its rows.
+    //
+    // A folder matches the **subtree** and not only the id it was granted on. Without
+    // that, a folder one level down from a shared folder arrives with no grant reaching
+    // it and is labelled `shared: false, role: viewer` — a badge saying "this is yours"
+    // about a folder somebody else wrote and gave you, and "read only" about one you
+    // were explicitly given edit rights over. Both are false, and the row filter two
+    // hundred lines up had already delivered the folder **because** the same subtree
+    // admitted it, so the two halves of one question disagreed.
+    //
+    // A **space** grant matches by space, and for the same reason. It brings the whole
+    // room, and the room is nothing but its contents; a grant that named the space and
+    // reached nothing inside it was a label saying "read only" over lists the server was
+    // meanwhile accepting edits to — worse than saying nothing, because it is a specific,
+    // checkable, wrong number.
     let grantRole: 'editor' | 'viewer' | null = null;
     for (const cadena of args.cadenas) {
       const alcanza =
         (cadena.folderId !== null && cadena.folderId === args.folderId) ||
+        (args.folderId != null && args.carpetasConcedidas?.has(args.folderId) === true) ||
         (cadena.listId !== null && cadena.listId === args.listId) ||
-        (cadena.noteId !== null && cadena.noteId === args.noteId);
+        (cadena.noteId !== null && cadena.noteId === args.noteId) ||
+        (cadena.nodeType === 'workspace' && cadena.workspaceId === args.workspaceId);
       if (!alcanza) continue;
       if (grantRole === null || cadena.role === 'editor') grantRole = cadena.role;
     }
@@ -666,6 +760,16 @@ export class SyncRepository {
     );
 
     /*
+      The same folders, as something you can ask a question of.
+
+      `carpetasConcedidas` is a list because that is what `inArray` wants, and this is a
+      list because `accesoDe` is called once per row and a membership test on an array is a
+      scan of the whole subtree for every folder on the page. One conversion, here, instead
+      of per row.
+    */
+    const carpetasConcedidasEn = new Set(carpetasConcedidas);
+
+    /*
       Where this person filed what they were given.
 
       Read here rather than per row because it is one question about the person, not a
@@ -699,9 +803,39 @@ export class SyncRepository {
     const espaciosConcedidos = cadenas
       .filter((c) => c.nodeType === 'workspace')
       .map((c) => c.workspaceId);
-    const espaciosVisibles = [
-      ...new Set([...memberWorkspaceIds, ...cadenas.map((c) => c.workspaceId)]),
+
+    /*
+     * Which spaces get a **row**.
+     *
+     * The space a folder came from is deliberately not one of them. It used to be, and it
+     * was the space *row* that made a shared folder read as a shared space: the row arrives,
+     * the drawer lists it, and there is one folder in it that belongs to somebody else. Which
+     * is not a folder you were given, it is a room you were given the key to, and the
+     * difference is the whole of what the person on the other side asked for.
+     *
+     * It was needed once. The client keys its tree on `workspaceId:parentId`, and a filed
+     * folder that still pointed at its old parent could not be drawn at all. `punteroDeContencion`
+     * re-points it, so the whole filed subtree now hangs from the space the recipient chose
+     * and needs no row from the other one. See `mount-pointer.test.ts` for the case that
+     * would break if this were put back.
+     *
+     * A space handed over **whole** is the exception and does get its row, because there is
+     * nothing to file it in: it arrives in the root, and an empty room there is the failure
+     * that was reported.
+     */
+    const espaciosQueLlegan = [
+      ...new Set([...memberWorkspaceIds, ...espaciosConcedidos]),
     ];
+
+    /*
+     * Whether there is anything at all to look for, which is not the same question.
+     *
+     * Somebody with no spaces of their own, given one folder, has nothing in
+     * `espaciosQueLlegan` — and still has a folder arriving. Gating the content queries on
+     * the row list would drop it, which is the same silent disappearance as before, one
+     * layer down.
+     */
+    const hayAlgoQueTraer = memberWorkspaceIds.length > 0 || cadenas.length > 0;
 
     const changes: SyncChange[] = [];
     let lastUpdatedAt = null as Date | null;
@@ -710,7 +844,7 @@ export class SyncRepository {
       lastUpdatedAt = lastUpdatedAt && lastUpdatedAt > updatedAt ? lastUpdatedAt : updatedAt;
     };
 
-    if (espaciosVisibles.length > 0) {
+    if (espaciosQueLlegan.length > 0) {
       // The grants that put you in each space, and the one with the most reach if
       // there are several: somebody who was given a folder with an editor grant and
       // a list inside it with a viewer grant is, in that space, an editor — the
@@ -739,7 +873,7 @@ export class SyncRepository {
         )
         .where(
           and(
-            inArray(workspaces.id, espaciosVisibles),
+            inArray(workspaces.id, espaciosQueLlegan),
             gt(workspaces.updatedAt, after),
           ),
         )
@@ -770,7 +904,7 @@ export class SyncRepository {
       }
     }
 
-    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
+    if (hayAlgoQueTraer && changes.length < input.limit) {
       const folderChanges = await db
         .select()
         .from(folders)
@@ -805,6 +939,7 @@ export class SyncRepository {
               folderId: row.id,
               rolesPorEspacio,
               cadenas,
+              carpetasConcedidas: carpetasConcedidasEn,
             }),
           },
         });
@@ -812,7 +947,7 @@ export class SyncRepository {
       }
     }
 
-    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
+    if (hayAlgoQueTraer && changes.length < input.limit) {
       const listChanges = await db
         .select()
         .from(lists)
@@ -875,6 +1010,7 @@ export class SyncRepository {
               folderId: row.folderId,
               rolesPorEspacio,
               cadenas,
+              carpetasConcedidas: carpetasConcedidasEn,
             }),
           },
         });
@@ -882,7 +1018,7 @@ export class SyncRepository {
       }
     }
 
-    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
+    if (hayAlgoQueTraer && changes.length < input.limit) {
       const itemChanges = await db
         .select({
           item: listItems,
@@ -937,6 +1073,7 @@ export class SyncRepository {
               folderId: row.folderId,
               rolesPorEspacio,
               cadenas,
+              carpetasConcedidas: carpetasConcedidasEn,
             }),
           },
         });
@@ -944,7 +1081,7 @@ export class SyncRepository {
       }
     }
 
-    if (espaciosVisibles.length > 0 && changes.length < input.limit) {
+    if (hayAlgoQueTraer && changes.length < input.limit) {
       // Notes, in the same shape as items: the ones in a space the caller is in,
       // plus the ones a share handed them.
       //
@@ -980,6 +1117,7 @@ export class SyncRepository {
               folderId: row.row.folderId,
               rolesPorEspacio,
               cadenas,
+              carpetasConcedidas: carpetasConcedidasEn,
             }),
           },
         });

@@ -121,11 +121,30 @@ describe('compartir un espacio entero', () => {
     const beto = await createVerifiedUser(api, { displayName: 'Beto dos' });
     const otra = await espacioConCosas('Otra dueña');
 
-    await api.post(
+    const suya = await api.post(
       '/shares',
       { nodeType: 'list', nodeId: ana.listId, granteeUserId: beto.userId, role: 'viewer' },
       ana.user.accessToken,
     );
+
+    // Until he files it, nothing of it is in his tree. The space above all, which is the
+    // point of the rule and the reason this test is stronger than it was.
+    const antesDeColocar = await pull(beto);
+    expect(de(antesDeColocar, 'workspace').map((c) => c.record.id)).not.toContain(
+      ana.workspaceId,
+    );
+    expect(de(antesDeColocar, 'list').map((c) => c.record.id)).not.toContain(ana.listId);
+
+    const suyo = randomUUID();
+    await push(beto, [
+      { kind: 'create', entity: 'workspace', entityId: suyo, payload: { name: 'Casa de Beto', color: 'fucsia' } },
+    ]);
+    const colocada = await api.post(
+      `/shares/${suya.body.data.id}/place`,
+      { workspaceId: suyo, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+    expect(colocada.status).toBe(200);
 
     const cambios = await pull(beto);
     expect(de(cambios, 'list').map((c) => c.record.id)).toContain(ana.listId);
@@ -139,6 +158,33 @@ describe('compartir un espacio entero', () => {
     // And another person's space is nowhere in sight, which is the line this test
     // exists for.
     expect(de(cambios, 'workspace').map((c) => c.record.id)).not.toContain(otra.workspaceId);
+
+    /*
+     * **And neither is Ana's own space**, which is the part this test is really named
+     * after and used to get wrong in the other direction.
+     *
+     * The chain used to ship it, because the list was re-pointed at Beto's space but its
+     * `folderId` still pointed at a folder in Ana's, and the client keys its tree on
+     * `workspaceId:folderId` — a list carrying a space the device had never heard of could
+     * not be drawn anywhere. So the space came down "just in case", and the result was the
+     * exact thing the person on the other side reported: being given one list put the
+     * **whole space** in their list of spaces, with one list in it and a line explaining
+     * they are not a member.
+     *
+     * Filing now re-points `folderId` as well as `workspaceId` (`mount-pointer.test.ts`),
+     * so the row is not needed and is not sent. The list hangs in Beto's space and the
+     * space it came from is nobody's business.
+     */
+    expect(de(cambios, 'workspace').map((c) => c.record.id)).not.toContain(ana.workspaceId);
+
+    const espacios = await api.get('/workspaces', beto.accessToken);
+    expect(espacios.body.data.items.map((w: { id: string }) => w.id)).toEqual([suyo]);
+
+    // And the list itself is filed in Beto's space, and in the folder he chose, which is
+    // what makes it drawable at all.
+    const lista = de(cambios, 'list').find((c) => c.record.id === ana.listId)!;
+    expect(lista.record.workspaceId).toBe(suyo);
+    expect(lista.record['folderId']).toBeNull();
   });
 
   it('NO se puede compartir con alguien lo que ya tiene por el espacio', async () => {

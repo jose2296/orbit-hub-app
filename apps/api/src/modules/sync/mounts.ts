@@ -48,6 +48,16 @@ export interface MontajeProyectado {
   folderId: string | null;
   /** Only for the node that was mounted: where it sits among its new siblings. */
   position: number;
+  /**
+   * Whether this entry is the node that was actually filed, or something under it.
+   *
+   * The distinction is the difference between a filed folder and a flattened one. A
+   * descendant keeps its own `parentId`, because that link is what the tree is made of
+   * and it still points at its real parent. Only the filed node is re-pointed at the
+   * folder the recipient chose, because that is the one place where "its parent" stopped
+   * being true — it was filed in their space, not in Ana's.
+   */
+  esElMontado: boolean;
 }
 
 export type MontajesPorNodo = Map<string, MontajeProyectado>;
@@ -110,6 +120,7 @@ export async function montajesDe(
       workspaceId: montaje.espacioVivo,
       folderId: await carpetaViva(db, montaje.folderId),
       position: montaje.position,
+      esElMontado: true,
     };
 
     if (montaje.nodeType === 'folder') {
@@ -119,9 +130,26 @@ export async function montajesDe(
 
     if (montaje.nodeType === 'list') {
       resultado.set(`list:${montaje.nodeId}`, destino);
-      // The rows of a list are its list; there is no other way to ask which space a row
-      // is in. See the projection's own comment on `list_item`.
-      resultado.set(`list_item:${montaje.nodeId}`, destino);
+      continue;
+    }
+
+    if (montaje.nodeType === 'list_item') {
+      /*
+        A row cannot be filed on its own, so its **list** is what gets filed.
+       *
+        This used to project the row alone. The row's `workspaceId` moved and the list's
+        did not, so the list stayed in the owner's space while the row said it was in the
+        recipient's — and a list in a space the device was never sent is a list the client
+        cannot index, so the row it holds is a row with nowhere to be. The row had arrived
+        in the pull and could not be drawn: the disappearance again, one step further down.
+       *
+        The list is the mounted node, because it is the one whose place on screen changed.
+        The row keeps its own container — a row has no `folderId`, it is inside its list —
+        and only moves the space, which `aplicaMontaje` does through `viaListaId`.
+       */
+      const listaId = await listaDe(db, montaje.nodeId);
+      if (!listaId) continue;
+      resultado.set(`list:${listaId}`, destino);
       continue;
     }
 
@@ -163,8 +191,13 @@ async function expandCarpeta(
         .where(inArray(lists.folderId, nivel)),
     ]);
 
-    for (const hijo of hijos) hacia.set(`folder:${hijo.id}`, destino);
-    for (const lista of listas) hacia.set(`list:${lista.id}`, destino);
+    // Descendants, and the lists inside them: same space, **their own parent kept**.
+    // Re-pointing them all at the destination folder would move the whole subtree into
+    // one flat pile at the root of the recipient's space, which is not what "you filed
+    // this folder" means.
+    const bajo = { ...destino, esElMontado: false };
+    for (const hijo of hijos) hacia.set(`folder:${hijo.id}`, bajo);
+    for (const lista of listas) hacia.set(`list:${lista.id}`, bajo);
 
     nivel = hijos.map((hijo) => hijo.id);
   }
@@ -221,6 +254,17 @@ async function espacioDe(
     .where(eq(notes.id, nodeId))
     .limit(1);
   return fila[0]?.workspaceId ?? null;
+}
+
+/** Which list a row belongs to, or `null` when the row is gone. */
+async function listaDe(db: Database, itemId: string): Promise<string | null> {
+  const fila = await db
+    .select({ listId: listItems.listId })
+    .from(listItems)
+    .where(eq(listItems.id, itemId))
+    .limit(1);
+
+  return fila[0]?.listId ?? null;
 }
 
 /** `null` for "no folder", and `null` for "that folder is gone, use the root". */

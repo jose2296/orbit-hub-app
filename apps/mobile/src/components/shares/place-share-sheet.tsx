@@ -10,8 +10,18 @@ import { Sheet } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { useShares } from "@/hooks/use-shares";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
+import { useSyncStatus } from "@/hooks/use-sync-status";
 import { useTranslation } from "@/lib/i18n";
 import { spacesYouCanFileInto } from "@/lib/shares/fileable-spaces";
+import {
+  EN_LA_RAIZ,
+  cambiaDeEspacio,
+  eligeCarpeta,
+  entraEn,
+  subeUnNivel,
+  tieneCarpetasAdentro,
+} from "@/lib/shares/where-it-goes";
+import type { Recorrido } from "@/lib/shares/where-it-goes";
 import { useTheme } from "@/theme";
 
 const NODE_ICON: Record<Share["nodeType"], string> = {
@@ -52,10 +62,15 @@ export function PlaceShareSheet({
   const t = useTranslation();
   const router = useRouter();
   const { place } = useShares();
+  const { syncNow } = useSyncStatus();
   const tree = useSpacesTree();
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [folderId, setFolderId] = useState<string | null>(null);
+  /**
+   * Where the list is looking and what it would file, as two separate things. The rules
+   * live in `where-it-goes.ts` and are tested there; this is just the state.
+   */
+  const [recorrido, setRecorrido] = useState<Recorrido>(EN_LA_RAIZ);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,14 +78,26 @@ export function PlaceShareSheet({
 
   if (!share) return null;
 
-  const folders = workspaceId ? tree.foldersOf(workspaceId, folderId) : [];
+  const folders = workspaceId ? tree.foldersOf(workspaceId, recorrido.mirandoEn) : [];
+  const padre = recorrido.mirandoEn ? tree.parentOf(recorrido.mirandoEn) : null;
 
+  /*
+   * Filing is a decision taken in the server, so **it only shows up on the next pull**.
+   * Without the pull the thing was filed, left the inbox, and never appeared: the
+   * panel closed, the row was gone, and the space the person had just put it in was
+   * exactly as empty as it was before. Which reads as the button not working, and it is
+   * the one flow in the app where that is true — every other write goes through the
+   * queue and lands locally first, and this one cannot, by design.
+   */
   const confirmar = async () => {
     if (!workspaceId) return;
     setSaving(true);
     setError(null);
     try {
-      await place({ shareId: share.id, workspaceId, folderId });
+      await place({ shareId: share.id, workspaceId, folderId: recorrido.elige });
+      // The wait happens before the panel closes, so the person is not left looking at
+      // a space that has not changed yet with no sign that anything is happening.
+      await syncNow();
       onClose();
       onPlaced?.();
     } catch (problem) {
@@ -156,10 +183,10 @@ export function PlaceShareSheet({
                     key={space.id}
                     icon="grid-outline"
                     label={space.name}
-                    selected={workspaceId === space.id}
+                    selected={space.id === workspaceId}
                     onPress={() => {
                       setWorkspaceId(space.id);
-                      setFolderId(null);
+                      setRecorrido(cambiaDeEspacio());
                     }}
                   />
                 ))}
@@ -175,22 +202,51 @@ export function PlaceShareSheet({
             </AppText>
             <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
               <View style={{ gap: 2 }}>
+                {padre ? (
+                  /*
+                   * Back out. Without it the list is a corridor: you can go three
+                   * folders deep and the only way to the root is to close the panel and
+                   * start again, and the only way to the folder you wanted is to pick
+                   * every folder on the way down.
+                   */
+                  <Pick
+                    icon="arrow-up-outline"
+                    label={t("place.upOneLevel")}
+                    selected={false}
+                    onPress={() =>
+                      setRecorrido((actual) =>
+                        subeUnNivel(actual, (id) => tree.parentOf(id)),
+                      )
+                    }
+                  />
+                ) : null}
                 {/* The root of the space is a place, not "nowhere": a thing at the
                     top of a space is filed, and the only reason to have this
                     button is to undo a folder that was picked by mistake. */}
                 <Pick
                   icon="ellipsis-horizontal-circle-outline"
                   label={t("place.rootOfSpace")}
-                  selected={folderId === null}
-                  onPress={() => setFolderId(null)}
+                  selected={recorrido.mirandoEn === null && recorrido.elige === null}
+                  onPress={() => setRecorrido(EN_LA_RAIZ)}
                 />
                 {folders.map((folder) => (
                   <Pick
                     key={folder.id}
                     icon="folder-outline"
                     label={folder.name}
-                    selected={false}
-                    onPress={() => setFolderId(folder.id)}
+                    selected={folder.id === recorrido.elige}
+                    onPress={() =>
+                      setRecorrido((actual) => eligeCarpeta(actual, folder.id))
+                    }
+                    onOpen={
+                      tieneCarpetasAdentro(folder, (ws, parent) =>
+                        tree.foldersOf(ws, parent),
+                      )
+                        ? () =>
+                            setRecorrido((actual) => entraEn(actual, folder.id))
+                        : undefined
+                    }
+                    openLabel={t("place.lookInside", { name: folder.name })}
                   />
                 ))}
               </View>
@@ -223,51 +279,100 @@ export function PlaceShareSheet({
   );
 }
 
+/**
+ * One row: pick it, and — when there is something inside — look inside it.
+ *
+ * **Two sibling pressables, not a button inside a button.** The first version nested the
+ * chevron `Pressable` inside the row's, and on web that renders `<button><button>`, which
+ * is invalid HTML: the browser re-parents the inner one, React's hydration disagrees
+ * about the tree it just built, and the row it lands in is not the row the press handler
+ * belongs to. It looked fine in the snapshot and was broken in the only browser anybody
+ * can check.
+ *
+ * A `View` for the layout and two presses side by side inside it is also the only version
+ * where the chevron does what it says: nesting meant a tap near the arrow could select
+ * the folder it was only meant to open.
+ */
 function Pick({
   icon,
   label,
   selected,
   onPress,
+  onOpen,
+  openLabel,
 }: {
   icon: string;
   label: string;
   selected: boolean;
   onPress: () => void;
+  /** Present only when there is something inside, so the affordance is not a dead end. */
+  onOpen?: () => void;
+  /** Spoken by the "look inside" press. Passed in, not translated here. */
+  openLabel?: string;
 }) {
   const theme = useTheme();
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => ({
+    <View
+      style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 8,
-        minHeight: 38,
-        paddingHorizontal: theme.spacing.sm,
         borderRadius: theme.radius.md,
-        backgroundColor: selected
-          ? theme.colors.accentSoft
-          : pressed
-            ? theme.colors.surfaceMuted
-            : "transparent",
-      })}
+        backgroundColor: selected ? theme.colors.accentSoft : "transparent",
+      }}
     >
-      <Ionicons
-        name={icon as never}
-        size={16}
-        color={selected ? theme.colors.accent : theme.colors.textMuted}
-      />
-      <AppText
-        variant="body"
-        numberOfLines={1}
-        style={{ flex: 1, color: selected ? theme.colors.accent : undefined }}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        accessibilityLabel={label}
+        onPress={onPress}
+        style={({ pressed }) => ({
+          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          minHeight: 38,
+          paddingHorizontal: theme.spacing.sm,
+          borderRadius: theme.radius.md,
+          backgroundColor:
+            selected || !pressed ? "transparent" : theme.colors.surfaceMuted,
+        })}
       >
-        {label}
-      </AppText>
-    </Pressable>
+        <Ionicons
+          name={icon as never}
+          size={16}
+          color={selected ? theme.colors.accent : theme.colors.textMuted}
+        />
+        <AppText
+          variant="body"
+          numberOfLines={1}
+          style={{ flex: 1, color: selected ? theme.colors.accent : undefined }}
+        >
+          {label}
+        </AppText>
+      </Pressable>
+      {onOpen ? (
+        <Pressable
+          accessibilityRole="button"
+          // Deliberately not the folder's name: the two presses are different actions and
+          // a screen reader that hears the same label twice has no way to choose.
+          accessibilityLabel={openLabel ?? label}
+          hitSlop={8}
+          onPress={onOpen}
+          style={({ pressed }) => ({
+            paddingHorizontal: theme.spacing.sm,
+            paddingVertical: 4,
+            borderRadius: theme.radius.sm,
+            backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
+          })}
+        >
+          <Ionicons
+            name="chevron-forward-outline"
+            size={16}
+            color={theme.colors.textMuted}
+          />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 

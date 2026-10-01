@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,4 +175,95 @@ export async function createVerifiedUser(
     userId: session.user.id,
     sessionId: session.device.id,
   };
+}
+
+/**
+ * Shares a node **and files it**, which is the two things the app does.
+ *
+ * Not a convenience. Since the rule that a received thing appears nowhere until you say
+ * where it goes, sharing alone puts a row in the inbox and nothing else: no folder, no
+ * space, no contents. A test that shares and then pulls is testing a half-finished flow,
+ * and about twenty of them were written before the rule existed.
+ *
+ * The fileable spaces are the recipient's own, so a test has to give them one. Pass
+ * `en` to leave it unfiled and assert that nothing arrives, which is the other half of
+ * the rule and worth testing directly.
+ */
+export async function compartirYColocar(
+  api: TestServer,
+  args: {
+    /** Who owns the node and where it lives. */
+    dueno: TestUser;
+    nodeType: 'workspace' | 'folder' | 'list' | 'list_item' | 'note';
+    nodeId: string;
+    workspaceId: string;
+    /** Who is given it. */
+    destinatario: TestUser;
+    role?: 'editor' | 'viewer';
+    /** Where it is filed. `null` for a space, which is not filed anywhere. */
+    en?: string | null;
+  },
+): Promise<{ shareId: string }> {
+  const creada = await api.post(
+    '/shares',
+    {
+      workspaceId: args.workspaceId,
+      nodeType: args.nodeType,
+      nodeId: args.nodeId,
+      granteeUserId: args.destinatario.userId,
+      role: args.role ?? 'editor',
+    },
+    args.dueno.accessToken,
+  );
+
+  if (creada.status !== 201) {
+    throw new Error(`compartir fallo: ${JSON.stringify(creada.body)}`);
+  }
+
+  const shareId = creada.body.data.id as string;
+  if (args.nodeType === 'workspace' || args.en === undefined) {
+    return { shareId };
+  }
+
+  const colocada = await api.post(
+    `/shares/${shareId}/place`,
+    { workspaceId: args.en, folderId: null, position: 0 },
+    args.destinatario.accessToken,
+  );
+  if (colocada.status !== 200) {
+    throw new Error(`colocar fallo: ${JSON.stringify(colocada.body)}`);
+  }
+
+  return { shareId };
+}
+
+/** A space of this person's own, which is where a received thing gets filed. */
+export async function espacioPropio(api: TestServer, user: TestUser, name: string): Promise<string> {
+  const id = randomUUID();
+  const response = await api.post(
+    '/sync/push',
+    {
+      deviceId: randomUUID(),
+      lastPulledAt: null,
+      operations: [
+        {
+          operationId: randomUUID(),
+          clientId: 'test-client-helper',
+          entity: 'workspace',
+          kind: 'create',
+          entityId: id,
+          baseVersion: 0,
+          payload: { name, color: 'teal' },
+          base: null,
+          clientTimestamp: new Date().toISOString(),
+        },
+      ],
+    },
+    user.accessToken,
+  );
+
+  if (response.body.data.results[0].status !== 'applied') {
+    throw new Error(`no se pudo crear el espacio: ${JSON.stringify(response.body)}`);
+  }
+  return id;
 }

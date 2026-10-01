@@ -241,9 +241,24 @@ describe('compartir dentro de un espacio que el otro ya tiene, y en uno que no t
       expect(ids).toContain(ana.itemId);
       expect(ids).not.toContain(ana.listId);
 
-      // And the chain *does* arrive, in the pull: item, list, folder and space, because
-      // a grant on an item has to reach its list or "share this item" and "share this
-      // item in an empty list" are the same thing and he cannot tick anything.
+      // And the chain *does* arrive once he files it: item, list, folder and space,
+      // because a grant on an item has to reach its list or "share this item" and
+      // "share this item in an empty list" are the same thing and he cannot tick
+      // anything.
+      //
+      // Filed, because until then the chain is not in his tree at all. That is the rule
+      // now: the inbox is where a received thing waits, and nowhere else.
+      const suyo = randomUUID();
+      await push(beto, [
+        { kind: 'create', entity: 'workspace', entityId: suyo, payload: { name: 'Casa de Beto', color: 'fucsia' } },
+      ]);
+      const colocada = await api.post(
+        `/shares/${item.body.data.id}/place`,
+        { workspaceId: suyo, folderId: null, position: 0 },
+        beto.accessToken,
+      );
+      expect(colocada.status).toBe(200);
+
       const pull = await api.post(
         '/sync/pull',
         { deviceId: randomUUID(), cursor: null, limit: 200 },
@@ -256,7 +271,22 @@ describe('compartir dentro de un espacio que el otro ya tiene, y en uno que no t
       expect(llegados).toContain(ana.itemId);
       expect(llegados).toContain(ana.listId);
       expect(llegados).toContain(ana.folderId);
-      expect(llegados).toContain(ana.workspaceId);
+
+      // **Not** the space. The chain needs somewhere to hang from and this used to be it,
+      // so being handed one row put Ana's whole space in Beto's list of spaces with a
+      // single list in it and a line saying he was not a member — which is what "you
+      // shared the space with me" looks like, and is not what happened. Filed nodes are
+      // re-pointed at the space Beto chose, so nothing needs the other space to exist.
+      expect(llegados).not.toContain(ana.workspaceId);
+
+      // The precondition, so that is not a claim about an empty pull: Beto's own space is
+      // there, and the granted list is filed in it.
+      const espacios = await api.get('/workspaces', beto.accessToken);
+      expect(espacios.body.data.items.map((w: { id: string }) => w.id)).toContain(suyo);
+      const lista = pull.body.data.changes.find(
+        (c: { record: { id?: string } }) => c.record?.id === ana.listId,
+      );
+      expect(lista?.record.workspaceId).toBe(suyo);
     });
 
     it('al colocarlo desaparece de la bandeja y deja de poder colocarse otra vez', async () => {

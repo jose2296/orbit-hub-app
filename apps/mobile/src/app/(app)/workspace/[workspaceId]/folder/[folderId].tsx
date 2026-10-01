@@ -3,6 +3,8 @@ import { useCallback, useMemo, useState } from "react";
 
 import type { List } from "@orbit-hub/contracts";
 
+import { Button } from "@/components/ui/button";
+import { useHeaderAction } from "@/components/ui/header-action";
 import { CreateSheet } from "@/components/folders/create-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
 import { ContentList } from "@/components/content/content-list";
@@ -58,6 +60,47 @@ export default function FolderScreen() {
   );
 
   useScreenTitle(folder?.name ?? t("folders.title"));
+
+  /*
+    The menu of **this** folder, from inside it.
+
+    It used to be reachable only from the folder's row in its parent's list, which means
+    that creating a folder — the action that puts you inside it — left you somewhere with
+    no menu at all. The three dots of a folder are in the folder's parent, so from inside
+    there was nothing: you could rename nothing, delete nothing and **share nothing**,
+    and the obvious next step after creating a thing is to share it.
+
+    It is the same sheet and the same options as the row's, not a second version of it.
+  */
+  useHeaderAction(
+    () =>
+      folder ? (
+        <Button
+          testID="folder-menu-button"
+          label={t("folders.menu")}
+          variant="ghost"
+          size="sm"
+          icon="ellipsis-horizontal"
+          iconOnly
+          accessibilityHint={t("folders.menuHint")}
+          fullWidth={false}
+          onPress={() =>
+            setMenuFor({
+              kind: "folder",
+              folder: {
+                id: folder.id,
+                name: folder.name,
+                emoji: folder.emoji,
+                parentId: folder.parentId,
+                position: folder.position,
+              },
+            })
+          }
+        />
+      ) : null,
+    [folder, t],
+  );
+
 
   const closeSheets = useCallback(() => {
     setMenuFor(null);

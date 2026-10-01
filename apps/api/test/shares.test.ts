@@ -3,7 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { sharedWithYouEmail } from '../src/modules/email/email.js';
 import { shareService } from '../src/modules/shares/share-service.js';
-import { createVerifiedUser, startTestServer } from './helpers';
+import {
+  compartirYColocar,
+  createVerifiedUser,
+  espacioPropio,
+  startTestServer,
+} from './helpers';
 import type { TestServer, TestUser } from './helpers';
 
 let api: TestServer;
@@ -335,11 +340,16 @@ describe('una nota compartida', () => {
     const yo = await conNota('Pull nota yo');
     const otra = await createVerifiedUser(api, { displayName: 'Pull nota otra' });
 
-    await api.post(
-      '/shares',
-      { nodeType: 'note', nodeId: yo.noteId, granteeUserId: otra.userId, role: 'editor' },
-      yo.user.accessToken,
-    );
+    const suyo = await espacioPropio(api, otra, 'Espacio de la otra');
+    await compartirYColocar(api, {
+      dueno: yo.user,
+      nodeType: 'note',
+      nodeId: yo.noteId,
+      workspaceId: yo.workspaceId,
+      destinatario: otra,
+      role: 'editor',
+      en: suyo,
+    });
 
     const r = await api.post(
       '/sync/pull',
@@ -480,11 +490,21 @@ describe('una nota compartida', () => {
     const yo = await conNota('Revocar nota yo');
     const otra = await createVerifiedUser(api, { displayName: 'Revocar nota otra' });
 
+    const suya = await espacioPropio(api, otra, 'Espacio de la otra');
     const creada = await api.post(
       '/shares',
       { nodeType: 'note', nodeId: yo.noteId, granteeUserId: otra.userId, role: 'editor' },
       yo.user.accessToken,
     );
+    // Colocada, para que la nota llegue. Sin esto no hay pull que entierre: una
+    //.concesion sin colocar no esta en el arbol de la otra, y enterrar algo que
+    // nunca estuvo no es lo que se esta probando.
+    const colocada = await api.post(
+      `/shares/${creada.body?.data?.id}/place`,
+      { workspaceId: suya, folderId: null, position: 0 },
+      otra.accessToken,
+    );
+    expect(colocada.status).toBe(200);
 
     let cursor: string | null = null;
     const pull = async () => {
@@ -497,6 +517,8 @@ describe('una nota compartida', () => {
       return r;
     };
 
+    // La precondicion: la nota esta en su cache antes de que la revoquen. Un entierro
+    // que llega a un movil que nunca la tuvo no borra nada, porque no la tenia.
     expect(
       (await pull()).body?.data?.changes?.some((c: { entity: string }) => c.entity === 'note'),
     ).toBe(true);
@@ -648,13 +670,26 @@ describe('el pull trae lo compartido', () => {
   it('la cadena entera de una lista compartida llega a un movil sin espacios', async () => {
     const yo = await conEspacio('Pull yo');
     const otra = await createVerifiedUser(api, { displayName: 'Pull otra' });
-    // Sin ningun espacio propio: el caso real de alguien a quien le comparten
-    // algo antes de que haya creado nada.
-    await shareService.createShare({
+    const suyo = await espacioPropio(api, otra, 'Espacio de la otra');
+
+    // Antes de colocarla no llega nada. Era el caso que cubria este test — alguien a
+    // quien le comparten algo sin tener espacios — y ya no es posible: sin un espacio
+    // propio no hay donde colocar, y lo que no se coloca no llega. La regla de "nada
+    // hasta que confirmes" se come ese caso, y el de ahora es el de verdad: alguien con
+    // su espacio al que le comparten una lista.
+    const creada = await shareService.createShare({
       ownerUserId: yo.user.userId,
       target: await shareService.resolveTarget('list', yo.listId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'editor',
+    });
+    expect(titulos(await pull(otra))).not.toContain('Compra');
+
+    await shareService.placeShare({
+      userId: otra.userId,
+      shareId: creada.shareId,
+      workspaceId: suyo,
+      folderId: null,
     });
 
     // Un elemento nuevo en la lista compartida: es lo que el cursor tiene que
@@ -764,11 +799,17 @@ describe('el pull trae lo compartido', () => {
     // pone el simbolo en espacios que no lo son y lo quita de los que si. Un
     // viewer invitado y un viewer al que le compartieron una lista son el mismo
     // `role` y no la misma cosa.
+    //
+    // Compartir el **espacio entero**, y no una lista: el espacio de la duena solo llega
+    // al pull cuando la concesion es sobre el espacio, porque se manda para que el sitio
+    // se pueda pintar y mandarlo por una lista de dentro era precisamente el fallo — te
+    // ponen su espacio entero en el menu. El caso de la lista de dentro esta en el test
+    // de al lado, que es el que lo comprueba.
     const yo = await conEspacio('Marca yo');
     const otra = await createVerifiedUser(api, { displayName: 'Marca otra' });
     await shareService.createShare({
       ownerUserId: yo.user.userId,
-      target: await shareService.resolveTarget('list', yo.listId),
+      target: await shareService.resolveTarget('workspace', yo.workspaceId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'viewer',
     });
@@ -794,31 +835,103 @@ describe('el pull trae lo compartido', () => {
     expect(propios.every((w: { shared: boolean }) => w.shared === false)).toBe(true);
   });
 
-  it('el papel del espacio compartido es el mas amplio de tus concessiones', async () => {
-    // Alguien con una lista en solo lectura y una carpeta con permiso de edicion
-    // esta, en ese espacio, como editor: lo que va a encontrar al entrar. Si aqui
-    // saliera el primero que llego, entraria pensando que no puede tocar nada.
-    const yo = await conEspacio('Amplo yo');
-    const otra = await createVerifiedUser(api, { displayName: 'Amplo otra' });
-    await shareService.createShare({
+  it('compartir una lista de dentro no pone el espacio de la duena en su lista de espacios', async () => {
+    // El caso que el otro test ya no cubre, y el que se reporto: el espacio entero en el
+    // menu de quien recibio **una lista**. Aqui no se pone, porque no hace falta para
+    // pintar nada: la lista colocada se re-apunta a su espacio y a su carpeta.
+    const yo = await conEspacio('Marca dentro yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Marca dentro otra' });
+    const suyo = await espacioPropio(api, otra, 'Espacio de la otra');
+    const creada = await shareService.createShare({
       ownerUserId: yo.user.userId,
       target: await shareService.resolveTarget('list', yo.listId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'viewer',
     });
-    await shareService.createShare({
+    await shareService.placeShare({
+      userId: otra.userId,
+      shareId: creada.shareId,
+      workspaceId: suyo,
+      folderId: null,
+    });
+
+    const r = await pull(otra);
+    const espacios = (r.body?.data?.changes ?? [])
+      .filter((c: { entity: string }) => c.entity === 'workspace')
+      .map((c: { record: { name: string } }) => c.record.name);
+
+    // Solo el suyo. Y la lista esta ahi, que es lo que tiene que estar.
+    expect(espacios).toEqual(['Espacio de la otra']);
+    expect(
+      (r.body?.data?.changes ?? []).some(
+        (c: { record: { title?: string } }) => c.record.title === 'Compra',
+      ),
+    ).toBe(true);
+  });
+
+  it('el papel de lo que hay dentro es el mas amplio de tus concessiones', async () => {
+    // Alguien con una lista en solo lectura y una carpeta con permiso de edicion
+    // entra en esa carpeta como editor: lo que va a encontrar al abrirla. Si aqui
+    // saliera el primero que llego, entraria pensando que no puede tocar nada.
+    //
+    // Antes esto se midia sobre la fila del **espacio**, y esa fila solo llega cuando la
+    // concesion es sobre el espacio entero — y ahi no se puede mezclar, porque compartir
+    // algo dentro de un espacio que ya te han entregado entero es un 409. Asi que la fila
+    // del espacio ya no puede tener dos papeles distintos, y la pregunta se ha quedado sin
+    // donde preguntarse. La version que queda, y la que de verdad se ve, es la de las filas
+    // de dentro, y es la que se comprueba.
+    const yo = await conEspacio('Amplo yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Amplo otra' });
+    const suyo = await espacioPropio(api, otra, 'Espacio de la otra');
+
+    const lista = await shareService.createShare({
+      ownerUserId: yo.user.userId,
+      target: await shareService.resolveTarget('list', yo.listId),
+      grantee: { userId: otra.userId, email: otra.email, displayName: null },
+      role: 'viewer',
+    });
+    const carpeta = await shareService.createShare({
       ownerUserId: yo.user.userId,
       target: await shareService.resolveTarget('folder', yo.folderId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'editor',
     });
+    // Las dos colocadas, o ninguna llega y el papel no se puede mirar.
+    for (const shareId of [lista.shareId, carpeta.shareId]) {
+      await shareService.placeShare({
+        userId: otra.userId,
+        shareId,
+        workspaceId: suyo,
+        folderId: null,
+      });
+    }
 
     const r = await pull(otra);
-    const espacio = (r.body?.data?.changes ?? []).find(
-      (c: { entity: string }) => c.entity === 'workspace',
+    // La carpeta es editor, y la lista de dentro **tambien**, aunque se compartiera suelta
+    // para solo mirar. La concesion mas amplia gana, y aqui la amplia es la de la carpeta:
+    // si ganara la primera que llego, entraria en su lista sin poder editarla, o —peor—
+    // podria editarla en el papel y no en el servidor.
+    const cambios = r.body?.data?.changes ?? [];
+    const fila = cambios.find(
+      (c: { entity: string; record: { name?: string } }) =>
+        c.entity === 'folder' && c.record.name === 'Viajes',
     );
-    expect(espacio?.record.role).toBe('editor');
-    expect(espacio?.record.shared).toBe(true);
+    const listaDentro = cambios.find(
+      (c: { entity: string; record: { title?: string } }) =>
+        c.entity === 'list' && c.record.title === 'Compra',
+    );
+    const suFila = cambios.find(
+      (c: { entity: string; record: { title?: string } }) =>
+        c.entity === 'list_item' && c.record.title === 'Leche',
+    );
+
+    expect(fila?.record.role).toBe('editor');
+    expect(fila?.record.shared).toBe(true);
+    expect(listaDentro?.record.role).toBe('editor');
+    expect(listaDentro?.record.shared).toBe(true);
+    // Y la fila de la lista, que no nombra ninguna concesion y llega por la lista.
+    expect(suFila?.record.role).toBe('editor');
+    expect(suFila?.record.shared).toBe(true);
   });
 
   it('revocar manda un entierro, para que el movil lo borre de verdad', async () => {
@@ -828,11 +941,19 @@ describe('el pull trae lo compartido', () => {
     // Parar de traer filas nuevas no devuelve las que ya tenia.
     const yo = await conEspacio('Revocar yo');
     const otra = await createVerifiedUser(api, { displayName: 'Revocar otra' });
+    const suyo = await espacioPropio(api, otra, 'Espacio de la otra');
     const { shareId } = await shareService.createShare({
       ownerUserId: yo.user.userId,
       target: await shareService.resolveTarget('list', yo.listId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'editor',
+    });
+    // Colocada antes de revocar: el entierro solo sirve sobre algo que el movil tiene.
+    await shareService.placeShare({
+      userId: otra.userId,
+      shareId,
+      workspaceId: suyo,
+      folderId: null,
     });
 
     // La primera vez llega entera.
@@ -869,12 +990,22 @@ describe('el pull trae lo compartido', () => {
     // — y no hay forma de que el cliente distinga eso de un fallo.
     const yo = await conEspacio('Revocar dos');
     const otra = await createVerifiedUser(api, { displayName: 'Revocar otra dos' });
+    const suyo = await espacioPropio(api, otra, 'Espacio de la otra');
     const { shareId } = await shareService.createShare({
       ownerUserId: yo.user.userId,
       target: await shareService.resolveTarget('list', yo.listId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'editor',
     });
+    // Colocada y vista antes de revocar, que es lo que un movil tiene: sin esto la
+    // revocacion no llega a encontrar nada en su cache que entitlement a borrar.
+    await shareService.placeShare({
+      userId: otra.userId,
+      shareId,
+      workspaceId: suyo,
+      folderId: null,
+    });
+    expect(titulos(await pull(otra))).toContain('Compra');
 
     await shareService.revokeShare({ userId: yo.user.userId, shareId });
     // Por el `pull` de verdad, para que el cursor quede donde ha quedado: el
@@ -882,11 +1013,20 @@ describe('el pull trae lo compartido', () => {
     // entero.
     await pull(otra);
 
-    await shareService.createShare({
+    // Al volver a compartir hay que colocarla otra vez. Que antes no hiciera falta es
+    // parte de lo que cambio: algo que vuelve a compartirse no aparece solo, porque la
+    // regla es que no aparece hasta que se dice donde.
+    const recompartida = await shareService.createShare({
       ownerUserId: yo.user.userId,
       target: await shareService.resolveTarget('list', yo.listId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'editor',
+    });
+    await shareService.placeShare({
+      userId: otra.userId,
+      shareId: recompartida.shareId,
+      workspaceId: suyo,
+      folderId: null,
     });
 
     // Cambia algo, a proposito: sin un cambio el cursor no avanza y no se puede
@@ -898,16 +1038,32 @@ describe('el pull trae lo compartido', () => {
     const titres = titulos(await pull(otra));
     expect(titres).toContain('Compra');
     expect(titres).toContain('Pan');
+    // Y no vuelve como una lista enterrada: la fila tiene que venir viva, o el movil
+    // la sigue teniendo oculta y esto no arregla nada.
+    const laLista = (await pull(otra)).body?.data?.changes?.find(
+      (c: { entity: string; record: { title?: string } }) =>
+        c.entity === 'list' && c.record.title === 'Compra',
+    );
+    expect(laLista?.record.deletedAt).toBeFalsy();
   });
 
   it('lo revocado deja de llegar con vida, y con un entierro por delante', async () => {
     const yo = await conEspacio('Pull yo tres');
     const otra = await createVerifiedUser(api, { displayName: 'Pull otra tres' });
+    const suyo = await espacioPropio(api, otra, 'Espacio de la otra');
     const { shareId } = await shareService.createShare({
       ownerUserId: yo.user.userId,
       target: await shareService.resolveTarget('list', yo.listId),
       grantee: { userId: otra.userId, email: otra.email, displayName: null },
       role: 'editor',
+    });
+    // Colocada: la precondicion de todo el test es que la lista esta en la cache del
+    // movil, y una concesion sin colocar no llega a ninguna cache.
+    await shareService.placeShare({
+      userId: otra.userId,
+      shareId,
+      workspaceId: suyo,
+      folderId: null,
     });
 
     expect(titulos(await pull(otra))).toContain('Compra');

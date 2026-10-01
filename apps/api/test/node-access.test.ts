@@ -77,14 +77,14 @@ async function conEspacio(nombre: string) {
   return { user, workspaceId, folderId, listId, noteId, itemId };
 }
 
-/** Shares a node and hands the grantee a place to put it, so it is in their pull. */
+/** Shares a node and files it in the grantee's own space, so it is in their pull. */
 async function compartir(
   dueno: TestUser,
   target: { nodeType: 'folder' | 'list' | 'note'; nodeId: string },
   otra: TestUser,
   role: 'editor' | 'viewer',
 ) {
-  await shareService.createShare({
+  const creada = await shareService.createShare({
     // `.userId` and not the object. `TestUser` carries the whole session, and
     // passing it where a uuid is expected does not fail loudly: it reaches Postgres
     // as `"[object Object]"` and the error names the query instead of the argument.
@@ -93,10 +93,23 @@ async function compartir(
     grantee: { userId: otra.userId, email: otra.email, displayName: null },
     role,
   });
+
   const suyo = randomUUID();
   await push(otra, [
     { kind: 'create', entity: 'workspace', entityId: suyo, payload: { name: 'Suyo', color: 'rose' } },
   ]);
+
+  // Sharing is not the half of it that shows up. Until it is filed, it is a row in the
+  // inbox and nothing else — not the node, not the space it lives in, not what is
+  // inside it. So a test that shares and pulls is looking at an empty tree, and one of
+  // them below (`NO trae las notas que tiene al lado`) was quietly passing because of
+  // exactly that, asserting that a note was absent from a pull that contained no notes.
+  await shareService.placeShare({
+    userId: otra.userId,
+    shareId: creada.shareId,
+    workspaceId: suyo,
+    folderId: null,
+  });
 }
 
 describe('lo que la cabecera va a poder decir', () => {
@@ -217,6 +230,12 @@ describe('lo que la cabecera va a poder decir', () => {
     await compartir(yo.user, { nodeType: 'folder', nodeId: yo.folderId }, otra, 'editor');
 
     const r = await pull(otra);
+    // La precondicion, que es la que hace que esto signifique algo: la carpeta y su lista
+    // si llegan. Sin esta linea la prueba pasa porque el pull estaba vacio entero, y
+    // estaria jurando que la nota de al lado no se comparte cuando en realidad no se
+    // estaba comprobando nada.
+    expect(nodo(r, 'folder', yo.folderId)).toBeTruthy();
+    expect(nodo(r, 'list', yo.listId)).toBeTruthy();
     expect(nodo(r, 'note', notaAlLado)).toBeUndefined();
   });
 

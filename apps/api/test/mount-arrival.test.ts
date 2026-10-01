@@ -6,17 +6,22 @@ import { createVerifiedUser, startTestServer } from './helpers';
 import type { TestServer, TestUser } from './helpers';
 
 /**
- * Placing something has to **re-send** it.
+ * Placing something has to **re-send** it, every time you place it.
  *
  * A mount is a projection, not a row: nothing about the folder changes when you file it,
  * so nothing about it gets a newer `updatedAt`, and the pull — which is a walk through
- * time — has nothing to say about it. A device that already had the folder in its cache
- * keeps the copy it had, **with the owner's `workspaceId`**, forever. No error, no empty
- * screen, and no way to fix it from the app.
+ * time — has nothing to say about it. A device that already has the folder in its cache
+ * keeps the copy it had, **with the space it was last filed in**, forever. No error, no
+ * empty screen, and no way to fix it from the app.
+ *
+ * The first filing gets away with it — the folder had never reached that device, so there
+ * is nothing stale to contradict. **Moving it is what bites**: file a folder in one space,
+ * decide it belongs in another, and the row the phone holds still says the old space, so
+ * it shows up in the wrong place and reappears in the right one the next time the listing
+ * is rebuilt. Both at once, and neither one goes away.
  *
  * That is the same reason sharing stamps the node: not because the content changed, but
- * because the set of people who can read it did. Filing it changes what the reader sees,
- * and that is the same kind of news.
+ * because who can read it, and where it shows up for them, did.
  */
 describe('colocar algo lo vuelve a mandar', () => {
   let api: TestServer;
@@ -64,11 +69,12 @@ describe('colocar algo lo vuelve a mandar', () => {
     };
   }
 
-  it('la carpeta vuelve a mandarse con el espacio nuevo despues de colocarla', async () => {
+  it('moverla de un espacio a otro la vuelve a mandar, que si no se queda en los dos', async () => {
     const ana = await createVerifiedUser(api, { displayName: 'Ana' });
     const beto = await createVerifiedUser(api, { displayName: 'Beto' });
     const spaceId = randomUUID();
-    const suyoId = randomUUID();
+    const suyoUno = randomUUID();
+    const suyoDos = randomUUID();
     const carpetaId = randomUUID();
     const listaId = randomUUID();
 
@@ -78,7 +84,8 @@ describe('colocar algo lo vuelve a mandar', () => {
       { kind: 'create', entity: 'list', entityId: listaId, payload: { workspaceId: spaceId, folderId: carpetaId, title: 'Pistas', kind: 'tasks', position: 0 } },
     ]);
     await push(beto, [
-      { kind: 'create', entity: 'workspace', entityId: suyoId, payload: { name: 'Casa de Beto', color: 'fucsia' } },
+      { kind: 'create', entity: 'workspace', entityId: suyoUno, payload: { name: 'Casa de Beto', color: 'fucsia' } },
+      { kind: 'create', entity: 'workspace', entityId: suyoDos, payload: { name: 'Trabajo', color: 'amber' } },
     ]);
 
     const compartida = await api.post(
@@ -87,35 +94,45 @@ describe('colocar algo lo vuelve a mandar', () => {
       ana.accessToken,
     );
     expect(compartida.status).toBe(201);
+    const shareId = compartida.body.data.id as string;
 
-    // Beto receives it. **This is the device that already has the folder cached**, which
-    // is the whole point: a fresh device would pass even with the bug.
+    // Filed in the first space, and the device pulls it: this is the row it now holds.
+    const primerFichaje = await api.post(
+      `/shares/${shareId}/place`,
+      { workspaceId: suyoUno, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+    expect(primerFichaje.status).toBe(200);
+
     await new Promise((r) => setTimeout(r, 5));
     const recibido = await pull(beto, null);
-    const antesDeColocar = recibido.cambios.find((c) => c.record['id'] === carpetaId);
-    expect(antesDeColocar!.record.workspaceId).toBe(spaceId);
+    expect(recibido.cambios.find((c) => c.record['id'] === carpetaId)!.record.workspaceId).toBe(
+      suyoUno,
+    );
     const cursorEnEsteMomento = recibido.cursor;
     expect(cursorEnEsteMomento).toBeTruthy();
 
+    // Now he changes his mind. Nothing about the folder changed, and nothing was edited.
     await new Promise((r) => setTimeout(r, 5));
-    const colocada = await api.post(
-      `/shares/${compartida.body.data.id}/place`,
-      { workspaceId: suyoId, folderId: null, position: 0 },
+    const movida = await api.post(
+      `/shares/${shareId}/place`,
+      { workspaceId: suyoDos, folderId: null, position: 0 },
       beto.accessToken,
     );
-    expect(colocada.status).toBe(200);
+    expect(movida.status).toBe(200);
 
-    // And now: same cursor, no content touched, and it has to arrive anyway.
+    // Same cursor, no content touched, and it has to arrive anyway.
     const despues = await pull(beto, cursorEnEsteMomento);
     const reelaborada = despues.cambios.find((c) => c.record['id'] === carpetaId);
 
     // Without a bump this is `undefined`: the pull has nothing newer to send, so the
-    // device keeps the row it had, with Ana's space, and the folder stays invisible.
+    // device keeps the row it had, with the first space, and the folder is in both.
     expect(reelaborada).toBeTruthy();
-    expect(reelaborada!.record.workspaceId).toBe(suyoId);
+    expect(reelaborada!.record.workspaceId).toBe(suyoDos);
 
     // And the contents with it, because a folder that moves alone opens empty.
     const lista = despues.cambios.find((c) => c.record['id'] === listaId);
-    expect(lista!.record.workspaceId).toBe(suyoId);
+    expect(lista).toBeTruthy();
+    expect(lista!.record.workspaceId).toBe(suyoDos);
   });
 });
