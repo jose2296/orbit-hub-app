@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Enter } from "@/components/ui/enter";
+import { mediaCardOf } from "@/lib/lists/media-card";
 import {
   sharedCoverStyle,
   sharedCoverTag,
@@ -212,7 +213,22 @@ export default function ItemDetailsScreen() {
     };
   }, [externalId, kind, t]);
 
-  if (isLoading) {
+  /*
+    The "Cargando" screen, **and only when there is nothing of our own to draw.**
+    `isLoading` starts as `true` on purpose — it is set back to `false` by the
+    effect below once it knows whether there is anything to ask — and that first
+    frame is the one the transition is made of. So while the provider is being
+    asked, the screen showed a centred hourglass and nothing else: no poster, no
+    title, and therefore **nothing for the poster that was pressed to travel to**.
+    The transition was being asked for on the one frame where the thing it needs
+    does not exist yet.
+
+    With a row in hand there is always something: the poster and the title are in
+    the cache and cost nothing. So the hourglass is for the case where there is
+    genuinely nothing — no row and no record — and the skeleton below covers
+    everything else.
+  */
+  if (isLoading && !item) {
     return (
       <Screen>
         <EmptyState icon="hourglass-outline" title={t("common.loading")} />
@@ -223,14 +239,94 @@ export default function ItemDetailsScreen() {
   // A title written by hand has no record anywhere to fetch. The screen is not
   // an error and not an empty one: it is the row itself, with the actions that
   // apply to a row, and the way to give it a record if it is a real title.
-  if (!details && !error && item) {
+  if (item && !error && (!details || isLoading)) {
+    /*
+      **The same screen the loaded one is, with the parts that are missing filled
+      with placeholders** — and the reason it is not a card with a sentence in it is
+      the poster.
+
+      Pressing a poster in the carousel is a promise that the poster is going
+      somewhere. This used to answer that promise with a completely different
+      screen: a grey card, a title and a line saying there is no record yet, while
+      the request went off. So on the frame that matters there was no poster
+      anywhere on screen, the browser had nothing to pair with the one that had
+      been pressed, and the transition the person pressed for did not happen — it
+      was replaced by a card arriving, then by the real screen arriving.
+
+      The row already knows its own poster and its own title, in the cache, without
+      asking anybody. So those two are drawn **where the loaded screen draws them**,
+      at the same size and in the same place, and the two elements the carousel was
+      carrying line up with the two that arrive. Everything that genuinely needs the
+      provider — the tagline, the synopsis, the facts, the cast — is a placeholder
+      in the space it is going to occupy, so nothing jumps when the answer lands.
+
+      And that is also the honest reading of a screen that is loading: the shape of
+      what is coming, with the one thing that was already known already there.
+    */
     return (
-      <Screen>
-        <Card variant="muted" style={{ gap: theme.spacing.md }}>
-          <AppText variant="title">{item.title}</AppText>
-          <AppText variant="body" tone="muted">
-            {t("itemDetails.noRecord")}
-          </AppText>
+      <Screen scroll>
+        <View style={{ gap: theme.spacing.lg }}>
+          <View style={[styles.header, { gap: theme.spacing.lg }]}>
+            <View style={[styles.cover, { gap: theme.spacing.md }]}>
+              {mediaCardOf(item)?.imageUrl ? (
+                <Image
+                  source={{ uri: mediaCardOf(item)?.imageUrl as string }}
+                  resizeMode="cover"
+                  style={[
+                    styles.poster,
+                    {
+                      borderRadius: theme.radius.md,
+                      backgroundColor: theme.colors.surfaceMuted,
+                    },
+                    /*
+                      **The name the carousel's poster is carrying, written from the
+                      same fact.** Without it there is nothing on this screen for the
+                      browser to pair with the poster that was pressed, and the
+                      transition that was asked for is one that never starts.
+                    */
+                    sharedCoverStyle(item.id),
+                  ]}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.poster,
+                    styles.posterFallback,
+                    {
+                      borderRadius: theme.radius.md,
+                      backgroundColor: theme.colors.surfaceMuted,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={listKind === "books" ? "book-outline" : "film-outline"}
+                    size={28}
+                    color={theme.colors.textMuted}
+                  />
+                </View>
+              )}
+            </View>
+
+            <View style={[styles.headerText, { gap: theme.spacing.sm }]}>
+              <AppText variant="title">{item.title}</AppText>
+              <Esqueleto alto={22} ancho="70%" />
+              <Esqueleto alto={16} />
+              <Esqueleto alto={16} ancho="92%" />
+              <Esqueleto alto={16} ancho="84%" />
+              <Esqueleto alto={16} ancho="60%" />
+            </View>
+          </View>
+
+          <Card variant="muted" style={{ gap: theme.spacing.sm }}>
+            <Esqueleto alto={14} ancho="30%" />
+            <Esqueleto alto={16} ancho="80%" />
+          </Card>
+
+          {/*
+            The row's own words under the placeholders, **and it is the row and not
+            the provider**: the tags and the note are in the cache already, so there
+            is nothing to wait for and no reason to hide them behind a grey bar.
+          */}
           {item.tags.length > 0 ? (
             <AppText variant="caption" tone="accent">
               {item.tags.join(" · ")}
@@ -241,7 +337,7 @@ export default function ItemDetailsScreen() {
               {item.annotation}
             </AppText>
           ) : null}
-        </Card>
+        </View>
 
         {/* Aqui no hay botones: "buscar este titulo" y "marcar como vista"
             estan en el menu de al lado de la portada, que es donde esta el resto
@@ -974,6 +1070,32 @@ function ActionButton({
         </AppText>
       </Animated.View>
     </Pressable>
+  );
+}
+
+/**
+ * A grey bar where something is coming, **and its height is the height of what
+ * will be there.**
+ *
+ * It is not a spinner and not a shimmer: a spinner says "wait", and a person who
+ * has already pressed the poster knows what they are waiting for — they can see
+ * the poster. A bar of the right size says "this is the synopsis" without saying
+ * anything, and it holds the place so the text does not arrive by shoving
+ * everything below it down.
+ */
+function Esqueleto({ alto, ancho = "100%" }: { alto: number; ancho?: `${number}%` | "auto" }) {
+  const theme = useTheme();
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        height: alto,
+        width: ancho,
+        borderRadius: theme.radius.sm,
+        backgroundColor: theme.colors.skeleton,
+      }}
+    />
   );
 }
 

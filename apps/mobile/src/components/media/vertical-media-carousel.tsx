@@ -8,7 +8,7 @@ import { Animated, Pressable, StyleSheet, View } from "react-native";
   transition would never happen with no error anywhere to look.
 */
 import AnimatedUI from "react-native-reanimated";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -103,6 +103,30 @@ export function VerticalMediaCarousel({
 
   const [alto, setAlto] = useState(0);
   const desplazamiento = useRef(new Animated.Value(0)).current;
+
+  /*
+    Where the row is scrolled to, **put back to the beginning whenever the set of
+    posters changes.**
+
+    The fade below is a function of how far each card is from the middle of the
+    screen, and the card in the middle is the one at full opacity — which means the
+    *first* card is only at full opacity while the row is scrolled to the
+    beginning. Changing the tab changes the posters without changing the scroll
+    position, so the card a person is looking at inherited whatever offset the
+    other tab had been left at, and arrived dimmed.
+
+    That is the whole of the asymmetry that made this look like two different
+    things: the tab with one title has nothing to scroll and is always centred, and
+    the tab with five keeps the offset of wherever the last tab was left and shows
+    its first poster at two thirds.
+
+    **And the offset is a number, not a scroll command**, so this does not fight a
+    finger that is on the row at the moment the data arrives: the value is what the
+    scroll actually is, and it is written again by `onScroll` the moment it is not.
+  */
+  useEffect(() => {
+    desplazamiento.setValue(0);
+  }, [desplazamiento, items]);
 
   /**
    * Which poster failed to load, and it is a **Set and not a flag**.
