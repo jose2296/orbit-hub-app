@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+
+# OrbitHub web.
+#
+# A different service from the API, and a different image. The API is a Node
+# server; this is 94 static files and a router with no room to be clever. Railway
+# gets one image per service, so the web export is built inside this container
+# rather than copied from the repository.
+#
+# The context is the repository root because `npm ci` here is an npm workspaces
+# install: the app's package.json depends on `@orbit-hub/contracts` and
+# `@orbit-hub/config` as local workspaces, and a lockfile that does not see them
+# is a lockfile npm refuses.
+
+# ------------------------------------------------------------------- build --
+
+FROM node:22-slim AS build
+
+WORKDIR /repo
+ENV npm_config_update_notifier=false
+
+# Manifests on their own, so this layer survives a change to any source file.
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY apps/mobile/package.json apps/mobile/package.json
+COPY apps/api/package.json apps/api/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/config/package.json packages/config/package.json
+
+# `apps/api` is here as a manifest and nothing more: its manifest has to exist
+# for the workspace graph to resolve, but none of its code is needed.
+RUN npm ci --workspace @orbit-hub/mobile --workspace @orbit-hub/contracts --workspace @orbit-hub/config
+
+COPY packages/contracts/ packages/contracts/
+COPY packages/config/ packages/config/
+COPY apps/mobile/ apps/mobile/
+
+# Contracts and config first, and for the same reason as the API image: Metro
+# resolves them through `dist`, and a stale package builds into a bundle that
+# disagrees with the server about what a list item is.
+RUN npm run build:packages \
+ && npm run export:web --workspace @orbit-hub/mobile
+
+# ----------------------------------------------------------------- runtime --
+
+FROM nginx:1.27-alpine AS runtime
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /repo/apps/mobile/dist /usr/share/nginx/html
+
+# nginx:alpine serves as root and drops to nginx for the workers, so it can bind
+# :8080 without the privilege bit that Railway does not grant.
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

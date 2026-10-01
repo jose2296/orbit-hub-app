@@ -1,0 +1,43 @@
+# The build context is the whole monorepo, because the API compiles the contract
+# and config packages that live next to it. Everything below is either not needed
+# to produce `apps/api/dist/server.js`, or must never reach the image.
+
+# Secrets and local state. The `.env` files are already git-ignored; a Docker
+# build does not read .gitignore, so they would still be in the context.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Installed by the image itself, in the stage that needs it.
+node_modules
+**/node_modules
+dist
+**/dist
+.expo
+**/.expo
+
+# Local Postgres, uploads and whatever else development leaves behind.
+.data
+**/.data
+*.log
+
+# The app is a workspace, so `npm ci` needs its `package.json` for the workspace
+# graph to resolve even when the image is the API and never builds it, and the web
+# image exports its source. What is left out is what is generated and large:
+# `android/` is a prebuilt native project with Gradle caches, and `dist/` is a
+# previous export that the container rebuilds.
+apps/mobile/android
+apps/mobile/ios
+capturas
+regresion
+verify
+.playwright-mcp
+
+# Version control and editor noise.
+.git
+.github
+.vscode
+.idea
