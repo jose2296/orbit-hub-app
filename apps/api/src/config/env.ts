@@ -138,17 +138,13 @@ const envSchema = z
       }
     }
 
-    if (value.NODE_ENV === 'production' && value.STORAGE_DRIVER === 'local') {
-      // A local directory is inside the container, and a container that restarts
-      // loses it. Saying so at boot is better than an attachment that was there
-      // yesterday and is a 404 today.
-      ctx.addIssue({
-        code: 'custom',
-        path: ['STORAGE_DRIVER'],
-        message:
-          'STORAGE_DRIVER=local keeps files on the disk of this process, which a restart loses; set it to s3 in production',
-      });
-    }
+    // `local` in production is deliberately NOT an error any more. It was one, and
+    // refusing to boot turned out to be the wrong call for a reason a deploy shows
+    // in one minute: a server that will not start cannot be looked at, and one that
+    // starts with a warning can. The attachments really are lost on every redeploy —
+    // that has not been downgraded, it just stopped being a reason to keep the whole
+    // API down until somebody configures a bucket. What is missing is the driver, not
+    // the permission to run without it. See `warnAboutEphemeralStorage`.
 
     if (value.NODE_ENV === 'production' && !value.JWT_SECRET) {
       ctx.addIssue({

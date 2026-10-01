@@ -98,25 +98,53 @@ certificados, a cambio de que el proxy tenga que aguantar también las subidas d
 - **`@node-rs/argon2` es nativo**, y la imagen es `node:22-slim` (glibc) a propósito:
   los binarios precompilados que trae son `linux-x64-gnu`, `linux-arm64-gnu` y los musl.
 
-## Los dos cosas que no funcionan en Railway todavía
+## Los adjuntos no sobreviven a un redeploy ⬜
 
-1. **Los adjuntos se pierden.** `STORAGE_DRIVER=local` escribe en `.data/attachments`,
-   y el disco de un contenedor de Railway es efímero: se borra en cada redeploy. El
-   driver `s3` ya existe y está implementado; lo que falta son las variables
-   (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) y decidir el
-   proveedor. Hasta entonces, las fotos de las notas se suben y desaparecen.
-2. **Más de una réplica corre migraciones a la vez.** Con una sola instancia no pasa
-   nada. Si se sube el número de réplicas, poner `RUN_MIGRATIONS_ON_BOOT=false` y
-   correrlas como un paso aparte, o Drizzle se encuentra con dos procesos aplicando la
-   misma migración.
+**Es la deuda que queda abierta, y es deliberada.** `STORAGE_DRIVER=local` escribe en
+`.data/attachments`, dentro del contenedor, y el disco de Railway es efímero: se borra
+en cada redeploy. Una foto subida a una nota sobrevive hasta el siguiente despliegue y
+después es un 404.
 
-La primera tiene una trampa que ya está resuelta en la imagen y conviene entender, porque
-es fácil reintroducirla: el servidor corre como `node` (uid 1000) y **no** como root.
-Todo lo que escribe la imagen se crea como root, así que un directorio que el proceso
-necesite escribir tiene que ser de `node` explícitamente. El `Dockerfile` lo hace para
-`/app/.data`, y sin eso el arranque falla con `EACCES` — después de que la API ya esté
-escuchando y el health check ya responda, que es la parte incómoda: el despliegue parece
-bueno y falla en el primer adjunto que suba alguien.
+**El driver `s3` ya está escrito y probado** (`apps/api/src/modules/notes/storage.ts`): el
+API no sirve los bytes, da una URL firmada y el fichero va del móvil al bucket. Lo único
+que falta son cuatro variables y elegir dónde vive el bucket:
+
+| Variable | Qué es |
+| --- | --- |
+| `STORAGE_DRIVER` | `s3` |
+| `S3_BUCKET` | El nombre del bucket |
+| `S3_REGION` | Su región |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Credenciales con permiso de escritura |
+| `S3_ENDPOINT` | Opcional; para un bucket que no es de AWS, como Cloudflare R2 |
+
+**Por qué `local` en producción dejó de ser un error de arranque.** Era un
+`superRefine` que rechazaba la configuración, y eso tenía la API entera caída —auth,
+sync, listas, notas, todo— por una cosa que usa una parte de la app. Un servidor que no
+arranca no se puede mirar, y uno que arranca con un aviso sí. Los ficheros se siguen
+perdiendo: eso no se ha degradado, ha dejado de ser motivo para tener la API caída.
+
+Ahora avisa al arrancar, y el aviso es el que dice qué arreglar:
+
+```
+attachments are being written to this container's disk, which a restart or redeploy erases
+  driver: local   dir: .data/attachments
+  fix: set STORAGE_DRIVER=s3 and the four S3_* variables
+```
+
+### La trampa de los permisos
+
+El servidor corre como `node` (uid 1000) y **no** como root, y todo lo que escribe la
+imagen se crea como root. Un directorio que el proceso necesite escribir tiene que ser
+de `node` explícitamente: el `Dockerfile` lo hace para `/app/.data`, porque sin el
+`chown` el arranque falla con `EACCES` —después de que la API ya escuche y el health
+check ya responda, que es la parte incómoda: el despliegue parece bueno y falla en el
+primer adjunto que suba alguien.
+
+## Más de una réplica correría migraciones a la vez ⬜
+
+Con una sola instancia no pasa nada. Si se sube el número de réplicas, poner
+`RUN_MIGRATIONS_ON_BOOT=false` y correrlas como un paso aparte, o Drizzle se encuentra
+con dos procesos aplicando la misma migración.
 
 ## Desplegar la web: segundo servicio
 

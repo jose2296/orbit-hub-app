@@ -13,10 +13,36 @@ const app = createApp();
  */
 const shouldMigrate = process.env['RUN_MIGRATIONS_ON_BOOT'] !== 'false';
 
+/**
+ * Says out loud that attachments are living on a disk that a redeploy erases.
+ *
+ * This used to be a boot error instead, and the change is worth recording: it kept
+ * the entire API down — auth, sync, lists, notes, everything — for the sake of a
+ * feature that one part of the app uses. The files really are lost; what changed is
+ * that it is a warning in the log instead of a reason not to run.
+ *
+ * `warn` and not `error`, so it is visible in the middle of a normal deploy log
+ * instead of buried among the lines that say everything is fine.
+ */
+function warnAboutEphemeralStorage(): void {
+  if (env.NODE_ENV !== 'production' || env.STORAGE_DRIVER !== 'local') return;
+
+  logger.warn(
+    {
+      driver: env.STORAGE_DRIVER,
+      dir: env.STORAGE_LOCAL_DIR,
+      fix: 'set STORAGE_DRIVER=s3 and the four S3_* variables; attachments are lost on every redeploy until then',
+    },
+    'attachments are being written to this container\'s disk, which a restart or redeploy erases',
+  );
+}
+
 async function start(): Promise<Server> {
   if (shouldMigrate) {
     await runMigrations(process.env['MIGRATIONS_FOLDER'] ?? './drizzle');
   }
+
+  warnAboutEphemeralStorage();
 
   const server = await new Promise<Server>((resolve) => {
     const started = app.listen(env.PORT, env.HOST, () => {

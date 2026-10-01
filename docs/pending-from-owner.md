@@ -144,6 +144,25 @@ El paso a paso completo, con las variables y lo que no funciona todavía, está 
 [deploy-railway.md](deploy-railway.md). El `Dockerfile` de la raíz ya está escrito y
 construido, así que en Railway solo hay que señalar al repo.
 
+### Los errores que costaron este despliegue ⬜
+
+Los dos servicios fallaron al arrancar, y ninguno era un bug del código:
+
+| Qué pasa | Por qué |
+| --- | --- |
+| `WEB_ORIGIN: Invalid URL` | Estaba a `temp`, un placeholder. Y **sin `https://`**: `z.string().url()` no acepta un dominio pelado |
+| `DATABASE_URL` no puesta | El Postgres tenía la suya, pero nadie la conectó. Es `${{Postgres.DATABASE_URL}}` |
+| El servicio web servía la API | `Dockerfile Path` en `Dockerfile` en vez de `Dockerfile.web`, y los dos logs salían idénticos |
+
+`DATABASE_SSL=false` porque la red privada de Railway no sale de Railway.
+
+### El almacenamiento se deja para luego ⬜
+
+Los adjuntos **se pierden en cada redeploy**, y está escrito en
+[deploy-railway.md](deploy-railway.md) con las cuatro variables del driver `s3`, que ya
+está implementado. El API ahora avisa al arrancar en vez de negarse a arrancar: eso tenía
+la API entera caída —auth, sync, listas, notas— por una cosa que usa una parte de la app.
+
 ---
 
 ## 5. Identificadores de la app y dominio ⬜
