@@ -55,10 +55,12 @@ coverage/
 test-results/
 playwright-report/
 # Artefactos del navegador de pruebas: capturas, trazas y ficheros subidos para
-# comprobar un flujo a mano.
+# comprobar un flujo a mano. Son la evidencia de una comprobación, no la
+# comprobación: los scripts de `scripts/verify-*.mjs` son lo que se versiona.
 .playwright-mcp/
 verify/
 capturas/
+regresion/
 
 # Local databases and dumps
 .data/
