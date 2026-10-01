@@ -134,7 +134,9 @@ ok "credenciales presentes"
 
 step "2/10  Git"
 
-[ -d .git ] || fail "Esto no es un repositorio git."
+# Un worktree de git tiene .git como fichero, no como directorio, y esta
+# comprobación tiene que_valer para los dos.
+git rev-parse --git-dir >/dev/null 2>&1 || fail "Esto no es un repositorio git."
 
 if [ -n "$(git status --porcelain)" ]; then
   git status --short

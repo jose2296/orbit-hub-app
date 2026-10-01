@@ -156,6 +156,7 @@ Start at [`docs/README.md`](docs/README.md):
 - [Roadmap](docs/roadmap.md)
 - [Environment variables](docs/environment.md) — every variable, and which came from where
 - [Deploying to Railway](docs/deploy-railway.md) — the API image, the web image, every variable, and what does not work yet
+- [Publishing to Google Play](docs/deploy-play.md) — `npm run release`: the upload key, the service account, and the one-time Play Console setup
 - [Pending from the owner](docs/pending-from-owner.md) — credentials and decisions still needed
 - [Legacy migration (future work)](docs/migration/legacy-migration.md)
 - [Security & secrets](docs/security/secrets.md)

@@ -1782,7 +1782,7 @@ una base de datos por fichero, y eso es un bloque entero.
 | `DATABASE_URL` de PostgreSQL de producción | La API usa PGlite en desarrollo, que es un Postgres en memoria dentro del proceso |
 | Cuentas de las stores, firma y perfiles de build | Sin esto no hay binario distribuible |
 | Alojar `jrz-labs.com` (o `app.jrz-labs.com`) | El correo ya sale —el dominio está verificado y hay envío real— pero los enlaces de los correos abren `WEB_ORIGIN`, que hoy es `localhost:8081` |
-| Clientes de Google OAuth para Android e iOS, si se quiere en nativo | El login funciona en web; para las stores hacen falta los otros dos clientes con `com.orbithub.app` |
+| Clientes de Google OAuth para Android e iOS, si se quiere en nativo | El login funciona en web; para las stores hacen falta los otros dos clientes: Android con `com.jrzlabs.orbithub` y la huella SHA-1 del keystore de subida, iOS con `com.orbithub.app`. Ver [deploy-play.md](deploy-play.md) |
 
 **Resuelto desde la última revisión:** dominio de Resend verificado (`jrz-labs.com`,
 `eu-west-1`, comprobado contra la API), envío real funcionando

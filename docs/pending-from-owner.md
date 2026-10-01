@@ -65,8 +65,9 @@ Estos son los pasos completos, por si hay que rehacerlos o crear los clientes de
      `https://orbithub-app.jrz-labs.com/auth/google`
      (en desarrollo, `http://localhost:8081/auth/google`)
    - **Tipo de aplicación iOS**: bundle id `com.orbithub.app`
-   - **Tipo de aplicación Android**: package `com.orbithub.app` y huella SHA-1 del keystore de
-     firma
+   - **Tipo de aplicación Android**: package `com.jrzlabs.orbithub` y huella SHA-1 de
+     `apps/mobile/keys/orbit-hub-upload.jks`. Se saca con:
+     `keytool -list -v -keystore apps/mobile/keys/orbit-hub-upload.jks -alias orbit-hub-upload`
 4. Añade el dominio en **Dominios autorizados** de la pantalla de consentimiento.
 
 | Dato | Dónde lo pongo |
@@ -77,8 +78,9 @@ Estos son los pasos completos, por si hay que rehacerlos o crear los clientes de
 
 > El `client_secret` nunca va en la app. Solo se usa en la API para canjear el código.
 
-**Lo que queda para las stores:** los clientes de iOS y Android con `com.orbithub.app`. El de
-web ya funciona; sin esos dos, el login con Google no llega a un móvil.
+**Lo que queda para las stores:** los clientes de iOS (`com.orbithub.app`) y Android
+(`com.jrzlabs.orbithub`). El de web ya funciona; sin esos dos, el login con Google no
+llega a un móvil.
 
 ---
 
@@ -200,7 +202,7 @@ Confirmar antes de crear las cuentas en las stores, porque después no se pueden
 | Elemento | Valor | Estado |
 | --- | --- | --- |
 | Bundle id iOS | `com.orbithub.app` | ⬜ confirmar |
-| Package Android | `com.orbithub.app` | ⬜ confirmar |
+| Package Android | `com.jrzlabs.orbithub` | ✅ confirmado |
 | Dominio web | `orbithub-app.jrz-labs.com` | ✅ en uso |
 | Dominio de la API | `orbithub-api.jrz-labs.com` | ✅ en uso |
 | Correo de soporte | `support@orbithub.com` | ⬜ confirmar |
@@ -216,8 +218,11 @@ No bloquean el desarrollo, pero abren camino a la Fase 10.
 
 - [ ] Apple Developer Program (membresía anual) → para TestFlight y la App Store
 - [ ] Google Play Console (cuenta de desarrollador, 25 USD una vez) → para la Play Store
-- [ ] EAS (Expo) → se configura con `eas login` y un proyecto de EAS cuando haya bundle id y
-      cuenta de Apple/Google
+      — la cuenta de servicio ya está creada en Google Cloud
+      (`orbit-hub-play-uploader@orbithub-509713.iam.gserviceaccount.com`); falta bajar su clave
+      JSON y crear la app `com.jrzlabs.orbithub`. Ver [deploy-play.md](deploy-play.md).
+- [ ] EAS (Expo) → no hace falta para publicar. El build y la subida son locales; `eas.json`
+      sigue ahí por si algún día se quiere un build cloud.
 
 ---
 
@@ -230,7 +235,7 @@ No bloquean el desarrollo, pero abren camino a la Fase 10.
 | `DATABASE_URL` | Ejecuto las migraciones contra producción y verifico el health check |
 | Nombre y correo de Git | ~~Ya está~~ — no hace falta |
 | Bundle id y dominio definitivos | Los fijo en config, AASA, Asset Links y en EAS |
-| Cuentas de las stores | Configuro `eas.json`, firma y builds de previsualización |
+| Cuentas de las stores | Nada en el código: `npm run release` ya está. Ver [deploy-play.md](deploy-play.md) |
 
 ---
 

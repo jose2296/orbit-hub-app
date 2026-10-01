@@ -68,7 +68,8 @@ Two rules follow, and both are enforced in `apps/api/src/modules/auth/google.ts`
 
 - **A web client id on an installed app is rejected by Google** with `invalid_request` and "does
   not comply with Google's OAuth 2.0 policy for keeping apps secure". Native builds need their
-  own clients, created with the package name / bundle id `com.orbithub.app`.
+  own clients, created with the package name `com.jrzlabs.orbithub` (Android) and the
+  bundle id `com.orbithub.app` (iOS).
 - **A public client cannot keep a secret**, so its code can only be redeemed with the PKCE
   verifier. The app generates it, and sends it to the API, which performs the exchange. A native
   code arriving without a verifier is refused locally rather than sent to Google to fail.

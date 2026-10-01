@@ -20,7 +20,7 @@ describe("la sanitizacion del editor", () => {
   });
 
   it("deja pasar la imagen de un telefono, que es un fichero de la cache", () => {
-    expect(allows("file:///data/user/0/com.orbithub.app/cache/note-images/a.png")).toBe(true);
+    expect(allows("file:///data/user/0/com.jrzlabs.orbithub/cache/note-images/a.png")).toBe(true);
   });
 
   it("deja pasar los enlaces que una nota puede llevar", () => {
