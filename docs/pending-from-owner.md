@@ -18,14 +18,33 @@ comprobado contra el repositorio en vez de fiarme de la nota.
 
 ---
 
-## 2. Google OAuth ✅ (claves puestas y funcionando)
+## 2. Google OAuth 🟡 (claves puestas, falta un URI en la consola de Google)
 
-El botón **ya está activo**: `EXPO_PUBLIC_GOOGLE_CLIENT_ID` en `apps/mobile/.env` y
-`GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` en `apps/api/.env`. El intercambio de código y el
-linking de identidad los hace la API, y `POST /auth/google` tiene su test.
+El botón **ya está activo** y la app llega a Google: `EXPO_PUBLIC_GOOGLE_CLIENT_ID` en el
+servicio web de Railway y `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` en el de la API. El
+intercambio de código y el linking los hace la API, y `POST /auth/google` tiene su test.
 
-Estos son los pasos de Google Cloud Console, por si hay que rehacerlos o crear los clientes
-de móvil:
+**Lo que falla hoy es una línea en la consola de Google:** `redirect_uri_mismatch`. Google
+devuelve eso en la URL de error, con el texto *"el URI redirigido no coincide con el URI de
+redirecto autorizado para esta aplicación"*, y el popup se queda ahí. **No llega ninguna
+petición a la API**, porque el código nunca se llega a canjear.
+
+El URI lo pide la app a partir del propio origen de la página, no de una variable:
+
+```
+https://orbithub-app.jrz-labs.com/auth/google
+```
+
+Se registró `app.jrz-labs.com` cuando el dominio se llamaba así, así que el nombre nuevo no
+está. Añádelo en el cliente **Web** del proyecto `959281134147`:
+
+- **APIs y servicios → Credenciales → (el ID de cliente web) → URI de redirección
+  autorizada**, y añadir `https://orbithub-app.jrz-labs.com/auth/google`.
+- **Sin barra final**: `.../auth/google/` es un URI distinto y Google lo rechaza igual.
+
+Y en **Pantalla de consentimiento OAuth → Dominios autorizados**, `jrz-labs.com`.
+
+Estos son los pasos completos, por si hay que rehacerlos o crear los clientes de móvil:
 
 1. Crea o usa un proyecto en [console.cloud.google.com](https://console.cloud.google.com).
 2. **APIs y servicios → Pantalla de consentimiento OAuth**. Tipo: *Externo*. Añade:
@@ -35,7 +54,8 @@ de móvil:
    - pantalla de consentimiento: correo de soporte
 3. **APIs y servicios → Credenciales → Crear credenciales → ID de cliente OAuth**:
    - **Tipo de aplicación web**: URI de redirección autorizada
-     `https://app.jrz-labs.com/auth/google` (en desarrollo, `http://localhost:8081/auth/google`)
+     `https://orbithub-app.jrz-labs.com/auth/google`
+     (en desarrollo, `http://localhost:8081/auth/google`)
    - **Tipo de aplicación iOS**: bundle id `com.orbithub.app`
    - **Tipo de aplicación Android**: package `com.orbithub.app` y huella SHA-1 del keystore de
      firma
@@ -169,15 +189,16 @@ la API entera caída —auth, sync, listas, notas— por una cosa que usa una pa
 
 Confirmar antes de crear las cuentas en las stores, porque después no se pueden cambiar.
 
-| Elemento | Valor provisional | Estado |
+| Elemento | Valor | Estado |
 | --- | --- | --- |
 | Bundle id iOS | `com.orbithub.app` | ⬜ confirmar |
 | Package Android | `com.orbithub.app` | ⬜ confirmar |
-| Dominio web | `app.orbithub.com` | ⬜ confirmar o elegir otro |
+| Dominio web | `orbithub-app.jrz-labs.com` | ✅ en uso |
+| Dominio de la API | `orbithub-api.jrz-labs.com` | ✅ en uso |
 | Correo de soporte | `support@orbithub.com` | ⬜ confirmar |
 
-**Sobre el dominio:** lo necesito antes de la Fase 7 (deep links, universal links, AASA y
-Asset Links requieren que el dominio apunte a la web y a la app).
+**Sobre el dominio:** los dos dominios ya apuntan a Railway y funcionan, así que la Fase 7
+solo necesita los `AASA` y los `Asset Links` encima de lo que ya está.
 
 ---
 
@@ -220,18 +241,21 @@ Lo único que bloquea el despliegue es de tu cuenta y son tres cosas:
 
 ---
 
-## 8. Dominio `jrz-labs.com` 🟡 (correo resuelto, falta alojaje)
+## 8. Dominio `jrz-labs.com` ✅ (correo y web resueltos)
 
 **Resuelto:** los registros DNS de Resend (DKIM + SPF) están puestos y el dominio sale
-`verified`. Los correos se envían de verdad desde `no-reply@jrz-labs.com`.
+`verified`. Los correos se envían de verdad desde `no-reply@jrz-labs.com`. Y la web está
+sirviéndose en `https://orbithub-app.jrz-labs.com`, con la API detrás de
+`https://orbithub-api.jrz-labs.com`.
 
-**Lo que falta:**
+**Lo que queda:**
 
 | Qué | Para qué |
 | --- | --- |
-| Apuntar el dominio (o `app.jrz-labs.com`) al hosting de la web | Para que la PWA se sirva y los enlaces de los correos abran la app |
-| Poner `WEB_ORIGIN` al dominio real en producción | Ahora es `http://localhost:8081`, o sea que los enlaces de verificación y de invitación apuntan a local |
 | `AASA` (iOS) y `Asset Links` (Android) | Deep links y universal links, Fase 7 |
+
+Para probar en local, `WEB_ORIGIN=http://localhost:8081` y se leen los enlaces del log. Está
+explicado en [environment.md](environment.md#web_origin-en-desarrollo).
 
 Para probar en local, `WEB_ORIGIN=http://localhost:8081` y se leen los enlaces del log. Está
 explicado en [environment.md](environment.md#web_origin-en-desarrollo).
