@@ -108,17 +108,29 @@ describe("el menu es uno", () => {
       "utf8",
     );
 
-    // The four things that were on the phone and not on the desktop. If one of
+    // The three things that were on the phone and not on the desktop. If one of
     // them goes missing the menu is a flat list again, and this is the test that
     // says so before somebody screenshots it.
     for (const parte of [
       "function SpaceBranch",
       "function FolderBranch",
       "function ListBranch",
-      "function InboxRow",
     ]) {
       expect(menu).toContain(parte);
     }
+
+    // The inbox row is **not** one of them any more, and that is the fix rather
+    // than a regression: the share notification links to `/shared`, that route had
+    // to become a screen, and a screen cannot draw a function that only exists
+    // inside the drawer. It lives in `shared-inbox-row` now and both draw the same
+    // one — see `email-links.test.ts`, which is the test that says the link has
+    // somewhere to land.
+    expect(menu).toContain("SharedInboxRow");
+    const fila = readFileSync(
+      join(RAIZ, "components", "shares", "shared-inbox-row.tsx"),
+      "utf8",
+    );
+    expect(fila).toContain("export function SharedInboxRow");
   });
 
   it("no queda un segundo menu en un archivo aparte", () => {

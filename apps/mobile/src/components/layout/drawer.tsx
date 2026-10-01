@@ -29,6 +29,7 @@ import type {
 } from "@orbit-hub/contracts";
 
 import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
+import { SharedInboxRow } from "@/components/shares/shared-inbox-row";
 import { SharesDot } from "@/components/shares/shares-dot";
 import { useUnseen } from "@/lib/shares/incoming-store";
 import { SyncBadge } from "@/components/sync/sync-badge";
@@ -569,7 +570,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
               ) : null}
             </View>
             {inbox.map((share) => (
-              <InboxRow
+              <SharedInboxRow
                 key={share.id}
                 share={share}
                 onPress={() => setColocando(share)}
@@ -590,55 +591,6 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
         onPlaced={() => void reloadInbox()}
       />
     </View>
-  );
-}
-
-/**
- * One thing shared with this person that is not filed yet, in its own component
- * so the hint hook is not called once per share inside a map.
- */
-function InboxRow({ share, onPress }: { share: Share; onPress: () => void }) {
-  const theme = useTheme();
-  const t = useTranslation();
-
-  const pista = useA11yHint(t("place.chooseSpaceHint"));
-
-  return (
-    <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${t("drawer.sharedWithMe")}: ${share.title}`}
-        {...pista.props}
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.item,
-          {
-            borderRadius: theme.radius.md,
-            backgroundColor: pressed
-              ? theme.colors.surfaceMuted
-              : "transparent",
-            paddingHorizontal: theme.spacing.sm,
-            paddingVertical: 7,
-          },
-        ]}
-      >
-        <Ionicons name="people-outline" size={15} color={theme.colors.accent} />
-        <View style={{ flex: 1 }}>
-          <AppText variant="callout" numberOfLines={1}>
-            {share.title}
-          </AppText>
-          <AppText variant="caption" tone="subtle" numberOfLines={1}>
-            {share.ownerName ?? ""}
-          </AppText>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={14}
-          color={theme.colors.textSubtle}
-        />
-      </Pressable>
-      {pista.node}
-    </>
   );
 }
 
