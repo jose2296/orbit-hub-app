@@ -18,7 +18,7 @@ export const ANDROID_PACKAGE = 'com.jrzlabs.orbithub';
 export const WEB_ORIGIN = 'https://orbithub-app.jrz-labs.com';
 
 export const API_PREFIX = '/api/v1';
-export const SUPPORT_EMAIL = 'support@orbithub.com';
+export const SUPPORT_EMAIL = 'privacy@jrzlabs.com';
 
 export const SUPPORTED_LOCALES = ['es', 'en'] as const;
 export const DEFAULT_LOCALE = 'es' as const;

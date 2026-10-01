@@ -170,6 +170,11 @@ describe('los documentos legales', () => {
 
     // Baja este numero a medida que se resuelvan, y el boton de la tienda solo
     // se puede dar cuando este test afirme que no queda ninguno.
-    expect(pendientes).toHaveLength(4);
+    //
+    // Los cuatro estan cerrados: JRZ Labs es el responsable, privacy@jrzlabs.com
+    // el contacto, los proveedores (Railway, Resend, S3/R2, TMDB, Google Books)
+    // estan nombrados con sus terminos, y la ley aplicable es la espanola con los
+    // tribunales de Madrid.
+    expect(pendientes).toHaveLength(0);
   });
 });

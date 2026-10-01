@@ -63,7 +63,8 @@ export const LEGAL_PRIVACY: LegalDocumentData = {
       heading: 'El responsable',
       paragraphs: [
         'OrbitHub es una aplicación para organizar espacios de trabajo, listas, notas y tareas, disponible en Android, iOS y web con la misma cuenta.',
-        'PENDIENTE: nombre legal del responsable, domicilio, y el correo de contacto. Un nombre de producto no es un responsable, y esta página tiene que decir quién responde por los datos.',
+        'El responsable del tratamiento es JRZ Labs. Puedes escribir a privacy@jrzlabs.com para cualquier cosa relacionada con tus datos.',
+        'Si la ley de tu país te obliga a saber un domicilio físico del responsable, escríbenos y te lo enviamos. No lo publicamos aquí porque es un dato que cambia y esta página no se actualiza a menudo.',
       ],
     },
     {
@@ -85,10 +86,13 @@ export const LEGAL_PRIVACY: LegalDocumentData = {
     {
       heading: 'Con quién se comparten',
       paragraphs: [
-        'Con los proveedores que hacen funcionar el servicio, y solo para eso: el alojamiento del servidor y la base de datos, el envío del correo de verificación y de las invitaciones, y el almacenamiento de los adjuntos.',
+        'Con los proveedores que hacen funcionar el servicio, y solo para eso. Estos son todos, con un enlace a sus condiciones:',
+        '• Railway, que aloja el servidor y la base de datos PostgreSQL. Solo recibe tus datos porque es quien los guarda. Sus condiciones están en https://railway.com/legal/terms',
+        '• Resend, que envía el correo de verificación y el de las invitaciones. Cada correo sale con tu dirección en el campo Para. Sus condiciones están en https://resend.com/legal',
+        '• Amazon S3 o Cloudflare R2, que guardan los archivos que adjuntas a una nota. Tus condiciones están en https://aws.amazon.com/legal y https://www.cloudflare.com/terms',
         'Con Google si te validas con una cuenta de Google, y con TMDB y con Google Books si buscas películas, series o libros en el catálogo. Una búsqueda del catálogo envía el título que escribes a esos servicios para que puedan responder; no se les envía tu cuenta ni el contenido de tus notas.',
         'Con nadie más. No vendemos los datos, no se usan para publicidad, y no se comparten con terceros para sus propios fines.',
-        'PENDIENTE: nombrar aquí los proveedores concretos con sus condiciones, y la cláusula de transferencia internacional si alguno está fuera del Espacio Económico Europeo.',
+        'Todos estos proveedores pueden tratar datos fuera del Espacio Económico Europeo. Lo hacen con sus propias garantías, como los acuerdos de marco de protección de datos de la Comisión Europea o los marcos de privacidad de datos de Estados Unidos. Puedes escribirnos y te explicamos qué garantía cubre tu caso, o borrar la cuenta y que no quede nada en ningún sitio.',
       ],
     },
     {
@@ -101,8 +105,8 @@ export const LEGAL_PRIVACY: LegalDocumentData = {
       heading: 'Tus derechos',
       paragraphs: [
         'Puedes saber qué datos tuyos tenemos, corregirlos, pedir que se borre la cuenta, y llevarte una copia. También puedes oponerte a un uso concreto o retirar un consentimiento.',
-        'Para ejercerlos basta con escribir al correo de contacto. Y no tienen por qué ser un correo: casi todos se resuelven desde la propia aplicación, que es más rápido que leer un correo y más difícil de malinterpretar.',
-        'PENDIENTE: el correo de contacto donde ejercerlos, y el plazo de respuesta que se compromete.',
+        'Para ejercerlos basta con escribir a privacy@jrzlabs.com. Respondemos en un máximo de 30 días, y normalmente en dos o tres. Y no tienen por qué ser un correo: casi todos se resuelven desde la propia aplicación, que es más rápido que leer un correo y más difícil de malinterpretar.',
+        'Si no quedas satisfecho con la respuesta, puedes reclamar ante la Agencia Española de Protección de Datos.',
       ],
     },
     {
@@ -179,7 +183,8 @@ export const LEGAL_TERMS: LegalDocumentData = {
     {
       heading: 'Ley aplicable',
       paragraphs: [
-        'PENDIENTE: qué ley se aplica y qué tribunales son los competentes. Este es el punto que más se nota si falta: es la razón por la que existe la cláusula.',
+        'Estas condiciones se rigen por la ley española. Para cualquier controversia son competentes los tribunales de Madrid, porque es donde está el responsable.',
+        'Si estás en otro país, esto no te quita el derecho a usar la protección de tu consumidor local.',
       ],
     },
   ],

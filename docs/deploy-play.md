@@ -51,10 +51,16 @@ Sácalas cuando quieras publicar:
 
 ```bash
 export ORBIT_HUB_UPLOAD_KEYSTORE="$PWD/apps/mobile/keys/orbit-hub-upload.jks"
-export ORBIT_HUB_UPLOAD_STORE_PASSWORD="$(security find-generic-password -a "$USER" -s orbit-hub-upload-store -w)"
 export ORBIT_HUB_UPLOAD_KEY_ALIAS="orbit-hub-upload"
-export ORBIT_HUB_UPLOAD_KEY_PASSWORD="$(security find-generic-password -a "$USER" -s orbit-hub-upload-key -w)"
+export SUPPLY_JSON_KEY_PATH="$HOME/keys/play-service-account.json"
 ```
+
+Las dos contraseñas no hace falta exportarlas: `release.sh` las busca en el
+llavero bajo `orbit-hub-upload-store` y `orbit-hub-upload-key`. Si algún día
+prefieres tenerlas en el entorno, `ORBIT_HUB_UPLOAD_STORE_PASSWORD` y
+`ORBIT_HUB_UPLOAD_KEY_PASSWORD` tienen prioridad sobre el llavero.
+
+**Esto es lo único que necesitas exportar antes de cada publicación.**
 
 ### Qué hace el plugin, y por qué existe
 
@@ -135,10 +141,10 @@ Con *Admin* también funciona, pero no hace falta.
 
 - **Crear app**: nombre, idioma por defecto, **App o juego** → *App*, gratis
 - **Declaraciones de la app**: completes
-- **Público objetivo y contenido**: la ficha de la tienda y los �‑sintetizadores
-  de clasificación parental. Sin esto, Play no publica nada
-- **Política de privacidad**: URL pública. En `apps/mobile` hay
-  `src/app/legal/privacy.tsx`; falta publicarla en un dominio
+- **Público objetivo y contenido**: la ficha de la tienda y el cuestionario de
+  clasificación parental. Sin esto, Play no publica nada
+- **Política de privacidad**: `https://orbithub-app.jrz-labs.com/privacy` — ya
+  desplegada y sin `PENDIENTE:` dentro
 
 Para una cuenta **personal** creada después de noviembre de 2023, Google pide
 además **12 testers en internal testing durante 14 días** antes de permitir un
@@ -225,3 +231,139 @@ ahí.
 `build.gradle` (`keyPassword 'android'` y el `release` con firma de debug). Si
 Expo lo cambia, el plugin lanza un error que dice exactamente qué no encontró en
 vez de parchear a medias.
+
+
+---
+
+## Los textos de la ficha
+
+Play Console no tiene API para escribir la ficha: la descripción, el título corto
+y las capturas se editan en el navegador. `fastlane supply` sube binarios, no
+metadatos. Lo que hay aquí está escrito para copiar y pegar.
+
+**Play bloquea el título, el título corto y la descripción en cuanto hay un
+release fuera de internal testing.** Después ya no se cambian. Por eso conviene
+revisarlos aquí antes de la primera publicación, y no después.
+
+### Título corto (máx. 30 caracteres)
+
+```
+OrbitHub: listas y notas
+```
+
+Son 26. Empieza por el nombre porque es lo que la gente busca en el buscador de
+Play.
+
+### Descripción corta (máx. 80 caracteres)
+
+```
+Espacios, listas, notas y catálogo de películas y libros. Funciona sin conexión.
+```
+
+Son 74.
+
+### Descripción completa (máx. 4000 caracteres)
+
+```
+Un espacio para cada parte de tu vida, y dentro lo que esa parte necesita.
+
+ESPACIOS
+Un espacio es un sitio: Casa, Trabajo, el taller, lo que sea. Cada uno con su
+color y sus carpetas. Los espacios no son carpetas globales, así que la lista de
+la compra no se mezcla con lo del trabajo aunque las dos se llamen "pendientes".
+
+LISTAS DE TAREAS
+Tareas con icono, prioridad y orden. El icono importa más de lo que parece: una
+fila que dice "pan" y otra que dice "bombilla" se leen de un vistazo sin leer, y
+un emoji no funciona porque se ve distinto en cada móvil.
+
+CATÁLOGO DE PELÍCULAS, SERIES Y LIBROS
+Busca en el catálogo y añade a una lista. La lista guarda el póster, el año y de
+qué servicio viene, no solo un texto. Después se ordenan como quieras: por año,
+por título, por fecha de añadir.
+
+NOTAS
+Notas con formato, no texto plano. Con listas dentro si hace falta, con adjuntos,
+con plantillas para lo que repites.
+
+COMPARTE
+Comparte una nota, una lista o una carpeta con quien elijas y decide si puede
+verla o editarla. Las invitaciones se responden dentro de la propia aplicación,
+sin abrir el correo.
+
+FUNCIONA SIN CONEXIÓN
+Esto es lo que más se nota en el metro. La app guarda lo que ves en el
+dispositivo, escribe primero ahí y sincroniza cuando vuelve la cobertura. Si no
+hay red, no pierdes nada: se sincroniza después.
+
+EN VARIOS DISPOSITIVOS
+Android, iOS y web con la misma cuenta. Lo que escribes en el móvil aparece en el
+navegador y al revés.
+
+SIN ANUNCIOS
+Sin anuncios, sin rastreo, sin compras dentro. La aplicación es gratuita y no
+vende tus datos.
+
+---
+Política de privacidad: https://orbithub-app.jrz-labs.com/privacy
+
+---
+
+## La API que lleva el bundle
+
+Esto no es un detalle del build, es lo que decide si la app instalada sirve para
+algo.
+
+`EXPO_PUBLIC_API_URL` se **inlinea en el JavaScript** mientras Metro exporta. El
+valor acaba dentro del bundle, no en el entorno del sitio que se sirve. Después
+de compilar, el fichero es lo único que hay.
+
+Por eso hay tres ficheros y cada uno gana a otro:
+
+| Fichero | Para qué | Quién lo lee |
+| --- | --- | --- |
+| `apps/mobile/.env` | desarrollo, `http://localhost:4000/api/v1` | Expo |
+| `apps/mobile/.env.local` | overrides de tu máquina | Expo, y gana al anterior |
+| `apps/mobile/.env.release` | producción | **solo `release.sh`**, por variables de entorno |
+
+El tercero no lo lee Expo a propósito. Si `apps/mobile/.env` tuviera la URL de
+producción, tu `npm start` en local hablaría con la base de datos real y
+escribirías datos de prueba en producción cada vez que la app arrancara.
+
+Así que `release.sh` exporta lo que hay en `.env.release` en el entorno justo
+antes de compilar, por encima de lo que Expo cargue, y comprueba tres cosas:
+
+- que `EXPO_PUBLIC_API_URL` no esté vacía
+- que no apunte a `localhost`, `127.0.0.1` ni `10.0.2.2` — la máquina que compila
+- que `EXPO_PUBLIC_WEB_ORIGIN` esté puesta, porque es de donde sale el enlace del
+  correo de verificación
+
+### El fallo que esto evita
+
+Un AAB compilado sin esto lleva `http://localhost:4000` dentro. La app se
+instala, abre, y **funciona offline sin que nada falle de forma visible**: cada
+petición va a `localhost` del propio teléfono, donde no hay nada, y una conexión
+refusada se parece a una red mala. No sale un error, no hay rastro. Se descubre
+cuando alguien sincroniza y no pasa nada.
+
+Hay un test de web (`scripts/assert-export-env.mjs`) que lleva tiempo mirando
+esto para el bundle de la web, y `release.sh` lo corre también antes de
+compilar el Android.
+
+### El cliente de Google es por plataforma
+
+Un client de OAuth de web **no vale en una app instalada**: Google lo rechaza.
+Cada plataforma necesita el suyo, y `google-auth.ts` los lee de tres variables
+distintas:
+
+```
+EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
+EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID
+EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS
+```
+
+Solo el de web tiene *fallback* a `EXPO_PUBLIC_GOOGLE_CLIENT_ID`. Los de móvil no:
+si `EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID` está vacía, el botón de Google sale
+deshabilitado con una explicación debajo, y la página parece terminada. Es un
+fallo silencioso por diseño — la feature se ve "desactivada", no rota.
+
