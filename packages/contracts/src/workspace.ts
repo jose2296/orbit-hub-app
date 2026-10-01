@@ -857,6 +857,28 @@ export type Share = z.infer<typeof shareSchema>;
 export const shareListResponseSchema = z.object({ items: z.array(shareSchema) });
 export type ShareListResponse = z.infer<typeof shareListResponseSchema>;
 
+/**
+ * What has arrived at you, with the date it arrived.
+ *
+ * Deliberately **not** `shareSchema`: this one has no `nodeId`, no `workspaceId` and
+ * no `placedAt`, because none of them answer "has something new arrived". It exists to
+ * be counted, so it carries the least that a count needs — and a whole space is in it,
+ * which `Share` cannot be, since a space is not something you file.
+ */
+export const incomingShareSchema = z.object({
+  id: uuidSchema,
+  nodeType: shareNodeTypeSchema,
+  title: z.string(),
+  ownerName: z.string().nullable().default(null),
+  createdAt: z.iso.datetime(),
+});
+export type IncomingShare = z.infer<typeof incomingShareSchema>;
+
+export const incomingSharesResponseSchema = z.object({
+  items: z.array(incomingShareSchema),
+});
+export type IncomingSharesResponse = z.infer<typeof incomingSharesResponseSchema>;
+
 export const createShareRequestSchema = z.object({
   nodeType: shareNodeTypeSchema,
   nodeId: uuidSchema,

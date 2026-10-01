@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
@@ -10,6 +11,7 @@ import { AppText } from "@/components/ui/text";
 import { useShares } from "@/hooks/use-shares";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useTranslation } from "@/lib/i18n";
+import { spacesYouCanFileInto } from "@/lib/shares/fileable-spaces";
 import { useTheme } from "@/theme";
 
 const NODE_ICON: Record<Share["nodeType"], string> = {
@@ -41,9 +43,14 @@ export interface PlaceShareSheetProps {
  * difference is the person who will be surprised in three months when the other
  * side deletes it and it goes from their phone too.
  */
-export function PlaceShareSheet({ share, onClose, onPlaced }: PlaceShareSheetProps) {
+export function PlaceShareSheet({
+  share,
+  onClose,
+  onPlaced,
+}: PlaceShareSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
+  const router = useRouter();
   const { place } = useShares();
   const tree = useSpacesTree();
 
@@ -52,7 +59,7 @@ export function PlaceShareSheet({ share, onClose, onPlaced }: PlaceShareSheetPro
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const spaces = useMemo(() => tree.spaces(), [tree]);
+  const spaces = useMemo(() => spacesYouCanFileInto(tree.spaces()), [tree]);
 
   if (!share) return null;
 
@@ -67,7 +74,9 @@ export function PlaceShareSheet({ share, onClose, onPlaced }: PlaceShareSheetPro
       onClose();
       onPlaced?.();
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : t("errors.unknown"));
+      setError(
+        problem instanceof Error ? problem.message : t("errors.unknown"),
+      );
     } finally {
       setSaving(false);
     }
@@ -100,26 +109,63 @@ export function PlaceShareSheet({ share, onClose, onPlaced }: PlaceShareSheetPro
           </AppText>
         </View>
 
-        <View style={{ gap: theme.spacing.xs }}>
+        {/*
+         * The `testID` is on the *list of spaces*, not on the sheet, and for a reason
+         * that cost an hour: the drawer stays open behind this panel and it lists the
+         * spaces too, including the sender's. A check that reads the whole page finds
+         * the sender's space either way and cannot tell a correct panel from a broken
+         * one.
+         */}
+        <View testID="place-spaces" style={{ gap: theme.spacing.xs }}>
           <AppText variant="caption" tone="subtle">
             {t("place.chooseSpace")}
           </AppText>
-          <ScrollView style={{ maxHeight: 190 }} nestedScrollEnabled>
-            <View style={{ gap: 2 }}>
-              {spaces.map((space) => (
-                <Pick
-                  key={space.id}
-                  icon="grid-outline"
-                  label={space.name}
-                  selected={workspaceId === space.id}
-                  onPress={() => {
-                    setWorkspaceId(space.id);
-                    setFolderId(null);
-                  }}
-                />
-              ))}
+          {spaces.length === 0 ? (
+            /*
+             * Said out loud, because the alternative is a panel with nothing in it and
+             * a button that never lights up.
+             *
+             * And it names the way out rather than just the problem: this is the state
+             * of somebody who has just been sent their first thing and has not made a
+             * space yet, which is the *first* thing that happens to a new person.
+             *
+             * The button goes to the screen with the `+` on it instead of opening a
+             * second sheet on top of this one. Two sheets stacked is the kind of thing
+             * that works in a browser and behaves differently on a phone, and this one
+             * is a dead end either way — so the honest version is a hop to a screen
+             * that is known to work.
+             */
+            <View style={{ gap: theme.spacing.sm }}>
+              <AppText variant="caption" tone="muted">
+                {t("place.noSpaces")}
+              </AppText>
+              <Button
+                label={t("place.createSpace")}
+                variant="secondary"
+                onPress={() => {
+                  onClose();
+                  router.push("/workspaces");
+                }}
+              />
             </View>
-          </ScrollView>
+          ) : (
+            <ScrollView style={{ maxHeight: 190 }} nestedScrollEnabled>
+              <View style={{ gap: 2 }}>
+                {spaces.map((space) => (
+                  <Pick
+                    key={space.id}
+                    icon="grid-outline"
+                    label={space.name}
+                    selected={workspaceId === space.id}
+                    onPress={() => {
+                      setWorkspaceId(space.id);
+                      setFolderId(null);
+                    }}
+                  />
+                ))}
+              </View>
+            </ScrollView>
+          )}
         </View>
 
         {workspaceId ? (

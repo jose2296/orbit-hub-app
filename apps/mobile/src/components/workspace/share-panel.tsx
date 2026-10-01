@@ -2,8 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
-import type { Invitation, WorkspaceMember } from "@orbit-hub/contracts";
+import type { Invitation, Person, WorkspaceMember } from "@orbit-hub/contracts";
 
+import { PersonPicker } from "@/components/people/person-picker";
 import { Button } from "@/components/ui/button";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
@@ -61,6 +62,8 @@ export function SharePanel({
 
   const [page, setPage] = useState<Page>("people");
   const [email, setEmail] = useState("");
+  /** Somebody tapped out of the directory; the address below is then only a filter. */
+  const [person, setPerson] = useState<Person | null>(null);
   const [role, setRole] = useState<"editor" | "viewer">("editor");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export function SharePanel({
     if (workspaceId) {
       setPage("people");
       setEmail("");
+      setPerson(null);
       setProblem(null);
       setCopied(false);
     }
@@ -83,13 +87,24 @@ export function SharePanel({
 
   const send = useMemo(
     () => async () => {
-      const address = email.trim();
+      /*
+       * A tapped name wins over the box, for the same reason it does in
+       * `ShareNodeForm`: two ways of naming one recipient and a silent preference
+       * between them is how somebody ends up inviting the wrong person.
+       *
+       * It is still sent by address, not by id. `createInvitationRequestSchema`
+       * takes an `email` and not a `userId`, and an invitation is not the same act
+       * as a share: it makes somebody a member of a space, which is a bigger and
+       * more durable thing than being handed a list. The contract is left alone.
+       */
+      const address = person ? person.user.email : email.trim();
       if (!address) return;
       setBusy(true);
       setProblem(null);
       try {
         await invite({ role, email: address });
         setEmail("");
+        setPerson(null);
       } catch {
         // The message the API sent is in English and says which of the several
         // reasons it was; the app says what to do about it in its own words.
@@ -102,7 +117,7 @@ export function SharePanel({
         setBusy(false);
       }
     },
-    [email, role, invite, user?.email, t],
+    [email, person, role, invite, user?.email, t],
   );
 
   const makeLink = useMemo(
@@ -154,12 +169,21 @@ export function SharePanel({
               value={email}
               onChangeText={setEmail}
               label={t("share.emailLabel")}
-              placeholder={t("share.emailPlaceholder")}
+              placeholder={t("share.searchPlaceholder")}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
               returnKeyType="send"
               onSubmitEditing={() => void send()}
+            />
+
+            <PersonPicker
+              query={email}
+              selected={person}
+              onPick={setPerson}
+              // Members are already in, and an invitation for somebody in the space
+              // is an error the server already refuses. Their row says so.
+              alreadyHaveIds={members.map((m) => m.user.id)}
             />
 
             <RolePicker role={role} onPick={setRole} />
@@ -175,7 +199,7 @@ export function SharePanel({
               icon="paper-plane-outline"
               fullWidth
               loading={busy}
-              disabled={email.trim().length === 0}
+              disabled={!person && email.trim().length === 0}
               onPress={() => void send()}
             />
 

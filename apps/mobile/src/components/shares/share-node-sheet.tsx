@@ -2,13 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 
-import type { Share, ShareRole } from "@orbit-hub/contracts";
+import type { Person, Share, ShareRole } from "@orbit-hub/contracts";
 
+import { PersonPicker } from "@/components/people/person-picker";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
-import { useShares } from "@/hooks/use-shares";
+import { useShareReach, useShares } from "@/hooks/use-shares";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -56,18 +57,54 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
   const { share } = useShares();
 
   const [email, setEmail] = useState("");
+  /** Somebody tapped out of the directory, and the address field is only a filter. */
+  const [person, setPerson] = useState<Person | null>(null);
   const [role, setRole] = useState<ShareRole>("editor");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Who already has this, so their row in the directory can say so. Asked here
+  // because the panel is open: the answer can change in another tab and there is no
+  // share in flight to be wrong about.
+  const reach = useShareReach(target);
+
   const enviar = async () => {
-    const limpio = email.trim().toLowerCase();
-    if (!limpio) return;
+    // A person out of the directory wins over whatever is in the box. Tapping a name
+    // and then typing must not quietly change who the share is for, and the only
+    // thing that can undo that ambiguity is an explicit order of precedence.
+    if (!person) {
+      const limpio = email.trim().toLowerCase();
+      if (!limpio) return;
+
+      setSending(true);
+      setError(null);
+      try {
+        await share({
+          nodeType: target.nodeType,
+          nodeId: target.nodeId,
+          granteeEmail: limpio,
+          role,
+        });
+        onDone();
+      } catch (problem) {
+        setError(problem instanceof Error ? problem.message : t("errors.unknown"));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
 
     setSending(true);
     setError(null);
     try {
-      await share({ nodeType: target.nodeType, nodeId: target.nodeId, granteeEmail: limpio, role });
+      // By id, and this is the line the whole feature exists for: the API has
+      // accepted `granteeUserId` since before anybody used it.
+      await share({
+        nodeType: target.nodeType,
+        nodeId: target.nodeId,
+        granteeUserId: person.user.id,
+        role,
+      });
       onDone();
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : t("errors.unknown"));
@@ -75,6 +112,8 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
       setSending(false);
     }
   };
+
+  const puedeEnviar = person !== null || email.trim().length > 0;
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -90,16 +129,32 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
         </AppText>
       </View>
 
+      {/*
+        The address field stays, and it stays above the list on purpose.
+
+        It is not a legacy path to be deleted once the directory works: the
+        directory only knows people you have already dealt with, and sharing with
+        somebody who has never opened the app is half of what sharing is for. So the
+        field is the escape hatch and the list is the shortcut, and which one you
+        used is decided by whether you tapped a name — not by guessing the text.
+      */}
       <TextField
         value={email}
         onChangeText={setEmail}
         label={t("share.whoseEmail")}
-        placeholder="nombre@ejemplo.com"
+        placeholder={t("share.searchPlaceholder")}
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="email-address"
         returnKeyType="send"
         onSubmitEditing={() => void enviar()}
+      />
+
+      <PersonPicker
+        query={email}
+        selected={person}
+        onPick={setPerson}
+        alreadyHaveIds={reach?.people.map((p) => p.userId) ?? []}
       />
 
       <View style={{ gap: theme.spacing.xs }}>
@@ -158,7 +213,7 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
       <View style={{ gap: theme.spacing.sm }}>
         <Button
           label={sending ? t("share.sending") : t("share.send")}
-          disabled={email.trim().length === 0 || sending}
+          disabled={!puedeEnviar || sending}
           fullWidth
           onPress={() => void enviar()}
         />

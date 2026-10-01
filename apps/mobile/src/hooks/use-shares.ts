@@ -1,5 +1,7 @@
 import type {
   CreateShareRequest,
+  IncomingShare,
+  IncomingSharesResponse,
   Share,
   ShareListResponse,
   ShareReach,
@@ -9,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
+import { fijarIncoming, marcarVisto } from "@/lib/shares/incoming-store";
 
 /**
  * What has been shared with this person, and who they have shared with.
@@ -30,6 +33,15 @@ import { ApiError } from "@/lib/api/client";
 export interface SharesState {
   /** Unplaced things. Once you file one it belongs to that space and leaves. */
   inbox: Share[];
+  /**
+   * Everything that has arrived, spaces included, whether or not it needs filing.
+   *
+   * A different list from `inbox` and it has to be: `inbox` is what you **file**, and a
+   * whole shared space is not something you file — it arrives in your list of spaces
+   * by itself. Counting the badge off `inbox` would make sharing a whole workspace the
+   * one kind of sharing that never says anything, and the site asks for all three.
+   */
+  incoming: IncomingShare[];
   isLoading: boolean;
   error: string | null;
 }
@@ -37,6 +49,7 @@ export interface SharesState {
 export function useShares() {
   const [state, setState] = useState<SharesState>({
     inbox: [],
+    incoming: [],
     isLoading: false,
     error: null,
   });
@@ -44,15 +57,54 @@ export function useShares() {
   const load = useCallback(async () => {
     setState((current) => ({ ...current, isLoading: true, error: null }));
     try {
-      const inbox = await api.get<ShareListResponse>("/shares/inbox");
-      setState({ inbox: inbox.items, isLoading: false, error: null });
+      // Both lists come from here because they are both about the same thing arriving,
+      // and a badge that read one list while the drawer drew another would show a
+      // number next to a list that does not add up.
+      const [inbox, incoming] = await Promise.all([
+        api.get<ShareListResponse>("/shares/inbox"),
+        api.get<IncomingSharesResponse>("/shares/incoming"),
+      ]);
+      fijarIncoming(incoming.items);
+      setState({
+        inbox: inbox.items,
+        incoming: incoming.items,
+        isLoading: false,
+        error: null,
+      });
     } catch (error) {
+      // An empty list on failure, and **not** the last one that worked: a badge that
+      // keeps counting things from a request that failed is a number nobody can trust,
+      // and the drawer says it could not reach the server right beside it.
+      fijarIncoming([]);
       setState({
         inbox: [],
+        incoming: [],
         isLoading: false,
         error: error instanceof ApiError ? error.message : null,
       });
     }
+  }, []);
+
+  /*
+   * There is deliberately **no `unseen` here**.
+   *
+   * It was one, and it was a `useCallback` wrapping `useUnseen` — a hook behind a plain
+   * function, which a caller then invoked *after* its own `return null`. React counts
+   * hooks per render, so those renders had one hook fewer than the one before and the
+   * whole screen threw. Handing out a hook as if it were a function is the mistake, and
+   * the way not to make it twice is for callers to import `useUnseen` themselves, where
+   * it is visibly a hook and visibly at the top of the component.
+   */
+
+  /**
+   * Called when the list has actually been on screen.
+   *
+   * Stamped on the client, per device, and sent nowhere — see `lib/shares/last-seen`
+   * for why it is a timestamp and not a flag per item.
+   */
+  const markSeen = useCallback((userId: string | null) => {
+    if (!userId) return;
+    marcarVisto(userId);
   }, []);
 
   // Nothing is loaded on mount, on purpose.
@@ -65,12 +117,9 @@ export function useShares() {
   // asks for it, and asks once there is a session to ask with.
 
   /** Gives a node to somebody. A link, not a copy: it stays where it is. */
-  const share = useCallback(
-    async (input: CreateShareRequest) => {
-      return api.post<{ id: string }>("/shares", input);
-    },
-    [],
-  );
+  const share = useCallback(async (input: CreateShareRequest) => {
+    return api.post<{ id: string }>("/shares", input);
+  }, []);
 
   /** Takes it back. The other side finds out on the next pull. */
   const revoke = useCallback(async (shareId: string) => {
@@ -93,7 +142,7 @@ export function useShares() {
     [load],
   );
 
-  return { ...state, load, share, revoke, place };
+  return { ...state, load, share, revoke, place, markSeen };
 }
 
 /**
@@ -110,7 +159,7 @@ export function useShares() {
  * delete still works; it just does not claim to know.
  */
 export function useShareReach(
-  target: { nodeType: Share['nodeType']; nodeId: string } | null,
+  target: { nodeType: Share["nodeType"]; nodeId: string } | null,
 ) {
   const [reach, setReach] = useState<ShareReach | null>(null);
 

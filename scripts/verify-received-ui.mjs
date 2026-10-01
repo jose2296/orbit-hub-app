@@ -6,6 +6,9 @@
  * mirarlo", and that the menu does not offer to share it to somebody else — because
  * editing fifty rows is not deciding that a sixth person sees them.
  *
+ * The badge is read **from the options menu**, which is the only place it is printed.
+ * See the comment on the check further down for why this script opens the menu.
+ *
  * Beto has a note shared with him as `editor` and no membership of the owner's
  * space, so every one of those three should be true at once.
  */
@@ -139,16 +142,56 @@ await page.waitForTimeout(4000);
 await page.screenshot({ path: `${OUT}/13-nota-compartida.png` });
 console.log(`  · 13-nota-compartida.png`);
 
+/*
+ * The badge lives in the **options menu** and nowhere else, so this opens the menu.
+ *
+ * It used to read the note screen, because the badge used to be printed above the
+ * note. Checking it there reported "the badge does not say 'shared with you'" against
+ * a screen that is correct by decision — the check had outlived what it checked, and
+ * the worst version of that is a check that fails and gets "fixed" by putting the
+ * badge back in two places.
+ */
+let botones = page.locator("button");
+for (let i = (await botones.count()) - 1; i >= 0; i -= 1) {
+  await botones.nth(i).click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+  if (/Renombrar/.test(await page.locator("body").innerText())) break;
+}
+await page.screenshot({ path: `${OUT}/13b-menu-nota.png` });
+console.log("  · 13b-menu-nota.png");
+
 const cuerpo = await page.locator("body").innerText();
+const insigniaAbierta = (await page.locator('[data-testid="shared-badge"]').count()) > 0;
 const diceCompartido = /Compartido contigo/.test(cuerpo);
 const diceTuyo = /(^|\n)\s*Tuyo\s*($|\n)/.test(cuerpo);
 
+console.log(`  insignia en el menu: ${insigniaAbierta}`);
 console.log(`  "Compartido contigo": ${diceCompartido}`);
 console.log(`  "Tuyo": ${diceTuyo}`);
 console.log(`  "Puedes editarlo": ${/Puedes editarlo/.test(cuerpo)}`);
 
+if (!insigniaAbierta) note("el menu de la nota no lleva insignia: es donde vive ahora");
 if (!diceCompartido) note('la insignia no dice "Compartido contigo" para algo que le compartieron');
 if (diceTuyo) note('la insignia dice "Tuyo" sobre una nota que no es suya');
+
+/*
+ * And the one this script was written for and had stopped checking.
+ *
+ * Beto has this note as `editor`. The menu offered him "Con quién" — and the server
+ * agreed, so it was not a cosmetic mistake: he could hand Ana's note to a third
+ * person, and Ana, who wrote it and owns the space, then got a 403 when she tried to
+ * take it back. Being able to edit fifty rows is not being able to decide that a
+ * sixth person sees them, and "editor" said yes to both at once.
+ *
+ * Asserted here because this is the screen where it was visible, and because a menu
+ * that offers something the server refuses is a menu that teaches the rule by making
+ * the person find out.
+ */
+if (/Con quién/.test(cuerpo)) {
+  note('el menu ofrece compartir una nota que lefue prestada: solo la duena puede decidir quien mas la ve');
+} else {
+  console.log('  ✓ no ofrece compartir: le la prestaron, no es suya');
+}
 
 if (errors.length) note(`errores de pagina: ${errors.slice(0, 3).join(" | ")}`);
 

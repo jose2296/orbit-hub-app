@@ -74,7 +74,7 @@ async function entrar(page, email, password) {
   return true;
 }
 
-async function insignia(page, testId = "shared-badge-detailed") {
+async function insignia(page, testId = "shared-badge") {
   return page.locator(`[data-testid="${testId}"]`);
 }
 
@@ -87,6 +87,18 @@ const browser = await chromium.launch({
 });
 const ctx = await browser.newContext({ viewport: { width: 430, height: 940 } });
 const page = await ctx.newPage();
+/**
+ * The app is configured for port 4000, which belongs to another piece of work, so
+ * the calls are redirected from the browser to the API this script seeded. The same
+ * reason and the same refusal to touch anyone's env — the repo `.env.local` says in
+ * writing not to put that variable there.
+ */
+const REAL = process.env.API_ORIGIN ?? "http://localhost:4002";
+const DECLARADO = "http://localhost:4000";
+await page.route(`${DECLARADO}/**`, async (route) => {
+  await route.continue({ url: route.request().url().replace(DECLARADO, REAL) });
+});
+
 const errores = [];
 page.on("pageerror", (e) => errores.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") errores.push(m.text()); });
@@ -156,8 +168,7 @@ step("el espacio dice si es tuyo");
 await page.goto(`${WEB}/workspace/${SEED.spaceId}`, { waitUntil: "networkidle" });
 await page.waitForTimeout(3000);
 cuerpo = await page.locator("body").innerText();
-if ((await page.locator('[data-testid="shared-badge-detailed"]').count()) > 0) ok("el espacio lleva insignia"); else note("el espacio no lleva insignia");
-if (/Tuyo/.test(cuerpo)) ok("el espacio dice 'Tuyo'"); else note("el espacio no dice 'Tuyo'");
+if ((await page.locator('[data-testid="shared-badge"]').count()) === 0) ok("el espacio ya no lleva insignia arriba"); else note("el espacio vuelve a llevar insignia arriba");
 await shot(page, "23-espacio");
 await desborde(page, "espacio");
 
@@ -166,9 +177,7 @@ step("la nota dice si es tuya");
 await page.goto(`${WEB}/note/${SEED.noteId}`, { waitUntil: "networkidle" });
 await page.waitForTimeout(3000);
 cuerpo = await page.locator("body").innerText();
-if ((await page.locator('[data-testid="shared-badge-detailed"]').count()) > 0) ok("la nota lleva insignia"); else note("la nota no lleva insignia");
-if (/Tuyo/.test(cuerpo)) ok("la nota dice 'Tuyo'"); else note("la nota no dice 'Tuyo'");
-if (/Puedes editarlo/.test(cuerpo)) ok("la nota dice que se puede editar"); else note("la nota no dice el permiso");
+if ((await page.locator('[data-testid="shared-badge"]').count()) === 0) ok("la nota ya no lleva insignia arriba"); else note("la nota vuelve a llevar insignia arriba");
 await shot(page, "24-nota");
 await desborde(page, "nota");
 
@@ -185,6 +194,8 @@ for (let i = (await botones.count()) - 1; i >= 0; i -= 1) {
 }
 await shot(page, "25-menu-nota");
 
+if ((await page.locator('[data-testid="shared-badge"]').count()) > 0) ok("el menu de la nota lleva la insignia");
+else note("el menu de la nota no lleva insignia: es donde vive ahora");
 if (/Con quién/.test(await page.locator("body").innerText())) ok("el menu ofrece compartir"); else note("el menu NO ofrece compartir");
 await pulsa(page, "Con quién", "el menu de la nota");
 await page.waitForTimeout(2200);
@@ -261,8 +272,7 @@ step("la lista dice si es tuya y se puede compartir");
 await page.goto(`${WEB}/list/${SEED.listId}`, { waitUntil: "networkidle" });
 await page.waitForTimeout(3000);
 cuerpo = await page.locator("body").innerText();
-if ((await page.locator('[data-testid="shared-badge-detailed"]').count()) > 0) ok("la lista lleva insignia"); else note("la lista no lleva insignia");
-if (/Tuyo/.test(cuerpo)) ok("la lista dice 'Tuyo'"); else note("la lista no dice 'Tuyo'");
+if ((await page.locator('[data-testid="shared-badge"]').count()) === 0) ok("la lista ya no lleva insignia arriba"); else note("la lista vuelve a llevar insignia arriba");
 await shot(page, "29-lista");
 await desborde(page, "lista");
 
@@ -299,7 +309,7 @@ if (await filaCarpeta.count()) {
     const cuerpoCarpeta = await page.locator("body").innerText();
     if (/Con quién/.test(cuerpoCarpeta)) ok("la carpeta ofrece compartir");
     else note("el menu de la carpeta no ofrece compartir");
-    if ((await page.locator('[data-testid="shared-badge-detailed"]').count()) > 0) {
+    if ((await page.locator('[data-testid="shared-badge"]').count()) > 0) {
       ok("la carpeta muestra insignia de propiedad");
     } else {
       note("el menu de la carpeta no lleva insignia");
