@@ -100,7 +100,19 @@ step("los 3 puntitos de una pantalla no se quedan en la siguiente");
 // ------------------------------------------------------------- seguir -------
 step("buscar a alguien con quien no tienes nada y anadirlo");
 {
-  const campo = page.locator('input[placeholder*="Nombre"], input[placeholder*="nombre"]').first();
+  /*
+   * By its `testID` and **not** by its placeholder, which is what this used to match.
+   *
+   * Gente has two fields whose placeholders both contain "nombre": the filter above
+   * ("Nombre o correo") and the search inside the "Añadir" card ("Correo o nombre").
+   * `.first()` picked the filter, so typing an email into it filtered the directory
+   * to nothing, found no Elena, found no "Añadir" button, and the script reported
+   * three broken features that did not exist.
+   *
+   * The three failures were all the selector, and one field being wrong is exactly
+   * what the two-field split was for. Asking for the one field by name is the point.
+   */
+  const campo = page.locator('[data-testid="people-search"]').first();
   if (!(await campo.count())) {
     note("no hay campo de busqueda en Gente");
   } else {
