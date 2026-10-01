@@ -167,8 +167,11 @@ export class WorkspaceQueryService {
     workspaceId: string,
     options: { parentId?: string | null; limit: number; cursor: string | null },
   ): Promise<ListFoldersResponse> {
-    // Authorisation first: an invisible workspace must not leak folder counts.
-    await this.getWorkspace(userId, workspaceId);
+    // Authorisation first: an invisible workspace must not leak folder counts. And
+    // it already answers the question the badge asks — reaching this endpoint means
+    // being a member of that space, and the membership role it returns is the role
+    // every folder inside it carries. One query, already being paid for.
+    const espacio = await this.getWorkspace(userId, workspaceId);
 
     const db = await this.db();
     const after = options.cursor ? new Date(options.cursor) : null;
@@ -204,6 +207,12 @@ export class WorkspaceQueryService {
       name: row.name,
       emoji: row.emoji,
       position: row.position,
+      // Folders have no role of their own either: this is the role of the space
+      // they are in, and `shared` is false because reaching this endpoint already
+      // required being a member of it. The sync pull is where a folder somebody was
+      // lent is marked, because there the caller has no membership.
+      role: espacio.role,
+      shared: false,
       version: row.version,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

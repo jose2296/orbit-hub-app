@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -589,8 +590,15 @@ export const shares = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     /** Who shared it. A tombstone too, so a deleted account does not hide it. */
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * What is being handed over. Five values and not six: `note_template` was in
+     * here and in the CHECK, and it never worked — revoking one produced no
+     * tombstone, because `toEntityName` has no name for it, so the other phone
+     * kept the template forever. Templates are shared by `scope`, to a space or to
+     * everybody, never to one person. See ADR 0032.
+     */
     nodeType: varchar('node_type', { length: 16 })
-      .$type<'workspace' | 'folder' | 'list' | 'list_item' | 'note' | 'note_template'>()
+      .$type<'workspace' | 'folder' | 'list' | 'list_item' | 'note'>()
       .notNull(),
     nodeId: uuid('node_id').notNull(),
     granteeUserId: uuid('grantee_user_id')
@@ -647,5 +655,40 @@ export const shareMounts = pgTable(
     uniqueIndex('share_mounts_share_user_unique').on(table.shareId, table.userId),
     index('share_mounts_user_idx').on(table.userId),
     index('share_mounts_workspace_idx').on(table.workspaceId),
+  ],
+);
+
+/**
+ * Who you follow, so that sharing with them does not mean typing their address.
+ *
+ * **Not a friendship and no acceptance.** That is the whole design and the reason
+ * there is no status column: somebody who has to accept a request can only accept it
+ * if they find out about it, and this app has no in-app inbox — mail is the only
+ * channel. A friend request here would be a request nobody sees.
+ *
+ * So this is one-sided and it says nothing about the other person. Following Marta
+ * does not tell Marta anything, does not let you see anything of hers, and does not
+ * give her the right to share anything with you. It is a shortcut, and it is only
+ * ever read by the person who made it.
+ */
+export const peopleFollows = pgTable(
+  'people_follows',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    followerUserId: uuid('follower_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    followeeUserId: uuid('followee_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Following yourself is not following anybody, and the row would never be read.
+    check('people_follows_not_self', sql`${table.followerUserId} <> ${table.followeeUserId}`),
+    // Following twice is a no-op, not a second row.
+    uniqueIndex('people_follows_pair_unique').on(table.followerUserId, table.followeeUserId),
+    index('people_follows_follower_idx').on(table.followerUserId),
+    index('people_follows_followee_idx').on(table.followeeUserId),
   ],
 );

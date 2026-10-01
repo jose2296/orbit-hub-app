@@ -32,6 +32,8 @@ describe('newListItem', () => {
       position: 3,
       completed: false,
       priority: 'none',
+      role: 'editor',
+      shared: false,
       icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
       tags: [],
       externalId: null,

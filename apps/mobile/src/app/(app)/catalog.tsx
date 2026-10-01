@@ -12,7 +12,7 @@ import { TextField } from '@/components/ui/text-field';
 import { AppText } from '@/components/ui/text';
 import { allowedCatalogKinds } from '@/lib/lists/catalog-kinds';
 import { CATALOG_MIN_QUERY, useCatalogSearch } from '@/hooks/use-catalog-search';
-import { useListExternalIds, useListItems, useLists } from '@/hooks/use-lists';
+import { useListExternalStates, useListItems, useLists } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 
@@ -72,7 +72,16 @@ export default function CatalogSearchScreen() {
    * hides the completed rows when the screen is set to — and a film somebody has
    * already watched is exactly the one nobody wants to add a second time.
    */
-  const enLaLista = useListExternalIds(listId);
+  /*
+    What the list already has of each hit, **with whether it has been seen**.
+
+    It was a `Set` of ids, which can answer "do I have this" and nothing else, so
+    the corner of the poster had nothing to draw. The same read now answers both,
+    and the lock and the ribbon come from one place: a title that is in the list
+    and watched shows both, and one that is in the list and not watched shows only
+    the lock.
+  */
+  const enLaLista = useListExternalStates(listId);
 
   async function onAdd(externalId: string) {
     const hit = results.find((item) => item.externalId === externalId);
@@ -168,6 +177,7 @@ export default function CatalogSearchScreen() {
                 result={hit}
                 disabled={addingId !== null}
                 inList={enLaLista.has(hit.externalId)}
+                completed={enLaLista.get(hit.externalId)?.completed === true}
                 onPress={(selected) => void onAdd(selected.externalId)}
                 onAdd={(selected) => void onAdd(selected.externalId)}
               />

@@ -46,6 +46,15 @@ export function newNote(input: NewNoteInput): Note {
     // every other note the moment somebody types one.
     tags: input.tags ? [...input.tags] : [],
     attachmentCount: 0,
+    /*
+      Yours and editable, and that is not a guess: you can only get here from the
+      editor, and the editor only opens for a space you can write in. So the honest
+      answer for a note you are writing this second is "yours, and you may change
+      it", whatever the server says afterwards — and the server has the last word,
+      which is why it is safe for a local record to say so before it has been sent.
+    */
+    role: "editor",
+    shared: false,
     deletedAt: null,
   };
 }
@@ -89,6 +98,24 @@ export function withNoteDefaults(value: unknown): Note {
     // tiene que poder leerse igual, y el navegador pone las que valen cero al
     // final para que no salten a la cabeza de un sitio ya colocado.
     position: typeof record.position === "number" ? Math.max(0, record.position) : 0,
+    /*
+      A note cached before this field existed has no answer, and the two possible
+      guesses are not equally bad. "Viewer" would make every existing note in the
+      app read-only in the interface the morning after an update — thousands of
+      people unable to type in their own writing until the next pull. "Editor" is
+      wrong for the handful of notes somebody was only lent, and the very next pull
+      replaces it with the truth.
+
+      And this cannot grant anything: the badge is a drawing and the share button is
+      a button. What a person may actually do is decided on the server, on every
+      single write. A client that believed the wrong thing here shows a button that
+      answers 403; it does not open a door.
+    */
+    role:
+      record.role === "owner" || record.role === "editor" || record.role === "viewer"
+        ? record.role
+        : "editor",
+    shared: record.shared === true,
     deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
   };
 }

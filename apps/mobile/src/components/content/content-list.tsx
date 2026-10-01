@@ -7,18 +7,13 @@ import type { Folder, List, ListOrderMode, Note } from "@orbit-hub/contracts";
 
 import { ContentToolbar } from "@/components/content/content-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  DRAG_HANDLE_WIDTH,
-  DraggableRow,
-  DraggableSort,
-} from "@/components/ui/draggable-row";
+import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
 import { LIST_KIND_ICON } from "@/lib/lists/kind";
 import {
   alcanceDe,
   EMPTY_FILTER,
   enAlcance,
-  isDraggableOrder,
   matchesFilter,
   moveRow,
   sortRows,
@@ -143,26 +138,6 @@ export function ContentList({
   );
 
 
-  /**
-   * How many lists of each kind are here.
-   *
-   * **The kinds themselves are not decided here — they are the contract's five,
-   * always.** This is only the count that goes on the chip, so "Libros · 0" is
-   * honest instead of a chip that can only ever empty the list. The chips used to
-   * be only the kinds that happened to be here, which meant the same row of
-   * filters meant something different in every space: a space with no book list
-   * did not have a "Libros" chip, so the row was not a row of *kinds* but a list
-   * of what this space happened to contain. A filter you have to learn per space
-   * is a filter that has to be learned again.
-   */
-  const cuentaDeKinds = useMemo(() => {
-    const cuenta = new Map<string, number>();
-    for (const row of todo) {
-      if (row.kind !== "list" || !row.listKind) continue;
-      cuenta.set(row.listKind, (cuenta.get(row.listKind) ?? 0) + 1);
-    }
-    return cuenta;
-  }, [todo]);
 
   const abrir = useCallback(
     (row: ContentRow) => {
@@ -183,19 +158,18 @@ export function ContentList({
   );
 
   /**
-   * The move, from the index the row was dropped at.
+   * The move, **as a displacement and not as a place**.
    *
-   * `DraggableRow` hands over the **index** and not a displacement, which is
-   * right: a row dragged two places up and one down is one index and not a
-   * number of steps, and turning an index back into a step here would be the one
-   * place in the app where "how far did it move" is a guess.
+   * `moveRow` takes a step count and not an index, because that is what survives
+   * positions being renumbered from zero. The reorder sheet hands over a
+   * displacement already, and it is the sheet that knows both numbers: the index
+   * the row was dropped at and the index it was in.
    */
   const mover = useCallback(
-    (rowId: string, toIndex: number) => {
-      const from = visible.findIndex((row) => row.id === rowId);
-      if (from < 0) return;
+    (rowId: string, delta: number) => {
+      if (delta === 0) return;
       const antes = new Map(todo.map((row) => [row.id, row.position]));
-      const { changed } = moveRow(visible, rowId, toIndex - from);
+      const { changed } = moveRow(visible, rowId, delta);
       if (changed.length === 0) return;
       void saveContentOrder(changed, antes);
     },
@@ -218,16 +192,26 @@ export function ContentList({
     <View style={{ gap: theme.spacing.md }}>
       {todo.length > 0 ? (
         <ContentToolbar
+          rows={todo}
           filter={filter}
           onFilterChange={setFilter}
           order={order}
           onOrderChange={setOrder}
-          listKindCounts={cuentaDeKinds}
-          hiddenCount={todo.length - visible.length}
-          totalCount={todo.length}
+          onMove={mover}
+          canReorder={true}
         />
       ) : null}
 
+      {/*
+        The rows, **and no drag on them**.
+
+        They used to be draggable in place, which meant a list you had chosen to
+        read by date could be rearranged by dragging rows that were not where your
+        finger was: the order you chose to read is the order the rows are in, and
+        the row you want to move is wherever that order put it. Putting the order
+        in a sheet with a handle per row is the arrangement the films already use,
+        and it leaves the row itself a thing you press to open.
+      */}
       {vacioDeFiltro ? (
         <EmptyState
           title={t("content.emptyFiltered")}
@@ -239,17 +223,12 @@ export function ContentList({
           description={t("folders.empty.body")}
         />
       ) : (
-        <DraggableSort>
-          <View style={{ gap: theme.spacing.xs }}>
-            {visible.map((row, index) => (
+        <View style={{ gap: theme.spacing.xs }}>
+          {visible.map((row) => (
               <ContentRowView
                 key={`${row.kind}:${row.id}`}
                 row={row}
-                index={index}
-                total={visible.length}
-                draggable={isDraggableOrder(order) && filter.kind === "all" && filter.folderId === null && filter.query.length === 0}
                 onOpen={() => abrir(row)}
-                onMove={(toIndex) => mover(row.id, toIndex)}
                 onMenu={
                   row.kind === "folder"
                     ? onFolderMenu
@@ -268,8 +247,7 @@ export function ContentList({
                 foreground={foreground}
               />
             ))}
-          </View>
-        </DraggableSort>
+        </View>
       )}
 
     </View>
@@ -287,22 +265,14 @@ export function ContentList({
  */
 function ContentRowView({
   row,
-  index,
-  total,
-  draggable,
   onOpen,
-  onMove,
   onMenu,
   tint,
   iconTint,
   foreground,
 }: {
   row: ContentRow;
-  index: number;
-  total: number;
-  draggable: boolean;
   onOpen: () => void;
-  onMove: (toIndex: number) => void;
   onMenu?: () => void;
   tint: string;
   iconTint: string;
@@ -310,6 +280,18 @@ function ContentRowView({
 }) {
   const theme = useTheme();
   const t = useTranslation();
+
+  /*
+    The whole of a name on a long press, **on this row's own press**.
+
+    It is a hook and not a `Pressable` around the name because a `Pressable`
+    inside this row's `Pressable` takes the gesture away from it on a phone: the
+    innermost view that asks for the touch is the one that gets it, so the row
+    would stop opening. On the web it would look fine, because a click bubbles and
+    both would fire — which is exactly the kind of bug that only exists on the two
+    platforms nobody here can run. See `useLongPressText`.
+  */
+  const nombre = useLongPressText(row.name);
 
   const icon =
     row.kind === "folder"
@@ -319,9 +301,10 @@ function ContentRowView({
         : LIST_KIND_ICON[(row.listKind ?? "tasks") as keyof typeof LIST_KIND_ICON] ??
           "list-outline";
 
-  const cuerpo = (
+  return (
     <View style={styles.caja}>
       <Pressable
+        onLongPress={nombre.onLongPress}
         accessibilityRole="button"
         accessibilityLabel={row.name}
         onPress={onOpen}
@@ -334,15 +317,14 @@ function ContentRowView({
             gap: theme.spacing.md,
             padding: theme.spacing.md,
             /*
-              El hueco de la derecha, en una sola cuenta: el menu de la fila y el
-              asa de arrastrar se dibujan **encima** de este rectangulo, asi que el
-              cuerpo tiene que terminar antes de los dos. Con las dos cosas puestas
-              se solapaban y el menu quedaba debajo del asa, que es un boton que
-              no se puede pulsar y no se ve por que.
+              El hueco de la derecha, y **solo del menu**: el menu de la fila se
+              dibuja encima de este rectangulo, asi que el cuerpo tiene que terminar
+              antes que el. El otro hueco que hubo aqui era para el asa de arrastrar
+              y ya no hace falta —la fila no se arrastra, se ordena en una hoja— asi
+              que el nombre tiene cuarenta y cuatro puntos mas de ancho, que es
+              justo lo que un nombre largo necesita.
             */
-            paddingRight:
-              (onMenu ? 44 : theme.spacing.md) +
-              (draggable ? DRAG_HANDLE_WIDTH + theme.spacing.xs : 0),
+            paddingRight: onMenu ? 44 : theme.spacing.md,
           },
         ]}
       >
@@ -360,6 +342,7 @@ function ContentRowView({
           </AppText>
         </View>
       </Pressable>
+      {nombre.sheet}
       {/*
         The menu and the drag handle are both on the right of the row, and the
         handle spans its whole height — so the menu has to sit to the *left* of it,
@@ -368,26 +351,9 @@ function ContentRowView({
         both, and it looked fine because one of the two glyphs was showing.
       */}
       {onMenu ? (
-        <BotonMenu
-          label={row.name}
-          onPress={onMenu}
-          offset={draggable ? DRAG_HANDLE_WIDTH : 0}
-        />
+        <BotonMenu label={row.name} onPress={onMenu} />
       ) : null}
     </View>
-  );
-
-  if (!draggable) return cuerpo;
-
-  return (
-    <DraggableRow
-      id={row.id}
-      index={index}
-      total={total}
-      onReorder={(_movedId: string, toIndex: number) => onMove(toIndex)}
-    >
-      {cuerpo}
-    </DraggableRow>
   );
 }
 
@@ -407,16 +373,7 @@ function subtitulo(row: ContentRow, t: ReturnType<typeof useTranslation>): strin
   return t("content.itemsIn", { count: row.itemCount ?? 0, kind: clase });
 }
 
-function BotonMenu({
-  label,
-  onPress,
-  offset,
-}: {
-  label: string;
-  onPress: () => void;
-  /** How far to step left so the drag handle does not sit on top of this. */
-  offset: number;
-}) {
+function BotonMenu({ label, onPress }: { label: string; onPress: () => void }) {
   const theme = useTheme();
   const t = useTranslation();
   return (
@@ -442,7 +399,7 @@ function BotonMenu({
           // The handle is `right: 8` and about 32 wide, so stepping by its width
           // plus its own margin puts the menu clear of it rather than a few
           // pixels to the side of it.
-          right: theme.spacing.sm + offset,
+          right: theme.spacing.sm,
           // 40 de blanco y el icono dentro: media 26, por debajo de lo que un
           // dedo alcanza con fiabilidad. Con `hitSlop` el blanco crecia hacia el
           // asa de arrastrar, que esta al lado.

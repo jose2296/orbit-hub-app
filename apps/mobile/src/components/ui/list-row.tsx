@@ -6,6 +6,8 @@ import type { ViewStyle } from "react-native";
 import { useTheme } from "@/theme";
 
 import type { IconName } from "./button";
+import { useLongPressText } from "@/hooks/use-long-press-text";
+
 import { AppText } from "./text";
 
 export interface SectionHeaderProps {
@@ -85,6 +87,16 @@ export function ListRow({
 }: ListRowProps) {
   const theme = useTheme();
 
+  /*
+    The whole name on a long press, **added to this row's own press**.
+
+    The row is the thing that opens the note, so a `Pressable` around the name
+    would take the gesture from it on a phone and the row would stop opening — a
+    bug the web cannot show, because a click there bubbles and both fire. See
+    `useLongPressText`.
+  */
+  const nombre = useLongPressText(title);
+
   const content = (
     <>
       {leading ?? null}
@@ -144,27 +156,32 @@ export function ListRow({
         ]}
       >
         {content}
+        {nombre.sheet}
       </View>
     );
   }
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        {
-          gap: theme.spacing.md,
-          paddingVertical: theme.spacing.md,
-          opacity: disabled ? 0.5 : pressed ? 0.6 : 1,
-        },
-        style,
-      ]}
-    >
-      {content}
-    </Pressable>
+    <>
+      <Pressable
+        onLongPress={nombre.onLongPress}
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.row,
+          {
+            gap: theme.spacing.md,
+            paddingVertical: theme.spacing.md,
+            opacity: disabled ? 0.5 : pressed ? 0.6 : 1,
+          },
+          style,
+        ]}
+      >
+        {content}
+      </Pressable>
+      {nombre.sheet}
+    </>
   );
 }
 

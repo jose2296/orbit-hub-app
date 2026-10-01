@@ -32,6 +32,7 @@ import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
 import { SyncBadge } from "@/components/sync/sync-badge";
 import { SyncRow } from "@/components/sync/sync-row";
 import { useA11yHint } from "@/components/ui/a11y-hint";
+import { useLongPressText } from "@/hooks/use-long-press-text";
 import { expandedProps, selectedProps } from "@/components/ui/a11y-state";
 import { AppText } from "@/components/ui/text";
 import { SpaceDot } from "@/components/ui/wash";
@@ -85,6 +86,23 @@ const DESTINATIONS = [
     path: "/search",
     icon: "search",
     labelKey: "tabs.search",
+  },
+  {
+    /*
+     * People, between search and settings.
+
+     * It is a destination of its own and not a section inside settings, because the
+     * thing it is for is sharing, and sharing is not something anybody goes to
+     * settings to do. It sits above settings because everything else in this menu
+     * is about your own things and this is the only row that is about somebody
+     * else's.
+     *
+     * It is a directory and not a friends list: see ADR 0032.
+     */
+    route: "/(app)/people",
+    path: "/people",
+    icon: "people-outline",
+    labelKey: "people.title",
   },
   {
     route: "/(app)/settings",
@@ -143,6 +161,7 @@ export function Drawer({
   wide: boolean;
   children: React.ReactNode;
 }) {
+
   const t = useTranslation();
   const { width } = useWindowDimensions();
   const { open, setOpen } = useDrawer();
@@ -574,6 +593,9 @@ function SpaceBranch({
   pathname: string;
   onOpen: (href: string) => void;
 }) {
+  /** The whole of this row's name on a long press, on the row's own press. */
+  const nombreLargo = useLongPressText(workspace.name);
+
   const theme = useTheme();
   const t = useTranslation();
   const inside = pathname.includes(workspace.id);
@@ -601,6 +623,7 @@ function SpaceBranch({
           {...expandedProps(open)}
           accessibilityLabel={workspace.name}
           {...pista.props}
+          onLongPress={nombreLargo.onLongPress}
           onPress={() => onOpen(`/(app)/workspace/${workspace.id}`)}
           style={({ pressed }) => [
             styles.item,
@@ -626,7 +649,8 @@ function SpaceBranch({
             wash={workspace.wash}
             size={14}
           />
-          <AppText variant="body" numberOfLines={1} style={styles.flex}>
+
+                    <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {workspace.name}
           </AppText>
           {/*
@@ -647,6 +671,7 @@ function SpaceBranch({
           ) : null}
         </Pressable>
         {pista.node}
+        {nombreLargo.sheet}
 
         <BranchToggle
           open={open}
@@ -735,6 +760,9 @@ function FolderBranch({
   onOpen: (href: string) => void;
   depth: number;
 }) {
+  /** The whole of this row's name on a long press, on the row's own press. */
+  const nombreLargo = useLongPressText(folder.name);
+
   const theme = useTheme();
   const t = useTranslation();
   const [open, setOpen] = useState(false);
@@ -749,6 +777,7 @@ function FolderBranch({
           {...expandedProps(open)}
           accessibilityLabel={folder.name}
           {...pista.props}
+          onLongPress={nombreLargo.onLongPress}
           onPress={() =>
             onOpen(`/(app)/workspace/${folder.workspaceId}/folder/${folder.id}`)
           }
@@ -770,12 +799,14 @@ function FolderBranch({
             size={15}
             color={theme.colors.textSubtle}
           />
-          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
+
+                    <AppText variant="callout" numberOfLines={1} style={styles.flex}>
             {folder.emoji ? `${folder.emoji} ` : ""}
             {folder.name}
           </AppText>
         </Pressable>
         {pista.node}
+        {nombreLargo.sheet}
 
         <BranchToggle
           open={open}
@@ -827,6 +858,9 @@ function ListBranch({
   list: List;
   onOpen: (href: string) => void;
 }) {
+  /** The whole of this row's name on a long press, on the row's own press. */
+  const nombreLargo = useLongPressText(list.title);
+
   const theme = useTheme();
   const t = useTranslation();
   const [open, setOpen] = useState(false);
@@ -849,6 +883,7 @@ function ListBranch({
           {...expandedProps(open)}
           accessibilityLabel={list.title}
           {...pista.props}
+          onLongPress={nombreLargo.onLongPress}
           onPress={() => onOpen(`/(app)/list/${list.id}`)}
           style={({ pressed }) => [
             styles.item,
@@ -868,7 +903,8 @@ function ListBranch({
             size={15}
             color={theme.colors.textSubtle}
           />
-          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
+
+                    <AppText variant="callout" numberOfLines={1} style={styles.flex}>
             {list.title}
           </AppText>
           {list.itemCount > 0 ? (
@@ -878,6 +914,7 @@ function ListBranch({
           ) : null}
         </Pressable>
         {pista.node}
+        {nombreLargo.sheet}
 
         <BranchToggle
           open={open}

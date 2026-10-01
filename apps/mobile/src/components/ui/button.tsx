@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { useTheme } from '@/theme';
 
@@ -59,6 +60,26 @@ export function Button({
 }: ButtonProps) {
   const theme = useTheme();
   const isDisabled = disabled || loading;
+
+  /*
+    The press, **as a small squeeze and not as a change of colour**.
+
+    The whole app answered a press with opacity, and at 0.85 on a coloured button
+    you cannot see it happened: on a screen where the three buttons in the row
+    above a carousel are the only things you touch, nothing that is pressed ever
+    looked pressed.
+
+    The squeeze is on the **content and not on the button**, deliberately. The
+    `Pressable` carries the size — the height, the padding, the `alignSelf` that
+    decides whether the button fills the row — and a transform on it would move
+    the box and not just the drawing. The content is what the eye is following, so
+    that is what moves, and the button keeps the space it was given.
+
+    Three percent, on a spring with no bounce: a button that overshoots reads as
+    a toy, and this thing is tapped two hundred times a day.
+  */
+  const escala = useSharedValue(1);
+  const estiloContenido = useAnimatedStyle(() => ({ transform: [{ scale: escala.value }] }));
 
   // A fragment and not a wrapper `View`: the `Pressable` below is the root of
   // this component and it sets `alignSelf: 'stretch'`/`'flex-start'` and
@@ -145,6 +166,13 @@ export function Button({
         testID={testID}
         disabled={isDisabled}
         onPress={onPress}
+        onPressIn={() => {
+          if (isDisabled) return;
+          escala.value = withSpring(0.97, { damping: 22, stiffness: 400, mass: 0.4 });
+        }}
+        onPressOut={() => {
+          escala.value = withSpring(1, { damping: 18, stiffness: 300, mass: 0.4 });
+        }}
         style={({ pressed }) => [
           {
             height: sizeConfig.height,
@@ -163,7 +191,7 @@ export function Button({
           style,
         ]}
       >
-        {content}
+        <Animated.View style={estiloContenido}>{content}</Animated.View>
       </Pressable>
       {pista.node}
     </>

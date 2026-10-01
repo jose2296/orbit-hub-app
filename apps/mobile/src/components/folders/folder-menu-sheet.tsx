@@ -3,34 +3,32 @@ import { View } from "react-native";
 
 import type { ListKind } from "@orbit-hub/contracts";
 
+import { ShareNodeForm } from "@/components/shares/share-node-sheet";
+import { SharedBadge } from "@/components/shares/shared-badge";
 import { useFolders } from "@/hooks/use-workspaces";
 import { LIST_KIND_LABEL, LIST_KIND_ORDER } from "@/lib/lists/kind";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
 import { ConfirmSheet, RenameSheet } from "../ui/rename-sheet";
-import { Sheet, SheetOptions } from "../ui/sheet";
+import { Sheet, SheetOptions, useLastValue } from "../ui/sheet";
 import type { SheetOption } from "../ui/sheet";
 
 export interface FolderMenuSheetProps {
-  /** The folder the menu is for, or `null` when it is closed. */
   folder: {
     id: string;
     name: string;
     parentId: string | null;
     version: number;
     emoji?: string | null;
+    role: "owner" | "editor" | "viewer";
+    shared: boolean;
   } | null;
-  /** The space it is in, which is where its lists go when the folder goes. */
   workspaceId: string | undefined;
-  /** How many lists are inside, so the delete says what goes with it. */
   listCount: number;
-  /** Whether the folder already has a card on the panel, so the option says so. */
   onPanel?: boolean;
-  /** Puts a card for this folder on the panel, or takes it off again. */
   onTogglePin?: () => void;
   onClose: () => void;
-  /** Opens the create panel already set to this folder and this kind. */
   onCreateInside: (kind: ListKind) => void;
 }
 
@@ -52,7 +50,7 @@ export interface FolderMenuSheetProps {
  * been had the folder never existed.
  */
 export function FolderMenuSheet({
-  folder,
+  folder: pedido,
   workspaceId,
   listCount,
   onPanel = false,
@@ -60,6 +58,45 @@ export function FolderMenuSheet({
   onClose,
   onCreateInside,
 }: FolderMenuSheetProps) {
+  /*
+    `folder` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!folder) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was — declared here, at the
+    top, so that everything below keeps the name it always had and now has a value
+    that cannot be null — and the caller's own argument, which goes to `null` at
+    once, is what `visible` is asked from. The panel keeps its identity while it
+    leaves, and the dismissal is a movement instead of a cut.
+  */
+  /*
+    `folder` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!folder) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was, and the caller's own
+    argument — which goes to `null` at once, because that is how a caller says "close"
+    — is what `visible` is asked from. The panel keeps its identity while it leaves,
+    and the dismissal is a movement instead of a cut.
+
+    **The prop keeps its name and only the local is new.** Renaming what the caller
+    passes would be six call sites later, for a change nobody outside this file can
+    see.
+  */
+  const folder = useLastValue(pedido);
+
   const theme = useTheme();
   const t = useTranslation();
   const { updateFolder, deleteFolder } = useFolders(workspaceId);
@@ -67,9 +104,9 @@ export function FolderMenuSheet({
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [creatingKind, setCreatingKind] = useState<ListKind | null>(null);
+  const [sharing, setSharing] = useState(false);
 
-  /** A sub-panel of this menu is open, so the options are not the whole story. */
-  const inside = renaming || confirmDelete || creatingKind !== null;
+  const inside = renaming || confirmDelete || creatingKind !== null || sharing;
 
   const createOptions: SheetOption[] = useMemo(
     () =>
@@ -115,6 +152,17 @@ export function FolderMenuSheet({
         icon: "create-outline",
         onPress: () => setRenaming(true),
       },
+          ...(folder && (folder.role === "owner" || folder.role === "editor")
+        ? [
+            {
+              key: "share",
+              label: t("share.pickSomeone"),
+              icon: "people-outline" as const,
+              description: t("share.isALink"),
+              onPress: () => setSharing(true),
+            },
+          ]
+        : []),
       {
         key: "delete",
         label: t("common.delete"),
@@ -132,7 +180,7 @@ export function FolderMenuSheet({
   return (
     <>
       <Sheet
-        visible={!inside}
+        visible={pedido !== null && !inside}
         onClose={onClose}
         title={folder.name}
         subtitle={t("folders.whatItHolds", { count: listCount })}
@@ -144,6 +192,7 @@ export function FolderMenuSheet({
             paddingBottom: theme.spacing.sm,
           }}
         >
+          <SharedBadge shared={folder.shared} role={folder.role} />
           <SheetOptions options={options} />
         </View>
       </Sheet>
@@ -162,6 +211,29 @@ export function FolderMenuSheet({
           }}
         >
           <SheetOptions options={createOptions} />
+        </View>
+      </Sheet>
+
+      <Sheet
+        visible={sharing}
+        onClose={() => setSharing(false)}
+        title={folder.name}
+        subtitle={t("share.subtitle", { name: folder.name })}
+        scrollable
+      >
+        <View
+          style={{
+            paddingHorizontal: theme.spacing.lg,
+            paddingBottom: theme.spacing.sm,
+          }}
+        >
+          <ShareNodeForm
+            target={{ nodeType: "folder", nodeId: folder.id, title: folder.name }}
+            onDone={() => {
+              setSharing(false);
+              onClose();
+            }}
+          />
         </View>
       </Sheet>
 

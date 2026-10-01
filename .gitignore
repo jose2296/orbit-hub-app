@@ -58,6 +58,7 @@ playwright-report/
 # comprobar un flujo a mano.
 .playwright-mcp/
 verify/
+capturas/
 
 # Local databases and dumps
 .data/

@@ -241,6 +241,16 @@ describe('el filtro', () => {
     expect(matchesFilter(nota, { ...EMPTY_FILTER, query: 'SALSA' })).toBe(true);
   });
 
+  it('el buscador tampoco distingue los acentos', () => {
+    // "azucar" ya sale falso porque la nota no lo tiene, así que la prueba va
+    // contra una palabra que sí está y que casi nadie escribe con tilde:
+    // `toLocaleLowerCase` no quita los acentos, y con él la búsqueda contestaba
+    // sólo a la escritura exacta.
+    const conAcento = { ...nota, name: 'Ajo y jamón' };
+    expect(matchesFilter(conAcento, { ...EMPTY_FILTER, query: 'jamon' })).toBe(true);
+    expect(matchesFilter(conAcento, { ...EMPTY_FILTER, query: 'AJO Y JAMÓN' })).toBe(true);
+  });
+
   it('cuenta cuantos filtros hay puestos', () => {
     expect(activeFilterCount(EMPTY_FILTER)).toBe(0);
     expect(activeFilterCount({ ...EMPTY_FILTER, kind: 'note' })).toBe(1);

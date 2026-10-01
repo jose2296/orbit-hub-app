@@ -171,8 +171,31 @@ function AppNavigation() {
       <Stack.Screen name="sync" options={{ title: t("sync.title") }} />
       <Stack.Screen name="devices" options={{ title: t("settings.devices") }} />
       <Stack.Screen name="catalog" options={{ title: t("catalog.title") }} />
-      <Stack.Screen name="item/[itemId]" options={{ title: "" }} />
+      {/*
+        The detail of a title, **and it is the one screen in the app that cross
+        fades.**
+
+        Everywhere else the stack slides, which is right: a slide says "here is
+        another screen in the same building" and it keeps the screen you came from
+        underneath you so you know where you are. The title's detail is not another
+        room, it is **the same poster opened up** — the cover you tapped is the
+        cover at the top of it, a few points larger. Sliding to it moves the thing
+        that was on top of the stack off to one side and brings this one in from
+        the other, which is two movements and a relationship that does not exist
+        between a card in a carousel and a page.
+
+        So it fades, in a fifth of a second, and the rise is left to the content:
+        the blocks on the page arrive staggered by twenty-five milliseconds each,
+        which is the movement that says "this is being read now". A fade for the
+        screen and a settle for the text, and neither of them pretending to be the
+        other.
+      */}
+      <Stack.Screen
+        name="item/[itemId]"
+        options={{ title: "", animation: "fade", animationDuration: 180 }}
+      />
       <Stack.Screen name="notes" options={{ title: t("notes.title") }} />
+      <Stack.Screen name="people" options={{ title: t("people.title") }} />
       <Stack.Screen name="templates" options={{ title: t("note.templates") }} />
       {/* The template's own name, not the route: this screen draws it under the
           header, where a note draws its title, and a caption of

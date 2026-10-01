@@ -181,13 +181,44 @@ export const workspaceSchema = syncableEntitySchema.extend({
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
-export const folderSchema = syncableEntitySchema.extend({
-  workspaceId: uuidSchema,
-  parentId: uuidSchema.nullable().default(null),
-  name: z.string().trim().min(1).max(120),
-  emoji: z.string().max(16).nullable().default(null),
-  position: z.number().int().min(0),
+/**
+ * What you can do with a node, and whether it is yours or it was handed to you.
+ *
+ * Two fields and they are not the same question, which is the whole reason they
+ * are not one:
+ *
+ * - `role` is about **the contents**: edit or only look. It is the ceiling logic of
+ *   ADR 0031 applied — a grant never lifts you above a space you are already in —
+ *   and it is computed by one function on the server, not here and not on the app.
+ * - `shared` is about **how you got it**: `false` means you are a member of its
+ *   space and it is yours, `true` means somebody handed it to you and you are not a
+ *   member. A list three colleagues also have is still `shared: false`: it is in
+ *   your space, it is yours, and they were given a copy of the same link.
+ *
+ * How many *other* people a node reaches is a third thing and is deliberately not
+ * here — it changes every time somebody shares it, and it is a question with an
+ * endpoint: `GET /shares/:nodeType/:nodeId/reach`.
+ *
+ * On every syncable entity rather than on a separate call, because the screen that
+ * draws the badge is a header, and a header that has to wait for a second request to
+ * know whether to draw anything flickers in exactly the place where the answer is
+ * most wanted.
+ */
+export const nodeAccessSchema = z.object({
+  role: membershipRoleSchema,
+  shared: z.boolean().default(false),
 });
+export type NodeAccess = z.infer<typeof nodeAccessSchema>;
+
+export const folderSchema = syncableEntitySchema
+  .extend({
+    workspaceId: uuidSchema,
+    parentId: uuidSchema.nullable().default(null),
+    name: z.string().trim().min(1).max(120),
+    emoji: z.string().max(16).nullable().default(null),
+    position: z.number().int().min(0),
+  })
+  .extend(nodeAccessSchema.shape);
 export type Folder = z.infer<typeof folderSchema>;
 
 /**
@@ -277,31 +308,33 @@ export function isManualOrder(mode: ListOrderMode): boolean {
   return mode === "manual";
 }
 
-export const listSchema = syncableEntitySchema.extend({
-  workspaceId: uuidSchema,
-  folderId: uuidSchema.nullable().default(null),
-  kind: listKindSchema,
-  title: z.string().trim().min(1).max(120),
-  description: z.string().max(1000).nullable().default(null),
-  emoji: z.string().max(16).nullable().default(null),
-  tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
-  position: z.number().int().min(0),
-  itemCount: z.int().min(0).default(0),
-  /**
-   * How the items of this list are ordered, and the default is the order the
-   * person put them in.
-   *
-   * It is a property of the list and not of the person, so everyone looking at
-   * a shared list sees the same order, which is the only way a list somebody
-   * else arranged still means something to you. Changing it never renumbers
-   * anything: the manual order is kept and is what the list goes back to, so
-   * choosing an order to look at something is not a way of losing it.
-   *
-   * The drag only exists while this is `manual`, because a row moved under an
-   * alphabetical order lands somewhere the order did not ask for.
-   */
-  orderMode: listOrderModeSchema.default("manual"),
-});
+export const listSchema = syncableEntitySchema
+  .extend({
+    workspaceId: uuidSchema,
+    folderId: uuidSchema.nullable().default(null),
+    kind: listKindSchema,
+    title: z.string().trim().min(1).max(120),
+    description: z.string().max(1000).nullable().default(null),
+    emoji: z.string().max(16).nullable().default(null),
+    tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    position: z.number().int().min(0),
+    itemCount: z.int().min(0).default(0),
+    /**
+     * How the items of this list are ordered, and the default is the order the
+     * person put them in.
+     *
+     * It is a property of the list and not of the person, so everyone looking at
+     * a shared list sees the same order, which is the only way a list somebody
+     * else arranged still means something to you. Changing it never renumbers
+     * anything: the manual order is kept and is what the list goes back to, so
+     * choosing an order to look at something is not a way of losing it.
+     *
+     * The drag only exists while this is `manual`, because a row moved under an
+     * alphabetical order lands somewhere the order did not ask for.
+     */
+    orderMode: listOrderModeSchema.default("manual"),
+  })
+  .extend(nodeAccessSchema.shape);
 export type List = z.infer<typeof listSchema>;
 
 /**
@@ -309,7 +342,8 @@ export type List = z.infer<typeof listSchema>;
  * record (TMDB / Google Books) and `metadata` keeps the raw provider payload
  * so the app can render offline without calling the provider again.
  */
-export const listItemSchema = syncableEntitySchema.extend({
+export const listItemSchema = syncableEntitySchema
+  .extend({
   listId: uuidSchema,
   title: z.string().trim().min(1).max(300),
   position: z.number().int().min(0),
@@ -363,7 +397,8 @@ export const listItemSchema = syncableEntitySchema.extend({
    * in `noteSchema`. See [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
    */
   annotation: z.string().max(2000).nullable().default(null),
-});
+})
+  .extend(nodeAccessSchema.shape);
 export type ListItem = z.infer<typeof listItemSchema>;
 
 /**
@@ -373,22 +408,24 @@ export type ListItem = z.infer<typeof listItemSchema>;
  * editor writes and nothing has to be converted. See `./note-document.ts` and
  * `docs/architecture/adr/0009-one-native-editor.md`.
  */
-export const noteSchema = syncableEntitySchema.extend({
-  workspaceId: uuidSchema,
-  folderId: uuidSchema.nullable().default(null),
-  title: z.string().trim().min(1).max(200),
-  document: noteDocumentSchema,
-  plainText: z.string().default(""),
-  tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
-  attachmentCount: z.int().min(0).default(0),
-  /**
-   * Where this note sits among the things in its folder when somebody has put
-   * them in an order by hand. Zero means not placed, and the browser sorts those
-   * last so a note written before the order existed never jumps to the top of
-   * somebody's arrangement.
-   */
-  position: z.number().int().min(0).default(0),
-});
+export const noteSchema = syncableEntitySchema
+  .extend({
+    workspaceId: uuidSchema,
+    folderId: uuidSchema.nullable().default(null),
+    title: z.string().trim().min(1).max(200),
+    document: noteDocumentSchema,
+    plainText: z.string().default(""),
+    tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    attachmentCount: z.int().min(0).default(0),
+    /**
+     * Where this note sits among the things in its folder when somebody has put
+     * them in an order by hand. Zero means not placed, and the browser sorts those
+     * last so a note written before the order existed never jumps to the top of
+     * somebody's arrangement.
+     */
+    position: z.number().int().min(0).default(0),
+  })
+  .extend(nodeAccessSchema.shape);
 export type Note = z.infer<typeof noteSchema>;
 
 export const attachmentSchema = z.object({
@@ -758,13 +795,35 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>;
  * `list_items` has a short plain-text `annotation`. See
  * [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
  */
+/**
+ * What can be shared. Five node types, and a note is one of them.
+ *
+ * It used to be six, with `note_template` at the end, and it was a promise the
+ * other side of the codebase never kept — which is worse than not offering it.
+ *
+ * **Why it goes.** A template is not shareable to a person, and three separate
+ * facts say so:
+ *
+ * - `toEntityName` in the sync repository returns `null` for it, so **revoking a
+ *   template share produced no tombstone**: the device that had it kept showing it
+ *   forever. There was no way to take it back.
+ * - Templates already have their own mechanism — a `scope` of personal, workspace
+ *   or public, with its own `share()` — which hands one to a space or to everybody
+ *   and never to a single person. Two mechanisms for one thing, one of them
+ *   half-built.
+ * - And there is no answer to where the recipient files it. A note has a place
+ *   because it has a space and a folder; a template is in no tree at all.
+ *
+ * So it is out of the enum and out of the database CHECK. If it is ever wanted it
+ * is another ADR, with a tombstone and a place to put it. See
+ * [ADR 0032](../../docs/architecture/adr/0032-personas.md).
+ */
 export const shareNodeTypeSchema = z.enum([
   'workspace',
   'folder',
   'list',
   'list_item',
   'note',
-  'note_template',
 ]);
 export type ShareNodeType = z.infer<typeof shareNodeTypeSchema>;
 

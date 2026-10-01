@@ -5,7 +5,7 @@ import { Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
-import { Sheet, SheetOptions, type SheetOption } from "@/components/ui/sheet";
+import { Sheet, SheetOptions, type SheetOption, useLastValue } from "@/components/ui/sheet";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import {
   canEditTemplate,
@@ -43,12 +43,51 @@ export interface TemplateMenuSheetProps {
 type Step = "menu" | "rename" | "share";
 
 export function TemplateMenuSheet({
-  template,
+  template: pedido,
   onClose,
   onChanged,
   onDeleted,
   onFailed,
 }: TemplateMenuSheetProps) {
+  /*
+    `template` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!template) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was — declared here, at the
+    top, so that everything below keeps the name it always had and now has a value
+    that cannot be null — and the caller's own argument, which goes to `null` at
+    once, is what `visible` is asked from. The panel keeps its identity while it
+    leaves, and the dismissal is a movement instead of a cut.
+  */
+  /*
+    `template` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!template) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was, and the caller's own
+    argument — which goes to `null` at once, because that is how a caller says "close"
+    — is what `visible` is asked from. The panel keeps its identity while it leaves,
+    and the dismissal is a movement instead of a cut.
+
+    **The prop keeps its name and only the local is new.** Renaming what the caller
+    passes would be six call sites later, for a change nobody outside this file can
+    see.
+  */
+  const template = useLastValue(pedido);
+
   const theme = useTheme();
   const t = useTranslation();
   const { user } = useSession();
@@ -117,7 +156,7 @@ export function TemplateMenuSheet({
   if (step === "rename") {
     return (
       <Sheet
-        visible
+        visible={pedido !== null}
         onClose={close}
         title={t("note.template.rename")}
         scrollable

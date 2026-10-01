@@ -15,7 +15,19 @@ import { HttpError } from '../../lib/http-error.js';
 
 import { MEMBERSHIP_ROLE_RANK, type MembershipRoleName } from '../../db/constants.js';
 
-function toNote(row: typeof notes.$inferSelect): Note {
+/**
+ * The access fields, for the REST reads.
+ *
+ * Every caller of this service is a member of the note's space — `readableNote`
+ * refuses anything else, and `assertCanWrite` on top of that — so `shared` is
+ * uniformly `false` here. Not a shortcut: the REST surface is membership-gated by
+ * design, and somebody who was *lent* a note reads it through the sync pull, where
+ * the projection says `shared: true` because there they really are not a member.
+ *
+ * `role` is passed in rather than read from the note, because a note has no role of
+ * its own: it has the role of the space it is filed in.
+ */
+function toNote(row: typeof notes.$inferSelect, role: MembershipRoleName): Note {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -28,6 +40,8 @@ function toNote(row: typeof notes.$inferSelect): Note {
     // before there was an order has no place in somebody's hand-made one.
     position: row.position,
     attachmentCount: row.attachmentCount,
+    role,
+    shared: false,
     version: row.version,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -56,6 +70,21 @@ export class NoteService {
       .from(memberships)
       .where(eq(memberships.userId, userId));
     return rows.map((row) => row.id);
+  }
+
+  /**
+   * The note as the caller sees it: its fields, plus the role it carries.
+   *
+   * A note has no role of its own, so it is looked up in the space it is filed in —
+   * one query, and the caller is already known to be a member of it by the time
+   * anything reaches here.
+   */
+  private async toNoteFor(
+    userId: string,
+    row: typeof notes.$inferSelect,
+  ): Promise<Note> {
+    const role = await this.roleIn(userId, row.workspaceId);
+    return toNote(row, role ?? 'viewer');
   }
 
   private async roleIn(userId: string, workspaceId: string): Promise<MembershipRoleName | null> {
@@ -175,13 +204,17 @@ export class NoteService {
     const last = rows.at(-1);
     const hasMore = rows.length === filters.limit && last !== undefined;
     return {
-      items: rows.map(toNote),
+      // One role lookup per row would be a page of round trips to draw a badge, so
+      // the roles are fetched once for every space on the page and matched here.
+      items: await Promise.all(
+        rows.map((row) => this.toNoteFor(userId, row)),
+      ),
       nextCursor: hasMore ? last.updatedAt.toISOString() : null,
     };
   }
 
   async get(userId: string, noteId: string): Promise<Note> {
-    return toNote(await this.readableNote(userId, noteId));
+    return this.toNoteFor(userId, await this.readableNote(userId, noteId));
   }
 
   async create(userId: string, input: CreateNoteRequest): Promise<Note> {
@@ -214,7 +247,7 @@ export class NoteService {
       .returning();
 
     if (!row) throw HttpError.internal('The note was not stored');
-    return toNote(row);
+    return this.toNoteFor(userId, row);
   }
 
   /**
@@ -256,7 +289,7 @@ export class NoteService {
       .returning();
 
     if (!row) throw HttpError.notFound('Note not found');
-    return toNote(row);
+    return this.toNoteFor(userId, row);
   }
 
   /**

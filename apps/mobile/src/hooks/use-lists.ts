@@ -338,49 +338,75 @@ function nowIso(): string {
 }
 
 /**
- * The provider ids of **every** row in a list, and not the ones on screen.
+ * What the list already has of each provider id: **whether it is there, and
+ * whether it has been seen**.
  *
  * **This exists because `useListItems` cannot answer the question.** That hook
- * reads the list through `showCompleted`, so with the completed ones hidden a
- * film somebody has already watched is not in its `items` — and a catalog search
- * that decided "you already have this" from it would happily let a watched film
- * be added a second time. Asking a store that is also the list you are looking at
- * for "what is in this list" is the kind of question that gets a yes for the wrong
+ * reads the list through `showCompleted`, so with the completed ones hidden a film
+ * somebody has already watched is not in its `items` — and a catalogue search that
+ * decided "you already have this" from it would happily let a watched film be
+ * added a second time. Asking a store that is also the list you are looking at for
+ * "what is in this list" is the kind of question that gets a yes for the wrong
  * reason.
  *
- * So it reads the list itself, always whole, and answers with a `Set` because the
- * question is asked once per search result and a list array does that in linear
- * time each time.
+ * So it reads the list itself, always whole, and answers with a `Map` because the
+ * question is asked once per search result and an array does that in linear time
+ * each time. **A `Map` and not the `Set` this used to be**, because the ribbon in
+ * the corner of a poster needs the second half of the answer: knowing that a film
+ * is in the list does not say whether the eye on the corner is open or shut, and a
+ * hook that can only answer the first half is a hook the caller has to go around.
+ *
+ * It answers for **one** list, which is the list the screen is about. A title in
+ * two of your lists is in both, and the ribbon follows the list being looked at
+ * rather than guessing which of the two wins.
  */
-export function useListExternalIds(listId: string | undefined): Set<string> {
-  const [ids, setIds] = useState<Set<string>>(new Set());
+export function useListExternalStates(
+  listId: string | undefined,
+): Map<string, { completed: boolean }> {
+  const [states, setStates] = useState<Map<string, { completed: boolean }>>(new Map());
 
   const load = useCallback(async () => {
     if (!listId) {
-      setIds(new Set());
+      setStates(new Map());
       return;
     }
     const store = await getLocalStoreReady();
     const rows = await store.listCachedItems(listId, { includeCompleted: true });
-    setIds(
-      new Set(
-        rows
-          .map((row) => readRecord<ListItem>(row).externalId)
-          .filter((id): id is string => typeof id === "string" && id.length > 0),
-      ),
-    );
+    const next = new Map<string, { completed: boolean }>();
+    for (const row of rows) {
+      const record = readRecord<ListItem>(row);
+      if (typeof record.externalId !== "string" || record.externalId.length === 0) continue;
+      // A title twice in one list is not a thing the app allows, and if it
+      // happened the seen state of the first row is as good an answer as any.
+      if (!next.has(record.externalId)) {
+        next.set(record.externalId, { completed: record.completed === true });
+      }
+    }
+    setStates(next);
   }, [listId]);
 
   useEffect(() => {
     void load();
-    // The store is what changes here, not a prop: another screen adds a row and
-    // this screen has to know without being told.
+    // The store is what changes here, not a prop: another screen adds a row or
+    // ticks one off and this screen has to know without being told.
     return subscribeToLocalStore(() => {
       void load();
     });
   }, [load]);
 
-  return ids;
+  return states;
+}
+
+/**
+ * Just the ids, for the callers that only need to know "is it there".
+ *
+ * A `Set` because that is the question being asked — a lock on a search result and
+ * a line in a menu — and a `Map` would make every one of those callers reach into
+ * it for a key.
+ */
+export function useListExternalIds(listId: string | undefined): Set<string> {
+  const states = useListExternalStates(listId);
+  return useMemo(() => new Set(states.keys()), [states]);
 }
 
 export function useListItems(listId: string | undefined) {

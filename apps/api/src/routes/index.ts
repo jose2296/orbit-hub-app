@@ -5,6 +5,7 @@ import { catalogRouter } from "./catalogs.js";
 import { sharesRouter } from "./shares.js";
 import { healthRouter } from "./health.js";
 import { notesRouter } from "./notes.js";
+import { peopleRouter } from "./people.js";
 import { applyTemplateRouter, noteTemplatesRouter } from "./note-templates.js";
 import { attachmentBytesRouter, attachmentsRouter } from "./attachments.js";
 
@@ -48,5 +49,6 @@ apiRouter.use("/attachments", attachmentBytesRouter);
 apiRouter.use("/notes", attachmentsRouter);
 apiRouter.use("/notes", notesRouter);
 apiRouter.use("/catalog", catalogRouter);
+apiRouter.use("/people", peopleRouter);
 apiRouter.use("/shares", sharesRouter);
 apiRouter.use("/search", searchRouter);

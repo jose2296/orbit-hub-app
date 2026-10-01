@@ -270,6 +270,251 @@ describe('compartir', () => {
   });
 });
 
+describe('una nota compartida', () => {
+  /**
+   * A note is the thing people actually send to each other.
+   *
+   * `resolveTarget` had no `note` branch, so a note fell through to the list-item
+   * query, matched nothing, and answered 404. Three separate failures came out of that
+   * one missing branch, and they are the three below:
+   *
+   * 1. `POST /shares` with `nodeType: 'note'` was a 404.
+   * 2. The recipient could not edit it: `assertCanWrite` in sync-service calls the
+   *    same `resolveTarget` and turns the throw into "workspace not found".
+   * 3. The recipient was never told anything had arrived, because `tocaElNodo`
+   *    stamped a list row that does not exist and the pull cursor never moved.
+   *
+   * All of them go through HTTP. The comment at the top of this file explains what
+   * a service-only test cost the last time.
+   */
+  async function conNota(nombre: string) {
+    const user = await createVerifiedUser(api, { displayName: nombre });
+    const workspaceId = randomUUID();
+    const noteId = randomUUID();
+    await push(user, [
+      { kind: 'create', entity: 'workspace', entityId: workspaceId, payload: { name: 'Casa', color: 'teal' } },
+      {
+        kind: 'create',
+        entity: 'note',
+        entityId: noteId,
+        payload: { workspaceId, folderId: null, title: 'Lista de la compra', document: '<p>Pan</p>', tags: [] },
+      },
+    ]);
+    return { user, workspaceId, noteId };
+  }
+
+  it('se puede compartir por HTTP, y llega a la bandeja de la otra persona', async () => {
+    const yo = await conNota('Nota yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Nota otra' });
+
+    const r = await api.post(
+      '/shares',
+      {
+        nodeType: 'note',
+        nodeId: yo.noteId,
+        // Por id y no por correo: es la via que el selector de personas usara, y la
+        // que no existia desde ningun lado hasta ahora.
+        granteeUserId: otra.userId,
+        role: 'editor',
+      },
+      yo.user.accessToken,
+    );
+
+    // Un 404 aqui era la respuesta de antes, y decia "That does not exist" de una
+    // nota que existia y era del que la compartia.
+    expect(r.status).toBe(201);
+    expect(r.body?.data?.id).toBeTruthy();
+
+    const bandeja = await api.get('/shares/inbox', otra.accessToken);
+    expect(bandeja.body?.data?.items).toHaveLength(1);
+    expect(bandeja.body?.data?.items?.[0]?.title).toBe('Lista de la compra');
+    expect(bandeja.body?.data?.items?.[0]?.nodeType).toBe('note');
+  });
+
+  it('quien la recibe la ve en su pull, y no hace falta que tenga espacios', async () => {
+    const yo = await conNota('Pull nota yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Pull nota otra' });
+
+    await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: yo.noteId, granteeUserId: otra.userId, role: 'editor' },
+      yo.user.accessToken,
+    );
+
+    const r = await api.post(
+      '/sync/pull',
+      { deviceId: randomUUID(), cursor: null, limit: 200 },
+      otra.accessToken,
+    );
+
+    const notas = (r.body?.data?.changes ?? []).filter((c: { entity: string }) => c.entity === 'note');
+    expect(notas).toHaveLength(1);
+    expect(notas[0]?.record?.title).toBe('Lista de la compra');
+  });
+
+  it('quien la recibe como editor puede editarla por sync, sin ser miembro', async () => {
+    const yo = await conNota('Sync nota yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Sync nota otra' });
+
+    await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: yo.noteId, granteeUserId: otra.userId, role: 'editor' },
+      yo.user.accessToken,
+    );
+
+    const r = await api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          {
+            operationId: randomUUID(),
+            clientId: 'test-client-shares',
+            kind: 'update',
+            entity: 'note',
+            entityId: yo.noteId,
+            baseVersion: 0,
+            base: { title: 'Lista de la compra' },
+            payload: { title: 'Compra del Saturday' },
+            clientTimestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      otra.accessToken,
+    );
+
+    // Antes esto caia en el 404 de "workspace not found" del `assertCanWrite`, que
+    // es un 404 porque no distingue "no existe" de "no es tuyo", y aqui la nota si
+    // existia y si era suya: la concesion se la habia dado el dueno hace un momento.
+    expect(r.body?.data?.results?.[0]?.status).toBe('applied');
+  });
+
+  it('quien la recibe en solo lectura no puede editarla y se le dice por que', async () => {
+    const yo = await conNota('Sync nota viewer yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Sync nota viewer otra' });
+
+    await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: yo.noteId, granteeUserId: otra.userId, role: 'viewer' },
+      yo.user.accessToken,
+    );
+
+    const r = await api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          {
+            operationId: randomUUID(),
+            clientId: 'test-client-shares',
+            kind: 'update',
+            entity: 'note',
+            entityId: yo.noteId,
+            baseVersion: 0,
+            base: { title: 'Lista de la compra' },
+            payload: { title: 'No deberia poder' },
+            clientTimestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      otra.accessToken,
+    );
+
+    expect(r.body?.data?.results?.[0]?.status).toBe('rejected');
+    expect(r.body?.data?.results?.[0]?.error).toMatch(/edit access/);
+  });
+
+  it('a quien no se la han compartido le sale como si la nota no existiera', async () => {
+    const yo = await conNota('Sync nota ajena yo');
+    const ajena = await createVerifiedUser(api, { displayName: 'Sync nota ajena' });
+
+    const r = await api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          {
+            operationId: randomUUID(),
+            clientId: 'test-client-shares',
+            kind: 'update',
+            entity: 'note',
+            entityId: yo.noteId,
+            baseVersion: 0,
+            base: { title: 'Lista de la compra' },
+            payload: { title: 'Ni se inmuta' },
+            clientTimestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      ajena.accessToken,
+    );
+
+    // El 404 y no el 403 a proposito, y por lo que dice el comentario de
+    // `resolveGrantee`: el mismo 404 para "no existe" y "existe pero no es tuyo" es
+    // lo que no deja averiguar que notas ajenas hay. Un 403 confirmaria que el id
+    // existe, que es justo lo que no hay que confirmar.
+    expect(r.body?.data?.results?.[0]?.status).toBe('rejected');
+    expect(r.body?.data?.results?.[0]?.error).toMatch(/not found/i);
+  });
+
+  it('el alcance de una nota se puede preguntar antes de borrarla', async () => {
+    const yo = await conNota('Alcance yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Alcance otra' });
+
+    await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: yo.noteId, granteeUserId: otra.userId, role: 'viewer' },
+      yo.user.accessToken,
+    );
+
+    const r = await api.get(`/shares/note/${yo.noteId}/reach`, yo.user.accessToken);
+    expect(r.status).toBe(200);
+    expect(r.body?.data?.count).toBe(1);
+    expect(r.body?.data?.people?.[0]?.email).toBe(otra.email);
+  });
+
+  it('revocar una nota compartida la entierra en el pull del otro', async () => {
+    const yo = await conNota('Revocar nota yo');
+    const otra = await createVerifiedUser(api, { displayName: 'Revocar nota otra' });
+
+    const creada = await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: yo.noteId, granteeUserId: otra.userId, role: 'editor' },
+      yo.user.accessToken,
+    );
+
+    let cursor: string | null = null;
+    const pull = async () => {
+      const r = await api.post(
+        '/sync/pull',
+        { deviceId: randomUUID(), cursor, limit: 200 },
+        otra.accessToken,
+      );
+      if (typeof r.body?.data?.nextCursor === 'string') cursor = r.body.data.nextCursor;
+      return r;
+    };
+
+    expect(
+      (await pull()).body?.data?.changes?.some((c: { entity: string }) => c.entity === 'note'),
+    ).toBe(true);
+
+    await api.delete(`/shares/${creada.body?.data?.id}`, yo.user.accessToken);
+
+    const despues = (await pull()).body?.data?.changes ?? [];
+    const laNota = despues.find(
+      (c: { entity: string; record: { title?: string } }) =>
+        c.entity === 'note' && c.record.title === 'Lista de la compra',
+    );
+    // El entierro es lo unico que puede hacer que un movil que ya la tiene en cache
+    // la borre de verdad. Sin el, "ya esta revocado" no se ve por ningun lado.
+    expect(laNota?.record?.deletedAt).toBeTruthy();
+    expect(laNota?.record?.withdrawn).toBe(true);
+  });
+});
+
 describe('una lista compartida en el sync', () => {
   /** Tacha un elemento de la lista, por la via normal de la app. */
   async function tachar(user: TestUser, itemId: string) {

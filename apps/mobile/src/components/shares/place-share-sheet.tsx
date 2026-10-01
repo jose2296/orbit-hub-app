@@ -18,7 +18,6 @@ const NODE_ICON: Record<Share["nodeType"], string> = {
   list: "list-outline",
   list_item: "checkmark-circle-outline",
   note: "document-text-outline",
-  note_template: "documents-outline",
 };
 
 export interface PlaceShareSheetProps {

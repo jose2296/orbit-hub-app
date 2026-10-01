@@ -1,26 +1,25 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import type { Folder, List, ListItem, ListKind } from "@orbit-hub/contracts";
 
+import { MediaFiltersBody } from "@/components/media/media-filters-body";
 import {
   EMPTY_MEDIA_FILTER,
-  MediaFiltersSheet,
+  matchesMediaFilter,
   mediaFilterCount,
-  mediaTypeOf,
   type MediaFilter,
-} from "@/components/media/media-filters-sheet";
+} from "@/lib/lists/media-filter";
+import { ListControls } from "@/components/lists/list-controls";
 import { MediaReorderSheet } from "@/components/media/media-reorder-sheet";
 import { MediaTabs, type MediaTab } from "@/components/media/media-tabs";
 import { VerticalMediaCarousel } from "@/components/media/vertical-media-carousel";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
-import { Button } from "@/components/ui/button";
 import { Screen } from "@/components/ui/screen";
-import { AppText } from "@/components/ui/text";
-import { Sheet, SheetOptions } from "@/components/ui/sheet";
+import { useLists } from "@/hooks/use-lists";
 import { useTranslation } from "@/lib/i18n";
-import { canReorder, isReleasedOrder, orderItems } from "@/lib/lists/item-presentation";
+import { canReorder, orderItems } from "@/lib/lists/item-presentation";
 import { mediaCardOf } from "@/lib/lists/media-card";
 import { useTheme } from "@/theme";
 
@@ -51,6 +50,24 @@ import { useTheme } from "@/theme";
  * manual, by title both ways, by when it was added, and by when it came out both
  * ways.
  */
+/**
+ * The orders offered for a list of things that were released, **and the words for
+ * them**.
+ *
+ * `released` is only offered for a list whose rows have a release date. A list of
+ * films does; a shopping list does not, and offering "by when it came out" there
+ * is a button that answers with nothing.
+ */
+const ORDENES: { mode: List["orderMode"]; key: string }[] = [
+  { mode: "manual", key: "order.manual" },
+  { mode: "alphabetical", key: "order.alphabetical" },
+  { mode: "alphabetical_desc", key: "order.alphabetical_desc" },
+  { mode: "created_asc", key: "order.created_asc" },
+  { mode: "created_desc", key: "order.created_desc" },
+  { mode: "released_asc", key: "order.released_asc" },
+  { mode: "released_desc", key: "order.released_desc" },
+];
+
 export function MediaListScreen({
   list,
   items,
@@ -91,11 +108,19 @@ export function MediaListScreen({
 }) {
   const theme = useTheme();
   const t = useTranslation();
+  /**
+   * Writing the order, and **this is what was missing**.
+   *
+   * The sheet of orders closed itself and did nothing else: it never called
+   * `setOrderMode`, so choosing "by title" closed the sheet, left the list in the
+   * order it was in and showed a check on the option that was not on. The order
+   * lives on the list, and a screen that only reads it is a screen that shows the
+   * order and cannot change it.
+   */
+  const { setOrderMode } = useLists({});
 
   const [pestana, setPestana] = useState<MediaTab>("pending");
   const [filtro, setFiltro] = useState<MediaFilter>(EMPTY_MEDIA_FILTER);
-  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
-  const [ordenAbierto, setOrdenAbierto] = useState(false);
   const [reordenarAbierto, setReordenarAbierto] = useState(false);
 
   /**
@@ -115,37 +140,16 @@ export function MediaListScreen({
    * Filtering the seen list by "not seen" gives nothing, so the two tabs stay
    * independent: each is filtered by the same filter and neither changes the
    * other. The tab is what you are looking at and the filter is what of it.
+   *
+   * **`matchesMediaFilter` and not a copy of it here.** The sheet counts the rows
+   * each chip would leave, and it counts them with this function; a second copy
+   * in this file is how a chip says "3" and the list shows five, with neither
+   * copy wrong on its own.
    */
-  const pasa = useMemo(() => {
-    return (item: ListItem) => {
-      /*
-        The text, and **`includes` and not `compare`**.
-
-        `compare` says how two strings *order*, not whether one contains the other,
-        and a filter built on a comparator reads like a filter and filters
-        everything or nothing: the condition below was `!compare(...)`, which is
-        true for every pair of different strings, so the search only ever showed
-        the titles that were exactly the query. What is wanted is "does the title
-        contain this", and going through the same normalization on both sides means
-        the accents and the case do not decide it: "perros" finds "Perros" and
-        "pelicula" finds "Película".
-      */
-      if (filtro.text.length > 0) {
-        const aguja = filtro.text.toLocaleLowerCase("es");
-        if (!item.title.toLocaleLowerCase("es").includes(aguja)) return false;
-      }
-      if (filtro.decade !== null) {
-        const card = mediaCardOf(item);
-        const anio = card?.released ? Number.parseInt(card.released, 10) : null;
-        if (anio === null || Math.floor(anio / 10) * 10 !== filtro.decade) return false;
-      }
-      if (filtro.type !== null && mediaTypeOf(item) !== filtro.type) return false;
-      if (filtro.tags.length > 0 && !filtro.tags.every((tag) => item.tags.includes(tag))) {
-        return false;
-      }
-      return true;
-    };
-  }, [filtro]);
+  const pasa = useMemo(
+    () => (item: ListItem) => matchesMediaFilter(item, filtro),
+    [filtro],
+  );
 
   const pendientes = useMemo(
     () => sorted.filter((item) => !item.completed && pasa(item)),
@@ -158,20 +162,25 @@ export function MediaListScreen({
 
   const enPestana = pestana === "pending" ? pendientes : vistos;
 
-  const opcionesDeOrden = useMemo(() => {
-    const out: { mode: List["orderMode"]; key: string }[] = [
-      { mode: "manual", key: "order.manual" },
-      { mode: "alphabetical", key: "order.alphabetical" },
-      { mode: "alphabetical_desc", key: "order.alphabetical_desc" },
-      { mode: "created_asc", key: "order.created_asc" },
-      { mode: "created_desc", key: "order.created_desc" },
-      { mode: "released_asc", key: "order.released_asc" },
-      { mode: "released_desc", key: "order.released_desc" },
-    ];
-    return out;
-  }, []);
+  /**
+   * The orders, **and the one that is on carries the tick**.
+   *
+   * A function and not a memo: the list it maps over closes over the order, and a
+   * memo would hand back the array built the first time with the tick that was on
+   * then.
+   */
+  const opcionesDeOrden = () =>
+    ORDENES.map((o) => ({
+      key: o.mode,
+      label: t(o.key as never),
+      icon: o.mode === orderMode ? ("checkmark" as const) : ("ellipse-outline" as const),
+      onPress: () => {
+        if (list) void setOrderMode(list, o.mode);
+      },
+    }));
 
-  const claveOrden = opcionesDeOrden.find((o) => o.mode === orderMode)?.key ?? "order.manual";
+  const claveOrden =
+    ORDENES.find((o) => o.mode === orderMode)?.key ?? "order.manual";
 
   /*
     The same order with a word that fits in a button.
@@ -242,46 +251,29 @@ export function MediaListScreen({
           buttons, and the sentence still says the same thing in the sheet, where it
           is a title with room to be one.
         */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: theme.spacing.sm, paddingRight: theme.spacing.lg }}
-          style={styles.filaBotones}
+        {/*
+          The controls, **one of them, and the same control as the folders have**.
+
+          It was three buttons in a row here and three in a row over the folders
+          and three over the tasks, all answering one question and each opening a
+          sheet of its own. One button that says what is on, and one sheet with the
+          three things in it, is one control in three places — see `ListControls`.
+        */}
+        <ListControls
+          filterCount={mediaFilterCount(filtro)}
+          orderLabel={etiquetaCorta}
+          orders={opcionesDeOrden()}
+          canReorder={canReorder(orderMode)}
+          onReorder={() => setReordenarAbierto(true)}
+          testID="media-controls"
         >
-          <Button
-            label={etiquetaCorta}
-            icon={isReleasedOrder(orderMode) ? "film-outline" : "swap-vertical-outline"}
-            size="sm"
-            variant="secondary"
-            fullWidth={false}
-            onPress={() => setOrdenAbierto(true)}
-            testID="media-order-button"
+          <MediaFiltersBody
+            items={sorted}
+            filter={filtro}
+            onFilterChange={setFiltro}
+            listKind={list?.kind ?? null}
           />
-          <Button
-            label={
-              mediaFilterCount(filtro) > 0
-                ? t("filters.titleOn", { count: mediaFilterCount(filtro) })
-                : t("filters.title")
-            }
-            icon="funnel-outline"
-            size="sm"
-            variant={mediaFilterCount(filtro) > 0 ? "primary" : "secondary"}
-            fullWidth={false}
-            onPress={() => setFiltrosAbiertos(true)}
-            testID="media-filter-button"
-          />
-          {canReorder(orderMode) ? (
-            <Button
-              label={t("order.reorder")}
-              icon="reorder-two-outline"
-              size="sm"
-              variant="secondary"
-              fullWidth={false}
-              onPress={() => setReordenarAbierto(true)}
-              testID="media-reorder-button"
-            />
-          ) : null}
-        </ScrollView>
+        </ListControls>
       </View>
 
       {isLoading ? null : (
@@ -335,37 +327,8 @@ export function MediaListScreen({
         />
       ) : null}
 
-      <MediaFiltersSheet
-        open={filtrosAbiertos}
-        items={sorted}
-        filter={filtro}
-        onFilterChange={setFiltro}
-        onApply={() => setFiltrosAbiertos(false)}
-        onClose={() => setFiltrosAbiertos(false)}
-        listKind={list?.kind ?? null}
-      />
 
-      <Sheet visible={ordenAbierto} onClose={() => setOrdenAbierto(false)} title={t("content.sort.title")}>
-        <SheetOptions
-          options={opcionesDeOrden.map((o) => ({
-            key: o.mode,
-            /*
-              La frase entera, y no la corta. Aqui hay sitio y el botulo de la fila
-              de arriba no: «Como yo lo pongo» es un titulo, y en un boton de 167
-              puntos es medio movil.
-            */
-            label: t(o.key as never),
-            description: o.mode === orderMode ? t(claveOrden as never) : undefined,
-            icon: o.mode === orderMode ? ("checkmark" as const) : ("ellipse-outline" as const),
-            onPress: () => setOrdenAbierto(false),
-          }))}
-        />
-        {isReleasedOrder(orderMode) ? (
-          <AppText variant="caption" tone="subtle" style={{ marginTop: theme.spacing.sm }}>
-            {t("order.releasedHint")}
-          </AppText>
-        ) : null}
-      </Sheet>
+
 
       {/*
         The **whole list**, and not the current tab's rows.

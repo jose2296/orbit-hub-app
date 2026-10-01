@@ -3,6 +3,8 @@ import { Image, Pressable, StyleSheet, View } from 'react-native';
 
 import type { CatalogResult } from '@orbit-hub/contracts';
 
+import { SeenRibbon } from '@/components/media/seen-ribbon';
+import { useLongPressText } from '@/hooks/use-long-press-text';
 import { AppText } from '@/components/ui/text';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
@@ -31,6 +33,15 @@ export interface CatalogResultRowProps {
    * está" costs one line and answers the question the tap was asking.
    */
   inList?: boolean;
+  /**
+   * Whether it is a row of the list **and it has been watched**.
+   *
+   * The lock says "you have this" and the ribbon says "and you have seen it", and
+   * they are different facts: a film added last week and watched is in the list
+   * and watched, and a film added last week and not touched is in the list and not
+   * watched, and the ribbon has to be able to say the second one is false.
+   */
+  completed?: boolean;
 }
 
 /**
@@ -43,38 +54,59 @@ export function CatalogResultRow({
   onAdd,
   disabled,
   inList,
+  completed,
 }: CatalogResultRowProps) {
   const theme = useTheme();
   const t = useTranslation();
 
-  const poster = result.imageUrl ? (
-    <Image
-      source={{ uri: result.imageUrl }}
-      // `resizeMode` moved from style to props in React Native Web.
-      resizeMode="cover"
-      style={[
-        styles.poster,
-        { borderRadius: theme.radius.sm, backgroundColor: theme.colors.surfaceMuted },
-      ]}
-    />
-  ) : (
-    <View
-      style={[
-        styles.poster,
-        styles.posterFallback,
-        {
-          borderRadius: theme.radius.sm,
-          backgroundColor: theme.colors.surfaceMuted,
-        },
-      ]}
-    >
-      <Ionicons name="film-outline" size={18} color={theme.colors.textMuted} />
+  /** The whole of a title the provider wrote, on a long press of this row. */
+  const nombreLargo = useLongPressText(result.title);
+
+  /**
+   * The poster, **in a box of its own so the corner has something to sit on**.
+   *
+   * A ribbon positioned against the row would be a ribbon on the middle of the
+   * screen: the row is a hundred percent wide and the corner is the corner of the
+   * row, not of the picture. The box is the size of the picture and clips it, so
+   * the corner is the picture's.
+   */
+  const poster = (
+    <View style={[styles.posterCaja, { borderRadius: theme.radius.sm }]}>
+      {result.imageUrl ? (
+        <Image
+          source={{ uri: result.imageUrl }}
+          // `resizeMode` moved from style to props in React Native Web.
+          resizeMode="cover"
+          style={[styles.poster, { backgroundColor: theme.colors.surfaceMuted }]}
+        />
+      ) : (
+        <View style={[styles.poster, styles.posterFallback, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <Ionicons name="film-outline" size={18} color={theme.colors.textMuted} />
+        </View>
+      )}
+      {/*
+        Seen, **in the corner, and the same corner as everywhere else**. A search
+        result is the place where somebody is about to decide whether to add a
+        title, and "I already watched this" is the fact that changes that decision,
+        so it belongs where the eye already goes for the picture and not in the
+        line of text under it.
+      */}
+      {inList ? (
+        <SeenRibbon
+          completed={completed === true}
+        label={`${t("mediaTabs.seen")}: ${result.title}`}
+        size={26}
+          delay={120}
+          testID={`visto-${result.externalId}`}
+        />
+      ) : null}
     </View>
   );
 
   return (
     <View style={[styles.row, { gap: theme.spacing.md, paddingVertical: theme.spacing.sm }]}>
       <Pressable
+        onLongPress={nombreLargo.onLongPress}
         accessibilityRole="button"
         accessibilityLabel={`${result.title}${result.subtitle ? `, ${result.subtitle}` : ''}`}
         disabled={disabled}
@@ -87,7 +119,7 @@ export function CatalogResultRow({
       >
         {poster}
         <View style={[styles.text, { gap: 2 }]}>
-          <AppText variant="bodyStrong" numberOfLines={2}>
+                    <AppText variant="bodyStrong" numberOfLines={2}>
             {result.title}
           </AppText>
           {result.subtitle ? (
@@ -100,6 +132,7 @@ export function CatalogResultRow({
           </AppText>
         </View>
       </Pressable>
+      {nombreLargo.sheet}
 
       {/*
         Forty points square, and not twenty-two: the row above it is a button the
@@ -157,6 +190,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  /** The box the corner is cut against. */
+  posterCaja: {
+    overflow: 'hidden',
   },
   poster: {
     width: 44,

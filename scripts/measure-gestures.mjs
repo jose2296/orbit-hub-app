@@ -147,7 +147,17 @@ async function account() {
  */
 const INPUT = process.env.PANEL_INPUT ?? "touch";
 
-async function drag(tab, from, to, steps, sample) {
+/**
+ * Un arrastre que **coge** algo, y por eso empieza manteniendo pulsado.
+ *
+ * Una tarjeta no se mueve porque el dedo se mueva: se coge manteniendo pulsado, como
+ * en un escritorio. Un arrastre sin ese mantenimiento no mueve nada, y una medida
+ * hecha así mide un panel en reposo y lo llama "no se mueve con el dedo", que es la
+ * conclusión contraria de la buena.
+ */
+const COGER = 420;
+
+async function drag(tab, from, to, steps, sample, { mantener = COGER } = {}) {
   const samples = [];
   const point = (x, y) => [{ x, y, id: 1, radiusX: 12, radiusY: 12, force: 1 }];
 
@@ -156,6 +166,8 @@ async function drag(tab, from, to, steps, sample) {
   } else {
     await tab.send("Input.dispatchMouseEvent", { type: "mousePressed", x: from.x, y: from.y, button: "left", clickCount: 1, buttons: 1 });
   }
+
+  await sleep(mantener);
 
   for (let i = 1; i <= steps; i += 1) {
     const x = from.x + ((to.x - from.x) * i) / steps;

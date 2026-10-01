@@ -8,6 +8,7 @@ import type { ListKind } from "@orbit-hub/contracts";
 import { Segmented } from "@/components/ui/segmented";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useLongPressName } from "@/hooks/use-long-press-text";
 import { Card } from "@/components/ui/card";
 import { Divider } from "@/components/ui/divider";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -38,6 +39,20 @@ const KIND_META: Record<
 type Filter = ListKind | "all";
 
 export default function ListsScreen() {
+
+  /*
+    The whole of a list's name on a long press, **on the card's own press**.
+
+    It is one hook for the screen and not one per card, because a hook cannot be
+    called once per item inside a loop: there is a list of cards here and the name
+    is not known until one of them is pressed. The card's `onLongPress` is given
+    its own title.
+
+    A `Pressable` around the name would take the gesture from the card on a phone
+    and the card would stop opening — invisible on the web, where a click bubbles
+    and both fire. See `useLongPressName`.
+  */
+  const nombreLargo = useLongPressName();
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
@@ -122,6 +137,11 @@ export default function ListsScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={list.title}
+                onLongPress={() =>
+                  nombreLargo.onLongPress(
+                    `${list.emoji ? `${list.emoji} ` : ""}${list.title}`,
+                  )
+                }
                 onPress={() => router.push(`/(app)/list/${list.id}`)}
                 style={({ pressed }) => [
                   styles.row,
@@ -149,7 +169,7 @@ export default function ListsScreen() {
                 </View>
 
                 <View style={styles.flex}>
-                  <AppText variant="bodyStrong">
+                                    <AppText variant="bodyStrong">
                     {list.emoji ? `${list.emoji} ` : ""}
                     {list.title}
                   </AppText>
@@ -175,6 +195,7 @@ export default function ListsScreen() {
               </Pressable>
             </View>
           ))}
+        {nombreLargo.sheet}
         </Card>
       )}
 

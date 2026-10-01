@@ -1,4 +1,5 @@
 import type { Folder, List, ListOrderMode, Note } from "@orbit-hub/contracts";
+import { normaliseToCompare } from "@/lib/lists/done-match";
 
 /**
  * One thing in a folder, whatever kind of thing it is.
@@ -216,12 +217,22 @@ export function matchesFilter(row: ContentRow, filter: ContentFilter): boolean {
   }
   if (filter.folderId !== null && row.folderId !== filter.folderId) return false;
   if (filter.query.length > 0) {
-    const aguja = filter.query.toLocaleLowerCase();
-    const nombre = row.name.toLocaleLowerCase();
+    /*
+      The same normalization on both sides, **accents included**.
+     *
+      It was `toLocaleLowerCase`, which does not remove them: typing "jabon"
+      found nothing on a list with "Jabón" on it, and the only axis of a long
+      list that needs no picker was the one that needed the exact spelling. The
+      films list was fixed the same way at the same time, because a search that
+      answers to accents in one list and not in the other is not a difference
+      anybody can defend.
+    */
+    const aguja = normaliseToCompare(filter.query);
+    const nombre = normaliseToCompare(row.name);
     // The note's own words, and not only its title: a note called "Recetas" whose
     // text is full of "salsa" is a note somebody is looking for with the word
     // "salsa", and a filter that only reads titles would not find it.
-    const cuerpo = (row.notePreview ?? "").toLocaleLowerCase();
+    const cuerpo = normaliseToCompare(row.notePreview ?? "");
     if (!nombre.includes(aguja) && !cuerpo.includes(aguja)) return false;
   }
   return true;

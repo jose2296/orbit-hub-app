@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { ListItem } from "@orbit-hub/contracts";
 
 import { useA11yHint } from "@/components/ui/a11y-hint";
+import { useLongPressText } from "@/hooks/use-long-press-text";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -132,9 +133,13 @@ function DoneRow({
 
   const pista = useA11yHint(t("doneTray.undoHint"));
 
+  /** The whole of a name the user wrote, on a long press of this row. */
+  const nombreLargo = useLongPressText(item.title);
+
   return (
     <>
       <Pressable
+        onLongPress={nombreLargo.onLongPress}
         accessibilityRole="button"
         accessibilityLabel={item.title}
         {...pista.props}
@@ -153,6 +158,7 @@ function DoneRow({
           {item.title}
         </AppText>
       </Pressable>
+      {nombreLargo.sheet}
       {pista.node}
     </>
   );

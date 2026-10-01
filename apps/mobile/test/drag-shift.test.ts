@@ -106,3 +106,49 @@ describe("dropIndex", () => {
     expect(dropIndex({ index: 1, total: 3, translationY: 40, rowHeight: 0 })).toBe(2);
   });
 });
+
+/**
+ * The number these two functions want is the **distance between rows**, and the
+ * difference is not academic.
+ *
+ * A sheet of sixty-point rows with four points of space between them has a pitch
+ * of sixty-four, and after a thousand points of drag the two numbers disagree by a
+ * whole row. The row is over the seventeenth, the hole opened at the sixteenth, and
+ * the row is pulled back to where the data says it is — which is the bounce that
+ * made the drag look broken.
+ *
+ * So this is a test of the arithmetic *with the real pitch*, and it is here
+ * because the number is measured in the component and the mistake was in the
+ * caller: both versions of it pass, and the one that used a bare height is the one
+ * that was wrong.
+ */
+describe("the pitch of a list, and not its height", () => {
+  const ALTO = 60;
+  const HUECO = 4;
+  const PASO = ALTO + HUECO;
+
+  it("agrees with the height for a short drag, which is why the bug hid", () => {
+    // Under about two hundred points the two round to the same index, so a drag
+    // that does not go far works perfectly and a drag that goes the length of the
+    // list does not. That is the worst shape this kind of bug can have.
+    expect(dropIndex({ index: 0, total: 20, translationY: 100, rowHeight: PASO })).toBe(
+      dropIndex({ index: 0, total: 20, translationY: 100, rowHeight: ALTO }),
+    );
+  });
+
+  it("is a row out after a long drag, and the hole is not where the row is", () => {
+    const conPaso = dropIndex({ index: 0, total: 20, translationY: 1000, rowHeight: PASO });
+    const conAltura = dropIndex({ index: 0, total: 20, translationY: 1000, rowHeight: ALTO });
+    expect(conPaso).toBe(16);
+    expect(conAltura).toBe(17);
+  });
+
+  it("makes the rows step aside by the pitch and not by their own height", () => {
+    // Two rows four points apart that move four points apart leave a four-point
+    // sliver between them while the drag is on: the hole is open and the row does
+    // not fit it.
+    expect(
+      rowShift({ draggingId: "a", id: "b", index: 1, from: 0, to: 1, rowHeight: PASO }),
+    ).toBe(-PASO);
+  });
+});

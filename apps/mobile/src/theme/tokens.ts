@@ -127,7 +127,29 @@ const NEUTRALS: Record<ColorSchemeName, NeutralColors> = {
     textMuted: "#59627A",
     textSubtle: "#8A93A8",
     skeleton: "#E7EAF2",
-    overlay: "rgba(14, 18, 32, 0.45)",
+    /*
+      The veil over a sheet, **and it was too light to read as a veil.**
+
+      Forty-five percent of a near-black over a near-white screen leaves the
+      background legible: the poster behind the sheet stays recognisable, the
+      header under it stays readable, and a person cannot tell at a glance whether
+      the thing on top of the screen is a sheet they opened or the screen itself
+      with a panel on it. A veil is a statement that something is on top and
+      something else is not available right now, and at this strength it was a
+      tint.
+
+      Sixty-two is measured on the web, not chosen: it is the point where the
+      background is unmistakably behind glass — the header text is no longer
+      something you would read if you meant to — while the sheet's own text is
+      still the brightest thing on the screen by a long way. Going further starts
+      costing the panel's contrast against its own veil, which is the opposite of
+      what a veil is for.
+
+      **This token is the bottom sheet's and nothing else's.** It is read in one
+      place in the whole app, so darkening it darkens the sheet and not the drawer,
+      the dialogs or anything else that might have wanted the old strength.
+    */
+    overlay: "rgba(10, 13, 26, 0.62)",
     tabBar: "#FFFFFF",
     shadow: "#0E1220",
   },
@@ -142,7 +164,15 @@ const NEUTRALS: Record<ColorSchemeName, NeutralColors> = {
     textMuted: "#9AA5BC",
     textSubtle: "#6C7791",
     skeleton: "#1E2634",
-    overlay: "rgba(3, 6, 14, 0.6)",
+    /*
+      The same veil in the dark, and **dark for the opposite reason**: here the
+      background behind the sheet is already almost black, so a near-black veil at
+      a strength that reads on white reads as nothing at all. It is pushed further
+      than the light one for the same effect and not because dark needs to be
+      heavier — because on a dark screen the only thing a veil can take away is
+      light, and this one was taking almost none.
+    */
+    overlay: "rgba(2, 4, 10, 0.76)",
     tabBar: "#101623",
     shadow: "#000000",
   },

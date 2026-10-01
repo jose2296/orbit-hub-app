@@ -6,6 +6,7 @@ import { Platform, Pressable, StyleSheet, View } from "react-native";
 import type { Workspace } from "@orbit-hub/contracts";
 
 import { Badge } from "@/components/ui/badge";
+import { useLongPressName } from "@/hooks/use-long-press-text";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
@@ -25,6 +26,17 @@ const ROLE_TONE: Record<Workspace["role"], "accent" | "neutral"> = {
 };
 
 export default function WorkspacesScreen() {
+
+  /*
+    The whole of a space's name on a long press, **on the tile's own press**.
+
+    One hook for the screen and not one per tile, because a hook cannot be called
+    once per item inside a loop. A `Pressable` around the name would take the
+    gesture away from the tile on a phone and the tile would stop opening, which
+    the web cannot show because a click bubbles and both fire. See
+    `useLongPressName`.
+  */
+  const nombreLargo = useLongPressName();
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
@@ -87,6 +99,7 @@ export default function WorkspacesScreen() {
                 key={workspace.id}
                 accessibilityRole="button"
                 accessibilityLabel={workspace.name}
+                onLongPress={() => nombreLargo.onLongPress(workspace.name)}
                 onPress={() => router.push(`/(app)/workspace/${workspace.id}`)}
                 style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
               >
@@ -135,7 +148,7 @@ export default function WorkspacesScreen() {
                   </SpaceWash>
 
                   <View style={styles.flex}>
-                    <AppText variant="bodyStrong">{workspace.name}</AppText>
+                                        <AppText variant="bodyStrong">{workspace.name}</AppText>
                     <View style={[styles.meta, { gap: theme.spacing.sm }]}>
                       <Badge
                         label={t(`workspaces.role.${workspace.role}`)}
@@ -185,6 +198,7 @@ export default function WorkspacesScreen() {
           router.push(`/(app)/workspace/${workspaceId}`)
         }
       />
+      {nombreLargo.sheet}
     </Screen>
   );
 }

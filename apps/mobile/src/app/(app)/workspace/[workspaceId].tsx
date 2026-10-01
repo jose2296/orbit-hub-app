@@ -102,6 +102,17 @@ export default function WorkspaceScreen() {
     setCreateStep("what");
     setCreateKind(null);
     setTitle("");
+    /*
+      And the row's own menu, **which it did not close**.
+
+      This function is what every sheet on this screen calls when it is dismissed,
+      and it cleared five pieces of state and not the sixth: the item whose menu was
+      open. So pressing the cross on a folder's menu asked the screen to close it,
+      the screen agreed, and the folder was still there — and the sheet's `visible`
+      is "there is a folder", so it stayed open. Which reads, from the other side of
+      the screen, as a three-dot button that opens a menu that will not go away.
+    */
+    setMenuFor(null);
   }, []);
 
   const onCreate = useCallback(async () => {

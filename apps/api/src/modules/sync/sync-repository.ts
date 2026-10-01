@@ -16,6 +16,7 @@ import {
   syncOperations,
   workspaces,
 } from '../../db/schema.js';
+import { accessOf } from '../shares/access.js';
 
 /** One live grant, resolved into the chain that holds the node it points at. */
 interface CadenaCompartida {
@@ -375,14 +376,40 @@ export class SyncRepository {
           .limit(1);
         const found = row[0];
         if (!found) continue;
+        /*
+          The granted folder **itself**, and the list and the note branches above
+          both do the same thing with their own id.
+
+          It used to push `parentId` here, which meant a folder grant pointed at
+          whatever held the folder and never at the folder: sharing a top-level
+          folder produced a chain with `folderId: null`, so the folder filter
+          (`inArray(folders.id, cadenaDe(cadenas, 'folderId'))`) matched nothing and
+          the folder nobody was ever shown **did not reach the other phone**. A
+          nested one arrived as its parent, which is the wrong folder, and its own
+          contents still did not come.
+
+          The parent goes in as well, and as a chain of its own, because a device
+          cannot draw a folder it has no parent for — which is the same reason
+          `ancestorsOf` walks up in the share service.
+        */
         cadenas.push({
           nodeType: 'folder',
           workspaceId: found.workspaceId,
-          folderId: found.parentId,
+          folderId: grant.nodeId,
           listId: null,
           noteId: null,
           role: grant.role,
         });
+        if (found.parentId) {
+          cadenas.push({
+            nodeType: 'folder',
+            workspaceId: found.workspaceId,
+            folderId: found.parentId,
+            listId: null,
+            noteId: null,
+            role: grant.role,
+          });
+        }
         continue;
       }
 
@@ -471,6 +498,62 @@ export class SyncRepository {
     return changes;
   }
 
+  /**
+   * What this person can do with a node, and whether it is theirs.
+   *
+   * **It calls `accessOf` and does not decide anything.** The rules — that a grant
+   * is a floor and your membership is the floor under that, that a grant can never
+   * lift you above a space you are already in, that a grant never lowers you either
+   * — live in one pure function in `modules/shares/access.ts`, and this is a second
+   * place that needs them. A copy here would be a second answer to the same question
+   * that nobody would remember to update, and the symptom would not be a crash: it
+   * would be a header that says "puedes editarla" over a list you cannot edit, which
+   * is the app lying about permissions in the one place somebody looks to find out
+   * what they are allowed to do.
+   *
+   * `grantRole` is the strongest grant that reaches the node or anything above it,
+   * because that is what makes a shared folder carry its lists.
+   */
+  private accesoDe(args: {
+    workspaceId: string;
+    folderId?: string | null;
+    listId?: string | null;
+    noteId?: string | null;
+    rolesPorEspacio: Map<string, MembershipRoleName>;
+    cadenas: CadenaCompartida[];
+  }): { role: MembershipRoleName; shared: boolean } {
+    const membershipRole = args.rolesPorEspacio.get(args.workspaceId) ?? null;
+
+    // The strongest grant that reaches this node or anything above it, because
+    // "reaches" is what makes a shared folder carry its lists and a shared list
+    // carry its rows.
+    let grantRole: 'editor' | 'viewer' | null = null;
+    for (const cadena of args.cadenas) {
+      const alcanza =
+        (cadena.folderId !== null && cadena.folderId === args.folderId) ||
+        (cadena.listId !== null && cadena.listId === args.listId) ||
+        (cadena.noteId !== null && cadena.noteId === args.noteId);
+      if (!alcanza) continue;
+      if (grantRole === null || cadena.role === 'editor') grantRole = cadena.role;
+    }
+
+    const acceso = accessOf({ membershipRole, mountRole: null, grantRole });
+
+    // `owner` is only ever the space's own membership role read straight through: a
+    // grant is never an owner, so nobody reaches "owner" here without already being
+    // the owner of that space.
+    const role: MembershipRoleName =
+      membershipRole === 'owner' ? 'owner' : acceso === 'edit' ? 'editor' : 'viewer';
+
+    return {
+      role,
+      // "Shared" is how you got it, not how many people have it: `true` only when
+      // there is a grant reaching it and you are not a member of its space. A list
+      // three colleagues also have is in your space and is yours.
+      shared: membershipRole === null && grantRole !== null,
+    };
+  }
+
   async changesSince(input: {
     userId: string;
     cursor: string | null;
@@ -486,6 +569,26 @@ export class SyncRepository {
         .where(eq(memberships.userId, input.userId))
     ).map((row) => row.id);
 
+    /*
+      The membership role per space, for the same query and in the same round trip.
+
+      The workspace projection used to `leftJoin` the membership row and read the
+      role off the join, which only works for workspaces. Every other node needs the
+      role of the space it lives in, and a node is identified by its own id, so the
+      role has to be looked up by that space — which is what this map is. One query
+      for the whole page, not one per node: a pull that asked the database about
+      every row it is about to return would be a hundred round trips to draw a
+      header.
+    */
+    const rolesPorEspacio = new Map<string, MembershipRoleName>();
+    if (memberWorkspaceIds.length > 0) {
+      const propias = await db
+        .select({ workspaceId: memberships.workspaceId, role: memberships.role })
+        .from(memberships)
+        .where(eq(memberships.userId, input.userId));
+      for (const row of propias) rolesPorEspacio.set(row.workspaceId, row.role);
+    }
+
     // What this person reaches without being a member of the space, and the spaces
     // that has to be read as: a granted node, and the chain that holds it.
     //
@@ -498,6 +601,23 @@ export class SyncRepository {
     // like anything else, one row at a time, as it changes, and the app has no idea
     // it is shared and needs none.
     const cadenas = await this.cadenasDeCompartido(input.userId);
+
+    /*
+      The folders a grant reaches, used by every filter below.
+
+      A grant on a folder names that folder. Its **children** are in the same space
+      and below it, and nothing names them — so a filter that admits only the named
+      ones delivers the folder, its parent, the space, and **nothing inside it**. And
+      because nothing inside ever arrived, nothing inside ever changed, so nothing
+      inside ever arrived later either: a device that was sent a folder kept an empty
+      folder forever.
+
+      This is one more `in`, not a walk of the tree. What lives under a shared folder
+      still arrives in cursor order like anything else, one row at a time, as it
+      changes — which is the contract the comment further up describes, and which the
+      filters were not keeping.
+    */
+    const carpetasConcedidas = cadenaDe(cadenas, 'folderId');
     const espaciosVisibles = [
       ...new Set([...memberWorkspaceIds, ...cadenas.map((c) => c.workspaceId)]),
     ];
@@ -577,7 +697,8 @@ export class SyncRepository {
           and(
             or(
               inArray(folders.workspaceId, memberWorkspaceIds),
-              inArray(folders.id, cadenaDe(cadenas, 'folderId')),
+              inArray(folders.id, carpetasConcedidas),
+              inArray(folders.parentId, carpetasConcedidas),
             ),
             gt(folders.updatedAt, after),
           ),
@@ -586,7 +707,18 @@ export class SyncRepository {
         .limit(input.limit - changes.length);
 
       for (const row of folderChanges) {
-        changes.push({ entity: 'folder', record: row as Record<string, unknown> });
+        changes.push({
+          entity: 'folder',
+          record: {
+            ...(row as Record<string, unknown>),
+            ...this.accesoDe({
+              workspaceId: row.workspaceId,
+              folderId: row.id,
+              rolesPorEspacio,
+              cadenas,
+            }),
+          },
+        });
         remember(row.updatedAt);
       }
     }
@@ -600,6 +732,9 @@ export class SyncRepository {
             or(
               inArray(lists.workspaceId, memberWorkspaceIds),
               inArray(lists.id, cadenaDe(cadenas, 'listId')),
+              // A list filed inside a folder somebody was handed. Same reason as the
+              // folders above: the grant reaches it even though nothing names it.
+              inArray(lists.folderId, carpetasConcedidas),
             ),
             gt(lists.updatedAt, after),
           ),
@@ -639,6 +774,13 @@ export class SyncRepository {
           record: {
             ...(row as Record<string, unknown>),
             itemCount: itemCounts.get(row.id) ?? 0,
+            ...this.accesoDe({
+              workspaceId: row.workspaceId,
+              listId: row.id,
+              folderId: row.folderId,
+              rolesPorEspacio,
+              cadenas,
+            }),
           },
         });
         remember(row.updatedAt);
@@ -647,7 +789,16 @@ export class SyncRepository {
 
     if (espaciosVisibles.length > 0 && changes.length < input.limit) {
       const itemChanges = await db
-        .select({ item: listItems })
+        .select({
+          item: listItems,
+          workspaceId: lists.workspaceId,
+          // The folder the list is filed in, and not decoration: the filter below
+          // admits a row because of a grant on that folder, and `accesoDe` has to
+          // reach the same conclusion from the same facts. A row that arrives with
+          // `shared: false` because the code that let it in knew something the code
+          // that labels it did not is a row wearing the wrong badge.
+          folderId: lists.folderId,
+        })
         .from(listItems)
         .innerJoin(lists, eq(listItems.listId, lists.id))
         .where(
@@ -655,6 +806,10 @@ export class SyncRepository {
             or(
               inArray(lists.workspaceId, memberWorkspaceIds),
               inArray(lists.id, cadenaDe(cadenas, 'listId')),
+              // A row is reached by a grant on its list, or by a grant on the folder
+              // the list is filed in. Both are "the grant reaches it", which is what
+              // makes "comparte esta carpeta" mean the things inside it too.
+              inArray(lists.folderId, carpetasConcedidas),
             ),
             gt(listItems.updatedAt, after),
           ),
@@ -663,7 +818,22 @@ export class SyncRepository {
         .limit(input.limit - changes.length);
 
       for (const row of itemChanges) {
-        changes.push({ entity: 'list_item', record: row.item as Record<string, unknown> });
+        changes.push({
+          entity: 'list_item',
+          record: {
+            ...(row.item as Record<string, unknown>),
+            // The list it belongs to, because that is what a grant reaches: being
+            // handed a list is being handed its rows, and there is no way to ask
+            // "what is the space of this row" from the row itself.
+            ...this.accesoDe({
+              workspaceId: row.workspaceId,
+              listId: row.item.listId,
+              folderId: row.folderId,
+              rolesPorEspacio,
+              cadenas,
+            }),
+          },
+        });
         remember(row.item.updatedAt);
       }
     }
@@ -693,7 +863,19 @@ export class SyncRepository {
         .limit(input.limit - changes.length);
 
       for (const row of noteChanges) {
-        changes.push({ entity: 'note', record: row.row as Record<string, unknown> });
+        changes.push({
+          entity: 'note',
+          record: {
+            ...(row.row as Record<string, unknown>),
+            ...this.accesoDe({
+              workspaceId: row.row.workspaceId,
+              noteId: row.row.id,
+              folderId: row.row.folderId,
+              rolesPorEspacio,
+              cadenas,
+            }),
+          },
+        });
         remember(row.row.updatedAt);
       }
     }

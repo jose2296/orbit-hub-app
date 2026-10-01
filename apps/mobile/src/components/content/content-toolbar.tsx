@@ -1,19 +1,23 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { View } from "react-native";
 
-import { listKindSchema, type ListOrderMode } from "@orbit-hub/contracts";
+import type { ListOrderMode } from "@orbit-hub/contracts";
 
-import { Sheet, SheetOptions, type SheetOption } from "@/components/ui/sheet";
-import { TextField } from "@/components/ui/text-field";
+import { ContentFiltersBody } from "@/components/content/content-filters-body";
+import { ListControls } from "@/components/lists/list-controls";
 import { AppText } from "@/components/ui/text";
+import { ReorderSheet } from "@/components/ui/reorder-sheet";
+import type { SheetOption } from "@/components/ui/sheet";
 import {
   activeFilterCount,
-  EMPTY_FILTER,
   isDraggableOrder,
+  matchesFilter,
   type ContentFilter,
+  type ContentRow,
 } from "@/lib/content-order";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, type Translate } from "@/lib/i18n";
+import { pluralKey } from "@/lib/i18n/plural";
 import { useTheme } from "@/theme";
 
 /** The orders offered here, and the words for them. */
@@ -26,334 +30,148 @@ const ORDENES: { mode: ListOrderMode; key: string }[] = [
 ];
 
 export interface ContentToolbarProps {
+  /** Every row at this level, for the numbers on the chips. */
+  rows: ContentRow[];
   filter: ContentFilter;
   onFilterChange: (filter: ContentFilter) => void;
   order: ListOrderMode;
   onOrderChange: (order: ListOrderMode) => void;
+  /** Moves a row by a displacement, which is what every list here writes with. */
+  onMove: (id: string, delta: number) => void;
   /**
-   * How many lists of each kind are here, for the number on the chip.
-   *
-   * A `Map` and not a list of what is here, because **the kinds are not decided
-   * by this list**: they are the contract's five, offered the same on every
-   * space and in every folder. This map only says how many of each are in front of
-   * the person right now, so a chip that would come up empty says "0" instead of
-   * not being there.
+   * The row to draw to the left of each name, and it is a function because a
+   * folder has a glyph, a list has a kind and a note has neither.
    */
-  listKindCounts: ReadonlyMap<string, number>;
-  /** How many rows the filter is leaving out, for the line that says so. */
-  hiddenCount: number;
-  totalCount: number;
+  leadingFor?: (row: ContentRow) => ReactNode;
+  /** Whether the list can be put in order at all, and why not when it cannot. */
+  canReorder: boolean;
 }
 
 /**
- * The three things that stand between a person and the list: what is in it, in
- * what order, and which of it they are looking for.
+ * The three buttons over a list of folders, lists and notes — **the same three
+ * that are over a list of films**.
  *
- * They are one row and not three screens because they are three views of the
- * same list and not three places. Somebody who has narrowed to the notes in a
- * folder and then wants them by date is still looking for the same six notes, and
- * making them go back to do it is what turns a filter into a chore.
+ * It was a row of chips for the kinds, a search box and one button whose label
+ * was the current order, and every part of that was a different arrangement for
+ * the same three questions: what is in here, in what order, and which of it am I
+ * looking for. Having it identical to the films is the point: the gesture is
+ * learned once and the label says the same thing in both places.
  *
- * The chips are **visible and not behind a button** on purpose. A row of things
- * you can narrow by is a row you can see is narrowing by, and a filter hidden in
- * a sheet is a filter whose state you cannot check without opening it. What moves
- * into a sheet here is only the *order*, because there are five of them and
- * nobody wants five chips taking a whole row of a phone.
+ * **"Reordenar" only exists while the order is manual**, for the same reason it
+ * does over the films: a list that is being read by date cannot be rearranged by
+ * dragging, because the row you would be moving is not where the finger is.
+ *
+ * **Putting the rows in order is a sheet, not the list itself.** The rows in front
+ * of you are in the order you chose to read them in, and a drag has to fight the
+ * scroll to move one of them. The sheet has one job, a handle per row, and closes
+ * back onto the same list showing what was arranged.
  */
 export function ContentToolbar({
+  rows,
   filter,
   onFilterChange,
   order,
   onOrderChange,
-  listKindCounts,
-  hiddenCount,
-  totalCount,
+  onMove,
+  leadingFor,
+  canReorder,
 }: ContentToolbarProps) {
   const theme = useTheme();
   const t = useTranslation();
-  const [ordenAbierto, setOrdenAbierto] = useState(false);
+
+  const [reordenarAbierto, setReordenarAbierto] = useState(false);
 
   const activos = activeFilterCount(filter);
+  const claveOrden = ORDENES.find((o) => o.mode === order)?.key ?? "content.sort.manual";
 
-  const chip = (clave: string, etiqueta: string, activo: boolean, alPulsar: () => void) => (
-    /*
-     * `checkbox` and not `button`, and that is not a detail of the name: with
-     * `button`, react-native-web drops `accessibilityState.selected` and the
-     * chip reaches a screen reader as a plain button that says nothing about
-     * whether it is on. A filter chip that is lit has to *say* it is lit, which
-     * is the whole point of drawing it lit. `checkbox` is also the honest role:
-     * what the chip does is narrow the list, and a checkbox is a control whose
-     * state is worth knowing before you press it.
-     */
-    <Pressable
-      key={clave}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: activo }}
-      /* Y tambien el atributo tal cual: en react-native-web el `accessibilityState`
-         no llega al DOM en esta version, y una pastilla que se ve encendida sin
-         decir que lo esta es un adorno para el ojo y nada para un lector de
-         pantalla. Puesto de una vez aqui, el atributo y el estado no pueden
-         desincronizarse. */
-      aria-checked={activo}
-      accessibilityLabel={etiqueta}
-      onPress={alPulsar}
-      style={({ pressed }) => [
-        styles.chip,
-        {
-          gap: theme.spacing.xs,
-          paddingVertical: theme.spacing.xs,
-          paddingHorizontal: theme.spacing.sm,
-          // 40 puntos de alto, medidos y no puestos por costumbre: la pastilla
-          // media 25. Y `hitSlop` no lo arregla, porque `hitSlop` agranda donde se
-          // puede pulsar **sin** agrandar el elemento, y el elemento es lo que un
-          // lector de pantalla anuncia y lo que alcanza un dedo. La fila se
-          // desplaza a lo ancho, asi que una pastilla mas alta no cuesta sitio.
-          minHeight: 40,
-          minWidth: 40,
-          justifyContent: "center",
-          borderRadius: theme.radius.md,
-          backgroundColor: activo ? theme.colors.accent : theme.colors.surfaceMuted,
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}
-    >
-      <AppText
-        variant="caption"
-        style={{ color: activo ? theme.colors.onAccent : theme.colors.textMuted }}
-      >
-        {etiqueta}
-      </AppText>
-    </Pressable>
+  /**
+   * How many rows the filter is leaving out, **counted with the same predicate
+   * that filters the list**: one copy of the rule, so the number on the button and
+   * the number in the sentence cannot be two different numbers.
+   */
+  const escondidos = useMemo(
+    () => rows.reduce((n, row) => (matchesFilter(row, filter) ? n : n + 1), 0),
+    [rows, filter],
   );
 
   /*
-    Las tres pastillas, y **no hay una cuarta que diga "todo"**.
-
-    Con cuatro, la de "todo" estaba encendida la mitad de las veces y decia lo que
-    ya se veia: que no hay nada encendido. Sin ella, no hay nada encendido es la
-    misma informacion y se ve sin leer. Ademas "todo" como pastilla compite por el
-    sitio con las otras tres, y la que mas se usa es la que no hace falta.
-
-    Asi que el estado por defecto —`kind: "all"`— no se dibuja, y el boton de quitar
-    es lo unico que se enciende cuando hay algo que quitar.
+    The same short label as the films' order button: the sentence belongs in the
+    sheet, where it is a title with room to be one, and the button says the short
+    thing. "Como yo lo pongo" is a hundred and sixty points on a phone that is
+    three hundred and ninety wide, which is half the row for the state of one
+    control.
   */
-  const tipos: { kind: ContentFilter["kind"]; key: string }[] = [
-    { kind: "folder", key: "content.filter.folders" },
-    { kind: "list", key: "content.filter.lists" },
-    { kind: "note", key: "content.filter.notes" },
-  ];
-
-  /*
-    Los tipos de lista, y **sustituyen a la fila entera**.
-
-    Cuando "Listas" esta encendida, en la fila no queda mas que los cinco tipos y el
-    icono de quitar. Las otras dos pastillas —"Carpetas" y "Notas"— desaparecen,
-    porque son otra manera de responder a la misma pregunta y la pregunta ya esta
-    contestada: se quiere una lista. Dejarlas invita a cambiar de genero sin volver
-    a empezar, que es justo lo que hace una fila de filtros que no se estrecha.
-
-    Antes eran una segunda fila debajo. Dos filas de pastillas que significan cosas
-    distintas se leen como una sola lista larga, y ademas la de abajo cambiaba de
-    alto segun lo que hubiera, con lo que el contenido saltaba al abrirla.
-
-    Y es **la misma regla para las tres**: al pulsar "Carpetas" o "Notas" tambien
-    se queda sola la pastilla encendida y el icono de quitar. Si solo se estrechara
-    "Listas", la fila se comportaria de dos maneras segun que pastilla se pulsara, y
-    una fila que se comporta de dos maneras es una fila que hay que aprender. Con la
-    regla sola la fila es siempre lo mismo: lo que elegiste, y como deshacerlo.
-  */
-  const tiposDeLista = listKindSchema.options.map((kind) => kind as string);
-
-  /** The kind that is open, or `null` when none is: the row is whole. */
-  const abierto = filter.kind === "all" ? null : filter.kind;
+  const etiquetaCorta = t(`orderShort.${claveOrden.replace("content.sort.", "")}` as never);
 
   const opcionesOrden: SheetOption[] = ORDENES.map((o) => ({
     key: o.mode,
     label: t(o.key as never),
-    description: t((o.mode === "manual" ? "content.sort.manualHint" : "content.sort.plainHint") as never),
     icon: o.mode === order ? ("checkmark" as const) : ("ellipse-outline" as const),
-    onPress: () => {
-      onOrderChange(o.mode);
-      setOrdenAbierto(false);
-    },
+    onPress: () => onOrderChange(o.mode),
   }));
 
   return (
     <View style={{ gap: theme.spacing.sm }}>
-      <View style={[styles.fila, { gap: theme.spacing.sm }]}>
-        <View style={styles.crece}>
-          <TextField
-            value={filter.query}
-            onChangeText={(query) => onFilterChange({ ...filter, query })}
-            placeholder={t("content.search")}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            accessibilityLabel={t("content.search")}
-          />
-        </View>
-        {/*
-          The order, and **why** it is a button: there are five orders and this is
-          a phone. The label under the icon says which one is on, so the state is
-          readable without opening anything — the mistake a row of five chips makes
-          is spending the row on a choice nobody changes often to show a choice
-          that is already on.
-        */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("content.sort.title")}
-          onPress={() => setOrdenAbierto(true)}
-          style={({ pressed }) => [
-            styles.botonOrden,
-            {
-              gap: theme.spacing.xxs,
-              paddingHorizontal: theme.spacing.sm,
-              paddingVertical: theme.spacing.xs,
-              // El mismo 40 que las pastillas, y por el mismo motivo: media 25.
-              minHeight: 40,
-              justifyContent: "center",
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.colors.surfaceMuted,
-              borderColor: theme.colors.border,
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          <AppText variant="caption" tone="subtle" numberOfLines={1}>
-            {t(ORDENES.find((o) => o.mode === order)?.key as never)}
-          </AppText>
-        </Pressable>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: theme.spacing.xs, paddingRight: theme.spacing.sm }}
+      <ListControls
+        filterCount={activos}
+        orderLabel={etiquetaCorta}
+        orders={opcionesOrden}
+        canReorder={canReorder && isDraggableOrder(order)}
+        onReorder={() => setReordenarAbierto(true)}
+        testID="content-controls"
       >
-        {/*
-          Quitar, y **un icono y no una palabra**, y **lo primero de la fila**.
-
-          "Quitar filtros" era la palabra mas larga de la fila y la unica que no era
-          el nombre de un tipo de cosa, asi que se leia como un boton de otra clase.
-          El icono de prohibido es el que ya se usa para "quitarlo de aqui" en el
-          menu de una lista, y en una fila donde todo lo demas son nombres, un icono
-          se distingue sin leerlo.
-
-          Y va **primero** y no el ultimo: la fila se desplaza a lo ancho y con los
-          cinco tipos encima el final queda fuera de la pantalla, con lo que la
-          salida —que es lo unico que deshace lo que se ha hecho— era justo lo que
-          no se veia. Al principio esta siempre, que es donde se busca la vuelta
-          atras.
-        */}
-        {activos > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("content.clear")}
-            onPress={() => onFilterChange(EMPTY_FILTER)}
-            style={({ pressed }) => [
-              styles.chip,
-              styles.limpiar,
-              {
-                paddingHorizontal: theme.spacing.sm,
-                justifyContent: "center",
-                minHeight: 40,
-                minWidth: 40,
-                borderRadius: theme.radius.md,
-                backgroundColor: theme.colors.surfaceMuted,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}
-          >
-            <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
-          </Pressable>
-        ) : null}
-
-        {/* Sin genero abierto, la fila entera. Con uno, solo el suyo. */}
-        {abierto === null
-          ? tipos.map((tipo) => chip(tipo.kind, t(tipo.key as never), false, () =>
-              onFilterChange({ ...filter, kind: tipo.kind, listKind: undefined }),
-            ))
-          : null}
-        {abierto === "list"
-          ? tiposDeLista.map((kind) =>
-              chip(
-                `lk:${kind}`,
-                `${t(`lists.kind.${kind === "movies_and_series" ? "moviesAndSeries" : kind}` as never)} · ${listKindCounts.get(kind) ?? 0}`,
-                filter.listKind === kind,
-                () =>
-                  onFilterChange({
-                    ...filter,
-                    // Pulsar el tipo que ya estaba puesto vuelve a "todas las
-                    // listas", no a "todo": el genero sigue siendo "Listas".
-                    listKind: filter.listKind === kind ? undefined : kind,
-                  }),
-              ),
-            )
-          : null}
-        {abierto === "folder" || abierto === "note"
-          ? (() => {
-              const tipo = tipos.find((x) => x.kind === abierto);
-              /*
-                Se queda solo la pastilla que esta encendida, y pulsarla la apaga.
-                Sin ella no habria forma de volver a "todo" sin el icono, y con ella
-                sola la fila dice exactamente lo que hay puesto.
-              */
-              return tipo
-                ? chip(tipo.kind, t(tipo.key as never), true, () => onFilterChange(EMPTY_FILTER))
-                : null;
-            })()
-          : null}
-      </ScrollView>
+        <ContentFiltersBody
+          rows={rows}
+          filter={filter}
+          onFilterChange={onFilterChange}
+        />
+      </ListControls>
 
       {/*
         What the filter is costing, said in words and not left to be deduced from
-        a count. "9 de 23" is a number somebody has to subtract; this says there
-        are fourteen hidden and why they might be.
+        the button's number. "14 of 23 hidden" is a sentence; a number on a chip is
+        a number somebody has to subtract, and it does not say why they are gone.
       */}
-      {hiddenCount > 0 ? (
+      {escondidos > 0 ? (
         <AppText variant="caption" tone="subtle">
-          {t("content.hidden", {
-            hidden: hiddenCount,
-            total: totalCount,
-          })}
+          {t("content.hidden", { hidden: escondidos, total: rows.length })}
         </AppText>
       ) : null}
 
-      <Sheet
-        visible={ordenAbierto}
-        onClose={() => setOrdenAbierto(false)}
-        title={t("content.sort.title")}
-      >
-        <SheetOptions options={opcionesOrden} />
-        {isDraggableOrder(order) ? (
-          <AppText variant="caption" tone="subtle" style={{ marginTop: theme.spacing.sm }}>
-            {t("content.sort.dragHint")}
-          </AppText>
-        ) : null}
-      </Sheet>
+      <ReorderSheet
+        open={reordenarAbierto}
+        onMove={onMove}
+        onClose={() => setReordenarAbierto(false)}
+        title={t("order.reorder")}
+        hint={t("order.reorderHint")}
+        rows={rows.map((row) => ({
+          id: row.id,
+          title: row.name,
+          subtitle: subtitleOf(row, t),
+          leading: leadingFor?.(row) ?? null,
+          leadingSize: { width: 32, height: 32, radius: theme.radius.sm },
+        }))}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  fila: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  crece: {
-    flex: 1,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  limpiar: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  botonOrden: {
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 92,
-  },
-});
+/**
+ * The one line under the name, **and it is how many things are in it**.
+ *
+ * It was the *kind* for a list, which put "Libros" under a list called "Libros":
+ * the same word twice on one row, in the sheet whose whole job is telling rows
+ * apart. A count is never a copy of the name and it is the number somebody is
+ * ordering by anyway — a folder of forty things and a folder of two are not
+ * interchangeable, and two rows both called "Libros" are.
+ *
+ * A note has nothing to count that is not in its name, so it gets no second line.
+ */
+function subtitleOf(row: ContentRow, t: Translate): string | null {
+  if (row.kind === "note") return null;
+  const count = row.itemCount ?? 0;
+  if (count === 0) return null;
+  // The plural key, because a row with one thing in it and a row with nine are
+  // not the same sentence.
+  return t(pluralKey("lists.itemCount" as never, count) as never, { count });
+}

@@ -12,10 +12,11 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 
@@ -40,8 +41,28 @@ interface SortState {
   fromIndex: SharedValue<number>;
   /** Where it would land if the finger lifted now. */
   toIndex: SharedValue<number>;
-  /** How tall a row is, in the list being dragged. */
+  /**
+   * The distance from one row to the next, in the list being dragged.
+   *
+   * **It is a distance and not a height**, and that word is the whole difference
+   * between a drag that lands where the hole opened and one that does not. Both
+   * `dropIndex` and `rowShift` do arithmetic of "one row further down", so the
+   * number they want is the *pitch* of the list: the height of a row **plus** the
+   * space between rows.
+   *
+   * It used to be measured as a height, and in a list with no gap between rows
+   * the two are the same number, so nothing was ever wrong in the one list that
+   * used it. Put the same rows in a container with a gap and the pitch is four
+   * points more than the height, every row further down is four points out, and
+   * on a list of twenty the drop lands **more than a row short**: the finger is
+   * over the last row, the row goes to the second to last, and the gap that opens
+   * is not the gap it dropped into. That reads as the drag not taking, and as the
+   * row bouncing when it is let go — the row was pulled back to where the data
+   * said it was, away from where the finger left it.
+   */
   rowHeight: SharedValue<number>;
+  /** The space between rows, which is part of the pitch and not of the height. */
+  gap: number;
 }
 
 const SortContext = createContext<SortState | null>(null);
@@ -53,16 +74,28 @@ const SortContext = createContext<SortState | null>(null);
  * not a prop on the row because the rows are inside a `FlatList`, and passing
  * four shared values through `renderItem` on every row is a prop list that has
  * to be kept in step with the component by hand.
+ *
+ * **`gap` is the space the caller puts between its rows, written down once.**
+ * Whoever lays the rows out is the only one who knows it, and a row can only
+ * measure itself, so without this the caller's layout and the drag maths each work
+ * from a different idea of where row three starts.
  */
-export function DraggableSort({ children }: { children: ReactNode }) {
+export function DraggableSort({
+  children,
+  gap = 0,
+}: {
+  children: ReactNode;
+  /** The space between rows in the layout the caller built. */
+  gap?: number;
+}) {
   const draggingId = useSharedValue<string | null>(null);
   const fromIndex = useSharedValue(0);
   const toIndex = useSharedValue(0);
   const rowHeight = useSharedValue(ROW_HEIGHT_DEFAULT);
 
   const value = useMemo(
-    () => ({ draggingId, fromIndex, toIndex, rowHeight }),
-    [draggingId, fromIndex, toIndex, rowHeight],
+    () => ({ draggingId, fromIndex, toIndex, rowHeight, gap }),
+    [draggingId, fromIndex, toIndex, rowHeight, gap],
   );
 
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
@@ -132,9 +165,29 @@ export function DraggableRow({
     [onDragStateChange],
   );
 
+  /*
+    The drag, **and it only exists on the handle**.
+
+    It used to be a pan on the whole row that armed after two hundred
+    milliseconds, which is the standard trick for "drag a row that is also a
+    button". It costs two things that this app cannot afford:
+
+    - **a long press is taken.** Two hundred milliseconds of holding a row is the
+      gesture every other part of the app now uses to read a name that is too long
+      to fit, and a row that is a button and a name and a drag surface has room for
+      two of the three. The sheet of long names could not be in a list that is
+      reorderable, and the reason was this line.
+    - **the whole row is a drag target by accident.** Sliding a finger down a list
+      to read it passes over four rows, and any of them could pick up a drag.
+
+    On the handle instead, the drag is where the drawing says it is, it starts as
+    soon as the finger moves, and the row is free to be a button, a name and
+    anything else. There is no delay to wait out and nothing to disarm.
+  */
   const gesture = Gesture.Pan()
-    // A drag has to beat the row's own taps, but not steal a scroll.
-    .activateAfterLongPress(200)
+    // A couple of points of slop, so a tap on the handle is a tap and a drag is a
+    // drag, and nothing in between.
+    .minDistance(2)
     .onStart(() => {
       isDragging.value = true;
       startY.value = translateY.value;
@@ -166,14 +219,14 @@ export function DraggableRow({
     })
     .onEnd(() => {
       runOnJS(commit)(sort ? sort.toIndex.value : index);
-      translateY.value = withSpring(0, { damping: 18, stiffness: 220 });
+      translateY.value = withTiming(0, SOLTAR);
       isDragging.value = false;
       if (sort) sort.draggingId.value = null;
       runOnJS(setDraggingState)(false);
       runOnJS(marcarArrastrada)();
     })
     .onFinalize(() => {
-      translateY.value = withSpring(0, { damping: 18, stiffness: 220 });
+      translateY.value = withTiming(0, SOLTAR);
       isDragging.value = false;
       if (sort) sort.draggingId.value = null;
     });
@@ -247,9 +300,16 @@ export function DraggableRow({
   //
   // With the menu pushing, the row is 82px. The handle and the space reserved for
   // it are 60 of those, and what was left for the name of the item was nothing:
-  // a checkbox, a drag handle and no item. On a row that narrow the drag is not
-  // usable either — a finger covers the whole thing — so the handle goes and the
-  // name comes back.
+  // a checkbox, a drag handle and no item, so the handle goes and the name comes
+  // back.
+  //
+  // **This used to cost a narrow row nothing and now it costs it the drag.** The
+  // handle was a drawing on a row that could be dragged anywhere; it is now the
+  // only thing that can be dragged. No row that is reorderable in this app is
+  // narrow — the three that use this are full width on a phone and wider on a
+  // tablet — so the branch is a guard and not a state, and it is written down
+  // here because the day it does start happening the symptom is a list that
+  // silently cannot be put in order.
   const [ancho, setAncho] = useState(0);
   const estrecho = ancho > 0 && ancho < 210;
 
@@ -261,42 +321,71 @@ export function DraggableRow({
       style={styles.wrapper}
       onLayout={(event) => {
         setAncho(event.nativeEvent.layout.width);
-        // Measured, not assumed: the rows are not all the same height, and a
-        // gap of the wrong size is a drop target that is off by a row.
+        /*
+          Measured, not assumed, and **measured as the distance to the next row**:
+          this row's height plus the space the caller leaves between rows. The drag
+          maths divides how far the finger has gone by that number to know how many
+          places the row has moved, so a number that is only the height leaves every
+          row further down short of where it is, and on a long list the drop lands
+          more than a row away from the gap that opened for it.
+        */
         const alto = event.nativeEvent.layout.height;
-        if (sort && alto > 0) sort.rowHeight.value = alto;
+        if (sort && alto > 0) sort.rowHeight.value = alto + sort.gap;
       }}
     >
-      <GestureDetector gesture={gesture}>
-        <Animated.View
-          style={[
-            {
-              borderRadius: theme.radius.lg,
-              backgroundColor: theme.colors.surface,
-              ...theme.shadow.card,
-            },
-            dragging ? styles.dragging : null,
-            makeRoomStyle,
-            animatedStyle,
-          ]}
-        >
-          {children}
-        </Animated.View>
-      </GestureDetector>
+      <Animated.View
+        style={[
+          {
+            borderRadius: theme.radius.lg,
+            backgroundColor: theme.colors.surface,
+            ...theme.shadow.card,
+          },
+          dragging ? styles.dragging : null,
+          makeRoomStyle,
+          animatedStyle,
+        ]}
+      >
+        {children}
+      </Animated.View>
 
-      {/* The handle is the explicit affordance: the row body stays tappable. */}
+      {/*
+        The handle, **and it is the drag**.
+
+        The drawing is eighteen points wide in a row that is fifty or sixty tall,
+        and a finger is about forty: pressing exactly on the glyph is a thing
+        people are bad at, and the drag that used to cover the whole row was the
+        compensation. The compensation is the hit slop instead — **twenty points
+        on every side**, so the touchable area is fifty-eight wide and covers the
+        height of the row, which is a target you cannot miss. It is on the handle
+        and not on the row, so the slop never reaches the name or the checkbox.
+      */}
       {estrecho ? null : (
       <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('items.dragToReorder')}
-        {...pista.props}
-        hitSlop={8}
-        style={styles.handle}
-        onLongPress={() => setDraggingState(true)}
-      >
-        <Ionicons name="reorder-two" size={18} color={theme.colors.textMuted} />
-      </Pressable>
+      <GestureDetector gesture={gesture}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('items.dragToReorder')}
+          {...pista.props}
+          /*
+            **Moving the row without dragging it**, because a drag is the one
+            gesture nobody can do with a screen reader or with a switch.
+
+            Increment and decrement are the two names the platform already
+            understands for "this goes up" and "this goes down", and they land on
+            the same `onReorder` the finger does, so a list can be put in order
+            without ever being dragged.
+          */
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'increment') commit(index - 1);
+            if (event.nativeEvent.actionName === 'decrement') commit(index + 1);
+          }}
+          hitSlop={20}
+          style={styles.handle}
+        >
+          <Ionicons name="reorder-two" size={18} color={theme.colors.textMuted} />
+        </Pressable>
+      </GestureDetector>
       {pista.node}
       </>
       )}
@@ -314,11 +403,47 @@ export function DraggableRow({
  */
 export const DRAG_HANDLE_WIDTH = 40;
 
+/**
+ * How a row goes back to its place, **and it is a timing and not a spring**.
+ *
+ * It was `withSpring(0, { damping: 18, stiffness: 220 })`, which is a spring that
+ * overshoots by arithmetic: a mass of one on a stiffness of 220 needs a damping of
+ * 2·√220 = **29.7** to come to rest without passing the target, and 18 is well
+ * under it. So the row went past the row it had just been dropped on, came back,
+ * and settled — the bounce, on every drop, on every row of the list.
+ *
+ * **A `withTiming` cannot pass the target**: it interpolates between two numbers
+ * and stops there. So the row lands and stays landed, which is what "no bounce at
+ * all" means, and 170 ms with a decelerating curve reads as the row settling
+ * rather than as the row travelling across the screen.
+ *
+ * The spring is not missed anywhere else: the shadow under a row being dragged and
+ * the pill of the tabs are the two that want a little life in them, and they have
+ * it.
+ */
+const SOLTAR = { duration: 170, easing: Easing.out(Easing.cubic) } as const;
+
 const ROW_HEIGHT_DEFAULT = 64;
 
 const styles = StyleSheet.create({
   wrapper: {
     position: 'relative',
+    /*
+      The row is not text, it is a thing you move, **and on the web the browser
+      disagrees.**
+
+      The drag starts on the handle, which is not text, but the finger then travels
+      over the row below and Chromium — which starts a selection from any
+      `mousedown` that moves, and has no notion of "this is a drag and not a
+      text selection" — highlights every label it passes and **leaves them
+      highlighted after the drop**. The reorder sheet went from a list of cards to
+      a page of blue text with a shadow under one of them.
+
+      `user-select: none` is a no-op on Android and iOS, which have no text
+      selection outside an input, so this costs nothing there and fixes the only
+      platform that had the problem.
+    */
+    userSelect: 'none',
   },
   dragging: {
     opacity: 0.98,

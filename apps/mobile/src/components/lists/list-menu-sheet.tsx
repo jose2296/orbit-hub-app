@@ -4,6 +4,7 @@ import { View } from "react-native";
 import type { Folder, List } from "@orbit-hub/contracts";
 
 import { ShareNodeForm } from "@/components/shares/share-node-sheet";
+import { SharedBadge } from "@/components/shares/shared-badge";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { useLists } from "@/hooks/use-lists";
 import { useShareReach } from "@/hooks/use-shares";
@@ -17,18 +18,15 @@ import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
 import { Button } from "../ui/button";
-import { Sheet, SheetOptions } from "../ui/sheet";
+import { Sheet, SheetOptions, useLastValue } from "../ui/sheet";
 import type { SheetOption } from "../ui/sheet";
 import { AppText } from "../ui/text";
 import { TextField } from "../ui/text-field";
 
 export interface ListMenuSheetProps {
-  /** The list the menu is for, or `null` when it is closed. */
   list: List | null;
-  /** The folder it is in, so the menu says where it lives. */
   folder: Folder | null;
   onClose: () => void;
-  /** Called after the list is gone, so the screen can go back somewhere. */
   onDeleted?: () => void;
 }
 
@@ -52,11 +50,50 @@ export interface ListMenuSheetProps {
 type Page = "options" | "rename" | "share" | "delete";
 
 export function ListMenuSheet({
-  list,
+  list: pedido,
   folder,
   onClose,
   onDeleted,
 }: ListMenuSheetProps) {
+  /*
+    `list` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!list) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was — declared here, at the
+    top, so that everything below keeps the name it always had and now has a value
+    that cannot be null — and the caller's own argument, which goes to `null` at
+    once, is what `visible` is asked from. The panel keeps its identity while it
+    leaves, and the dismissal is a movement instead of a cut.
+  */
+  /*
+    `list` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!list) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was, and the caller's own
+    argument — which goes to `null` at once, because that is how a caller says "close"
+    — is what `visible` is asked from. The panel keeps its identity while it leaves,
+    and the dismissal is a movement instead of a cut.
+
+    **The prop keeps its name and only the local is new.** Renaming what the caller
+    passes would be six call sites later, for a change nobody outside this file can
+    see.
+  */
+  const list = useLastValue(pedido);
+
   const theme = useTheme();
   const t = useTranslation();
   const { updateList, deleteList, duplicateList } = useLists({});
@@ -126,17 +163,24 @@ export function ListMenuSheet({
           void duplicateList(list);
         },
       },
-      {
-        key: "share",
-        label: t("share.title", { name: list.title }),
-        icon: "people-outline",
-        // The description is the "not a copy" line, because this is the one option
-        // on the menu whose consequences are not visible afterwards. Somebody who
-        // is about to hand a colleague the ability to edit a real list should read
-        // that before pressing it, not discover it later.
-        description: t("share.isALink"),
-        onPress: () => setPage("share"),
-      },
+      // Only for somebody who may decide who else sees it. Editing fifty rows is
+      // not deciding that a sixth person sees them, and a viewer who is offered
+      // the option only finds out the rule from the server refusing.
+      ...(list.role === "owner" || list.role === "editor"
+        ? [
+            {
+              key: "share",
+              label: t("share.title", { name: list.title }),
+              icon: "people-outline" as const,
+              // The description is the "not a copy" line, because this is the one
+              // option on the menu whose consequences are not visible={pedido !== null} afterwards.
+              // Somebody who is about to hand a colleague the ability to edit a real
+              // list should read that before pressing it, not discover it later.
+              description: t("share.isALink"),
+              onPress: () => setPage("share"),
+            },
+          ]
+        : []),
       {
         key: "delete",
         label: t("common.delete"),
@@ -161,7 +205,7 @@ export function ListMenuSheet({
 
   return (
     <Sheet
-      visible
+      visible={pedido !== null}
       onClose={onClose}
       title={list.title}
       subtitle={subtitle}
@@ -175,6 +219,14 @@ export function ListMenuSheet({
       >
         {page === "options" ? (
           <>
+            {/*
+              Whether it is yours or it was handed to you, and whether you can
+              change it — above the options, because two of them (share, and the
+              delete that asks who else has it) mean something different depending on
+              the answer, and you should not have to tap one to find out which.
+            */}
+            <SharedBadge shared={list.shared} role={list.role} />
+
             {list.description ? (
               <AppText variant="body" tone="muted" numberOfLines={2}>
                 {list.description}

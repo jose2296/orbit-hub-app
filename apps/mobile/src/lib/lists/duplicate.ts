@@ -44,6 +44,14 @@ export interface DuplicationPlan {
   list: DuplicationSource & {
     id: string;
     itemCount: number;
+    /**
+     * The copy is yours and editable, stated here rather than defaulted from the
+     * contract. `role` has no default on purpose: a missing role that defaulted to
+     * `editor` would let a payload without one claim write access, and the default
+     * that is safe is the one that makes a legacy cache read-only.
+     */
+    role: "editor";
+    shared: false;
     version: 0;
     createdAt: string;
     updatedAt: string;
@@ -99,6 +107,10 @@ export function planDuplication(
     externalId: item.externalId,
     metadata: item.metadata ? { ...item.metadata } : null,
     annotation: item.annotation,
+    // Same as the list: the copy is in a space of yours, so it is not "shared" no
+    // matter how shared the original was, and you can edit what you just made.
+    role: "editor" as const,
+    shared: false,
     version: 0 as const,
     createdAt: now,
     updatedAt: now,
@@ -121,6 +133,17 @@ export function planDuplication(
       // sorted by name that came out sorted by hand would be a different list.
       orderMode: source.orderMode,
       itemCount: items.length,
+      /*
+        Yours and editable, and it does not inherit from the source.
+
+        The copy is a new list in a space of yours, so it is not "shared" however
+        shared the original was — copying somebody else's list is how you get one
+        you can edit, and carrying `shared` over would leave a list of your own
+        wearing somebody else's badge. Whether the server accepts the copy at all
+        is decided there, as always.
+      */
+      role: "editor",
+      shared: false,
       version: 0,
       createdAt: now,
       updatedAt: now,

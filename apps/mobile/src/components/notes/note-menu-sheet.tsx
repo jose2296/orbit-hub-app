@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 
-import { Sheet, SheetOptions, type SheetOption } from "@/components/ui/sheet";
+import { ShareNodeForm } from "@/components/shares/share-node-sheet";
+import { SharedBadge } from "@/components/shares/shared-badge";
+import { Sheet, SheetOptions, type SheetOption, useLastValue } from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
 import type { Note } from "@orbit-hub/contracts";
 
@@ -25,21 +27,59 @@ import { useTheme } from "@/theme";
 export interface NoteMenuSheetProps {
   note: Note | null;
   onClose: () => void;
-  /** Opens the template sheet, which is a different question and a second sheet. */
   onSaveAsTemplate?: (note: Note) => void;
   onDeleted?: (note: Note) => void;
   onChanged?: () => void;
 }
 
-type Step = "menu" | "rename" | "template";
+type Step = "menu" | "rename" | "template" | "share";
 
 export function NoteMenuSheet({
-  note,
+  note: pedido,
   onClose,
   onSaveAsTemplate,
   onDeleted,
   onChanged,
 }: NoteMenuSheetProps) {
+  /*
+    `note` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!note) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was — declared here, at the
+    top, so that everything below keeps the name it always had and now has a value
+    that cannot be null — and the caller's own argument, which goes to `null` at
+    once, is what `visible` is asked from. The panel keeps its identity while it
+    leaves, and the dismissal is a movement instead of a cut.
+  */
+  /*
+    `note` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!note) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was, and the caller's own
+    argument — which goes to `null` at once, because that is how a caller says "close"
+    — is what `visible` is asked from. The panel keeps its identity while it leaves,
+    and the dismissal is a movement instead of a cut.
+
+    **The prop keeps its name and only the local is new.** Renaming what the caller
+    passes would be six call sites later, for a change nobody outside this file can
+    see.
+  */
+  const note = useLastValue(pedido);
+
   const theme = useTheme();
   const t = useTranslation();
 
@@ -123,6 +163,16 @@ export function NoteMenuSheet({
     );
   }
 
+  /*
+    "Compartir" is only offered when you are allowed to decide who else sees it.
+
+    A viewer can open a note somebody gave them and write in it; what they cannot do
+    is hand it to a third person, which is the rule in `access.ts` and not a choice
+    of this screen. Offering it and letting the server refuse is the version where
+    somebody discovers the rule by being told no.
+  */
+  const puedeCompartir = note.role === "owner" || note.role === "editor";
+
   const opciones: SheetOption[] = [
     {
       key: "rename",
@@ -130,6 +180,27 @@ export function NoteMenuSheet({
       icon: "create-outline",
       onPress: () => setStep("rename"),
     },
+    /*
+     * Sharing a note is the reason this menu was missing the option for so long: a
+     * note is a page of writing, and sending a page of writing to somebody is the
+     * single most ordinary thing anybody does with one. It was here in the contract
+     * and in the database the whole time, with no way in from the app.
+     *
+     * It is a page of this sheet and not a second sheet: a sheet on top of a sheet
+     * is two backdrops over one screen, and a tap that reaches the wrong one closes
+     * what is underneath.
+     */
+    ...(puedeCompartir
+      ? [
+          {
+            key: "share",
+            label: t("share.pickSomeone"),
+            icon: "people-outline" as const,
+            description: t("share.isALink"),
+            onPress: () => setStep("share"),
+          },
+        ]
+      : []),
     ...(onSaveAsTemplate
       ? [
           {
@@ -150,9 +221,31 @@ export function NoteMenuSheet({
     },
   ];
 
+  if (step === "share") {
+    return (
+      <Sheet
+        visible={pedido !== null}
+        onClose={close}
+        title={note.title || t("note.untitled")}
+        subtitle={t("share.subtitle", { name: note.title })}
+        scrollable
+      >
+        <View style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}>
+          <ShareNodeForm
+            target={{ nodeType: "note", nodeId: note.id, title: note.title }}
+            onDone={close}
+          />
+        </View>
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet visible onClose={close} title={note.title || t("note.untitled")}>
-      <SheetOptions options={opciones} />
+      <View style={{ gap: theme.spacing.sm }}>
+        <SharedBadge shared={note.shared} role={note.role} />
+        <SheetOptions options={opciones} />
+      </View>
     </Sheet>
   );
 }

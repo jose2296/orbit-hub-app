@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { BackButton } from '@/components/ui/breadcrumbs';
 import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
-import { AppText } from '@/components/ui/text';
+import { FullTitle } from "@/components/media/full-title";
 import { SpaceWash } from '@/components/ui/wash';
 import { ALTO_LAVADO, VELO, type WashVariant } from '@/lib/workspace/wash';
 import { useTheme } from '@/theme';
@@ -151,15 +151,34 @@ export function AppHeader({ options, children }: AppHeaderProps) {
           debajo es una respuesta a otra pregunta. El color del tema es lo unico
           que se puede prometer que se lee, porque es el color que hay bajo el velo.
         */}
-        <View style={styles.centro} pointerEvents="none">
+        {/*
+          `box-none` and not `none`, because the title inside is now pressable.
+
+          The centre of a bar has to let touches through to the screen underneath
+          it, or a tap in the middle of the header does nothing at all — that is
+          what `none` was for. `box-none` is the version of that which still lets
+          the **children** be touched, which is the one thing the long press on a
+          long list name needs, and the box itself is as transparent to touches as
+          it was.
+        */}
+        <View style={styles.centro} pointerEvents="box-none">
           {typeof options.title === 'string' && options.title.length > 0 ? (
-            <AppText
-              variant="heading"
+            /*
+              The name in the bar, **and the whole of it on a long press**.
+
+              It is one line in a bar that is a third of the screen wide and shared
+              with a back arrow and a menu, and the names that land there are the
+              ones somebody typed: a list called "Cosas que comprar para el piso de
+              la abuela" is a third of a word here. The bar itself is not pressable,
+              so this one needs no guard.
+            */
+            <FullTitle
+              text={options.title}
               numberOfLines={1}
+              variant="heading"
               style={[styles.titulo, { color: theme.colors.text }]}
-            >
-              {options.title}
-            </AppText>
+              testID="titulo-cabecera"
+            />
           ) : (
             children
           )}

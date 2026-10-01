@@ -17,6 +17,8 @@ function item(partial: Partial<ListItem> & { id: string }): ListItem {
     version: 1,
     createdAt: '',
     updatedAt: '',
+    role: 'editor',
+    shared: false,
     deletedAt: null,
     title: 'Algo',
     position: 0,

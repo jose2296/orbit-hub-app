@@ -4,7 +4,7 @@ import type { ShareNodeType } from '@orbit-hub/contracts';
 import { users } from '../../db/auth-schema.js';
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
-import { folders, listItems, lists, memberships, shareMounts, shares, workspaces } from '../../db/content-schema.js';
+import { folders, listItems, lists, memberships, notes, shareMounts, shares, workspaces } from '../../db/content-schema.js';
 import { HttpError } from '../../lib/http-error.js';
 import { accessOf, canRevoke, canShare } from './access.js';
 import type { AccessFacts, ShareAccess } from './access.js';
@@ -93,6 +93,29 @@ export class ShareService {
         .select({ title: lists.title, workspaceId: lists.workspaceId })
         .from(lists)
         .where(eq(lists.id, nodeId))
+        .limit(1);
+      const found = row[0];
+      if (!found) throw HttpError.notFound('That does not exist');
+      return { nodeType, nodeId, title: found.title, workspaceId: found.workspaceId };
+    }
+
+    /*
+     * A note is its own table and its own sync entity (ADR 0008), and it carries
+     * its own `workspace_id`, so it resolves in one query with no join.
+     *
+     * It did not have a branch here, and the `else` below swallowed it: a share of
+     * a note went looking for a list row with that id, found nothing, and answered
+     * 404. Worse, `assertCanWrite` in sync-service calls this same function and
+     * turns the throw into "workspace not found", so the person a note was shared
+     * with could not edit it. The pull side got this right from the start
+     * (`cadenasDeCompartido` in sync-repository) and this one did not, which is how
+     * a note ended up shareable on the way in and unopenable on the way back.
+     */
+    if (nodeType === 'note') {
+      const row = await db
+        .select({ title: notes.title, workspaceId: notes.workspaceId })
+        .from(notes)
+        .where(eq(notes.id, nodeId))
         .limit(1);
       const found = row[0];
       if (!found) throw HttpError.notFound('That does not exist');
@@ -387,6 +410,11 @@ export class ShareService {
       await db.update(folders).set({ updatedAt: ahora }).where(eq(folders.id, target.nodeId));
     } else if (target.nodeType === 'list') {
       await db.update(lists).set({ updatedAt: ahora }).where(eq(lists.id, target.nodeId));
+    } else if (target.nodeType === 'note') {
+      // The note's own table, for the reason `resolveTarget` has a branch for it:
+      // falling through here stamped a list row that does not exist, so the pull
+      // cursor never moved and the grantee was never told anything had arrived.
+      await db.update(notes).set({ updatedAt: ahora }).where(eq(notes.id, target.nodeId));
     } else {
       await db.update(listItems).set({ updatedAt: ahora }).where(eq(listItems.id, target.nodeId));
     }

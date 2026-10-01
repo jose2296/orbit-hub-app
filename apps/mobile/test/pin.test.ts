@@ -37,6 +37,8 @@ function list(partial: Partial<List> = {}): List {
     workspaceId: "w1",
     folderId: null,
     kind: "tasks",
+    role: "owner",
+    shared: false,
     title: "Compra",
     description: null,
     emoji: null,
@@ -183,6 +185,8 @@ describe("withPinnedFolder", () => {
     createdAt: "",
     updatedAt: "",
     deletedAt: null,
+    role: "owner",
+    shared: false,
     ...partial,
   });
 

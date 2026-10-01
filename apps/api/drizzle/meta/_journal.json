@@ -120,6 +120,20 @@
       "when": 1790765400000,
       "tag": "0017_no_favorites",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790779000000,
+      "tag": "0018_note_template_not_shareable",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790799600000,
+      "tag": "0019_people_follows",
+      "breakpoints": true
     }
   ]
 }

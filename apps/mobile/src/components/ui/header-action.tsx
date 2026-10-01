@@ -1,3 +1,4 @@
+import { useFocusEffect } from "expo-router";
 import {
   createContext,
   useCallback,
@@ -130,19 +131,37 @@ export function useHeaderAction(render: HeaderAction, deps: readonly unknown[]):
     return fn ? fn() : null;
   }, []);
 
-  useLayoutEffect(() => {
-    /*
-      `publish(() => estable)` and **not** `publish(estable)`.
+  /**
+   * Publish on **focus**, and take it back on blur.
+   *
+   * It used to be a `useLayoutEffect` that published on mount and cleared on
+   * unmount, which is right for a screen that replaces another and wrong for a
+   * screen that is **pushed on top of one**: a stack keeps the screen underneath
+   * mounted, so its cleanup never runs and its button stays in the header of the
+   * screen you are looking at now.
+   *
+   * That is not hypothetical and it is not subtle. Open a film, then go to People:
+   * the three dots at the top right are the film's, and pressing them opens the
+   * film's own options — a menu that acts on something you are no longer looking
+   * at, which is the one thing this hook exists to prevent. The comment above this
+   * effect already said that a button left behind is worse than no button; it just
+   * was not true on a stack.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      /*
+        `publish(() => estable)` and **not** `publish(estable)`.
 
-      What is stored here is a function, and a function handed straight to a
-      `useState` setter is not a value: React takes it for an updater and stores
-      what it returns. So the published "action" was the *button element* the
-      function drew, and the header called it — `action is not a function`, thrown
-      from inside the header, blank screen, nothing in the tree to point at.
-    */
-    publish(() => estable);
-    return () => publish(null);
-  }, [estable, publish]);
+        What is stored here is a function, and a function handed straight to a
+        `useState` setter is not a value: React takes it for an updater and stores
+        what it returns. So the published "action" was the *button element* the
+        function drew, and the header called it — `action is not a function`, thrown
+        from inside the header, blank screen, nothing in the tree to point at.
+      */
+      publish(() => estable);
+      return () => publish(null);
+    }, [estable, publish]),
+  );
 
   /**
    * And the redraw, on the caller's own terms.

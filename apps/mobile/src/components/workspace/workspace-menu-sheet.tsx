@@ -5,8 +5,9 @@ import type { Workspace } from "@orbit-hub/contracts";
 
 import { WorkspaceColorPicker } from "@/components/workspace/workspace-color-picker";
 import { SharePanel } from "@/components/workspace/share-panel";
+import { SharedBadge } from "@/components/shares/shared-badge";
 import { Button } from "../ui/button";
-import { Sheet, SheetOptions } from "../ui/sheet";
+import { Sheet, SheetOptions, useLastValue } from "../ui/sheet";
 import type { SheetOption } from "../ui/sheet";
 import { AppText } from "../ui/text";
 import { TextField } from "../ui/text-field";
@@ -19,7 +20,6 @@ import { useTheme } from "@/theme";
 export interface WorkspaceMenuSheetProps {
   workspace: Workspace | null;
   onClose: () => void;
-  /** Called after the space is gone, so the screen can go back somewhere. */
   onDeleted?: () => void;
 }
 
@@ -39,10 +39,49 @@ type Page = "options" | "edit" | "share" | "delete";
  * folder and somebody's whole organisation of their things do not come back.
  */
 export function WorkspaceMenuSheet({
-  workspace,
+  workspace: pedido,
   onClose,
   onDeleted,
 }: WorkspaceMenuSheetProps) {
+  /*
+    `workspace` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!workspace) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was — declared here, at the
+    top, so that everything below keeps the name it always had and now has a value
+    that cannot be null — and the caller's own argument, which goes to `null` at
+    once, is what `visible` is asked from. The panel keeps its identity while it
+    leaves, and the dismissal is a movement instead of a cut.
+  */
+  /*
+    `workspace` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!workspace) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was, and the caller's own
+    argument — which goes to `null` at once, because that is how a caller says "close"
+    — is what `visible` is asked from. The panel keeps its identity while it leaves,
+    and the dismissal is a movement instead of a cut.
+
+    **The prop keeps its name and only the local is new.** Renaming what the caller
+    passes would be six call sites later, for a change nobody outside this file can
+    see.
+  */
+  const workspace = useLastValue(pedido);
+
   const theme = useTheme();
   const t = useTranslation();
   const { updateWorkspace, deleteWorkspace } = useWorkspaces();
@@ -125,7 +164,7 @@ export function WorkspaceMenuSheet({
 
   return (
     <Sheet
-      visible
+      visible={pedido !== null}
       onClose={onClose}
       title={workspace.name}
       subtitle={subtitle}
@@ -146,6 +185,16 @@ export function WorkspaceMenuSheet({
       >
         {page === "options" ? (
           <>
+            {/*
+              For a space this badge is the one thing that distinguishes two states
+              that look identical on screen: an invited viewer, who is a member and
+              can see everything, and a viewer who was handed the space and is not a
+              member at all. Same `role`, different reality, and the app already had
+              to separate them for the drawer. Here it is where somebody finds out
+              whether they can actually invite people.
+            */}
+            <SharedBadge shared={workspace.shared} role={workspace.role} />
+
             {workspace.description ? (
               <AppText variant="body" tone="muted" numberOfLines={2}>
                 {workspace.description}

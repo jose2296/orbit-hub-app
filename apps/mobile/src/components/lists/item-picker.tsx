@@ -2,7 +2,6 @@ import { StyleSheet, View } from "react-native";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sheet } from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -19,7 +18,6 @@ export interface FiltersSheetProps {
   onCompleted: (value: "all" | "pending" | "done") => void;
   text: string;
   onText: (value: string) => void;
-  activeCount: number;
   onReset: () => void;
 }
 
@@ -31,9 +29,17 @@ export interface FiltersSheetProps {
  * opens with everything showing, because a filter that hides things the moment
  * it appears is one nobody trusts.
  */
-export function FiltersSheet({
-  open,
-  onClose,
+/**
+ * The filter of a list of things, **as the body of a sheet and not a sheet**.
+ *
+ * It was a sheet of its own with its own margin inside it, so it was opened from
+ * a button, and the button next to it opened another sheet for the order, and the
+ * one next to that opened a third for the manual arrangement. Three sheets for one
+ * list. This is the first section of the one sheet that holds all three, and it
+ * brings **no margin of its own**: the sheet's body has one, and a section with a
+ * second one sits thirty-six points in from the edge of a panel that is eighteen.
+ */
+export function FiltersBody({
   tags,
   selectedTags,
   onToggleTag,
@@ -41,26 +47,13 @@ export function FiltersSheet({
   onCompleted,
   text,
   onText,
-  activeCount,
   onReset,
-}: FiltersSheetProps) {
+}: Omit<FiltersSheetProps, "open" | "onClose" | "activeCount">) {
   const theme = useTheme();
   const t = useTranslation();
 
   return (
-    <Sheet
-      visible={open}
-      onClose={onClose}
-      title={t("filters.title")}
-      subtitle={
-        activeCount > 0
-          ? t("filters.active", { count: activeCount })
-          : t("filters.none")
-      }
-    >
-      <View
-        style={{ gap: theme.spacing.lg, paddingHorizontal: theme.spacing.lg }}
-      >
+    <View style={{ gap: theme.spacing.lg }}>
         <TextField
           label={t("filters.searchLabel")}
           value={text}
@@ -116,15 +109,13 @@ export function FiltersSheet({
           </View>
         ) : null}
 
-        <Button
-          label={t("filters.reset")}
-          variant="ghost"
-          icon="refresh"
-          disabled={activeCount === 0}
-          onPress={onReset}
-        />
-      </View>
-    </Sheet>
+      <Button
+        label={t("filters.reset")}
+        variant="ghost"
+        icon="refresh"
+        onPress={onReset}
+      />
+    </View>
   );
 }
 

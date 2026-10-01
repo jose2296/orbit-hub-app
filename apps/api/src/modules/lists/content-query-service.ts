@@ -40,6 +40,30 @@ export class ContentQueryService {
     return rows.map((row) => row.id);
   }
 
+  /**
+   * The caller's role in every space they belong to, in one query.
+   *
+   * These endpoints are **membership-gated** — `visibleWorkspaceIds` and
+   * `canSeeWorkspace` both read `memberships` and both refuse anything else — so
+   * every list, folder and row they return is in a space this person belongs to.
+   * That makes `shared` uniformly `false` here, and it is not a shortcut: somebody
+   * who is a member *and* was handed a node holds both, and the badge answers "how
+   * did I get this", which for a member is membership.
+   *
+   * The counterpart to this lives in the sync projection, where the answer is not
+   * uniform: there, somebody who was lent a list has no membership at all and it
+   * shows. Two surfaces, one question, and the difference between them is exactly
+   * whether the caller is a member — which is what decides the value.
+   */
+  private async membershipRoles(userId: string): Promise<Map<string, string>> {
+    const db = await this.db();
+    const rows = await db
+      .select({ workspaceId: memberships.workspaceId, role: memberships.role })
+      .from(memberships)
+      .where(eq(memberships.userId, userId));
+    return new Map(rows.map((row) => [row.workspaceId, row.role]));
+  }
+
   private async canSeeWorkspace(userId: string, workspaceId: string): Promise<void> {
     const db = await this.db();
     const [row] = await db
@@ -88,6 +112,11 @@ export class ContentQueryService {
       .orderBy(desc(lists.updatedAt))
       .limit(filters.limit);
 
+    // One query for the whole page rather than one per list: this runs on every
+    // open of the content screen, and a page of twenty lists would otherwise be
+    // twenty round trips to draw a header that says "yours".
+    const roles = await this.membershipRoles(userId);
+
     const items: List[] = rows.map((row) => ({
       id: row.id,
       workspaceId: row.workspaceId,
@@ -100,6 +129,8 @@ export class ContentQueryService {
       position: row.position,
       version: row.version,
       itemCount: 0,
+      role: (roles.get(row.workspaceId) ?? 'viewer') as List['role'],
+      shared: false,
       orderMode: row.orderMode,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -129,6 +160,8 @@ export class ContentQueryService {
     // cannot see is indistinguishable from one that does not exist.
     await this.canSeeWorkspace(userId, row.workspaceId);
 
+    const roles = await this.membershipRoles(userId);
+
     const countRow = await db
       .select({ total: sql<number>`count(*)::int` })
       .from(listItems)
@@ -144,6 +177,8 @@ export class ContentQueryService {
       emoji: row.emoji,
       tags: row.tags,
       position: row.position,
+      role: (roles.get(row.workspaceId) ?? 'viewer') as List['role'],
+      shared: false,
       version: row.version,
       itemCount: countRow[0]?.total ?? 0,
       orderMode: row.orderMode,
@@ -158,7 +193,10 @@ export class ContentQueryService {
     listId: string,
     filters: { completed?: boolean; limit: number; cursor: string | null },
   ): Promise<ListItemsResponse> {
-    await this.getList(userId, listId);
+    // Fetched once and used for two things: it is what proves the caller can see
+    // this list, and its `role` is the role of every row in it, because a row has
+    // no space of its own to ask about.
+    const lista = await this.getList(userId, listId);
 
     const db = await this.db();
     const conditions = [eq(listItems.listId, listId), isNull(listItems.deletedAt)];
@@ -195,6 +233,10 @@ export class ContentQueryService {
       externalId: row.externalId,
       metadata: row.metadata,
       annotation: row.annotation,
+      // The list's role, not one of the row's own: what you may do to a row is
+      // decided by the list it is in, and the row does not know where that is.
+      role: lista.role,
+      shared: false,
       version: row.version,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

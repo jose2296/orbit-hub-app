@@ -293,6 +293,13 @@ export class NoteTemplateService {
       tags: row.tags ?? [],
       position: row.position,
       attachmentCount: row.attachmentCount,
+      // Yours and editable, and it is not a guess: `assertCanWrite` a few lines
+      // above refused to get here unless you can write in that space, so this note
+      // was born in a space of yours. It also came from a template somebody lent
+      // you, which is a fact about the template and not about the note — the
+      // document is copied, so nothing about it is shared.
+      role: 'editor',
+      shared: false,
     };
   }
 

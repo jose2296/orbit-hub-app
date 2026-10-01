@@ -15,12 +15,13 @@ import { DoneTray } from "@/components/lists/done-tray";
 import { ItemIcon } from "@/components/lists/icon-picker";
 import { MediaListScreen } from "@/components/media/media-list-screen";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
-import { FiltersSheet } from "@/components/lists/item-picker";
+import { FiltersBody } from "@/components/lists/item-picker";
+import { ListControls } from "@/components/lists/list-controls";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
-import { DraggableRow, DraggableSort } from "@/components/ui/draggable-row";
 import { Screen } from "@/components/ui/screen";
-import { Sheet, SheetOptions } from "@/components/ui/sheet";
+import { ReorderSheet } from "@/components/ui/reorder-sheet";
+import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
@@ -57,6 +58,26 @@ const PRIORITY_TONE = {
 } as const;
 
 export default function ListScreen() {
+
+  /**
+   * The orders this list offers, **and the one that is on carries the tick**.
+   *
+   * It is a function and not an array built once, because the array would close
+   * over the order that was on the first render and keep offering that tick for
+   * ever after the order changed.
+   */
+  const opcionesDeOrden = () =>
+    ORDER_MODES.map((mode) => ({
+      key: mode,
+      label: t(`order.${mode}` as never),
+      icon:
+        mode === "manual"
+          ? ("hand-left-outline" as const)
+          : ("swap-vertical-outline" as const),
+      onPress: () => {
+        if (list) void setOrderMode(list, mode);
+      },
+    }));
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
@@ -145,8 +166,7 @@ export default function ListScreen() {
   } = useListItems(listId);
 
   const [menuFor, setMenuFor] = useState<ListItem | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [orderOpen, setOrderOpen] = useState(false);
+  const [reorderOpen, setReorderOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [filterState, setFilterState] = useState<"all" | "pending" | "done">(
     "all",
@@ -213,10 +233,6 @@ export default function ListScreen() {
     () => visible.filter((item) => item.completed),
     [visible],
   );
-  const isFiltered =
-    selectedTags.length > 0 ||
-    filterState !== "all" ||
-    filterText.trim().length > 0;
   const activeFilterCount =
     selectedTags.length +
     (filterState === "all" ? 0 : 1) +
@@ -327,7 +343,7 @@ export default function ListScreen() {
       );
     }
 
-    const { item, index } = entry;
+    const { item } = entry;
     const row = (
       <TaskRow
         item={item}
@@ -342,29 +358,17 @@ export default function ListScreen() {
       />
     );
 
-    // A row cannot be dragged while the list is read in another order: it would
-    // land somewhere the order did not ask for, and the next re-sort would put
-    // it back, which looks like the drag did nothing.
-    if (!canDrag) return row;
+    /*
+      The row, **and no drag on it**.
 
-    return (
-      <DraggableRow
-        id={item.id}
-        index={index}
-        total={entry.item.completed ? completed.length : pending.length}
-        onReorder={(movedId, toIndex) => {
-          const section = completed.some((row) => row.id === movedId)
-            ? completed
-            : pending;
-          const from = section.findIndex((row) => row.id === movedId);
-          // The drag already knows where the row landed, so the write is one
-          // reorder and not a chain of single steps.
-          if (from !== -1) void moveItemTo(movedId, toIndex - from);
-        }}
-      >
-        {row}
-      </DraggableRow>
-    );
+      It used to be wrapped in a `DraggableRow` here, in a list that could also be
+      read by date or by priority: a list you had chosen to read one way could be
+      rearranged by dragging, and the row you wanted to move was not where your
+      finger was. The order is now a sheet with a handle per row, the same one the
+      films use, and this row is a thing you press to open and a thing you press to
+      tick.
+    */
+    return row;
   };
 
   /**
@@ -392,13 +396,6 @@ export default function ListScreen() {
         </View>
       </View>
 
-      {/*
-        Sin banda. El color del espacio lo pone ahora la cabecera de la app y el
-        menu de la lista tambien esta ahi, al lado del titulo, que es donde estan
-        las acciones de todas las pantallas. Lo que la banda hacia y ya no hace
-        falta: decir de que espacio es esta lista, que la cabecera dice con su
-        color, y repetir el nombre del espacio debajo del nombre de la lista.
-      */}
 
       {items.length > 0 ? (
         <View style={styles.badges}>
@@ -436,28 +433,46 @@ export default function ListScreen() {
       {/* The two knobs over a list: what it shows and how it is read. They are
           buttons and not a row of chips because a shopping list has a dozen
           labels and a row of them would take more space than the items. */}
+      {/*
+        The controls, **and they are one control here too**.
+
+        It was three buttons in a row here and three in a row over the folders and
+        three in a row over the films, all answering one question, and opening a
+        sheet each. One button whose label says what is on, and one sheet with the
+        three things in it, is the same control in the three places — see
+        `ListControls`.
+      */}
       {!media && !isLoading && items.length > 0 ? (
         <View style={[styles.toolbar, { gap: theme.spacing.sm }]}>
-          <Button
-            label={
-              isFiltered
-                ? t("filters.titleOn", { count: activeFilterCount })
-                : t("filters.title")
-            }
-            icon="funnel-outline"
-            size="sm"
-            variant={isFiltered ? "primary" : "secondary"}
-            fullWidth={false}
-            onPress={() => setFiltersOpen(true)}
-          />
-          <Button
-            label={t(`order.${orderMode}`)}
-            icon="swap-vertical-outline"
-            size="sm"
-            variant="secondary"
-            fullWidth={false}
-            onPress={() => setOrderOpen(true)}
-          />
+          <ListControls
+            filterCount={activeFilterCount}
+            orderLabel={t(`orderShort.${orderMode}` as never)}
+            orders={opcionesDeOrden()}
+            canReorder={canReorder(orderMode)}
+            onReorder={() => setReorderOpen(true)}
+            testID="task-controls"
+          >
+            <FiltersBody
+              tags={labels}
+              selectedTags={selectedTags}
+              onToggleTag={(tag) =>
+                setSelectedTags((previas) =>
+                  previas.includes(tag)
+                    ? previas.filter((x) => x !== tag)
+                    : [...previas, tag],
+                )
+              }
+              completed={filterState}
+              onCompleted={setFilterState}
+              text={filterText}
+              onText={setFilterText}
+              onReset={() => {
+                setSelectedTags([]);
+                setFilterState("all");
+                setFilterText("");
+              }}
+            />
+          </ListControls>
         </View>
       ) : null}
 
@@ -568,11 +583,15 @@ export default function ListScreen() {
       */
       wash={{ color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }}
     >
-      {/* El provider va alrededor de la lista y no en cada fila: las filas
-          comparten el estado del arrastre por contexto, y son las tres cifras
-          que necesitan para apartarse. */}
-      <DraggableSort>
-        <FlatList
+      {/*
+        The list itself, **with nothing around it that expects a drag**.
+
+        There was a `DraggableSort` wrapping the `FlatList` so the rows could
+        share the drag state, and there are no dragged rows here any more: the
+        order is arranged in a sheet. A provider with no rows inside it is a
+        provider that measures a list it never touches.
+      */}
+      <FlatList
           data={entries}
           keyExtractor={entryKey}
           renderItem={renderEntry}
@@ -601,7 +620,6 @@ export default function ListScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         />
-      </DraggableSort>
 
       {/* What can be done with a film, a series or a book. It lives here and in
           the detail and nowhere else, because two lists of the same handful of
@@ -629,56 +647,32 @@ export default function ListScreen() {
         />
       ) : null}
 
-      <FiltersSheet
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        tags={labels}
-        selectedTags={selectedTags}
-        onToggleTag={(tag) =>
-          setSelectedTags((current) =>
-            current.includes(tag)
-              ? current.filter((row) => row !== tag)
-              : [...current, tag],
-          )
-        }
-        completed={filterState}
-        onCompleted={setFilterState}
-        text={filterText}
-        onText={setFilterText}
-        activeCount={activeFilterCount}
-        onReset={() => {
-          setSelectedTags([]);
-          setFilterState("all");
-          setFilterText("");
-        }}
-      />
 
-      <Sheet
-        visible={orderOpen}
-        onClose={() => setOrderOpen(false)}
-        title={t("order.title")}
-        subtitle={t("order.hint")}
-        scrollable={false}
-      >
-        <View style={{ paddingHorizontal: theme.spacing.lg }}>
-          <SheetOptions
-            options={ORDER_MODES.map((mode) => ({
-              key: mode,
-              label: t(`order.${mode}`),
-              icon:
-                mode === "manual"
-                  ? "hand-left-outline"
-                  : "swap-vertical-outline",
-              tone:
-                orderMode === mode ? ("accent" as const) : ("default" as const),
-              onPress: () => {
-                setOrderOpen(false);
-                if (list) void setOrderMode(list, mode);
-              },
-            }))}
-          />
-        </View>
-      </Sheet>
+
+
+      {/*
+        The order, in a sheet, **and over the whole list**.
+
+        A row dragged two places up is one index and not a number of steps, and
+        the sheet is the only place that knows both numbers: where it was dropped
+        and where it was. The manual order is a property of the list and not of the
+        "not done" half of it, so what is arranged is everything in the list and
+        the completed rows are in it too — a manual order that moved a row past
+        something already done would renumber across both and land somewhere
+        different from where it was dropped.
+      */}
+      <ReorderSheet
+        open={reorderOpen}
+        onClose={() => setReorderOpen(false)}
+        title={t("order.reorder")}
+        hint={t("order.reorderHint")}
+        onMove={(id, delta) => void moveItemTo(id, delta)}
+        rows={sorted.map((item) => ({
+          id: item.id,
+          title: item.title,
+          subtitle: item.tags.length > 0 ? item.tags.join(" · ") : null,
+        }))}
+      />
 
       {/* The one button that adds to this list, at the bottom right where the
           thumb is on a phone, and it is the same button everywhere: in a list of
@@ -741,6 +735,15 @@ function TaskRow({
   const theme = useTheme();
   const t = useTranslation();
 
+  /**
+   * The whole of a name the user wrote, **on this row's own press**.
+   *
+   * A `Pressable` around the name would take the gesture away from the row on a
+   * phone and the row would stop opening the item — a bug the web cannot show,
+   * because a click bubbles there and both fire. See `useLongPressText`.
+   */
+  const nombreLargo = useLongPressText(item.title);
+
   const pistaNombre = useA11yHint(t("itemEdit.subtitle"));
 
   return (
@@ -791,12 +794,13 @@ function TaskRow({
             and the thing you were reading was gone, with nothing said and
             nothing to undo. */}
         <Pressable
+            onLongPress={nombreLargo.onLongPress}
           accessibilityRole="button"
           accessibilityLabel={item.title}
           {...pistaNombre.props}
           onPress={onEdit}
         >
-          <AppText
+                    <AppText
             variant="body"
             tone={item.completed ? "subtle" : "default"}
             style={item.completed ? styles.strike : undefined}
@@ -805,6 +809,7 @@ function TaskRow({
             {item.title}
           </AppText>
         </Pressable>
+        {nombreLargo.sheet}
         {pistaNombre.node}
 
         {/* The labels, and only the ones there are. A row used to say "+ Label"

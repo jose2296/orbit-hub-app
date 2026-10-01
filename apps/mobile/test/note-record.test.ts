@@ -30,6 +30,8 @@ const FULL: Note = {
   tags: ['cocina'],
   attachmentCount: 2,
   position: 4,
+  role: 'owner',
+  shared: false,
   deletedAt: null,
 };
 
@@ -55,6 +57,8 @@ describe('newNote', () => {
       title: 'Salsa',
       document: '<p>Seis tomates</p>',
       plainText: '',
+  role: 'editor',
+  shared: false,
         tags: [],
       attachmentCount: 0,
       // Cero, y no "sin valor": una nota nueva no está colocada a mano en el

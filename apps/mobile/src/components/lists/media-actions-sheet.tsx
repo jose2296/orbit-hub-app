@@ -10,23 +10,15 @@ import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
 import { mediaCardOf } from "@/lib/lists/media-card";
 
 import { EmptyState } from "@/components/ui/empty-state";
-import { Sheet, SheetOptions } from "@/components/ui/sheet";
+import { Sheet, SheetOptions, useLastValue } from "@/components/ui/sheet";
 import { useTheme } from "@/theme";
 import type { SheetOption } from "@/components/ui/sheet";
 
 export interface MediaActionsSheetProps {
-  /** The item the menu is for, or `null` when the menu is closed. */
   item: ListItem | null;
-  /** The list it is in, which the menu cannot offer to remove it from. */
   listId: string;
-  /** Media kind, so the wording is "watched" or "read". */
   listKind: List["kind"];
-  /**
-   * When the menu is opened from the detail of the item, searching for its title
-   * and asking where it is are actions on the thing and not buttons on the screen.
-   */
   onFindTitle?: () => void;
-  /** Only when the title has a provider id: a book is not on Netflix. */
   onWhereToWatch?: () => void;
   onClose: () => void;
 }
@@ -44,13 +36,52 @@ export interface MediaActionsSheetProps {
  * most of the time, and the wording follows the list: a book is read.
  */
 export function MediaActionsSheet({
-  item,
+  item: pedido,
   listId,
   listKind,
   onFindTitle,
   onWhereToWatch,
   onClose,
 }: MediaActionsSheetProps) {
+  /*
+    `item` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!item) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was — declared here, at the
+    top, so that everything below keeps the name it always had and now has a value
+    that cannot be null — and the caller's own argument, which goes to `null` at
+    once, is what `visible` is asked from. The panel keeps its identity while it
+    leaves, and the dismissal is a movement instead of a cut.
+  */
+  /*
+    `item` is **the last one, and not the one the caller is holding** — and that
+    difference is the whole fix.
+
+    A sheet of options was written as `if (!item) return null`: the caller says the
+    menu is closed by handing over nothing, and the component does the obvious thing
+    with nothing — which takes the sheet, and the exit it is in the middle of, out
+    of the tree on the very frame the dismissal is asked for. Measured on the web,
+    the panel was gone **forty-five milliseconds** after the cross, and the quarter
+    of a second it was supposed to travel down was never on screen.
+
+    So the value that is drawn is the last one there was, and the caller's own
+    argument — which goes to `null` at once, because that is how a caller says "close"
+    — is what `visible` is asked from. The panel keeps its identity while it leaves,
+    and the dismissal is a movement instead of a cut.
+
+    **The prop keeps its name and only the local is new.** Renaming what the caller
+    passes would be six call sites later, for a change nobody outside this file can
+    see.
+  */
+  const item = useLastValue(pedido);
+
   const t = useTranslation();
   const theme = useTheme();
   const router = useRouter();
@@ -59,15 +90,16 @@ export function MediaActionsSheet({
   const { toggleCompleted, removeItem, addItemTo } = useListItems(listId);
 
   const [pickingList, setPickingList] = useState(false);
-  /*
-    The target being written to right now.
+
+  /**
+   * The one list being added to right now.
    *
-    `planAddToList` refuses a duplicate, and a refusal is no use against two taps
-    in a row: both calls read the list **before** either writes, so each one sees a
-    list that does not have the title yet and both say yes. The two rows then land
-    together, and the rule that was there to prevent exactly that is what let it
-    through. One name in flight is what closes that window.
-  */
+   * "Add" and "Remove" have to be able to be in a row: both calls read the list
+   * **before** either writes, so each one sees a list that does not have the title
+   * yet and both say yes. The two rows then land together, and the rule that was
+   * there to prevent exactly that is what let it through. One name in flight is
+   * what closes that window.
+   */
   const [anadiendoEn, setAnadiendoEn] = useState<string | null>(null);
 
   const isBook = listKind === "books";
@@ -96,7 +128,7 @@ export function MediaActionsSheet({
   if (pickingList) {
     return (
       <Sheet
-        visible
+        visible={pedido !== null}
         onClose={close}
         title={t("mediaActions.addToAnother")}
         subtitle={item.title}

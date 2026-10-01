@@ -4,6 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { FullTitle } from "@/components/media/full-title";
+import { SeenRibbon } from "@/components/media/seen-ribbon";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -222,26 +224,21 @@ export function VerticalMediaCarousel({
               the card that changes one thing and opens nothing is a card with a
               trap in the corner, and the corner is the first place a finger goes.
             */}
-            <View
-              style={[
-                styles.estado,
-                {
-                  backgroundColor: item.completed ? theme.colors.successSoft : theme.colors.surfaceMuted,
-                  borderRadius: theme.radius.md,
-                },
-              ]}
-              accessibilityRole="text"
-              accessibilityLabel={
-                item.completed ? t("mediaTabs.seen") : t("mediaTabs.pending")
-              }
+            {/*
+              Whether it has been seen, **in the corner and not on the picture**.
+
+              It was a forty-point circle with an eye in it, and forty points of a
+              poster in the corner is a hole: the film is hidden under a control that
+              is not a control. The drawing lives in `SeenRibbon` now, because the
+              same corner has to say the same thing on a related title, on a
+              collection and on a search result, and four copies of a triangle is
+              four chances to have one of them the wrong size.
+            */}
+            <SeenRibbon
+              completed={item.completed}
+              label={t("mediaTabs.seen")}
               testID={`visto-${item.key}`}
-            >
-              <Ionicons
-                name={item.completed ? "eye-off" : "eye-outline"}
-                size={18}
-                color={item.completed ? theme.colors.success : theme.colors.textMuted}
-              />
-            </View>
+            />
 
             {/* The menu, a sibling of the poster and not a child: a button inside a
                 button is not valid HTML, and on the web that is not a style
@@ -265,9 +262,21 @@ export function VerticalMediaCarousel({
           </Animated.View>
 
           <View style={styles.pie}>
-            <AppText variant="heading" numberOfLines={2} align="center">
-              {item.title}
-            </AppText>
+            {/*
+              The name under the poster, **and the whole of it on a long press**.
+
+              Two lines in the middle of a three hundred and twenty point screen is
+              about twenty characters of a title, and half the films in a list like
+              this one have longer names than that. The press opens the sheet and
+              the tap still opens the film: two gestures, two different things, and
+              neither of them is a guess.
+            */}
+            <FullTitle
+              text={item.title}
+              numberOfLines={2}
+              style={styles.titulo}
+              testID={`titulo-${item.key}`}
+            />
             <View style={[styles.meta, { gap: theme.spacing.xs }]}>
               {item.released ? (
                 <AppText variant="caption" tone="subtle">
@@ -373,15 +382,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  estado: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   menu: {
     position: "absolute",
     top: 8,
@@ -405,6 +405,9 @@ const styles = StyleSheet.create({
   visto: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  titulo: {
+    textAlign: 'center',
   },
   vacio: {
     flex: 1,
