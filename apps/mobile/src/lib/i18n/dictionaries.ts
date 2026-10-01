@@ -365,6 +365,8 @@ const es = {
      distintas: con "la misma lista" la nota de al lado ofrecia "la otra persona
      vera la misma lista", que describe otra cosa y no la que se esta compartiendo.
      "esto" aguanta las tres y no se equivoca en ninguna. */
+  "share.notOnServerYet":
+    "Se está sincronizando. Espera un momento y vuelve a compartirlo.",
   "share.isALink":
     "No es una copia. La otra persona verá esto mismo y podrá cambiarlo; si lo borra, desaparece también de aquí.",
   "shared.yours": "Tuyo",
@@ -1312,6 +1314,8 @@ const en: Record<TranslationKey, string> = {
   "share.subtitle": 'Share "{name}"',
   /* With no noun on purpose: this sits under the share entry of a list, a note and a
      folder alike, and naming any of them is wrong in the other two. */
+  "share.notOnServerYet":
+    "It is still syncing. Give it a moment and share it again.",
   "share.isALink":
     "It is not a copy. The other person sees this same thing and can change it; if they delete it, it goes from here too.",
   "shared.yours": "Yours",

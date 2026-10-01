@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import type { Person, Share, ShareRole } from "@orbit-hub/contracts";
@@ -10,6 +10,9 @@ import { Sheet } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useShareReach, useShares } from "@/hooks/use-shares";
+import { getLocalStoreReady } from "@/lib/offline/local-store";
+import { flushOutbox } from "@/lib/offline/sync-service";
+import { pendingOperationFor } from "@/lib/shares/pending-node";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -68,7 +71,45 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
   // share in flight to be wrong about.
   const reach = useShareReach(target);
 
+  /**
+   * Sends the folder out first if it is still only here.
+   *
+   * A grant is decided on the server, so the node has to be on the server before it
+   * can be granted, and a folder created a moment ago is a pending outbox row. Without
+   * this the POST answers `404 That does not exist`, the panel shows that under a form
+   * that looks finished, and the way out is to reload the page — which on a phone means
+   * closing the app and hoping. Flushing first turns "reload and try again" into
+   * "wait a second", and it says which one it is doing.
+   *
+   * The flush sends the whole batch, not only this node, which is right: everything in
+   * there is a write somebody already asked for, and holding it back to share one
+   * folder would be inventing a priority the app does not have.
+   */
+  const [sincronizando, setSincronizando] = useState(false);
+  const asegurarQueEstaEnElServidor = useCallback(async () => {
+    const store = await getLocalStoreReady();
+    const pendiente = pendingOperationFor(await store.listPending(200), target);
+    if (!pendiente) return true;
+
+    setSincronizando(true);
+    try {
+      const resultado = await flushOutbox();
+      // Still there after a flush means the server said no, and retrying will not
+      // change that. Saying so beats a second 404.
+      return !resultado.error;
+    } finally {
+      setSincronizando(false);
+    }
+  }, [target]);
+
   const enviar = async () => {
+    // Before the two ways of naming somebody, because the check is the same for both:
+    // a grant is decided on the server and the node has to be there first.
+    if (!(await asegurarQueEstaEnElServidor())) {
+      setError(t("share.notOnServerYet"));
+      return;
+    }
+
     // A person out of the directory wins over whatever is in the box. Tapping a name
     // and then typing must not quietly change who the share is for, and the only
     // thing that can undo that ambiguity is an explicit order of precedence.
@@ -113,7 +154,8 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
     }
   };
 
-  const puedeEnviar = person !== null || email.trim().length > 0;
+  const puedeEnviar =
+    !sincronizando && (person !== null || email.trim().length > 0);
 
   return (
     <View style={{ gap: theme.spacing.md }}>
