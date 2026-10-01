@@ -25,7 +25,7 @@ Monorepo, app, API y documentación. Detalle en el commit inicial.
 
 ---
 
-## Fase 1 — Auth y datos 🟡
+## Fase 1 — Auth y datos ✅
 
 El objetivo es una cuenta real de principio a fin: registrarse, verificar, entrar en dos
 dispositivos, revocar uno y cerrar sesión en todos.
@@ -62,7 +62,9 @@ dispositivos, revocar uno y cerrar sesión en todos.
 - [x] Abstracción `EmailSender` con transporte de consola en desarrollo
 - [x] Transporte real de Resend con reintentos, timeout y sin romper el registro si falla
 - [x] Plantillas de verificación y recuperación en español e inglés
-- [ ] Dominio de envío verificado en Resend (falta la clave y el DNS)
+- [x] Dominio de envío verificado en Resend (`jrz-labs.com`, región `eu-west-1`), consultado
+      contra la API del proveedor y no de memoria
+- [x] Login con Google funcionando con credenciales reales
 
 ### 1.6 App ✅
 - [x] Registro y login reales conectados a la API
@@ -75,11 +77,38 @@ dispositivos, revocar uno y cerrar sesión en todos.
 **Estado:** implementada. 45 tests en verde (36 de API, 9 de app), de los cuales 25 son de
 integración contra Postgres real.
 
-**Pendiente para cerrar la fase:**
-- [ ] Proveedor de email real y dominio de producción
-- [ ] Credenciales reales de Google OAuth (las aporta el usuario)
+**Pendiente para cerrar el despliegue** (ya no para cerrar la fase):
 - [ ] Ejecutar el mismo esquema en PostgreSQL gestionado
 - [ ] Empaquetado de la API para el entorno de destino
+
+### El transporte de Resend estaba escrito y nunca se había ejecutado
+
+`EMAIL_TRANSPORT=resend` era la **única** configuración de este módulo que no se había
+lanzado nunca, y no por falta de ganas: estaba ** rota**. `emailSender` se creaba en la
+línea 65 del módulo y `ResendEmailSender` se declaraba en la 102, y una `class` no se eleva
+como una función: está en su zona temporal muerta hasta que se evalúa. Con el transporte
+real, el proceso moría **al importar**, antes de escuchar el puerto:
+
+```
+ReferenceError: Cannot access 'ResendEmailSender' before initialization
+    at createEmailSender (email.ts:69:41)
+```
+
+Y no lo cazó nada de lo que hay en este repo:
+
+- el **typecheck** no lo ve: los dos nombres son correctos y el orden no es un tipo;
+- los **tests** usan `EMAIL_TRANSPORT=noop`, que sale por la primera línea de la fábrica y
+  nunca llega a la referencia;
+- en **desarrollo** se usaba `console`, idem por la misma puerta.
+
+O sea que el transporte tenía sus tres pruebas y ninguna era de este camino. El singleton
+está ahora **al final del fichero**, con el motivo escrito al lado, porque moverlo de sitio
+lo vuelve a romper sin que nada lo diga. Comprobado enviando de verdad a
+`no-reply@jrz-labs.com` y leyendo el `id` que devuelve Resend.
+
+**La lección, que es la de siempre en este documento:** un módulo con cobertura que nunca
+se ha ejecutado en su configuración real no está probado, está *escrito*. La prueba que faltaba
+no era un caso nuevo, era **correr la línea que ya existía** con la variable puesta.
 
 **Criterio de salida cumplido:** un usuario se registra, verifica el correo, entra en dos
 dispositivos, los ve en Ajustes, revoca uno y cierra sesión en todos, con tests que lo cubren.
@@ -1743,9 +1772,15 @@ una base de datos por fichero, y eso es un bloque entero.
 | Qué | Por qué bloquea |
 | --- | --- |
 | `DATABASE_URL` de PostgreSQL de producción | La API usa PGlite en desarrollo, que es un Postgres en memoria dentro del proceso |
-| Credenciales de Google OAuth **para Android e iOS** | Hay que crear dos clientes más, con `com.orbithub.app` |
 | Cuentas de las stores, firma y perfiles de build | Sin esto no hay binario distribuible |
-| Sección 8 del dominio `jrz-labs.com` | Sin el dominio propio no hay correo real |
+| Alojar `jrz-labs.com` (o `app.jrz-labs.com`) | El correo ya sale —el dominio está verificado y hay envío real— pero los enlaces de los correos abren `WEB_ORIGIN`, que hoy es `localhost:8081` |
+| Clientes de Google OAuth para Android e iOS, si se quiere en nativo | El login funciona en web; para las stores hacen falta los otros dos clientes con `com.orbithub.app` |
+
+**Resuelto desde la última revisión:** dominio de Resend verificado (`jrz-labs.com`,
+`eu-west-1`, comprobado contra la API), envío real funcionando
+(`EMAIL_TRANSPORT=resend`) y credenciales de Google OAuth puestas. Ver también
+[El transporte de Resend estaba escrito y nunca se había ejecutado](#el-transporte-de-resend-estaba-escrito-y-nunca-se-había-ejecutado),
+que salió al cambiar la variable y no está en ninguna parte de este documento hasta ahora.
 
 ---
 

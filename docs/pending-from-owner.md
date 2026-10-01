@@ -8,28 +8,24 @@ Estado: ⬜ pendiente · 🟡 en curso · ✅ hecho
 
 ---
 
-## 1. Identidad de los commits (bloqueante para el historial) 🟡
+## 1. Identidad de los commits ✅ (ya está puesta)
 
-Ahora mismo los commits llevan un autor provisional (`OrbitHub <dev@orbithub.local>`) porque no
-hay `user.name` ni `user.email` configurados en el repositorio.
+`git config user.name` y `git config user.email` ya están configurados en este repositorio, y
+el autor del último commit es el tuyo, no el provisional. No hay nada que reescribir.
 
-**Necesito de ti:** el nombre y el correo que quieres que aparezca en el historial.
-
-```bash
-git config user.name "Tu Nombre"
-git config user.email "tu@correo.com"
-```
-
-Con eso reescribo el autor de los commits existentes (son pocos, y aún no hay collaborators).
+Este punto llevaba en la lista desde el principio y se había quedado obsoleto: lo he
+comprobado contra el repositorio en vez de fiarme de la nota.
 
 ---
 
-## 2. Google OAuth ✅ (claves puestas, probado)
+## 2. Google OAuth ✅ (claves puestas y funcionando)
 
-Hoy el botón está implemented pero **desactivado**: el cliente no existe, así que la app lo
-muestra deshabilitado con un aviso. En cuanto me pases el par, lo activo.
+El botón **ya está activo**: `EXPO_PUBLIC_GOOGLE_CLIENT_ID` en `apps/mobile/.env` y
+`GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` en `apps/api/.env`. El intercambio de código y el
+linking de identidad los hace la API, y `POST /auth/google` tiene su test.
 
-### Pasos en Google Cloud Console
+Estos son los pasos de Google Cloud Console, por si hay que rehacerlos o crear los clientes
+de móvil:
 
 1. Crea o usa un proyecto en [console.cloud.google.com](https://console.cloud.google.com).
 2. **APIs y servicios → Pantalla de consentimiento OAuth**. Tipo: *Externo*. Añade:
@@ -39,13 +35,11 @@ muestra deshabilitado con un aviso. En cuanto me pases el par, lo activo.
    - pantalla de consentimiento: correo de soporte
 3. **APIs y servicios → Credenciales → Crear credenciales → ID de cliente OAuth**:
    - **Tipo de aplicación web**: URI de redirección autorizada
-     `https://app.orbithub.com/auth/google` (en desarrollo, `http://localhost:8081/auth/google`)
+     `https://app.jrz-labs.com/auth/google` (en desarrollo, `http://localhost:8081/auth/google`)
    - **Tipo de aplicación iOS**: bundle id `com.orbithub.app`
    - **Tipo de aplicación Android**: package `com.orbithub.app` y huella SHA-1 del keystore de
      firma
-4. Añade el dominio `app.orbithub.com` en **Dominios autorizados** de la pantalla de consentimiento.
-
-**Necesito de ti:**
+4. Añade el dominio en **Dominios autorizados** de la pantalla de consentimiento.
 
 | Dato | Dónde lo pongo |
 | --- | --- |
@@ -55,8 +49,8 @@ muestra deshabilitado con un aviso. En cuanto me pases el par, lo activo.
 
 > El `client_secret` nunca va en la app. Solo se usa en la API para canjear el código.
 
-Si prefieres, también sirve un **secreto de cliente de la app móvil** (Google lo llama
-"client secret" también en iOS/Android); pásamelo y lo guardo igual en la API.
+**Lo que queda para las stores:** los clientes de iOS y Android con `com.orbithub.app`. El de
+web ya funciona; sin esos dos, el login con Google no llega a un móvil.
 
 ---
 
@@ -79,54 +73,76 @@ claves de IA (la IA se eliminó) y las de Firebase (push necesita su propio proy
 Buena noticia: los `.env` antiguos **no estaban versionados** en sus repos, así que las claves no
 no están en el historial de git. Aun así, rota lo que importaste antes de producción.
 
-## 3. Proveedor de email — Resend 🟡 (integrado, falta la clave)
+## 3. Proveedor de email — Resend ✅ (integrado, probado y enviando)
 
 **Decidido: Resend.** El transporte ya está implementado y probado
 (`apps/api/src/modules/email/email.ts`): reintenta ante 429 y errores 5xx, distingue un rechazo
 definitivo (no reintenta), tiene timeout de 10 s y nunca hace fallar un registro porque el correo
 no salió: el fallo queda en el audit trail y el usuario puede pedir el reenvío.
 
-**Me falta esto:**
+**Ya está todo:**
 
-| Dato | Dónde se saca | Dónde va |
-| --- | --- | --- |
-| `RESEND_API_KEY` | [resend.com/api-keys](https://resend.com/api-keys), tipo **Sending access** y permisos **Only** (enviar es lo único que hacemos) | `apps/api/.env` |
-| Dominio verificado | [resend.com/domains](https://resend.com/domains), añade los registros DNS que te dé (DKIM + SPF). Vale un subdominio: `mail.orbithub.com` | — |
-| `EMAIL_FROM` | El remitente que quieras, por ejemplo `OrbitHub <no-reply@mail.orbithub.com>` | `apps/api/.env` |
-| `EMAIL_TRANSPORT=resend` | — | `apps/api/.env` |
-
-**Pruebas:**
+| Dato | Estado |
+| --- | --- |
+| `RESEND_API_KEY` | ✅ puesta en `apps/api/.env` |
+| Dominio | ✅ `jrz-labs.com` verificado, región `eu-west-1` (consultado a la API de Resend) |
+| `EMAIL_FROM` | ✅ `no-reply@jrz-labs.com` |
+| `EMAIL_TRANSPORT=resend` | ✅ puesto, y **enviando de verdad** |
 
 ```bash
-# 1. Antes de verificar el dominio solo puedes enviar a tu propio correo
 make -C apps/api email-test EMAIL=tu-correo@ejemplo.com
-
-# 2. Cuando la clave esté puesta
-make -C apps/api email-test EMAIL=otro-correo@ejemplo.com
 ```
 
-Si el dominio aún no está verificado, Resend solo permite enviar a la dirección de tu cuenta
-usando `onboarding@resend.dev`. Sirve para probar, no para producción.
+Sale `✓ Enviado con resend` y un `id` del proveedor. Se mandó a `no-reply@jrz-labs.com` y
+funcionó a la primera.
+
+**Un fallo que salió al ponerlo, y que estaba escondido desde que se escribió el módulo:**
+`EMAIL_TRANSPORT=resend` nunca se había ejecutado. El proceso moría al arrancar con
+`Cannot access 'ResendEmailSender' before initialization`, porque el singleton se creaba
+antes de que la clase existiera. El typecheck no lo ve y los tests usan `noop`, así que
+estaba «probado» sin haberse ejecutado nunca. Arreglado moviendo el singleton al final del
+fichero. Está escrito en el roadmap, en la sección 1.5.
 
 Plan gratuito: 3.000 correos al mes y 100 al día. Suficiente para empezar.
 
-## 4. PostgreSQL de producción ⬜
+## 4. PostgreSQL de producción ⬜ (decidido: Railway)
 
-En desarrollo uso un Postgres embebido (PGlite) en `apps/api/.data/pglite`. Para desplegar
-necesito un Postgres gestionado real.
+**Elegido Railway.** La razón es que ya lo usas: tienes allí los otros proyectos, el Postgres
+lo provisiona el propio panel con un clic, y la API es un servicio Node que Railway despliega
+sin Dockerfile. El [ADR 0004](architecture/adr/0004-external-postgresql.md) ya pedía un
+Postgres gestionado externo con connection string, así que esto no cambia ninguna decisión:
+es cumplirla.
 
-**Proveedores recomendados:** Neon, Supabase (solo Postgres), Railway, o cualquier servidor
-propio. Todos sirven: la API solo necesita una connection string.
+En desarrollo uso un Postgres embebido (PGlite) en `apps/api/.data/pglite`. En producción
+`DATABASE_URL` es **obligatoria**: `env.ts` la rechaza si `NODE_ENV=production` sin ella, a
+propósito, porque el Postgres embebido está en memoria dentro del proceso.
 
-**Necesito de ti:**
+### Los pasos
 
-| Dato | Nota |
-| --- | --- |
-| `DATABASE_URL` | `postgresql://user:pass@host:5432/orbit_hub` |
-| ¿Requiere SSL? | casi siempre sí → `DATABASE_SSL=true` |
-| ¿Permite migraciones? | permiso DDL para el usuario de la app |
+1. **New → Database → PostgreSQL** en un proyecto. Railway crea el servicio y pone un
+   `DATABASE_URL` en los demás servicios del proyecto.
+2. La API, como servicio Node en el **mismo proyecto**: `DATABASE_URL=${{Postgres.DATABASE_URL}}`.
+   Con la red privada de Railway **no hace falta SSL**, porque el tráfico no sale de Railway:
+   `DATABASE_SSL=false`. Solo si abres la base al público (no deberías) sería `true`.
+3. **Las migraciones corren solas al arrancar**: `index.ts` las ejecuta antes de escuchar,
+   salvo que se ponga `RUN_MIGRATIONS_ON_BOOT=false`. No hay paso manual.
+4. Exponer la API con **Networking → Generate Domain**, y apuntar `WEB_ORIGIN` al dominio.
 
-**Mientras tanto:** no hace falta nada. `npm run api` funciona sin base de datos externa.
+**Lo que ya está comprobado y no va a faltar:** la migración `0012` crea
+`CREATE EXTENSION IF NOT EXISTS pg_trgm` antes de sus índices, y el cliente ya tiene
+`ssl: { rejectUnauthorized: false }` cuando `DATABASE_SSL=true`. El usuario `postgres` de
+Railway puede crear extensiones, que es lo que hace falta.
+
+**Lo que sí necesita tu cuenta:** `railway login` (la CLI está instalada pero sin sesión), y
+el servicio de la API necesita `JWT_SECRET` de 32 caracteres o más y `NODE_ENV=production` —
+la clave no se puede generar aquí porque no debe salir de tu máquina.
+
+**Cuidado con una cosa:** las variables de Railway viven **solo en Railway**. La copia local
+sigue con PGlite a propósito, para que `npm run api` funcione sin nada.
+
+El paso a paso completo, con las variables y lo que no funciona todavía, está en
+[deploy-railway.md](deploy-railway.md). El `Dockerfile` de la raíz ya está escrito y
+construido, así que en Railway solo hay que señalar al repo.
 
 ---
 
@@ -164,7 +180,7 @@ No bloquean el desarrollo, pero abren camino a la Fase 10.
 | `client_id` + `client_secret` | Activo el login con Google y añado tests del intercambio y del linking |
 | Proveedor de email | Integro el transporte, plantillas reales y reintentos |
 | `DATABASE_URL` | Ejecuto las migraciones contra producción y verifico el health check |
-| Nombre y correo de Git | Reescribo el autor de los commits |
+| Nombre y correo de Git | ~~Ya está~~ — no hace falta |
 | Bundle id y dominio definitivos | Los fijo en config, AASA, Asset Links y en EAS |
 | Cuentas de las stores | Configuro `eas.json`, firma y builds de previsualización |
 
@@ -172,25 +188,30 @@ No bloquean el desarrollo, pero abren camino a la Fase 10.
 
 ## Resumen: lo mínimo para seguir trabajando
 
-Nada de lo de arriba bloquea el desarrollo de la **Fase 2** (workspaces, carpetas, dashboard y
-sincronización). Solo dos cosas son urgentes de verdad:
+**No queda nada urgente de la lista inicial.** Identidad de Git, Google OAuth y Resend ya
+están cerrados.
 
-1. **Identidad de Git** → dime nombre y correo.
-2. **La clave de Resend y el dominio verificado** → la integración está hecha, solo falta la clave.
+Lo único que bloquea el despliegue es de tu cuenta y son tres cosas:
 
-El resto (Postgres de producción, stores) puede llegar más adelante, con avisos.
+1. **`railway login`** — la CLI está instalada pero sin sesión.
+2. **Postgres en Railway** — un servicio, y la API apuntando a
+   `${{Postgres.DATABASE_URL}}`. Está en [deploy-railway.md](deploy-railway.md).
+3. **`JWT_SECRET` de 32 caracteres o más** en las variables de Railway. No lo genero aquí
+   porque no debe salir de tu máquina.
 
 ---
 
-## 8. Dominio `jrz-labs.com` ✅ (puesto, falta alojaje)
+## 8. Dominio `jrz-labs.com` 🟡 (correo resuelto, falta alojaje)
 
-Ya está configurado como origen de los correos. Para que funcione de verdad falta:
+**Resuelto:** los registros DNS de Resend (DKIM + SPF) están puestos y el dominio sale
+`verified`. Los correos se envían de verdad desde `no-reply@jrz-labs.com`.
+
+**Lo que falta:**
 
 | Qué | Para qué |
 | --- | --- |
 | Apuntar el dominio (o `app.jrz-labs.com`) al hosting de la web | Para que la PWA se sirva y los enlaces de los correos abran la app |
-| Registros DNS de Resend (DKIM + SPF) en `jrz-labs.com` | Para que los correos no acaben en spam |
-| `https://<dominio>/auth/google` en el cliente OAuth de Google | Redirect URI del login con Google |
+| Poner `WEB_ORIGIN` al dominio real en producción | Ahora es `http://localhost:8081`, o sea que los enlaces de verificación y de invitación apuntan a local |
 | `AASA` (iOS) y `Asset Links` (Android) | Deep links y universal links, Fase 7 |
 
 Para probar en local, `WEB_ORIGIN=http://localhost:8081` y se leen los enlaces del log. Está

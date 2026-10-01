@@ -155,6 +155,7 @@ Start at [`docs/README.md`](docs/README.md):
 - [Notes editor](docs/architecture/notes-editor.md)
 - [Roadmap](docs/roadmap.md)
 - [Environment variables](docs/environment.md) — every variable, and which came from where
+- [Deploying to Railway](docs/deploy-railway.md) — the API image, the web image, every variable, and what does not work yet
 - [Pending from the owner](docs/pending-from-owner.md) — credentials and decisions still needed
 - [Legacy migration (future work)](docs/migration/legacy-migration.md)
 - [Security & secrets](docs/security/secrets.md)
