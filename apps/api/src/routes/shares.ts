@@ -56,9 +56,16 @@ sharesRouter.get('/inbox', async (req, res) => {
       nodeId: row.nodeId,
       role: row.role,
       title: row.title,
-      workspaceId: '',
+      // The real one. It used to be `''` here, and `shareSchema` says this field is a
+      // uuid: a field that is declared as an id and always empty is worse than one that
+      // is missing, because the app's own type says it is there and the shape says it
+      // cannot be used. Anything showing where it came from had nothing to show.
+      workspaceId: row.workspaceId,
       ownerName: row.ownerName,
-      placedAt: null,
+      // Also read rather than assumed. The query already excludes mounted shares, so
+      // this is `null` in practice — but "in practice" is how a field becomes a lie
+      // the day the query changes.
+      placedAt: row.placedAt,
       createdAt: new Date().toISOString(),
     })),
   });

@@ -732,7 +732,11 @@ export class ShareService {
       nodeId: string;
       role: string;
       title: string;
+      /** Which space it came from, from the node itself. */
+      workspaceId: string;
       ownerName: string | null;
+      /** Null until it is filed. */
+      placedAt: string | null;
     }[]
   > {
     const db = await this.db();
@@ -744,6 +748,10 @@ export class ShareService {
         nodeId: shares.nodeId,
         role: shares.role,
         ownerName: users.displayName,
+        // Null by construction — the query below excludes anything mounted — but read
+        // rather than assumed. "In practice" is how a field becomes a lie the day the
+        // query changes.
+        placedAt: shareMounts.placedAt,
       })
       .from(shares)
       .innerJoin(users, eq(users.id, shares.ownerUserId))
@@ -785,7 +793,12 @@ export class ShareService {
           nodeId: row.nodeId,
           role: row.role,
           title: target.title,
+          // `resolveTarget` already walked up to the space, and it is the only place
+          // that can: `shares` has no `workspace_id`, because a grant is on a node and
+          // the space is wherever that node happens to live.
+          workspaceId: target.workspaceId,
           ownerName: row.ownerName,
+          placedAt: row.placedAt ? row.placedAt.toISOString() : null,
         };
       }),
     );
