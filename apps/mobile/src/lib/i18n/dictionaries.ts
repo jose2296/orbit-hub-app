@@ -606,6 +606,15 @@ const es = {
   "drawer.label": "Menú del espacio de trabajo",
   "drawer.goTo": "Ir a {what}",
   "drawer.sharedWithMe": "Compartido conmigo",
+  "myInvitations.title": "Invitaciones",
+  "myInvitations.count.one": "1 invitación esperando tu respuesta",
+  "myInvitations.count.other": "{count} invitaciones esperando tu respuesta",
+  "myInvitations.emptyTitle": "No tienes invitaciones",
+  "myInvitations.emptyBody":
+    "Cuando alguien te invite a un espacio aparecerá aquí, con el permiso que vas a tener.",
+  "myInvitations.emptyWrongAccount":
+    "Si esperabas una invitación y no hay ninguna, quizá entraste con otra cuenta: la invitación se envía a un correo concreto y solo aparece en esa.",
+
   /* Lo que ha llegado y no has mirado. El numero va en el punto de la hamburguesa y
      tambien junto a la lista, porque son dos preguntas: cuantos hay sin colocar (el
      recuento) y cuantos son nuevos (el punto). */
@@ -1543,6 +1552,15 @@ const en: Record<TranslationKey, string> = {
   "drawer.label": "Workspace menu",
   "drawer.goTo": "Go to {what}",
   "drawer.sharedWithMe": "Shared with me",
+  "myInvitations.title": "Invitations",
+  "myInvitations.count.one": "1 invitation waiting for your answer",
+  "myInvitations.count.other": "{count} invitations waiting for your answer",
+  "myInvitations.emptyTitle": "No invitations",
+  "myInvitations.emptyBody":
+    "When somebody invites you to a space it appears here, with the role you will have.",
+  "myInvitations.emptyWrongAccount":
+    "If you were expecting an invitation and there is none, you may have signed in with a different account: an invitation is addressed to one email and only shows up there.",
+
   /* What has arrived that you have not looked at. The count goes on the dot in the
      menu button and again next to the list, because they are two questions: how much
      there is to file (the count) and how much is new (the dot). */

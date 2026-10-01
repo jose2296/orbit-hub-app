@@ -32,6 +32,7 @@ import { PlaceShareSheet } from "@/components/shares/place-share-sheet";
 import { SharedInboxRow } from "@/components/shares/shared-inbox-row";
 import { SharesDot } from "@/components/shares/shares-dot";
 import { useUnseen } from "@/lib/shares/incoming-store";
+import { usePendingInvitations } from "@/lib/workspaces/pending-invitations";
 import { SyncBadge } from "@/components/sync/sync-badge";
 import { SyncRow } from "@/components/sync/sync-row";
 import { useA11yHint } from "@/components/ui/a11y-hint";
@@ -340,6 +341,16 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
    * nothing to have missed, and a badge left on screen by a sign-out is the sort of
    * thing that needs a reload to go away.
    */
+  /**
+   * How many invitations are waiting, for the row that opens them.
+   *
+   * Asked here rather than by the screen because the row has to know whether to
+   * exist: a permanent "Invitaciones" entry that is empty nine times out of ten is a
+   * line the menu spends on nothing. And asked on its own because the count is what
+   * the menu needs and the screen needs the list.
+   */
+  const { count: pendientes } = usePendingInvitations(status === "authenticated");
+
   const sinMirar = useUnseen(
     status === "authenticated" ? (user?.id ?? null) : null,
   );
@@ -517,6 +528,58 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
             {t("workspaces.allOfThem")}
           </AppText>
         </Pressable>
+
+        {/*
+          The invitations, **above** what has been shared with you, and only when
+          there is one.
+
+          An invitation is the only row in the menu that is asking a question, and a
+          question that needs an answer does not belong under a heading you have to
+          scroll to. Before this, the answer lived in a mail: the notification was the
+          only door, so losing the mail lost the invitation. Now the row is the door
+          and the mail is the bell.
+        */}
+        {pendientes > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t(pluralKey("myInvitations.count", pendientes), {
+              count: pendientes,
+            })}
+            onPress={() => go("/(app)/invitations")}
+            style={({ pressed }) => [
+              styles.item,
+              {
+                borderRadius: theme.radius.md,
+                backgroundColor: pressed
+                  ? theme.colors.surfaceMuted
+                  : "transparent",
+                paddingHorizontal: theme.spacing.sm,
+                paddingVertical: theme.spacing.sm,
+              },
+            ]}
+          >
+            <Ionicons
+              name="mail-unread-outline"
+              size={18}
+              color={theme.colors.accent}
+            />
+            <View style={{ flex: 1 }}>
+              <AppText variant="body">{t("myInvitations.title")}</AppText>
+              <AppText variant="caption" tone="subtle" numberOfLines={1}>
+                {t("invite.from", { name: pendientes.toString() })}
+              </AppText>
+            </View>
+            <Badge
+              label={String(pendientes)}
+              tone="accent"
+              testID="drawer-invitations-badge"
+              accessibilityLabel={t(
+                pluralKey("myInvitations.count", pendientes),
+                { count: pendientes },
+              )}
+            />
+          </Pressable>
+        ) : null}
 
         {/*
           Only when there is something. An empty "compartido conmigo" heading with

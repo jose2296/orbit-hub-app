@@ -127,16 +127,26 @@ describe("invitations", () => {
       expect(invitation.id).not.toBe(invitation.token);
     });
 
-    it("mails the person it was addressed to, with the link inside", async () => {
+    it("mails the person it was addressed to, and the mail is the bell, not the door", async () => {
       const before = capturedEmails().length;
       await invite(owner, { email: stranger.email });
 
       const sent = capturedEmails().slice(before);
       expect(sent).toHaveLength(1);
       expect(sent[0]!.to).toBe(stranger.email);
-      // The button is the whole point of the mail, so the link has to be in it.
-      expect(sent[0]!.text).toContain("/invite?token=");
       expect(sent[0]!.subject).toContain("Casa");
+
+      // It used to be `/invite?token=`, and the mail was the only way to answer:
+      // lose it, search for it, let it land in a folder, and the invitation is gone.
+      // So the button goes to the screen where invitations live as rows.
+      expect(sent[0]!.text).toContain("/invitations");
+      expect(sent[0]!.text).not.toContain("/invite?token=");
+      expect(sent[0]!.text).not.toContain("token=");
+
+      // And it must be a route that exists, or we are back to a button that lands on
+      // "Page could not be found". `email-links.test.ts` walks the routes; this says
+      // the mail is one of the ones that gets checked.
+      expect(sent[0]!.html).toContain("/invitations");
     });
 
     it("does not mail anybody when the link is meant to be sent by hand", async () => {

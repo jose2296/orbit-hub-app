@@ -225,8 +225,8 @@ const COPY = {
     inviteSubject: 'Te han invitado a {workspace} en OrbitHub',
     inviteTitle: 'Invitación a {workspace}',
     inviteBody: '{inviter} te ha invitado como {role}. Pulsa el botón para entrar en el espacio. El enlace caduca el {expires}.',
-    inviteCta: 'Entrar en el espacio',
-    inviteIgnore: 'Si no reconoces a quien te invita, puedes ignorar este correo: nadie se une sin que pulses el botón.',
+    inviteCta: 'Ver las invitaciones',
+    inviteIgnore: 'La respuesta se da dentro de la app, y nadie se une sin que pulses el botón. Si no reconoces a quien te invita, ignora este correo.',
     shareSubject: '{owner} ha compartido {node} contigo en OrbitHub',
     shareSubjectOf: '{owner} ha compartido {node} de {space} contigo en OrbitHub',
     shareTitle: '{node} está en tu bandeja',
@@ -255,8 +255,8 @@ const COPY = {
     inviteSubject: 'You have been invited to {workspace} on OrbitHub',
     inviteTitle: 'Invitation to {workspace}',
     inviteBody: '{inviter} invited you as {role}. Tap the button to join the space. The link expires on {expires}.',
-    inviteCta: 'Join the space',
-    inviteIgnore: 'If you do not know who invited you, ignore this email: nobody joins anything without tapping the button.',
+    inviteCta: 'See the invitations',
+    inviteIgnore: 'You answer it inside the app, and nobody joins anything without tapping the button. If you do not know who invited you, ignore this email.',
     shareSubject: '{owner} shared {node} with you on OrbitHub',
     shareSubjectOf: '{owner} shared {node} from {space} with you on OrbitHub',
     shareTitle: '{node} is in your inbox',
@@ -321,7 +321,6 @@ export function verificationEmail(input: TemplateInput): EmailMessage {
  */
 export function invitationEmail(input: {
   to: string;
-  token: string;
   locale: Locale;
   workspaceName: string;
   inviterName: string;
@@ -329,7 +328,18 @@ export function invitationEmail(input: {
   expiresAt: Date;
 }): EmailMessage {
   const copy = COPY[input.locale] ?? COPY.es;
-  const href = link('/invite', input.token);
+  /**
+   * **Not the token link, and that is the decision.** This mail used to point at
+   * `/invite/<token>`, which made the notification the only door: lose the mail, or
+   * search for it, or have it land in a folder, and the invitation is invisible and
+   * the space never happens.
+   *
+   * So the button goes to `/invitations`, where the invitation is a row next to
+   * everything else and both answers are one tap away. The token link still exists and
+   * still works — it is in the mails people already have — and the app answers with the
+   * same two endpoints, so there is one way to accept and not two.
+   */
+  const href = absoluteLink('/invitations');
   const fill = (value: string) =>
     value
       .replace('{workspace}', input.workspaceName)

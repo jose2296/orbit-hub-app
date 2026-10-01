@@ -10,7 +10,7 @@ import type {
   Workspace,
 } from "@orbit-hub/contracts";
 import { membershipRoleRank } from "@orbit-hub/contracts";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, notExists, sql } from "drizzle-orm";
 
 import { getDatabase } from "../../db/client.js";
 import type { Database } from "../../db/client.js";
@@ -129,24 +129,83 @@ export class InvitationService {
         desc(workspaceInvitations.createdAt),
       );
 
-    const items: Invitation[] = rows.map((row) => ({
-      id: row.id,
-      workspaceId: row.workspaceId,
-      workspaceName: row.workspaceName,
-      role: row.role as Invitation["role"],
-      token: row.token,
-      status: row.status as InvitationStatus,
-      invitedBy: {
-        id: row.inviterId ?? "",
-        displayName: row.inviterName ?? "",
-      },
-      invitedEmail: row.invitedEmail,
-      expiresAt: row.expiresAt.toISOString(),
-      createdAt: row.createdAt.toISOString(),
-      acceptedAt: row.acceptedAt ? row.acceptedAt.toISOString() : null,
-    }));
+    return { items: rows.map(toInvitation) };
+  }
 
-    return { items };
+  /**
+   * The invitations addressed to this person, waiting for an answer.
+   *
+   * **The other half of "the owner sees what they sent".** `list` answers "who did I
+   * invite to this space"; this answers "who invited me and what have I not answered
+   * yet", which had no endpoint at all. The only way in was a token from a mail, so
+   * accepting an invitation meant opening a link in a message — and a mail that is also
+   * the only door is a door that gets lost.
+   *
+   * Matched on **the caller's own email**, the same rule `assertUsable` uses, so the
+   * list and the accept cannot disagree about who an invitation is for. An invitation
+   * with no address — the "here is the link" kind — is not in this list: it is addressed
+   * to nobody, and offering to accept one would be offering to accept a link somebody
+   * happened to forward.
+   *
+   * Expired ones are left out rather than shown as dead, and so are the spaces this
+   * person is already in: "you have been invited to a space you are in" has only one
+   * sensible answer and should not be asked.
+   */
+  async listForCaller(userId: string): Promise<ListInvitationsResponse> {
+    const db = await this.db();
+
+    const [me] = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const myEmail = me?.email?.toLowerCase();
+    if (!myEmail) return { items: [] };
+
+    const rows = await db
+      .select({
+        id: workspaceInvitations.id,
+        workspaceId: workspaceInvitations.workspaceId,
+        role: workspaceInvitations.role,
+        token: workspaceInvitations.token,
+        status: workspaceInvitations.status,
+        invitedEmail: workspaceInvitations.invitedEmail,
+        expiresAt: workspaceInvitations.expiresAt,
+        createdAt: workspaceInvitations.createdAt,
+        acceptedAt: workspaceInvitations.acceptedAt,
+        workspaceName: workspaces.name,
+        inviterId: users.id,
+        inviterName: users.displayName,
+      })
+      .from(workspaceInvitations)
+      .innerJoin(workspaces, eq(workspaceInvitations.workspaceId, workspaces.id))
+      .leftJoin(users, eq(workspaceInvitations.invitedByUserId, users.id))
+      .where(
+        and(
+          eq(workspaceInvitations.status, "pending"),
+          eq(workspaceInvitations.invitedEmail, myEmail),
+          gt(workspaceInvitations.expiresAt, new Date()),
+          // Not a space this person is already in. `notExists` rather than a join
+          // and a filter afterwards, so the membership cannot drop an invitation
+          // out of the result by duplicating it.
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(memberships)
+              .where(
+                and(
+                  eq(memberships.workspaceId, workspaceInvitations.workspaceId),
+                  eq(memberships.userId, userId),
+                ),
+              ),
+          ),
+        ),
+      )
+      // Newest first: the one somebody has to act on is the one that just arrived.
+      .orderBy(desc(workspaceInvitations.createdAt));
+
+    return { items: rows.map(toInvitation) };
   }
 
   /**
@@ -578,3 +637,43 @@ function displayNameOf(name: string | null, email: string | null): string {
   return name?.trim() || email?.split("@")[0] || "Alguien";
 }
 export const invitationService = new InvitationService();
+
+/**
+ * One selected row as the contract's invitation.
+ *
+ * Shared by the two lists on purpose. They answer different questions — "who did I
+ * invite" and "who invited me" — and both are read by the same app, so a field that
+ * only one of them fills is a field that is sometimes missing for reasons nobody can
+ * see. One mapper is what keeps the two answers the same shape.
+ */
+function toInvitation(row: {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  role: string;
+  token: string;
+  status: string;
+  invitedEmail: string | null;
+  expiresAt: Date;
+  createdAt: Date;
+  acceptedAt: Date | null;
+  inviterId: string | null;
+  inviterName: string | null;
+}): Invitation {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    workspaceName: row.workspaceName,
+    role: row.role as Invitation["role"],
+    token: row.token,
+    status: row.status as InvitationStatus,
+    invitedBy: {
+      id: row.inviterId ?? "",
+      displayName: row.inviterName ?? "",
+    },
+    invitedEmail: row.invitedEmail,
+    expiresAt: row.expiresAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    acceptedAt: row.acceptedAt ? row.acceptedAt.toISOString() : null,
+  };
+}

@@ -142,6 +142,19 @@ workspacesRouter.delete("/:id/invitations/:invitationId", async (req, res) => {
 
 invitationsRouter.use(requireAuth);
 
+/**
+ * What is waiting for this person to answer.
+ *
+ * **And not under `/workspaces/:id/`.** That one is the owner's view of what they
+ * sent; this is the other side of the same table, and a recipient does not have a
+ * workspace id yet — they are not a member, which is the whole reason they cannot see
+ * it. Putting it here also keeps it off the sync path: knowing that somebody wants to
+ * add you is a read of somebody else's act, not content you edit offline.
+ */
+invitationsRouter.get("/", async (req, res) => {
+  sendData(res, 200, await invitationService.listForCaller(caller(req)));
+});
+
 invitationsRouter.get("/:token", async (req, res) => {
   const { token } = tokenParams.parse(req.params);
   sendData(res, 200, await invitationService.preview(caller(req), token));
@@ -180,7 +193,9 @@ async function mailInvitation(
     await emailSender.send(
       invitationEmail({
         to: email,
-        token: invitation.token,
+        // No token, on purpose: the mail no longer carries the door, so it does not
+        // hand out the key either. See the note on `invitationEmail`.
+        //
         // In the language of whoever pressed the button. The person reading it
         // is the person who wrote it, and they are the one who knows what they
         // are inviting somebody to.
