@@ -7,6 +7,7 @@ import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { PosterFlightProvider } from '@/components/media/poster-flight';
 import { AppText } from '@/components/ui/text';
 import { SessionProvider, useSession } from '@/hooks/use-session';
 import { I18nProvider, useTranslation } from '@/lib/i18n';
@@ -27,7 +28,13 @@ export default function RootLayout() {
         <ThemeProvider>
           <I18nProvider>
             <SessionProvider>
-              <Navigation />
+              {/*
+                The provider wraps the navigator and not a screen, **because the copy
+                has to be above every screen.**
+              */}
+              <PosterFlightProvider>
+                <Navigation />
+              </PosterFlightProvider>
             </SessionProvider>
           </I18nProvider>
         </ThemeProvider>

@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FullTitle } from "@/components/media/full-title";
 import { SeenRibbon } from "@/components/media/seen-ribbon";
+import { usePosterFlight } from "@/components/media/poster-flight";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -103,6 +104,14 @@ export function VerticalMediaCarousel({
 
   const [alto, setAlto] = useState(0);
   const desplazamiento = useRef(new Animated.Value(0)).current;
+  const ref = useRef<View>(null);
+  const refTitulo = useRef<View>(null);
+  /** The two rectangles of the card the last time somebody pressed it. */
+  const medirRef = useRef<{
+    desde: { x: number; y: number; width: number; height: number };
+    tituloDesde: { x: number; y: number; width: number; height: number };
+  } | null>(null);
+  const vuelo = usePosterFlight();
 
   /*
     Where the row is scrolled to, **put back to the beginning whenever the set of
@@ -141,6 +150,41 @@ export function VerticalMediaCarousel({
    * URL is dead gets it when the image says so.
    */
   const [fallidos, setFallidos] = useState<ReadonlySet<string>>(new Set());
+  /**
+   * This card's own box on the screen, **asked for at the moment of the press and
+   * not on layout.**
+   *
+   * A layout event says where the card was last time somebody drew it; a press is
+   * the last word on where it is now, after any scrolling, after any change of tab
+   * and after any rotation. The flight is built out of this rectangle and out of
+   * the one the detail measures for itself, so both numbers are asked of the thing
+   * that is being measured rather than written down here.
+   *
+   * **It is measured in window coordinates** — from the top left of the screen and
+   * not of the list — because the copy that flies is drawn above every screen and
+   * has to agree with a card that is inside one.
+   */
+  const medir = useCallback(
+    (item: VerticalMediaItem) => {
+      ref.current?.measureInWindow((x, y, width, height) => {
+        refTitulo.current?.measureInWindow((tx, ty, tw, th) => {
+          medirRef.current = {
+            desde: { x, y, width, height },
+            tituloDesde: { x: tx, y: ty, width: Math.max(1, tw), height: Math.max(1, th) },
+          };
+          vuelo.iniciar({
+            id: item.key,
+            uri: item.imageUrl,
+            titulo: item.title,
+            desde: { x, y, width, height },
+            tituloDesde: { x: tx, y: ty, width: Math.max(1, tw), height: Math.max(1, th) },
+          });
+        });
+      });
+    },
+    [vuelo],
+  );
+
   const fallo = useCallback(
     (key: string) =>
       setFallidos((previos) => {
@@ -217,7 +261,11 @@ export function VerticalMediaCarousel({
             ]}
           >
             <Pressable
-              onPress={item.onPress}
+              ref={ref}
+              onPress={() => {
+                medir(item);
+                item.onPress?.();
+              }}
               accessibilityRole="button"
               accessibilityLabel={item.title}
               style={styles.poster}
@@ -326,12 +374,14 @@ export function VerticalMediaCarousel({
               `sharedCoverTitleStyle` writes nothing on a phone — see
               `lib/media/shared-cover.ts`.
             */}
-            <FullTitle
-              text={item.title}
-              numberOfLines={2}
-              style={[styles.titulo, sharedCoverTitleStyle(item.key)]}
-              testID={`titulo-${item.key}`}
-            />
+            <View ref={refTitulo} collapsable={false}>
+              <FullTitle
+                text={item.title}
+                numberOfLines={2}
+                style={[styles.titulo, sharedCoverTitleStyle(item.key)]}
+                testID={`titulo-${item.key}`}
+              />
+            </View>
             <View style={[styles.meta, { gap: theme.spacing.xs }]}>
               {item.released ? (
                 <AppText variant="caption" tone="subtle">

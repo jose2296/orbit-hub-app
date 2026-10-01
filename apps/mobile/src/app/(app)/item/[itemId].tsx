@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Enter } from "@/components/ui/enter";
 import { mediaCardOf } from "@/lib/lists/media-card";
+import { usePosterFlight } from "@/components/media/poster-flight";
 import {
   sharedCoverStyle,
   sharedCoverTag,
@@ -129,6 +130,43 @@ export default function ItemDetailsScreen() {
    * the slowest of them has answered.
    */
   const portadaDeLaRuta = image || (item ? mediaCardOf(item)?.imageUrl : null) || null;
+
+  /*
+    **Where this screen wants the poster to arrive**, asked for once the cover has
+    actually been laid out and not before.
+
+    The flight is the phone's answer to what the browser does with a
+    `view-transition-name`, and this half is the other end of it: the copy in the
+    air does not know where it is going until somebody here says. Until then it
+    sits exactly on the card it came from, which is what the eye expects, and the
+    moment this reports, it travels.
+
+    The title reports with it, in the same call, because a poster that arrives
+    before or after its own title reads as two events.
+  */
+  const vuelo = usePosterFlight();
+  const refPortada = useRef<View>(null);
+  const refTitulo = useRef<View>(null);
+  const destinoAvisado = useRef(false);
+
+  const avisarDestino = useCallback(() => {
+    if (destinoAvisado.current) return;
+    refPortada.current?.measureInWindow((px, py, pw, ph) => {
+      refTitulo.current?.measureInWindow((tx, ty, tw, th) => {
+        destinoAvisado.current = true;
+        vuelo.destino({
+          destino: { x: px, y: py, width: pw, height: ph },
+          tituloDestino: { x: tx, y: ty, width: Math.max(1, tw), height: Math.max(1, th) },
+        });
+      });
+    });
+  }, [vuelo]);
+
+  useEffect(() => {
+    // Measured once the cover is on screen; before that there is nothing to say.
+    const id = setTimeout(avisarDestino, 60);
+    return () => clearTimeout(id);
+  }, [avisarDestino, portadaDeLaRuta]);
 
   /*
     Which related title has its menu open, and it is a **title and not a
@@ -304,6 +342,8 @@ export default function ItemDetailsScreen() {
             <View style={[styles.cover, { gap: theme.spacing.md }]}>
               {portadaDeLaRuta ? (
                 <Image
+                  ref={refPortada as never}
+                  onLayout={avisarDestino}
                   source={{ uri: portadaDeLaRuta }}
                   resizeMode="cover"
                   style={[
@@ -342,9 +382,11 @@ export default function ItemDetailsScreen() {
             </View>
 
             <View style={[styles.headerText, { gap: theme.spacing.sm }]}>
-              <AppText variant="title" style={sharedCoverTitleStyle(idCompartido)}>
-                {item?.title ?? title}
-              </AppText>
+              <View ref={refTitulo} collapsable={false} onLayout={avisarDestino}>
+                <AppText variant="title" style={sharedCoverTitleStyle(idCompartido)}>
+                  {item?.title ?? title}
+                </AppText>
+              </View>
               <Esqueleto alto={22} ancho="70%" />
               <Esqueleto alto={16} />
               <Esqueleto alto={16} ancho="92%" />
