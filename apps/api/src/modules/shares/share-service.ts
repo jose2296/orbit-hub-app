@@ -473,6 +473,25 @@ export class ShareService {
    * better than the alternative, which is a person who shared a list and never
    * saw it arrive.
    */
+  /**
+   * Moves the whole chain forward: the node, the space it lives in, and everything
+   * under it.
+   *
+   * One method, three callers, and the reason they have to be the same is the whole
+   * subject of this file: the pull is a walk through time, so the only way a device
+   * hears about anything is a row that is newer than where it stopped.
+   *
+   * - **Sharing** changes who can read the rows.
+   * - **Filing it somewhere** changes what the reader sees, and changes nothing at all
+   *   about the row — so without this, a device that already had it keeps the copy it
+   *   had, with the owner's space, and the thing never appears in the space it was
+   *   filed in. That was a real report and it looked like the fix had not deployed.
+   * - **Revoking** changes who can read them back.
+   *
+   * The space is in here because a node is undrawable without one: the client has no
+   * row for it, so the folder is in a space the device has never heard of, and that
+   * renders as nothing.
+   */
   private async tocaElNodo(target: ShareTarget): Promise<void> {
     const db = await this.db();
     const ahora = new Date();
@@ -703,6 +722,22 @@ export class ShareService {
           updatedAt: now,
         },
       });
+
+    /*
+      And then the part that makes filing something visible.
+
+      A mount is a **projection**: nothing about the folder changed, so nothing about it
+      is newer, and the pull has nothing to send. The device that already had it keeps
+      the row it had — with the owner's `workspaceId` — and the folder never appears in the
+      space it was just filed in. No error, no empty screen, no way to fix it from the
+      app: it is the one failure in this file that looks like nothing at all.
+
+      Same stamp as sharing, and for the same kind of reason: what changed is what the
+      reader sees.
+    */
+    await this.tocaElNodo(
+      await this.resolveTarget(encontrada.nodeType, encontrada.nodeId),
+    );
   }
 
   /**
