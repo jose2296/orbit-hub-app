@@ -373,6 +373,32 @@ export class SyncService {
    * to look the same, and a grant is not a way to find out whether an id is real
    * in a space you have never seen.
    */
+  /**
+   * Whether this person owns the space, and may therefore erase what is in it.
+   *
+   * Deliberately **only** ownership, and not "can edit": see the comment on the delete
+   * branch. The two facts a caller has are `roleInWorkspace` and the share access, and
+   * this uses the first and ignores the second, because a grant is permission to work
+   * on somebody's thing and never permission to destroy it.
+   *
+   * An `owner` **membership** is the test, and it is the same fact for the space itself
+   * as for its contents: the person who made a space has an `owner` row in it. So one
+   * method covers "delete this space" and "delete this list", which is why the caller
+   * passes the space in both cases instead of branching.
+   *
+   * A space this person cannot see is a 404 and not a 403, so that "you may not" and
+   * "it is not there" stay the same sentence and the error is not a way of finding out
+   * which ids are real.
+   */
+  private async assertCanDelete(workspaceId: string | null, userId: string): Promise<void> {
+    if (!workspaceId) throw HttpError.notFound('Workspace not found');
+    const role = await syncRepository.roleInWorkspace(workspaceId, userId);
+    if (role === null) throw HttpError.notFound('Workspace not found');
+    if (role !== 'owner') {
+      throw HttpError.forbidden('Only the owner can delete this: you were shared it, not given it');
+    }
+  }
+
   private async assertCanWrite(
     workspaceId: string | null,
     userId: string,
@@ -624,23 +650,32 @@ export class SyncService {
     }
 
     if (operation.kind === 'delete') {
+      /*
+       * **Ownership**, and not write access.
+       *
+       * `assertCanWrite` is the wrong gate here and it was a hole with data loss
+       * behind it: a tombstone is global. Somebody lent a note as `editor` — which
+       * the share menu offers, and which the badge calls "Puedes editarlo" — could
+       * delete it, and the delete applied to the **owner's** note. Verified: the
+       * owner's copy came back with `deletedAt` set, from a `status: "applied"`.
+       *
+       * The two are not on a scale. Editing somebody's list is the thing the role
+       * means and it is useful. Deleting it is not editing: it takes it away from the
+       * person who wrote it, in every space they have, on every device, and nobody
+       * granted that by picking "editor".
+       *
+       * A `viewer` was already stopped — `acceso === 'view'` throws. That left exactly
+       * one hole and it was the widest one, because the person with an editor role is
+       * the one the product actively invites to have.
+       */
       if (entity === 'workspace') {
-        await this.assertCanWrite(operation.entityId, userId);
+        await this.assertCanDelete(operation.entityId, userId);
       } else if (entity === 'folder' || entity === 'list') {
-        await this.assertCanWrite((existing['workspaceId'] as string | null) ?? null, userId, {
-          nodeType: entity,
-          nodeId: operation.entityId,
-        });
+        await this.assertCanDelete((existing['workspaceId'] as string | null) ?? null, userId);
       } else if (entity === 'list_item') {
-        await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId, {
-          nodeType: 'list_item',
-          nodeId: operation.entityId,
-        });
+        await this.assertCanDelete(await this.workspaceOfListItem(existing, userId), userId);
       } else if (entity === 'note') {
-        await this.assertCanWrite(this.workspaceOfNote(existing), userId, {
-          nodeType: 'note',
-          nodeId: operation.entityId,
-        });
+        await this.assertCanDelete(this.workspaceOfNote(existing), userId);
       }
 
       const row = await syncRepository.updateEntity(entity, operation.entityId, {}, {

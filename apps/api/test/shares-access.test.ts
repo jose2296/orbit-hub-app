@@ -76,9 +76,25 @@ describe('accessOf', () => {
 });
 
 describe('canShare', () => {
-  it('is for members of the space who can edit it', () => {
+  it('is for the owner of the space', () => {
     expect(canShare({ membershipRole: 'owner', mountRole: null, grantRole: null })).toBe(true);
-    expect(canShare({ membershipRole: 'editor', mountRole: null, grantRole: null })).toBe(true);
+  });
+
+  it('is NOT for an editor of the space, even with no grant at all', () => {
+    /*
+     * This one line was `'owner' || 'editor'` and it was a hole, not a lax rule.
+     *
+     * The content tables have no `owner_id`, so every node in a space belongs to the
+     * space's owner. An editor is a member of somebody else's space, and with this
+     * line they could share the owner's own note with a third person — and then the
+     * owner could not take it back, because `canRevoke` asks who granted it and the
+     * answer would be the editor.
+     *
+     * Asserted on its own, with no grant, because that is the case that made it
+     * reachable: nothing about a grant is needed to get here.
+     */
+    expect(canShare({ membershipRole: 'editor', mountRole: null, grantRole: null })).toBe(false);
+    expect(canShare({ membershipRole: 'editor', mountRole: 'owner', grantRole: null })).toBe(false);
   });
 
   it('is not for a viewer, and not for a grantee however much they can edit', () => {

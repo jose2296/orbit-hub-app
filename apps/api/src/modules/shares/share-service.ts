@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 
 import type { ShareNodeType } from '@orbit-hub/contracts';
 import { users } from '../../db/auth-schema.js';
@@ -181,6 +181,37 @@ export class ShareService {
    * A space is included because sharing a space is one of the four things you can
    * share, and it is the node that holds everything.
    */
+  /**
+   * Whether this person already reaches this node by something shared above it.
+   *
+   * "Above it" is a live grant on the node itself, on any folder above it, or on the
+   * space it lives in — the three ways of already having something. Membership is
+   * **not** one of them and is deliberately not counted: a colleague who is in your
+   * space is there because you invited them, and sharing a single list with them on
+   * top of that is a normal thing to want to do. It narrows their role on that one
+   * list, which is the point of it.
+   *
+   * A grant *on the node itself* is in the list because `whoHas` counts it, and the
+   * picker greys the person out on that basis. If this and `whoHas` disagreed, the
+   * same person would be unselectable in one screen and accepted by another.
+   */
+  private async alcanzaPorEncima(target: ShareTarget, userId: string): Promise<boolean> {
+    const db = await this.db();
+    const ancestors = await this.ancestorsOf(target);
+    const row = await db
+      .select({ id: shares.id })
+      .from(shares)
+      .where(
+        and(
+          eq(shares.granteeUserId, userId),
+          isNull(shares.revokedAt),
+          inArray(shares.nodeId, ancestors),
+        ),
+      )
+      .limit(1);
+    return row.length > 0;
+  }
+
   private async ancestorsOf(target: ShareTarget): Promise<string[]> {
     const db = await this.db();
     const ids = [target.nodeId, target.workspaceId];
@@ -287,9 +318,22 @@ export class ShareService {
       throw HttpError.badRequest('You cannot share something with yourself');
     }
 
+    /*
+     * Only the owner of the space. See `canShare` in `./access.ts` for the whole
+     * argument and for the case this costs.
+     *
+     * Two different people get refused here — somebody who is not a member, and
+     * somebody who is a member but not the owner — and they used to get the same
+     * sentence, which told an editor of the space that they did not belong to it.
+     * They do. So they are told what is actually true.
+     */
     const membership = await this.roleIn(args.target.workspaceId, args.ownerUserId);
     if (!canShare({ membershipRole: membership, mountRole: null, grantRole: null })) {
-      throw HttpError.forbidden('You cannot share something from a space you do not belong to');
+      throw HttpError.forbidden(
+        membership === null
+          ? 'You cannot share something from a space you do not belong to'
+          : 'Only the owner of the space can share what is in it',
+      );
     }
 
     const existing = await db
@@ -307,6 +351,34 @@ export class ShareService {
     const previa = existing[0];
     if (previa && !previa.revokedAt) {
       throw HttpError.conflict('That is already shared with that person');
+    }
+
+    /*
+     * The same node, twice, is above and says so. This one is **different**: they
+     * already reach this node through something else, most often the whole space was
+     * shared with them, and a new grant gives them nothing.
+     *
+     * It is not refused because it is forbidden but because it is **pointless**, and
+     * pointless is worse than forbidden here because it leaves two things behind. The
+     * grant gives them nothing and then sits in their "shared with me" as an item to
+     * file that they cannot file: the node is in a space they are not a member of, and
+     * `placeShare` asks exactly that. So the report was: the space stopped showing as
+     * shared, two items appeared that could not be put anywhere, and both were echoes
+     * of the space grant itself.
+     *
+     * After the check above and not before, so that "you already shared this exact
+     * thing" keeps its own sentence. One rule covering both cases said "already has
+     * this through something else" about the thing itself, which is not what happened.
+     *
+     * The client already greyed these people out, from `whoHas`. But the client is not
+     * the boundary, and a rule that only lives in the picker is a rule the API does
+     * not have: share by typed email and the duplicate goes straight in.
+     */
+    const yaLoTiene = await this.alcanzaPorEncima(args.target, args.grantee.userId);
+    if (yaLoTiene) {
+      throw HttpError.conflict(
+        'That person already has this through something else that was shared with them',
+      );
     }
 
     // Who writes it, and in which language. Read once here so the route does not have
@@ -515,7 +587,7 @@ export class ShareService {
     const db = await this.db();
 
     const share = await db
-      .select({ granteeUserId: shares.granteeUserId, nodeId: shares.nodeId, revokedAt: shares.revokedAt })
+      .select({ granteeUserId: shares.granteeUserId, nodeType: shares.nodeType, nodeId: shares.nodeId, revokedAt: shares.revokedAt })
       .from(shares)
       .where(eq(shares.id, args.shareId))
       .limit(1);
@@ -523,6 +595,17 @@ export class ShareService {
     if (!encontrada || encontrada.revokedAt) throw HttpError.notFound('That share does not exist');
     if (encontrada.granteeUserId !== args.userId) {
       throw HttpError.forbidden('That share is not yours to place');
+    }
+
+    /*
+     * Said plainly rather than as the membership question below.
+     *
+     * A space is not filed inside another space, so this used to answer the one thing
+     * that was never the problem — "you can only file it in one of your own spaces" —
+     * while the real one was that there was nothing to file.
+     */
+    if (encontrada.nodeType === 'workspace') {
+      throw HttpError.badRequest('A shared space is already in your spaces: there is nothing to file');
     }
 
     if (!(await this.roleIn(args.workspaceId, args.userId))) {
@@ -564,6 +647,78 @@ export class ShareService {
   }
 
   /**
+   * Todo lo que me han compartido y sigue vivo, con su fecha.
+   *
+   * Es **otra cosa** que `inbox`, y la distincion es el motivo de que exista:
+   *
+   * - `inbox` son las cosas que **hay que colocar** en un espacio tuyo. Por eso no
+   *   incluye los espacios compartidos: un espacio no se coloca dentro de otro.
+   * - `incoming` son las cosas que **te han llegado**, para saber si ha llegado algo
+   *   nuevo. Y un espacio compartido es exactamente eso: ha llegado, aparece en tu
+   *   lista de espacios, y merece decirselo.
+   *
+   * Si se reutilizara `inbox` para avisar, un espacio compartido no notified nunca —
+   * que es justo uno de los tres tipos que el sitio pide avisar (item, carpeta y
+   * workspace). Y si `inbox` volviera a incluir los espacios, se reintroducia el
+   * "colgar un espacio dentro de otro" que se acaba de quitar.
+   *
+   * Incluye lo ya colocado a proposito: "te ha llegado" no deja de ser cierto por
+   * haberlo-archivado, y el badge se limpia al abrir el menu, asi que aqui no
+   * engorda una lista que nadie mira.
+   */
+  async incoming(userId: string): Promise<
+    {
+      shareId: string;
+      nodeType: ShareNodeType;
+      title: string;
+      ownerName: string | null;
+      createdAt: Date;
+    }[]
+  > {
+    const db = await this.db();
+
+    const rows = await db
+      .select({
+        shareId: shares.id,
+        nodeType: shares.nodeType,
+        nodeId: shares.nodeId,
+        ownerName: users.displayName,
+        createdAt: shares.createdAt,
+      })
+      .from(shares)
+      .innerJoin(users, eq(users.id, shares.ownerUserId))
+      .where(and(eq(shares.granteeUserId, userId), isNull(shares.revokedAt)))
+      .orderBy(desc(shares.createdAt));
+
+    // The title is one query per node, on purpose not a join, for the same reason
+    // `inbox` does it that way: the node can be a workspace, a folder, a list, an
+    // item or a note, and four joins to get one string is four chances to get a join
+    // wrong. A grant whose node has since been deleted cannot be titled, and it is
+    // dropped rather than sent as a blank row.
+    const out: {
+      shareId: string;
+      nodeType: ShareNodeType;
+      title: string;
+      ownerName: string | null;
+      createdAt: Date;
+    }[] = [];
+
+    for (const row of rows) {
+      const target = await this.resolveTarget(row.nodeType, row.nodeId).catch(() => null);
+      if (!target) continue;
+      out.push({
+        shareId: row.shareId,
+        nodeType: row.nodeType,
+        title: target.title,
+        ownerName: row.ownerName,
+        createdAt: row.createdAt,
+      });
+    }
+
+    return out;
+  }
+
+  /**
    * "Shared with me": what has been given to this person and not filed yet.
    *
    * Only unplaced ones. Once somebody chooses where it goes it belongs to that
@@ -598,6 +753,22 @@ export class ShareService {
           eq(shares.granteeUserId, userId),
           isNull(shares.revokedAt),
           isNull(shareMounts.id),
+          /*
+           * A shared **space** is not in here, and it was a bug that it was.
+           *
+           * Everything in this list is something the person has to *put somewhere*:
+           * it arrived from somebody else's space and it has no home in yours until
+           * you choose one. A space is not that. It arrives whole, with its folders,
+           * lists and notes, and it is already in the list of your spaces marked as
+           * shared — there is nothing to file and nowhere it could be filed that would
+           * mean anything.
+           *
+           * Listing it anyway produced the worst of the three: a row that said
+           * "Compartido conmigo · 2", a panel offering to put a space inside another
+           * space, and `403 You can only file it in one of your own spaces` — which is
+           * true and useless, because the problem was never the space they picked.
+           */
+          ne(shares.nodeType, 'workspace'),
         ),
       )
       .orderBy(desc(shares.createdAt));

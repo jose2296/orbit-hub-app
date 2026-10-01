@@ -64,6 +64,30 @@ sharesRouter.get('/inbox', async (req, res) => {
   });
 });
 
+/**
+ * What has arrived, with dates, including whole spaces.
+ *
+ * Separate from `/inbox` on purpose, and the reason is written up in the service:
+ * `inbox` is the list of things you have to **file**, and a shared space is not one of
+ * them. If the badge counted the filing list, sharing a whole workspace would be the
+ * one kind of sharing that never says anything.
+ */
+sharesRouter.get('/incoming', async (req, res) => {
+  const userId = req.auth?.userId;
+  if (!userId) throw HttpError.unauthorized();
+
+  const items = await shareService.incoming(userId);
+  sendData(res, 200, {
+    items: items.map((row) => ({
+      id: row.shareId,
+      nodeType: row.nodeType,
+      title: row.title,
+      ownerName: row.ownerName,
+      createdAt: row.createdAt.toISOString(),
+    })),
+  });
+});
+
 /** Hands a node to somebody, by id or by mail. */
 sharesRouter.post('/', async (req, res) => {
   const userId = req.auth?.userId;

@@ -935,3 +935,116 @@ describe('el pull trae lo compartido', () => {
     expect(items).toHaveLength(0);
   });
 });
+
+/**
+ * Who may hand a thing on to somebody else.
+ *
+ * Over HTTP on purpose. `shares-access.test.ts` proves `canShare` as a function, and
+ * a function can be right while the route in front of it is not — which is what
+ * happened: the service called `canShare` with `mountRole: null, grantRole: null`
+ * hardcoded, so the facts handed to it could not have told the space's owner apart
+ * from somebody invited to write in it. A service-level test would have called the
+ * same function with the same facts and agreed with itself.
+ */
+describe('quien puede compartir lo que hay en un espacio', () => {
+  /** Ana's space, with a note in it that Beto will try to hand on. */
+  async function anaConNota(nombre: string) {
+    const ana = await conEspacio(nombre);
+    const noteId = randomUUID();
+    await push(ana.user, [
+      {
+        kind: 'create',
+        entity: 'note',
+        entityId: noteId,
+        payload: {
+          workspaceId: ana.workspaceId,
+          folderId: null,
+          title: 'La nota de Ana',
+          document: '<p>Secreto.</p>',
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    ]);
+    return { ...ana, noteId };
+  }
+
+
+  it('el editor del espacio NO puede compartir la nota de su duena', async () => {
+    const ana = await anaConNota('Ana');
+    const beto = await createVerifiedUser(api, { displayName: 'Beto' });
+    const elena = await createVerifiedUser(api, { displayName: 'Elena' });
+
+    const invitacion = await api.post(
+      `/workspaces/${ana.workspaceId}/invitations`,
+      { role: 'editor', email: beto.email },
+      ana.user.accessToken,
+    );
+    expect(invitacion.status).toBe(201);
+    const acepta = await api.post(
+      `/invitations/${invitacion.body.data.token}/accept`,
+      {},
+      beto.accessToken,
+    );
+    expect(acepta.status).toBe(200);
+
+    // Beto can edit in the space. What he cannot do is decide that somebody else
+    // reads the note Ana wrote. This answered 201.
+    const intento = await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: ana.noteId, granteeUserId: elena.userId, role: 'viewer' },
+      beto.accessToken,
+    );
+    expect(intento.status).toBe(403);
+    // And it tells him something true. "You do not belong to this space" would be a
+    // lie told to somebody who was invited into it a minute ago.
+    expect(intento.body.error.message).toMatch(/owner/i);
+  });
+
+  it('no queda ninguna puerta abierta que la duena no pueda cerrar', async () => {
+    // The finding was not "an editor can share". It was "and then the author cannot
+    // take it back", because `canRevoke` asks who granted it. Asserted as its own
+    // test because it is the property that matters and it is invisible from the 403.
+    const ana = await anaConNota('Ana dos');
+    const beto = await createVerifiedUser(api, { displayName: 'Beto dos' });
+    const elena = await createVerifiedUser(api, { displayName: 'Elena dos' });
+
+    const invitacion = await api.post(
+      `/workspaces/${ana.workspaceId}/invitations`,
+      { role: 'editor', email: beto.email },
+      ana.user.accessToken,
+    );
+    await api.post(`/invitations/${invitacion.body.data.token}/accept`, {}, beto.accessToken);
+
+    const intento = await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: ana.noteId, granteeUserId: elena.userId, role: 'viewer' },
+      beto.accessToken,
+    );
+    expect(intento.status).toBe(403);
+
+    // Nothing reached Elena, so there is nothing for Ana to be locked out of.
+    const bandeja = await api.get('/shares/inbox', elena.accessToken);
+    expect(bandeja.body.data.items).toHaveLength(0);
+  });
+
+  it('la duena del espacio sigue pudiendo compartir, y quitarlo', async () => {
+    // The other direction. Without it the fix above reads as "sharing is off", and a
+    // test suite that only proves the refusal proves nothing about the feature.
+    const ana = await anaConNota('Ana tres');
+    const otra = await createVerifiedUser(api, { displayName: 'Otra tres' });
+
+    const propia = await api.post(
+      '/shares',
+      { nodeType: 'note', nodeId: ana.noteId, granteeUserId: otra.userId, role: 'viewer' },
+      ana.user.accessToken,
+    );
+    expect(propia.status).toBe(201);
+
+    const bandeja = await api.get('/shares/inbox', otra.accessToken);
+    expect(bandeja.body.data.items).toHaveLength(1);
+
+    // And the grantee cannot revoke it either — that is the other half of the rule.
+    const porLaOtra = await api.delete(`/shares/${propia.body.data.id}`, otra.accessToken);
+    expect(porLaOtra.status).toBe(403);
+  });
+});

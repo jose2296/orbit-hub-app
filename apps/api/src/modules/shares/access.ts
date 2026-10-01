@@ -21,9 +21,10 @@
  *   space A has a folder shared into it, and now they are editing inside a space
  *   where they were only supposed to look. A grant is a second door, not a key
  *   that overrides the locks already on the door.
- * - **Sharing does not chain.** Somebody who was given a list cannot pass it on,
- *   so the circle always has one person who could hand it to someone else, and
- *   there is no question of who can see a list that nobody knows about.
+ * - **Sharing does not chain.** Somebody who was given a list cannot pass it on, and
+ *   neither can somebody who was invited to write in the space it lives in. Only the
+ *   owner of the space can hand it to someone else, so there is never more than one
+ *   person who can decide who sees a thing.
  *
  * `canShare` is separate and it is the one that is deliberately false for
  * grantees: being able to edit a thing is not being able to decide who else sees
@@ -120,13 +121,33 @@ export function canView(facts: AccessFacts): boolean {
 /**
  * Whether this person may hand the node to somebody else.
  *
- * True for a member of its space, and false for a grantee, always. A grantee can
- * edit a list with fifty items in it and cannot decide that a sixth person sees
- * them, and the two are not on a scale: one is about the contents and the other is
- * about who is let in.
+ * **Only the owner of the space.** And `editor` used to be in here, which was wrong
+ * in a way that could not be seen from this file.
+ *
+ * An editor of a space can write in it, and every node in it is the space owner's:
+ * the content tables carry no `owner_id`, so membership **is** ownership, and an
+ * editor is a member of somebody else's space rather than the owner of it. So
+ * "editor can share" was really "anybody a space owner invited can decide who else
+ * sees the space owner's notes".
+ *
+ * It was reachable and it was not merely a missing feature. Ana invites Beto as an
+ * editor, which is the ordinary way to collaborate. Beto shares **Ana's note** with
+ * Elena, the server answers `201`, and then Ana — the author, the space owner — gets
+ * `403` from `canRevoke` on the share Beto made of her own note, because
+ * `canRevoke` asks who granted it and the answer is Beto. Nobody but Beto could undo
+ * it, and Beto can leave.
+ *
+ * So the permission to hand something on is the permission to name who else sees it,
+ * and that belongs to the person the thing belongs to. Editing is about the contents.
+ *
+ * The cost, stated because it is real: an editor who writes their **own** note inside
+ * somebody else's space cannot share it out. Closing that properly needs an
+ * `owner_id` on `notes`, `lists`, `list_items` and `folders` — a migration and a sync
+ * projection change. Until then this is a hole closed at the cost of a case not
+ * supported, and the hole was the more expensive of the two.
  */
 export function canShare(facts: AccessFacts): boolean {
-  return facts.membershipRole === 'owner' || facts.membershipRole === 'editor';
+  return facts.membershipRole === 'owner';
 }
 
 /**

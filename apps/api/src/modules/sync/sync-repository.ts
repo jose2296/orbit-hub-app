@@ -618,6 +618,29 @@ export class SyncRepository {
       filters were not keeping.
     */
     const carpetasConcedidas = cadenaDe(cadenas, 'folderId');
+
+    /*
+     * The spaces that were handed over **whole**, and the reason this is a separate
+     * list and not `cadenas.map(c => c.workspaceId)`.
+     *
+     * `cadenas` also carries the containing space of every other grant, so the obvious
+     * one-liner hands a person the entire space when they were given a single list in
+     * it. That is the mistake this line exists to not make.
+     *
+     * They are separate because the two grants mean different things and the sync
+     * projection has to honour both:
+     *
+     * - A grant on a **folder** brings the things filed in it, and nothing beside it.
+     * - A grant on a **list** brings the list, and not the notes next to it.
+     * - A grant on the **space** brings the space: every folder, list, item and note
+     *   in it. Otherwise "comparte este espacio" produces a space that arrives
+     *   **empty** — the record comes down, the drawer lists it, and there is nothing
+     *   in it, which reads as the share having failed rather than as half of it
+     *   working. That is what was reported.
+     */
+    const espaciosConcedidos = cadenas
+      .filter((c) => c.nodeType === 'workspace')
+      .map((c) => c.workspaceId);
     const espaciosVisibles = [
       ...new Set([...memberWorkspaceIds, ...cadenas.map((c) => c.workspaceId)]),
     ];
@@ -697,6 +720,9 @@ export class SyncRepository {
           and(
             or(
               inArray(folders.workspaceId, memberWorkspaceIds),
+              // A space handed over whole brings its folders with it. See
+              // `espaciosConcedidos`.
+              inArray(folders.workspaceId, espaciosConcedidos),
               inArray(folders.id, carpetasConcedidas),
               inArray(folders.parentId, carpetasConcedidas),
             ),
@@ -731,6 +757,7 @@ export class SyncRepository {
           and(
             or(
               inArray(lists.workspaceId, memberWorkspaceIds),
+              inArray(lists.workspaceId, espaciosConcedidos),
               inArray(lists.id, cadenaDe(cadenas, 'listId')),
               // A list filed inside a folder somebody was handed. Same reason as the
               // folders above: the grant reaches it even though nothing names it.
@@ -805,6 +832,7 @@ export class SyncRepository {
           and(
             or(
               inArray(lists.workspaceId, memberWorkspaceIds),
+              inArray(lists.workspaceId, espaciosConcedidos),
               inArray(lists.id, cadenaDe(cadenas, 'listId')),
               // A row is reached by a grant on its list, or by a grant on the folder
               // the list is filed in. Both are "the grant reaches it", which is what
@@ -854,6 +882,7 @@ export class SyncRepository {
           and(
             or(
               inArray(notes.workspaceId, memberWorkspaceIds),
+              inArray(notes.workspaceId, espaciosConcedidos),
               inArray(notes.id, cadenaDe(cadenas, 'noteId')),
             ),
             gt(notes.updatedAt, after),
