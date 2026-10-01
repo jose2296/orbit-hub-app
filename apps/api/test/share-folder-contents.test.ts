@@ -159,3 +159,90 @@ describe('compartir una carpeta: lo que hay dentro tambien tiene que llegar', ()
     expect(segundo.ids).not.toContain(listaId);
   });
 });
+/**
+ * What a mount actually does to the other person's tree.
+ *
+ * `placeShare` writes a `share_mounts` row and stops. The client's tree is keyed by
+ * `workspaceId:parentId` (`useSpacesTree`), so where a node shows up is decided by the
+ * `workspaceId` the **pull** sent — and the pull sends the owner's space, because that
+ * is where the row lives.
+ *
+ * So the answer to "where do I put what is shared with me" today is: nowhere of your
+ * own. It appears under the owner's space, and choosing a space changes what the server
+ * remembers and nothing that anybody sees.
+ */
+describe('lo que hace colocar algo: nada todavia', () => {
+  let api: TestServer;
+
+  beforeAll(async () => {
+    api = await startTestServer();
+  });
+
+  afterAll(async () => {
+    await api.close();
+  });
+
+  it('la carpeta sigue saliendo bajo el espacio del dueno, no bajo el elegido', async () => {
+    const ana = await createVerifiedUser(api, { displayName: 'Ana' });
+    const beto = await createVerifiedUser(api, { displayName: 'Beto' });
+    const spaceId = randomUUID();
+    const carpetaId = randomUUID();
+    const suyoId = randomUUID();
+
+    const creado = await api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          { operationId: randomUUID(), clientId: 'test-client-mount', kind: 'create', entity: 'workspace', entityId: spaceId, baseVersion: 0, payload: { name: 'Casa de Ana', color: 'teal' }, base: null, clientTimestamp: new Date().toISOString() },
+          { operationId: randomUUID(), clientId: 'test-client-mount', kind: 'create', entity: 'folder', entityId: carpetaId, baseVersion: 0, payload: { workspaceId: spaceId, name: 'Viajes', position: 0 }, base: null, clientTimestamp: new Date().toISOString() },
+        ],
+      },
+      ana.accessToken,
+    );
+    if (creado.body.data.results[0]?.status !== 'applied') {
+      throw new Error('push fallo: ' + JSON.stringify(creado.body.data.results));
+    }
+    await api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          { operationId: randomUUID(), clientId: 'test-client-mount', kind: 'create', entity: 'workspace', entityId: suyoId, baseVersion: 0, payload: { name: 'Casa de Beto', color: 'fucsia' }, base: null, clientTimestamp: new Date().toISOString() },
+        ],
+      },
+      beto.accessToken,
+    );
+
+    const compartida = await api.post(
+      '/shares',
+      { workspaceId: spaceId, nodeType: 'folder', nodeId: carpetaId, granteeUserId: beto.userId, role: 'editor' },
+      ana.accessToken,
+    );
+    expect(compartida.status).toBe(201);
+    const shareId = compartida.body.data.id;
+
+    const colocada = await api.post(
+      `/shares/${shareId}/place`,
+      { workspaceId: suyoId, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+    expect(colocada.status).toBe(200);
+
+    const pull = await api.post(
+      '/sync/pull',
+      { deviceId: randomUUID(), cursor: null, limit: 200 },
+      beto.accessToken,
+    );
+    const carpeta = pull.body.data.changes.find(
+      (c: { record: { id?: string } }) => c.record?.id === carpetaId,
+    );
+
+    // **The gap, written down so it cannot be quietly forgotten:** Beto filed it in
+    // his own space and the pull still says it belongs to Ana's.
+    expect(carpeta.record.workspaceId).toBe(spaceId);
+    expect(carpeta.record.workspaceId).not.toBe(suyoId);
+  });
+});
