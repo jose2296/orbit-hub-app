@@ -19,6 +19,28 @@ FROM node:22-slim AS build
 WORKDIR /repo
 ENV npm_config_update_notifier=false
 
+# Metro inlines `EXPO_PUBLIC_*` into the bundle while it exports, and Docker does
+# **not** hand a build-time variable to a `RUN` unless the stage asks for it by
+# name. These two lines are the whole reason the first deployed build pointed at
+# `http://localhost:4000`: the variables were set in Railway, the platform passed
+# them in, and the build never saw them because nobody declared them. An `ENV`
+# would not have worked either — it would have shadowed the passed value with an
+# empty one, which is the same bug wearing a different hat.
+ARG EXPO_PUBLIC_API_URL
+ARG EXPO_PUBLIC_WEB_ORIGIN
+ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
+ENV EXPO_PUBLIC_WEB_ORIGIN=$EXPO_PUBLIC_WEB_ORIGIN
+
+# Fails the build instead of shipping an app that cannot reach its own API.
+#
+# `resolveBaseUrl()` falls back to `http://localhost:4000/api/v1` when the variable
+# is absent, which is right on a laptop and catastrophic in a deployment: the bundle
+# is valid, the build is green, the page loads, and every request goes to whatever
+# machine is looking at it. Nothing downstream complains, because from the browser's
+# point of view a connection refused is a normal network error.
+COPY scripts/assert-export-api-url.mjs scripts/
+RUN node scripts/assert-export-api-url.mjs
+
 # Manifests on their own, so this layer survives a change to any source file.
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/mobile/package.json apps/mobile/package.json
@@ -39,6 +61,12 @@ COPY apps/mobile/ apps/mobile/
 # disagrees with the server about what a list item is.
 RUN npm run build:packages \
  && npm run export:web --workspace @orbit-hub/mobile
+
+# The last chance to catch it, and the check that actually looks at the artefact
+# rather than at the intent. Metro ran a few lines above; this reads what it wrote.
+# Passing the first check and failing this one means the bundler ignored the
+# variable, which is worth knowing about rather than deploying.
+RUN node scripts/assert-export-api-url.mjs --after apps/mobile/dist
 
 # ----------------------------------------------------------------- runtime --
 
