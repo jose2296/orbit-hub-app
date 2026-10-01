@@ -55,7 +55,7 @@ export default function ItemDetailsScreen() {
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
-  const { itemId, kind, externalId, title, itemKey } = useLocalSearchParams<{
+  const { itemId, kind, externalId, title, itemKey, image } = useLocalSearchParams<{
     /** Which list it is in, so the detail can take it out of it. */
     itemId?: string;
     kind?: string;
@@ -63,6 +63,17 @@ export default function ItemDetailsScreen() {
     title?: string;
     /** Which row of that list it is, so it can be ticked off from here. */
     itemKey?: string;
+    /**
+     * The poster the row had, handed over by the screen that sent us here.
+     *
+     * **It is in the link because it is already known, and because it is what the
+     * transition is made of.** Every other parameter is a question the detail has to
+     * go and ask; this one is the answer to a question nobody needs to ask yet. With
+     * it the cover is drawn on the very first frame — before the cache has said
+     * anything, on a phone installed five minutes ago — and that first frame is the
+     * only one a poster can arrive at.
+     */
+    image?: string;
   }>();
 
   const [details, setDetails] = useState<CatalogDetails | null>(null);
@@ -95,6 +106,29 @@ export default function ItemDetailsScreen() {
    * add is in flight — which is how a list ends up with a duplicate.
    */
   const [anadiendo, setAnadiendo] = useState<string | null>(null);
+
+  /*
+    The name the two halves of the transition share, **and it is the row's id from
+    the link and not from the row.**
+
+    `itemKey` is in the URL from the first frame; the row itself has to arrive from
+    the cache or the API, and on a cold start it arrives after. A shared name read
+    from the row is therefore a shared name that is briefly empty, and a transition
+    with an empty name in it is a transition that does not happen — which is exactly
+    what it was doing on Android.
+  */
+  const idCompartido = itemKey ?? item?.id ?? "";
+
+  /**
+   * The poster, **and where it comes from does not matter to how soon it is here.**
+   *
+   * Three sources, and the order is the whole point: the link the list handed us is
+   * already known on the first frame, the row out of the cache is known a moment
+   * later, and the provider's own answer is known last of all. Taking them in that
+   * order is what makes the cover exist during all three, instead of appearing once
+   * the slowest of them has answered.
+   */
+  const portadaDeLaRuta = image || (item ? mediaCardOf(item)?.imageUrl : null) || null;
 
   /*
     Which related title has its menu open, and it is a **title and not a
@@ -228,7 +262,7 @@ export default function ItemDetailsScreen() {
     genuinely nothing — no row and no record — and the skeleton below covers
     everything else.
   */
-  if (isLoading && !item) {
+  if (isLoading && !item && !portadaDeLaRuta) {
     return (
       <Screen>
         <EmptyState icon="hourglass-outline" title={t("common.loading")} />
@@ -239,7 +273,7 @@ export default function ItemDetailsScreen() {
   // A title written by hand has no record anywhere to fetch. The screen is not
   // an error and not an empty one: it is the row itself, with the actions that
   // apply to a row, and the way to give it a record if it is a real title.
-  if (item && !error && (!details || isLoading)) {
+  if (!error && (!details || isLoading) && (item || portadaDeLaRuta || title)) {
     /*
       **The same screen the loaded one is, with the parts that are missing filled
       with placeholders** — and the reason it is not a card with a sentence in it is
@@ -268,9 +302,9 @@ export default function ItemDetailsScreen() {
         <View style={{ gap: theme.spacing.lg }}>
           <View style={[styles.header, { gap: theme.spacing.lg }]}>
             <View style={[styles.cover, { gap: theme.spacing.md }]}>
-              {mediaCardOf(item)?.imageUrl ? (
+              {portadaDeLaRuta ? (
                 <Image
-                  source={{ uri: mediaCardOf(item)?.imageUrl as string }}
+                  source={{ uri: portadaDeLaRuta }}
                   resizeMode="cover"
                   style={[
                     styles.poster,
@@ -284,7 +318,7 @@ export default function ItemDetailsScreen() {
                       browser to pair with the poster that was pressed, and the
                       transition that was asked for is one that never starts.
                     */
-                    sharedCoverStyle(item.id),
+                    sharedCoverStyle(idCompartido),
                   ]}
                 />
               ) : (
@@ -308,7 +342,9 @@ export default function ItemDetailsScreen() {
             </View>
 
             <View style={[styles.headerText, { gap: theme.spacing.sm }]}>
-              <AppText variant="title">{item.title}</AppText>
+              <AppText variant="title" style={sharedCoverTitleStyle(idCompartido)}>
+                {item?.title ?? title}
+              </AppText>
               <Esqueleto alto={22} ancho="70%" />
               <Esqueleto alto={16} />
               <Esqueleto alto={16} ancho="92%" />
@@ -327,12 +363,12 @@ export default function ItemDetailsScreen() {
             the provider**: the tags and the note are in the cache already, so there
             is nothing to wait for and no reason to hide them behind a grey bar.
           */}
-          {item.tags.length > 0 ? (
+          {item?.tags.length ? (
             <AppText variant="caption" tone="accent">
               {item.tags.join(" · ")}
             </AppText>
           ) : null}
-          {item.annotation ? (
+          {item?.annotation ? (
             <AppText variant="body" tone="muted">
               {item.annotation}
             </AppText>
@@ -658,7 +694,7 @@ export default function ItemDetailsScreen() {
                       cover as two unrelated pictures and the transition would simply
                       not happen.
                     */
-                    sharedCoverStyle(item?.id ?? ""),
+                    sharedCoverStyle(idCompartido),
                   ]}
                   sharedTransitionTag={
                     item ? sharedCoverTag(item.id) : undefined
@@ -920,7 +956,7 @@ export default function ItemDetailsScreen() {
             */}
             <AppText
               variant="bodyStrong"
-              style={item ? sharedCoverTitleStyle(item.id) : undefined}
+              style={sharedCoverTitleStyle(idCompartido)}
             >
               {title}
             </AppText>

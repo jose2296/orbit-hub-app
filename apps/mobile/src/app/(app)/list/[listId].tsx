@@ -36,7 +36,7 @@ import {
   orderItems,
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
-import { isMediaList,  } from "@/lib/lists/media-card";
+import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
 import { providerRefOf } from "@/lib/lists/provider-ref";
 import { useTheme } from "@/theme";
 
@@ -335,6 +335,22 @@ export default function ListScreen() {
           kind: ref?.kind ?? "",
           externalId: ref?.externalId ?? "",
           title: item.title,
+          /*
+            And the poster, **which is the whole reason this is a link and not only
+            a question.**
+
+            Every other parameter here asks something: which provider, which record.
+            This one is an answer — the list already had the picture when the finger
+            went down — so the detail can draw the same poster on its very first
+            frame, with a cold cache, on a phone that has never seen this list.
+            Without it the screen waits for the row to arrive from the cache or from
+            the API, and until one of those happens there is no poster on screen, and
+            a poster that is not on screen cannot be the one a transition arrives at.
+
+            Empty when there is none — a row written by hand has no picture — and the
+            detail falls back to the icon it already drew.
+          */
+          image: mediaCardOf(item)?.imageUrl ?? "",
         },
       });
 
