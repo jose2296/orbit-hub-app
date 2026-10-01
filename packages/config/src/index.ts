@@ -12,10 +12,10 @@ export const APP_TAGLINE = 'Your day, your lists, one place.';
 
 /** Reverse-DNS identifiers. Provisional until the store accounts are created. */
 export const IOS_BUNDLE_ID = 'com.orbithub.app';
-export const ANDROID_PACKAGE = 'com.orbithub.app';
+export const ANDROID_PACKAGE = 'com.jrzlabs.orbithub';
 
 /** Canonical web origin, used for links, AASA and Asset Links. */
-export const WEB_ORIGIN = 'https://app.orbithub.com';
+export const WEB_ORIGIN = 'https://orbithub-app.jrz-labs.com';
 
 export const API_PREFIX = '/api/v1';
 export const SUPPORT_EMAIL = 'support@orbithub.com';

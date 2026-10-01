@@ -17,7 +17,8 @@
       }
     },
     "android": {
-      "package": "com.orbithub.app",
+      "package": "com.jrzlabs.orbithub",
+      "versionCode": 1,
       "predictiveBackGestureEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -32,6 +33,7 @@
     "plugins": [
       "expo-router",
       "expo-localization",
+      "./plugins/with-upload-signing",
       [
         "expo-splash-screen",
         {

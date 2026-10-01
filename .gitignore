@@ -79,3 +79,12 @@ orbit-*.png
 # Generated native folders (managed by EAS / CNG)
 /apps/mobile/ios
 /apps/mobile/android
+
+# Android signing material. La clave de subida de Play no va en el repo bajo
+# ningún concepto: quien la tiene puede subir una versión firmada como tú.
+/apps/mobile/keys/
+*.jks
+*.keystore
+# JSON de la cuenta de servicio de Google Play
+play-service-account*.json
+*service-account*.json
