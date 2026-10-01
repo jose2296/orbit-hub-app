@@ -17,7 +17,11 @@ import { SeenRibbon } from "@/components/media/seen-ribbon";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
-import { sharedCoverStyle, sharedCoverTag } from "@/lib/media/shared-cover";
+import {
+  sharedCoverStyle,
+  sharedCoverTag,
+  sharedCoverTitleStyle,
+} from "@/lib/media/shared-cover";
 
 /** One poster, one screen, one flick. */
 export interface VerticalMediaItem {
@@ -290,10 +294,18 @@ export function VerticalMediaCarousel({
               the tap still opens the film: two gestures, two different things, and
               neither of them is a guess.
             */}
+            {/*
+              The title travels with the picture, **and it is the title's own name**
+              so the browser pairs it with the title and not with the poster.
+              Without it the poster moves alone, and a picture travelling by itself
+              is read as the gallery sliding rather than as the title being opened.
+              `sharedCoverTitleStyle` writes nothing on a phone — see
+              `lib/media/shared-cover.ts`.
+            */}
             <FullTitle
               text={item.title}
               numberOfLines={2}
-              style={styles.titulo}
+              style={[styles.titulo, sharedCoverTitleStyle(item.key)]}
               testID={`titulo-${item.key}`}
             />
             <View style={[styles.meta, { gap: theme.spacing.xs }]}>

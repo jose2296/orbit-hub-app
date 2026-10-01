@@ -175,7 +175,7 @@ export function ListMenuSheet({
               label: t("share.title", { name: list.title }),
               icon: "people-outline" as const,
               // The description is the "not a copy" line, because this is the one
-              // option on the menu whose consequences are not visible={pedido !== null} afterwards.
+              // option on the menu whose consequences are not visible afterwards.
               // Somebody who is about to hand a colleague the ability to edit a real
               // list should read that before pressing it, not discover it later.
               description: t("share.isALink"),

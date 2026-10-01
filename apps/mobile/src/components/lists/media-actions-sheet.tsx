@@ -282,7 +282,7 @@ export function MediaActionsSheet({
 
   return (
     <Sheet
-      visible
+      visible={pedido !== null}
       onClose={onClose}
       title={item.title}
       subtitle={t(LIST_KIND_LABEL[listKind])}

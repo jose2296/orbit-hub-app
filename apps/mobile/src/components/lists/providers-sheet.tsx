@@ -179,12 +179,27 @@ const OFRECIMIENTAS: [CatalogProviders["providers"][number]["offering"], "provid
   ["buy", "providers.buy"],
 ];
 
-/** The two-letter country the app is asking about, from the language it is in. */
+/**
+ * The two-letter country the app is asking about, from the language it is in.
+ *
+ * **`navigator` exists on a phone and `navigator.language` does not.** That is the
+ * whole of this: React Native provides a `navigator` — Hermes ships one with a
+ * `product` in it — so the `typeof navigator !== "undefined"` guard passes on
+ * Android and iOS exactly as it does in a browser, and the object that comes back
+ * has no `language` on it at all. The guard was there to answer "is there a
+ * browser?", and on a phone the answer was yes while the property was still
+ * missing, so the line below asked a string to split itself and threw
+ * `Cannot read property 'split' of undefined` — on the sheet a person reaches from
+ * a film's options, which is where it was found.
+ *
+ * So the question is not whether there is a `navigator` but whether there is a
+ * **language in it**, and the default is applied to the property rather than to
+ * the object. A phone with no language gets the same country a browser in Spanish
+ * would, which is the answer that was wanted anyway.
+ */
 function regionDelIdioma(): string {
-  const idioma = (
-    typeof navigator !== "undefined" ? navigator.language : "es-ES"
-  )
-    .split("-")[1];
+  const navigator_ = typeof navigator === "undefined" ? undefined : navigator;
+  const idioma = navigator_?.language?.split("-")[1];
   return (idioma && /^[A-Za-z]{2}$/.test(idioma) ? idioma : "es").toUpperCase();
 }
 

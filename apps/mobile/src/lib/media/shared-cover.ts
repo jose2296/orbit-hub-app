@@ -23,7 +23,7 @@
  * On a phone none of this is used: the same name is a `sharedTransitionTag`, and
  * the platform matches the two views by it without anybody asking the browser.
  */
-import type { ImageStyle } from "react-native";
+import type { ImageStyle, TextStyle } from "react-native";
 
 /** The name for one title's cover, from the row's id. */
 export function sharedCoverName(itemId: string): string {
@@ -31,23 +31,58 @@ export function sharedCoverName(itemId: string): string {
 }
 
 /**
- * The style that hands the name over on the web, **and nothing at all elsewhere.**
+ * The style that hands the name over on the web, **and nothing at all on a
+ * phone.**
  *
  * `view-transition-name` is not a React Native style property and does not appear
  * in its types — it is a CSS property that happens to have a DOM node to live on,
  * and React Native Web passes an unknown property straight through to it. That is
- * why the cast is here and not at the two call sites: the caller writes
+ * why the cast is here and not at the call sites: the caller writes
  * `sharedCoverStyle(item.id)` in a style array and does not have to know that the
- * name it is writing is one the framework has never heard of, which is the whole
- * of what makes this a helper and not a literal in two files.
+ * name it is writing is one the framework has never heard of.
+ *
+ * **On a phone it writes nothing, and that is not tidiness.** React Native does not
+ * know this property and neither does Fabric: the object goes into a native view's
+ * props and the platform has no word for it. The posters on Android came out with
+ * an opacity nothing in the app had asked for, and a property with no meaning on
+ * that platform is not neutral — it is unaccounted for. So the name is not written
+ * where it cannot be read, and the picture on a phone is drawn with exactly the
+ * styles the carousel had before any of this existed.
  *
  * And why it is not a style in `tokens.ts`: it is a name for the browser's own
- * animation, it is meaningless on Android and iOS, and putting it in the palette
- * would be putting a browser's implementation detail where a designer would expect
- * to find it.
+ * animation and nothing else, so putting it in the palette would be putting a
+ * browser's implementation detail where a designer would expect to find it.
  */
 export function sharedCoverStyle(itemId: string): ImageStyle {
+  if (typeof document === "undefined") return {} as ImageStyle;
   return { viewTransitionName: sharedCoverName(itemId) } as unknown as ImageStyle;
+}
+
+/**
+ * The title's own name, **because the picture travelling on its own reads as a
+ * slide rather than as a title being opened.**
+ *
+ * The poster moves a long way — from filling the screen to a hundred and ten
+ * points beside a score — and on its own that is a picture shrinking, which the eye
+ * reads as the gallery doing something to a picture. With the title travelling
+ * too, the two arrive together and it reads as one thing moving from one place to
+ * another, which is what pressing a poster is supposed to mean.
+ *
+ * **A second name, and not the same one on purpose.** A `view-transition-name` is
+ * one element: two elements cannot hold it, and giving the title the picture's
+ * name would have the browser pair the carousel's poster with the detail's title
+ * and decline to do anything about either.
+ */
+export function sharedCoverTitleName(itemId: string): string {
+  return `coverTitle-${itemId}`;
+}
+
+/** The title's style on the web, and nothing on a phone, for the reason above. */
+export function sharedCoverTitleStyle(itemId: string): TextStyle {
+  if (typeof document === "undefined") return {} as TextStyle;
+  return {
+    viewTransitionName: sharedCoverTitleName(itemId),
+  } as unknown as TextStyle;
 }
 
 /**
@@ -113,11 +148,12 @@ export function sharedCoverTag(itemId: string): string | undefined {
  */
 export function releaseSharedCover(itemId: string): void {
   if (typeof document === "undefined") return;
-  const nombre = sharedCoverName(itemId);
-  const AGRUPADO = document.querySelectorAll<HTMLElement>(
-    `[style*="view-transition-name: ${nombre}"]`,
-  );
-  for (const nodo of Array.from(AGRUPADO)) {
-    nodo.style.viewTransitionName = "";
+  for (const nombre of [sharedCoverName(itemId), sharedCoverTitleName(itemId)]) {
+    const AGRUPADO = document.querySelectorAll<HTMLElement>(
+      `[style*="view-transition-name: ${nombre}"]`,
+    );
+    for (const nodo of Array.from(AGRUPADO)) {
+      nodo.style.viewTransitionName = "";
+    }
   }
 }

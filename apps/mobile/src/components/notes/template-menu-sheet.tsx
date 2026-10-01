@@ -293,7 +293,7 @@ export function TemplateMenuSheet({
   ];
 
   return (
-    <Sheet visible onClose={close} title={template.name} scrollable={false}>
+    <Sheet visible={pedido !== null} onClose={close} title={template.name} scrollable={false}>
       <SheetOptions options={opciones} />
       {canEditTemplate(template, user?.id) ? null : (
         /*

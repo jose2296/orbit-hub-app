@@ -21,7 +21,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Enter } from "@/components/ui/enter";
-import { sharedCoverStyle, sharedCoverTag } from "@/lib/media/shared-cover";
+import {
+  sharedCoverStyle,
+  sharedCoverTag,
+  sharedCoverTitleStyle,
+} from "@/lib/media/shared-cover";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ExpandableText } from "@/components/media/expandable-text";
 import { Rating } from "@/components/media/rating";
@@ -809,7 +813,21 @@ export default function ItemDetailsScreen() {
             <AppText variant="caption" tone="subtle">
               {t("itemDetails.addedAs")}
             </AppText>
-            <AppText variant="bodyStrong">{title}</AppText>
+            {/*
+              The other end of the title's name. **It is the one place on this
+              screen that shows the row's own title**, which is what the carousel was
+              showing when the finger went down, and pairing those two is the whole
+              of the title travelling. The heading above is the provider's tagline —
+              a different sentence about the same film — and morphing one into the
+              other would be two words replacing each other, which is a different
+              effect and not this one.
+            */}
+            <AppText
+              variant="bodyStrong"
+              style={item ? sharedCoverTitleStyle(item.id) : undefined}
+            >
+              {title}
+            </AppText>
           </Card>
         ) : null}
       </View>
