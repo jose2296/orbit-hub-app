@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Enter } from "@/components/ui/enter";
+import { sharedCoverStyle, sharedCoverTag } from "@/lib/media/shared-cover";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ExpandableText } from "@/components/media/expandable-text";
 import { Rating } from "@/components/media/rating";
@@ -540,7 +541,7 @@ export default function ItemDetailsScreen() {
             */}
             <Enter indice={0} rise={12}>
               {details.imageUrl ? (
-                <Image
+                <Animated.Image
                   source={{ uri: details.imageUrl }}
                   resizeMode="cover"
                   style={[
@@ -549,7 +550,19 @@ export default function ItemDetailsScreen() {
                       borderRadius: theme.radius.md,
                       backgroundColor: theme.colors.surfaceMuted,
                     },
+                    /*
+                      The other end of the same name, **and it is the row's id**, which
+                      is the key the carousel was already drawing and the `itemKey` the
+                      route arrived with. One fact in three places, so the two halves
+                      cannot drift apart — a name that did would leave the poster and the
+                      cover as two unrelated pictures and the transition would simply
+                      not happen.
+                    */
+                    sharedCoverStyle(item?.id ?? ""),
                   ]}
+                  sharedTransitionTag={
+                    item ? sharedCoverTag(item.id) : undefined
+                  }
                 />
               ) : (
                 <View

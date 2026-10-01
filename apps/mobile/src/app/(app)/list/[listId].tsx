@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { FlatList, Pressable, StyleSheet, View } from "react-native";
+import { FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
 import type { ListItem, ListOrderMode } from "@orbit-hub/contracts";
 
+import { releaseSharedCover } from "@/lib/media/shared-cover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -297,20 +298,66 @@ export default function ListScreen() {
     // holds both, a list of tasks is also where a book somebody typed by hand
     // ends up, and asking the wrong provider returns nothing at all.
     const ref = providerRefOf(item);
-    router.push({
-      pathname: "/(app)/item/[itemId]",
-      params: {
-        // Which list it is in, so the detail can take it out of it.
-        itemId: listId,
-        // Which row of that list it is, so the detail can tick it off.
-        itemKey: item.id,
-        // Left empty when the row has no provider record: the detail screen then
-        // shows the row itself instead of an error.
-        kind: ref?.kind ?? "",
-        externalId: ref?.externalId ?? "",
-        title: item.title,
-      },
-    });
+    /*
+      On the web the move is **inside the browser's own transition**, and that is
+      the half of it that is not ours to do.
+
+      The poster and the cover already carry the same name, and that is enough for
+      the browser to know they are one picture — but only while a transition is
+      running. Without `startViewTransition` the name sits there doing nothing and
+      the screen arrives by whatever means it was going to arrive by: a cut, which
+      is exactly what it did before.
+
+      **It is a call and not a flag**, so the whole thing is guarded by asking
+      whether the call is there. Firefox and Safari have not got it, and on those
+      the poster keeps a name nobody uses, the screen arrives the normal way, and
+      nothing is broken and nothing is announced. On a phone none of this runs:
+      Reanimated's shared transition is drawn by the view system and never goes
+      near a document.
+
+      And `push` returns nothing, so the browser waits for the next frame rather
+      than for a promise. Whether the route has actually rendered by then is the
+      question this has to be measured against: a transition that captures the new
+      state too early morphs nothing and reports nothing at all.
+    */
+    const ir = () =>
+      router.push({
+        pathname: "/(app)/item/[itemId]",
+        params: {
+          // Which list it is in, so the detail can take it out of it.
+          itemId: listId,
+          // Which row of that list it is, so the detail can tick it off. **This is
+          // also the shared element's name**, and the poster had already drawn it
+          // before the route existed.
+          itemKey: item.id,
+          // Left empty when the row has no provider record: the detail screen then
+          // shows the row itself instead of an error.
+          kind: ref?.kind ?? "",
+          externalId: ref?.externalId ?? "",
+          title: item.title,
+        },
+      });
+
+    if (
+      Platform.OS === "web" &&
+      typeof document !== "undefined" &&
+      typeof document.startViewTransition === "function"
+    ) {
+      document.startViewTransition(() => {
+        /*
+          The outgoing poster lets go of the name here, **between** the two
+          snapshots and for no other reason. The list screen is still mounted behind
+          this one, so in the "after" there would be a poster and a cover with one name
+          between them, and the browser refuses to pair a name that is in the document
+          twice — silently, with the screen still arriving and the poster simply not
+          travelling. See `releaseSharedCover`.
+        */
+        releaseSharedCover(item.id);
+        ir();
+      });
+      return;
+    }
+    ir();
   }
 
   if (!listId) {

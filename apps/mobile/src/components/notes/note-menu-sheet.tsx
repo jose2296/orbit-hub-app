@@ -171,7 +171,16 @@ export function NoteMenuSheet({
     of this screen. Offering it and letting the server refuse is the version where
     somebody discovers the rule by being told no.
   */
-  const puedeCompartir = note.role === "owner" || note.role === "editor";
+  /*
+   * Only the owner. Not the editor.
+   *
+   * An editor of a space can write in it, and every note in it belongs to the space's
+   * owner, so "editor can share" meant "anybody the owner invited can decide who
+   * else reads the owner's notes" — and the owner then cannot take it back, because
+   * the share belongs to the editor who made it. The server refuses this now; hiding
+   * the option is what stops it being offered and refused.
+   */
+  const puedeCompartir = note.role === "owner";
 
   const opciones: SheetOption[] = [
     {

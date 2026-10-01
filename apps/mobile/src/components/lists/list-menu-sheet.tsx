@@ -164,9 +164,11 @@ export function ListMenuSheet({
         },
       },
       // Only for somebody who may decide who else sees it. Editing fifty rows is
-      // not deciding that a sixth person sees them, and a viewer who is offered
-      // the option only finds out the rule from the server refusing.
-      ...(list.role === "owner" || list.role === "editor"
+      // not deciding that a sixth person sees them — and neither is being an editor
+      // of the space the list lives in, because the list belongs to whoever owns
+      // that space. The comment here said "owner" for years while the code below it
+      // said `owner || editor`, and the code is what ran.
+      ...(list.role === "owner"
         ? [
             {
               key: "share",

@@ -1,5 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Animated, Image, Pressable, StyleSheet, View } from "react-native";
+import { Animated, Pressable, StyleSheet, View } from "react-native";
+/*
+  React Native's `Animated` is above, for the values; **this one is the other
+  `Animated`**, the one that has an `Image`. A `sharedTransitionTag` is read by
+  Reanimated's animated components and by nothing else: handed to React Native's
+  own `Animated.Image` it would be an unknown prop, dropped in silence, and the
+  transition would never happen with no error anywhere to look.
+*/
+import AnimatedUI from "react-native-reanimated";
 import { useCallback, useRef, useState } from "react";
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +17,7 @@ import { SeenRibbon } from "@/components/media/seen-ribbon";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
+import { sharedCoverStyle, sharedCoverTag } from "@/lib/media/shared-cover";
 
 /** One poster, one screen, one flick. */
 export interface VerticalMediaItem {
@@ -186,11 +195,21 @@ export function VerticalMediaCarousel({
               style={styles.poster}
             >
               {item.imageUrl && !fallidos.has(item.key) ? (
-                <Image
+                <AnimatedUI.Image
                   source={{ uri: item.imageUrl }}
-                  style={styles.imagen}
+                  style={[styles.imagen, sharedCoverStyle(item.key)]}
                   resizeMode="cover"
                   onError={() => fallo(item.key)}
+                  /*
+                    The name this poster shares with the cover on the detail, and
+                    **the whole of what makes one picture out of two screens.**
+
+                    It is `key`, which is the row's own id and the same id the route
+                    to the detail carries, so the two names cannot drift apart. See
+                    `lib/media/shared-cover.ts` for why the name is prefixed and why
+                    it has to be taken off again when the screen goes.
+                  */
+                  sharedTransitionTag={sharedCoverTag(item.key)}
                 />
               ) : (
                 <View

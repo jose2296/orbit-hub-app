@@ -152,7 +152,11 @@ export function FolderMenuSheet({
         icon: "create-outline",
         onPress: () => setRenaming(true),
       },
-          ...(folder && (folder.role === "owner" || folder.role === "editor")
+          // Only the owner of the space may hand it on. See `canShare` in
+        // `apps/api/src/modules/shares/access.ts`: an editor of the space can write
+        // in it, and the folder belongs to whoever owns it, so `editor` here meant
+        // the owner could not take back what an editor shared.
+        ...(folder && (folder.role === "owner")
         ? [
             {
               key: "share",
