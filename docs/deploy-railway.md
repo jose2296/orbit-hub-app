@@ -38,7 +38,7 @@ servicio de Postgres sin copiar la contraseña a ningún sitio.
 | `EMAIL_TRANSPORT` | `resend` | `console` está rechazado en producción por `env.ts` |
 | `RESEND_API_KEY` | la clave (`re_...`) | `env.ts` comprueba prefijo y longitud al arrancar |
 | `EMAIL_FROM` | `no-reply@jrz-labs.com` | |
-| `GOOGLE_CLIENT_ID` | el de **web** | Login con Google. Sin él `isGoogleConfigured()` es `false` y el botón sale desactivado |
+| `GOOGLE_CLIENT_ID` | el de **web**, **entero** | Login con Google. Empieza por el número de proyecto y **copiarlo a medias da `invalid_client`** |
 | `GOOGLE_CLIENT_SECRET` | el secreto de **web** | Nunca en la app, solo aquí |
 | `TMDB_API_KEY` | la clave | Catálogo de películas y series |
 | `GOOGLE_BOOKS_API_KEY` | la clave | Catálogo de libros |

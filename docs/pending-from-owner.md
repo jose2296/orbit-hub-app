@@ -44,6 +44,14 @@ está. Añádelo en el cliente **Web** del proyecto `959281134147`:
 
 Y en **Pantalla de consentimiento OAuth → Dominios autorizados**, `jrz-labs.com`.
 
+**Copia el client id entero, incluido el prefijo numérico.** Esto costó un despliegue: en
+Railway quedó puesto `kp8bp7djedqrcv0l2tm98bhmbpusi1ni.apps.googleusercontent.com` en vez de
+`959281134147-kp8bp7djedqrcv0l2tm98bhmbpusi1ni.apps.googleusercontent.com`. Un id de cliente
+de Google empieza por el número de proyecto, y sin él Google responde `invalid_client` —que
+la API traducía a `unauthorized` con el mensaje genérico "Google sign-in could not be
+completed", sin decir nada del id. **El motivo sí sale en el log del servidor**
+(`google code exchange rejected … reason="invalid_client"`), que es donde hay que mirar.
+
 Estos son los pasos completos, por si hay que rehacerlos o crear los clientes de móvil:
 
 1. Crea o usa un proyecto en [console.cloud.google.com](https://console.cloud.google.com).
