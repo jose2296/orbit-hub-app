@@ -28,18 +28,24 @@ ENV npm_config_update_notifier=false
 # empty one, which is the same bug wearing a different hat.
 ARG EXPO_PUBLIC_API_URL
 ARG EXPO_PUBLIC_WEB_ORIGIN
+ARG EXPO_PUBLIC_GOOGLE_CLIENT_ID
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 ENV EXPO_PUBLIC_WEB_ORIGIN=$EXPO_PUBLIC_WEB_ORIGIN
+ENV EXPO_PUBLIC_GOOGLE_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_CLIENT_ID
 
-# Fails the build instead of shipping an app that cannot reach its own API.
+# Fails the build instead of shipping an app that cannot reach its own API, or one
+# with a disabled sign-in button and no hint why.
 #
 # `resolveBaseUrl()` falls back to `http://localhost:4000/api/v1` when the variable
 # is absent, which is right on a laptop and catastrophic in a deployment: the bundle
 # is valid, the build is green, the page loads, and every request goes to whatever
 # machine is looking at it. Nothing downstream complains, because from the browser's
 # point of view a connection refused is a normal network error.
-COPY scripts/assert-export-api-url.mjs scripts/
-RUN node scripts/assert-export-api-url.mjs
+#
+# The Google client id is checked for the same reason and fails the other way: its
+# absence renders a **disabled button that looks finished**.
+COPY scripts/assert-export-env.mjs scripts/
+RUN node scripts/assert-export-env.mjs
 
 # Manifests on their own, so this layer survives a change to any source file.
 COPY package.json package-lock.json tsconfig.base.json ./
@@ -65,8 +71,8 @@ RUN npm run build:packages \
 # The last chance to catch it, and the check that actually looks at the artefact
 # rather than at the intent. Metro ran a few lines above; this reads what it wrote.
 # Passing the first check and failing this one means the bundler ignored the
-# variable, which is worth knowing about rather than deploying.
-RUN node scripts/assert-export-api-url.mjs --after apps/mobile/dist
+# variables, which is worth knowing about rather than deploying.
+RUN node scripts/assert-export-env.mjs --after apps/mobile/dist
 
 # ----------------------------------------------------------------- runtime --
 
