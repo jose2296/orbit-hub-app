@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
+import { LegalNotice } from '@/components/legal/legal-notice';
 import { LogoMark } from '@/components/brand/logo-mark';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
@@ -57,9 +58,7 @@ export default function WelcomeScreen() {
         <Link href="/(auth)/sign-in" asChild>
           <Button label={t('onboarding.signIn')} variant="secondary" />
         </Link>
-        <AppText variant="caption" tone="subtle" align="center">
-          {t('onboarding.terms')}
-        </AppText>
+        <LegalNotice />
       </View>
     </Screen>
   );

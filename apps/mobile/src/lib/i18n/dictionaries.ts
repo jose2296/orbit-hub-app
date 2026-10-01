@@ -37,8 +37,21 @@ const es = {
   "onboarding.point.collab": "Comparte con tu equipo y editad juntos",
   "onboarding.createAccount": "Crear cuenta",
   "onboarding.signIn": "Iniciar sesión",
-  "onboarding.terms":
-    "Al continuar aceptas los términos y la política de privacidad.",
+
+  /**
+   * `legal.notice` carries two markers on purpose, and they are what
+   * `splitNotice` cuts the sentence on to put a link inside it. See
+   * `src/lib/legal/notice.ts`.
+   *
+   * There is no `onboarding.terms` any more: it said this sentence in plain
+   * text, and there were then two copies of it, one with links and one without.
+   * Two copies of a sentence that has to match is two things to forget.
+   */
+  "legal.notice": "Al continuar aceptas los {terms} y la {privacy}.",
+  "legal.links.terms": "términos",
+  "legal.links.privacy": "política de privacidad",
+  "legal.privacy.title": "Política de privacidad",
+  "legal.terms.title": "Términos y condiciones",
 
   "auth.signIn.title": "Iniciar sesión",
   "auth.signIn.subtitle":
@@ -52,7 +65,7 @@ const es = {
   "auth.forgotPassword": "¿Olvidaste tu contraseña?",
   "auth.noAccount": "¿No tienes cuenta?",
   "auth.hasAccount": "¿Ya tienes cuenta?",
-  "auth.termsAccept": "Acepto los términos y la política de privacidad",
+  "auth.termsAccept": "Acepto las condiciones",
   "auth.google": "Continuar con Google",
   "auth.googleDivider": "o continúa con tu correo",
   "auth.submit.signIn": "Iniciar sesión",
@@ -92,6 +105,15 @@ const es = {
   "auth.error.emailTaken": "Ya existe una cuenta con ese correo",
   "auth.error.tooManyAttempts": "Demasiados intentos. Espera unos minutos.",
   "auth.error.generic": "No hemos podido completar la operación",
+  /**
+   * Its own key, and not `auth.termsAccept` reused.
+   *
+   * The form used to answer a missing box with the label the box carries, which
+   * read as "I accept the terms and the privacy policy" under a form that had
+   * not been filled in. The label is short now, and a short label is not a
+   * sentence you can hand somebody as the reason a form will not send.
+   */
+  "auth.error.termsRequired": "Acepta las condiciones para continuar",
 
   "catalog.title": "Buscar en catálogos",
   "catalog.subtitle": "Añade a «{list}» desde películas, series o libros.",
@@ -897,7 +919,8 @@ const es = {
   "devices.revoke": "Revocar este dispositivo",
   "devices.signOutThis": "Cerrar sesión aquí",
   "devices.signOutEverywhere": "Cerrar sesión en todos los dispositivos",
-  "settings.terms": "Términos y privacidad",
+  "settings.terms": "Términos y condiciones",
+  "settings.privacy": "Política de privacidad",
   "settings.version": "Versión",
   "settings.signOut": "Cerrar sesión",
   "settings.signOutConfirm": "¿Quieres cerrar la sesión en este dispositivo?",
@@ -977,8 +1000,12 @@ const en: Record<TranslationKey, string> = {
   "onboarding.point.collab": "Share with your team and edit together",
   "onboarding.createAccount": "Create account",
   "onboarding.signIn": "Sign in",
-  "onboarding.terms":
-    "By continuing you accept the terms and the privacy policy.",
+
+  "legal.notice": "By continuing you accept the {terms} and the {privacy}.",
+  "legal.links.terms": "terms",
+  "legal.links.privacy": "privacy policy",
+  "legal.privacy.title": "Privacy policy",
+  "legal.terms.title": "Terms of service",
 
   "auth.signIn.title": "Sign in",
   "auth.signIn.subtitle": "Sign in to sync your data across devices.",
@@ -991,7 +1018,7 @@ const en: Record<TranslationKey, string> = {
   "auth.forgotPassword": "Forgot your password?",
   "auth.noAccount": "No account yet?",
   "auth.hasAccount": "Already have an account?",
-  "auth.termsAccept": "I accept the terms and the privacy policy",
+  "auth.termsAccept": "I accept the terms",
   "auth.google": "Continue with Google",
   "auth.googleDivider": "or continue with your email",
   "auth.submit.signIn": "Sign in",
@@ -1032,6 +1059,7 @@ const en: Record<TranslationKey, string> = {
   "auth.error.emailTaken": "An account with that email already exists",
   "auth.error.tooManyAttempts": "Too many attempts. Wait a few minutes.",
   "auth.error.generic": "We could not complete the operation",
+  "auth.error.termsRequired": "Accept the terms to continue",
 
   "catalog.title": "Search a catalog",
   "catalog.subtitle": 'Add to "{list}" from films, series or books.',
@@ -1823,7 +1851,8 @@ const en: Record<TranslationKey, string> = {
   "devices.revoke": "Revoke this device",
   "devices.signOutThis": "Sign out here",
   "devices.signOutEverywhere": "Sign out on every device",
-  "settings.terms": "Terms and privacy",
+  "settings.terms": "Terms of service",
+  "settings.privacy": "Privacy policy",
   "settings.version": "Version",
   "settings.signOut": "Sign out",
   "settings.signOutConfirm": "Do you want to sign out on this device?",

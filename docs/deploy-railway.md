@@ -210,12 +210,16 @@ en blanco.
 
 ### Por qué `nginx.conf` existe
 
-El export es **plano**: 19 `.html` en la raíz y ninguna carpeta. Un enlace directo a
+El export es **plano**: 21 `.html` en la raíz y ninguna carpeta. Un enlace directo a
 `/workspaces` no encuentra nada, y la regla que lo arregla es:
 
 ```nginx
 try_files $uri $uri.html $uri/index.html /index.html;
 ```
+
+Esa segunda regla es también lo que hace que `/privacy` y `/terms` funcionen sin tocar
+nada aquí: son dos `.html` más en la raíz, y por eso son URLs públicas de la web y no
+rutas de la API.
 
 El último `/index.html` es lo que hace que una ruta que no existe en build time —el id de
 una nota, el de una carpeta— abra la app y la dibuje el router, en vez de dar un 404.

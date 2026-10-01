@@ -63,10 +63,12 @@ describe('splitNotice', () => {
   });
 
   it('un marcador al final no deja un texto vacio detras', () => {
-    const partes = splitNotice('Lee los {terms}');
-
-    expect(partes[partas.length - 1]).toEqual({ kind: 'text', value: 'Lee los ' });
-    expect(partes).toHaveLength(2);
+    // Dos partes y no tres: la tercera seria un `''` que se pinta como una
+    // linea de mas en un texto que ya se acaba en el enlace.
+    expect(splitNotice('Lee los {terms}')).toEqual([
+      { kind: 'text', value: 'Lee los ' },
+      { kind: 'link', value: '{terms}', href: '/terms' },
+    ]);
   });
 
   it('una frase sin marcadores se devuelve entera', () => {
@@ -161,11 +163,9 @@ describe('los documentos legales', () => {
    */
   it('los PENDIENTE que quedan son los que el repo todavia no puede responder', () => {
     const pendientes = Object.entries(documentos).flatMap(([nombre, documento]) =>
-      documento.sections.flatMap((seccion) =>
-        seccion.paragraphs
-          .filter((parrafo) => /PENDIENTE/i.test(parrafo))
-          .map((parrafo) => `${nombre} › ${seccion.heading}`),
-      ),
+      documento.sections
+        .filter((seccion) => seccion.paragraphs.some((parrafo) => /PENDIENTE/i.test(parrafo)))
+        .map((seccion) => `${nombre} › ${seccion.heading}`),
     );
 
     // Baja este numero a medida que se resuelvan, y el boton de la tienda solo

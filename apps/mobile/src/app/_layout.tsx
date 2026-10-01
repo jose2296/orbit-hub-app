@@ -101,6 +101,13 @@ function Navigation() {
         {/* Outside the auth guard on purpose: the person who opens an
             invitation is the person who is not signed in yet. */}
         <Stack.Screen name="invite/[token]" options={{ title: t('invite.title') }} />
+        {/* The legal documents, for the same reason and for a stronger one: the
+            URL in App Store Connect and in Play Console is opened by somebody
+            deciding whether to install, who by definition has no session. Inside
+            `(app)` they would be behind the guard, which redirects to the welcome
+            and turns the page a store sends somebody into the sign-up form. */}
+        <Stack.Screen name="privacy" options={{ title: t('legal.privacy.title') }} />
+        <Stack.Screen name="terms" options={{ title: t('legal.terms.title') }} />
       </Stack>
       {/*
         Something to look at while the session is being restored.

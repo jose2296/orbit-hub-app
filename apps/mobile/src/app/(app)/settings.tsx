@@ -132,11 +132,26 @@ export default function SettingsScreen() {
       <View style={{ gap: 12 }}>
         <SectionHeader title={t('settings.sections.about')} />
         <Card padded={false} style={{ paddingHorizontal: 16 }}>
+          {/*
+            Two rows and not one, because this used to be a single row called
+            "Términos y privacidad" with a chevron and **no `onPress`**: a link
+            that looks like it goes somewhere and does not. One row cannot have
+            two destinations, so the name was split and each half got the press
+            it always looked like it had.
+          */}
           <ListRow
             icon="document-text-outline"
             title={t('settings.terms')}
             subtitle={`${t('settings.version')} ${version}`}
             chevron
+            onPress={() => router.push('/terms')}
+          />
+          <Divider inset={50} />
+          <ListRow
+            icon="shield-checkmark-outline"
+            title={t('settings.privacy')}
+            chevron
+            onPress={() => router.push('/privacy')}
           />
         </Card>
       </View>

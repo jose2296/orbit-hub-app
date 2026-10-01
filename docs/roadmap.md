@@ -289,7 +289,15 @@ Un solo editor en las tres plataformas, HTML como formato, en
 - [ ] Importación/exportaciónadvanced de contenido
 - [ ] Herramienta de migración desde `utility-app-native` / `utility-app-turbo`
       (ver [migration/legacy-migration.md](migration/legacy-migration.md))
-- [ ] Páginas de términos y privacidad, consentimiento web
+- [x] Páginas de términos y privacidad, en `/privacy` y `/terms`. **El texto está en
+      borrador**: el responsable legal, el correo de contacto, los plazos de conservación,
+      la base jurídica y la ley aplicable siguen sin decidir, y cada uno es un `PENDIENTE`
+      en `apps/mobile/src/content/legal.ts`. La cuenta atrás de cuántos quedan está en
+      `apps/mobile/test/legal.test.ts`, y la URL no es la que se da a una tienda mientras
+      no sean cero.
+- [ ] Consentimiento web: banner y registro del consentimiento. Hecho solo el enlace —
+      el texto legal se puede leer desde el registro y desde el welcome, pero no se pide
+      ni se guarda el consentimiento por separado.
 
 ---
 

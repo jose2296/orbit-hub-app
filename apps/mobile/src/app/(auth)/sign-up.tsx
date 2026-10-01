@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
+import { LegalNotice } from '@/components/legal/legal-notice';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -32,7 +33,7 @@ export default function SignUpScreen() {
     if (!email.includes('@')) return t('auth.invalidEmail');
     if (password.length < 10) return t('auth.passwordTooShort');
     if (password !== passwordConfirm) return t('auth.passwordMismatch');
-    if (!acceptedTerms) return t('auth.termsAccept');
+    if (!acceptedTerms) return t('auth.error.termsRequired');
     return null;
   }
 
@@ -133,6 +134,11 @@ export default function SignUpScreen() {
           onToggle={() => setAcceptedTerms((value) => !value)}
           label={t('auth.termsAccept')}
         />
+
+        {/* The two documents, as links, under the box rather than inside it.
+            The box is a `Pressable`, and a `Link` in its label would be one tap
+            that both ticks the box and leaves the screen. */}
+        <LegalNotice />
 
         {error ? (
           <AppText variant="caption" tone="danger">
