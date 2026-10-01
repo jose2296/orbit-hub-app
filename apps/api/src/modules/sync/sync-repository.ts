@@ -17,6 +17,9 @@ import {
   workspaces,
 } from '../../db/schema.js';
 import { accessOf } from '../shares/access.js';
+import { descendientesDeCarpetas } from '../shares/folder-subtree.js';
+import { montajesDe } from './mounts.js';
+import type { MontajesPorNodo } from './mounts.js';
 
 /** One live grant, resolved into the chain that holds the node it points at. */
 interface CadenaCompartida {
@@ -514,6 +517,37 @@ export class SyncRepository {
    * `grantRole` is the strongest grant that reaches the node or anything above it,
    * because that is what makes a shared folder carry its lists.
    */
+  /**
+   * Rewrites a node to hang from where this person filed it.
+   *
+   * **Not copied and not moved.** Same row, same id, same version; the pull only
+   * presents it under the recipient's space, because the tree is keyed by
+   * `workspaceId:parentId` and that is what decides where it shows up. That is the whole
+   * reason an edit on either side is the same edit — there is only one row.
+   *
+   * `parentId` and `folderId` are deliberately **not** touched. The recipient's choice
+   * sets the parent of the node that was mounted and nothing else, and a child keeps
+   * pointing at its own parent — which is why the subtree only needs its `workspaceId`
+   * rewritten and the tree does not have to be walked on the client.
+   *
+   * The `role`/`shared` badge is computed **after** this, from the original space, so a
+   * mounted thing is still marked as shared: it still belongs to somebody else.
+   */
+  private aplicaMontaje(
+    registro: Record<string, unknown>,
+    entidad: string,
+    id: string,
+    montajes: MontajesPorNodo,
+    /** For a row of a list: where its list was filed decides where the row goes. */
+    viaListaId?: string | null,
+  ): Record<string, unknown> {
+    const montaje =
+      montajes.get(`${entidad}:${id}`) ??
+      (viaListaId ? montajes.get(`list:${viaListaId}`) : undefined);
+    if (!montaje) return registro;
+    return { ...registro, workspaceId: montaje.workspaceId };
+  }
+
   private accesoDe(args: {
     workspaceId: string;
     folderId?: string | null;
@@ -617,7 +651,31 @@ export class SyncRepository {
       changes — which is the contract the comment further up describes, and which the
       filters were not keeping.
     */
-    const carpetasConcedidas = cadenaDe(cadenas, 'folderId');
+    /*
+      The folders a grant reaches — **and everything under them**.
+
+      Only the named folder was here, and it is why a shared folder arrived with
+      nothing in it: the filters admitted the folder and one level below it, and the
+      filter on lists only matched a list whose folder was the granted one, so a list
+      inside a *nested* folder was not admitted at all. Same symptom as a share that
+      failed, and it is half of one: the folder came down and the contents did not.
+    */
+    const carpetasConcedidas = await descendientesDeCarpetas(
+      db,
+      cadenaDe(cadenas, 'folderId'),
+    );
+
+    /*
+      Where this person filed what they were given.
+
+      Read here rather than per row because it is one question about the person, not a
+      question about each node — and because the answer has to be the same for the
+      folder, its lists and their rows, or a mounted folder arrives in the recipient's
+      space with its contents still in the owner's and opens empty.
+
+      A member is never in this: see `mounts.ts`.
+    */
+    const montajes = await montajesDe(db, input.userId, memberWorkspaceIds);
 
     /*
      * The spaces that were handed over **whole**, and the reason this is a separate
@@ -736,7 +794,12 @@ export class SyncRepository {
         changes.push({
           entity: 'folder',
           record: {
-            ...(row as Record<string, unknown>),
+            ...this.aplicaMontaje(
+              row as Record<string, unknown>,
+              'folder',
+              row.id,
+              montajes,
+            ),
             ...this.accesoDe({
               workspaceId: row.workspaceId,
               folderId: row.id,
@@ -799,7 +862,12 @@ export class SyncRepository {
         changes.push({
           entity: 'list',
           record: {
-            ...(row as Record<string, unknown>),
+            ...this.aplicaMontaje(
+              row as Record<string, unknown>,
+              'list',
+              row.id,
+              montajes,
+            ),
             itemCount: itemCounts.get(row.id) ?? 0,
             ...this.accesoDe({
               workspaceId: row.workspaceId,
@@ -849,7 +917,17 @@ export class SyncRepository {
         changes.push({
           entity: 'list_item',
           record: {
-            ...(row.item as Record<string, unknown>),
+            ...this.aplicaMontaje(
+              row.item as Record<string, unknown>,
+              'list_item',
+              row.item.id,
+              montajes,
+              // A row has no space of its own — the projection joined its list to get
+              // one — so where the list was filed is what decides where the row hangs.
+              // Without this the list moves and its rows stay behind, which is a list
+              // that opens with nothing in it.
+              row.item.listId,
+            ),
             // The list it belongs to, because that is what a grant reaches: being
             // handed a list is being handed its rows, and there is no way to ask
             // "what is the space of this row" from the row itself.

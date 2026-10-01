@@ -100,12 +100,42 @@ describe('compartir una carpeta: lo que hay dentro tambien tiene que llegar', ()
     const beto = await createVerifiedUser(api, { displayName: 'Beto' });
 
     /*
-      Beto pulls **first**, with nothing to do with Ana. This is the ordinary case: a
-      phone that has been in use for a week has a cursor, and it is the only case where
-      the folder arrives empty.
+      Beto has a space of his own and pulls **first**, so the cursor he gets back is a
+      real one.
+
+      The first version of this test gave him an account with nothing in it. His first
+      pull returned no rows, `nextCursor` fell back to the cursor he sent — `null` — and
+      the second pull was therefore a **full** one. Every assertion passed, and none of
+      them had exercised the thing that was broken: the contents are older than his
+      cursor and have to be made newer to arrive. A test that passes for the wrong
+      reason is worse than one that fails.
     */
+    await api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: [
+          {
+            operationId: randomUUID(),
+            clientId: 'test-client-folder-share',
+            kind: 'create',
+            entity: 'workspace',
+            entityId: randomUUID(),
+            baseVersion: 0,
+            payload: { name: 'Casa de Beto', color: 'fucsia' },
+            base: null,
+            clientTimestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      beto.accessToken,
+    );
+
     const antes = await pull(beto, null);
     expect(antes.ids).not.toContain(carpetaId);
+    // The whole test rests on this line: a cursor that is really a cursor.
+    expect(antes.cursor).toBeTruthy();
 
     const compartida = await api.post(
       '/shares',
@@ -119,6 +149,11 @@ describe('compartir una carpeta: lo que hay dentro tambien tiene que llegar', ()
       ana.accessToken,
     );
     expect(compartida.status).toBe(201);
+
+    // Two milliseconds. The cursor is a timestamp and the share stamps "now", so a
+    // test that shares in the same millisecond Beto's own row was written is testing
+    // the clock of the machine and not the code.
+    await new Promise((r) => setTimeout(r, 5));
 
     const despues = await pull(beto, antes.cursor);
 
@@ -171,7 +206,7 @@ describe('compartir una carpeta: lo que hay dentro tambien tiene que llegar', ()
  * own. It appears under the owner's space, and choosing a space changes what the server
  * remembers and nothing that anybody sees.
  */
-describe('lo que hace colocar algo: nada todavia', () => {
+describe('lo que hace colocar algo: sale donde lo colocaste', () => {
   let api: TestServer;
 
   beforeAll(async () => {
@@ -240,9 +275,216 @@ describe('lo que hace colocar algo: nada todavia', () => {
       (c: { record: { id?: string } }) => c.record?.id === carpetaId,
     );
 
-    // **The gap, written down so it cannot be quietly forgotten:** Beto filed it in
-    // his own space and the pull still says it belongs to Ana's.
-    expect(carpeta.record.workspaceId).toBe(spaceId);
-    expect(carpeta.record.workspaceId).not.toBe(suyoId);
+    // Filed in his own space, and the pull says so. This is the same assertion as the
+    // one above with the other value, which is the whole change: the mount is
+    // projected, so where a received thing shows up is where the recipient put it.
+    expect(carpeta.record.workspaceId).toBe(suyoId);
+    expect(carpeta.record.workspaceId).not.toBe(spaceId);
+
+    // And it is still **shared**, because it still belongs to Ana. Moving where you
+    // filed something is not a way of saying you made it, and a badge that said
+    // otherwise would be how somebody ends up editing a list that is not theirs
+    // without being told.
+    expect(carpeta.record.shared).toBe(true);
+    expect(carpeta.record.role).toBe('editor');
+  });
+});
+
+/**
+ * The part that makes a mount a mount and not a relabelling: **the contents come too.**
+ *
+ * The client tree is keyed by `workspaceId:parentId`. Rewriting only the folder leaves
+ * its lists carrying the owner's space, and they are then looked up under
+ * `ownerSpace:mountedFolder` while the recipient asks `theirSpace:mountedFolder` — a
+ * folder that opens and has nothing in it, which is the same symptom as a share that
+ * did not work and reads as one.
+ */
+describe('lo que hay dentro de lo colocado tambien sale ahi', () => {
+  let api: TestServer;
+
+  beforeAll(async () => {
+    api = await startTestServer();
+  });
+
+  afterAll(async () => {
+    await api.close();
+  });
+
+  async function push(user: TestUser, operations: Record<string, unknown>[]) {
+    return api.post(
+      '/sync/push',
+      {
+        deviceId: randomUUID(),
+        lastPulledAt: null,
+        operations: operations.map((operation) => ({
+          operationId: randomUUID(),
+          clientId: 'test-client-mount-tree',
+          baseVersion: 0,
+          payload: {},
+          base: null,
+          clientTimestamp: new Date().toISOString(),
+          ...operation,
+        })),
+      },
+      user.accessToken,
+    );
+  }
+
+  /** Ana: `Viajes > {2026 > {Pistas}}` and a list with a row in it. */
+  async function arbol() {
+    const ana = await createVerifiedUser(api, { displayName: 'Ana' });
+    const beto = await createVerifiedUser(api, { displayName: 'Beto' });
+    const spaceId = randomUUID();
+    const suyoId = randomUUID();
+    const viajes = randomUUID();
+    const anio = randomUUID();
+    const pistas = randomUUID();
+    const item = randomUUID();
+
+    await push(ana, [
+      { kind: 'create', entity: 'workspace', entityId: spaceId, payload: { name: 'Casa de Ana', color: 'teal' } },
+      { kind: 'create', entity: 'folder', entityId: viajes, payload: { workspaceId: spaceId, name: 'Viajes', position: 0 } },
+      { kind: 'create', entity: 'folder', entityId: anio, payload: { workspaceId: spaceId, parentId: viajes, name: '2026', position: 0 } },
+      { kind: 'create', entity: 'list', entityId: pistas, payload: { workspaceId: spaceId, folderId: anio, title: 'Pistas', kind: 'tasks', position: 0 } },
+      { kind: 'create', entity: 'list_item', entityId: item, payload: { listId: pistas, title: 'Roma', position: 0 } },
+    ]);
+    await push(beto, [
+      { kind: 'create', entity: 'workspace', entityId: suyoId, payload: { name: 'Casa de Beto', color: 'fucsia' } },
+    ]);
+
+    const compartida = await api.post(
+      '/shares',
+      {
+        workspaceId: spaceId,
+        nodeType: 'folder',
+        nodeId: viajes,
+        granteeUserId: beto.userId,
+        role: 'editor',
+      },
+      ana.accessToken,
+    );
+    expect(compartida.status).toBe(201);
+
+    return { ana, beto, spaceId, suyoId, viajes, anio, pistas, item, shareId: compartida.body.data.id };
+  }
+
+  async function pullDe(user: TestUser, cursor: string | null = null) {
+    const respuesta = await api.post(
+      '/sync/pull',
+      { deviceId: randomUUID(), cursor, limit: 200 },
+      user.accessToken,
+    );
+    return respuesta.body.data.changes as {
+      entity: string;
+      record: Record<string, unknown>;
+    }[];
+  }
+
+  it('la carpeta, la de dentro, la lista y su fila salen todas en el espacio elegido', async () => {
+    const { beto, suyoId, spaceId, viajes, anio, pistas, item, shareId } = await arbol();
+
+    const colocada = await api.post(
+      `/shares/${shareId}/place`,
+      { workspaceId: suyoId, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+    expect(colocada.status).toBe(200);
+
+    const cambios = await pullDe(beto);
+    const de = (id: string) => cambios.find((c) => c.record['id'] === id);
+
+    // Every level of the tree hangs from Beto's space. One of them not doing it is a
+    // folder that opens empty, and that symptom reads as a share that failed.
+    expect(de(viajes)!.record.workspaceId).toBe(suyoId);
+    expect(de(anio)!.record.workspaceId).toBe(suyoId);
+    expect(de(pistas)!.record.workspaceId).toBe(suyoId);
+    expect(de(item)!.record.workspaceId).toBe(suyoId);
+
+    for (const id of [viajes, anio, pistas, item]) {
+      expect(de(id)!.record.workspaceId).not.toBe(spaceId);
+    }
+  });
+
+  it('los hijos conservan a quien es su padre, que es lo que los mantiene colgando', async () => {
+    const { beto, suyoId, anio, pistas, viajes, shareId } = await arbol();
+    await api.post(
+      `/shares/${shareId}/place`,
+      { workspaceId: suyoId, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+
+    const cambios = await pullDe(beto);
+    const de = (id: string) => cambios.find((c) => c.record['id'] === id);
+
+    // The tree resolves a child by its own id plus its parent. Rewriting only the space
+    // would break exactly this, so the parent link is left alone.
+    expect(de(anio)!.record['parentId']).toBe(viajes);
+    expect(de(pistas)!.record['folderId']).toBe(anio);
+  });
+
+  it('quien ya es miembro del espacio no lo ve movido de sitio', async () => {
+    /*
+      The one carve-out, and it is not a detail.
+
+      Somebody invited into Ana's space and handed one of her lists already sees it, in
+      Ana's space, where it belongs. Rewriting it would take it out of the space it
+      lives in, to file it somewhere the owner cannot see it from — and a shared thing
+      showing in two places is worse than one place that is not the one you asked for.
+    */
+    const { ana, beto, spaceId, suyoId, pistas } = await arbol();
+
+    const invitacion = await api.post(
+      `/workspaces/${spaceId}/invitations`,
+      { role: 'editor', email: beto.email },
+      ana.accessToken,
+    );
+    expect(invitacion.status).toBe(201);
+    await api.post(`/invitations/${invitacion.body.data.token}/accept`, {}, beto.accessToken);
+
+    const lista = await api.post(
+      '/shares',
+      {
+        workspaceId: spaceId,
+        nodeType: 'list',
+        nodeId: pistas,
+        granteeUserId: beto.userId,
+        role: 'viewer',
+      },
+      ana.accessToken,
+    );
+    expect(lista.status).toBe(201);
+
+    await api.post(
+      `/shares/${lista.body.data.id}/place`,
+      { workspaceId: suyoId, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+
+    const cambios = await pullDe(beto);
+    const esa = cambios.find((c) => c.record['id'] === pistas);
+    expect(esa!.record.workspaceId).toBe(spaceId);
+  });
+
+  it('borrar el espacio donde se monto deshace el montaje y lo devuelve a su dueno', async () => {
+    const { beto, suyoId, spaceId, viajes, shareId } = await arbol();
+    await api.post(
+      `/shares/${shareId}/place`,
+      { workspaceId: suyoId, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+
+    const antes = await pullDe(beto);
+    expect(antes.find((c) => c.record['id'] === viajes)!.record.workspaceId).toBe(suyoId);
+
+    // The mount hangs off the space with `onDelete: cascade`, so deleting the space
+    // deletes the mount: the thing leaves your view and is only Ana's again. It is not
+    // lost and it was never copied — there was only ever one row.
+    await push(beto, [
+      { kind: 'delete', entity: 'workspace', entityId: suyoId, baseVersion: 1, payload: {} },
+    ]);
+
+    const despues = await pullDe(beto, null);
+    const carpeta = despues.find((c) => c.record['id'] === viajes);
+    expect(carpeta!.record.workspaceId).toBe(spaceId);
   });
 });

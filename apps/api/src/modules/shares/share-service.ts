@@ -7,6 +7,7 @@ import type { Database } from '../../db/client.js';
 import { folders, listItems, lists, memberships, notes, shareMounts, shares, workspaces } from '../../db/content-schema.js';
 import { HttpError } from '../../lib/http-error.js';
 import { accessOf, canRevoke, canShare } from './access.js';
+import { descendientesDeCarpetas } from './folder-subtree.js';
 import type { AccessFacts, ShareAccess } from './access.js';
 
 /**
@@ -478,8 +479,66 @@ export class ShareService {
 
     if (target.nodeType === 'workspace') {
       await db.update(workspaces).set({ updatedAt: ahora }).where(eq(workspaces.id, target.nodeId));
-    } else if (target.nodeType === 'folder') {
-      await db.update(folders).set({ updatedAt: ahora }).where(eq(folders.id, target.nodeId));
+      return;
+    }
+
+    /*
+      **The space that holds it, always, and this was the one that decided whether a
+      shared folder appeared at all.**
+
+      Sharing a folder sends the folder, its parent, its lists and its rows — and none of
+      them can be drawn, because the client has never heard of the space they live in. The
+      row for that space is old, so it is behind the cursor and is not sent either. What
+      the other device ends up with is a folder that belongs to a space it does not have,
+      which renders as nothing at all: "no se ha generado la carpeta".
+
+      Same reason as the node's own clock, applied one level up: the set of people who can
+      read that row just changed too.
+    */
+    await db
+      .update(workspaces)
+      .set({ updatedAt: ahora })
+      .where(eq(workspaces.id, target.workspaceId));
+
+    if (target.nodeType === 'folder') {
+      /*
+        The folder **and everything under it**, and the second half is the one that
+        matters.
+
+        The pull walks forward by time. A folder share made the contents reachable, but
+        the contents were created earlier and nobody had touched them since, so they sat
+        *behind* the other person's cursor and were never sent — and because nothing
+        arrived, nothing changed, so nothing arrived later either. A phone that had been
+        in use for a week got a folder it could open and nothing inside it.
+
+        So the whole subtree's clock moves, the same reason the folder's own does: the
+        set of people who can read these rows just changed, and `updatedAt` is the only
+        thing the pull can notice that by.
+      */
+      const subtree = await descendientesDeCarpetas(db, [target.nodeId]);
+      await db
+        .update(folders)
+        .set({ updatedAt: ahora })
+        .where(inArray(folders.id, subtree));
+      // And the lists filed at every level, which are inside those folders but not one
+      // of them. A list's rows move with their list, and the pull joins them to it.
+      const listas = await db
+        .select({ id: lists.id })
+        .from(lists)
+        .where(inArray(lists.folderId, subtree));
+      if (listas.length > 0) {
+        const idsDeLista = listas.map((l) => l.id);
+        await db.update(lists).set({ updatedAt: ahora }).where(inArray(lists.id, idsDeLista));
+
+        // And the rows of those lists. The pull joins an item to its list to know what
+        // space it is in, but the filter is on the item's **own** clock, so a list whose
+        // clock moved and rows whose clock did not is a list that arrives with its
+        // ticks still on the other device.
+        await db
+          .update(listItems)
+          .set({ updatedAt: ahora })
+          .where(inArray(listItems.listId, idsDeLista));
+      }
     } else if (target.nodeType === 'list') {
       await db.update(lists).set({ updatedAt: ahora }).where(eq(lists.id, target.nodeId));
     } else if (target.nodeType === 'note') {
