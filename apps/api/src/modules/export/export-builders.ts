@@ -123,7 +123,7 @@ export function metadataCell(
  * por CRLF y todo el fichero empieza con BOM para que Excel no rompa las tildes.
  */
 export function itemsToCsv(args: { list: List; items: ListItem[] }): string {
-  const header = [...LIST_EXPORT_CSV_COLUMNS].join(';');
+  const header = LIST_EXPORT_CSV_COLUMNS.join(';');
   const rows = args.items.map((item) => itemToCsvRow(args.list, item));
 
   return '\uFEFF' + [header, ...rows].join('\r\n') + '\r\n';
@@ -136,7 +136,7 @@ function itemToCsvRow(list: List, item: ListItem): string {
     metadataCell(metadata, 'releaseDate') ||
     metadataCell(metadata, 'publishedDate');
 
-  const year = yearCell(metadata, releaseDate);
+  const year = yearCell(metadata);
 
   const cells = [
     item.id,
@@ -162,18 +162,26 @@ function itemToCsvRow(list: List, item: ListItem): string {
 /**
  * El year puede venir directo o deducirse de los primeros cuatro caracteres
  * de una fecha de estreno o publicacion.
+ *
+ * El guarda se hace sobre el valor crudo, no sobre la salida de `metadataCell`,
+ * porque `metadataCell` convierte numeros a string: un timestamp como
+ * 780422400000 saldria como "7804" si solo miraramos los primeros cuatro
+ * caracteres de su representacion.
  */
-function yearCell(
-  metadata: Record<string, unknown> | null,
-  releaseDate: string,
-): string {
+function yearCell(metadata: Record<string, unknown> | null): string {
   const explicit = metadataCell(metadata, 'year');
   if (explicit !== '') {
     return explicit;
   }
 
-  if (releaseDate.length >= 4) {
+  const releaseDate = metadata?.releaseDate;
+  if (typeof releaseDate === 'string' && releaseDate.length >= 4) {
     return releaseDate.slice(0, 4);
+  }
+
+  const publishedDate = metadata?.publishedDate;
+  if (typeof publishedDate === 'string' && publishedDate.length >= 4) {
+    return publishedDate.slice(0, 4);
   }
 
   return '';
@@ -183,13 +191,12 @@ function yearCell(
  * Cita siempre con comillas dobles y duplica las comillas internas.
  *
  * Citar siempre es mas simple que decidir, y evita que un `;` o un salto de
- * linea dentro de un titulo o una anotacion partan la fila. Los CRLF internos
- * se normalizan a LF: un `\r\n` dentro de una celda citada confundiria a los
- * lectores que dividen por `\r\n`, y el valor leido sigue siendo un salto de
- * linea.
+ * linea dentro de un titulo o una anotacion partan la fila. Los datos viajan
+ * exactamente como estan almacenados: un CRLF dentro de una celda citada es
+ * un CRLF en el CSV, y un parser que respete las comillas lo leera como un
+ * solo campo.
  */
 function csvCell(value: string): string {
-  const normalized = value.replace(/\r\n/g, '\n');
-  const escaped = normalized.replace(/"/g, '""');
+  const escaped = value.replace(/"/g, '""');
   return `"${escaped}"`;
 }

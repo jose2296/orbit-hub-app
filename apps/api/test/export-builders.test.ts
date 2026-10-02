@@ -21,6 +21,74 @@ import {
   type AccountExportRows,
 } from '../src/modules/export/export-builders.js';
 
+/**
+ * Parser CSV minimo que respeta las comillas.
+ *
+ * Necesario porque los tests cuentan registros, no bytes: un campo citado
+ * puede contener `;` o `\r\n` sin que eso cree una fila nueva. El parser
+ * devuelve los campos ya sin comillas exteriores y con `""` desescapado.
+ */
+function parseCsvRecords(csv: string): string[][] {
+  const records: string[][] = [];
+  let currentRecord: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  let i = csv.startsWith('\uFEFF') ? 1 : 0;
+
+  function endField(): void {
+    currentRecord.push(field);
+    field = '';
+  }
+
+  function endRecord(): void {
+    records.push(currentRecord);
+    currentRecord = [];
+  }
+
+  while (i < csv.length) {
+    const char = csv[i];
+    const next = csv[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        field += '"';
+        i += 2;
+      } else {
+        inQuotes = !inQuotes;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === ';') {
+      endField();
+      i += 1;
+      continue;
+    }
+
+    if (!inQuotes && (char === '\r' || char === '\n')) {
+      endField();
+      endRecord();
+      i += char === '\r' && next === '\n' ? 2 : 1;
+      continue;
+    }
+
+    field += char;
+    i += 1;
+  }
+
+  endField();
+  endRecord();
+
+  // El fichero termina en CRLF, asi que el parser crea un ultimo registro vacio.
+  const lastRecord = records[records.length - 1];
+  if (lastRecord && lastRecord.length === 1 && lastRecord[0] === '') {
+    records.pop();
+  }
+
+  return records;
+}
+
 function item(over: Partial<ListItem> = {}): ListItem {
   return {
     id: 'i1',
@@ -329,10 +397,26 @@ describe('itemsToCsv', () => {
       ],
     });
 
-    expect(csv).toContain('"1994"');
-    expect(csv).toContain('"1994-09-10"');
-    expect(csv).toContain('"https://x/y.jpg"');
-    expect(csv).toContain('"tmdb"');
+    const records = parseCsvRecords(csv);
+    const row = records[1]!;
+
+    expect(row[8]).toBe('1994');
+    expect(row[9]).toBe('1994-09-10');
+    expect(row[10]).toBe('https://x/y.jpg');
+    expect(row[11]).toBe('tmdb');
+  });
+
+  it('deriva year de releaseDate cuando no hay year explicito', () => {
+    const csv = itemsToCsv({
+      list: list({ kind: 'movies' }),
+      items: [item({ metadata: { releaseDate: '1994-09-10' } })],
+    });
+
+    const records = parseCsvRecords(csv);
+    const row = records[1]!;
+
+    expect(row[8]).toBe('1994');
+    expect(row[9]).toBe('1994-09-10');
   });
 
   it('usa publishedDate como release_date para un libro', () => {
@@ -347,7 +431,23 @@ describe('itemsToCsv', () => {
       ],
     });
 
-    expect(csv).toContain('"2005-03-02"');
+    const records = parseCsvRecords(csv);
+    const row = records[1]!;
+
+    expect(row[8]).toBe('2005');
+    expect(row[9]).toBe('2005-03-02');
+  });
+
+  it('no deriva year de un releaseDate numerico', () => {
+    const csv = itemsToCsv({
+      list: list({ kind: 'movies' }),
+      items: [item({ metadata: { releaseDate: 780422400000 } })],
+    });
+
+    const records = parseCsvRecords(csv);
+
+    expect(records[1]![8]).toBe('');
+    expect(records[1]![8]).not.toContain('7804');
   });
 
   it('deja vacias las celdas de metadata cuando metadata es null', () => {
@@ -358,12 +458,12 @@ describe('itemsToCsv', () => {
 
     expect(csv).not.toContain('undefined');
 
-    const row = csv.trim().split('\r\n')[1]!;
-    const cells = row.split(';').map((cell) => cell.slice(1, -1).replace(/""/g, '"'));
-    expect(cells[8]).toBe(''); // year
-    expect(cells[9]).toBe(''); // release_date
-    expect(cells[10]).toBe(''); // image_url
-    expect(cells[11]).toBe(''); // provider
+    const records = parseCsvRecords(csv);
+    const row = records[1]!;
+    expect(row[8]).toBe(''); // year
+    expect(row[9]).toBe(''); // release_date
+    expect(row[10]).toBe(''); // image_url
+    expect(row[11]).toBe(''); // provider
   });
 
   it('no convierte un array de releaseDate en a,b', () => {
@@ -372,7 +472,9 @@ describe('itemsToCsv', () => {
       items: [item({ metadata: { releaseDate: ['a', 'b'] } })],
     });
 
+    const records = parseCsvRecords(csv);
     expect(csv).not.toContain('a,b');
+    expect(records[1]![9]).toBe('');
   });
 
   it('une los tags con pipe', () => {
@@ -385,27 +487,50 @@ describe('itemsToCsv', () => {
   });
 
   it('cita titulos con comillas, punto y coma y CRLF sin partir la fila', () => {
+    const title = 'dice "hola"; o no\r\nquizas';
     const csv = itemsToCsv({
       list: list(),
       items: [
-        item({ title: 'dice "hola"; o no\r\nquizas' }),
+        item({ title }),
         item({ id: 'i2', title: 'otro' }),
       ],
     });
 
-    expect(csv.trim().split('\r\n')).toHaveLength(3);
+    const records = parseCsvRecords(csv);
+
+    expect(records).toHaveLength(3); // cabecera + 2 items
+    expect(records[1]).toHaveLength(LIST_EXPORT_CSV_COLUMNS.length);
+    expect(records[1]![1]).toBe(title);
   });
 
   it('cita anotaciones con CRLF sin partir la fila', () => {
+    const annotation = 'linea uno\r\nlinea dos';
     const csv = itemsToCsv({
       list: list(),
       items: [
-        item({ annotation: 'linea uno\r\nlinea dos' }),
+        item({ annotation }),
         item({ id: 'i2', title: 'otro' }),
       ],
     });
 
-    expect(csv.trim().split('\r\n')).toHaveLength(3);
+    const records = parseCsvRecords(csv);
+
+    expect(records).toHaveLength(3);
+    expect(records[1]).toHaveLength(LIST_EXPORT_CSV_COLUMNS.length);
+    expect(records[1]![7]).toBe(annotation);
+  });
+
+  it('preserva CRLF dentro de una celda citada', () => {
+    const annotation = 'primera\r\nsegunda';
+    const csv = itemsToCsv({
+      list: list(),
+      items: [item({ annotation })],
+    });
+
+    const records = parseCsvRecords(csv);
+
+    expect(records[1]![7]).toBe(annotation);
+    expect(records[1]![7]).toContain('\r\n');
   });
 
   it('escribe true y false como palabras', () => {
