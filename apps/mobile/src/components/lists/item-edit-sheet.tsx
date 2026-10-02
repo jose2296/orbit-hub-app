@@ -654,8 +654,12 @@ export function ItemEditSheet({
                 pill the row draws, in the same colour, because the colour is the
                 list's and not this panel's— with the two things you can do to it
                 inside it: take it off, or give it a colour.
-                `alignItems: "center"` stays on this row: it is what keeps a pill
-                from stretching when the row wraps under it. */}
+                `alignItems: "center"` stays on this row, and it is **not** what
+                keeps a pill from stretching when the row wraps: every pill carries
+                its own `alignSelf: "flex-start"`, and a child's `align-self` wins
+                over the row's `alignItems`. It stays as the default for whatever
+                else is dropped on this row without an `alignSelf` of its own, and
+                because the list row builds its line of pills the same way. */}
             <View
               style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}
             >

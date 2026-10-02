@@ -98,11 +98,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     /*
-     * So the pill is as tall as its own contents wherever it is dropped. With no
-     * `alignItems` on the parent row it would otherwise stretch to the full cross
-     * size and be a rounded rectangle instead of a pill. Both call sites centre
-     * their row already, so this changes nothing today — it is here so the next
-     * wrapping row without an `alignItems` gets a pill and not a block.
+     * So the pill is as tall as its own contents wherever it is dropped, and it
+     * says so **itself**: a child with an `alignSelf` beats its row's
+     * `alignItems`, which is the rule `workspace-color-picker.tsx` verified in a
+     * browser on its `columnaPreview`. So this holds on a row that centres, on a
+     * row that stretches and on a row with no `alignItems` at all. Without it the
+     * pill would take the full cross size and be a rounded rectangle instead of a
+     * pill — and the fix is never to change the row, only to keep it here. The
+     * first version of this comment credited the parent's `alignItems` for the
+     * job, and the credit was in the wrong place.
+     *
+     * The three rows of pills today — two in the task sheet, one in the list row —
+     * all centre their own row as well, so none of them needs this. It is for the
+     * next one, and for whoever puts a pill on a row that does not centre.
      */
     alignSelf: "flex-start",
   },

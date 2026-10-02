@@ -1049,12 +1049,20 @@ const styles = StyleSheet.create({
   meta: {
     flexDirection: "row",
     /*
-     * Kept, and **not** for the pill's sake: what stops a pill stretching into a
-     * rounded block the height of the whole line is the pill's own `alignSelf`,
-     * which `TagChip` and `Badge` both carry. This centres each of them on the
-     * line they share, and the task sheet's two tag rows centre their own rows the
-     * same way — so it is here for them and for the badge beside the pills, and
-     * taking it away would break those rows rather than this one.
+     * Kept, and **none of the credit for it is the pill's.**
+     *
+     * `TagChip` and `Badge` both carry `alignSelf: "flex-start"`, and a child's
+     * `align-self` wins over the row's `alignItems` — the rule
+     * `workspace-color-picker.tsx` verified in a browser, on its `columnaPreview`,
+     * where changing the row changed nothing. Those two are the only children this
+     * style has, so today `alignItems` here governs **nothing**: neither the pill
+     * nor the badge is centred by it, and neither is stopped from stretching by it
+     * either. Each of them says that about itself.
+     *
+     * So it stays for the next child that arrives without an `alignSelf` of its
+     * own, which is centred instead of stretched down the whole line; and because
+     * it is the same `alignItems: "center"` as `styles.row` in the task sheet, so
+     * the two lines of pills in this feature are built the same way.
      */
     alignItems: "center",
     /*
