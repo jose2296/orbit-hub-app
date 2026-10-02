@@ -260,23 +260,49 @@ function toRgb(hex) {
 }
 
 /**
- * `rgb(r, g, b)` a `#RRGGBB`, que es lo que `luminanceDe` sabe leer.
+ * `rgb(r, g, b)` a `#RRGGBB`, que es lo que `luminanceDe` sabe leer — y que **no
+ * devuelve nunca un color que la cuenta no entienda**.
  *
- * **Necesario desde que el contraste del acento esmeralda se calcula sobre el
- * color que sale del DOM.** `getComputedStyle` devuelve `rgb(14, 159, 110)` y
- * `luminanceDe` hace `parseInt("rg", 16)`, que es `NaN`: el primer intento de esta
- * comprobación sobre el borde medido dio `3.02:1` con literales y **`NaN:1` leído
- * del DOM**, que es la forma que tiene un número malo de parecer un número. La
- * conversión falla ruidosamente en vez de dejar pasar un `NaN`, porque un `NaN` no
- * llega a 3 ni a 4.5:1, así que la comparación falla —pero el mensaje habría dicho
- * "NaN:1" en lugar de lo que pasó, que es que el color no estaba en el formato que
- * la cuenta entiende.
+ * **Por qué existe.** El contraste del acento esmeralda se calcula sobre el color
+ * que sale del DOM, y `getComputedStyle` devuelve `rgb(14, 159, 110)` mientras que
+ * `luminanceDe` hace `parseInt("rg", 16)`. Ese camino dio **`NaN:1`**, que es la
+ * forma que tiene un número malo de parecer un número. La primera versión de esta
+ * función devolvía la entrada sin tocar cuando no la reconocía —`if (!partes)
+ * return texto`— y su comentario decía que fallaba ruidosamente: **el comentario y
+ * la función se contradecían dos líneas abajo**, y `"transparent"` seguía pasando
+ * de largo hasta el `NaN`.
+ *
+ * **Ahora lanza, y el alfa no se tira callado.** `rgba(0, 0, 0, 0)` convertido a
+ * `#000000` da 18.76:1, que es un número plausible y completamente falso: es
+ * transparente. Un alfa menor de 1 se rechaza con el color, porque un color
+ * semitransparente no tiene un contraste —depende de lo que haya debajo— y quien
+ * pide medir un color translúcido tiene que decir con qué se compone.
+ *
+ * Y por qué la cuenta se queda como está: los otros dos sitios donde se usa
+ * `contrastRatio` pasan constantes hex, y en la app `labelTextColor` sólo recibe
+ * hex de la paleta y un relleno de tema. Arreglar `luminanceDe` para tolerar
+ * `rgb()` sería hacer el doble de trabajo para un caso que no existe.
  */
 function comoHex(color) {
   const texto = String(color).trim();
-  if (texto.startsWith("#")) return texto;
-  const partes = texto.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
-  if (!partes) return texto;
+  // `#abc` y `#aabbcc` no son `#RRGGBB`; se нормаizan aquí y no en la cuenta.
+  if (/^#[0-9a-f]{3}$/i.test(texto)) {
+    return `#${texto[1]}${texto[1]}${texto[2]}${texto[2]}${texto[3]}${texto[3]}`.toLowerCase();
+  }
+  if (/^#[0-9a-f]{6}$/i.test(texto)) return texto.toLowerCase();
+  const partes = texto.match(
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)\s*(?:[,/]\s*([\d.%]+)\s*)?\)$/i,
+  );
+  if (!partes) {
+    throw new Error(
+      `comoHex no sabe leer "${texto}": un contraste necesita #RRGGBB o rgb(r, g, b)`,
+    );
+  }
+  if (partes[4] !== undefined && Number.parseFloat(partes[4]) < 1) {
+    throw new Error(
+      `comoHex no va a medir "${texto}": un alfa de ${partes[4]} no tiene un contraste propio, depende de lo que haya detrás`,
+    );
+  }
   const canal = (n) =>
     Math.max(0, Math.min(255, Math.round(Number(n))))
       .toString(16)
@@ -415,16 +441,22 @@ const linesOfRow = (tab, itemId, tags) =>
         pillCount: pastillas.length,
         pillHeight: altoPastilla,
         rowHeight: r.height,
-        rowWidth: r.width,
         /**
          * Los bordes de la fila, en coordenadas de pantalla, y no un ancho y una x
-         * pelados. rowWidth es una longitud y rightmost era una posición
+         * pelados. Un ancho es una longitud y rightmost era una posición
          * absoluta, y compararlos como si fueran la misma magnitud sólo
-         * funcionaba porque la fila está en x ≈ 0: con un margen, un padding de
-         * pantalla o cualquier cambio de layout, la comparación empezaría a
-         * comparar dos cosas distintas. rightEdge es donde acaba la fila de
-         * verdad y sobra es la diferencia entre el borde de la fila y lo que
-         * llega más a la derecha, que es la pregunta que se quiere hacer.
+         * funcionaba porque la fila está en x ≈ 0 —va de 32 a 358—: con un
+         * margen, un padding de pantalla o cualquier cambio de layout, la
+         * comparación empezaría a comparar dos cosas distintas. rightEdge es
+         * donde acaba la fila de verdad y sobra es la diferencia entre el borde
+         * de la fila y lo que llega más a la derecha, que es la pregunta que se
+         * quiere hacer.
+         *
+         * El ancho de la fila está en row.width y **no** suelto por encima: la
+         * versión anterior tenía las dos cosas en el mismo objeto y rowWidth se
+         * quedó sin usarse en cuanto las comparaciones pasaron a usar rightEdge.
+         * Dos rutas al mismo número y una sin usar es una que algún día se
+         * desincroniza de la otra sin que nada se entere.
          */
         row: { left: r.left, right: r.right, width: r.width },
         rightEdge: r.right,
@@ -931,11 +963,17 @@ try {
    * mismo índice, así que **los errores del arranque de la app y del primer
    * dibujado de la lista no se miraban nunca**. `docs/verificacion-en-navegador.md`
    * dice que un error de consola es un fallo "en todo lo que ha hecho"; esto lo
-   * cumple ahora, y la primera ejecución después del cambio dirá si el arranque
-   * produce algo.
+   * cumple ahora, y la ejecución después del cambio dirá si el arranque —incluido
+   * el de `seedSession`, que hasta aquí no se miraba— produce algo.
    */
   problems = collectProblems(tab);
+  // Siempre cero, y está bien que lo sea: el array se acaba de nacer vacío. Se
+  // deja escrito para que quede claro que **no** es un índice que oculte algo, sino
+  // el principio de una ventana que empieza aquí y no se mueve.
   const problemasDesdeElPrincipio = problems.length;
+  if (problemasDesdeElPrincipio !== 0) {
+    throw new Error("el array de problemas no empieza vacío: la ventana no sería desde el principio");
+  }
 
   await seedSession(tab, session, APP);
   await tab.send("Emulation.setDeviceMetricsOverride", {
@@ -953,7 +991,22 @@ try {
     `(() => { localStorage.setItem("orbithub:appearance", JSON.stringify({ appearance: "system", accent: "orbit" })); return true; })()`,
   );
 
-  problems = collectProblems(tab);
+  /*
+   * **Aquí ya no se vuelve a llamar a `collectProblems`, y es lo importante.**
+   *
+   * Llamada dos veces no es "empezar a contar dos veces": `collectProblems`
+   * devuelve un array **nuevo** y devuelve *oídos* nuevos que empujan en él. La
+   * segunda llamada **tiraba el primer array**, y con él todo lo que `seedSession`
+   * hubiera producido —que son hasta tres intentos por dos arrancos completos de
+   * la app cada uno, y el primero arranca **anónimo a propósito**, que es la
+   * navegación que más falla de todo el guion—. Los oyentes del primer array
+   * seguían empujando en un array que nadie leía, así que además la primera
+   * llamada era código muerto y `problemasDesdeElPrincipio` era decorativo:
+   * valía siempre `0` porque el array nuevo está vacío al nacer.
+   *
+   * Una comprobación con el índice bien puesto contra el array equivocado informa
+   * verde, que es lo mismo que no comprobar pero con más confianza.
+   */
 
   /** Va a una lista, espera a que se pinte, y devuelve las pastillas que hay. */
   const goToList = async (listId, expectRows) => {
@@ -1575,11 +1628,13 @@ try {
     check(
       "el boton de color abierto se pinta con el borde del acento, no con su fondo",
       esmeralda.color.borderColor !== esmeralda.color.backgroundColor,
-      `borde ${esmeralda.color.borderColor} y fondo ${esmeralda.color.backgroundColor}, medidos: el fondo da ${rFondo.toFixed(3)}:1 sobre la pastilla, o sea no se ve, y el borde es lo unico que dice que la tira esta abierta`,
+      `borde ${esmeralda.color.borderColor} y fondo ${esmeralda.color.backgroundColor}, los dos medidos: el fondo da ${rFondo.toFixed(3)}:1 sobre el relleno ${esmeralda.pillFill}${rFondo < 1.05 ? ", por debajo de lo que se distingue de un color plano" : ""}, y el borde ${rBorde.toFixed(2)}:1`,
     );
-    // Y el número del token, como comparación y no como comprobación.
+    // Y los otros acentos, como comparación y no como comprobación: salen del token,
+    // no de un botón medido, y el orden se calcula aquí con la misma cuenta.
+    const acentoEnToken = (hex) => contrastRatio(hex, SCHEME.light.fill);
     note(
-      `los otros acentos salen del token, no del DOM: orbit 4.64:1, violet 5.09:1, amber 3.24:1, rose 4.33:1. El esmeralda es el mas flojo de los cinco`,
+      `los otros acentos salen del token, no del DOM, calculados aquí con la misma cuenta sobre ${SCHEME.light.fill}: orbit ${acentoEnToken("#3B63E0").toFixed(2)}:1, violet ${acentoEnToken("#7C3AED").toFixed(2)}:1, amber ${acentoEnToken("#C2740A").toFixed(2)}:1, rose ${acentoEnToken("#D42D5C").toFixed(2)}:1. El esmeralda medido es el mas flojo de los cinco: ${rBorde.toFixed(2)}:1`,
     );
   }
   await tab.screenshot(`${SHOTS}/etiquetas-04-acento-esmeralda-claro.png`);
@@ -1613,7 +1668,7 @@ try {
     );
   }
   // Comparado contra `rightEdge`, que es donde acaba la fila en coordenadas de
-  // pantalla, y no contra `rowWidth`, que es un ancho. Ver el comentario de
+  // pantalla, y no contra el ancho de la fila. Ver el comentario de
   // `linesOfRow`: sólo coincidían porque la fila está en x ≈ 0.
   check(
     "una pastilla mas ancha que la fila se parte por dentro y no se corta",
@@ -1659,7 +1714,18 @@ try {
   check(
     "una pastilla, tres y ocho caben en la misma pantalla sin empujar nada",
     [geo.una, geo.tres, geo.ocho].every((g) => g.sobra <= 1 && g.rowHeight <= 200),
-    `altos: 1 etiqueta ${Math.round(geo.una.rowHeight)} pt, 3 ${Math.round(geo.tres.rowHeight)} pt, 8 ${Math.round(geo.ocho.rowHeight)} pt`,
+    // Imprime **las dos cosas que se comprueban**: el alto y el holgura a la
+    // derecha. Antes sólo salía el alto, que es la mitad de lo que dice el `every`:
+    // un mensaje que enseña una de las dos condiciones deja en silencio a la otra,
+    // y es la que más difícil de ver es la que más cerca está de romperse.
+    Object.entries(geo)
+      .map(([k, v]) => {
+        // El mapa cuenta etiquetas; `larga` es una de 40 caracteres, no cuarenta.
+        const n = { una: 1, tres: 3, ocho: 8, larga: 1 }[k] ?? v.pillCount;
+        const cuantas = `${n} etiqueta${n === 1 ? "" : "s"}`;
+        return `${cuantas}${k === "larga" ? " de 40 caracteres" : ""} en ${v.lines} línea${v.lines === 1 ? "" : "s"}, fila de ${Math.round(v.rowHeight)} pt y ${Math.round(-v.sobra)} pt de holgura a la derecha`;
+      })
+      .join("; "),
   );
 
   section("11. Los dos '+' de la hoja de etiquetas");
