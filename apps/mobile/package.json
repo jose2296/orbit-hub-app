@@ -9,7 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "device": "expo start",
-    "export:web": "expo export --platform web",
+    "export:web": "node ../../scripts/export-web.mjs",
     "typecheck": "tsc --noEmit",
     "doctor": "expo-doctor",
     "config:check": "expo config --type public",
