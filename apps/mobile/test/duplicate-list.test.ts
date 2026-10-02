@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { TagColors } from '@orbit-hub/contracts';
-
 import { planDuplication } from '../src/lib/lists/duplicate';
 
 /**
@@ -22,10 +20,9 @@ function source(overrides: Record<string, unknown> = {}) {
     tags: ['pendiente'],
     position: 3,
     orderMode: 'manual' as const,
-    // Nobody has chosen a colour for any of this list's labels, which is the
-    // state a list is in until somebody picks one. Cast, because `{}` has no
-    // index signature to offer the `Record`.
-    tagColors: {} as TagColors,
+    // A list nobody has chosen a colour for yet: every label falls back to the
+    // colour its name hashes to.
+    tagColors: {},
     version: 4,
     itemCount: 2,
     ...overrides,
