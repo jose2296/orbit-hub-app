@@ -62,6 +62,13 @@ COPY packages/contracts/ packages/contracts/
 COPY packages/config/ packages/config/
 COPY apps/mobile/ apps/mobile/
 
+# `export:web` ya no es `expo export` a pelo: lo envuelve
+# `scripts/export-web.mjs`, que es quien deja el `<title>` puesto en el HTML
+# exportado. Sin esta copia el contenedor falla en el `RUN` de abajo con
+# `MODULE_NOT_FOUND`, y el fallo dice algo de `scripts/` —no dice que faltaba un
+# fichero que la linea de al lado de arriba parecia copiar entera.
+COPY scripts/export-web.mjs scripts/
+
 # Contracts and config first, and for the same reason as the API image: Metro
 # resolves them through `dist`, and a stale package builds into a bundle that
 # disagrees with the server about what a list item is.
