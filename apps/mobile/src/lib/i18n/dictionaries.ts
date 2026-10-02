@@ -84,6 +84,8 @@ const es = {
   "auth.google.unavailable":
     "El acceso con Google se habilitará cuando se configure el cliente OAuth.",
   "auth.google.completing": "Completando el acceso con Google…",
+  "auth.google.cancelled": "Se canceló el acceso con Google.",
+  "auth.google.failed": "No se pudo completar el acceso con Google:",
   "auth.google.callbackFailed":
     "No se pudo completar el acceso. Vuelve a intentar desde la pantalla de inicio de sesión.",
   "auth.verify.missingEmail": "No sabemos a qué correo reenviar el mensaje.",
@@ -1091,6 +1093,8 @@ const en: Record<TranslationKey, string> = {
   "auth.google.unavailable":
     "Google sign-in will be enabled once the OAuth client is configured.",
   "auth.google.completing": "Completing Google sign-in…",
+  "auth.google.cancelled": "Google sign-in was cancelled.",
+  "auth.google.failed": "Could not complete Google sign-in:",
   "auth.google.callbackFailed":
     "Sign-in could not be completed. Try again from the sign-in screen.",
   "auth.verify.missingEmail":

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useGoogleAuthRequest } from '@/lib/auth/google-auth';
@@ -15,6 +16,7 @@ export function GoogleSignInButton() {
   const theme = useTheme();
   const t = useTranslation();
   const { isConfigured, promptAsync, isLoading } = useGoogleAuthRequest();
+  const [fallo, setFallo] = useState<string | null>(null);
 
   return (
     <View style={{ gap: theme.spacing.xs }}>
@@ -23,7 +25,26 @@ export function GoogleSignInButton() {
         accessibilityState={{ disabled: !isConfigured, busy: isLoading }}
         disabled={!isConfigured || isLoading}
         onPress={() => {
-          void promptAsync();
+          /*
+           * Antes esto era `void promptAsync()` y nada más: si el canje fallaba,
+           * la promesa se rechazaba sola y **no se veía ningún error**. Un login
+           * roto era indistinguible de un login que no se había intentado, y
+           * durante horas eso fue justo lo que pasó: dos bugs distintos
+           * —un crash y un canje descartado—looked igual desde fuera.
+           *
+           * Ahora el fallo se dice, y se dice **qué** fue: sin eso hay que
+           * adivinar, y adivinar mal cuesta una build entera.
+           */
+          setFallo(null);
+          void promptAsync().catch((error: unknown) => {
+            const motivo =
+              error instanceof Error ? error.message : String(error);
+            setFallo(
+              motivo === 'GOOGLE_LOGIN_CANCELLED'
+                ? t('auth.google.cancelled')
+                : `${t('auth.google.failed')}\n\n${motivo}`,
+            );
+          });
         }}
         style={({ pressed }) => [
           styles.container,
@@ -43,6 +64,11 @@ export function GoogleSignInButton() {
       {!isConfigured ? (
         <AppText variant="caption" tone="subtle" align="center">
           {t('auth.google.unavailable')}
+        </AppText>
+      ) : null}
+      {fallo ? (
+        <AppText variant="caption" tone="danger" align="center">
+          {fallo}
         </AppText>
       ) : null}
     </View>

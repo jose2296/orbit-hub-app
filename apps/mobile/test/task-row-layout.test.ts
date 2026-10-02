@@ -1,0 +1,146 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+/**
+ * The four things a task row draws, and the three that are only broken on a phone.
+ *
+ * Every assertion here is about the **source**, not about a rendered tree: this
+ * suite runs in `node` with React Native stubbed, so nothing measures a pixel and
+ * nothing can catch Yoga. What it can do is stop the four shapes below from
+ * coming back, which is what happened once already — see `styles.nombre` in
+ * `list/[listId].tsx` for a comment that blamed the wrong file and fixed nothing.
+ *
+ * The measurements that found them are in the comments on the code they guard, and
+ * they were taken on an Android release build (API 35), not reasoned about.
+ */
+const RAIZ = join(import.meta.dirname, '..');
+const src = (ruta: string) => readFileSync(join(RAIZ, ruta), 'utf8');
+
+const checkbox = src('src/components/ui/checkbox.tsx');
+const badge = src('src/components/ui/badge.tsx');
+const listId = src('src/app/(app)/list/[listId].tsx');
+const appHeader = src('src/components/ui/app-header.tsx');
+const screen = src('src/components/ui/screen.tsx');
+const spaceBand = src('src/components/workspace/space-band.tsx');
+
+describe('la casilla no se come la fila', () => {
+  /**
+   * `flex: 1` on an **empty** `Text` grows into the whole row, and the title that
+   * shares it gets nothing.
+   *
+   * Measured: the checkbox took 755 of the row's 754 points of content width, so
+   * `styles.flex` measured zero — no title painted, the urgency badge crushed to
+   * ten points wide and wrapping one letter per line. An empty element measures
+   * zero in a browser however it is styled, which is why this was invisible on the
+   * web and on a dev server, and only showed up in a release build.
+   *
+   * `flex: 1` may stay where it is: the four call sites that pass a label want it
+   * to fill the row. What may not come back is an empty one.
+   */
+  it('no pinta una etiqueta que no le han dado', () => {
+    expect(checkbox).toContain('{label ? (');
+  });
+
+  it('el nodo de la etiqueta esta dentro de esa condicion', () => {
+    // Not "there is no label prop" — there is a prop, and `sign-up` and the item
+    // panel pass text to it. The claim is that an empty one is not rendered.
+    const etiqueta = checkbox.match(/\{label \? \([\s\S]*?\{label\}[\s\S]*?\) : null\}/);
+    expect(etiqueta).not.toBeNull();
+    // And it is the only place the label is drawn.
+    expect([...checkbox.matchAll(/\{label\}/g)]).toHaveLength(1);
+  });
+});
+
+describe('la insignia no se aplasta', () => {
+  /**
+   * A pill that gets narrow is not a pill.
+   *
+   * Measured on the same build: 53 points wide and 145 tall, "High" ten points
+   * wide wrapping one letter per line, and a row four times the height of its
+   * content. `flexShrink: 0` is what makes the badge the fixed thing and the
+   * labels the thing that yields.
+   */
+  it('no se encoge', () => {
+    expect(badge).toContain('flexShrink: 0');
+  });
+});
+
+describe('la fila de una tarea no reserva el asa de arrastrar', () => {
+  /**
+   * 28 points on the right of every row, for a handle that no longer exists: the
+   * row stopped being draggable when the order moved into a sheet, and the padding
+   * stayed. It is not a decoration, it is width taken from the title on every row
+   * of every list.
+   */
+  it('no tiene paddingRight de asa', () => {
+    expect(listId).not.toContain('dragHandle');
+  });
+
+  it('la insignia y las etiquetas viven en la misma linea y las etiquetas ceden', () => {
+    expect(listId).toContain('metaTags');
+    // The badge is what must survive twenty labels, so the labels shrink.
+    const meta = listId.slice(listId.indexOf('metaTags'));
+    expect(meta).toContain('flexShrink: 1');
+  });
+});
+
+describe('la cabecera se gasta el hueco de la barra de estado', () => {
+  /**
+   * The navigator draws the header from the top of the window and does not inset
+   * it, and `Screen` insets the *content* — so the bar's buttons sat under the
+   * clock while everything below them was correctly placed.
+   *
+   * Measured on the same build: the bar was exactly its own 56 points at y = 0,
+   * its buttons at y = 8..48, and the status bar at y = 0..24.
+   */
+  it('la cabecera toma insets.top', () => {
+    expect(appHeader).toContain('useSafeAreaInsets');
+    expect(appHeader).toContain('paddingTop: insets.top');
+    // And grows by it, so the wash still paints from the very top edge.
+    expect(appHeader).toContain('minHeight: ALTO + insets.top');
+  });
+
+  /**
+   * Only the bar takes it. Both taking it is the gap measured twice, which is how
+   * a bar of 24 points ends up above a page that starts another 24 points down.
+   */
+  it('la pantalla no lo vuelve a tomar cuando la cabecera ya lo ha tomado', () => {
+    expect(screen).toContain('useHeaderOwnsTopInset');
+    expect(screen).toContain(
+      'edges={cabeceraArriba ? ["left", "right"] : ["top", "left", "right"]}',
+    );
+  });
+});
+
+describe('el lavado no se parte en dos puntos distintos', () => {
+  /**
+   * The header got taller and the band did not.
+   *
+   * The wash is one gradient cut in two, and the cut is the bottom edge of the
+   * bar. The bar grew by `insets.top`; `SpaceBand` was still told the bar is 56,
+   * so it started its half 24 points too low and the two halves met at different
+   * points of the same ramp — a step of 36/255 measured across one line, on every
+   * screen of every space, which is exactly what the design says cannot happen.
+   *
+   * Both halves now read the bar's real height. The arithmetic that keeps them
+   * agreeing is in `wash-seam.test.ts`; these two are the wiring, because a helper
+   * nobody calls fixes nothing.
+   */
+  it('las dos mitades se miden contra la altura real de la barra', () => {
+    // The bar grows, and paints the taller wash.
+    expect(appHeader).toContain('minHeight: ALTO + insets.top');
+    expect(appHeader).toContain('height: altoLavadoDe(insets.top)');
+    // The band is told where the bar ends, and offsets its wash by the same number.
+    expect(spaceBand).toContain('const altoBarra = altoCabeceraDe(insets.top)');
+    expect(spaceBand).toContain('{ top: -altoBarra }');
+    expect(spaceBand).toContain('marginTop: -altoBarra');
+    expect(spaceBand).toContain('altoLavadoDe(insets.top)');
+
+    // And neither of them may go back to the bare constant: that is the exact shape
+    // the bug had, and it is a constant so nothing else would fail if it did.
+    expect(spaceBand).not.toContain('top: -ALTO_CABECERA');
+    expect(spaceBand).not.toContain('marginTop: -ALTO_CABECERA');
+  });
+});

@@ -838,10 +838,6 @@ function TaskRow({
         {
           gap: theme.spacing.md,
           padding: theme.spacing.lg,
-          // El asa de arrastrar va encima, en el borde derecho, y la insignia de
-          // urgencia se solapaba con ella. Se le deja sitio: dos cosas que se
-          // pisan no se leen, y ademas el que va debajo no se puede pulsar.
-          paddingRight: theme.spacing.lg + styles.dragHandle.width,
         },
       ]}
     >
@@ -1014,10 +1010,6 @@ const styles = StyleSheet.create({
   metaTags: {
     flexShrink: 1,
   },
-  /** Lo que ocupa el asa de arrastrar, en el borde derecho de la fila. */
-  dragHandle: {
-    width: 28,
-  },
   createButton: {
     position: "absolute",
     width: 56,
@@ -1049,22 +1041,26 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   /**
-   * The pressable that wraps the title, and **it must not be a flex child**.
+   * The pressable that wraps the title, and **it stays empty on purpose.**
    *
-   * Symptom: in a release build of Android the row shows its checkbox, its icon
-   * and the counters — every one of them styled — and **no title at all**. The
-   * `accessibilityLabel` of the icon, one line up, reads the title in full, so
-   * the data is there and the title is being dropped at layout time.
+   * Symptom this was written for: on Android the row showed its checkbox, its
+   * icon and the badge — every one of them styled — and **no title at all**, and
+   * an empty `{}` here was the fix that was believed to have done it. It did not
+   * fix it: `{}` is not a style, it changes nothing, and the title kept vanishing.
    *
-   * Why: its parent is already `flex: 1`, so this box has no width of its own,
-   * and a `Pressable` that is told how to divide a space rather than how much to
-   * occupy ends up occupying **zero** in Android's flexbox. A zero-width box clips
-   * everything inside it, and the `AppText` goes with it — while the icon beside
-   * it, which has a fixed `width: 24`, survives. On web the same tree lays out,
-   * because the browser gives an unstyled element its content width.
+   * **The cause was next door, not here.** The `Checkbox` to the left is given
+   * `label=""`, and it drew that empty label as an `AppText` with `flex: 1`. In
+   * Yoga the grow resolves against the space available to the whole checkbox,
+   * which is the rest of this row, so the checkbox grew to the row's full width —
+   * measured at 755 of the row's 754 points — and `styles.flex`, the title column
+   * sharing that row, got zero. Nothing to paint, and the badge crushed beside it.
+   * An empty element measures zero in a browser however it is styled, which is why
+   * the web was right and the phone was not.
    *
-   * So: no flex, no absolute, nothing. It measures what it wraps, which is the
-   * only thing that was ever wanted — the title is as long as it is.
+   * So the fix is in `checkbox.tsx`, which no longer draws a label it was not
+   * given. What is left here is a note not to "tidy" this into a `flex: 1`: the
+   * title is as long as it is, and a box told how to divide a space is a box that
+   * decides the title's width for it.
    */
   nombre: {},
   flex: {
