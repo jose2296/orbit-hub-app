@@ -117,9 +117,10 @@ export function ExportResultSheet({ attempt: pedido, title, onClose }: ExportRes
     a 422 or a 409 are refusals of a particular request shape, and the plain
     `Error` from `save.ts` is the person closing the share panel — on a phone
     that is the single most ordinary way this flow ends, and by then the file is
-    already written to the cache. Falling back to `export.error.unknown` turned
-    all three into "Algo falló al preparar el fichero." in red, which tells
-    somebody their file is broken when it is in their downloads.
+    already written to the cache. This used to fall back to a catch-all key that
+    turned all three into "Algo falló al preparar el fichero." in red, which tells
+    somebody their file is broken when it is in their downloads. **There is no
+    catch-all key now, and there is not going to be one**: `null` means `null`.
 
     So this is computed once, here, and `null` paints no line at all: the buttons
     below are still there and the person can still read what happened by pressing

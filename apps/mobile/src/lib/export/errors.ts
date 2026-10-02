@@ -12,14 +12,23 @@ import type { TranslationKey } from '@/lib/i18n/dictionaries';
  *
  * Lo que llega aqui en un movil lo decide `lib/export/save.ts`: alli el intercambio
  * HTTP ocurre dentro de `expo-file-system`, asi que no se construye ningun
- * `ApiError` y un fallo de descarga sale ya con `kind: 'network'`. Si no, un 401
- * en un telefono acabaria en `unknown`, que es `null` aqui, y la hoja pintaria
- * "algo fallo" de un 403 igual que de un 404.
+ * `ApiError` y un fallo de descarga sale ya con `kind: 'network'`, que si tiene
+ * frase. Sin eso, un 401 en un telefono acabaria en `unknown` — o sea `null`, o
+ * sea silencio — y una sesion caducada no se diria de ninguna manera. Ese
+ * trabajo de `save.ts` era lo que hacia que un `null` aqui fuera un hueco
+ * pequeno; ahora es la unica linea que evita que el fallo no se diga.
  *
- * Devuelve `null` para lo que no tiene frase propia. Quien llama decide el hueco:
- * inventar una clave para un 422 que no tiene equivalente posible en Castellano
- * seria una frase que no describe el problema, y `export.error.unknown` esta ahi
- * para ese caso.
+ * **Devuelve `null` para lo que no tiene frase propia, y quien llama pinta
+ * exactamente eso: nada.** No hay ninguna clave de reserva, y no hay una frase
+ * generica escondida detras de este `null` a la que recurrir: inventar una para
+ * un 422 que no tiene equivalente posible en Castellano seria una frase que no
+ * describe el problema, y una frase que no describe el problema es peor que no
+ * decir ninguna. El silencio es la respuesta, no un hueco esperando a que lo
+ * rellene quien llama.
+ *
+ * Que ese silencio sea el correcto es decision de quien llama y no de aqui, y
+ * por eso el `null` viene con su razon escrita: `export-result-sheet.tsx` lo
+ * pinta como una linea que no se dibuja, con el reintento y el cerrar debajo.
  */
 export function exportErrorKey(error: unknown): TranslationKey | null {
   // Envuelto con `toApiError` y no con un `instanceof` porque el hook deja en
