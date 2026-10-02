@@ -545,8 +545,17 @@ git commit -m "Pedir bytes sin parsearlos, que en un movil la respuesta va a un 
 - Produces:
   - `export const EXPORT_TIMEOUT_MS = 120_000`
   - `saveExport(args: { pending: PendingRequest; filename: string }): Promise<'downloaded' | 'shared'>`
+  - `readSavedEnvelope(args: { path: string; format: 'json' | 'csv' }): Promise<AccountExport | ListExport | null>` — **sólo nativo**
   - `exportErrorKey(error: unknown): TranslationKey | null`
-  - `useExport(): { running: boolean; run(args: { path: string; format: 'json' | 'csv'; title: string; fallbackId: string }): Promise<{ counts: ExportCounts | null } | null> }`
+  - `useExport(): UseExport`, donde `UseExport` expone `{ running: boolean; error: ApiError | null; filename: string | null; result: ExportResult | null; run(args: { path: string; format: 'json' | 'csv'; title: string; fallbackId: string }): Promise<ExportResult | null> }` y `ExportResult` es `{ counts: AccountExport['counts'] | ListExport['counts']; how: 'downloaded' | 'shared'; filename: string }`
+
+**Los `counts` salen del fichero, y eso obliga a que las dos plataformas los consigan de forma distinta.** En web, `send()` devuelve un `Response` cuyo `blob()` hay que leer igualmente, así que se parsea ese mismo `Response` y se le pasa a `saveExport` — un solo envío. En nativo **no hay ningún `Response` que parsear**: `File.downloadFileAsync` lleva los bytes del `Response` a un fichero de la caché y el `Response` no existe. La única forma de tener los `counts` ahí es releer el fichero recién escrito.
+
+Y releerlo es además lo correcto: **los números que se enseñan salen del fichero que ha quedado en disco**, no de una respuesta que nadie ha mirado. Si el fichero se escribió mal, los números no cuadran y se ve.
+
+`run()` lee `Platform.OS` una vez para decidir, y **ningún módulo nativo se importa fuera de `save.ts`**. Eso es lo que mantiene `save.ts` importable desde un test con el stub de `react-native`.
+
+El superset de `UseExport` —`error`, `filename`, `result`— no es adorno: sin ellos la Task 6 no puede pintar `export.saved` ni un error reintentable, y la hoja de resultado necesita el `how` para decir si el fichero se descargó o se compartió.
 
 `EXPORT_TIMEOUT_MS` es explícito y grande a propósito: `DEFAULT_TIMEOUT_MS` está puesto para JSON pequeño, y un export de varios megas lo termina contra un error de timeout que no es un timeout.
 
@@ -656,7 +665,7 @@ El destino **no** lleva el `filename` que devuelve `exportFilename` como nombre 
 
 - [ ] **Step 7: `use-export.ts`**
 
-`run()` es un `async` que: monta `running`, llama a `apiRaw(path, { query: { format }, timeoutMs: EXPORT_TIMEOUT_MS })`, llama a `exportFilename` con `new Date().toISOString().slice(0, 10)`, llama a `saveExport`, y **parsea el sobre con `accountExportSchema` o `listExportSchema` del contrato para sacar los `counts`**. Que los `counts` los diga el propio fichero y no el cliente es el punto: el número que se enseña es el que va a salir por pantalla.
+`run()` es un `async` que: monta `running`, limpia `error` y `result`, llama a `apiRaw(path, { query: { format }, timeoutMs: EXPORT_TIMEOUT_MS })`, llama a `exportFilename` con `new Date().toISOString().slice(0, 10)`, y entrega el fichero a `saveExport`. Los `counts` salen del sobre, y **la forma de llegar al sobre depende de la plataforma** — ver la sección de Interfaces de esta misma tarea.
 
 El tipo que devuelve `run` es `AccountExport['counts'] | ListExport['counts']`, **derivado de los tipos del contrato y escrito así**. No declares una interfaz `ExportCounts` propia: una segunda definición de la forma de los `counts` es una que se queda vieja en cuanto el contrato cambie, y el typecheck no la caza.
 
