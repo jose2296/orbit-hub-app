@@ -44,4 +44,20 @@ describe("cambiar el color de una etiqueta", () => {
     planTagColorChange(original, "Mercadona", "green");
     expect(original).toEqual({ Mercadona: "red" });
   });
+
+  it("tampoco lo muta al quitar el color", () => {
+    // El caso espejo del de arriba, y el que un `delete` ingenuo rompe sin que
+    // se note: quitar el color es media funcion, asi que una copia solo en el
+    // camino de elegir un color deja el otro sin cubrir.
+    //
+    // Y aqui el mapa que le pasan no es una copia de nada: es el mismo objeto
+    // que la lista tiene guardado. Un `delete current[tag]` lo vacia en sitio, y
+    // como el estado ya apunta a el, nadie repinta y nadie se entera: la lista se
+    // queda mostrando un color que ya no esta en el mapa que se acaba de enviar.
+    const original = { Mercadona: "green" as const, Alcampo: "red" as const };
+    expect(planTagColorChange(original, "Mercadona", null)).toEqual({
+      Alcampo: "red",
+    });
+    expect(original).toEqual({ Mercadona: "green", Alcampo: "red" });
+  });
 });
