@@ -311,21 +311,25 @@ export function MediaListScreen({
 
       {/*
         The list's own menu, **gated on the state and not on the list**.
-         *
+
         It was `list ? ... : null`, and a list on this screen is never null, so
         the sheet came up on its own the moment the screen opened — and could not
         be closed, because the thing it showed was not state anybody could set
         back. `ListMenuSheet` takes the list or nothing as its "is it open" signal,
         which is a trap: the same prop means "which list" and "is it open", and
         passing a real one says yes for ever.
+
+        So the gate is the state, **and it stays mounted**: pressing a format calls
+        `onClose()` before asking for the file, and under a conditional mount that
+        would unmount this and take the export with it — the sheet of results would
+        arrive at a component that is not there. Mounted always and gated by `null`,
+        the panel travels down and the outcome has somewhere to land.
        */}
-      {listOpen && list ? (
-        <ListMenuSheet
-          list={list}
-          folder={list.folderId ? (folders.find((f) => f.id === list.folderId) ?? null) : null}
-          onClose={onCloseListMenu}
-        />
-      ) : null}
+      <ListMenuSheet
+        list={listOpen && list ? list : null}
+        folder={list?.folderId ? (folders.find((f) => f.id === list.folderId) ?? null) : null}
+        onClose={onCloseListMenu}
+      />
 
 
 

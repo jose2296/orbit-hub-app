@@ -3,8 +3,11 @@ import { Platform } from 'react-native';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError, apiRaw, apiRequest, configureApiClient } from '@/lib/api/client';
+import { exportCountsLine } from '@/lib/export/counts';
 import { exportErrorKey } from '@/lib/export/errors';
 import { readSavedEnvelope, saveExport } from '@/lib/export/save';
+import { dictionaries, formatTranslation } from '@/lib/i18n/dictionaries';
+import type { TranslationKey } from '@/lib/i18n/dictionaries';
 import { deliverExport, type ExportResult } from '@/hooks/use-export';
 
 const originalFetch = globalThis.fetch;
@@ -507,5 +510,108 @@ describe('entregar la exportacion en la web', () => {
     // El `href` es la object URL, no la de la API: al navegador lo que le importa
     // para descargar es el blob, no de donde salio.
     expect(ancla.href).toBe(creados[0]);
+  });
+});
+
+/**
+ * La linea que se ensena al terminar una exportacion.
+ *
+ * El `t` es el de verdad, montado sobre el diccionario de castellano, y no una
+ * funcion de mentira que devuelve la clave: asi lo que se comprueba es la frase
+ * que se leeria en la pantalla —con sus tres grupos y su separador— y no solo que
+ * se llamo a la clave correcta. Una clave que se renombre o un `{listas}` que se
+ * escriba de otra manera rompe esto, que es justo lo que hay que que se rompa.
+ */
+const t = (key: TranslationKey, values?: Record<string, string | number>): string =>
+  formatTranslation(dictionaries.es[key], values);
+
+/**
+ * Los tres grupos de la cuenta, y solo los tres que dice su frase.
+ *
+ * El sobre de la cuenta lleva siete numeros —espacios, carpetas, adjuntos y
+ * plantillas tambien— y `export.counts` solo nombra tres. Los otros cuatro se
+ * cuentan igual de bien y no se ensenan: una linea con todo son cuatro cifras mas
+ * que nadie va a leer.
+ */
+describe('los numeros de una exportacion de la cuenta', () => {
+  it('enseña listas, elementos y notas, y nada mas', () => {
+    expect(
+      exportCountsLine(
+        { workspaces: 1, folders: 2, lists: 3, items: 4, notes: 5, attachments: 6, templates: 7 },
+        t,
+      ),
+    ).toBe('3 listas · 4 elementos · 5 notas');
+  });
+
+  it('los numeros que no estan en la frase no se inventan un lugar', () => {
+    // Los siete numeros del sobre, con las carpetas y los adjuntos a montones: si
+    // la frase crease un grupo para ellos, esta seria otra linea.
+    const linea = exportCountsLine(
+      { workspaces: 9, folders: 40, lists: 1, items: 0, notes: 12, attachments: 300, templates: 5 },
+      t,
+    );
+
+    expect(linea).toBe('1 listas · 0 elementos · 12 notas');
+    expect(linea).not.toContain('9');
+    expect(linea).not.toContain('300');
+  });
+});
+
+/**
+ * Una lista solo tiene `items`, y la frase de una lista solo tiene una cifra.
+ *
+ * Esta es la rama que se confunde: los dos sobres llevan `counts`, asi que la
+ * decision no es si hay numeros sino **de quien son**. Con `"lists" in counts` mal
+ * puesto, o con el orden de los dos `safeParse` del hook invertido, una lista cae
+ * en la frase de la cuenta y se ensena "listas · elementos · notas" con dos de
+ * los tres grupos en `undefined` — que es lo que hace `formatTranslation` con un
+ * marcador sin valor: lo deja tal cual, con las llaves.
+ */
+describe('los numeros de una exportacion de una lista', () => {
+  it('enseña solo los items, en plural', () => {
+    expect(exportCountsLine({ items: 7 }, t)).toBe('7 elementos');
+  });
+
+  it('enseña el singular cuando hay uno', () => {
+    // La rama del plural, no la de la cuenta: "1 elemento" y no "1 elementos", y
+    // desde luego no "1 listas · 1 elementos · 1 notas".
+    expect(exportCountsLine({ items: 1 }, t)).toBe('1 elemento');
+  });
+
+  it('no deja ningun grupo de la cuenta colgando', () => {
+    // La asercion que pincha la confusion de verdad: un marcador sin valor se
+    // queda en la pantalla con sus llaves, asi que basta con que no haya ninguno.
+    const linea = exportCountsLine({ items: 42 }, t);
+
+    expect(linea).toBe('42 elementos');
+    expect(linea).not.toContain('{');
+    expect(linea).not.toContain('·');
+  });
+
+  it('una lista vacia dice cero elementos y no nada', () => {
+    // `counts.items` es un numero del sobre, y vale cero: una lista sin items
+    // exportada sale con un cero delante, que es la verdad, y no con una linea
+    // vacia que parece un fallo.
+    expect(exportCountsLine({ items: 0 }, t)).toBe('0 elementos');
+  });
+});
+
+/**
+ * Un CSV no lleva sobre, y por eso `counts` es `null`.
+ *
+ * Lo que se decide aqui es que no se pinte **nada**, y no "un cero" o "un
+ * separador solo": la cadena vacia es lo unico que la hoja puede recibir sin
+ * dibujar una linea de la que no hay nada que decir. Un `·` suelto al final de un
+ * panel es el sintoma de haber usado aqui un valor por defecto.
+ */
+describe('una exportacion sin sobre', () => {
+  it('no dice nada, ni una cifra ni un separador', () => {
+    expect(exportCountsLine(null, t)).toBe('');
+  });
+
+  it('la cadena vacia es de verdad vacia, no un espacio', () => {
+    // Un `trim()` de la linea que la hoja pinta: si esto salia con un espacio, el
+    // panel dibujaria una linea de altura con nada en ella.
+    expect(exportCountsLine(null, t).trim()).toBe('');
   });
 });
