@@ -69,7 +69,7 @@ describe('exchangeGoogleCode', () => {
     expect(body.get('client_secret')).toBe('web-secret');
   });
 
-  it('redeems a native code without a secret, sending the PKCE verifier', async () => {
+  it('redeems a native code sending the PKCE verifier, and the secret when there is one', async () => {
     await exchangeGoogleCode({
       code: 'code-android',
       codeVerifier: 'verifier-value-1234567890',
@@ -78,9 +78,19 @@ describe('exchangeGoogleCode', () => {
 
     const body = bodyOf();
     expect(body.get('client_id')).toBe(env.GOOGLE_ANDROID_CLIENT_ID);
-    // Sending the web secret with a native client is what Google rejects.
-    expect(body.get('client_secret')).toBeNull();
     expect(body.get('code_verifier')).toBe('verifier-value-1234567890');
+    /*
+     * El secret se manda ahora en Android, y antes este test exigía que no.
+     *
+     * Lo que Google prohíbe no es mandar el secret: es que el secret esté en la
+     * app. Aquí el canje lo hace este servidor y `auth-client.ts` solo envía el
+     * `code` y el `code_verifier` — ni el client id ni el secret salen del
+     * servidor hacia el bundle. Google's dos salidas para una app instalada
+     * —el esquema propio, que su propia consola marca como "no se recomienda" y
+     * que bloquea, y un https propio, que rechaza en los clients de Android— no
+     * dejan ninguna abierta, y un client *web* solo canjea si llega el secret.
+     */
+    expect(body.get('client_secret')).toBe(env.GOOGLE_CLIENT_SECRET);
   });
 
   it('uses the iOS client on iOS', async () => {

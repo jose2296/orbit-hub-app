@@ -60,7 +60,32 @@ function googleClientFor(platform: GooglePlatform): GoogleClient | null {
     return env.GOOGLE_IOS_CLIENT_ID ? { clientId: env.GOOGLE_IOS_CLIENT_ID } : null;
   }
   if (platform === 'android') {
-    return env.GOOGLE_ANDROID_CLIENT_ID ? { clientId: env.GOOGLE_ANDROID_CLIENT_ID } : null;
+    if (!env.GOOGLE_ANDROID_CLIENT_ID) return null;
+    /*
+     * **El secret viaja también en Android, y aquí está por qué.**
+     *
+     * La regla de Google es que una app instalada no use un client *web*, y el
+     * motivo —el único— es que el secret acaba dentro del APK, donde cualquiera
+     * lo extrae. **Aquí no**: el canje lo hace este servidor, la app solo manda
+     * el `code` y el `code_verifier`, y el secret no sale de aquí ni entra en el
+     * bundle. Se comprueba en `auth-client.ts`, que no envía ni el client id ni
+     * el secret.
+     *
+     * Y el motivo por el que hace falta mandarlo: Google ya no admite un
+     * `redirect_uri` https propio en un client **de Android** —probado, el mismo
+     * request con el client web pasa a la pantalla de consentimiento y con el de
+     * Android responde `Access blocked: This app's request is invalid`— y su
+     * esquema propio aparece en su propia consola como "no se recomienda" y lo
+     * bloquea a la vez. Esas son las dos ramas, y las dos están cerradas.
+     *
+     * Mandar el secret es inocuo para un client público de verdad —Google lo
+     * ignora— y es lo que un client *web* exige para canjear el código. Por eso
+     * se manda siempre que exista, y no solo en la rama de web.
+     */
+    return {
+      clientId: env.GOOGLE_ANDROID_CLIENT_ID,
+      ...(env.GOOGLE_CLIENT_SECRET ? { clientSecret: env.GOOGLE_CLIENT_SECRET } : {}),
+    };
   }
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return null;
   return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };

@@ -1,6 +1,7 @@
+import { APP_SCHEME } from '@orbit-hub/config';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
@@ -24,10 +25,31 @@ export default function GoogleCallbackScreen() {
   const [standalone, setStandalone] = useState(false);
 
   useEffect(() => {
-    // A page opened directly (not as the popup the app created) has no opener,
-    // so there is nobody to hand the URL back to and this window is not ours to
-    // close. Chrome warns about that, and rightly.
+    /*
+     * **El salto intermedio del login en nativo.**
+     *
+     * Google no acepta `orbithub://auth/google` como `redirect_uri` en una app
+     * instalada, y su consola lo dice del client de Android. Así que el nativo
+     * sale a un https y vuelve por el scheme, y esta página es quien hace de
+     * puente: recibe el `code` en la query y rebota el navegador al scheme.
+     *
+     * Google nunca ve el scheme —solo recibió el https—, que es justo lo que
+     * hace que esto funcione en vez de devolver el mismo `Access blocked`.
+     *
+     * Y solo en nativo: con `window.opener` hay un popup detrás al que hay que
+     * devolverle la URL, y el reboto se lo comería. El caso "alguien abrió esta
+     * URL a mano" no tiene a nadie esperando, y por eso enseña el aviso.
+     */
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
     const isPopup = typeof window !== 'undefined' && window.opener !== null;
+
+    if (code && !isPopup && Platform.OS === 'web') {
+      const scheme = `${APP_SCHEME}://auth/google?${window.location.search.replace(/^\?/, '')}`;
+      window.location.replace(scheme);
+      return;
+    }
+
     if (!isPopup) {
       setStandalone(true);
       return;
