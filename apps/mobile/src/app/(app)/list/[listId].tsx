@@ -3,7 +3,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
-import type { ListItem, ListOrderMode, Priority } from "@orbit-hub/contracts";
+import type {
+  ListItem,
+  ListOrderMode,
+  Priority,
+  TagColors,
+} from "@orbit-hub/contracts";
 
 import { releaseSharedCover } from "@/lib/media/shared-cover";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +26,7 @@ import { FiltersBody } from "@/components/lists/item-picker";
 import { ListControls } from "@/components/lists/list-controls";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
+import { TagChip } from "@/components/lists/tag-chip";
 import { Screen } from "@/components/ui/screen";
 import { ReorderSheet } from "@/components/ui/reorder-sheet";
 import { useLongPressText } from "@/hooks/use-long-press-text";
@@ -429,6 +435,11 @@ export default function ListScreen() {
     const row = (
       <TaskRow
         item={item}
+        // The map of the list this row is being read out of, exactly as the
+        // sheet below it gets it. `?? {}` for the same reason it has it there: a
+        // list whose colours have not arrived yet draws its pills in the derived
+        // colour, which is what every other device computes for the same name.
+        tagColors={list?.tagColors ?? {}}
         onToggle={() => void toggleCompleted(item)}
         // Un toque abre el elemento. Antes el nombre era un boton que BORRABA,
         // sin confirmar y sin vuelta atras: la forma mas mala de perder trabajo
@@ -816,11 +827,22 @@ function entryKey(entry: ListEntry): string {
 /** One task row, shared by the pending and the completed sections. */
 function TaskRow({
   item,
+  tagColors,
   onToggle,
   onEdit,
   onIcon,
 }: {
   item: import("@orbit-hub/contracts").ListItem;
+  /**
+   * The colours of **this** list, handed down from the screen's `list`.
+   *
+   * A prop and not a lookup: "Mercadona" is a word any list can use, and two
+   * lists in the same app can hold it in two colours. A row that went and found
+   * the colour itself — from a module map, from the item, from a hook — would
+   * paint both of them the same one, and the only way to know which list a row
+   * belongs to is to be told.
+   */
+  tagColors: TagColors;
   onToggle: () => void;
   onEdit: () => void;
   onIcon: () => void;
@@ -953,24 +975,39 @@ function TaskRow({
               />
             ) : null}
 
-            {/* The labels, and only the ones there are. A row used to say
-                "+ Label" under every name, which is a second place to add the same
-                thing the item panel already does, in a row with no room to say it
-                in.
+            {/* The labels, one pill each, and only the ones there are. A row used
+                to say "+ Label" under every name, which is a second place to add
+                the same thing the item panel already does, in a row with no room
+                to say it in.
 
-                `flexShrink` and not nothing: twenty labels is a string longer than
-                the row, and the badge next to it must survive that, not be pushed
-                off the right edge with the first label. */}
-            {item.tags.length > 0 ? (
-              <AppText
-                variant="caption"
-                tone="accent"
-                numberOfLines={1}
-                style={styles.metaTags}
-              >
-                {item.tags.join(" · ")}
-              </AppText>
-            ) : null}
+                It used to be one string — "Mercadona · Panadería", joined, in the
+                accent colour — and a string has nowhere to put a colour that
+                belongs to one of its words. A label is a per-list thing with a
+                per-list colour, so it has to be a box: the pill is the same one
+                the task sheet draws, in the same colour, for the same reason.
+
+                **A pill that reads in `theme.colors.text` is not a bug.** The pill
+                keeps the label's own colour only where that colour reaches 4.5:1
+                on the pill's fill — nine of the twelve palette colours fail that
+                in each theme — and hands back the theme's text colour where it
+                does not. The arithmetic lives in `@/lib/lists/tag-colors` and it
+                is measured, so there is nothing to route around here.
+
+                And they wrap rather than being cut: a pill cut in half is worse
+                than a label cut in half, because the colour is on the pill and a
+                half-pill reads as a different colour. `docs/roadmap.md` says it
+                about a label beside a name and it is more true of a pill.
+
+                `flexShrink` is on the pill and not on the badge: twenty labels is
+                longer than any row, and the badge is the one thing on that line
+                that must not be squeezed, because it is what the list is sorted
+                by. The pill gets the wrapper because `TagChip` takes no style —
+                it is one box for one label, and its width is the label's. */}
+            {item.tags.map((tag) => (
+              <View key={tag} style={styles.metaTag}>
+                <TagChip tag={tag} colors={tagColors} size="compact" />
+              </View>
+            ))}
           </View>
         ) : null}
       </View>
@@ -1010,17 +1047,36 @@ const styles = StyleSheet.create({
   /** La fila de la insignia de urgencia y las etiquetas, bajo el nombre. */
   meta: {
     flexDirection: "row",
+    /*
+     * `alignItems` stays, and it is load-bearing: it is what lets the row be
+     * several lines tall — the pills wrap under the badge — without a pill
+     * stretching into a rounded block the height of the whole line.
+     * `TagChip` also carries `alignSelf: "flex-start"`, and the task sheet's two
+     * tag rows depend on the same arrangement, so this row is not the only thing
+     * reading it.
+     */
     alignItems: "center",
+    /*
+     * So the pills go under each other instead of being made narrower. They wrap,
+     * they are never cut: with `flexWrap` the row measures every pill at its own
+     * width and moves the ones that do not fit onto the next line, which is the
+     * only arrangement in which a pill is still the colour it was chosen to be.
+     */
+    flexWrap: "wrap",
   },
   /**
    * And the labels yield, not the badge.
    *
-   * A row with twenty labels is a string longer than the screen, and without this
-   * the string would keep its full width and push the badge off the right edge —
+   * A row with twenty labels is longer than the screen, and without this the
+   * pills would keep their full width and push the badge off the right edge —
    * which is the one thing on that line that cannot be cut in half, because it is
    * what the row is sorted by.
+   *
+   * It is a wrapper and not a style on the pill because `TagChip` takes no
+   * `style`: it is one box for one label, and how much of the line it may take
+   * is the caller's business, not the component's.
    */
-  metaTags: {
+  metaTag: {
     flexShrink: 1,
   },
   /** Lo que ocupa el asa de arrastrar, en el borde derecho de la fila. */
