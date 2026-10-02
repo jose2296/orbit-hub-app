@@ -134,13 +134,49 @@ describe('el lavado no se parte en dos puntos distintos', () => {
     expect(appHeader).toContain('height: altoLavadoDe(insets.top)');
     // The band is told where the bar ends, and offsets its wash by the same number.
     expect(spaceBand).toContain('const altoBarra = altoCabeceraDe(insets.top)');
-    expect(spaceBand).toContain('{ top: -altoBarra }');
     expect(spaceBand).toContain('marginTop: -altoBarra');
     expect(spaceBand).toContain('altoLavadoDe(insets.top)');
 
     // And neither of them may go back to the bare constant: that is the exact shape
     // the bug had, and it is a constant so nothing else would fail if it did.
-    expect(spaceBand).not.toContain('top: -ALTO_CABECERA');
     expect(spaceBand).not.toContain('marginTop: -ALTO_CABECERA');
+  });
+
+  /**
+   * The band starts **where the bar ends**, and that is `top: 0`.
+   *
+   * This is the cut the design says cannot exist, and it was in the code since
+   * before the safe-area change: the band's box was lifted a whole bar-height with
+   * `top: -ALTO_CABECERA`, so on the web it sat at y = 0..100 instead of 56..156 —
+   * and because its fade is pinned to the box's bottom (`bottom: 0`, 82% tall), the
+   * fade started at y = 18, **38 points above the join**. By the height of the bar's
+   * bottom edge the fade was already 46% done: the bar cuts the colour in half a
+   * piece and the band underneath was already half faded. Measured at 390 wide in
+   * both themes, a step of **32/255 across one line**, on every screen of a space.
+   *
+   * The comment on that style used to say `top: 0` was the thing causing a white
+   * line under the bar — which was this bug wearing the wrong explanation.
+   *
+   * Measured after the fix: band at y = 56..156, fade from y = 74, largest step in
+   * the whole column **3** (dark theme **2**), nothing above 6 anywhere.
+   */
+  it('la banda arranca donde acaba la barra, no mas arriba', () => {
+    // Scoped to the `banda` style, with its comment stripped. `top: 0` also appears
+    // on the veil and on the fade inside it, so asserting on the whole file passes
+    // even with the band lifted a whole bar-height — which is the thing to stop.
+    // And the comment on that style quotes the old `top: -56` while explaining why
+    // it went, so the comment has to go before anything can match `top:`.
+    const sinComentarios = spaceBand.replace(/\/\*[\s\S]*?\*\//g, '');
+    const banda = sinComentarios.slice(
+      sinComentarios.indexOf('banda: {'),
+      sinComentarios.indexOf('lavado: {'),
+    );
+    expect(banda).toContain('top: 0');
+    expect(banda).not.toMatch(/top:\s*-/);
+
+    // The fade is pinned to the bottom of the box, so the box's top is the only
+    // thing that decides where the colour starts going. It has to be the bar's edge.
+    expect(sinComentarios).not.toContain('top: -altoBarra');
+    expect(sinComentarios).not.toContain('top: -ALTO_CABECERA');
   });
 });

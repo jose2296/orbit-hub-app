@@ -30,5 +30,10 @@
     "assets:brand": "node scripts/generate-brand-assets.mjs",
     "release": "bash scripts/release.sh",
     "check": "npm run typecheck && npm run test && npm run config:check"
+  },
+  "dependencies": {
+    "expo": "~57.0.25",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
   }
 }
