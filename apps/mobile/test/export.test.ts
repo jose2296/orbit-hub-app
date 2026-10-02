@@ -1,7 +1,13 @@
 import { exportFilename } from '@orbit-hub/contracts';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { apiRaw, configureApiClient } from '@/lib/api/client';
+import { ApiError, apiRaw, apiRequest, configureApiClient } from '@/lib/api/client';
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 describe('exportFilename', () => {
   it('deja un nombre sin espacios ni acentos', () => {
@@ -65,5 +71,71 @@ describe('apiRaw', () => {
     });
 
     expect(pending.headers.Accept).toBe('text/csv');
+  });
+
+  it('send() reintenta una vez y con el token nuevo cuando la respuesta es 401', async () => {
+    const authorizations: (string | null)[] = [];
+    let currentToken = 'stale';
+
+    globalThis.fetch = async (_url, init) => {
+      authorizations.push(new Headers(init?.headers).get('Authorization'));
+
+      if (authorizations.length === 1) {
+        return new Response(JSON.stringify({ error: { code: 'unauthorized', message: 'nope' } }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('id,name\n1,uno\n', {
+        status: 200,
+        headers: { 'Content-Type': 'text/csv' },
+      });
+    };
+
+    configureApiClient({
+      getAccessToken: async () => currentToken,
+      onUnauthorized: async () => {
+        // El refresh renueva el token guardado, que es justo lo que el reintento
+        // tiene que leer. Si `send()` reusara las cabeceras compuestas antes del
+        // refresh, volveria a mandar el token caducado y recibiria otro 401.
+        currentToken = 'fresh';
+        return true;
+      },
+    });
+
+    const pending = await apiRaw('/lists/l1/export', { headers: { Accept: 'text/csv' } });
+    const response = await pending.send();
+
+    expect(response.status).toBe(200);
+    // El cuerpo vuelve entero y sin parsear: son bytes del llamante.
+    expect(await response.text()).toBe('id,name\n1,uno\n');
+    expect(authorizations).toHaveLength(2);
+    expect(authorizations).toEqual(['Bearer stale', 'Bearer fresh']);
+  });
+});
+
+/**
+ * El nucleo que comparten las dos rutas. Componer tambien puede fallar —
+ * `getAccessToken` es estado inyectado, no una constante — y un fallo ahi no
+ * puede salir como una excepcion suelta por el punto de entrada de la app: la
+ * red se reintenta y un `unknown` de `toApiError` no.
+ */
+describe('el nucleo de la peticion', () => {
+  it('reporta como red un token que no se puede leer, en las dos rutas', async () => {
+    configureApiClient({
+      getAccessToken: async () => {
+        throw new Error('el almacen seguro no esta disponible');
+      },
+    });
+
+    const fromJson = await apiRequest('/health').catch((caught) => caught);
+    const fromRaw = await apiRaw('/account/export').catch((caught) => caught);
+
+    for (const error of [fromJson, fromRaw]) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).kind).toBe('network');
+      expect((error as ApiError).isRetryable).toBe(true);
+    }
   });
 });

@@ -163,10 +163,12 @@ function networkError(error: unknown): ApiError {
  * no es anonima, y un `execute` que arma el timeout y envia una sola vez.
  *
  * Es un nucleo compartido y no dos copias porque el timeout y el refresh de 401
- * no pueden portarse de una forma en un camino y de otra en el otro. Y componer
- * y enviar van separados porque `apiRaw` devuelve la peticion sin enviarla: el
- * timeout cuenta desde que se envia, no desde que se compone, y el llamante
- * puede tardar todo lo que quiera entre las dos cosas.
+ * no pueden portarse de una forma en un camino y de otra en el otro: el timeout
+ * vive aqui y el refresh en `retryAfterUnauthorized`, y los dos los usan
+ * `apiRequest` y `send()`. Y componer y enviar van separados porque `apiRaw`
+ * devuelve la peticion sin enviarla: el timeout cuenta desde que se envia, no
+ * desde que se compone, y el llamante puede tardar todo lo que quiera entre las
+ * dos cosas.
  */
 async function request(
   path: string,
@@ -186,22 +188,35 @@ async function request(
     headers = {},
   } = options;
 
-  const url = buildUrl(path, query);
+  let url: string;
+  let requestHeaders: Record<string, string>;
 
-  const requestHeaders: Record<string, string> = {
-    Accept: 'application/json',
-    ...headers,
-  };
+  try {
+    url = buildUrl(path, query);
 
-  if (body !== undefined) {
-    requestHeaders['Content-Type'] = 'application/json';
-  }
+    requestHeaders = {
+      Accept: 'application/json',
+      ...headers,
+    };
 
-  if (!anonymous) {
-    const token = await getAccessToken();
-    if (token) {
-      requestHeaders.Authorization = `Bearer ${token}`;
+    if (body !== undefined) {
+      requestHeaders['Content-Type'] = 'application/json';
     }
+
+    if (!anonymous) {
+      const token = await getAccessToken();
+      if (token) {
+        requestHeaders.Authorization = `Bearer ${token}`;
+      }
+    }
+  } catch (error) {
+    // Componer tambien puede fallar: `getAccessToken` es estado inyectado y
+    // puede rechazar, y `buildUrl` puede tropezar con un valor raro en el query.
+    // Antes de partir el nucleo esto caia dentro del `try` de `execute` y salia
+    // mapeado; sin este `catch` la excepcion suelta cruzaria el punto de entrada
+    // y una pantalla la veria como el `unknown` de `toApiError`, que no se
+    // reintenta, en vez de como `network`, que si.
+    throw networkError(error);
   }
 
   const execute = async (): Promise<Response> => {
@@ -235,17 +250,39 @@ async function request(
 }
 
 /**
+ * La unica decision sobre un 401: refrescar el token y devolver las opciones del
+ * reintento, o `null` si no toca.
+ *
+ * Es una funcion y no dos porque las dos rutas prometieron tratar igual un token
+ * caducado. Si el camino de JSON reintentara y el de bytes no, la diferencia
+ * solo apareceria en unas exportaciones que fallan en el movil de alguien y en
+ * ningun test. El `noRetryOnUnauthorized` va en las opciones de salida porque un
+ * segundo 401 tiene que terminar la historia y no volver a preguntar por un
+ * token que hace un momento se renovo.
+ */
+async function retryAfterUnauthorized(
+  response: Response,
+  options: RequestOptions,
+): Promise<RequestOptions | null> {
+  if (response.status !== 401 || options.anonymous || options.noRetryOnUnauthorized) {
+    return null;
+  }
+
+  const refreshed = await onUnauthorized();
+  return refreshed ? { ...options, noRetryOnUnauthorized: true } : null;
+}
+
+/**
  * Single entry point for network calls: JSON in, JSON out, typed errors, and one
  * transparent refresh + retry on 401.
  *
  * A response that is not JSON — a CSV export — cannot come back through here,
  * because this path ends in `text()` + `JSON.parse`. Those responses go through
- * `apiRaw`, which sends on the same core so the timeout and the 401 retry
- * behave exactly the same.
+ * `apiRaw`, which sends on the same core and through the very same
+ * `retryAfterUnauthorized`, so neither the timeout nor the retry on a stale
+ * token can behave one way here and another way there.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { anonymous = false, noRetryOnUnauthorized = false } = options;
-
   const { execute } = await request(path, options);
 
   let response: Response;
@@ -255,11 +292,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw networkError(error);
   }
 
-  if (response.status === 401 && !anonymous && !noRetryOnUnauthorized) {
-    const refreshed = await onUnauthorized();
-    if (refreshed) {
-      return apiRequest<T>(path, { ...options, noRetryOnUnauthorized: true });
-    }
+  const retry = await retryAfterUnauthorized(response, options);
+  if (retry) {
+    return apiRequest<T>(path, retry);
   }
 
   if (!response.ok) {
@@ -331,14 +366,12 @@ export async function apiRaw(path: string, options: RequestOptions = {}): Promis
       throw networkError(error);
     }
 
-    if (response.status === 401 && !options.anonymous && !options.noRetryOnUnauthorized) {
-      const refreshed = await onUnauthorized();
-      if (refreshed) {
-        // El reintento se compone otra vez porque el token acaba de cambiar: un
-        // reenvio con estas mismas cabeceras volveria a recibir el mismo 401.
-        const retry = await apiRaw(path, { ...options, noRetryOnUnauthorized: true });
-        return retry.send();
-      }
+    const retry = await retryAfterUnauthorized(response, options);
+    if (retry) {
+      // Se compone otra vez porque el token acaba de cambiar: reenviar con las
+      // cabeceras de antes del refresh volveria a recibir el mismo 401.
+      const reattempt = await apiRaw(path, retry);
+      return reattempt.send();
     }
 
     if (!response.ok) {
