@@ -19,15 +19,25 @@ export type TagColors = z.infer<typeof tagColorSchema>;
  *
  * A hash of the name, and that is the whole design: the colour is **obligatory**
  * and choosing it is **optional**, so the default case has to exist without
- * anybody deciding anything — and it has to be a colour and not a grey, or "nobody
- * chose" and "this name happens to be grey" would look the same.
+ * anybody deciding anything. The fallback is not a colour of its own — nothing in
+ * this app is reserved for "nobody chose" — it is one of the twelve, drawn like
+ * any other.
+ *
+ * **`neutral` is one of the twelve, so a name can derive grey.** The modulo lands
+ * on it for roughly one name in twelve, and such a label then looks exactly like
+ * one whose grey somebody chose on purpose. Accepted, not fixed: one more colour,
+ * or a palette of its own that the icons do not share, costs more than the
+ * coincidence is worth. The promise is that a name keeps its colour, not that its
+ * colour says who chose it.
  *
  * FNV-1a, 32 bits, over the UTF-16 units of the name, modulo the palette length.
  * `Math.imul` keeps the multiply exact in 32 bits in every engine and
  * `charCodeAt` reads the same everywhere, so two phones and a server land on the
  * same colour for the same word. That is what makes it safe **not to store it**:
  * there is nothing to sync for the default case, and the labels that already
- * exist get a colour the moment this ships, with no backfill.
+ * exist get a colour the moment this ships, with no backfill. The value is pinned
+ * by a test in the app, because a hash that drifts is a silent change nobody can
+ * see coming.
  *
  * **Case and accents are not folded.** `Pañales` and `panales` are two different
  * labels everywhere else in this app —the membership check is exact— so folding
@@ -57,8 +67,10 @@ export function derivedTagColor(tag: string): ItemIconColor {
  * which is a state the map already has — an absent key — so the label falls back
  * to `derivedTagColor`. Rejecting the whole write would lose every other label's
  * colour because of one bad key, and would punish whoever did not type that key.
+ * Which is also why this can never be the thing that answers 422: what it returns
+ * is always a map `tagColorSchema` accepts, and there is a test that says so with
+ * the values that would otherwise be the ones that throw.
  */
-export function sanitiseTagColors(value: unknown): TagColors;
 export function sanitiseTagColors(value: unknown): TagColors {
   // Not an object, or an array, is no map: `{}`. Otherwise copy entry by entry,
   // skipping a key that is not 1-40 characters once trimmed, and a value that is
@@ -74,10 +86,11 @@ export function sanitiseTagColors(value: unknown): TagColors {
     if (etiqueta.length < 1 || etiqueta.length > 40) {
       continue;
     }
-    if (!ITEM_ICON_COLORS.includes(color as ItemIconColor)) {
+    const elegido = color as ItemIconColor;
+    if (!ITEM_ICON_COLORS.includes(elegido)) {
       continue;
     }
-    colores[etiqueta] = color as ItemIconColor;
+    colores[etiqueta] = elegido;
   }
   return colores;
 }

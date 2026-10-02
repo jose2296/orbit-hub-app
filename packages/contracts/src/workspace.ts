@@ -273,7 +273,6 @@ export type { ItemIcon, ItemIconCategory, ItemIconColor } from "./item-icons.js"
 export { tagColorSchema, derivedTagColor, sanitiseTagColors } from "./tag-colors.js";
 export type { TagColors } from "./tag-colors.js";
 
-
 /**
  * The ways a list can be ordered.
  *
@@ -329,9 +328,11 @@ export const listSchema = syncableEntitySchema
      * every task that carries it at once. On the task it would mean two tasks
      * with the same label in two colours, and then the colour says nothing.
      *
-     * Absent means "nobody chose", and that is not the same as neutral: the label
-     * falls back to `derivedTagColor(tag)`, which is why existing labels get a
-     * colour the moment this ships and why there is no backfill to run.
+     * Absent means "nobody chose", and the label falls back to
+     * `derivedTagColor(tag)`, which is why existing labels get a colour the moment
+     * this ships and why there is no backfill to run. That fallback can be
+     * `neutral` — it is one of the twelve — so the key being absent is the only
+     * thing that records the choice; the colour itself does not.
      */
     tagColors: tagColorSchema.default({}),
     position: z.number().int().min(0),
