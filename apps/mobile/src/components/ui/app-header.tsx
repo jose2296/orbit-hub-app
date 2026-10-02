@@ -1,12 +1,18 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/ui/breadcrumbs';
 import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
 import { FullTitle } from "@/components/media/full-title";
 import { SpaceWash } from '@/components/ui/wash';
-import { ALTO_LAVADO, VELO, type WashVariant } from '@/lib/workspace/wash';
+import {
+  ALTO_LAVADO,
+  altoLavadoDe,
+  VELO,
+  type WashVariant,
+} from '@/lib/workspace/wash';
 import { useTheme } from '@/theme';
 
 /** What a screen publishes about its space, read from the header options. */
@@ -91,12 +97,37 @@ export function AppHeader({ options, children }: AppHeaderProps) {
   */
   const espacio = (options as { espacio?: EspacioHeader | null }).espacio ?? null;
 
+  /*
+    El hueco de la barra de estado, y **la barra lo gasta, no el contenido**.
+
+    Measured on an Android release build (API 35): the bar was `[0,0]-[1080,147]`,
+    exactly the 56 points it declares, and its buttons sat at y = 8..48 with the
+    status bar at y = 0..24 — under the clock, where a finger cannot hit them. The
+    navigator draws this header from the top of the window and does not inset it,
+    and `Screen`'s `SafeAreaView` insets the *content*, which is why the two look
+    right on paper and the header still lands under the clock: nothing was ever
+    reading `insets.top` here.
+
+    The inset goes on the box, so the bar grows by it and the wash — which is
+    `styles.fondo`, absolute and full — still paints behind the status bar. That
+    is the arrangement worth having: the colour runs to the top edge and the
+    controls sit under it.
+
+    **And only here.** `Screen` would add the same inset again on the content
+    below, which is how a phone with a notch ends up with a bar of 24 points and a
+    page that starts another 24 points down. `HeaderOwnsTopInset` is how the two
+    halves agree without every screen having to know.
+  */
+  const insets = useSafeAreaInsets();
+
   return (
     <View
       style={[
         styles.caja,
         {
           backgroundColor: theme.colors.background,
+          paddingTop: insets.top,
+          minHeight: ALTO + insets.top,
           // **Sin filo, nunca.** Con lavado el desvanecido ya separa, y una linea de
           // un pixel seria el corte que el desvanecido acaba de borrar. Sin lavado
           // la barra se apoyaba en un hilo de color para separarse del contenido, y
@@ -126,7 +157,7 @@ export function AppHeader({ options, children }: AppHeaderProps) {
             colorKey={espacio.color}
             colorToKey={espacio.colorTo}
             wash={espacio.wash ?? undefined}
-            style={styles.lavado}
+            style={[styles.lavado, { height: altoLavadoDe(insets.top) }]}
           />
           {/* El velo, y es el **mismo** que el de la banda de `Screen`. */}
           <View
@@ -228,6 +259,15 @@ const styles = StyleSheet.create({
       barra, y la caja de la barra lo recorta: de los 156 puntos solo se ven los
       56 de arriba. Por eso el angulo no depende de cuanto mida la barra y la
       banda de debajo sigue el mismo degradado sin que haya nada que emparejar.
+
+      **Y el alto lo pone `altoLavadoDe(insets.top)`, no este 156.** La barra
+      crecio cuando empezo a gastar el hueco de la barra de estado, y esta caja
+      tiene que crecer con ella: es un degradado partido en dos, y el corte es el
+      borde de abajo de la barra. Una caja de 156 bajo una barra de 80 pinta el
+      degradado hasta el 80 mientras la banda empieza su mitad en el 56, y las dos
+      mitades se encuentran en puntos distintos de la misma rampa: un escalon de
+      36/255 medido a lo largo de una sola linea. `altoLavadoDe` hace que el corte
+      y la barra sean el mismo numero, y con un hueco de cero es el 156 de antes.
     */
     height: ALTO_LAVADO,
   },

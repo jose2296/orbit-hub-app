@@ -105,6 +105,33 @@ export const SOBRO_BANDA = 100;
 
 export const ALTO_LAVADO = ALTO_CABECERA + SOBRO_BANDA;
 
+/**
+ * The two heights, for a header that has spent the status bar's height.
+ *
+ * **The cut between the two halves of the wash is the bottom of the bar, and the
+ * bar is not always 56 tall.** It is 56 plus whatever `insets.top` is, because the
+ * bar has to start below the clock — measured on Android, 24 points.
+ *
+ * Before the inset existed this was one constant and could not be wrong. The two
+ * halves stopped agreeing when the bar grew and the numbers did not: the bar went
+ * on painting the gradient from `0` and the band went on starting its half at 56,
+ * so at the join the bar showed the gradient at 80/156 and the band showed it at
+ * 56/156. Measured, a jump of **36 of 255** across a single line, at exactly the
+ * bottom edge of the bar — a step of saturation where the design says there is
+ * nothing to step at, and it is visible on every screen of every space.
+ *
+ * So both halves are measured against the same two numbers, and with an inset of
+ * zero they are the constants above: on the web and on a phone with no cutout this
+ * changes nothing at all.
+ */
+export function altoCabeceraDe(insetSuperior: number): number {
+  return ALTO_CABECERA + insetSuperior;
+}
+
+export function altoLavadoDe(insetSuperior: number): number {
+  return ALTO_LAVADO + insetSuperior;
+}
+
 export function isWashVariant(value: unknown): value is WashVariant {
   return (
     typeof value === "string" &&

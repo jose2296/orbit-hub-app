@@ -224,8 +224,20 @@ describe("el layout de (app)", () => {
   );
 
   it("usa el mismo shell en las dos pantallas", () => {
-    expect(layout).toContain("<Drawer wide={wide}>{stack}</Drawer>");
     expect(layout).toContain("<DrawerProvider wide={wide}>");
+    // One `Drawer` and one `DrawerProvider`, and `stack` inside it. Counted and
+    // not matched literally: the children of `Drawer` have changed more than once
+    // — the provider for the header's action slot, the one that says the header
+    // has spent the status bar — and every time, this assertion failed on the
+    // shape instead of on the thing it is for.
+    expect([...layout.matchAll(/<Drawer\b/g)]).toHaveLength(1);
+    expect([...layout.matchAll(/<DrawerProvider\b/g)]).toHaveLength(1);
+
+    const drawer = layout.slice(layout.indexOf("<Drawer wide={wide}>"));
+    expect(drawer).toContain("</Drawer>");
+    // `stack` has to be inside it, or the shell is not wrapping the navigation.
+    const dentroDelDrawer = drawer.slice(0, drawer.indexOf("</Drawer>"));
+    expect(dentroDelDrawer).toContain("stack");
   });
 
   it("no importa ningun otro menu", () => {

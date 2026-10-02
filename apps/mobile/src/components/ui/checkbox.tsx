@@ -49,9 +49,12 @@ export function Checkbox({
           </AppText>
         ) : null}
       </View>
-      <AppText variant="callout" tone="muted" style={styles.label}>
-        {label}
-      </AppText>
+      {/* Only when there is a label, and this is not a detail: see `styles.label`. */}
+      {label ? (
+        <AppText variant="callout" tone="muted" style={styles.label}>
+          {label}
+        </AppText>
+      ) : null}
     </Pressable>
   );
 }
@@ -67,6 +70,28 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   label: {
+    /*
+      `flex: 1`, **and that is why the label may not be an empty string.**
+
+      Measured on an Android release build (API 35), on a task row whose label is
+      `""`: this `Text` took the whole row — 755 of the row's 754 points of content
+      width — and the title column beside it got zero. No title painted, the
+      priority badge crushed to ten points wide and wrapping one letter per line,
+      and the labels pushed off the right edge. The web lays the same tree out
+      correctly, because an empty element measures zero there however it is styled.
+
+      Why Yoga and not the browser: `flex: 1` is `flex-basis: 0%` plus
+      `flex-grow: 1`, and the grow is resolved against **the space available to
+      this `Pressable`**, not against its own content. The `Pressable` has no
+      width of its own, so the space available to it is the whole rest of the row
+      it is a child of, and an empty `Text` grows into all of it. The row then has
+      nothing left, and the sibling sharing it is the one that disappears — which
+      is also why it reads as a missing title rather than as a wide checkbox.
+
+      So the label is rendered only when there is one, and `flex: 1` stays for
+      the four call sites that pass text: there the label is meant to fill the row,
+      and that is what this does for them.
+    */
     flex: 1,
   },
 });
