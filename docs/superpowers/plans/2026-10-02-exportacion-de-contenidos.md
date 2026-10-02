@@ -12,8 +12,9 @@
 
 ## Global Constraints
 
+- **Todo el trabajo ocurre en el worktree `/Users/jose/code/orbit-hub/.worktrees/exportar-contenidos`, en la rama `exportar-contenidos`.** No en el checkout principal. Todos los comandos de este plan se ejecutan con ese directorio como working directory.
 - `npm run typecheck` (raíz) y `npm run test` (raíz) pasan antes de dar cualquier tarea por buena. Cada una construye `@orbit-hub/contracts` primero, así que un cambio en el contrato se ve en la API en la misma orden.
-- **No se toca el trabajo sin commitear.** `package.json`, `apps/mobile/plugins/with-upload-signing.js`, `apps/mobile/src/components/ui/floating-button.tsx`, `apps/mobile/src/components/ui/screen.tsx` y `apps/mobile/src/components/workspace/space-band.tsx` tienen cambios de otra persona en el árbol. `git add` **con rutas explícitas**, nunca `git add -A` ni `git add .`, en todas las tareas.
+- **`git add` siempre con rutas explícitas.** Nunca `git add -A`, nunca `git add .`, nunca `git add -u`. En el checkout principal hay trabajo sin commitear de otra persona (`package.json`, `with-upload-signing.js`, `floating-button.tsx`, `screen.tsx`, `space-band.tsx`, `list/[listId].tsx`, `use-lists.ts`) y un `git add` sin rutas lo metería todo en un commit. En el worktree el árbol está limpio, pero la costumbre es lo que protege cuando se mergee.
 - Fichero **sin tildes en el nombre**: `orbit-hub-<slug>-<YYYY-MM-DD>.<json|csv>`. El correo nunca aparece en él.
 - CSV: delimitador `;`, UTF-8 **con BOM**, CRLF, comillas siempre, etiquetas de una celda unidas con `|`.
 - El sobre JSON lleva `format: "orbit-hub.export"` y `version: 1`, arrays **planos**, `metadata` **sin aplanar**, `deletedAt` **incluido**, `counts` arriba del todo.
@@ -134,7 +135,7 @@ describe('exportFilename', () => {
 ```
 cd apps/mobile && npx vitest run test/export.test.ts
 ```
-Expected: FAIL — `exportFilename` no existe en `@orbit-hub/contracts`.
+Expected: FAIL. El fallo concreto es que `@orbit-hub/contracts` resuelve a `dist/`, que se construyó antes de que existiera `export.ts`: el error es un "no export named `exportFilename`" desde el paquete ya construido, no un módulo inexistente. **Lo que importa es que falla antes del Step 3**, por la razón que sea.
 
 - [ ] **Step 3: Escribir `packages/contracts/src/export.ts`**
 
@@ -274,6 +275,8 @@ Expected: FAIL — el módulo no existe.
 - `tags`: `item.tags.join('|')`.
 
 `csvCell(value)`: envuelve **siempre** entre comillas dobles y duplica las comillas dobles de dentro (`"` → `""`), que es lo que dice RFC 4180. Citar siempre es más simple que decidir, y no puede salir mal.
+
+**La cabecera va SIN comillas.** Es una constante fija de ASCII sin nada que citar, y dejarla desnuda es lo que hace que la primera línea sea literalmente `LIST_EXPORT_CSV_COLUMNS.join(';')` — que es justo lo que la aserción del test comprueba y lo que da sentido a que esa constante exista y se comparta. Citar también la cabecera sería CSV igual de válido, pero haría que la constante no sirviera para nada.
 
 El cuerpo entero empieza por `'\uFEFF'` — sin el BOM, Excel abre `El niño` como `El niÃ±o`.
 
@@ -449,6 +452,11 @@ En `apps/mobile/test/export.test.ts`, un `describe` nuevo para la composition de
 ```ts
 import { apiRaw, configureApiClient } from '@/lib/api/client';
 
+/**
+ * `configureApiClient` muta estado a nivel de módulo, así que **los tres tests
+ * configuran su propio token**. Si uno depende del que dejó el anterior, el test
+ * pasa por casualidad y no porque el código sea correcto.
+ */
 describe('apiRaw', () => {
   it('pone el token en las cabeceras sin enviar nada todavia', async () => {
     configureApiClient({ getAccessToken: async () => 'tok-123' });
@@ -467,6 +475,7 @@ describe('apiRaw', () => {
   });
 
   it('permite al llamante cambiar el Accept', async () => {
+    configureApiClient({ getAccessToken: async () => 'tok-123' });
     const pending = await apiRaw('/lists/l1/export', {
       headers: { Accept: 'text/csv' },
     });
@@ -585,65 +594,11 @@ cd apps/mobile && npx expo install expo-sharing
 
 **No escribas la versión a mano.** `npx expo install` la saca de `node_modules/expo/bundledNativeModules.json`, que dice `"expo-sharing": "~57.0.22"`, y el CI corre `npx --yes expo-doctor@latest apps/mobile`, que falla si la versión no encaja con el SDK. Escribir `^` o una versión inventada rompe el CI aunque la app funcione en local. Debe quedar en `dependencies` con `~`, en orden alfabético entre `expo-router` y `expo-secure-store`.
 
-**El `package.json` de la raíz tiene cambios sin commitear de otra persona.** Este comando toca `apps/mobile/package.json`, que es un fichero distinto, así que no lo mezcla. **No stages el `package.json` de la raíz.**
+**El lockfile está en la raíz y en ningún otro sitio.** `apps/mobile/package-lock.json` no existe: es un solo `package-lock.json` en la raíz del monorepo. Es ése —y sólo ése— el que hay que stagear con la dependencia nueva.
 
-- [ ] **Step 4: `errors.ts`**
+- [ ] **Step 4: Las claves de traducción — aquí, no en la Task 6**
 
-Puro. `ApiError` y `toApiError` son lo único que importa. Un `switch` sobre `error.kind` con `network`/`timeout`/`offline` juntos, `forbidden`, `not_found`, `rate_limited`, `unauthorized`, y `null` para el resto. `exportErrorKey` envuelve con `toApiError` y devuelve `null` si lo que le pasaron no era un error.
-
-- [ ] **Step 5: `save.ts`**
-
-El patrón de `lib/notes/image-store.ts` **exacto**: `Platform.OS === 'web'` primero, y los módulos nativos con `await import(...)` dentro de la rama, nunca arriba. En web el import nativo no llega a ejecutarse; en un test de Node el stub de `react-native` da `Platform.OS === 'web'` y por eso el fichero es importable desde un test aunque no se pueda probar su rama nativa.
-
-- **Web**: `const response = await pending.send(); const blob = await response.blob();` — el `response.text()` de `apiRequest` no sirve aquí. Luego `URL.createObjectURL`, un `<a download={filename}>` que no está en el documento, `click()`, `remove()`, y **`URL.revokeObjectURL` en el `finally`**. El `revokeObjectURL` es lo único que `image-store.ts` no hace y es lo único que no es opcional: `image-store` guarda las URLs en un mapa porque las reutiliza para pintar imágenes; una descarga se usa una vez, y sin liberarla se fuga un blob entero por cada export.
-- **Nativo**: `await File.downloadFileAsync(pending.url, destino, pending.headers)` con `destino` en `Paths.cache`, y luego `Sharing.shareAsync(destino.uri, { mimeType, dialogTitle: filename })`. El `mimeType` es `text/csv` o `application/json` según lo pedido.
-
-El destino **no** lleva el `filename` que devuelve `exportFilename` como nombre de carpeta: el fichero sí, y es el `dialogTitle` del `shareAsync`. `downloadFileAsync` quiere una ruta de fichero, no un directorio.
-
-- [ ] **Step 6: `use-export.ts`**
-
-`run()` es un `async` que: monta `running`, llama a `apiRaw(path, { query: { format }, timeoutMs: EXPORT_TIMEOUT_MS })`, llama a `exportFilename` con `new Date().toISOString().slice(0, 10)`, llama a `saveExport`, y **parsea el sobre con `accountExportSchema` o `listExportSchema` del contrato para sacar los `counts`**. Que los `counts` los diga el propio fichero y no el cliente es el punto: el número que se enseña es el que va a salir por pantalla.
-
-Un fallo de red o timeout **no** borra el estado ni lanza: deja `error` a mano para que la hoja lo pinte como reintentable. Un `forbidden` o un `not_found` tampoco.
-
-- [ ] **Step 7: Correr los tests y verlos pasar**
-
-```
-cd apps/mobile && npx vitest run test/export.test.ts
-```
-Expected: PASS, 13 en total.
-
-- [ ] **Step 8: Typecheck y el doctor**
-
-```
-npm run typecheck --workspace @orbit-hub/mobile && npx --yes expo-doctor@latest apps/mobile
-```
-Expected: typecheck 0, y el doctor sin quejas sobre `expo-sharing`.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add apps/mobile/package.json apps/mobile/package-lock.json apps/mobile/src/lib/export/save.ts apps/mobile/src/lib/export/errors.ts apps/mobile/src/hooks/use-export.ts apps/mobile/test/export.test.ts
-git commit -m "Guardar el fichero en los tres sistemas, y expo-sharing porque no hay otra manera"
-```
-
----
-
-### Task 6: Las dos superficies — el menú de la lista, la fila de Ajustes y las traducciones
-
-**Files:**
-- Modify: `apps/mobile/src/components/lists/list-menu-sheet.tsx`
-- Modify: `apps/mobile/src/app/(app)/settings.tsx`
-- Create: `apps/mobile/src/components/export/export-result-sheet.tsx`
-- Modify: `apps/mobile/src/lib/i18n/dictionaries.ts`
-
-**Interfaces:**
-- Consumes: `useExport` de Task 5, `exportErrorKey` de Task 5, `Sheet`/`SheetOptions`/`useLastValue`, `LIST_KIND_LABEL` de `@/lib/lists/kind`.
-- Produces: las claves de traducción de abajo, en `es` y `en`.
-
-**Ninguna de estas dos superficies lleva test de componente, y no porque no se pueda escribir.** `apps/mobile/vitest.config.ts` tiene `include: ['test/**/*.test.ts']` — sólo `.ts`, no `.tsx` — y el `react-native` del proyecto está aliaseado a un stub que exporta `Platform`, `AppState`, `StyleSheet`, `PixelRatio`, `Dimensions`, `Linking` y `Alert`, y nada más. Una prueba de render no se puede escribir hoy sin montar un harness que este repo no tiene. El portón de esta tarea es `npm run typecheck` más la Task 7, y **esa es la razón por la que la Task 7 no es opcional**.
-
-- [ ] **Step 1: Las claves de traducción, en los dos idiomas**
+Van en esta tarea y no en la siguiente, por una razón que no es de orden sino de compilar: `exportErrorKey` devuelve `TranslationKey`, y `TranslationKey` es `keyof typeof es`. Si las claves no existen todavía, el typecheck de esta tarea falla antes de haber empezado aovable la que hay después.
 
 En `es` y en `en`, dentro del bloque de `settings.*` que ya existe, y manteniendo los dos en el mismo orden:
 
@@ -670,11 +625,74 @@ En `es` y en `en`, dentro del bloque de `settings.*` que ya existe, y manteniend
 
 En inglés: `"Export my data"`, `"A copy of all your content, in JSON."`, `"Preparing the file…"`, `"{count} item"` / `"{count} items"`, `"{lists} lists · {items} items · {notes} notes"`, `"Saved as {name}"`, `"Try again"`, `"Close"`, `"The file could not be downloaded. Check your connection and try again."`, `"You do not have permission to export this."`, `"It is gone, or it was never where you looked."`, `"Too many exports in a row. Give it a moment."`, `"Your session expired. Sign in again."`, `"Something went wrong while preparing the file."`, `"Format"`, `"CSV — for Excel and Google Sheets"`, `"JSON — full backup"`.
 
-`export.done` y `export.counts` son **pares `.one`/`.other`** a propósito: `lib/i18n/plural.ts` construye la clave desde la base, y una base sin las dos formas no compila. El `export.done` se cuenta con `pluralKey('export.done', total)`.
+`export.done` es un par **`.one`/`.other`** a propósito: `lib/i18n/plural.ts` construye la clave desde la base, y una base sin las dos formas no compila.
 
-`export.counts` lleva tres `{placeholders}` en una sola cadena en vez de tres claves: son una línea sobre otra, no tres frases, y un `translations.test.ts` que ya recorre los `src/**` falla si una clave con `{name}` se llama sin el segundo argumento.
+`export.counts` lleva tres `{placeholders}` en una sola cadena en vez de tres claves: son una línea sobre otra, no tres frases, y `translations.test.ts` ya recorre los `src/**` y falla si una clave con `{name}` se llama sin el segundo argumento.
 
-- [ ] **Step 2: La página `export` del menú de lista**
+`export.format` y `export.format.csv` / `export.format.json` no se pintan hasta la Task 6. Se escriben ahora porque son del mismo grupo y dejarlas para después haría que esta tarea pasara su typecheck sólo por casualidad.
+
+- [ ] **Step 5: `errors.ts`**
+
+Puro. `ApiError` y `toApiError` son lo único que importa. Un `switch` sobre `error.kind` con `network`/`timeout`/`offline` juntos, `forbidden`, `not_found`, `rate_limited`, `unauthorized`, y `null` para el resto. `exportErrorKey` envuelve con `toApiError` y devuelve `null` si lo que le pasaron no era un error.
+
+- [ ] **Step 6: `save.ts`**
+
+El patrón de `lib/notes/image-store.ts` **exacto**: `Platform.OS === 'web'` primero, y los módulos nativos con `await import(...)` dentro de la rama, nunca arriba. En web el import nativo no llega a ejecutarse; en un test de Node el stub de `react-native` da `Platform.OS === 'web'` y por eso el fichero es importable desde un test aunque no se pueda probar su rama nativa.
+
+- **Web**: `const response = await pending.send(); const blob = await response.blob();` — el `response.text()` de `apiRequest` no sirve aquí. Luego `URL.createObjectURL`, un `<a download={filename}>` que no está en el documento, `click()`, `remove()`, y **`URL.revokeObjectURL` en el `finally`**. El `revokeObjectURL` es lo único que `image-store.ts` no hace y es lo único que no es opcional: `image-store` guarda las URLs en un mapa porque las reutiliza para pintar imágenes; una descarga se usa una vez, y sin liberarla se fuga un blob entero por cada export.
+- **Nativo**: `await File.downloadFileAsync(pending.url, destino, pending.headers)` con `destino` en `Paths.cache`, y luego `Sharing.shareAsync(destino.uri, { mimeType, dialogTitle: filename })`. El `mimeType` es `text/csv` o `application/json` según lo pedido.
+
+El destino **no** lleva el `filename` que devuelve `exportFilename` como nombre de carpeta: el fichero sí, y es el `dialogTitle` del `shareAsync`. `downloadFileAsync` quiere una ruta de fichero, no un directorio.
+
+- [ ] **Step 7: `use-export.ts`**
+
+`run()` es un `async` que: monta `running`, llama a `apiRaw(path, { query: { format }, timeoutMs: EXPORT_TIMEOUT_MS })`, llama a `exportFilename` con `new Date().toISOString().slice(0, 10)`, llama a `saveExport`, y **parsea el sobre con `accountExportSchema` o `listExportSchema` del contrato para sacar los `counts`**. Que los `counts` los diga el propio fichero y no el cliente es el punto: el número que se enseña es el que va a salir por pantalla.
+
+El tipo que devuelve `run` es `AccountExport['counts'] | ListExport['counts']`, **derivado de los tipos del contrato y escrito así**. No declares una interfaz `ExportCounts` propia: una segunda definición de la forma de los `counts` es una que se queda vieja en cuanto el contrato cambie, y el typecheck no la caza.
+
+Un fallo de red o timeout **no** borra el estado ni lanza: deja `error` a mano para que la hoja lo pinte como reintentable. Un `forbidden` o un `not_found` tampoco.
+
+- [ ] **Step 8: Correr los tests y verlos pasar**
+
+```
+cd apps/mobile && npx vitest run test/export.test.ts
+```
+Expected: PASS, 13 en total.
+
+- [ ] **Step 9: Typecheck y el doctor**
+
+```
+npm run typecheck --workspace @orbit-hub/mobile && npx --yes expo-doctor@latest apps/mobile
+```
+Expected: typecheck 0, y el doctor sin quejas sobre `expo-sharing`.
+
+- [ ] **Step 10: Commit**
+
+MIRA `git status` antes de stagear. `npx expo install` toca `apps/mobile/package.json` y el `package-lock.json` **de la raíz**. Si el `package.json` de la raíz también aparece modificado, no lo stages sin mirar por qué: en este worktree ese fichero estaba limpio, así que un cambio ahí es del comando y probablemente no deba commitearse.
+
+```bash
+git add apps/mobile/package.json package-lock.json apps/mobile/src/lib/export/save.ts apps/mobile/src/lib/export/errors.ts apps/mobile/src/hooks/use-export.ts apps/mobile/src/lib/i18n/dictionaries.ts apps/mobile/test/export.test.ts
+git commit -m "Guardar el fichero en los tres sistemas, y expo-sharing porque no hay otra manera"
+```
+
+---
+
+### Task 6: Las dos superficies — el menú de la lista, la fila de Ajustes y las traducciones
+
+**Files:**
+- Modify: `apps/mobile/src/components/lists/list-menu-sheet.tsx`
+- Modify: `apps/mobile/src/app/(app)/settings.tsx`
+- Create: `apps/mobile/src/components/export/export-result-sheet.tsx`
+
+**Interfaces:**
+- Consumes: `useExport` de Task 5, `exportErrorKey` de Task 5, `Sheet`/`SheetOptions`/`useLastValue`, `LIST_KIND_LABEL` de `@/lib/lists/kind`, y **las claves `export.*`, que ya están escritas desde la Task 5** —esta tarea las lee, no las crea.
+- Produces: nada que otra tarea consuma.
+
+**Las claves de traducción van en la Task 5 y no aquí**, porque `exportErrorKey` devuelve `TranslationKey` y `TranslationKey` es `keyof typeof es`: escribirlas aquí haría que la Task 5 no pasara su typecheck. Si este fichero necesita una clave que no está, **vuelve a la Task 5 y añádela en los dos idiomas a la vez**.
+
+**Ninguna de estas dos superficies lleva test de componente, y no porque no se pueda escribir.** `apps/mobile/vitest.config.ts` tiene `include: ['test/**/*.test.ts']` — sólo `.ts`, no `.tsx` — y el `react-native` del proyecto está aliaseado a un stub que exporta `Platform`, `AppState`, `StyleSheet`, `PixelRatio`, `Dimensions`, `Linking` y `Alert`, y nada más. Una prueba de render no se puede escribir hoy sin montar un harness que este repo no tiene. El portón de esta tarea es `npm run typecheck` más la Task 7, y **esa es la razón por la que la Task 7 no es opcional**.
+
+- [ ] **Step 1: La página `export` del menú de lista**
 
 `type Page` pasa a ser `"options" | "rename" | "share" | "export" | "delete"`.
 
@@ -686,36 +704,38 @@ El `subtitle` es un ternario más sobre `page`, y `export` cae en la línea de "
 
 Borra de paso **el bloque de comentario duplicado** que hay encima de `const list = useLastValue(pedido)`: hay dos copias del mismo párrafo, una de las dos se cortó a mitad ("and the caller's own argument"). Es basura de edición de otra persona en un fichero que vas a tocar de todos modos, y no es un cambio de comportamiento.
 
-- [ ] **Step 3: La hoja de resultado**
+- [ ] **Step 2: La hoja de resultado**
 
 `export-result-sheet.tsx`: `Sheet` con `useLastValue` como los demás, `title={t("export.title")}`, y dentro los `counts` con `export.counts`, el nombre del fichero con `export.saved`, y un `Button` de cerrar. Cuando hay error, el texto del error y un botón de reintentar que **vuelve a llamar a `run` con los mismos argumentos**, no a algo nuevo: reintentar tiene que ser la misma petición otra vez.
 
-- [ ] **Step 4: La fila de Ajustes**
+- [ ] **Step 3: La fila de Ajustes**
 
-El `onPress` vacío y su comentario desaparecen. En su lugar, un `useExport()` y un estado de resultado. El `ListRow` acepta `loading`? **Compruébalo antes de usarlo**: si `ListRow` no tiene `loading`, el estado de trabajo va dentro del `subtitle` —`t("export.running")` mientras corre— y punto. **No metas un componente nuevo en `ListRow` para esto.**
+El `onPress` vacío y su comentario desaparecen. En su lugar, un `useExport()` y un estado de resultado.
+
+**`ListRow` no tiene prop `loading`** — sus props son `leading`, `title`, `subtitle`, `icon`, `onPress`, `rightLabel`, `chevron`, `destructive`, `disabled` y `style`. El estado de trabajo va con las que sí existen: `disabled={running}` para que no se pueda pulsar dos veces, y el `subtitle` cambia de `t("settings.export.body")` a `t("export.running")` mientras corre. **No añadas una prop a `ListRow`** para esto: es el componente que usan todas las pantallas y una prop que sólo lee un sitio es una prop que otro acabará usando mal.
 
 La pantalla usa `useI18n()` y comillas simples; `list-menu-sheet.tsx` usa `useTranslation()` y comillas dobles. Cada fichero, con lo suyo.
 
 Al terminar, `export-result-sheet` se abre con los `counts`. Sin hoja de formato —el formato ya está decidido— y sin confirmación: el subtítulo de la fila ya dice "Descarga una copia de todo tu contenido".
 
-- [ ] **Step 5: Que los dos idiomas sigan siendo el mismo conjunto**
+- [ ] **Step 4: Que los dos idiomas sigan siendo el mismo conjunto**
 
 ```
 cd apps/mobile && npx vitest run test/translations.test.ts
 ```
 Expected: PASS. Este test es el que dice que es y en tienen exactamente las mismas claves, así que una traducción sin su pareja es un test rojo y no algo que se note en la aplicación.
 
-- [ ] **Step 6: Typecheck de los dos workspaces**
+- [ ] **Step 5: Typecheck de los dos workspaces**
 
 ```
 npm run typecheck --workspace @orbit-hub/mobile && npm run typecheck --workspace @orbit-hub/api
 ```
 Expected: ambos 0.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add apps/mobile/src/components/lists/list-menu-sheet.tsx apps/mobile/src/app/\(app\)/settings.tsx apps/mobile/src/components/export/export-result-sheet.tsx apps/mobile/src/lib/i18n/dictionaries.ts
+git add apps/mobile/src/components/lists/list-menu-sheet.tsx apps/mobile/src/app/\(app\)/settings.tsx apps/mobile/src/components/export/export-result-sheet.tsx
 git commit -m "Exportar desde el menu de la lista y desde Ajustes, y decir cuantas cosas salieron"
 ```
 
