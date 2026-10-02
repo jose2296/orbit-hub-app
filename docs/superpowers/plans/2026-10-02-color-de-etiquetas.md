@@ -1246,6 +1246,89 @@ git commit -m "Los colores de las etiquetas, mirados en un navegador"
 
 ---
 
+### Task 9: El icono y el titulo en su propia linea
+
+**Anadida despues de la Tarea 8, a peticion.** No venia en el plan: el titulo y el icono
+ya estaban uno al lado del otro, pero **no alineados entre filas**, y eso es lo que se
+corri aqui.
+
+**Files:**
+- Modify: `apps/mobile/src/app/(app)/list/[listId].tsx` (`TaskRow` and its styles)
+
+**Interfaces:**
+- Consumes: `TagChip`, `PRIORITY_ICON`, `PRIORITY_TONE`, `ItemIcon` — all as they are.
+- Produces: nothing new. No signature changes anywhere.
+
+- [ ] **Step 1: Mueve el icono dentro de la columna del titulo**
+
+Hoy el icono es un hermano de la columna del titulo, y `styles.item` lleva
+`alignItems: "center"`, asi que se centra contra **titulo + etiquetas**. En una tarea con
+insignia el icono baja respecto al titulo y en una sin ella queda centrado: de ahi que
+no cuadren entre filas.
+
+Saca el `Pressable`/`View` del icono de ahi y ponlo **dentro** de `styles.flex`, en una
+primera linea junto al texto. Esa linea es una `View` con `flexDirection: "row"` y
+`alignItems: "center"`, para que el icono quede centrado **en la linea del titulo**.
+
+El icono conserva su `Pressable`, su `testID={`item-icon-${item.id}`}`, su
+`accessibilityLabel`, su `hitSlop` y su `style={styles.iconSlot}`. Lo unico que cambia es
+donde vive.
+
+**Y sin hueco reservado**, por decision de la persona: cuando no hay icono no se dibuja
+nada, ni un `View` vacio. Los titulos de las filas con icono empiezan unas posiciones mas
+a la derecha que los de las que no lo tienen. Ya se pidio asi antes y se volvio a
+confirmar al cambiar la disposicion.
+
+- [ ] **Step 2: La segunda linea solo si hay algo**
+
+`styles.meta` —la insignia y las pastillas— pasa a ser la segunda linea de la columna, y
+el `View` que la envuelve se dibuja **solo** si `item.priority !== "none" || item.tags.length > 0`. Eso ya es asi; lo que cambia es que ahora es la segunda linea y no comparte linea con el titulo.
+
+Conserva en `styles.meta` el `flexWrap: "wrap"` y el `alignItems: "center"`, y sus
+comentarios: explican cosas ciertas y verificadas en la Tarea 7 (que el `alignSelf` de la
+pastilla gana al `alignItems` de la fila, y que el `flexWrap` es lo que salva a la
+insignia, no el `flexShrink`).
+
+- [ ] **Step 3: La casilla se queda como esta**
+
+`styles.item` conserva `alignItems: "center"` y la `Checkbox` no se mueve. Solo se le
+pide al icono y al titulo que cuadren entre si. Si prefieres que la casilla se alinee con
+la linea del titulo en vez de centrarse en la fila entera, es un cambio de una linea en un
+`alignItems` — pero no es lo pedido, asi que no se hace.
+
+Anade un `flexShrink: 1` a la linea del titulo? No: el texto ya lleva
+`numberOfLines={2}` y la columna padre lleva `minWidth: 0`, que es lo que evita que un
+titulo largo empuje el resto de la fila. No tocar lo que ya funciona.
+
+- [ ] **Step 4: Typecheck y todo**
+
+```
+npm run typecheck && npm run test
+```
+
+- [ ] **Step 5: Vuelve a correr la comprobacion del navegador**
+
+```
+EMAIL_TRANSPORT=console make -C apps/api dev   # en otra terminal
+make web
+node scripts/verify-tag-colors.mjs
+```
+
+La comprobacion de la Tarea 8 media esta fila, asi que **sus numeros quedan viejos** y hay
+que volver a mirarlos. Lo que hay que mirar de verdad aqui es lo que **no** se habia
+visto nunca: el icono centrado en la linea del titulo, y dos filas —una con insignia y
+etiquetas y otra sin nada— con el icono y el titulo a la **misma altura**. Mide las
+coordenadas y dilo con numeros; si no cuadran, no lo digas de otra manera.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add "apps/mobile/src/app/(app)/list/[listId].tsx" capturas/
+git commit -m "El icono y el titulo en su linea, y las etiquetas en la de abajo"
+```
+
+---
+
 ## What this plan does not cover
 
 - **Notes.** `notes.tags` is untouched; the spec says the request was about task labels.
