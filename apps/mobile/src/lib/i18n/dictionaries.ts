@@ -869,6 +869,12 @@ const es = {
   "export.error.notFound": "Ya no está, o nunca estuvo donde la buscabas.",
   "export.error.rateLimited": "Demasiadas exportaciones seguidas. Espera un momento.",
   "export.error.unauthorized": "Tu sesión ha caducado. Vuelve a entrar.",
+  // Un 500 es lo que sale de cualquier excepcion sin manejar del servidor, y el
+  // export hace siete selects seguidos: un timeout de base de datos o un fallo en
+  // un mapper llegan aqui. Con la hoja callada, esto seria un panel con dos
+  // botones y ninguna palabra. La frase es la que era `export.error.unknown`,
+  // que era la correcta para un 500 y la clave equivocada.
+  "export.error.internal": "Algo falló al preparar el fichero.",
   "export.format": "Formato",
   "export.format.csv": "CSV — para Excel y Google Sheets",
   "export.format.json": "JSON — copia completa",
@@ -1831,6 +1837,7 @@ const en: Record<TranslationKey, string> = {
   "export.error.notFound": "It is gone, or it was never where you looked.",
   "export.error.rateLimited": "Too many exports in a row. Give it a moment.",
   "export.error.unauthorized": "Your session expired. Sign in again.",
+  "export.error.internal": "Something went wrong while preparing the file.",
   "export.format": "Format",
   "export.format.csv": "CSV — for Excel and Google Sheets",
   "export.format.json": "JSON — full backup",

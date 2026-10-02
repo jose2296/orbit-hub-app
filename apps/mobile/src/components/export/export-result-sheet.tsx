@@ -122,6 +122,13 @@ export function ExportResultSheet({ attempt: pedido, title, onClose }: ExportRes
     somebody their file is broken when it is in their downloads. **There is no
     catch-all key now, and there is not going to be one**: `null` means `null`.
 
+    Which is only safe because `exportErrorKey` earns each one of its `null`s. The
+    failures that really are failures carry their own sentence —
+    `export.error.internal` among them — so a 500 paints a line instead of leaving
+    this panel standing empty over a button nobody can explain. The comment on the
+    branches in `lib/export/errors.ts` says which is which, and what to do if one of
+    the silent ones ever turns out to be reachable.
+
     So this is computed once, here, and `null` paints no line at all: the buttons
     below are still there and the person can still read what happened by pressing
     the share sheet again. **Both buttons stay on `error`, not on `errorKey`** —

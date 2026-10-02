@@ -210,6 +210,36 @@ describe('exportErrorKey', () => {
   it('no inventa una clave para un error que no es de la API', () => {
     expect(exportErrorKey(new Error('boom'))).toBeNull();
   });
+
+  /**
+   * Un 500 dice algo, y esta es la comprobacion que lo protege.
+   *
+   * `error-handler.ts` convierte toda excepcion sin manejar en `internal_error`, y
+   * el export hace siete selects seguidos: un timeout de la base de datos o un
+   * fallo en un mapper llegan aqui. Cuando este caso vivia en el `null` de al
+   * lado, la hoja —que solo pinta la linea cuando hay clave— dejaba a la persona
+   * con "Reintentar" y "Cerrar" y ninguna palabra. Ese es el fallo que nadie se
+   * enteraria de que ha pasado.
+   *
+   * No hay renderizador en este repo, asi que se comprueba lo que la hoja hace con
+   * la clave en vez de lo que pinta: que existe, y que **tiene frase en los dos
+   * idiomas**. Un `not.toBeNull()` solo bastaria si la clave pudiera no estar en el
+   * diccionario; que este en `es` y en `en` es la mitad de que la linea se dibuje,
+   * porque `t()` de una clave ausente devuelve `undefined` y un `<AppText>` con
+   * `undefined` es una linea con un hueco en lugar de una frase.
+   */
+  it('el 500 del servidor tiene frase propia, no un null', () => {
+    const clave = exportErrorKey(new ApiError({ kind: 'internal_error', message: 'x', status: 500 }));
+
+    // Lo que decide si la hoja dibuja la linea de error.
+    expect(clave).toBe('export.error.internal');
+    expect(clave).not.toBeNull();
+
+    // Y lo que la haria vacia: la frase existe y no esta vacia en ninguno de los
+    // dos diccionarios, que es lo que hace que `t(clave)` devuelva algo que pintar.
+    expect(dictionaries.es[clave!]).toBeTruthy();
+    expect(dictionaries.en[clave!]).toBeTruthy();
+  });
 });
 
 /**
