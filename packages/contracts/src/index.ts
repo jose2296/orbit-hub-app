@@ -2,6 +2,7 @@ export * from './api';
 export * from './auth';
 export * from './catalog';
 export * from './common';
+export * from './export';
 export * from './note-document';
 export * from './people';
 export * from './sync';
