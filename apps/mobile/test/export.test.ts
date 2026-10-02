@@ -1,6 +1,8 @@
 import { exportFilename } from '@orbit-hub/contracts';
 import { describe, expect, it } from 'vitest';
 
+import { apiRaw, configureApiClient } from '@/lib/api/client';
+
 describe('exportFilename', () => {
   it('deja un nombre sin espacios ni acentos', () => {
     expect(
@@ -31,5 +33,37 @@ describe('exportFilename', () => {
     expect(
       exportFilename({ title: 'export', fallbackId: 'export', extension: 'json', date: '2026-10-02' }),
     ).toBe('orbit-hub-export-2026-10-02.json');
+  });
+});
+
+/**
+ * `configureApiClient` muta estado a nivel de módulo, así que **los tres tests
+ * configuran su propio token**. Si uno depende del que dejó el anterior, el test
+ * pasa por casualidad y no porque el código sea correcto.
+ */
+describe('apiRaw', () => {
+  it('pone el token en las cabeceras sin enviar nada todavia', async () => {
+    configureApiClient({ getAccessToken: async () => 'tok-123' });
+    const pending = await apiRaw('/account/export', { query: { format: 'json' } });
+
+    expect(pending.url).toContain('/account/export');
+    expect(pending.url).toContain('format=json');
+    expect(pending.headers.Authorization).toBe('Bearer tok-123');
+  });
+
+  it('no manda Authorization cuando la peticion es anonima', async () => {
+    configureApiClient({ getAccessToken: async () => 'tok-123' });
+    const pending = await apiRaw('/health', { anonymous: true });
+
+    expect(pending.headers.Authorization).toBeUndefined();
+  });
+
+  it('permite al llamante cambiar el Accept', async () => {
+    configureApiClient({ getAccessToken: async () => 'tok-123' });
+    const pending = await apiRaw('/lists/l1/export', {
+      headers: { Accept: 'text/csv' },
+    });
+
+    expect(pending.headers.Accept).toBe('text/csv');
   });
 });
