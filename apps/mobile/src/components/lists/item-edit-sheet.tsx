@@ -57,8 +57,17 @@ export interface ItemEditSheetProps {
    *
    * It lands on the list and not on the task, which is why the signature has no
    * task in it: one write recolours every row that carries the label.
+   *
+   * **It may hand back the write, and this panel waits for it** — hence
+   * `void | Promise<void>`, so a caller with nothing to wait for can ignore it.
+   * The chosen colour arrives at `tagColors` only after the store has been
+   * written and read back, so a strip that closed on the tap had nothing on
+   * screen to show for it: the tap read as one that did nothing, and the button's
+   * own words ("now Red") were a round trip out of date. The strip therefore
+   * waits for the write and closes with it, in the same render that repaints the
+   * pill.
    */
-  onTagColor: (tag: string, color: ItemIconColor | null) => void;
+  onTagColor: (tag: string, color: ItemIconColor | null) => void | Promise<void>;
   onClose: () => void;
   /** Called after the row is gone, so the screen can put itself right. */
   onDeleted?: () => void;
@@ -134,6 +143,17 @@ export function ItemEditSheet({
    * which is what `labels` filters out.
    */
   const [colorDe, setColorDe] = useState<string | null>(null);
+  /*
+   * Whether a colour is being written right now, and **one write at a time**.
+   *
+   * It exists because the strip waits for the write it started (see
+   * `onTagColor`), and a strip that is waiting is a strip that can be tapped
+   * again: two taps inside one write would plan both from the same captured
+   * `list` and the second would eat the first. Closing the strip on the tap was
+   * what stopped that before; the guard replaces the closing as the thing that
+   * stops it.
+   */
+  const [guardando, setGuardando] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
   // Reopening always starts where the tap asked to start, on a fresh copy of
@@ -258,6 +278,50 @@ export function ItemEditSheet({
         ? shown.tags.filter((row) => row !== tag)
         : [...shown.tags, tag],
     });
+
+  /**
+   * A tap on one swatch: one write, and the strip closes **after** it.
+   *
+   * Two things are happening here and both were measured, not chosen:
+   *
+   * - **The await.** `tagColors` is what the pills are painted from, and it only
+   *   moves once the store has been written and read back, so a strip that closed
+   *   on the tap left that tap with nothing on screen: the strip disappearing was
+   *   the whole of it, and the colour landed some milliseconds later with nothing
+   *   to connect the two. Awaiting means the strip unmounts in the **same commit**
+   *   that repaints the pill —the hook's `setLists` and the two state changes
+   *   below are queued in one batch and React 18 flushes them in one pass— so the
+   *   tap has its consequence in the frame that answered it, and the button's
+   *   "now Red" is true when it is last read.
+   *
+   *   What that does **not** give is the chosen swatch sitting there ringed for an
+   *   extra frame: React never renders between the write and the close, and making
+   *   it render would mean awaiting a frame after the write, which buys nothing an
+   *   eye can see. A ring on the tap itself would mean optimising the colour into
+   *   local state first, which is what `icon-picker.tsx` does with its own swatches
+   *   and is deliberately not done here: this ring is read back from the store, and
+   *   a ring that is not what the store says is a lie while it is on screen.
+   * - **The guard.** That open strip is a second tap away, and `setTagColor`
+   *   plans from the `list` its caller captured: two taps inside one write would
+   *   both plan from the same map and the second would silently eat the first.
+   *   `guardando` is what keeps it to one write. The write is a local one, so
+   *   this is milliseconds; nothing in this app reports a failed write, and the
+   *   `finally` closes the strip either way, so a write that throws cannot leave
+   *   the panel stuck open.
+   */
+  const pickColor = async (tag: string, option: ItemIconColor | null) => {
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      await onTagColor(tag, option);
+    } finally {
+      setGuardando(false);
+      // Only closes its own strip: the write takes long enough for somebody to
+      // open another label's colours, and closing that one instead would be a
+      // strip that opened and vanished on its own.
+      setColorDe((current) => (current === tag ? null : current));
+    }
+  };
 
   /** Writes the row for the first time, with everything the panel was given. */
   const create = async () => {
@@ -601,6 +665,7 @@ export function ItemEditSheet({
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={t("tags.remove", { name: tag })}
+                      hitSlop={8}
                       onPress={() => toggleTag(tag)}
                       style={({ pressed }) => [
                         styles.chipAction,
@@ -628,14 +693,7 @@ export function ItemEditSheet({
                     <TagColorStrip
                       tag={tag}
                       chosen={tagColors[tag]}
-                      onPick={(option) => {
-                        // Un toque, una escritura, y la tira se va con él: por
-                        // eso no hay un "guardar" al cerrar. Una acción que
-                        // escribiese dos veces partiría de la misma lista vieja y
-                        // la segunda se comería la primera.
-                        onTagColor(tag, option);
-                        setColorDe(null);
-                      }}
+                      onPick={(option) => void pickColor(tag, option)}
                     />
                   ) : null}
                 </Fragment>
@@ -674,6 +732,7 @@ export function ItemEditSheet({
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={t("tags.put", { name: tag })}
+                          hitSlop={8}
                           onPress={() => toggleTag(tag)}
                           style={({ pressed }) => [
                             styles.chipAction,
@@ -703,10 +762,7 @@ export function ItemEditSheet({
                         <TagColorStrip
                           tag={tag}
                           chosen={tagColors[tag]}
-                          onPick={(option) => {
-                            onTagColor(tag, option);
-                            setColorDe(null);
-                          }}
+                          onPick={(option) => void pickColor(tag, option)}
                         />
                       ) : null}
                     </Fragment>
@@ -760,10 +816,15 @@ export function ItemEditSheet({
  * different `testID`s, which is the sort of thing a browser check then cannot
  * find.
  *
- * The label says which label it is *and* what colour that label has now, because
- * the button is the only place on this panel where the chosen colour is written
- * down. A button that said only "change the colour" would leave a person who has
- * just changed it guessing whether it had been saved.
+ * The label says three things: which label it is, what colour that label has
+ * **now**, and whether its strip is open. The first two are the brief's; the
+ * third is here because the state was invisible twice over. `accentSoft` on
+ * `surfaceMuted` measures **1.003:1 to 1.073:1** — a tint no eye will see, across
+ * every accent and both schemes — and `accessibilityState.selected` does not reach
+ * the web: in `react-native-web@0.21.2` only `isDisabled` is read out of
+ * `accessibilityState` (`modules/AccessibilityUtil/isDisabled.js`), so no
+ * `aria-selected` is ever written. So the border carries it and the words carry
+ * it, which is what `sheet.tsx` does with its own trailing control.
  */
 function TagColorButton({
   tag,
@@ -788,18 +849,30 @@ function TagColorButton({
     <Pressable
       testID={`tag-color-button-${tag}`}
       accessibilityRole="button"
-      accessibilityLabel={t("tags.changeColor", {
-        name: tag,
-        color: t(ICON_COLOR_LABEL[color]),
-      })}
+      accessibilityLabel={t(
+        open ? "tags.choosingColor" : "tags.changeColor",
+        {
+          name: tag,
+          color: t(ICON_COLOR_LABEL[color]),
+        },
+      )}
       {...hintProps}
       accessibilityState={{ selected: open }}
+      hitSlop={8}
       onPress={onPress}
       style={({ pressed }) => [
         styles.chipAction,
         {
           borderRadius: theme.radius.pill,
           backgroundColor: open ? theme.colors.accentSoft : "transparent",
+          /*
+           * El borde, y no solo el fondo: dos puntos de acento sobre la propia
+           * pastilla no se ven —1.0:1 medido, en los cinco acentos y los dos
+           * esquemas— y un estado que no se ve no es un estado. Ocupa su sitio
+           * **siempre**, para que el boton no crezca ni se mueva al alternar.
+           */
+          borderWidth: 2,
+          borderColor: open ? theme.colors.accent : "transparent",
           opacity: pressed ? 0.7 : 1,
         },
       ]}

@@ -784,18 +784,19 @@ export default function ListScreen() {
         mode={editing && editing.itemId === "" ? "create" : "edit"}
         startOn={editing?.page ?? "edit"}
         tagColors={list?.tagColors ?? {}}
-        onTagColor={(tag, color) => {
+        onTagColor={(tag, color) =>
           /*
            * `setTagColor` plans from **this** `list`, and not from the cache it
            * has just written, so two colour writes before the next render would
            * both plan from the same map and the second one would quietly eat the
-           * first. One tap on one swatch is one write of one label —the sheet
-           * closes the strip as it writes— so the only way to get two is two
-           * deliberate taps, and by then the `list` this render has is the one
-           * the first write produced. The same property `updateList` has.
+           * first. The sheet keeps a second tap from arriving while a write is in
+           * flight, so a tap is one write of one label; the promise comes **back**
+           * rather than being dropped with a `void`, because the sheet waits for
+           * it to close the strip —a strip that closed on the tap had nothing on
+           * screen to show for that tap.
            */
-          if (list) void setTagColor(list, tag, color);
-        }}
+          list ? setTagColor(list, tag, color) : undefined
+        }
         onClose={() => setEditing(null)}
       />
     </Screen>
