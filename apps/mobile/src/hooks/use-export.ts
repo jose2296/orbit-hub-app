@@ -153,10 +153,17 @@ export interface UseExport {
 /**
  * Descargar la cuenta entera, o una lista, y dejarla donde se pueda abrir.
  *
- * El estado es lo que hay: lo que va, lo que fallo y lo que salio. Un fallo no
- * borra lo anterior ni se relanza —vuelve como `null` y con `error` a mano—
- * porque quien llama es una hoja, y una hoja que desaparece con el error no
- * tiene nada que pintar ni boton de reintentar.
+ * El estado es lo que hay: lo que va, lo que fallo y lo que salio — **y nada de
+ * la vez anterior sobrevive a un intento nuevo.** `run` vacia `error`, `result` y
+ * `filename` al empezar y no al acertar, por una sola razon: un error nuevo
+ * pegado al `result` de una exportacion buena es una contradiccion en pantalla.
+ * Los dos se dibujan a la vez y el panel acabaria atribuyendo a este intento unos
+ * numeros que salieron de otro fichero. Despues de un fallo hay `error` y nada
+ * mas, y el `result` de antes ya no esta en ninguna parte.
+ *
+ * Un fallo **no se relanza**: vuelve como `null` y con `error` a mano, porque
+ * quien llama es una hoja, y una hoja a la que se le relanza el error no tiene
+ * nada que pintar ni boton de reintentar.
  */
 export function useExport(): UseExport {
   const [running, setRunning] = useState(false);
@@ -166,12 +173,9 @@ export function useExport(): UseExport {
 
   async function run(args: ExportRequest): Promise<ExportResult | null> {
     setRunning(true);
-    // Los tres estados del intento anterior se van aqui y no al acertar: si el
-    // error se limpiase al final, dejaria el `result` y el nombre de la
-    // exportacion buena junto al fallo nuevo, y la hoja los pintaria como si
-    // fueran de este intento. Y no es que un fallo borre lo anterior —no lo
-    // borra, sigue ahi para volver a mirarlo—, es que el intento nuevo empieza
-    // sin nada de la vez anterior encima.
+    // Los tres estados del intento anterior se van aqui y no al acertar; el
+    // porqué esta en el doc de `run` y no cabe en una linea. Un intento empieza
+    // sin nada de la vez anterior encima, y un fallo no los devuelve.
     setError(null);
     setResult(null);
     setFilename(null);
@@ -182,9 +186,13 @@ export function useExport(): UseExport {
       setFilename(entregado.filename);
       return entregado;
     } catch (caught) {
-      // Ni se relanza ni borra lo anterior. Un 403 o un 404 tampoco lo borran: no
-      // son un fallo de la descarga sino de lo que se pidio, y quien esta mirando
-      // ya tiene delante lo que funcionaba la vez anterior.
+      // Solo `error`. Lo que se vacio al entrar no vuelve aqui, asi que despues
+      // de este fallo no hay ningun `result` al lado — y **no se relanza**, que es
+      // la otra mitad de lo que dice el doc de `run`: quien llama es una hoja, y
+      // `null` con `error` a mano es lo que le deja pintar un motivo y ofrecer el
+      // reintento. Que un 422 o un 409 no tengan frase propia lo decide
+      // `exportErrorKey`, no este hook — un 403 y un 404 si la tienen—; aqui solo
+      // se guarda lo que fallo.
       setError(toApiError(caught));
       return null;
     } finally {

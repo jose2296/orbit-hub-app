@@ -36,11 +36,23 @@ The mobile client unwraps the envelope in `apiRequest`, so screens and hooks onl
 `data`. A response that is not an envelope is passed through untouched, which keeps the client
 usable against endpoints that answer with a bare payload.
 
-Two responses are not envelopes: the export files (`GET /account/export` and
-`GET /lists/:id/export`). They answer with bytes, a `Content-Disposition: attachment` and
-`Cache-Control: no-store`, and they go through `sendFile` instead of `sendData`. Once `sendFile`
-has run the headers are on the wire, and `errorHandler` steps aside when `res.headersSent` is
-true — so a failure after the body started writing cannot be turned into a JSON error anymore.
+Not every `2xx` body goes through `sendData`, and the exceptions are listed here rather than
+left to be found by reading the routers. **These three answers are not the `{ data, meta }`
+envelope**, in two kinds:
+
+- **Bytes, not JSON.** `GET /account/export` and `GET /lists/:id/export` answer with a file, a
+  `Content-Disposition: attachment` and `Cache-Control: no-store`, and they go through `sendFile`.
+  `GET /attachments/file/:key` is the older one and the reason this sentence had to stop being a
+  complete list: it streams the stored object with an `inline` disposition rather than writing a
+  body, because it serves a signed, short lived URL instead of a request from the app.
+- **JSON without the envelope.** `PUT /attachments/upload/{*key}` answers a bare `{ ok: true }`
+  written straight to the response. The body of that request *is* the file, so the client on the
+  other end is a bucket upload rather than the app, and there is no `meta` to hand back.
+
+Once `sendFile` has run the headers are on the wire, and `errorHandler` steps aside when
+`res.headersSent` is true — so a failure after the body started writing cannot be turned into a
+JSON error anymore. The streaming route carries the same hazard for the same reason: its headers
+are set before the first chunk goes out.
 
 ## Error codes
 

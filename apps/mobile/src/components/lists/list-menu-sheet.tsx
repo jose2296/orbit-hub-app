@@ -413,19 +413,47 @@ export function ListMenuSheet({
 
   return (
     /*
-      Two panels, and **one of them at a time.**
+      Two panels, and **one of them at a time as a rule, not as a guarantee.**
 
       They are siblings and not one inside the other because `Sheet` is a `Modal`,
       and a `Modal` inside a `Modal` is a panel on top of a panel — the thing this
       file's own header argues against, and worse, because the inner one is not
       dismissible by anything that is not on top of it.
 
-      They are never both up: the menu goes down before the request, and the result
-      only comes up once it has settled, which is seconds later. This is not the
-      sub-page trick used for rename and delete — those are one panel changing its
-      content, with the option's own answer still on screen. An export has no answer
-      to show until the file exists, so it is a second panel that arrives later, and
-      the argument for a single panel does not reach it.
+      **What is guaranteed is one thing only: the request never starts with the
+      menu up.** `exportar` calls `onClose()` before `run`, so `pedido` is `null`
+      and the menu's `visible` is false before a byte moves.
+
+      **What is not guaranteed is that the result sheet finds the menu down when it
+      settles.** Two paths put them together, and neither is exotic:
+
+        - The menu can be reopened while the download is still in flight — the
+          format rows are `disabled` precisely because that is reachable. Opening it
+          makes `abierto` true again, which fires the effect above and clears
+          `showing`; when the attempt settles, `setShowing(true)` in `exportar`'s
+          `finally` runs with the menu open, and the result sheet mounts over a
+          live `Sheet`.
+
+        - And even without that, `Sheet` keeps its `Modal` mounted for a few
+          hundred milliseconds after `visible` goes false — staying alive through
+          the dismissal is the whole point of `useLastValue`, and of the fix written
+          at the top of this file. A fast export settles inside that window, so the
+          leaving and the arriving panels overlap on purpose.
+
+      The overlap is cosmetic: the arriving panel covers the leaving one and
+      nothing is left unreachable, and both paths predate the last round of fixes
+      to this feature. **It is written down here because this comment used to claim
+      the opposite** — "they are never both up" — inside the very argument the
+      header of this file makes about stacked panels, and a false invariant in the
+      one place that argues against them is worse than the overlap it denies.
+
+      Skipping `setShowing(true)` when the menu is open would remove the overlap and
+      would also **throw the report away**, and this file's own reason for having a
+      result sheet at all is that a failure nobody is told about is a bug and not a
+      design. Closing the menu and showing the sheet afterwards keeps both and is a
+      one-line change to `exportar` — but it is behaviour, and behaviour is verified
+      by hand on the web, so it is a decision to make on purpose and not one a
+      comment quietly makes.
     */
     <>
       <Sheet

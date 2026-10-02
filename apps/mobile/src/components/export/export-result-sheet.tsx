@@ -72,9 +72,12 @@ export interface ExportResultSheetProps {
  * no second announcement of the same event. It says how much came out, names the
  * file, and gets out of the way.
  *
- * That restraint is why the failure can afford to be loud. A red line and two
- * buttons is a very different panel from two lines and one, and a person who just
- * saw the difference is being told something rather than shown a dialog.
+ * That restraint is why a failure with something to say can afford to be loud. A
+ * red line and two buttons is a very different panel from two lines and one, and a
+ * person who just saw the difference is being told something rather than shown a
+ * dialog. **A failure with nothing to say is the exception and paints nothing** —
+ * see `errorKey` below for which ones those are and why saying nothing there is
+ * the honest answer.
  */
 export function ExportResultSheet({ attempt: pedido, title, onClose }: ExportResultSheetProps) {
   /*
@@ -105,6 +108,27 @@ export function ExportResultSheet({ attempt: pedido, title, onClose }: ExportRes
   */
   const counts = result ? exportCountsLine(result.counts, t) : "";
 
+  /*
+    **The failure's own sentence, or `null` meaning "say nothing" — a decision, not
+    a gap.**
+
+    `exportErrorKey` returns `null` for an error that has no sentence of its own,
+    and that `null` is load-bearing. Two cases reach it and neither is a fault:
+    a 422 or a 409 are refusals of a particular request shape, and the plain
+    `Error` from `save.ts` is the person closing the share panel — on a phone
+    that is the single most ordinary way this flow ends, and by then the file is
+    already written to the cache. Falling back to `export.error.unknown` turned
+    all three into "Algo falló al preparar el fichero." in red, which tells
+    somebody their file is broken when it is in their downloads.
+
+    So this is computed once, here, and `null` paints no line at all: the buttons
+    below are still there and the person can still read what happened by pressing
+    the share sheet again. **Both buttons stay on `error`, not on `errorKey`** —
+    reasking is still the sensible thing to offer, and closing is still the way
+    out, whether or not there was a sentence worth showing.
+  */
+  const errorKey = error ? exportErrorKey(error) : null;
+
   return (
     <Sheet
       visible={pedido !== null}
@@ -125,10 +149,15 @@ export function ExportResultSheet({ attempt: pedido, title, onClose }: ExportRes
           the second half of that guarantee: if one day it did, the failure is what
           gets painted, because the counts of the file that came out last time are
           not what happened in this attempt.
+
+          The test on the first branch is `errorKey`, not `error`, precisely so
+          that a failure with no sentence renders neither branch: an empty
+          `<AppText>` is still a line tall, and a red line that says nothing true
+          is worse than no line.
         */}
-        {error ? (
+        {errorKey ? (
           <AppText variant="body" tone="danger">
-            {t(exportErrorKey(error) ?? "export.error.unknown")}
+            {t(errorKey)}
           </AppText>
         ) : result ? (
           <View style={{ gap: 2 }}>

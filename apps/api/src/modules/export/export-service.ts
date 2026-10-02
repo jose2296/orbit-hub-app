@@ -1,7 +1,8 @@
-import { exportFilename, isItemIcon } from '@orbit-hub/contracts';
+import { exportFilename } from '@orbit-hub/contracts';
 import type {
   ExportedAttachment,
   Folder,
+  ItemIcon,
   List,
   ListExport,
   ListItem,
@@ -110,9 +111,19 @@ function toItem(row: typeof listItems.$inferSelect, role: MembershipRoleName): L
     position: row.position,
     completed: row.completed,
     priority: row.priority,
-    // Un icono que este build no conoce no es icono, y no una fila rota: la
-    // columna es texto libre y el contrato es un conjunto cerrado.
-    icon: isItemIcon(row.icon) ? row.icon : null,
+    // Tal cual esta almacenado, sin guarda, y **el cast es el precio de esa
+    // decision**. La columna es texto libre; `listItemSchema` describe el
+    // conjunto que este build conoce, y una copia no tiene por que ajustarse al
+    // vocabulario de la version que la exporta. Reescribirlo a `null` — lo que
+    // hacia antes — es decidir en el export que ese dato no existe, y una copia a
+    // la que le falta un icono es peor que una copia con un icono que este build
+    // no sabe dibujar.
+    //
+    // Y si alguna vez se quiere una guarda de verdad, tiene que caer igual sobre
+    // los cuatro enums cerrados de esta fila —`icon`, `iconStyle`, `iconColor` y
+    // `priority`—, porque los cuatro se guardan igual: la que protege `icon` y
+    // deja pasar los otros tres no protege nada y solo descarta datos.
+    icon: row.icon as ItemIcon | null,
     iconStyle: row.iconStyle,
     iconColor: row.iconColor,
     tags: row.tags ?? [],
@@ -456,7 +467,13 @@ export class ExportService {
     await this.canSeeWorkspace(userId, row.workspaceId);
     const role = (await this.roleIn(userId, row.workspaceId)) ?? 'viewer';
 
-    const account = await this.accountOf(userId);
+    // El sobre de una lista lleva la cuenta sin `displayName`: el fichero no lo
+    // necesita, y `listExportSchema` —que es el contrato— dice que son dos
+    // campos. Se construye clave a clave y no se pasa el objeto entero porque
+    // TypeScript solo estrecha el tipo, no el valor: `accountOf` devuelve las
+    // tres columnas y `displayName` se colaria en el JSON sin que ningun
+    // compilador protestara.
+    const { id: accountId, email: accountEmail } = await this.accountOf(userId);
 
     const [workspaceRow] = await db
       .select({ id: workspaces.id, name: workspaces.name })
@@ -486,7 +503,7 @@ export class ExportService {
     const items = itemRows.map((itemRow) => toItem(itemRow, role));
 
     return listExportEnvelope({
-      account,
+      account: { id: accountId, email: accountEmail },
       workspace: workspaceRow,
       folder,
       list: toList(row, role, items.length),

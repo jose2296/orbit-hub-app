@@ -444,6 +444,61 @@ describe('GET /account/export', () => {
     expect(plantilla?.workspaceId).toBe(fix.workspaceId);
   });
 
+  it('lo de otra persona no sale ni una vez en el JSON', async () => {
+    const fix = await cuentaConContenido();
+
+    // Que lo de otra persona NO aparezca es la mitad del contrato de este
+    // endpoint. Este test existe para que un refactor futuro no pueda cambiar
+    // `visibleWorkspaceIds` ni el `inArray(workspaceId, workspaceIds)` de
+    // carpetas, listas, items o notas por un `isNotNull(...)` o un
+    // `where(id, 'is not', null)` — el fallo se veria porque la suite entera
+    // seguiria en verde al no haber ningun otro caso negativo que comprobara
+    // esos cuatro `inArray`. El unico caso negativo que habia era la plantilla
+    // personal, y esa rama es el `createdBy`, no el `workspaceId`.
+    const otra = await createVerifiedUser(api);
+    const suEspacioId = await espacioPropio(api, otra, 'Espacio Ajeno');
+    const suCarpetaId = await createFolder(otra, suEspacioId, 'Carpeta Ajena');
+    const suListaId = await createList(otra, suEspacioId, {
+      folderId: suCarpetaId,
+      title: 'Lista Ajena',
+    });
+    const suItemId = await createItem(otra, suListaId, { title: 'Item Ajeno' });
+    const suNotaId = await createNote(otra, suEspacioId, 'Nota Ajena');
+
+    const descarga = await bajar(api, '/account/export', fix.user.accessToken);
+    const sobre = accountExportSchema.parse(JSON.parse(descarga.text));
+
+    // El texto crudo y no el objeto parseado: los ids son uuid, no hay forma de
+    // que un `toContain` sobre arrays mas-selectivos los dejara pasar, pero
+    // sobre el texto tambien se ve un id colado en un sitio raro — un `createdBy`,
+    // un `document` de una nota compartida — y eso tambien es una fuga.
+    expect(descarga.text).not.toContain(suEspacioId);
+    expect(descarga.text).not.toContain(suCarpetaId);
+    expect(descarga.text).not.toContain(suListaId);
+    expect(descarga.text).not.toContain(suItemId);
+    expect(descarga.text).not.toContain(suNotaId);
+
+    // Y el sobre sigue siendo el de la primera persona y solo el suyo: unos
+    // counts inflados serian la otra forma de que un filtro desapareciera sin
+    // que ningun id ajeno apareciera. Los numeros son los del fixture de
+    // `cuentaConContenido` —un espacio, una carpeta, tres listas (una borrada),
+    // cuatro items (uno borrado y otro en la lista borrada), una nota y un
+    // adjunto— y ningun otro.
+    expect(sobre.counts).toEqual({
+      workspaces: 1,
+      folders: 1,
+      lists: 3,
+      items: 4,
+      notes: 1,
+      attachments: 1,
+      templates: 0,
+    });
+    expect(sobre.workspaces.map((w) => w.id)).toEqual([fix.workspaceId]);
+    expect(sobre.folders.map((f) => f.id)).toEqual([fix.folderId]);
+    expect(sobre.notes.map((n) => n.id)).toEqual([fix.noteId]);
+    expect(sobre.items.map((i) => i.id)).toContain(fix.itemId);
+  });
+
   it('?format=csv da 422 validation_failed, no un error inventado', async () => {
     const fix = await cuentaConContenido();
 
@@ -478,6 +533,28 @@ describe('GET /lists/:id/export', () => {
     expect(sobre.workspace.id).toBe(fix.workspaceId);
     expect(sobre.folder?.id).toBe(fix.folderId);
     expect(sobre.counts.items).toBe(sobre.items.length);
+  });
+
+  it('la cuenta del sobre de una lista es id y email, sin displayName', async () => {
+    // Un displayName que no aparece en ningun otro sitio del JSON, para que el
+    // `not.toContain` no pueda pasar por casualidad.
+    const user = await createVerifiedUser(api, { displayName: 'Nombre Que No Viaja' });
+    const workspaceId = await espacioPropio(api, user, 'Casa');
+    const listId = await createList(user, workspaceId, { title: 'Compra' });
+
+    const descarga = await bajar(api, `/lists/${listId}/export`, user.accessToken);
+
+    // El texto crudo y NO el objeto parseado: `listExportSchema` es un
+    // `z.object`, y un z.object quita las claves que no conoce en vez de
+    // fallar. Un `displayName` de mas pasaria por el parse sin quejarse, que es
+    // justo lo que hacia falta que este test notase. El parametro anotado del
+    // builder es `{ id, email }`, asi que TypeScript estrecha el tipo y no el
+    // valor: solo mirar el sobre ya construido lo detecta.
+    expect(descarga.text).not.toContain('displayName');
+    expect(descarga.text).not.toContain('Nombre Que No Viaja');
+
+    const cuenta = (JSON.parse(descarga.text) as { account: Record<string, unknown> }).account;
+    expect(Object.keys(cuenta).sort()).toEqual(['email', 'id']);
   });
 
   it('?format=csv da un CSV con BOM y la cabecera del contrato', async () => {
