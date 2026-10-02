@@ -11,6 +11,7 @@ import {
   NOTE_DOCUMENT_MAX_BYTES,
   noteDocumentSchema,
   noteDocumentToPlainText,
+  sanitiseTagColors,
   syncOperationSchema,
 } from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
@@ -252,6 +253,16 @@ function sanitisePayload(
       clean[key] = Array.isArray(value)
         ? value.map((tag) => String(tag).trim().slice(0, 40)).filter(Boolean).slice(0, 20)
         : [];
+      continue;
+    }
+
+    if (key === 'tagColors') {
+      // The only labels whose colour somebody chose. A colour this build cannot
+      // draw is dropped rather than replaced with `neutral`: dropping leaves the
+      // label with no colour chosen, which is a state the map already has and
+      // which sends it back to the colour deduced from its name. Replacing it
+      // with `neutral` would be a choice nobody made, and it would be stored.
+      clean[key] = sanitiseTagColors(value);
       continue;
     }
 
