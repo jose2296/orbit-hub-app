@@ -14,6 +14,20 @@ export interface BadgeProps {
   label: string;
   tone?: BadgeTone;
   icon?: IconName;
+  /**
+   * `compact` is the same badge with less of it around the words.
+   *
+   * It exists for the places where the badge is **not the headline** of the row:
+   * a list of tasks carries its urgency on its own line under the title, where a
+   * badge at the size of a badge in a header is a badge shouting over the thing
+   * it is describing. Same colours, same pill, same words — less padding and a
+   * smaller glyph.
+   *
+   * `regular` is the default on purpose: the sixteen other call sites are the ones
+   * a badge is the headline of, and a default they all have to opt out of is a
+   * default that gets opted out of wrongly.
+   */
+  size?: "regular" | "compact";
   style?: ViewStyle;
   /**
    * What a screen reader says instead of the bare label.
@@ -31,6 +45,7 @@ export function Badge({
   label,
   tone = "neutral",
   icon,
+  size = "regular",
   style,
   accessibilityLabel,
   testID,
@@ -59,6 +74,7 @@ export function Badge({
   };
 
   const palette = tones[tone];
+  const compacto = size === "compact";
 
   return (
     <View
@@ -69,14 +85,20 @@ export function Badge({
         {
           backgroundColor: palette.background,
           borderRadius: theme.radius.pill,
-          paddingHorizontal: theme.spacing.md,
-          paddingVertical: theme.spacing.xs,
+          paddingHorizontal: compacto ? theme.spacing.sm : theme.spacing.md,
+          paddingVertical: compacto ? theme.spacing.xxs : theme.spacing.xs,
           gap: theme.spacing.xs,
         },
         style,
       ]}
     >
-      {icon ? <Ionicons name={icon} size={12} color={palette.text} /> : null}
+      {icon ? (
+        <Ionicons
+          name={icon}
+          size={compacto ? 10 : 12}
+          color={palette.text}
+        />
+      ) : null}
       <AppText variant="caption" style={{ color: palette.text }}>
         {label}
       </AppText>

@@ -3,10 +3,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
-import type { ListItem, ListOrderMode } from "@orbit-hub/contracts";
+import type { ListItem, ListOrderMode, Priority } from "@orbit-hub/contracts";
 
 import { releaseSharedCover } from "@/lib/media/shared-cover";
 import { Badge } from "@/components/ui/badge";
+import type { IconName } from "@/components/ui/button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -57,6 +58,24 @@ const PRIORITY_TONE = {
   medium: "warning",
   high: "danger",
 } as const;
+
+/**
+ * The glyph each urgency carries in a row, next to the colour.
+ *
+ * Three shapes that escalate rather than three that are merely different: a ring,
+ * a ring with a bang, and a triangle. At ten points the colour is doing half the
+ * work — a badge on its own line under a title is small, and two reds at ten
+ * points are one red — so the shape is what still says *how* urgent when the
+ * colours are not being compared side by side.
+ *
+ * No `none`: a task with no urgency draws no badge at all, so there is nothing to
+ * put a glyph on.
+ */
+const PRIORITY_ICON: Record<Exclude<Priority, "none">, IconName> = {
+  low: "remove-circle-outline",
+  medium: "alert-circle-outline",
+  high: "warning",
+};
 
 export default function ListScreen() {
 
@@ -417,7 +436,6 @@ export default function ListScreen() {
         // porque te enteras cuando ya no lo querias.
         onEdit={() => setEditing({ itemId: item.id, page: "edit" })}
         onIcon={() => setEditing({ itemId: item.id, page: "icon" })}
-        onPriority={() => setEditing({ itemId: item.id, page: "edit" })}
       />
     );
 
@@ -787,13 +805,11 @@ function TaskRow({
   onToggle,
   onEdit,
   onIcon,
-  onPriority,
 }: {
   item: import("@orbit-hub/contracts").ListItem;
   onToggle: () => void;
   onEdit: () => void;
   onIcon: () => void;
-  onPriority: () => void;
 }) {
   const theme = useTheme();
   const t = useTranslation();
@@ -825,45 +841,61 @@ function TaskRow({
       ]}
     >
       {/* The icon is its own target: it is a picture of what to buy, and
-          pressing it opens the pictures rather than the row. With no icon there
-          is still something to press, or the feature is only found by someone
-          who already uses it. */}
+          pressing it opens the pictures rather than the row. */}
       <Checkbox checked={item.completed} onToggle={onToggle} label="" />
 
       {/* El icono va a la derecha de la casilla, y no en el borde de la fila: al
           otro extremo se leía como una foto de la lista y no como el icono de
           esta fila, y con la casilla al lado se sabe de un vistazo qué vas a
-          marcar y qué has marcado. */}
-      <Pressable
-        testID={`item-icon-${item.id}`}
-        accessibilityRole="button"
-        accessibilityLabel={t("icons.ofItem", { name: item.title })}
-        hitSlop={8}
-        onPress={onIcon}
-        style={styles.iconSlot}
-      >
-        <ItemIcon
-          icon={item.icon}
-          style={item.iconStyle}
-          color={item.iconColor}
-        />
-        {item.icon ? null : (
-          <Ionicons name="add" size={14} color={theme.colors.textSubtle} />
-        )}
-      </Pressable>
+          marcar y qué has marcado.
+
+          Y sin icono **no hay nada**: ni dibujo ni hueco.
+
+          El `+` que se dibujaba aquí cuando no había icono ya no está: Sayía
+          "añade un icono" en casi todas las tareas de todas las listas, y lo decía
+          en el sitio donde debería estar el nombre. Lo que lo sustituye es nada, y
+          un hueco vacío tampoco: el nombre empezaría pegado a la casilla y la fila
+          se llenaría de aire, que es un espacio vacío mayor.
+
+          Y por eso esto ni siquiera es una `View` vacía: un objetivo invisible del
+          ancho de un dedo junto a cada nombre sin icono abriría el selector de
+          iconos con un toque que parecía estar en el nombre. */}
+      {item.icon ? (
+        <Pressable
+          testID={`item-icon-${item.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={t("icons.ofItem", { name: item.title })}
+          hitSlop={8}
+          onPress={onIcon}
+          style={styles.iconSlot}
+        >
+          <ItemIcon
+            icon={item.icon}
+            style={item.iconStyle}
+            color={item.iconColor}
+          />
+        </Pressable>
+      ) : null}
 
       <View style={[styles.flex, { gap: 2 }]}>
         {/* The name opens the row. It used to be wired to the delete: one tap
             and the thing you were reading was gone, with nothing said and
-            nothing to undo. */}
+            nothing to undo.
+
+            It is the press and not the row behind it, so this one box carries both
+            gestures: a tap opens the item, a long one opens the whole name.
+
+            And `styles.nombre` is an empty object on purpose — read its comment
+            before anyone puts a `flex` on it. */}
         <Pressable
-            onLongPress={nombreLargo.onLongPress}
+          onPress={onEdit}
+          onLongPress={nombreLargo.onLongPress}
           accessibilityRole="button"
           accessibilityLabel={item.title}
           {...pistaNombre.props}
-          onPress={onEdit}
+          style={styles.nombre}
         >
-                    <AppText
+          <AppText
             variant="body"
             tone={item.completed ? "subtle" : "default"}
             style={item.completed ? styles.strike : undefined}
@@ -875,36 +907,59 @@ function TaskRow({
         {nombreLargo.sheet}
         {pistaNombre.node}
 
-        {/* The labels, and only the ones there are. A row used to say "+ Label"
-            under every name, which is a second place to add the same thing the
-            item panel already does, in a row with no room to say it in. */}
-        {item.tags.length > 0 ? (
-          <AppText variant="caption" tone="accent" numberOfLines={1}>
-            {item.tags.join(" · ")}
-          </AppText>
+        {/* The urgency and the labels, **on the same line**, under the name.
+
+            The urgency used to be on the right edge of the row, in the same column
+            as the drag handle, where it read as part of the row's trailing
+            furniture — and a column that lines the priorities of several rows up
+            into is a column that means nothing. It is a property of the task, so
+            it goes with the task.
+
+            One line and not one each: a row with a priority *and* two labels was
+            three lines tall, and the middle one held a single word in a pill. A
+            task list is read by scanning down the names, and three lines per row is
+            a list where only six names fit on a phone. The badge goes first — it
+            is the coarser of the two, and the labels are what you are looking for
+            when you are looking for a shop.
+
+            The badge is not pressable here. The name above opens the sheet, and the
+            sheet has the urgency as four things you can see, so a second way in
+            from the row is two ways to end up disagreeing about the value.
+
+            And it is compact, with a glyph: at this size the colour alone is not
+            enough to sort a list by. */}
+        {item.priority !== "none" || item.tags.length > 0 ? (
+          <View style={[styles.meta, { gap: theme.spacing.xs }]}>
+            {item.priority !== "none" ? (
+              <Badge
+                label={t(`items.priority.${item.priority}` as never)}
+                tone={PRIORITY_TONE[item.priority]}
+                icon={PRIORITY_ICON[item.priority]}
+                size="compact"
+              />
+            ) : null}
+
+            {/* The labels, and only the ones there are. A row used to say
+                "+ Label" under every name, which is a second place to add the same
+                thing the item panel already does, in a row with no room to say it
+                in.
+
+                `flexShrink` and not nothing: twenty labels is a string longer than
+                the row, and the badge next to it must survive that, not be pushed
+                off the right edge with the first label. */}
+            {item.tags.length > 0 ? (
+              <AppText
+                variant="caption"
+                tone="accent"
+                numberOfLines={1}
+                style={styles.metaTags}
+              >
+                {item.tags.join(" · ")}
+              </AppText>
+            ) : null}
+          </View>
         ) : null}
       </View>
-
-      {item.priority !== "none" ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("itemEdit.changePriority", {
-            name: t(`items.priority.${item.priority}` as never),
-          })}
-          hitSlop={6}
-          onPress={onPriority}
-        >
-          <Badge
-            label={t(`items.priority.${item.priority}` as never)}
-            tone={PRIORITY_TONE[item.priority]}
-          />
-        </Pressable>
-      ) : null}
-      {item.priority !== "none" ? null : (
-        /* Un hueco del ancho de la insignia, para que al ponerla la fila no
-           dé un salto hacia la derecha y el nombre no se mueva bajo el dedo. */
-        <View style={styles.priorityGap} />
-      )}
     </View>
   );
 }
@@ -938,12 +993,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  /** La fila de la insignia de urgencia y las etiquetas, bajo el nombre. */
+  meta: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  /**
+   * And the labels yield, not the badge.
+   *
+   * A row with twenty labels is a string longer than the screen, and without this
+   * the string would keep its full width and push the badge off the right edge —
+   * which is the one thing on that line that cannot be cut in half, because it is
+   * what the row is sorted by.
+   */
+  metaTags: {
+    flexShrink: 1,
+  },
   /** Lo que ocupa el asa de arrastrar, en el borde derecho de la fila. */
   dragHandle: {
     width: 28,
-  },
-  priorityGap: {
-    width: 64,
   },
   createButton: {
     position: "absolute",
@@ -975,6 +1043,25 @@ const styles = StyleSheet.create({
   hidden: {
     opacity: 0,
   },
+  /**
+   * The pressable that wraps the title, and **it must not be a flex child**.
+   *
+   * Symptom: in a release build of Android the row shows its checkbox, its icon
+   * and the counters — every one of them styled — and **no title at all**. The
+   * `accessibilityLabel` of the icon, one line up, reads the title in full, so
+   * the data is there and the title is being dropped at layout time.
+   *
+   * Why: its parent is already `flex: 1`, so this box has no width of its own,
+   * and a `Pressable` that is told how to divide a space rather than how much to
+   * occupy ends up occupying **zero** in Android's flexbox. A zero-width box clips
+   * everything inside it, and the `AppText` goes with it — while the icon beside
+   * it, which has a fixed `width: 24`, survives. On web the same tree lays out,
+   * because the browser gives an unstyled element its content width.
+   *
+   * So: no flex, no absolute, nothing. It measures what it wraps, which is the
+   * only thing that was ever wanted — the title is as long as it is.
+   */
+  nombre: {},
   flex: {
     flex: 1,
     // A child of a `flex` does not go below its content by default, so the
