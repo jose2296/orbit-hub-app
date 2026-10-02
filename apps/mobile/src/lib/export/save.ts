@@ -1,6 +1,7 @@
+import type { AccountExport, ExportFormat, ListExport } from '@orbit-hub/contracts';
 import { Platform } from 'react-native';
 
-import type { PendingRequest } from '@/lib/api/client';
+import { ApiError, type PendingRequest } from '@/lib/api/client';
 
 /**
  * Donde acaba el fichero de una exportacion, y como se lee despues.
@@ -17,32 +18,25 @@ import type { PendingRequest } from '@/lib/api/client';
  * nativo al cargar es un bundle web que no carga.
  */
 
+/**
+ * Los dos modulos nativos, con los tipos que ellos traen.
+ *
+ * `typeof import(...)` y no una interfaz escrita a mano, porque el compilador
+ * entonces comprueba cada llamada contra los `.d.ts` del paquete instalado. Una
+ * interfaz propia es una segunda definicion de la API de `expo-file-system` que se
+ * queda vieja en silencio: un SDK que renombre `downloadFileAsync` o le cambie el
+ * tipo de `Paths.cache` compila en verde y revienta en un telefono, y eso es
+ * justamente lo que el typecheck no caza.
+ */
+type FileSystemModule = typeof import('expo-file-system');
+type SharingModule = typeof import('expo-sharing');
+
 export type ExportOutcome = 'downloaded' | 'shared';
-
-interface FileSystemModule {
-  Paths: { cache: unknown };
-  File: {
-    new (...parts: unknown[]): {
-      uri: string;
-      exists: boolean;
-      text(): Promise<string>;
-    };
-    downloadFileAsync(
-      url: string,
-      destination: unknown,
-      options?: { headers?: Record<string, string>; idempotent?: boolean },
-    ): Promise<unknown>;
-  };
-}
-
-interface SharingModule {
-  shareAsync(url: string, options?: { mimeType?: string; dialogTitle?: string }): Promise<void>;
-}
 
 async function fileSystem(): Promise<FileSystemModule | null> {
   if (Platform.OS === 'web') return null;
   try {
-    return (await import('expo-file-system')) as unknown as FileSystemModule;
+    return await import('expo-file-system');
   } catch {
     // Un movil cuyo modulo de ficheros no carga no puede exportar el fichero, y
     // eso es un fallo que hay que poder contar: no un `null` silencioso que la
@@ -54,22 +48,35 @@ async function fileSystem(): Promise<FileSystemModule | null> {
 async function sharing(): Promise<SharingModule | null> {
   if (Platform.OS === 'web') return null;
   try {
-    return (await import('expo-sharing')) as unknown as SharingModule;
+    return await import('expo-sharing');
   } catch {
     return null;
   }
+}
+
+/** Lo que el modulo nativo dice, para no perderlo al convertirlo en `ApiError`. */
+function detailOf(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === 'string' ? error : 'sin detalle';
 }
 
 /**
  * El tipo del fichero, deducido del nombre en vez de recibido.
  *
  * La extension ya la puso `exportFilename` con el formato que se pidio, asi que
- * el `mimeType` sale de ahi. Pasarlo como argumento aparte seria un segundo sitio
- * donde el formato puede mentir, y un CSV anunciado como `application/json` es un
- * fichero que Excel se niega a abrir.
+ * el tipo sale de ahi. Pasarlo como argumento aparte seria un segundo sitio donde
+ * el formato puede mentir.
+ *
+ * Van los dos campos porque cada plataforma lee el suyo y descarta el otro.
+ * `mimeType` es el tipo que Android pone en el `Intent` de compartir, y por ahi un
+ * CSV anunciado como `application/json` es un fichero que Excel se niega a abrir.
+ * `UTI` es el identificador uniforme que lee iOS: el nombre con su extension ya
+ * le basta, pero el que decide si la app de destino abre el fichero es el `UTI`.
  */
-function mimeTypeOf(filename: string): string {
-  return filename.endsWith('.csv') ? 'text/csv' : 'application/json';
+function typeOf(filename: string): { mimeType: string; UTI: string } {
+  return filename.endsWith('.csv')
+    ? { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' }
+    : { mimeType: 'application/json', UTI: 'public.json' };
 }
 
 /**
@@ -128,28 +135,61 @@ async function downloadToCacheAndShare(
   const fs = await fileSystem();
   const share = await sharing();
   if (!fs || !share) {
+    // Sin `kind` a proposito. Un modulo que no carga no se arregla reintentando,
+    // y `network` pondria delante un boton que no puede hacer nada. Sin mapa, la
+    // hoja cae en su mensaje generico, que es lo unico cierto aqui.
     throw new Error('Este dispositivo no puede guardar el fichero de la exportacion');
   }
 
   // El cache y no el directorio de documentos porque el cache es lo unico que el
   // sistema puede recoger cuando le falta sitio, y donde acaba el fichero lo
   // decide la persona en el panel que viene despues, no este modulo.
-  const destino = new fs.File(fs.Paths.cache, filename);
+  let destino: InstanceType<FileSystemModule['File']>;
 
-  // `idempotent` porque el nombre lleva la fecha: exportar la misma lista dos
-  // veces el mismo dia da el mismo fichero, y sin esto la segunda vez falla con
-  // `DestinationAlreadyExists` en vez de sobrescribir el anterior.
-  await fs.File.downloadFileAsync(pending.url, destino, {
-    headers: pending.headers,
-    idempotent: true,
-  });
+  try {
+    destino = new fs.File(fs.Paths.cache, filename);
 
-  // El fichero no se borra despues. La app que recibe lo lee por la `uri` cuando
-  // la persona elige destino, y ese momento es posterior a este `await`.
-  await share.shareAsync(destino.uri, {
-    mimeType: mimeTypeOf(filename),
-    dialogTitle: filename,
-  });
+    // `idempotent` porque el nombre lleva la fecha: exportar la misma lista dos
+    // veces el mismo dia da el mismo fichero, y sin esto la segunda vez falla con
+    // `DestinationAlreadyExists` en vez de sobrescribir el anterior.
+    await fs.File.downloadFileAsync(pending.url, destino, {
+      headers: pending.headers,
+      idempotent: true,
+    });
+  } catch (caught) {
+    // Un `ApiError` y no el error crudo, y no por gusto: en un movil el
+    // intercambio HTTP entero ocurre dentro de `expo-file-system`, asi que aqui
+    // no se construye ninguno y `toApiError` convertia cualquier fallo —un 401, un
+    // 403, un 429, una conexion que se cae— en el mismo `unknown`, que
+    // `exportErrorKey` deja sin pintar y que `isRetryable` ni siquiera considera
+    // reintentable. Un codigo de estado no se ve aqui —el error nativo solo lo
+    // menciona en el texto—, pero lo que si se sabe es que no ha llegado, y
+    // `network` es el `kind` honesto: el unico con el que hay algo que hacer,
+    // que es volver a pulsar.
+    throw new ApiError({
+      kind: 'network',
+      message: `No se pudo descargar ${filename}: ${detailOf(caught)}`,
+    });
+  }
+
+  try {
+    // El fichero no se borra despues. La app que recibe lo lee por la `uri`
+    // cuando la persona elige destino, y ese momento es posterior a este `await`.
+    // El `dialogTitle` es el titulo del panel en Android; en iOS lo pone el
+    // sistema, que ya sabe leer el nombre del fichero.
+    await share.shareAsync(destino.uri, {
+      ...typeOf(filename),
+      dialogTitle: filename,
+    });
+  } catch (caught) {
+    // El share falla de otra manera y no se parece al anterior: la persona cerro
+    // el panel, o la app de destino no lo acepta. Aqui no hay nada que
+    // reintentar —volver a pulsar abriria el mismo panel que acaban de cerrar—,
+    // asi que sale como es, sin `kind` que lo mapee: `exportErrorKey` devuelve
+    // `null` y la hoja no pinta una frase que alarmaria por algo que no es un
+    // fallo de la descarga.
+    throw new Error(`No se pudo compartir ${filename}: ${detailOf(caught)}`);
+  }
 
   return 'shared';
 }
@@ -173,25 +213,37 @@ export async function saveExport(args: {
 }
 
 /**
- * El sobre del fichero que se acaba de escribir en el cache, o `null` si no se
- * puede leer.
+ * El sobre del fichero que se acaba de escribir en el cache, o `null` si no hay.
  *
  * Vive aqui y no en el hook porque este modulo es el unico que sabe donde ha
  * quedado el fichero. En la web devuelve `null` sin hacer nada: ahi los bytes los
  * tiene la respuesta de la red, y releerlos del disco del navegador no existe.
  *
+ * El tipo que sale es el del contrato y no un `unknown` que el llamante tenga que
+ * adivinar. El `as` es una asercion sobre un fichero que la propia API acaba de
+ * escribir con esos schemas —no un dato de fuera— y lo que la comprueba de verdad
+ * es la lectura de `counts` en `hooks/use-export.ts`.
+ *
  * Se relee entero —unos cuantos megas por JS— porque es la unica manera de que el
  * numero que se ensena sea el del fichero que sale por pantalla, y porque leer no
  * es lo caro que fue escribir.
  */
-export async function readSavedEnvelope(filename: string): Promise<unknown | null> {
+export async function readSavedEnvelope(args: {
+  filename: string;
+  format: ExportFormat;
+}): Promise<AccountExport | ListExport | null> {
+  // Una lista en CSV son filas y punto: no hay sobre. Preguntarlo aqui y no en el
+  // llamante es lo que evita el otro fallo —`JSON.parse` de un CSV, que lanza, y
+  // el `catch` de abajo se lo come y devuelve `null` como si no hubiera nada.
+  if (args.format !== 'json') return null;
+
   const fs = await fileSystem();
   if (!fs) return null;
 
   try {
-    const file = new fs.File(fs.Paths.cache, filename);
+    const file = new fs.File(fs.Paths.cache, args.filename);
     if (!file.exists) return null;
-    return JSON.parse(await file.text());
+    return JSON.parse(await file.text()) as AccountExport | ListExport;
   } catch {
     // Un sobre ilegible no es una exportacion fallida: el fichero ya esta
     // entregado y lo que se ha perdido son los numeros de la linea de debajo.

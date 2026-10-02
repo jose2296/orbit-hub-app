@@ -4,11 +4,17 @@ import type { TranslationKey } from '@/lib/i18n/dictionaries';
 /**
  * Que se le dice a la persona cuando la exportacion no sale.
  *
- * Puro a proposito: solo importan `ApiError` y `toApiError`, y nada de
- * `react-native`. Un modulo que llega a `Platform` es un modulo que en un test de
- * Node carga un stub en vez del telefono, y esta es la unica pieza de la
- * exportacion que se puede comprobar de verdad sin un dispositivo delante — que es
- * justo donde se decide si el fallo se dice en serio o se dice `undefined`.
+ * Puro a proposito: solo importan `toApiError` y el tipo de la clave, y nada de
+ * `react-native`. Un modulo que llega a `Platform` es un modulo que arrastra el
+ * stub del telefono a un test de Node, y esta traduccion es la que decide si el
+ * fallo se dice en serio o se dice `undefined`; que se pueda probar sin un
+ * dispositivo delante no es un lujo, es la mitad del trabajo.
+ *
+ * Lo que llega aqui en un movil lo decide `lib/export/save.ts`: alli el intercambio
+ * HTTP ocurre dentro de `expo-file-system`, asi que no se construye ningun
+ * `ApiError` y un fallo de descarga sale ya con `kind: 'network'`. Si no, un 401
+ * en un telefono acabaria en `unknown`, que es `null` aqui, y la hoja pintaria
+ * "algo fallo" de un 403 igual que de un 404.
  *
  * Devuelve `null` para lo que no tiene frase propia. Quien llama decide el hueco:
  * inventar una clave para un 422 que no tiene equivalente posible en Castellano

@@ -21,13 +21,16 @@ export const EXPORT_TIMEOUT_MS = 120_000;
 /**
  * El sobre del que salen los numeros que se ensenan.
  *
- * Los dos formatos son JSON y por eso los dos tienen el mismo `Accept`, el mismo
+ * Los dos formatos que llevan sobre son JSON, asi que el mismo `Accept`, el mismo
  * sobre y el mismo nombre con distinta extension. Un CSV no lleva sobre —son
  * filas— y por eso los `counts` pueden ser `null` sin que eso sea un fallo.
  */
-async function envelopeOf(response: Response): Promise<unknown> {
+async function envelopeOf(response: Response): Promise<AccountExport | ListExport | null> {
   try {
-    return await response.json();
+    // `json()` devuelve `any` en las typings de DOM, asi que el tipo lo pone el
+    // contrato; lo que lo comprueba de verdad es `countsOf`, que vuelve a pasar
+    // esos numeros por el schema.
+    return (await response.json()) as AccountExport | ListExport;
   } catch {
     return null;
   }
@@ -37,9 +40,13 @@ async function envelopeOf(response: Response): Promise<unknown> {
  * Los numeros del sobre, leidos del contrato y no contados aqui.
  *
  * Que los diga el propio fichero y no el cliente es el punto: el numero que se
- * ensena es el que va a salir por pantalla. Y se lee solo `counts`, con el
- * `shape.counts` del schema que sea, porque validar diez mil elementos para
- * descartar un numero ya bueno no es lo que se paga por una linea de resumen.
+ * ensena es el que va a salir por pantalla.
+ *
+ * Se parsea **solo** `counts`, con el `shape.counts` del schema que sea. No es por
+ * la memoria —el sobre entero ya esta construido y recorrido de todos modos, con
+ * su `clone()` y su `json()`— sino por el trabajo del validador: recorrer y
+ * comprobar diez mil elementos para descartar un numero ya bueno es lo que cuesta,
+ * y no hace falta pagarlo para una linea de resumen.
  *
  * El de la cuenta va primero porque es el que no encaja dentro del otro: los
  * `counts` de una lista son solo `{items}` y el schema de la cuenta exige el
@@ -50,14 +57,13 @@ async function envelopeOf(response: Response): Promise<unknown> {
  * aqui el fichero ya esta entregado, y un `counts` que no se reconoce es una
  * linea de menos, no una exportacion perdida.
  */
-function countsOf(envelope: unknown): AccountExport['counts'] | ListExport['counts'] | null {
-  if (!envelope || typeof envelope !== 'object') return null;
-  const counts = (envelope as { counts?: unknown }).counts;
+function countsOf(envelope: AccountExport | ListExport | null): AccountExport['counts'] | ListExport['counts'] | null {
+  if (!envelope) return null;
 
-  const cuenta = accountExportSchema.shape.counts.safeParse(counts);
+  const cuenta = accountExportSchema.shape.counts.safeParse(envelope.counts);
   if (cuenta.success) return cuenta.data;
 
-  const lista = listExportSchema.shape.counts.safeParse(counts);
+  const lista = listExportSchema.shape.counts.safeParse(envelope.counts);
   return lista.success ? lista.data : null;
 }
 
@@ -70,6 +76,68 @@ export interface ExportResult {
   filename: string;
 }
 
+export interface ExportRequest {
+  path: string;
+  format: ExportFormat;
+  title: string;
+  fallbackId: string;
+}
+
+/**
+ * La exportacion entera: pedirla, entregarla y leer de ella los numeros.
+ *
+ * Vive fuera del hook, y no por separacion de intereses sino porque es lo unico
+ * que se puede probar sin un telefono delante: `run` solo puede ejecutarse dentro
+ * de un render, y en este repositorio no hay renderer. Las dos ramas —web y
+ * movil— se ejecutan en los tests de `test/export.test.ts` poniendo el `Platform.OS`
+ * del stub y suplantando los modulos nativos.
+ *
+ * Y son justo las dos mitades que hay que mirar: que el fichero se baje **una**
+ * sola vez y que los numeros salgan del mismo fichero que se entrega.
+ */
+export async function deliverExport(args: ExportRequest): Promise<ExportResult> {
+  // El dia en UTC porque es lo unico que pueden ponerse de acuerdo el cliente y el
+  // servidor sin preguntar la zona a nadie, y el nombre que pone el servidor en su
+  // `Content-Disposition` es este mismo.
+  const filename = exportFilename({
+    title: args.title,
+    fallbackId: args.fallbackId,
+    extension: args.format,
+    date: new Date().toISOString().slice(0, 10),
+  });
+
+  const pending = await apiRaw(args.path, {
+    query: { format: args.format },
+    timeoutMs: EXPORT_TIMEOUT_MS,
+  });
+
+  // Una sola peticion para las dos mitades del trabajo. En la web hay que tener la
+  // `Response` a la vista —para el `blob` de la descarga y para el sobre— asi que
+  // se envia aqui y a `saveExport` se le pasa esa misma respuesta ya enviada: el
+  // `send` de mentira no es una segunda descarga, y por eso `saveExport` recibe un
+  // `pending` y no una URL. En nativo no se manda nada desde JS; los bytes los baja
+  // `expo-file-system` desde la URL con las cabeceras del `pending`, y el sobre se
+  // relee del cache, que es donde ha quedado.
+  let envelope: AccountExport | ListExport | null;
+  let how: ExportResult['how'];
+
+  if (Platform.OS === 'web') {
+    const response = await pending.send();
+    // `clone()` antes de que nadie lea el cuerpo: las dos ramas leen de la misma
+    // respuesta y un cuerpo se consume una sola vez.
+    envelope = args.format === 'json' ? await envelopeOf(response.clone()) : null;
+    how = await saveExport({
+      pending: { ...pending, send: async () => response },
+      filename,
+    });
+  } else {
+    how = await saveExport({ pending, filename });
+    envelope = await readSavedEnvelope({ filename, format: args.format });
+  }
+
+  return { counts: countsOf(envelope), how, filename };
+}
+
 export interface UseExport {
   /** Hay una exportacion en marcha: el boton que la lanza esta pulsado. */
   running: boolean;
@@ -79,12 +147,7 @@ export interface UseExport {
   filename: string | null;
   /** Lo que salio de la ultima que llego bien. */
   result: ExportResult | null;
-  run(args: {
-    path: string;
-    format: ExportFormat;
-    title: string;
-    fallbackId: string;
-  }): Promise<ExportResult | null>;
+  run(args: ExportRequest): Promise<ExportResult | null>;
 }
 
 /**
@@ -101,65 +164,27 @@ export function useExport(): UseExport {
   const [filename, setFilename] = useState<string | null>(null);
   const [result, setResult] = useState<ExportResult | null>(null);
 
-  async function run(args: {
-    path: string;
-    format: ExportFormat;
-    title: string;
-    fallbackId: string;
-  }): Promise<ExportResult | null> {
+  async function run(args: ExportRequest): Promise<ExportResult | null> {
     setRunning(true);
-    // El error anterior se va al empezar y no al acabar: mientras va, lo que se
-    // ve es "preparando el fichero", no el fallo de la vez anterior.
+    // Los tres estados del intento anterior se van aqui y no al acertar: si el
+    // error se limpiase al final, dejaria el `result` y el nombre de la
+    // exportacion buena junto al fallo nuevo, y la hoja los pintaria como si
+    // fueran de este intento. Y no es que un fallo borre lo anterior —no lo
+    // borra, sigue ahi para volver a mirarlo—, es que el intento nuevo empieza
+    // sin nada de la vez anterior encima.
     setError(null);
-
-    // El dia en UTC porque es lo unico que pueden ponerse de acuerdo el cliente
-    // y el servidor sin preguntar la zona a nadie, y el nombre que puesto el
-    // servidor en su `Content-Disposition` es este mismo.
-    const name = exportFilename({
-      title: args.title,
-      fallbackId: args.fallbackId,
-      extension: args.format,
-      date: new Date().toISOString().slice(0, 10),
-    });
+    setResult(null);
+    setFilename(null);
 
     try {
-      const pending = await apiRaw(args.path, {
-        query: { format: args.format },
-        timeoutMs: EXPORT_TIMEOUT_MS,
-      });
-
-      // Una sola peticion para las dos mitades del trabajo. En la web hay que
-      // tener la `Response` a la vista —para el `blob` de la descarga y para el
-      // sobre— asi que se envia aqui y a `saveExport` se le pasa la misma
-      // respuesta ya enviada: el `send` de mentira no es una segunda descarga.
-      // En nativo no se manda nada desde JS; los bytes los baja
-      // `expo-file-system` desde la URL con las cabeceras del `pending`, y el
-      // sobre se relee del cache, que es donde ha quedado.
-      let envelope: unknown;
-      let how: ExportResult['how'];
-
-      if (Platform.OS === 'web') {
-        const response = await pending.send();
-        // `clone()` antes de que nadie lea el cuerpo: las dos ramas leen de la
-        // misma respuesta y un cuerpo se consume una sola vez.
-        envelope = args.format === 'json' ? await envelopeOf(response.clone()) : null;
-        how = await saveExport({
-          pending: { ...pending, send: async () => response },
-          filename: name,
-        });
-      } else {
-        how = await saveExport({ pending, filename: name });
-        envelope = args.format === 'json' ? await readSavedEnvelope(name) : null;
-      }
-
-      const entregado: ExportResult = { counts: countsOf(envelope), how, filename: name };
+      const entregado = await deliverExport(args);
       setResult(entregado);
-      setFilename(name);
+      setFilename(entregado.filename);
       return entregado;
     } catch (caught) {
-      // Ni se borra lo de antes ni se relanza. Un 403 o un 404 tampoco lo
-      // borran: no son un fallo de la descarga sino de lo que se pidio, y quien
-      // esta mirando ya tiene delante lo que funcionaba la vez anterior.
+      // Ni se relanza ni borra lo anterior. Un 403 o un 404 tampoco lo borran: no
+      // son un fallo de la descarga sino de lo que se pidio, y quien esta mirando
+      // ya tiene delante lo que funcionaba la vez anterior.
       setError(toApiError(caught));
       return null;
     } finally {
