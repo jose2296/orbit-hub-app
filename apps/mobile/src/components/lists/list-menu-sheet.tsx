@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 
-import type { Folder, List } from "@orbit-hub/contracts";
+import type { ExportFormat, Folder, List } from "@orbit-hub/contracts";
 
 import { ShareNodeForm } from "@/components/shares/share-node-sheet";
 import { SharedBadge } from "@/components/shares/shared-badge";
 import { useDashboard } from "@/hooks/use-dashboard";
+import { useExport } from "@/hooks/use-export";
 import { useLists } from "@/hooks/use-lists";
 import { useShareReach } from "@/hooks/use-shares";
 import {
@@ -42,12 +43,12 @@ export interface ListMenuSheetProps {
  * Delete is last and it says how many things go with it. Everything else here
  * can be undone by opening the menu again, and the one that cannot asks first.
  *
- * Renaming and deleting are **pages of this same panel** and not panels of their
- * own. A panel on top of a panel is two backdrops over one screen, and a tap
- * that reaches the wrong one closes what is underneath instead of doing what was
- * asked. One panel whose content changes has neither problem.
+ * Renaming, sharing, exporting and deleting are **pages of this same panel** and not
+ * panels of their own. A panel on top of a panel is two backdrops over one screen,
+ * and a tap that reaches the wrong one closes what is underneath instead of doing
+ * what was asked. One panel whose content changes has neither problem.
  */
-type Page = "options" | "rename" | "share" | "delete";
+type Page = "options" | "rename" | "share" | "export" | "delete";
 
 export function ListMenuSheet({
   list: pedido,
@@ -55,23 +56,6 @@ export function ListMenuSheet({
   onClose,
   onDeleted,
 }: ListMenuSheetProps) {
-  /*
-    `list` is **the last one, and not the one the caller is holding** — and that
-    difference is the whole fix.
-
-    A sheet of options was written as `if (!list) return null`: the caller says the
-    menu is closed by handing over nothing, and the component does the obvious thing
-    with nothing — which takes the sheet, and the exit it is in the middle of, out
-    of the tree on the very frame the dismissal is asked for. Measured on the web,
-    the panel was gone **forty-five milliseconds** after the cross, and the quarter
-    of a second it was supposed to travel down was never on screen.
-
-    So the value that is drawn is the last one there was — declared here, at the
-    top, so that everything below keeps the name it always had and now has a value
-    that cannot be null — and the caller's own argument, which goes to `null` at
-    once, is what `visible` is asked from. The panel keeps its identity while it
-    leaves, and the dismissal is a movement instead of a cut.
-  */
   /*
     `list` is **the last one, and not the one the caller is holding** — and that
     difference is the whole fix.
@@ -98,6 +82,29 @@ export function ListMenuSheet({
   const t = useTranslation();
   const { updateList, deleteList, duplicateList } = useLists({});
   const { layout, save } = useDashboard();
+  /*
+    The export, and **only its `run`** — this panel paints nothing about it.
+
+    A format is chosen here and the file goes out on its own; what came out is
+    reported by the sheet of results, which Settings opens because that is the
+    screen with nothing else happening on it. The two answers this panel would
+    otherwise have to keep alive — "it is running" and "it failed" — are both
+    already given elsewhere: the panel is gone before the first byte is asked
+    for, and the browser's own download bar, or the system's share sheet, is what
+    answers a press in between.
+  */
+  const { run } = useExport();
+  /*
+    And whether one is already on its way, **in a ref and not in state.**
+
+    The two format rows stay on screen — and stay pressable — for the quarter of a
+    second this panel spends leaving, and on a wide screen where the panel only
+    fades and does not travel, a second tap lands on the same row. That is a second
+    download of the same list and, on a phone, a share panel over the first one. A
+    ref is read when the press happens and not when the handler was built, so it
+    also covers a press on a panel that is already halfway out.
+  */
+  const exporting = useRef(false);
   // Asked when the panel opens, and only then: the answer changes if somebody
   // shares the list in another tab, and there is no delete in flight to be wrong
   // about. `null` while asking, and also when the server could not be reached, so
@@ -185,6 +192,20 @@ export function ListMenuSheet({
         : []),
       {
         /*
+         * A copy of the list, and not of the account: the account copy is a row in
+         * Settings and it is one button, because there is only one format for it.
+         * Here there are two, and the difference is a whole afternoon for whoever
+         * ends up holding the file — a JSON envelope they need a parser to read, or
+         * a table they can open.
+         */
+        key: "export",
+        label: t("export.title"),
+        icon: "download-outline",
+        description: t("export.body"),
+        onPress: () => setPage("export"),
+      },
+      {
+        /*
          * Same rule as the note menu: a list you were lent is not yours to erase, and
          * a delete would take it from the person who made it rather than from you.
          */
@@ -203,6 +224,58 @@ export function ListMenuSheet({
 
   if (!list) return null;
 
+  /**
+   * One export of this list, in the format that was pressed.
+   *
+   * Built from the list this panel is showing, and not from the caller's argument:
+   * the title that names the file — and the id that names it when the title leaves
+   * nothing usable — are that list's, not whatever the screen behind has moved on
+   * to while the panel was on its way out.
+   *
+   * **`onClose()` before `run` and not after**, in the same order `duplicateList`
+   * above does it: the panel leaves and the work goes on behind it. A panel that
+   * waits on a multi-megabyte file is a panel that looks frozen, and on a phone
+   * that wait is measured in tens of seconds.
+   */
+  const downloadAs = async (format: ExportFormat) => {
+    if (exporting.current) return;
+    exporting.current = true;
+    onClose();
+    try {
+      await run({
+        path: `/lists/${list.id}/export`,
+        format,
+        title: list.title,
+        fallbackId: list.id,
+      });
+    } finally {
+      exporting.current = false;
+    }
+  };
+
+  /**
+   * The two formats, **and in that order.**
+   *
+   * JSON first because it is the copy: everything the list has, in a form that can
+   * be read back. CSV second because it is the one that gets opened in a
+   * spreadsheet, and a person who is already in a spreadsheet is looking for that
+   * one and not for the other.
+   */
+  const formats: SheetOption[] = [
+    {
+      key: "json",
+      label: t("export.format.json"),
+      icon: "code-slash-outline",
+      onPress: () => void downloadAs("json"),
+    },
+    {
+      key: "csv",
+      label: t("export.format.csv"),
+      icon: "grid-outline",
+      onPress: () => void downloadAs("csv"),
+    },
+  ];
+
   const subtitle =
     page === "options"
       ? `${t(LIST_KIND_LABEL[list.kind])}${folder ? ` · ${folder.name}` : ""}`
@@ -210,7 +283,9 @@ export function ListMenuSheet({
         ? t("rename.title", { what: t(LIST_KIND_LABEL[list.kind]) })
         : page === "share"
           ? t("share.subtitle", { name: list.title })
-          : t("lists.deleteTitle", { what: list.title });
+          : page === "export"
+            ? t("export.format")
+            : t("lists.deleteTitle", { what: list.title });
 
   return (
     <Sheet
@@ -294,6 +369,8 @@ export function ListMenuSheet({
             onDone={() => onClose()}
           />
         ) : null}
+
+        {page === "export" ? <SheetOptions options={formats} /> : null}
 
         {page === "delete" ? (
           <View style={{ gap: theme.spacing.md }}>
