@@ -195,10 +195,19 @@ Una pastilla por etiqueta, con su color, detras de la insignia de prioridad.
 | un color elegido gana al deducido, y la opcion de volver devuelve al deducido | las dos reglas de la seccion del principio |
 | la lectura de la lista: defaults y parseo del campo nuevo | las dos funciones que tienen que estar de acuerdo |
 | **API: un `push` con `tagColors` se aplica y se vuelve a leer** | **la perdida silenciosa del allowlist** |
-| API: un color que no esta en la paleta se rechaza con 422 | el contrato manda, no el cliente |
+| API: un color que no esta en la paleta **no se guarda**, y la etiqueta vuelve a su color deducido | que un mapa entero no se cae por una clave mala |
 | navegador: las pastillas salen con su color | lo que se ve |
 | navegador: cambiar un color cambia todas las filas que tienen la etiqueta | la promesse del principio |
 | navegador: una lista no pinta los colores de otra | que el color es de la lista |
+
+**Un color que no esta en la paleta no es un 422, se descarta.** El `push` valida
+el sobre y no el contenido de cada operacion: los campos de una entidad los
+`sanitisePayload` y ya. Un icono que la app no sabe dibujar no se rechaza tampoco, se
+guarda como `null` —que es lo que hizo `apps/api/test/sync.test.ts`—. Aqui lo
+equivalente es **dejar fuera la clave**: la etiqueta se queda sin color elegido, que es
+exactamente el estado de "no hay color guardado", y por lo tanto vuelve al deducido. Un
+`422` haria que una lista entera no se guardara por una clave mala, que es un castigo
+que no le toca a nadie mas que a quien la escribio.
 
 La del navegador no es un adorno: el typecheck y las pruebas unitarias pasan igual sobre
 una lista que no pinta ninguna pastilla, porque un componente que devuelve `null` es un
