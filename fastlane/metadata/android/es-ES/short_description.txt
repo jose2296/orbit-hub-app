@@ -1,0 +1,1 @@
+Espacios, listas, notas y catálogo. Funciona sin conexión.

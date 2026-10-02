@@ -15,10 +15,17 @@ const { withAppBuildGradle } = require('expo/config-plugins');
 const BEGIN = '// orbit-hub: upload signing (generado, no editar a mano)';
 const END = '// orbit-hub: fin upload signing';
 
+/**
+ * `storeFile` se evalúa en la fase de configuración, no en la de build, así que
+ * `file(System.getenv(...))` con la variable ausente es `file(null)` y revienta
+ * **antes de compilar nada**, también cuando solo se pide un build de debug. De
+ * ahí el ternario: sin la variable, el almacén queda en null y el build de debug
+ * sigue igual. El `release` es el que decide si usa esta firma o la de debug.
+ */
 const UPLOAD_SIGNING_CONFIG = [
   '',
   '        upload {',
-  "            storeFile file(System.getenv('ORBIT_HUB_UPLOAD_KEYSTORE'))",
+  "            storeFile System.getenv('ORBIT_HUB_UPLOAD_KEYSTORE') ? file(System.getenv('ORBIT_HUB_UPLOAD_KEYSTORE')) : null",
   "            storePassword System.getenv('ORBIT_HUB_UPLOAD_STORE_PASSWORD')",
   "            keyAlias System.getenv('ORBIT_HUB_UPLOAD_KEY_ALIAS')",
   "            keyPassword System.getenv('ORBIT_HUB_UPLOAD_KEY_PASSWORD')",

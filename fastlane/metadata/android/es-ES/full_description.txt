@@ -1,0 +1,25 @@
+Un espacio para cada parte de tu vida, y dentro lo que esa parte necesita.
+
+ESPACIOS
+Un espacio es un sitio: Casa, Trabajo, el taller, lo que sea. Cada uno con su color y sus carpetas. Los espacios no son carpetas globales, así que la lista de la compra no se mezcla con lo del trabajo aunque las dos se llamen "pendientes".
+
+LISTAS DE TAREAS
+Tareas con icono, prioridad y orden. El icono importa más de lo que parece: una fila que dice "pan" y otra que dice "bombilla" se leen de un vistazo sin leer, y un emoji no funciona porque se ve distinto en cada móvil.
+
+CATÁLOGO DE PELÍCULAS, SERIES Y LIBROS
+Busca en el catálogo y añade a una lista. La lista guarda el póster, el año y de qué servicio viene, no solo un texto. Después se ordenan como quieras: por año, por título, por fecha de añadir.
+
+NOTAS
+Notas con formato, no texto plano. Con listas dentro si hace falta, con adjuntos, con plantillas para lo que repites.
+
+COMPARTE
+Comparte una nota, una lista o una carpeta con quien elijas y decide si puede verla o editarla. Las invitaciones se responden dentro de la propia aplicación, sin abrir el correo.
+
+FUNCIONA SIN CONEXIÓN
+Esto es lo que más se nota en el metro. La app guarda lo que ves en el dispositivo, escribe primero ahí y sincroniza cuando vuelve la cobertura. Si no hay red, no pierdes nada: se sincroniza después.
+
+EN VARIOS DISPOSITIVOS
+Android, iOS y web con la misma cuenta. Lo que escribes en el móvil aparece en el navegador y al revés.
+
+SIN ANUNCIOS
+Sin anuncios, sin rastreo, sin compras dentro. La aplicación es gratuita y no vende tus datos.
