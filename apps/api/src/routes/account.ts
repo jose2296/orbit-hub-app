@@ -1,4 +1,4 @@
-import { accountExportQuerySchema, exportFilename } from '@orbit-hub/contracts';
+import { accountExportQuerySchema } from '@orbit-hub/contracts';
 import { Router } from 'express';
 
 import { HttpError } from '../lib/http-error.js';
@@ -29,16 +29,7 @@ accountRouter.get('/export', async (req, res) => {
   // ruta tenga que decidir.
   accountExportQuerySchema.parse(req.query);
 
-  const exportacion = await exportService.accountJson(caller(req));
-
-  sendFile(res, 200, {
-    body: JSON.stringify(exportacion, null, 2),
-    contentType: 'application/json',
-    filename: exportFilename({
-      title: 'export',
-      fallbackId: exportacion.account.id,
-      extension: 'json',
-      date: exportacion.exportedAt.slice(0, 10),
-    }),
-  });
+  // El cuerpo, el tipo y el nombre salen juntos del servicio: la ruta no
+  // inventa cabeceras.
+  sendFile(res, 200, await exportService.accountJson(caller(req)));
 });

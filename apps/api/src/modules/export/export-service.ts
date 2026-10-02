@@ -1,6 +1,5 @@
-import { isItemIcon } from '@orbit-hub/contracts';
+import { exportFilename, isItemIcon } from '@orbit-hub/contracts';
 import type {
-  AccountExport,
   ExportedAttachment,
   Folder,
   List,
@@ -10,7 +9,7 @@ import type {
   NoteTemplate,
   Workspace,
 } from '@orbit-hub/contracts';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
@@ -33,6 +32,22 @@ import {
   itemsToCsv,
   listExportEnvelope,
 } from './export-builders.js';
+
+/**
+ * Lo que devuelven los tres metodos publicos: exactamente lo que consume
+ * `sendFile`.
+ *
+ * El nombre sale del servicio y no de la ruta porque el servicio es el unico
+ * sitio que ha cargado la lista: una ruta que computara el nombre tendria que
+ * volver a cargarla o recibirla por parametro, y un nombre que no fuera el
+ * mismo que el telefono calcula con el mismo contrato serian dos nombres para
+ * el mismo fichero.
+ */
+export interface ExportFile {
+  body: string;
+  contentType: string;
+  filename: string;
+}
 
 /**
  * `role` va en CARPETAS, listas, items y notas: son las cuatro entidades que
@@ -260,27 +275,17 @@ export class ExportService {
    * items, notas, adjuntos y plantillas — y los tres ultimos cuelgan de los
    * anteriores por id. Ninguno filtra por `deletedAt`.
    */
-  async accountJson(userId: string): Promise<AccountExport> {
+  async accountJson(userId: string): Promise<ExportFile> {
     const account = await this.accountOf(userId);
     // Una sola vez para todo el fichero: las piezas no pueden llevar dos
-    // momentos distintos dentro del mismo export.
+    // momentos distintos dentro del mismo export, y el nombre del fichero
+    // lleva la misma fecha.
     const exportedAt = new Date().toISOString();
 
+    // Sin vuelta temprana para la cuenta sin espacios: tambien puede tener
+    // plantillas personales, y esas no cuelgan de ningun id. Las consultas
+    // con `inArray` se guardan por longitud para no emitir SQL vacio.
     const workspaceIds = await this.visibleWorkspaceIds(userId);
-    if (workspaceIds.length === 0) {
-      return accountExportEnvelope({
-        account,
-        exportedAt,
-        workspaces: [],
-        folders: [],
-        lists: [],
-        items: [],
-        notes: [],
-        attachments: [],
-        templates: [],
-      });
-    }
-
     const roles = await this.membershipRoles(userId);
     const db = await this.db();
 
@@ -332,16 +337,16 @@ export class ExportService {
     // 2. Carpetas. El role es el del espacio: una carpeta no tiene uno propio,
     //    y olvidarlo aqui es el error mas facil de toda la exportacion porque
     //    el servicio de lectura casi nunca devuelve carpetas.
-    const folderRows = await db
-      .select()
-      .from(folders)
-      .where(inArray(folders.workspaceId, workspaceIds));
+    const folderRows =
+      workspaceIds.length > 0
+        ? await db.select().from(folders).where(inArray(folders.workspaceId, workspaceIds))
+        : [];
 
     // 3. Listas.
-    const listRows = await db
-      .select()
-      .from(lists)
-      .where(inArray(lists.workspaceId, workspaceIds));
+    const listRows =
+      workspaceIds.length > 0
+        ? await db.select().from(lists).where(inArray(lists.workspaceId, workspaceIds))
+        : [];
 
     // 4. Items, por los ids de las listas, no por rango.
     const listIds = listRows.map((row) => row.id);
@@ -355,10 +360,10 @@ export class ExportService {
         : [];
 
     // 5. Notas.
-    const noteRows = await db
-      .select()
-      .from(notes)
-      .where(inArray(notes.workspaceId, workspaceIds));
+    const noteRows =
+      workspaceIds.length > 0
+        ? await db.select().from(notes).where(inArray(notes.workspaceId, workspaceIds))
+        : [];
 
     // 6. Adjuntos, por los ids de las notas.
     const noteIds = noteRows.map((row) => row.id);
@@ -367,11 +372,24 @@ export class ExportService {
         ? await db.select().from(attachments).where(inArray(attachments.noteId, noteIds))
         : [];
 
-    // 7. Plantillas de los espacios de la persona.
+    // 7. Plantillas: las de los espacios de la persona Y las suyas propias.
+    //    Las personales no cuelgan de ningun id — tienen `workspaceId: null`
+    //    y siguen a su autor — y una copia de seguridad que las pierde es
+    //    justo el agujero por el que las plantillas entraron en el export.
+    //    Las personales de otra persona no casan con ninguna rama, y las
+    //    integradas del catalogo no tienen `createdBy` y se reinstalan solas:
+    //    tampoco viajan. Sin filtro de `deletedAt`, como en el resto.
     const templateRows = await db
       .select()
       .from(noteTemplates)
-      .where(inArray(noteTemplates.workspaceId, workspaceIds));
+      .where(
+        workspaceIds.length > 0
+          ? or(
+              inArray(noteTemplates.workspaceId, workspaceIds),
+              eq(noteTemplates.createdBy, userId),
+            )
+          : eq(noteTemplates.createdBy, userId),
+      );
 
     const roleOf = (workspaceId: string): MembershipRoleName =>
       roles.get(workspaceId) ?? 'viewer';
@@ -386,7 +404,7 @@ export class ExportService {
       itemsPerList.set(row.listId, (itemsPerList.get(row.listId) ?? 0) + 1);
     }
 
-    return accountExportEnvelope({
+    const sobre = accountExportEnvelope({
       account,
       exportedAt,
       workspaces: workspacesExportados,
@@ -401,13 +419,28 @@ export class ExportService {
       attachments: attachmentRows.map(toAttachment),
       templates: templateRows.map(toTemplate),
     });
+
+    return {
+      body: JSON.stringify(sobre, null, 2),
+      contentType: 'application/json',
+      filename: exportFilename({
+        title: 'export',
+        fallbackId: account.id,
+        extension: 'json',
+        date: exportedAt.slice(0, 10),
+      }),
+    };
   }
 
   /**
    * Una lista con su contexto minimo: el espacio, la carpeta si la hay, y sus
    * items — incluidos los borrados, por la misma razon que en la cuenta.
+   *
+   * Privado: los dos metodos publicos (JSON y CSV) salen del mismo sobre, asi
+   * que el fichero y la hoja no pueden discrepar, y el nombre del fichero sale
+   * siempre del titulo que ya esta cargado aqui.
    */
-  async listJson(userId: string, listId: string): Promise<ListExport> {
+  private async listEnvelope(userId: string, listId: string): Promise<ListExport> {
     const db = await this.db();
     // Sin `isNull(deletedAt)`: exportar una lista borrada tiene sentido, es
     // exactamente el dato que alguien querria recuperar.
@@ -462,14 +495,38 @@ export class ExportService {
     });
   }
 
+  async listJson(userId: string, listId: string): Promise<ExportFile> {
+    const sobre = await this.listEnvelope(userId, listId);
+    return {
+      body: JSON.stringify(sobre, null, 2),
+      contentType: 'application/json',
+      filename: exportFilename({
+        title: sobre.list.title,
+        fallbackId: sobre.list.id,
+        extension: 'json',
+        date: sobre.exportedAt.slice(0, 10),
+      }),
+    };
+  }
+
   /**
    * El CSV de una lista. Sale del mismo sobre que el JSON — las mismas filas,
-   * el mismo orden — y lo escribe `itemsToCsv`, que es el unico sitio donde se
-   * construye un CSV.
+   * el mismo orden — y lo escribe `itemsToCsv`, que es el unico sitio donde
+   * se construye un CSV. El nombre sale del mismo titulo: una ruta que lo
+   * computara sin la lista cargada daria dos nombres para la misma lista.
    */
-  async listCsv(userId: string, listId: string): Promise<string> {
-    const envelope = await this.listJson(userId, listId);
-    return itemsToCsv({ list: envelope.list, items: envelope.items });
+  async listCsv(userId: string, listId: string): Promise<ExportFile> {
+    const sobre = await this.listEnvelope(userId, listId);
+    return {
+      body: itemsToCsv({ list: sobre.list, items: sobre.items }),
+      contentType: 'text/csv',
+      filename: exportFilename({
+        title: sobre.list.title,
+        fallbackId: sobre.list.id,
+        extension: 'csv',
+        date: sobre.exportedAt.slice(0, 10),
+      }),
+    };
   }
 }
 

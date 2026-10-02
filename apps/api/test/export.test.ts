@@ -121,6 +121,25 @@ async function deleteEntity(user: TestUser, entity: string, entityId: string): P
   expect(response.body.data.results[0].status).toBe('applied');
 }
 
+/** Una plantilla creada por REST, que es como las crea la app. */
+async function createTemplate(
+  user: TestUser,
+  args: { workspaceId: string | null; name: string; scope: 'personal' | 'workspace' },
+): Promise<string> {
+  const response = await api.post(
+    '/notes/templates',
+    {
+      workspaceId: args.workspaceId,
+      name: args.name,
+      scope: args.scope,
+      document: '<p>Plantilla</p>',
+    },
+    user.accessToken,
+  );
+  expect(response.status).toBe(201);
+  return response.body.data.id as string;
+}
+
 /** Los bytes que se suben, iguales que en attachments.test.ts. */
 const BYTES = 'falso binario';
 
@@ -375,6 +394,56 @@ describe('GET /account/export', () => {
     expect(sobre.templates).toEqual([]);
   });
 
+  it('una plantilla personal de la persona sale en el sobre', async () => {
+    const fix = await cuentaConContenido();
+    // Las personales tienen workspaceId null: no cuelgan de ningun espacio y
+    // un export que solo mirara ids las perderia en silencio.
+    const mia = await createTemplate(fix.user, {
+      workspaceId: null,
+      name: 'Mia',
+      scope: 'personal',
+    });
+
+    const descarga = await bajar(api, '/account/export', fix.user.accessToken);
+    const sobre = accountExportSchema.parse(JSON.parse(descarga.text));
+
+    const plantilla = sobre.templates.find((template) => template.id === mia);
+    expect(plantilla).toBeDefined();
+    expect(plantilla?.workspaceId).toBeNull();
+    expect(plantilla?.scope).toBe('personal');
+  });
+
+  it('una plantilla personal de otra persona no sale en el sobre', async () => {
+    const fix = await cuentaConContenido();
+    const otra = await createVerifiedUser(api);
+    const ajena = await createTemplate(otra, {
+      workspaceId: null,
+      name: 'Ajena',
+      scope: 'personal',
+    });
+
+    const descarga = await bajar(api, '/account/export', fix.user.accessToken);
+    const sobre = accountExportSchema.parse(JSON.parse(descarga.text));
+
+    expect(sobre.templates.map((template) => template.id)).not.toContain(ajena);
+  });
+
+  it('una plantilla de su espacio sale en el sobre', async () => {
+    const fix = await cuentaConContenido();
+    const delEspacio = await createTemplate(fix.user, {
+      workspaceId: fix.workspaceId,
+      name: 'Del espacio',
+      scope: 'workspace',
+    });
+
+    const descarga = await bajar(api, '/account/export', fix.user.accessToken);
+    const sobre = accountExportSchema.parse(JSON.parse(descarga.text));
+
+    const plantilla = sobre.templates.find((template) => template.id === delEspacio);
+    expect(plantilla).toBeDefined();
+    expect(plantilla?.workspaceId).toBe(fix.workspaceId);
+  });
+
   it('?format=csv da 422 validation_failed, no un error inventado', async () => {
     const fix = await cuentaConContenido();
 
@@ -440,6 +509,25 @@ describe('GET /lists/:id/export', () => {
     expect(fila).toBeDefined();
     // year es la columna 9 (indice 8) de LIST_EXPORT_CSV_COLUMNS.
     expect(celdas(fila as string)[8]).toBe('2000');
+  });
+
+  it('el CSV se llama por el titulo de la lista, no por su id', async () => {
+    const user = await createVerifiedUser(api);
+    const workspaceId = await espacioPropio(api, user, 'Casa');
+    const listId = await createList(user, workspaceId, {
+      kind: 'movies',
+      title: 'Películas para ver',
+    });
+
+    const descarga = await bajar(api, `/lists/${listId}/export?format=csv`, user.accessToken);
+    const disposition = descarga.headers.get('content-disposition') ?? '';
+    const ascii = /filename="([^"]*)"/.exec(disposition)?.[1] ?? '';
+
+    // El nombre y la hoja salen del mismo servicio, que es el unico que ha
+    // cargado la lista: el slug sale del titulo y el uuid no aparece. Es el
+    // nombre que el telefono calcula con el mismo exportFilename.
+    expect(ascii).toMatch(/^orbit-hub-peliculas-para-ver-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(ascii).not.toContain(listId);
   });
 
   it('otro usuario contra una lista que no es suya recibe 404, no 403', async () => {

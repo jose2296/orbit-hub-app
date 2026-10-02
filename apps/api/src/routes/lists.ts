@@ -1,5 +1,4 @@
 import {
-  exportFilename,
   listExportQuerySchema,
   listItemsQuerySchema,
   listListsQuerySchema,
@@ -64,42 +63,21 @@ listsRouter.get('/:id/items', async (req, res) => {
  * La lista como fichero: JSON con su contexto o CSV de sus items.
  *
  * Responde bytes con `Content-Disposition` y no el sobre, igual que el export
- * de cuenta. El nombre lo hace `exportFilename`, el mismo del contrato que usa
- * el cliente para su destino local, y en el CSV el titulo no llega a la ruta
- * (el servicio devuelve solo el texto), asi que el slug cae al id — que es la
- * caida que el propio `exportFilename` tiene prevista.
+ * de cuenta. El cuerpo, el tipo y el nombre salen juntos del servicio, que es
+ * el unico sitio que ha cargado la lista: si el nombre lo computara la ruta,
+ * la cabecera y lo que el telefono calcula con el mismo contrato podrian
+ * acabar siendo dos nombres distintos para la misma lista.
  */
 listsRouter.get('/:id/export', async (req, res) => {
   const { id } = listParams.parse(req.params);
   const { format } = listExportQuerySchema.parse(req.query);
   const userId = caller(req);
 
-  if (format === 'csv') {
-    const csv = await exportService.listCsv(userId, id);
-    sendFile(res, 200, {
-      body: csv,
-      contentType: 'text/csv',
-      filename: exportFilename({
-        title: '',
-        fallbackId: id,
-        extension: 'csv',
-        date: new Date().toISOString().slice(0, 10),
-      }),
-    });
-    return;
-  }
-
-  const exportacion = await exportService.listJson(userId, id);
-  sendFile(res, 200, {
-    body: JSON.stringify(exportacion, null, 2),
-    contentType: 'application/json',
-    filename: exportFilename({
-      title: exportacion.list.title,
-      fallbackId: id,
-      extension: 'json',
-      date: exportacion.exportedAt.slice(0, 10),
-    }),
-  });
+  const fichero =
+    format === 'csv'
+      ? await exportService.listCsv(userId, id)
+      : await exportService.listJson(userId, id);
+  sendFile(res, 200, fichero);
 });
 
 /**
