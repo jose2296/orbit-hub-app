@@ -158,14 +158,35 @@ export function ItemEditSheet({
 
   // Reopening always starts where the tap asked to start, on a fresh copy of
   // what the row has now and not on what it had when the panel was created.
+  //
+  // **The dependency is the row's `id` and not the row**, and that is the whole
+  // difference between "the panel opens where the tap asked" and "the panel
+  // throws you out of the page you are on every time anything is written".
+  //
+  // `items` is re-read from the cache on every local write, and it returns new
+  // objects every time, so with `item` in the dependency list this effect ran
+  // again on every write — and `setPage(startOn)` is a *reset to where the tap
+  // asked*, which for someone who got here by pressing the name of the row is
+  // `"edit"`, not the labels page they had just opened. Choosing a label's colour
+  // writes the list, so every colour chosen dumped the panel back on the first
+  // page and coloured labels cost three taps each.
+  //
+  // Nothing of this changes when a row is edited while the panel is open: the
+  // panel has its own draft (`title`, `annotation`) and reads the rest live, and
+  // `item` changing identity is not a reason to reset which page a person is on.
+  const idDelItem = item?.id ?? null;
   useEffect(() => {
-    if (item) {
-      setPage(startOn);
-      setTitle(item.title);
-      setAnnotation(item.annotation ?? "");
-      setNewTag("");
-    }
-  }, [item, startOn]);
+    if (!item) return;
+    setPage(startOn);
+    setTitle(item.title);
+    setAnnotation(item.annotation ?? "");
+    setNewTag("");
+    // And the strip with it: `colorDe` is state of this component and the panel
+    // stays mounted while it is closed (it returns `null` rather than being
+    // unmounted), so a panel closed with a strip open came back with that same
+    // strip open, pointing at a label the person had not asked about this time.
+    setColorDe(null);
+  }, [idDelItem, startOn]);
 
   // Creating always starts empty, every time it is opened.
   useEffect(() => {
@@ -1012,6 +1033,25 @@ const styles = StyleSheet.create({
      * thing that is drawn, not spacing between things, and `SPACING` has no
      * "size of a small tap target" in it. Bigger than the eleven- and
      * twelve-point glyphs it holds, so the glyph is not the button.
+     *
+     * **Twenty y cuatro es lo que dice WCAG 2.5.8 AA, y es menos de lo que piden
+     * las dos plataformas.** Medido en el navegador por
+     * `scripts/verify-tag-colors.mjs` a 390×844: los dos botones son 24×24
+     * exactos (576 pt² cada uno) con **dos puntos de hueco** entre ellos, así que
+     * el botón de quitar la etiqueta y a dos píxeles de él hay… la pastilla. Y el
+     * `hitSlop={8}` de los dos Pressable **no llega al DOM en web**: en
+     * `react-native-web@0.21.2` `hitSlop` sólo aparece en `exports/Touchable`, y
+     * `Pressable` no lo pasa a `createDOMProps`, así que no hay ni atributo ni
+     * pseudo-elemento. En nativo sí hace su trabajo; en el navegador no hace nada.
+     *
+     * Formalmente pasa (SC 2.5.8 pide 24×24, y la excepción de espaciado se
+     * cumple porque los círculos de 24 de los dos botones no se tocan: sus
+     * centros están a 26). Por debajo de las guías de las dos plataformas, que
+     * piden 44 en iOS y 48 en Material. **No se ha cambiado por eso**, y la razón
+     * está escrita en el informe de la tarea 8: un objetivo de pulsación más
+     * grande se nota en la pastilla, y el ancho de una pastilla en un dedo es de
+     * las cosas que el navegador no puede medir. Es un número para decidir con un
+     * dispositivo delante, no con un `<div>`.
      */
     width: 24,
     height: 24,

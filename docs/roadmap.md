@@ -1694,6 +1694,129 @@ como se pierde una comprobación que parece estar midiendo lo que no mide.
 
 ---
 
+## Los colores de las etiquetas ✅
+
+**Cada etiqueta tiene un color, y es de la lista, no de la tarea.** Antes una
+etiqueta era una palabra: el mismo texto en dos tareas no significaba nada más que
+el mismo texto, y no había manera de mirar una lista y ver de un vistazo qué
+compras son de una tienda y cuáles de otra. Ahora cada etiqueta lleva un color de
+la paleta de doce que la app ya usa para los iconos, el color es de la **lista** y
+no de la tarea —cambiar el color de "Mercadona" repinta las seis filas que la
+llevan, y sólo esa lista—, y cuando nadie ha elegido ninguno la etiqueta se lo
+deduce del nombre con un hash.
+
+Que el color sea **obligatorio y elegirlo opcional** es lo que hace que esto no
+necesite un backfill: `derivedTagColor("urgente")` es `rose` hoy y en un año, en
+este móvil, en el de al lado y en el servidor, porque la función es la misma y su
+valor está clavado en un test. Las etiquetas que ya existen tienen color el día que
+esto entra. Para el caso de no-elegido no hay nada que sincronizar, que es
+justamente por lo que no se ha añadido una entidad de sincronización: el mapa entero
+de colores viaja dentro de la operación de la lista, y dos personas cambiando colores
+a la vez significa que sobrevive una versión. El coste está asumido y escrito.
+
+| Fichero | Qué lleva |
+| --- | --- |
+| `packages/contracts/src/tag-colors.ts` | `tagColorSchema`, `derivedTagColor`, `sanitiseTagColors`. En el contrato y no en la app porque los dos lados la necesitan: el servidor la corre sobre una carga que no ha validado, y la app sobre una fila de caché escrita por una versión que puede no conocer el campo |
+| `apps/mobile/src/lib/lists/tag-colors.ts` | `planTagColorChange` —qué pasa con los **otros** colores cuando uno cambia— y `labelTextColor`, la regla de contraste que decide de qué color se escribe una pastilla |
+| `apps/mobile/src/components/lists/tag-chip.tsx` | La pastilla. El color llega en un prop y **no se busca en ningún otro sitio**: un mapa a nivel de módulo indexado por el nombre de la etiqueta pinta igual las dos listas que comparten la palabra |
+| `apps/mobile/src/components/lists/item-edit-sheet.tsx` | La página de etiquetas de una tarea, el botón de color dentro de la pastilla y la tira de doce |
+| `apps/mobile/src/app/(app)/list/[listId].tsx` | La fila, que pasa a `TaskRow` el mapa de **su** lista |
+| Cuatro claves de i18n × dos idiomas | `tags.color`, `tags.changeColor`, `tags.choosingColor`, `tags.backToDerivedOf` |
+| `scripts/verify-tag-colors.mjs` | La comprobación, en un navegador real. Sale 1 si algo no encaja |
+
+### Lo que casi se ha hecho mal, y se ha visto en el navegador
+
+**La semilla de la comprobación era degenerada y la comprobación pasaba.** El plan
+sembraba "Mercadona" y "urgente", y **las dos caen en `rose`**: la prueba entera
+podía ponerse verde sin haber puesto nunca dos colores deducidos uno al lado del
+otro, que es justo lo que alguien tiene que mirar para decidir si esto funciona. Las
+etiquetas de la semilla son ahora una decisión del guion y hay una comprobación que
+falla ruidosamente si vuelven a deducir el mismo color. No es una casualidad
+arreglada: es una comprobación que no se puede volver a perder.
+
+**Elegir un color te sacaba de la página de etiquetas.** El panel se reinicia con un
+`useEffect` cuyas dependencias eran el objeto de la tarea, y los objetos se releen de
+la caché en cada escritura local: son objetos nuevos cada vez, así que el efecto se
+disparaba con cada cambio y `setPage(startOn)` devolvía el panel a la página de
+edición. Elegir un color escribe la lista, de modo que **cada elección vaciaba el
+panel**. Lo encontraron 44 comprobaciones verdes y 786 pruebas: un `useEffect` con
+una dependencia que cambia de identidad es un componente correcto que se reinicia
+solo. Ahora la dependencia es el **id**, que es lo que significa "se ha abierto
+otra vez".
+
+**Y el mismo `useEffect` no cerraba la tira abierta al cerrar el panel.** El panel
+vive montado mientras está cerrado —devuelve `null` en vez de desmontarse—, así que
+la hoja volvía a abrirse con la tira de la etiqueta anterior todavía abierta.
+
+**La propia comprobación estaba mal planteada en su punto central.** Iba a
+comprobar que la misma etiqueta se ve distinta en dos listas leyendo el color del
+texto de la pastilla. Es falso: el color del texto **no es** el color de la etiqueta,
+porque la pastilla escribe en el color del tema cuando el suyo no llega a 4.5:1, y
+ni el verde elegido ni el rosa deducido llegan en claro. Las dos pastillas de
+"Mercadona" se ven **idénticas píxel a píxel** en el tema claro. Lo que se comprueba
+ahora es lo que la lista promete —que las dos listas no comparten el color— leído
+del `aria-label` del botón, que nombra los doce en cualquier esquema, **y además**
+midiendo y diciendo qué se ve en pantalla.
+
+### Lo que se ha medido, y no se ha supuesto
+
+- **De doce colores, tres se pintan de sí mismos en claro** (`purple` 4.81:1,
+  `blue` 4.62:1, `brown` 6.33:1) **y otros tres en oscuro** (`neutral` 5.17:1,
+  `green` 4.83:1, `amber` 4.99:1). **Ninguno de los tres es el mismo, así que
+  ningún color de la paleta se ve de su color en los dos esquemas.** En una fila de
+  ocho etiquetas, dos de ocho llevan su color y las otras seis van en el del tema.
+  El texto nunca falla: la pastilla que cede su color escribe en `theme.colors.text`,
+  que da 16.66:1 en claro y 14.70:1 en oscuro.
+- **Una fila de pastillas así se ve intencionada, no rota.** Miradas las capturas: ocho
+  pastillas y dos con color se leen como "estas dos están marcadas". El precio, que
+  sí conviene decir, es que **ámbar y naranja son idénticos a la vista en claro** y
+  se distinguen en oscuro.
+- **El borde del botón de color abierto con acento esmeralda es de 3.02:1** sobre el
+  relleno de la pastilla. Pasa el 3:1 de WCAG por dos centésimas, y el `orbit` da
+  4.64:1 y el `violet` 5.09:1. Es visible en las dos capturas, una al lado de la
+  otra, y es el acento más flojo de los cinco.
+- **Los dos botones de dentro de la pastilla son de 24×24 exactos con 2 pt de hueco**,
+  y el `hitSlop={8}` **no llega al DOM en web**: en `react-native-web@0.21.2` sólo
+  existe en `exports/Touchable`, y `Pressable` no lo pasa a `createDOMProps`. Medido
+  con `elementFromPoint`, no de oídas. Cumple WCAG 2.5.8 AA justo y por debajo de las
+  guías de las dos plataformas (44 y 48). **No se ha subido**, y el motivo está
+  escrito en el propio componente.
+- **La geometría del envuelto**: 1 etiqueta y 3 caben en una línea (76 pt de alto de
+  fila), 8 se reparten en **3 líneas** y la fila pasa a 124 pt. La insignia de
+  urgencia no se sale: va a su propia línea por `flexWrap`. Una pastilla **nunca** se
+  parte por la mitad, porque una pastilla a medio camino tiene el color a medio
+  camino y se lee como otro color.
+- **Una etiqueta del máximo del contrato —40 caracteres— entra entera en una línea**
+  (224 pt de ancho en una fila de 326), sin puntos suspensivos. El `flexShrink` que la
+  protege no llega a activarse a 390 de ancho: es una red de seguridad para anchos
+  menores y aquí no se ha probado que haga falta.
+
+### Lo que NO se ha comprobado
+
+- **Nada en un móvil ni en un emulador.** No hay ningún dispositivo conectado a esta
+  máquina y no se ha ejecutado ni un `expo run:ios` ni un `expo run:android`. **Todo
+  lo de este bloque es una afirmación sobre el objetivo web**, el typecheck cubre
+  Android e iOS y eso no es haber ejecutado nada.
+- **Si 24×24 con 2 pt de hueco es un problema real.** Está medido en el navegador, que
+  es donde se puede medir, y un objetivo mayor **cambia el ancho de la pastilla**, que
+  es justo lo que el navegador no dice. Con un dedo encima es otra cosa. Es un
+  número para decidir con un dispositivo delante, no con un `<div>`.
+- **El `hitSlop={8}` en nativo.** En web es un no-op medido. En iOS y Android
+  funciona, y no se ha medido que los 8 pt no se solapen con el botón de al lado.
+- **El ancho de una pastilla con letra del sistema más grande**, con la fila
+  envuelta a otro ancho que 390, o con la etiqueta escrita en otro idioma. Todo está
+  medido a 390×844 con la escala tipográfica por defecto.
+- **El teclado del sistema** al escribir una etiqueta nueva y si tapa la tira de
+  colores; y la **manga de selección** nativa sobre un texto largo.
+- **Un lector de pantalla.** El `aria-label` del botón de color es lo que dice el
+  color en palabras y es un nombre accesible comprobable; que un VoiceOver lo lea de
+  forma útil es otra pregunta.
+- **Dos personas cambiando colores a la vez.** El mapa entero viaja en una operación y
+  sobrevive una versión. El plan lo acepta como coste de no añadir una entidad de
+  sincronización, y aquí no se ha tocado.
+
+---
+
 ## Qué hay que revisar tú
 
 Todo lo anterior está comprobado por un script que conduce un navegador real y falla si
