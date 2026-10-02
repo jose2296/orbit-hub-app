@@ -847,6 +847,45 @@ const es = {
   "settings.devices.body": "Consulta y cierra sesión en tus dispositivos.",
   "settings.export": "Exportar mis datos",
   "settings.export.body": "Descarga una copia de todo tu contenido.",
+  // Las del grupo `export` se pintan en la hoja de exportacion, no en ajustes.
+  // Van aqui y no en la hoja porque `exportErrorKey` devuelve `TranslationKey`,
+  // que es `keyof typeof es`: si la clave no existe, el typecheck de la hoja
+  // falla por una clave que todavia nadie ha escrito.
+  "export.title": "Exportar mis datos",
+  // Las de una lista, y no las de arriba: `export.title` dice "mis datos" y aqui es
+  // una lista, y la pagina que abre ofrece los dos formatos y no solo JSON. La
+  // misma frase que la de la cuenta estaria contando mas cosas de las que se
+  // llevan —o de las que llevarian si el menu dejara elegir CSV y luego no lo
+  // hiciera.
+  "export.list.title": "Exportar esta lista",
+  "export.list.body": "Los elementos de esta lista, en JSON o CSV.",
+  "export.running": "Preparando el fichero…",
+  "export.done.one": "{count} elemento",
+  "export.done.other": "{count} elementos",
+  "export.counts": "{lists} listas · {items} elementos · {notes} notas",
+  "export.saved": "Guardado como {name}",
+  "export.retry": "Reintentar",
+  "export.close": "Cerrar",
+  "export.error.network": "No se pudo descargar. Comprueba la conexión y reinténtalo.",
+  "export.error.forbidden": "No tienes permiso para exportar esto.",
+  "export.error.notFound": "Ya no está, o nunca estuvo donde la buscabas.",
+  "export.error.rateLimited": "Demasiadas exportaciones seguidas. Espera un momento.",
+  "export.error.unauthorized": "Tu sesión ha caducado. Vuelve a entrar.",
+  // Un 500 es lo que sale de cualquier excepcion sin manejar del servidor, y el
+  // export de cuenta hace siete selects seguidos —el de una lista, tres—, un
+  // timeout de base de datos o un fallo en un mapper llegan aqui. Con la hoja
+  // callada, esto seria un panel con dos botones y ninguna palabra. La frase es la
+  // que era `export.error.unknown`, que era la correcta para un 500 y la clave
+  // equivocada.
+  "export.error.internal": "Algo falló al preparar el fichero.",
+  // No es un fallo de red ni un bug: es este dispositivo que no puede guardar el
+  // fichero, porque `expo-file-system` o `expo-sharing` no cargan. Reintentar no lo
+  // arregla, asi que la frase no dice "reinténtalo" como la de red.
+  "export.error.notImplemented":
+    "Este dispositivo no puede guardar el fichero de la exportación.",
+  "export.format": "Formato",
+  "export.format.csv": "CSV — para Excel y Google Sheets",
+  "export.format.json": "JSON — copia completa",
   "settings.deleteAccount": "Eliminar mi cuenta",
   "settings.deleteAccount.body": "Se eliminará tu cuenta y todo su contenido.",
 
@@ -1793,6 +1832,27 @@ const en: Record<TranslationKey, string> = {
   "settings.devices.body": "Review and sign out of your devices.",
   "settings.export": "Export my data",
   "settings.export.body": "Download a copy of all your content.",
+  "export.title": "Export my data",
+  "export.list.title": "Export this list",
+  "export.list.body": "The items in this list, as JSON or CSV.",
+  "export.running": "Preparing the file…",
+  "export.done.one": "{count} item",
+  "export.done.other": "{count} items",
+  "export.counts": "{lists} lists · {items} items · {notes} notes",
+  "export.saved": "Saved as {name}",
+  "export.retry": "Try again",
+  "export.close": "Close",
+  "export.error.network": "The file could not be downloaded. Check your connection and try again.",
+  "export.error.forbidden": "You do not have permission to export this.",
+  "export.error.notFound": "It is gone, or it was never where you looked.",
+  "export.error.rateLimited": "Too many exports in a row. Give it a moment.",
+  "export.error.unauthorized": "Your session expired. Sign in again.",
+  "export.error.internal": "Something went wrong while preparing the file.",
+  "export.error.notImplemented":
+    "This device cannot save the export file.",
+  "export.format": "Format",
+  "export.format.csv": "CSV — for Excel and Google Sheets",
+  "export.format.json": "JSON — full backup",
   "settings.deleteAccount": "Delete my account",
   "settings.deleteAccount.body":
     "Your account and all its content will be deleted.",

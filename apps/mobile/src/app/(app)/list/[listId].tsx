@@ -712,21 +712,26 @@ export default function ListScreen() {
         onClose={() => setMenuFor(null)}
       />
 
-      {/* El menu se monta cuando se pide y se desmonta al cerrar, que es como
-          decide abrirse: un menu siempre presente seria un menu que se abre solo
-          al cambiar la lista. */}
-      {menuOpen && list ? (
-        <ListMenuSheet
-          list={list}
-          folder={
-            list?.folderId
-              ? (folders.find((f) => f.id === list.folderId) ?? null)
-              : null
-          }
-          onClose={() => setMenuOpen(false)}
-          onDeleted={() => router.back()}
-        />
-      ) : null}
+      {/*
+        The menu is mounted for good and opens by its prop, **which is what
+        `useLastValue` was written for** — and not for tidiness: a menu that
+        unmounts on close takes the export down with it. Pressing a format calls
+        `onClose()` before asking for the file, so the panel leaves and the work
+        goes on behind it, and under a conditional mount that `onClose()` unmounts
+        this on the same frame the download starts. The sheet of results would then
+        arrive at a component that is not there, and the failure goes unpainted
+        again — which is the whole thing it exists to stop.
+      */}
+      <ListMenuSheet
+        list={menuOpen && list ? list : null}
+        folder={
+          list?.folderId
+            ? (folders.find((f) => f.id === list.folderId) ?? null)
+            : null
+        }
+        onClose={() => setMenuOpen(false)}
+        onDeleted={() => router.back()}
+      />
 
 
 
