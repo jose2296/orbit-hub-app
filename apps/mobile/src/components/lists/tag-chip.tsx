@@ -2,6 +2,7 @@ import { useTheme } from "@/theme";
 import type { TagColors } from "@orbit-hub/contracts";
 import { derivedTagColor } from "@orbit-hub/contracts";
 import { StyleSheet, View } from "react-native";
+import type { ViewStyle } from "react-native";
 import type { ReactNode } from "react";
 
 import { labelTextColor } from "@/lib/lists/tag-colors";
@@ -37,11 +38,22 @@ export function TagChip({
   colors,
   size = "regular",
   children,
+  style,
 }: {
   tag: string;
   colors: TagColors | undefined;
   size?: "regular" | "compact";
   children?: ReactNode;
+  /**
+   * What the pill takes of the line it is dropped on, the same prop `Badge` has.
+   *
+   * It is spread **last**, so a caller can override anything above it, and it is
+   * how a row that wraps gets `flexShrink` onto a pill: the shrink belongs to the
+   * pill and not to a box around it, because a box that shrinks while the pill
+   * inside it does not is an overflow waiting to happen. Nothing here sets it, so
+   * a caller that passes nothing gets exactly the pill this file describes.
+   */
+  style?: ViewStyle;
 }) {
   const theme = useTheme();
   const compacto = size === "compact";
@@ -70,6 +82,7 @@ export function TagChip({
           paddingVertical: compacto ? 1 : theme.spacing.xxs,
           gap: theme.spacing.xxs,
         },
+        style,
       ]}
     >
       <AppText variant="caption" style={{ color: text }}>

@@ -998,15 +998,16 @@ function TaskRow({
                 half-pill reads as a different colour. `docs/roadmap.md` says it
                 about a label beside a name and it is more true of a pill.
 
-                `flexShrink` is on the pill and not on the badge: twenty labels is
-                longer than any row, and the badge is the one thing on that line
-                that must not be squeezed, because it is what the list is sorted
-                by. The pill gets the wrapper because `TagChip` takes no style —
-                it is one box for one label, and its width is the label's. */}
+                `styles.metaTag` is the only thing about a pill this row decides
+                for itself, and its comment says what it is for. */}
             {item.tags.map((tag) => (
-              <View key={tag} style={styles.metaTag}>
-                <TagChip tag={tag} colors={tagColors} size="compact" />
-              </View>
+              <TagChip
+                key={tag}
+                tag={tag}
+                colors={tagColors}
+                size="compact"
+                style={styles.metaTag}
+              />
             ))}
           </View>
         ) : null}
@@ -1048,12 +1049,12 @@ const styles = StyleSheet.create({
   meta: {
     flexDirection: "row",
     /*
-     * `alignItems` stays, and it is load-bearing: it is what lets the row be
-     * several lines tall — the pills wrap under the badge — without a pill
-     * stretching into a rounded block the height of the whole line.
-     * `TagChip` also carries `alignSelf: "flex-start"`, and the task sheet's two
-     * tag rows depend on the same arrangement, so this row is not the only thing
-     * reading it.
+     * Kept, and **not** for the pill's sake: what stops a pill stretching into a
+     * rounded block the height of the whole line is the pill's own `alignSelf`,
+     * which `TagChip` and `Badge` both carry. This centres each of them on the
+     * line they share, and the task sheet's two tag rows centre their own rows the
+     * same way — so it is here for them and for the badge beside the pills, and
+     * taking it away would break those rows rather than this one.
      */
     alignItems: "center",
     /*
@@ -1065,16 +1066,20 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   /**
-   * And the labels yield, not the badge.
+   * And one label can still be wider than the whole line.
    *
-   * A row with twenty labels is longer than the screen, and without this the
-   * pills would keep their full width and push the badge off the right edge —
-   * which is the one thing on that line that cannot be cut in half, because it is
-   * what the row is sorted by.
+   * The `flexWrap` above is already what saves the badge: a row with twenty labels
+   * puts them on further lines rather than pushing the badge off the right edge.
+   * So this is not what keeps the badge whole, and it should not be described as
+   * such. It is the one label with no other line to go to — there is nowhere for
+   * it to wrap to — and without a `flexShrink` it would hang off the edge and be
+   * cut in half. With it the pill narrows to the row and the label wraps *inside*
+   * the pill, which is the whole pill and its whole colour.
    *
-   * It is a wrapper and not a style on the pill because `TagChip` takes no
-   * `style`: it is one box for one label, and how much of the line it may take
-   * is the caller's business, not the component's.
+   * On the pill and not on a box around it: a wrapper that shrinks while the pill
+   * inside it does not is an overflow waiting to happen. `TagChip` takes a `style`
+   * for exactly this, and the badge is left alone — it is the one thing on that
+   * line that must not be squeezed, because it is what the row is sorted by.
    */
   metaTag: {
     flexShrink: 1,
