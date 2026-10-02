@@ -3,7 +3,7 @@
     "name": "OrbitHub",
     "slug": "orbit-hub",
     "scheme": "orbithub",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.jrzlabs.orbithub",
-      "versionCode": 6,
+      "versionCode": 7,
       "predictiveBackGestureEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
