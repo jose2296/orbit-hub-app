@@ -98,6 +98,24 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F7FB" />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1020" />
         <meta name="description" content="OrbitHub — tus listas, tus notas y tus tareas en un solo sitio." />
+        {/*
+          Open Graph. El `<title>` ya lleva el nombre —lo pone `export-web.mjs`,
+          porque solo despues del export se puede asegurar— pero el nombre de una
+          app tambien sale por aquí, y es la mitad de lo que la verificacion de
+          OAuth de Google compara contra la pantalla de consentimiento.
+
+          `og:site_name` es el que dice el nombre de la *app*; `og:title` es el
+          de la pagina. Con el primero ausente, un crawler solo ve el `<title>`
+          y no hay nada mas que leer.
+        */}
+        <meta property="og:site_name" content="OrbitHub" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="OrbitHub" />
+        <meta
+          property="og:description"
+          content="OrbitHub — tus listas, tus notas y tus tareas en un solo sitio."
+        />
+        <meta property="og:url" content="https://orbithub-app.jrz-labs.com/" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
