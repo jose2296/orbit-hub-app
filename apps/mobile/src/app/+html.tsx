@@ -49,23 +49,23 @@ export default function Root({ children }: PropsWithChildren) {
     <html lang="es">
       <head>
         {/*
-          **El título va aquí, y no se pone solo.**
+          **Aquí no va un `<title>`, y por eso el de la web salía vacío.**
+          Está en `app/_layout.tsx`, en `screenOptions.title`. Lo que ocurre es
+          que expo-router emite su propio `<title data-rh="true">` al exportar y
+          pone ahí el título de la ruta; uno escrito a mano aquí sale **después**
+          del suyo, y de los dos `<title>` que quedan en el documento se lee el
+          primero. Google leía el de expo-router, vacío, y rechazaba la
+          verificación de OAuth con *"el nombre de la app no coincide con el de
+          tu página principal"*.
 
-          Sin este `<title>` el HTML exportado lleva `<title data-rh="true"></title>`
-          — vacío, que es lo que sale en `orbithub-app.jrz-labs.com` — y eso no es
-          un detalle cosmético: la verificación de OAuth de Google compara el
-          nombre de la app en la pantalla de consentimiento con el nombre que la
-          página principal dice, y una página sin título no tiene con qué
-          comparar. Google rechaza la verificación con *"El nombre de la app no
-          coincide con el nombre de la app de tu página principal"*, y el motivo
-          real es que el segundo no existe.
-
-          `apple-mobile-web-app-title` de abajo no cuenta: eso es lo que sale bajo
-          el icono cuando alguien añade la web a su pantalla de inicio, no lo que
-          Google lee para verificar.
-
-          Y tiene que ser el mismo nombre que en la ficha y que en la consola de
-          OAuth, o el mismo rechazo vuelve por el otro lado.
+          Ese aviso no era un capricho de la revisión: sin título no hay ningún
+          nombre con el que comparar el de la pantalla de consentimiento.
+        */}
+        {/*
+          Un `<title>` escrito aquí sale **después** del que emite expo-router, y
+          de los dos que quedan en el documento se lee el primero. Se deja igual:
+          ayuda a los lectores que toman el último y no estorba al que sí importa,
+          que es el de `_layout.tsx`.
         */}
         <title>OrbitHub</title>
         {/*
