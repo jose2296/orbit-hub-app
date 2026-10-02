@@ -48,6 +48,47 @@ export default function Root({ children }: PropsWithChildren) {
   return (
     <html lang="es">
       <head>
+        {/*
+          **El título va aquí, y no se pone solo.**
+
+          Sin este `<title>` el HTML exportado lleva `<title data-rh="true"></title>`
+          — vacío, que es lo que sale en `orbithub-app.jrz-labs.com` — y eso no es
+          un detalle cosmético: la verificación de OAuth de Google compara el
+          nombre de la app en la pantalla de consentimiento con el nombre que la
+          página principal dice, y una página sin título no tiene con qué
+          comparar. Google rechaza la verificación con *"El nombre de la app no
+          coincide con el nombre de la app de tu página principal"*, y el motivo
+          real es que el segundo no existe.
+
+          `apple-mobile-web-app-title` de abajo no cuenta: eso es lo que sale bajo
+          el icono cuando alguien añade la web a su pantalla de inicio, no lo que
+          Google lee para verificar.
+
+          Y tiene que ser el mismo nombre que en la ficha y que en la consola de
+          OAuth, o el mismo rechazo vuelve por el otro lado.
+        */}
+        <title>OrbitHub</title>
+        {/*
+          La verificación de Google de que el dominio es tuyo.
+
+          Google no deduce que `jrz-labs.com` es tuyo porque lo pongas en un
+          formulario: lo comprueba. Y la única forma de comprobarlo sin
+          configurarlo a mano es este `meta`, con el token que Google da en su
+          pantalla. Por eso está **vacío y commented**: el token es de una sola
+          aplicación y de un solo intento, y un token de verificación commiteado
+          es un token caducado en cuanto Google lo consume.
+
+          Mientras esté vacío, este `<meta>` no se renderiza — una etiqueta con
+          `content` vacío es ruido, no una verificación — así que la web sigue
+          funcionando igual. Ponerlo es un commit con la línea de abajo
+          descomentada y el valor que Google dé, y se borra en cuanto la
+          verificación pase.
+
+          La alternativa es un registro TXT en DNS, que no necesita tocar el
+          código y aguanta más: es lo que se usa cuando la web se despliega sin
+          poder tocar su HTML.
+        */}
+        {/* <meta name="google-site-verification" content="TOKEN_DE_GOOGLE" /> */}
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
