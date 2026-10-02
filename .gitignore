@@ -88,3 +88,9 @@ orbit-*.png
 # JSON de la cuenta de servicio de Google Play
 play-service-account*.json
 *service-account*.json
+
+# Worktrees de git y su raton de progreso. Un worktree noIgnored acaba con el
+# arbol entero dentro del repo, y el ledger de un plan es de ese plan, no de
+# nadie.
+/.worktrees/
+/.superpowers/
