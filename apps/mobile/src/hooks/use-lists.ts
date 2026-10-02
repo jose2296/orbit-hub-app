@@ -1,4 +1,5 @@
 import type {
+  ItemIconColor,
   List,
   ListItem,
   ListKind,
@@ -13,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { planDuplication } from "@/lib/lists/duplicate";
 import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
+import { planTagColorChange } from "@/lib/lists/tag-colors";
 import {
   newListItem,
   withListDefaults,
@@ -311,6 +313,30 @@ export function useLists(filters: ListFilters = {}) {
   );
 
   /**
+   * The colour of one of this list's labels, for every task that carries it.
+   *
+   * A property of the list and not of the task, which is why the write lands on
+   * the list: one write recolours every row that has the label, and no task is
+   * touched at all.
+   *
+   * Local-first like every other write here — the label repaints from the cache
+   * at once and the operation waits in the outbox, so choosing a colour on a
+   * train is a colour when the train stops.
+   */
+  const setTagColor = useCallback(
+    async (list: List, tag: string, color: ItemIconColor | null) => {
+      // `?? {}` because a list that did not come through `withListDefaults`
+      // arrives with no `tagColors` key at all, and a list with no colours
+      // chosen is a map with nothing in it.
+      await localUpdate("list", list.id, {
+        tagColors: planTagColorChange(list.tagColors ?? {}, tag, color),
+      });
+      await load();
+    },
+    [load],
+  );
+
+  /**
    * Changes what a list is called and what it says about itself.
    *
    * The same write as everything else, local first and into the outbox, so a
@@ -339,6 +365,7 @@ export function useLists(filters: ListFilters = {}) {
     duplicateList,
     updateList,
     setOrderMode,
+    setTagColor,
     reload: load,
   };
 }
