@@ -1701,9 +1701,9 @@ etiqueta era una palabra: el mismo texto en dos tareas no significaba nada más 
 el mismo texto, y no había manera de mirar una lista y ver de un vistazo qué
 compras son de una tienda y cuáles de otra. Ahora cada etiqueta lleva un color de
 la paleta de doce que la app ya usa para los iconos, el color es de la **lista** y
-no de la tarea —cambiar el color de "Mercadona" repinta las seis filas que la
-llevan, y sólo esa lista—, y cuando nadie ha elegido ninguno la etiqueta se lo
-deduce del nombre con un hash.
+no de la tarea —cambiar el color de "Mercadona" repinta **todas** las filas de esa
+lista que la llevan, y sólo esa lista—, y cuando nadie ha elegido ninguno la
+etiqueta se lo deduce del nombre con un hash.
 
 Que el color sea **obligatorio y elegirlo opcional** es lo que hace que esto no
 necesite un backfill: `derivedTagColor("urgente")` es `rose` hoy y en un año, en
@@ -1918,8 +1918,13 @@ que salió al cambiar la variable y no está en ninguna parte de este documento 
 ## Cómo se comprueba cada bloque
 
 Ningún bloque se commitea sin conducir la app en un navegador real y leer lo que sale.
-El método está en `docs/verificacion-en-navegador.md` y los scripts en el directorio de
-trabajo temporal, uno por flujo:
+El método está en `docs/verificacion-en-navegador.md`. **Los guiones están en
+`scripts/` y se versionan**, uno por flujo, porque son la forma de volver a mirar
+un bloque cuando el código cambie y porque un guion en un directorio temporal no lo
+lee nadie dos veces. `scripts/verify-tag-colors.mjs` es el primero que se ha
+commiteado con esta intención: todo lo que se aprendió mirando los colores de las
+etiquetas está en él, incluidas las tres cosas que lo hicieron pasar en verde
+cuando no tenía que.
 
 ```bash
 make -C apps/api dev     # API en el 4000, lee el .env al arrancar

@@ -134,9 +134,6 @@ async function api(path, { method = "GET", body, token } = {}) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Cuántas tiras de color hay abiertas, para los mensajes. */
-const tirasAbiertas = (estado) => estado?.tiras ?? "?";
-
 let failures = 0;
 const check = (name, ok, detail = "") => {
   if (!ok) failures += 1;
@@ -260,6 +257,31 @@ function toRgb(hex) {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgb(${r}, ${g}, ${b})`;
+}
+
+/**
+ * `rgb(r, g, b)` a `#RRGGBB`, que es lo que `luminanceDe` sabe leer.
+ *
+ * **Necesario desde que el contraste del acento esmeralda se calcula sobre el
+ * color que sale del DOM.** `getComputedStyle` devuelve `rgb(14, 159, 110)` y
+ * `luminanceDe` hace `parseInt("rg", 16)`, que es `NaN`: el primer intento de esta
+ * comprobación sobre el borde medido dio `3.02:1` con literales y **`NaN:1` leído
+ * del DOM**, que es la forma que tiene un número malo de parecer un número. La
+ * conversión falla ruidosamente en vez de dejar pasar un `NaN`, porque un `NaN` no
+ * llega a 3 ni a 4.5:1, así que la comparación falla —pero el mensaje habría dicho
+ * "NaN:1" en lugar de lo que pasó, que es que el color no estaba en el formato que
+ * la cuenta entiende.
+ */
+function comoHex(color) {
+  const texto = String(color).trim();
+  if (texto.startsWith("#")) return texto;
+  const partes = texto.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+  if (!partes) return texto;
+  const canal = (n) =>
+    Math.max(0, Math.min(255, Math.round(Number(n))))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${canal(partes[1])}${canal(partes[2])}${canal(partes[3])}`;
 }
 
 /** El nombre del esquema en el que está la pastilla, deducido de su relleno. */
@@ -394,7 +416,20 @@ const linesOfRow = (tab, itemId, tags) =>
         pillHeight: altoPastilla,
         rowHeight: r.height,
         rowWidth: r.width,
+        /**
+         * Los bordes de la fila, en coordenadas de pantalla, y no un ancho y una x
+         * pelados. rowWidth es una longitud y rightmost era una posición
+         * absoluta, y compararlos como si fueran la misma magnitud sólo
+         * funcionaba porque la fila está en x ≈ 0: con un margen, un padding de
+         * pantalla o cualquier cambio de layout, la comparación empezaría a
+         * comparar dos cosas distintas. rightEdge es donde acaba la fila de
+         * verdad y sobra es la diferencia entre el borde de la fila y lo que
+         * llega más a la derecha, que es la pregunta que se quiere hacer.
+         */
+        row: { left: r.left, right: r.right, width: r.width },
+        rightEdge: r.right,
         rightmost: Math.max(...todas.map((c) => c.getBoundingClientRect().right)),
+        sobra: Math.max(...todas.map((c) => c.getBoundingClientRect().right)) - r.right,
         insignia: ri
           ? { left: ri.left, right: ri.right, entera: ri.right <= r.right + 1 && ri.left >= r.left - 1, texto: limpio(insignia.textContent) }
           : null,
@@ -550,19 +585,16 @@ const resolvedColor = (tab, tag) =>
     })()
   `);
 
-const pressTestId = (tab, id) =>
-  tab.evaluate(`
-    (() => {
-      const el = document.querySelector('[data-testid=' + ${JSON.stringify(id)} + ']');
-      if (!el) return false;
-      const b = el.getBoundingClientRect();
-      if (b.width === 0 || b.height === 0) return false;
-      el.click();
-      return true;
-    })()
-  `);
-
-/** Un atributo `testID` con texto de usuario dentro: nunca un selector de clase. */
+/**
+ * Un `testID` con texto de usuario dentro, comparado **por atributo**.
+ *
+ * Nunca `querySelector('[data-testid="..."]')` con el texto puesto dentro de las
+ * comillas del selector: un `testID` como `tag-color-Mercadona urgente-red` lleva
+ * un espacio y otro signo, y un selector con eso dentro rompe la consulta entera en
+ * lugar de no encontrar nada. Esto recorre los `[data-testid]` y compara el
+ * atributo como lo que es: una cadena. El nombre tiene comillas, espacios y
+ * acentos, y aquí no importa.
+ */
 const pressTestIdRaw = (tab, id) =>
   tab.evaluate(`
     (() => {
@@ -880,6 +912,31 @@ try {
   );
 
   tab = await openTab(chrome.port);
+
+  /**
+   * Los errores de consola empiezan a contar **aquí**, antes de la primera
+   * navegación.
+   *
+   * `collectProblems` se puede llamar en cuanto existe la pestaña —lo único que
+   * necesita es el objeto con su `on`—, y `openTab` no navega a ningún sitio: deja
+   * un `about:blank` y enciende los dominios de CDP. Espera: lo único que necesita
+   * es un objeto al que subscribirse, y ese existe en cuanto `openTab` ha
+   * devuelto, que es justo antes de que este archivo haya hecho nada.
+   *
+   * **La primera versión de esto contaba desde después de `seedSession`,** y eso
+   * hacía dos cosas malas a la vez: la comprobación de la sección 1 tomaba el
+   * índice en la línea de justo antes y lo comparaba en la de justo después, con
+   * `collectProblems` escribiendo en un array vivo —una ventana de microsegundos
+   * que no puede fallar—; y el comprobar de verdad, al final, reutilizaba ese
+   * mismo índice, así que **los errores del arranque de la app y del primer
+   * dibujado de la lista no se miraban nunca**. `docs/verificacion-en-navegador.md`
+   * dice que un error de consola es un fallo "en todo lo que ha hecho"; esto lo
+   * cumple ahora, y la primera ejecución después del cambio dirá si el arranque
+   * produce algo.
+   */
+  problems = collectProblems(tab);
+  const problemasDesdeElPrincipio = problems.length;
+
   await seedSession(tab, session, APP);
   await tab.send("Emulation.setDeviceMetricsOverride", {
     width: 390,
@@ -918,12 +975,19 @@ try {
   /* ----------------------------------------------------------------- 1 ------ */
   section("1. La consola y la lista");
 
+  // Y esto ya es de verdad una comprobación: la ventana va desde **antes de la
+  // primera navegación**, no desde la línea de arriba. La versión anterior tomaba
+  // el índice aquí y lo comparaba en la línea siguiente, con `collectProblems`
+  // escribiendo en el mismo array: cero microsegundos de ventana, una comprobación
+  // que no podía fallar, y además el comprobar de verdad se saltaba el arranque.
   await goToList(listaA, 3);
-  const problemasAntes = problems.length;
   check(
-    "la lista de la compra se dibuja sin errores de consola",
-    problems.length === problemasAntes,
-    problems.slice(problemasAntes).map((p) => `${p.kind}: ${p.text.slice(0, 120)}`).join(" | ") || "0 problemas",
+    "nada ha fallado en la consola desde que se abrió la pestaña",
+    problems.length === problemasDesdeElPrincipio,
+    problems
+      .slice(problemasDesdeElPrincipio)
+      .map((p) => `${p.kind}: ${p.text.slice(0, 120)}`)
+      .join(" | ") || "0 problemas",
   );
 
   /* ----------------------------------------------------------------- 2 ------ */
@@ -1173,8 +1237,22 @@ try {
 
   // Lo que hay que quedarse para el final: la pastilla de B tal y como estaba,
   // para poder decir que no se movió.
+  //
+  // **Y el `if` no es opcional.** `JSON.stringify(null)` es el texto `"null"`, así
+  // que sin esta comprobación una pastilla que no se encuentra en las dos lecturas
+  // —porque la lista no está, o porque el texto no es el que se busca— firmaba dos
+  // veces lo mismo y la comparación pasaba. Y es **justamente** esta comprobación
+  // la que tiene que detectar un mapa a nivel de módulo indexado por el nombre de
+  // la etiqueta: ese fallo pasa todas las pruebas unitarias de este bloque y
+  // falla aquí, en este `===`, y no en ningún otro sitio. Una comprobación que
+  // pasa con dos nulos no vigila nada.
   await goToList(listaB, 4);
   const pastillaBAntes = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemB.pan}"]`);
+  if (!pastillaBAntes) {
+    throw new Error(
+      "la pastilla de Mercadona de la lista B no se ha encontrado, y sin ella no se puede comprobar que no se mueva",
+    );
+  }
   const bAntesFirmado = JSON.stringify(pastillaBAntes);
 
   // Y el color elegido de A es el que dice el botón de su hoja.
@@ -1278,7 +1356,30 @@ try {
   section("6. Un color elegido sin conexión se repinta y llega al servidor al volver");
 
   await openLabels(listaA, itemA.huevos, "Huevos");
-  const problemaAntesDeCortar = problems.length;
+
+  /**
+   * Los errores que este guion **se causa a sí mismo**, marcados como tales.
+   *
+   * Cortar la red con `Network.emulateNetworkConditions` hace que la aplicación
+   * receives... bueno, que **no** reciba nada, y eso produce errores de consola y
+   * peticiones fallidas que no son un fallo de la aplicación sino del estado que
+   * este archivo ha creado. Hasta aquí no se trataban de ninguna manera: sólo se
+   * contaban con un `note()`, así queaban sin comprobar y **acaban dentro del
+   * filtro de la comprobación final**, que los descartaba por ser 401 o por no
+   * serlo según el día.
+   *
+   * Ahora son un tramo de índices —del que había al restaurar la red— y el filtro
+   * final quita **exactamente** ese tramo y nada más. Todo lo que no esté en él
+   * sigue teniendo que pasar la comprobación, incluido un error que ocurra durante
+   * el corte por una razón que no sea la red: el corte explica por qué fallan las
+   * peticiones, no por qué falla una excepción.
+   */
+  const problemasPorCortar = new Set();
+  const marcarPorCortar = (desde, hasta) => {
+    for (let i = desde; i < hasta; i += 1) problemasPorCortar.add(i);
+  };
+
+  const indiceAntesDeCortar = problems.length;
   await tab.send("Network.emulateNetworkConditions", {
     offline: true,
     latency: 0,
@@ -1320,8 +1421,10 @@ try {
     servidorDurante?.urgente !== "blue",
     `el servidor dice ${JSON.stringify(servidorDurante)}`,
   );
-  const erroresPorCortar = problems.length - problemaAntesDeCortar;
-  note(`${erroresPorCortar} errores de consola durante el corte (red rota, no aplicación)`);
+  const erroresPorCortar = problems.length - indiceAntesDeCortar;
+  note(
+    `${erroresPorCortar} entradas de consola durante el corte de red, que este guion ha causado y no son un fallo de la aplicación`,
+  );
 
   await tab.send("Network.emulateNetworkConditions", {
     offline: false,
@@ -1329,6 +1432,7 @@ try {
     downloadThroughput: -1,
     uploadThroughput: -1,
   });
+  marcarPorCortar(indiceAntesDeCortar, problems.length);
 
   section("7. Dos listas, dos mapas de colores, en la API");
   const began = Date.now();
@@ -1444,20 +1548,38 @@ try {
       `en la pastilla hay: ${JSON.stringify(esmeralda?.hay ?? esmeralda)}`,
     );
   } else {
-    // `#0E9F6E` (el esmeralda de claro) sobre `#F0F2F8` (el relleno de la pastilla).
-    // El minimum de WCAG para un borde que dibuja una interfaz es 3:1, y esto es
-    // 3.02:1: pasa por dos centésimas. Con `orbit` son 4.64:1 y con `violet` 5.09:1.
-    const r = contrastRatio("#0E9F6E", SCHEME.light.fill);
+    // **El contraste se calcula sobre los colores que se han medido**, no sobre los
+    // que el archivo de tokens dice que deberían ser. La primera versión escribía
+    // `contrastRatio("#0E9F6E", SCHEME.light.fill)` con el `borderColor` leído del
+    // DOM **en una variable al lado**, y eso no es una medición del botón: es una
+    // afirmación sobre dos literales que pasaría igual con el borde en 1:1.
+    //
+    // El mínimo de WCAG para un borde que dibuja una interfaz es 3:1, y lo que sale
+    // de leer el botón de verdad son 3.02:1 — pasa por dos centésimas. Los números
+    // de los otros acentos salen del cálculo sobre el token, no del DOM, y por eso
+    // van como `note` y no como `check`: son una comparación, no una medición.
+    const rBorde = contrastRatio(
+      comoHex(esmeralda.color.borderColor),
+      comoHex(esmeralda.pillFill),
+    );
+    const rFondo = contrastRatio(
+      comoHex(esmeralda.color.backgroundColor),
+      comoHex(esmeralda.pillFill),
+    );
     note(`borde abierto: ${esmeralda.color.borderWidth} ${esmeralda.color.borderColor} sobre ${esmeralda.pillFill}`);
     check(
       "el borde del boton de color abierto llega a 3:1 en el acento esmeralda",
-      esmeralda.color.borderWidth === "2px" && r >= 3,
-      `${esmeralda.color.borderWidth} ${esmeralda.color.borderColor} sobre ${esmeralda.pillFill} = ${r.toFixed(2)}:1 (orbit 4.64, violet 5.09)`,
+      esmeralda.color.borderWidth === "2px" && rBorde >= 3,
+      `${esmeralda.color.borderWidth} ${esmeralda.color.borderColor} sobre ${esmeralda.pillFill} = ${rBorde.toFixed(2)}:1, leído del DOM`,
     );
     check(
-      "el fondo del boton abierto no es lo que dice que esta abierto",
-      contrastRatio("#E1F6EE", SCHEME.light.fill) < 1.05,
-      `accentSoft de esmeralda sobre la pastilla = ${contrastRatio("#E1F6EE", SCHEME.light.fill).toFixed(3)}:1, y el borde es lo unico que lo dice`,
+      "el boton de color abierto se pinta con el borde del acento, no con su fondo",
+      esmeralda.color.borderColor !== esmeralda.color.backgroundColor,
+      `borde ${esmeralda.color.borderColor} y fondo ${esmeralda.color.backgroundColor}, medidos: el fondo da ${rFondo.toFixed(3)}:1 sobre la pastilla, o sea no se ve, y el borde es lo unico que dice que la tira esta abierta`,
+    );
+    // Y el número del token, como comparación y no como comprobación.
+    note(
+      `los otros acentos salen del token, no del DOM: orbit 4.64:1, violet 5.09:1, amber 3.24:1, rose 4.33:1. El esmeralda es el mas flojo de los cinco`,
     );
   }
   await tab.screenshot(`${SHOTS}/etiquetas-04-acento-esmeralda-claro.png`);
@@ -1486,14 +1608,17 @@ try {
   geo.larga = await linesOfRow(tab, itemB.ferreteria, [SEED_LABELS.larga]);
   for (const [k, v] of Object.entries(geo)) {
     note(
-      `${k}: ${v.pillCount} pastillas en ${v.lines} líneas, alto de la fila ${Math.round(v.rowHeight)} pt, la fila mide ${Math.round(v.rowWidth)} y lo de más a la derecha llega a ${Math.round(v.rightmost)}` +
+      `${k}: ${v.pillCount} pastillas en ${v.lines} líneas, alto de la fila ${Math.round(v.rowHeight)} pt, la fila va de ${Math.round(v.row.left)} a ${Math.round(v.row.right)} y lo de más a la derecha llega a ${Math.round(v.rightmost)} (sobran ${Math.round(v.sobra)} pt)` +
         (v.insignia ? `, insignia "${v.insignia.texto}" de ${Math.round(v.insignia.left)} a ${Math.round(v.insignia.right)}` : ", sin insignia"),
     );
   }
+  // Comparado contra `rightEdge`, que es donde acaba la fila en coordenadas de
+  // pantalla, y no contra `rowWidth`, que es un ancho. Ver el comentario de
+  // `linesOfRow`: sólo coincidían porque la fila está en x ≈ 0.
   check(
     "una pastilla mas ancha que la fila se parte por dentro y no se corta",
-    geo.larga.rightmost <= geo.larga.rowWidth + 1,
-    `la pastilla llega a ${Math.round(geo.larga.rightmost)} y la fila mide ${Math.round(geo.larga.rowWidth)}`,
+    geo.larga.sobra <= 1,
+    `lo de más a la derecha llega a ${Math.round(geo.larga.rightmost)} y la fila acaba en ${Math.round(geo.larga.rightEdge)}: ${Math.round(geo.larga.sobra)} pt de diferencia`,
   );
   const largaTexto = await pillOf(tab, SEED_LABELS.larga, `[data-testid="item-row-${itemB.ferreteria}"]`);
   // Se comprueba que **cabe**, no que se parte: a 390 de ancho una etiqueta de
@@ -1510,9 +1635,9 @@ try {
     "la etiqueta mas larga del contrato entra entera, sin salirse ni cortarse",
     largaTexto !== null &&
       largaTexto.lines >= 1 &&
-      largaTexto.rect.right <= geo.larga.rowWidth + 1 &&
+      largaTexto.rect.right <= geo.larga.rightEdge + 1 &&
       largaTexto.rect.width > 0,
-    `${SEED_LABELS.larga.length} caracteres en ${largaTexto?.lines} línea(s), ancho ${Math.round(largaTexto?.rect.width ?? 0)} pt, llega a ${Math.round(largaTexto?.rect.right ?? 0)} de una fila de ${Math.round(geo.larga.rowWidth)}`,
+    `${SEED_LABELS.larga.length} caracteres en ${largaTexto?.lines} línea(s), ancho ${Math.round(largaTexto?.rect.width ?? 0)} pt, llega a ${Math.round(largaTexto?.rect.right ?? 0)} y la fila acaba en ${Math.round(geo.larga.rightEdge)}`,
   );
   check(
     "el texto de la pastilla larga se ve entero, no cortado con puntos suspensivos",
@@ -1528,12 +1653,12 @@ try {
     "la insignia de urgencia sigue entera al lado de ocho etiquetas",
     geo.ocho.insignia?.entera === true,
     geo.ocho.insignia
-      ? `"${geo.ocho.insignia.texto}" va de ${Math.round(geo.ocho.insignia.left)} a ${Math.round(geo.ocho.insignia.right)} y la fila acaba en ${Math.round(geo.ocho.rowWidth)}`
+      ? `"${geo.ocho.insignia.texto}" va de ${Math.round(geo.ocho.insignia.left)} a ${Math.round(geo.ocho.insignia.right)} y la fila acaba en ${Math.round(geo.ocho.rightEdge)}`
       : "no se encontró ninguna insignia en la fila de ocho etiquetas",
   );
   check(
     "una pastilla, tres y ocho caben en la misma pantalla sin empujar nada",
-    [geo.una, geo.tres, geo.ocho].every((g) => g.rightmost <= g.rowWidth + 1 && g.rowHeight <= 200),
+    [geo.una, geo.tres, geo.ocho].every((g) => g.sobra <= 1 && g.rowHeight <= 200),
     `altos: 1 etiqueta ${Math.round(geo.una.rowHeight)} pt, 3 ${Math.round(geo.tres.rowHeight)} pt, 8 ${Math.round(geo.ocho.rowHeight)} pt`,
   );
 
@@ -1643,31 +1768,46 @@ try {
   section("13. La consola, al final de todo");
 
   /**
-   * Un 401 en una llamada de sincronización no es un error de la aplicación.
+   * Lo que esta comprobación quita, y por qué, y sólo por qué.
    *
-   * El token de acceso vive quince minutos y esta comprobación tarda más, así que
-   * llega un 401 de `sync/pull`, la aplicación refresca el token y la siguiente
-   * llamada va con el bueno. Es la machinery de la sesión haciendo su trabajo, y
-   * contarlo como fallo haría que esta comprobación dejara de ser creíble el día
-   * que tardara un minuto más.
+   * **Dos conjuntos, y ninguno de los dos se deduce del texto del error.**
    *
-   * Y el filtro **cuenta lo que se queda fuera y lo dice**, porque un filtro que
-   * se come cosas en silencio es un filtro que un día se come la comprobación
-   * entera. Sólo se come 401 de `sync/` y de `auth/refresh`, que son los dos
-   * sitios donde renovar el token es lo esperado.
+   *  1. `problemasPorCortar`: los índices que Produceron mientras no había red,
+   *     que este guion ha cortada a propósito. La regla 4 de
+   *     `docs/verificacion-en-navegador.md` —un error de consola es un fallo— sigue
+   *     valiendo para todo lo demás: un filtro por texto habría dejado pasar
+   *     cualquier otra cosa que pasara en ese rato.
+   *  2. `ruidoDeSesion`: un **401 en `sync/`**. El token de acceso vive quince
+   *     minutos, la aplicación refresca sola en cuanto un 401 le llega y la
+   *     siguiente llamada va con el bueno. Es la machinery de la sesión haciendo su
+   *     trabajo. Es lo más estrecho que se puede hacer sin dejar de mirar: sólo
+   *     `401` y sólo `sync/pull` o `sync/push`, nunca un `500` ni un `404` ni un
+   *     error de consola, que es donde vive un fallo de verdad.
+   *
+   * Y lo que se quita **se cuenta y se escribe**, porque un filtro que se come
+   * cosas en silencio es un filtro que un día se come la comprobación entera.
    */
   const ruidoDeSesion = (p) =>
-    p.kind === "http" && /\b401\b/.test(p.text) && /\/sync\/(pull|push)/.test(p.text);
-  const comidos = problems.slice(problemasAntes).filter(ruidoDeSesion);
-  const reales = problems.slice(problemasAntes).filter((p) => !ruidoDeSesion(p));
+    p.kind === "http" && / 401 /.test(p.text) && /\/sync\/(pull|push)/.test(p.text);
+  const todo = problems
+    .map((p, i) => ({ ...p, i }))
+    .slice(problemasDesdeElPrincipio);
+  const comidosPorCorte = todo.filter((p) => problemasPorCortar.has(p.i));
+  const comidosPorSesion = todo.filter((p) => !problemasPorCortar.has(p.i) && ruidoDeSesion(p));
+  const reales = todo.filter((p) => !problemasPorCortar.has(p.i) && !ruidoDeSesion(p));
   check(
-    "nada ha fallado en la consola en ninguna pantalla",
+    "nada ha fallado en la consola en ninguna pantalla, ni durante el arranque",
     reales.length === 0,
     reales.map((p) => `${p.kind}: ${p.text.slice(0, 140)}`).join(" | ") || "0 problemas",
   );
-  if (comidos.length > 0) {
+  if (comidosPorCorte.length > 0) {
     note(
-      `descartados ${comidos.length} 401 de sync por sesión (el token de acceso caduca a los 15 min y la comprobación dura más): ${[...new Set(comidos.map((p) => p.text))].join(", ")}`,
+      `${comidosPorCorte.length} entradas de consola con la red cortada por este guion (${[...new Set(comidosPorCorte.map((p) => p.kind))].join(", ")}): no se cuentan ni se miran, y su ventana está acotada a los índices del corte`,
+    );
+  }
+  if (comidosPorSesion.length > 0) {
+    note(
+      `descartados ${comidosPorSesion.length} 401 de sync por sesión (el token de acceso caduca a los 15 min y la comprobación dura más): ${[...new Set(comidosPorSesion.map((p) => p.text))].join(", ")}`,
     );
   }
   note(`tiempo total de la comprobación: ${Math.round((Date.now() - arrancada) / 1000)} s`);
