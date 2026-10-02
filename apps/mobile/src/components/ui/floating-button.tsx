@@ -81,7 +81,22 @@ export function FloatingButton({
 
 const styles = StyleSheet.create({
   fab: {
-    position: "fixed",
+    /*
+      **No `fixed`, y en Android sale a la izquierda si lo pones.**
+      `fixed` es CSS y existe en la web, donde hace exactamente lo que dice el
+      comentario de arriba. En React Native los valores válidos de `position` son
+      `absolute`, `relative` y `static`: `fixed` no está, así que el motor de
+      Android lo trata como `relative`, y un `relative` con `right: 20` no se ancla
+      a la esquina — empuja el botón desde donde esté y lo deja pegado al otro
+      lado. Medido: el plus aparecía abajo a la izquierda en cada pantalla con
+      espacio, y en un build de Android.
+
+      La esquina se consigue con `position: "absolute"` **dentro de un contenedor
+      que ocupe la pantalla**, y ese contenedor lo pone `Screen` (`styles.anclaje`)
+      en el hueco `overlay`. Aquí solo van el desplazamiento respecto a ese
+      contenedor.
+    */
+    position: "absolute",
     right: 20,
     bottom: 24,
     alignItems: "center",

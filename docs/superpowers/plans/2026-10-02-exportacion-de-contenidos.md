@@ -315,10 +315,12 @@ git commit -m "El sobre y el CSV salen de los mismos registros, para que no pued
 - Consumes: todo lo de Task 1 y Task 2.
 - Produces:
   - `sendFile(res: Response, status: number, file: { body: string | Buffer; contentType: string; filename: string }): void`
-  - `ExportService.accountJson(userId: string): Promise<AccountExport>`
-  - `ExportService.listJson(userId: string, listId: string): Promise<ListExport>`
-  - `ExportService.listCsv(userId: string, listId: string): Promise<string>`
+  - `ExportService.accountJson(userId: string): Promise<ExportFile>`
+  - `ExportService.listJson(userId: string, listId: string): Promise<ExportFile>`
+  - `ExportService.listCsv(userId: string, listId: string): Promise<ExportFile>`
   - `export const exportService: ExportService`
+
+Los tres devuelven `ExportFile = { body: string; contentType: string; filename: string }`, que es exactamente lo que `sendFile` consume. **El nombre sale del servicio y no de la ruta, a propósito**: el servicio es lo único que ha cargado la lista, y si el nombre lo calculara la ruta tendría que volver a cargarla o recibirla como parámetro. Devolver el nombre junto al cuerpo es lo que hace imposible que el fichero se llame de una cosa en la cabecera y de otra en el móvil, que es lo que pasó cuando `listCsv` devolvía sólo el CSV y se quedaba sin título con el que nombrarlo.
 
 `sendFile` pone cuatro cabeceras y luego `res.status(status).send(body)`:
 `content-type` con `; charset=utf-8`, `cache-control: no-store`,
@@ -369,7 +371,7 @@ Los casos:
 - `GET /account/export?format=csv` da **422** con `error.code === 'validation_failed'`.
 - `GET /lists/<uuid-inexistente>/export` da 404.
 - Sin token, 401 en los dos endpoints.
-- `content-disposition` de una lista cuyo título tiene acentos: el `filename*` trae el título con el acento y el `filename` en ASCII no lo tiene.
+- `content-disposition` de una lista cuyo título tiene acentos: **`filename` y `filename*` traen el mismo slug ASCII, sin acento**. El slug sin acentos es deliberado —un móvil escribiendo en caché no puede nombrar un fichero con `á`— y como consecuencia no hay dos nombres distintos que poner: `exportFilename` ya devuelve ASCII, así que el `filename*` no lleva nada que percent-codificar. Un nombre con acento en `filename*` sería **peor**: hay clientes que ignoran `filename*` y se quedan con el ASCII, y los que lo honran escriben un fichero cuyo nombre no es el que dijo el servidor.
 
 - [ ] **Step 2: Correr los tests y verlos fallar**
 
@@ -393,6 +395,8 @@ El camino de autorización es **exactamente** el que ya usa el resto: `visibleWo
 **`role` va en CARPETAS, listas, items y notas.** Son las cuatro entidades que extienden `nodeAccessSchema` (`workspace.ts` 221, 337, 401, 428) y `role: membershipRoleSchema` no tiene `.default()`: es obligatorio. `workspaceSchema` y `noteTemplateSchema` **no** lo llevan y sus filas mapean directas. Este es el error más fácil de cometer de toda la tarea, porque `contentQueryService` casi nunca devuelve carpetas y copiarse sus filtros y sus mapeos hace que las carpetas se olviden en silencio.
 
 Los siete select: `workspaces`, `folders`, `lists`, `listItems`, `notes`, `attachments`, `noteTemplates`. Los tres últimos cuelgan de los anteriores por id, no por rango. **Ninguno con `isNull(deletedAt)`.**
+
+**Las plantillas se eligen por espacio O por authorship, no sólo por espacio.** Una plantilla personal tiene `workspaceId: null` —ahí vive, según su propio comentario del contrato—, así que filtrar por `eq(noteTemplates.workspaceId, id)` deja fuera justo las plantillas que el usuario escribió sin espacio. Y al revés, `workspaceId IS NULL` a secas trae las de otros. El filtro es `(inArray(workspaceId, wsIds) OR eq(createdBy, userId))`. Así entran las del espacio y las personales propias, y quedan fuera las de otros y **las que trae la aplicación** —`builtInKey` no nulo, `createdBy` nulo— que se reinstalan solas y no tienen por qué ocupar espacio en cada copia.
 
 El map de `metadata` es identidad: `metadata: row.metadata`. Sin `JSON.parse`, sin `JSON.stringify`, sin Selecting claves.
 

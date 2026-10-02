@@ -87,11 +87,28 @@ export function SpaceBand({ color, colorTo, wash }: SpaceBandProps) {
 const styles = StyleSheet.create({
   banda: {
     position: "absolute",
-    top: 0,
+    /*
+      **Arriba del todo, y no en `top: 0` de donde se pinta.**
+      Esta caja se posiciona respecto al padre, y el padre es el area del contenido
+      —que en Android **ya va 56 puntos por debajo de la cabecera** porque el
+      header va fuera del flujo—. Con `top: 0` la banda arrancaba a la altura del
+      contenido, es decir encajada con la barra: los dos velos se solapaban en esa
+      franja y la suma de los dos, sobre el degradado, era la **linea blanca y
+      gorda** que aparecia justo debajo del header en cada pantalla de un espacio.
+
+      Medido en Android, antes y despues: la banda tiene que empezar donde acaba la
+      barra, y por eso sube los 56 en vez de arrancar en cero.
+    */
+    top: -ALTO_CABECERA,
     left: 0,
     right: 0,
     // A height of its own and no `bottom`: this box does **not** grow with the
     // content, which is what lets the bar above it stay the height it is.
+    /*
+      El alto es el de la parte de abajo del lavado, y el `marginTop` negativo
+      hace que lo que se ve sea justo su tramo final: los 100 de `SOBRO_BANDA`
+      pelados, no 156 con la mitad tapada.
+    */
     height: SOBRO_BANDA,
     overflow: "hidden",
   },

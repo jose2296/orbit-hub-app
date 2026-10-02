@@ -177,7 +177,11 @@ export function Screen({
           `overlay` is the reason: a child of a `ScrollView` cannot be fixed to
           the window on the web.
         */}
-        {overlay}
+        {overlay ? (
+          <View pointerEvents="box-none" style={styles.anclaje}>
+            {overlay}
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -186,6 +190,20 @@ export function Screen({
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  /**
+   * The box the overlay is anchored to.
+   *
+   * `position: "absolute"` on a floating button needs an ancestor it can be
+   * absolute **inside**, and this is it: it fills the area the keyboard-avoiding
+   * view has, which is the window minus the safe area. Without it the button has
+   * nothing to be absolute against and lands wherever the flow puts it, which on
+   * Android was the left edge.
+   *
+   * `box-none` so it never eats a touch meant for the content behind it.
+   */
+  anclaje: {
+    ...StyleSheet.absoluteFill,
   },
   content: {
     flexGrow: 1,
