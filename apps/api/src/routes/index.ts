@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { accountRouter } from "./account.js";
 import { authRouter } from "./auth.js";
 import { catalogRouter } from "./catalogs.js";
 import { sharesRouter } from "./shares.js";
@@ -21,6 +22,9 @@ export const apiRouter = Router();
 
 apiRouter.use("/health", healthRouter);
 apiRouter.use("/auth", authRouter);
+// La cuenta, pero no la autenticacion: `DELETE /auth/account` borra la cuenta
+// y eso si es auth; esto sirve su exportacion, que es contenido.
+apiRouter.use("/account", accountRouter);
 apiRouter.use("/sync", syncRouter);
 apiRouter.use("/workspaces", workspacesRouter);
 apiRouter.use("/invitations", invitationsRouter);

@@ -36,6 +36,12 @@ The mobile client unwraps the envelope in `apiRequest`, so screens and hooks onl
 `data`. A response that is not an envelope is passed through untouched, which keeps the client
 usable against endpoints that answer with a bare payload.
 
+Two responses are not envelopes: the export files (`GET /account/export` and
+`GET /lists/:id/export`). They answer with bytes, a `Content-Disposition: attachment` and
+`Cache-Control: no-store`, and they go through `sendFile` instead of `sendData`. Once `sendFile`
+has run the headers are on the wire, and `errorHandler` steps aside when `res.headersSent` is
+true — so a failure after the body started writing cannot be turned into a JSON error anymore.
+
 ## Error codes
 
 | Code | Status | Meaning |
