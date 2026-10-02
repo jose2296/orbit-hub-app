@@ -88,21 +88,6 @@ function Navigation() {
       <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
-          /*
-            **El título del documento va aquí, y no en un `<title>` de `+html`.**
-            Expo Router emite su propio `<title data-rh="true">` al exportar
-            estático y escribe en él el título de la ruta; uno puesto a mano en
-            `+html.tsx` sale después del suyo, y con los dos en el documento se
-            lee el primero — el vacío. Por eso la página principal se veía sin
-            nombre y Google rechazaba la verificación de OAuth con *"el nombre de
-            la app no coincide con el de tu página principal"*, que no es un
-            capricho de la revisión: sin título no hay nada con qué comparar el
-            nombre de la pantalla de consentimiento.
-
-            Y tiene que ser el mismo nombre que el de la ficha y que el de la
-            consola de OAuth, o el mismo rechazo vuelve por el otro lado.
-          */
-          title: 'OrbitHub',
           headerStyle: { backgroundColor: theme.colors.background },
           headerTintColor: theme.colors.text,
           headerTitleStyle: { fontWeight: '600' },
