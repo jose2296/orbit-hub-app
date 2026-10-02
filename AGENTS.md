@@ -56,3 +56,9 @@ unverified until somebody runs a device.
 | API route / middleware / db       | `apps/api/src/**`                               |
 | Request/response schema           | `packages/contracts/src/**`                     |
 | Architecture decision             | new file in `docs/architecture/adr/`            |
+
+## Subagents
+
+Todos los subagentes usan **`Space Bunny Free`**, siempre. No se cambia por modelo,
+por coste ni porque otro parezca más adecuado para una tarea concreta: uno solo,
+y el que hay. Si un subagente necesita otro modelo, se hace la tarea aquí.
