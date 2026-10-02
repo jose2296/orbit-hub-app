@@ -623,7 +623,6 @@ En `es` y en `en`, dentro del bloque de `settings.*` que ya existe, y manteniend
 
 ```
 "export.title":              "Exportar mis datos"
-"export.body":               "Una copia de todo tu contenido, en JSON."
 "export.running":            "Preparando el fichero…"
 "export.done.one":           "{count} elemento"
 "export.done.other":         "{count} elementos"
@@ -636,7 +635,7 @@ En `es` y en `en`, dentro del bloque de `settings.*` que ya existe, y manteniend
 "export.error.notFound":     "Ya no está, o nunca estuvo donde la buscabas."
 "export.error.rateLimited":  "Demasiadas exportaciones seguidas. Espera un momento."
 "export.error.unauthorized": "Tu sesión ha caducado. Vuelve a entrar."
-"export.error.unknown":      "Algo falló al preparar el fichero."
+"export.error.internal":     "Algo falló al preparar el fichero."
 "export.format":             "Formato"
 "export.format.csv":         "CSV — para Excel y Google Sheets"
 "export.format.json":        "JSON — copia completa"
@@ -715,7 +714,7 @@ git commit -m "Guardar el fichero en los tres sistemas, y expo-sharing porque no
 
 `type Page` pasa a ser `"options" | "rename" | "share" | "export" | "delete"`.
 
-El `SheetOption` va entre el de compartir y el de borrar: `key: "export"`, `icon: "download-outline"`, `label: t("export.title")`, `description: t("export.body")`, `onPress: () => setPage("export")`.
+El `SheetOption` va entre el de compartir y el de borrar: `key: "export"`, `icon: "download-outline"`, `label: t("export.list.title")`, `description: t("export.list.body")`, `onPress: () => setPage("export")`.
 
 La página es un `SheetOptions` con dos filas —`export.format.json` y `export.format.csv`, en ese orden— y `onPress` en cada una que hace `onClose()` y luego `void run(...)`. **`onClose()` antes de `run()`, no después**, por lo mismo que hace `duplicateList` en el fichero: la hoja se va y el trabajo sigue.
 

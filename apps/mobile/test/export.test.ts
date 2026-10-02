@@ -215,8 +215,9 @@ describe('exportErrorKey', () => {
    * Un 500 dice algo, y esta es la comprobacion que lo protege.
    *
    * `error-handler.ts` convierte toda excepcion sin manejar en `internal_error`, y
-   * el export hace siete selects seguidos: un timeout de la base de datos o un
-   * fallo en un mapper llegan aqui. Cuando este caso vivia en el `null` de al
+   * el export de cuenta hace siete selects seguidos —el de una lista, tres—: un
+   * timeout de la base de datos o un fallo en un mapper llegan aqui. Cuando este
+   * caso vivia en el `null` de al
    * lado, la hoja —que solo pinta la linea cuando hay clave— dejaba a la persona
    * con "Reintentar" y "Cerrar" y ninguna palabra. Ese es el fallo que nadie se
    * enteraria de que ha pasado.
@@ -225,8 +226,11 @@ describe('exportErrorKey', () => {
    * la clave en vez de lo que pinta: que existe, y que **tiene frase en los dos
    * idiomas**. Un `not.toBeNull()` solo bastaria si la clave pudiera no estar en el
    * diccionario; que este en `es` y en `en` es la mitad de que la linea se dibuje,
-   * porque `t()` de una clave ausente devuelve `undefined` y un `<AppText>` con
-   * `undefined` es una linea con un hueco en lugar de una frase.
+   * porque `t()` de una clave ausente devuelve **la propia clave** —no
+   * `undefined`, que es lo que hace `i18n-provider.tsx` a proposito para que una
+   * etiqueta que falta se vea en vez de dejar la pantalla a medias— y lo que
+   * receberia el `<AppText>` seria la linea `export.error.internal` escrita en la
+   * pantalla: raro, pero visible.
    */
   it('el 500 del servidor tiene frase propia, no un null', () => {
     const clave = exportErrorKey(new ApiError({ kind: 'internal_error', message: 'x', status: 500 }));

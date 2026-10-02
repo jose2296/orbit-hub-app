@@ -870,11 +870,17 @@ const es = {
   "export.error.rateLimited": "Demasiadas exportaciones seguidas. Espera un momento.",
   "export.error.unauthorized": "Tu sesión ha caducado. Vuelve a entrar.",
   // Un 500 es lo que sale de cualquier excepcion sin manejar del servidor, y el
-  // export hace siete selects seguidos: un timeout de base de datos o un fallo en
-  // un mapper llegan aqui. Con la hoja callada, esto seria un panel con dos
-  // botones y ninguna palabra. La frase es la que era `export.error.unknown`,
-  // que era la correcta para un 500 y la clave equivocada.
+  // export de cuenta hace siete selects seguidos —el de una lista, tres—, un
+  // timeout de base de datos o un fallo en un mapper llegan aqui. Con la hoja
+  // callada, esto seria un panel con dos botones y ninguna palabra. La frase es la
+  // que era `export.error.unknown`, que era la correcta para un 500 y la clave
+  // equivocada.
   "export.error.internal": "Algo falló al preparar el fichero.",
+  // No es un fallo de red ni un bug: es este dispositivo que no puede guardar el
+  // fichero, porque `expo-file-system` o `expo-sharing` no cargan. Reintentar no lo
+  // arregla, asi que la frase no dice "reinténtalo" como la de red.
+  "export.error.notImplemented":
+    "Este dispositivo no puede guardar el fichero de la exportación.",
   "export.format": "Formato",
   "export.format.csv": "CSV — para Excel y Google Sheets",
   "export.format.json": "JSON — copia completa",
@@ -1838,6 +1844,8 @@ const en: Record<TranslationKey, string> = {
   "export.error.rateLimited": "Too many exports in a row. Give it a moment.",
   "export.error.unauthorized": "Your session expired. Sign in again.",
   "export.error.internal": "Something went wrong while preparing the file.",
+  "export.error.notImplemented":
+    "This device cannot save the export file.",
   "export.format": "Format",
   "export.format.csv": "CSV — for Excel and Google Sheets",
   "export.format.json": "JSON — full backup",

@@ -135,10 +135,22 @@ async function downloadToCacheAndShare(
   const fs = await fileSystem();
   const share = await sharing();
   if (!fs || !share) {
-    // Sin `kind` a proposito. Un modulo que no carga no se arregla reintentando,
-    // y `network` pondria delante un boton que no puede hacer nada. Sin mapa, la
-    // hoja cae en su mensaje generico, que es lo unico cierto aqui.
-    throw new Error('Este dispositivo no puede guardar el fichero de la exportacion');
+    // Un `ApiError` con `kind: 'not_implemented'`, y no un `Error` pelado, y no
+    // `network`. No es un fallo de la descarga: el fichero ni se ha pedido. Es
+    // **este dispositivo** que no puede guardarlo, porque un modulo nativo no
+    // carga, y eso tiene frase propia —`export.error.notImplemented`— en vez de
+    // salir como `unknown`, que es `null` y es un panel con dos botones y ninguna
+    // palabra.
+    //
+    // El `kind` no dice "reintentalo" porque reintentar no lo arregla: el boton
+    // sale igual, como sale con cualquier `error`, pero la frase no promete nada
+    // que no vaya a pasar. Y `not_implemented` es justo lo que es —una cosa
+    // planificada que aqui no esta disponible— y no un fallo de red al que
+    // reintentarle.
+    throw new ApiError({
+      kind: 'not_implemented',
+      message: 'Este dispositivo no puede guardar el fichero de la exportacion',
+    });
   }
 
   // El cache y no el directorio de documentos porque el cache es lo unico que el

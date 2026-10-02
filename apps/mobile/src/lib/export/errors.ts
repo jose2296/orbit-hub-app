@@ -60,36 +60,52 @@ export function exportErrorKey(error: unknown): TranslationKey | null {
       return 'export.error.unauthorized';
 
     // Un 500, y dice algo. `error-handler.ts` convierte **toda** excepcion sin
-    // manejar en `internal_error`, y el export hace siete selects seguidos y un
-    // mapeo por fila: un timeout de la base de datos, una violacion de una
-    // restriccion o un fallo en `toItem` llegan todos aqui. Este caso estaba en el
-    // `null` de abajo, y con la hoja callada eso era un panel con "Reintentar" y
-    // "Cerrar" y ni una palabra — el fallo mas probable del servidor era el
-    // unico que no se decia. La frase es la que era `export.error.unknown`, que
-    // era la correcta para un 500 y la clave equivocada para el.
+    // manejar en `internal_error`, y el export de cuenta hace siete selects
+    // seguidos y un mapeo por fila: un timeout de la base de datos, una violacion
+    // de una restriccion o un fallo en `toItem` llegan todos aqui. Este caso
+    // estaba en el `null` de abajo, y con la hoja callada eso era un panel con
+    // "Reintentar" y "Cerrar" y ni una palabra — el fallo mas probable del
+    // servidor era el unico que no se decia. La frase es la que era
+    // `export.error.unknown`, que era la correcta para un 500 y la clave
+    // equivocada para el.
     case 'internal_error':
       return 'export.error.internal';
 
-    // Los de aqui son `null` a proposito, y **no porque no tengan frase sino
-    // porque no se pueden dar**: los tres son inalcanzables desde las rutas de
-    // exportacion, y una clave que nadie puede pedir es una clave que un
-    // traductor mantiene para siempre — el defecto que `export.error.unknown` y
-    // `export.body` ya eran y que este fichero no va a volver a crear.
+    // Y el 501 no es solo del servidor: **la API no lo devuelve para estas rutas,
+    // pero el cliente lo produce**, en `save.ts`, cuando `expo-file-system` o
+    // `expo-sharing` no cargan. El lado del servidor existe y es real —lo lanzan
+    // `catalogs.ts`, el login con Google y las dos rutas de bytes de
+    // `attachments.ts`—, pero ninguna de ellas es una ruta de exportacion. Antes
+    // este caso salia como `Error` pelado, que `toApiError` convertia en
+    // `unknown` —o sea `null`, o sea un panel sin palabras— para algo que si es un
+    // fallo y si se puede decir: este dispositivo no puede guardar el fichero.
+    // Reintentar no lo arregla, y la frase por eso no lo sugiere.
+    case 'not_implemented':
+      return 'export.error.notImplemented';
+
+    // Los dos de aqui son `null` a proposito, y **no porque no tengan frase sino
+    // porque no se pueden dar** desde una exportacion, y una clave que nadie puede
+    // pedir es una clave que un traductor mantiene para siempre — el defecto que
+    // `export.error.unknown` y `export.body` ya eran y que este fichero no va a
+    // volver a crear.
     //
-    //   - `validation_failed` (422) solo sale de un `ZodError`, y las dos query de
-    //     exportacion las construye el cliente con un formato fijo y un id que ya
-    //     tiene: no hay nada que validar mal. Si apareciera, el fallo estaria en la
-    //     app, y ese `null` lo delata en vez de esconderlo. **Si algun dia estas
-    //     rutas aceptan un parametro que venga de fuera, esta linea es la alarma:
-    //     hay que decidirle frase aqui.**
-    //   - `not_implemented` (501) solo lo lanza `HttpError.notImplemented`, y lo
-    //     lanzan `catalogs.ts` y el login con Google. Estas rutas existen.
-    //   - `bad_request` (400) no se emite nunca: lo que no parsea es un
-    //     `ZodError`, y sale como 422.
+    //   - `validation_failed` (422) sale de un `ZodError`, y el export construye
+    //     sus query con un formato fijo y un id que ya tiene: no hay nada que
+    //     validar mal. El 422 se ve igual en la prueba de la API
+    //     (`?format=csv` en la cuenta, que solo admite JSON), asi que el caso no
+    //     es inventado: es que el cliente no puede pedirlo. Si apareciera, el
+    //     fallo estaria en la app y este `null` lo delata en vez de esconderlo.
+    //     **Si algun dia estas rutas aceptan un parametro que venga de fuera, esta
+    //     linea es la alarma: hay que decidirle frase aqui.**
+    //   - `bad_request` (400) si lo emite la API —`auth.ts`, `catalogs.ts`,
+    //     `share-service.ts` y `invitation-service.ts` lo lanzan, y el `kind` sale
+    //     del `error.code` del cuerpo—, pero ninguna de ellas es una ruta de
+    //     exportacion, asi que el cliente no puede verlo aqui.
     //
     // `conflict` (409) se queda en `null` por otra razon y no por ser
     // inalcanzable del todo: el export no escribe y no mira versiones, asi que
-    // las rutas de aqui no lo pueden devolver.
+    // aunque la API lo emita en otros sitios —`auth.ts` lo usa para un correo ya
+    // registrado— las rutas de aqui no lo pueden devolver.
     //
     // Y `unknown` se queda tambien, y a sabiendas: `toApiError` manda ahi
     // cualquier cosa que no sea un `ApiError`, y ahi caen a la vez el `Error` de
@@ -100,7 +116,6 @@ export function exportErrorKey(error: unknown): TranslationKey | null {
     case 'bad_request':
     case 'validation_failed':
     case 'conflict':
-    case 'not_implemented':
     case 'unknown':
       return null;
   }
