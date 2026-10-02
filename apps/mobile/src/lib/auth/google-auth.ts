@@ -4,7 +4,7 @@ import { useAuthRequest as useGoogleProviderRequest } from 'expo-auth-session/pr
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import { useMemo, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 
 import { authClient } from './auth-client';
 
@@ -215,10 +215,94 @@ export function useGoogleAuthRequest(): GoogleAuthRequest {
       `&access_type=offline` +
       `&prompt=select_account`;
 
-    const result = await WebBrowser.openAuthSessionAsync(url, returnUrl);
-    if (result.type !== 'success') return null;
+    /*
+     * **Ni `openAuthSessionAsync` ni su `Promise.race`, y el motivo está medido.**
+     *
+     * En Android esa API no es nativa: `_authSessionIsNativelySupported()`
+     * devuelve `false` y cae en un polyfill que compite dos promesas
+     *
+     *     Promise.race([
+     *       _openBrowserAndWaitAndroidAsync(...),  // gana cuando AppState -> 'active'
+     *       _waitForRedirectAsync(returnUrl),      // gana cuando llega el deep link
+     *     ])
+     *
+     * La primera se cumple en cuanto el navegador deja al frente a la app. Al
+     * volver de Google, el deep link hace exactamente eso —trae la app al frente
+     *—, así que `AppState` pasa a `active`, **gana la carrera**, y el `finally`
+     * llama a `_stopWaitingForRedirect()`, que quita el `Linking`. El deep link
+     * llega un instante después y ya no hay nadie escuchando: `type` sale
+     * `dismiss`, esto devuelve `null`, y no se logea ni se erroriza. En el emulador,
+     * sin cuenta de Google y sin la app vieja instalada, se reproduce igual.
+     *
+     * Con **un** salto —el proveedor yendo directo al scheme— esa carrera suele
+     * decidir bien. Con dos, el rebote por https genera una transición de
+     * `AppState` de más, y esa es la que gana.
+     *
+     * Así que aquí no hay carrera: se abre el navegador **sin esperarlo** y solo
+     * se espera el deep link, que es lo que tiene el código. Que la app vuelva
+     * al frente antes da igual —no es una señal, es un efecto— y al llegar el
+     * enlace se cierra el navegador y se canjea.
+     */
+    /*
+     * La referencia va en un objeto y no en un `let`: TypeScript no ve una
+     * asignacion hecha dentro del executor de una Promise y estrecha la variable
+     * a `never`, que es como se rompe la llamada a `remove()`.
+     */
+    const ref: { sub?: ReturnType<typeof Linking.addEventListener> } = {};
+    const refEstado: { sub?: ReturnType<typeof AppState.addEventListener> } = {};
 
-    const code = new URL(result.url).searchParams.get('code');
+    const redirect = new Promise<string>((resolve) => {
+      ref.sub = Linking.addEventListener('url', ({ url: llegada }) => {
+        if (llegada.startsWith(returnUrl)) resolve(llegada);
+      });
+    });
+
+    /*
+     * Y el otro final: el usuario cierra la pestaña con la X y no hay redirect.
+     * Sin esto la promesa no se cumple nunca, la escucha se queda puesta y el
+     * botón queda desactivado para siempre —peor que el fallo que se arregla.
+     *
+     * Ojo a no hacerlo al revés que antes: aquí la app volver al frente **no**
+     * significa que se canceló, significa que el deep link viene de camino. Se le
+     * da un margen corto y, si en ese margen no ha llegado nada, es que de verdad
+     * se canceló.
+     */
+    const espera = new Promise<null>((resolve) => {
+      refEstado.sub = AppState.addEventListener('change', (state) => {
+        if (state !== 'active') return;
+        setTimeout(() => resolve(null), 1500);
+      });
+    });
+
+    const soltar = () => {
+      ref.sub?.remove();
+      refEstado.sub?.remove();
+    };
+
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      soltar();
+      return null;
+    }
+
+    const llegada = await Promise.race([redirect, espera]);
+    soltar();
+
+    if (!llegada) {
+      await WebBrowser.dismissBrowser().catch(() => {});
+      return null;
+    }
+
+    // El navegador sigue abierto detrás: sin esto el usuario tiene que cerrarlo
+    // a mano, y en Android `dismissBrowser` es la única forma de hacerlo.
+    try {
+      await WebBrowser.dismissBrowser();
+    } catch {
+      // Sin `dismissBrowser` en la plataforma. El login ya está; no se cae por ello.
+    }
+
+    const code = new URL(llegada).searchParams.get('code');
     if (!code) return null;
 
     await authClient.loginWithGoogleCode({
