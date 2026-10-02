@@ -13,7 +13,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { planDuplication } from "@/lib/lists/duplicate";
 import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
-import { newListItem, withListItemDefaults } from "@/lib/lists/item-record";
+import {
+  newListItem,
+  withListDefaults,
+  withListItemDefaults,
+} from "@/lib/lists/item-record";
 import { reorderItems } from "@/lib/lists/reorder";
 import {
   enqueueOperation,
@@ -63,7 +67,10 @@ export function useLists(filters: ListFilters = {}) {
     const rows = await store.listCached("list");
 
     const visible = rows
-      .map((row) => readRecord<List>(row))
+      // With the defaults filled in: a list cached by a build that predates
+      // `tagColors` arrives with no key at all, and every colour read would be
+      // reading `undefined` from it.
+      .map((row) => withListDefaults(readRecord<List>(row)))
       .filter((list) => list.deletedAt === null)
       .filter((list) => (workspaceId ? list.workspaceId === workspaceId : true))
       .filter((list) =>
@@ -178,6 +185,9 @@ export function useLists(filters: ListFilters = {}) {
           // A copy of a list sorted by name that came out sorted by hand would
           // be a different list.
           orderMode: source.orderMode,
+          // Same for the colours of the labels: a copy whose "Mercadona" comes
+          // out in another colour is a list that changed by being duplicated.
+          tagColors: source.tagColors,
         },
         (await store.listCachedItems(source.id)).map((row) =>
           readRecord<ListItem>(row),

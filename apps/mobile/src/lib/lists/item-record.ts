@@ -1,5 +1,5 @@
-import { ITEM_ICON_COLORS, isItemIcon } from "@orbit-hub/contracts";
-import type { ListItem } from "@orbit-hub/contracts";
+import { ITEM_ICON_COLORS, isItemIcon, sanitiseTagColors } from "@orbit-hub/contracts";
+import type { List, ListItem } from "@orbit-hub/contracts";
 
 /**
  * Building and reading a row of a list.
@@ -140,5 +140,23 @@ export function withListItemDefaults(value: unknown): ListItem {
         : "editor",
     shared: record.shared === true,
     deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
+  };
+}
+
+/**
+ * A list read from the cache or from the server, with what is missing filled in.
+ *
+ * The same reason as `withListItemDefaults`, and the same hazard with a sharper
+ * edge: `readRecord` in `use-lists.ts` is a cast, not a parse, so a list that
+ * was cached before `tagColors` existed arrives with **no key at all** — not
+ * with an empty map. Every colour lookup would then be reading `undefined`, and
+ * the failure would show up as a row that paints no labels.
+ */
+export function withListDefaults(value: unknown): List {
+  const record = (value ?? {}) as Record<string, unknown>;
+
+  return {
+    ...(record as unknown as List),
+    tagColors: sanitiseTagColors(record.tagColors),
   };
 }

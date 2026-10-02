@@ -1,4 +1,9 @@
-import type { ListItem, ListKind, ListOrderMode } from '@orbit-hub/contracts';
+import type {
+  ListItem,
+  ListKind,
+  ListOrderMode,
+  TagColors,
+} from '@orbit-hub/contracts';
 
 type ListItemPriority = ListItem['priority'];
 
@@ -21,6 +26,8 @@ export interface DuplicationSource {
   position: number;
   /** How the list is read, copied so the copy reads the same way. */
   orderMode: ListOrderMode;
+  /** The chosen colours of the labels, so the copy reads the same way. */
+  tagColors: TagColors;
 }
 
 export interface DuplicableItem {
@@ -132,6 +139,9 @@ export function planDuplication(
       // How the list is read is part of what the list is: a copy of a list
       // sorted by name that came out sorted by hand would be a different list.
       orderMode: source.orderMode,
+      // Copied by value, same rule as the tags above: a later write to the copy's
+      // map must not recolour the original.
+      tagColors: { ...source.tagColors },
       itemCount: items.length,
       /*
         Yours and editable, and it does not inherit from the source.
