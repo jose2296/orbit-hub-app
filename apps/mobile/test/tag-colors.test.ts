@@ -58,10 +58,29 @@ describe("el mapa de colores que se guarda", () => {
   });
 
   it("descarta lo que no es un mapa", () => {
-    expect(sanitiseTagColors(undefined)).toEqual({});
-    expect(sanitiseTagColors(null)).toEqual({});
-    expect(sanitiseTagColors("Mercadona")).toEqual({});
-    expect(sanitiseTagColors(42)).toEqual({});
+    // Una sola tabla porque es la misma regla para todos: esto se llama con lo que
+    // llega por el cable, y lo que llega por el cable no es un mapa.
+    //
+    // El array esta aqui al lado de los demas, y no en un test aparte, porque es el
+    // caso que de verdad muerde: `Object.entries(["green"])` es `[["0", "green"]]`,
+    // o sea un mapa con una clave "0" que `tagColorSchema` acepta sin quejarse.
+    // Sin el `Array.isArray` de la funcion, un array que llega donde se declaro un
+    // mapa se convierte en colores que nadie eligio, y la etiqueta que de verdad
+    // se llamara "0" los heredaria sin haberlos pedido nunca. Es el fallo que no
+    // aparece en ninguna pantalla, y por eso se comprueba con nombre y todo.
+    const noMapas: [string, unknown][] = [
+      ["nada", undefined],
+      ["nulo", null],
+      ["una cadena", "Mercadona"],
+      ["un numero", 42],
+      ["un booleano", true],
+      ["un array de colores", ["green"]],
+      ["un array de etiquetas", ["Mercadona"]],
+    ];
+
+    for (const [nombre, valor] of noMapas) {
+      expect(sanitiseTagColors(valor), nombre).toEqual({});
+    }
   });
 
   it("descarta las claves que no son una etiqueta", () => {
