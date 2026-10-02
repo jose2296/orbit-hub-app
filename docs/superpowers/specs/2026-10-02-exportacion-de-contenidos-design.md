@@ -76,7 +76,7 @@ El servicio va en `apps/api/src/modules/export/export-service.ts`, siguiendo el
 
 - `exportFormatSchema = z.enum(['json', 'csv'])`
 - `accountExportQuerySchema` — **solo admite `format: 'json'`**. `?format=csv` en
-  la cuenta devuelve 400. Ver "El CSV" para por que.
+  la cuenta devuelve 422. Ver "El CSV" para por que.
 - `listExportQuerySchema` — admite los dos.
 - `EXPORT_FORMAT_VERSION = 1`
 - `accountExportSchema` y `listExportSchema`, con sus tipos inferidos.
@@ -285,11 +285,22 @@ de seguridad.
 
 | Situacion | Respuesta |
 | --------- | --------- |
-| `format` que no existe | 400, `invalid_format` |
-| No eres miembro del espacio de la lista | 403 |
+| `format` que no existe | 422 `validation_failed`, por el `parse` de Zod |
+| No eres miembro del espacio de la lista | 404 |
 | La lista no existe | 404 |
 | Token caducado | 401 y el refresh con reintento que ya hace el cliente |
 | Red o timeout | Los `ApiError` de siempre, marcados como reintentables en la hoja |
+
+**El no-miembro es 404 y no 403, y es a proposito.** El servicio de lectura de
+listas ya lo hace asi (`content-query-service.ts`, `canSeeWorkspace`): un espacio
+al que no perteneces y un espacio que no existen devuelven lo mismo, porque
+responder "existe pero no puedes" ya dice bastante. El 403 queda para el caso
+distinto: eres miembro y tu rol no llega. Aqui no hay rol que comprobar —leer y
+exportar es lo mismo—, asi que la fila del 403 no aparece en esta tabla.
+
+Y el formato invalido es **422, no 400**, porque no existe un codigo
+`invalid_format`: lo produce el `parse` de Zod sobre `req.query`, que el manejador
+de errores traduce a `validation_failed` con el campo que fallo dentro.
 
 ## Las pruebas
 
@@ -305,8 +316,8 @@ Los dos Vitest que ya hay, sin harness nuevo.
   protege una fuga.
 - CSV de una lista de tareas y CSV de una de peliculas: cabecera, y el `year`
   saliendo de `metadata`; con `metadata` vacio la celda va vacia, no `undefined`.
-- `?format=csv` contra la cuenta devuelve 400.
-- Otro usuario contra una lista que no es suya recibe 403.
+- `?format=csv` contra la cuenta devuelve 422.
+- Otro usuario contra una lista que no es suya recibe 404, no 403.
 
 **`apps/mobile/test/export-file.test.ts`**
 
