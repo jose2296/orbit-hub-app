@@ -2,6 +2,7 @@ import { exportFilename } from '@orbit-hub/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ApiError, apiRaw, apiRequest, configureApiClient } from '@/lib/api/client';
+import { exportErrorKey } from '@/lib/export/errors';
 
 const originalFetch = globalThis.fetch;
 
@@ -137,5 +138,38 @@ describe('el nucleo de la peticion', () => {
       expect((error as ApiError).kind).toBe('network');
       expect((error as ApiError).isRetryable).toBe(true);
     }
+  });
+});
+
+/**
+ * Lo que se le dice a la persona cuando la exportacion no sale.
+ *
+ * `kind: 'network'` y `kind: 'timeout'` dan la misma clave a proposito: para quien
+ * esta mirando, "se corto" y "tardo demasiado" son el mismo problema con la misma
+ * solucion, que es volver a pulsar.
+ */
+describe('exportErrorKey', () => {
+  it('dice que se puede reintentar cuando se corta la red', () => {
+    expect(exportErrorKey(new ApiError({ kind: 'network', message: 'x' })))
+      .toBe('export.error.network');
+  });
+
+  it('trata un timeout como reintentable', () => {
+    expect(exportErrorKey(new ApiError({ kind: 'timeout', message: 'x' })))
+      .toBe('export.error.network');
+  });
+
+  it('avisa cuando el servidor dice que no hay permiso', () => {
+    expect(exportErrorKey(new ApiError({ kind: 'forbidden', message: 'x', status: 403 })))
+      .toBe('export.error.forbidden');
+  });
+
+  it('avisa cuando no encuentra la lista', () => {
+    expect(exportErrorKey(new ApiError({ kind: 'not_found', message: 'x', status: 404 })))
+      .toBe('export.error.notFound');
+  });
+
+  it('no inventa una clave para un error que no es de la API', () => {
+    expect(exportErrorKey(new Error('boom'))).toBeNull();
   });
 });
