@@ -103,7 +103,7 @@ export function ListMenuSheet({
     The three states of the hook are read where they are drawn, so the sheet gets
     the attempt that just settled and never one from before it.
   */
-  const { run, result, error } = useExport();
+  const { run, result, error, running } = useExport();
   /*
     And whether one is already on its way, **in a ref and not in state.**
 
@@ -144,33 +144,56 @@ export function ListMenuSheet({
   const [page, setPage] = useState<Page>("options");
   const [name, setName] = useState(list?.title ?? "");
 
-  // Reopening the menu always starts at the options, whatever page it was left
-  // on: a menu that opens in the middle of a flow is a menu that surprises.
+  /**
+   * Whether the menu is open, **and the edge that everything below hangs off.**
+   *
+   * Reopening always starts at the options, whatever page it was left on: a menu
+   * that opens in the middle of a flow is a menu that surprises. The reset hangs
+   * off **the open edge and not on the list**, and that is not a style choice.
+   *
+   * Keyed on `list`, this stopped working the moment the menu stopped unmounting on
+   * close, and it failed in the worst way it could. `list` is `useLastValue(pedido)`,
+   * which **freezes while `pedido` is `null`** — that is its whole purpose, it is
+   * what keeps the panel alive during its dismissal. So its identity only changes
+   * when a *different* list arrives, and reopening the *same* one hands back the
+   * same object: the store hook holds `List[]` in state, so a re-render passes a
+   * referentially stable row. The effect did not fire, and the menu opened on the
+   * format page the export left it on, with the rename field still holding the old
+   * name. It read as a menu that had lost its place, which is the sentence this
+   * comment exists to prevent.
+   *
+   * So this is the second time this file has been bitten by the difference between
+   * unmounting and surviving, and the difference is never visible where it is
+   * written: the first was the export state dying with an unmount, this one is the
+   * same freeze taken away. **Anything that has to happen when the menu opens
+   * belongs to `abierto`, and nothing that has to happen when a list changes
+   * belongs here** — that is a different question and it is not this one.
+   */
+  const abierto = pedido !== null;
+
   useEffect(() => {
-    if (list) {
-      setPage("options");
-      setName(list.title);
-      // Armed when the panel opens rather than when delete is pressed, so the
-      // sentence about other people's phones is already there by the time anybody
-      // reads the confirmation.
-      setReached(true);
-      /*
-        And the sheet of results is put away with it, **because a different list is
-        a different export.**
+    if (!abierto) return;
+    setPage("options");
+    // The caller's own list and not `list`: this runs on the frame it arrives, and
+    // `pedido` is the value that arrived with it.
+    setName(pedido?.title ?? "");
+    // Armed when the panel opens rather than when delete is pressed, so the
+    // sentence about other people's phones is already there by the time anybody
+    // reads the confirmation.
+    setReached(true);
+    /*
+      And the sheet of results is put away as the menu opens, **so a sheet left
+      over from an earlier export cannot greet whoever opened this one.**
 
-        This effect runs on every new list, and it runs on the very list that was
-        just exported to — which arrives *before* the attempt settles, because that
-        is what `onClose()` does. Resetting here and not on close is what lets the
-        panel come back afterwards, and `showing` is only read as `true` once the
-        attempt has landed.
-
-        What this is really for is the next one: the menu stays mounted now, so a
-        `showing` left over from a previous export would put that panel's numbers
-        in front of whoever opened the menu next, for a list they did not export.
-      */
-      setShowing(false);
-    }
-  }, [list]);
+      It is `abierto` and not "the list changed" that is safe here, and the
+      difference is the whole reason this effect had to move: closing the menu does
+      not reset anything, because `onClose()` has already run by the time the
+      attempt settles and this effect cannot fire on the way back up — the panel
+      closing is not the panel opening. The result sheet comes up afterwards, on a
+      menu that is still closed, exactly as it should.
+    */
+    setShowing(false);
+  }, [abierto]);
 
   const pinned = list ? isPinned(layout, list.id) : false;
 
@@ -239,11 +262,18 @@ export function ListMenuSheet({
          * Here there are two, and the difference is a whole afternoon for whoever
          * ends up holding the file — a JSON envelope they need a parser to read, or
          * a table they can open.
+         *
+         * So these are `export.list.*` and not `export.*`. The account's own
+         * strings say "all your content", and over a single list that is a sentence
+         * about the wrong thing twice over: the person is told they exported more
+         * than they did, and the description promises JSON on a page that offers
+         * CSV as well. The sheet of results already draws this same line about
+         * `export.title`; this row is where it bit.
          */
         key: "export",
-        label: t("export.title"),
+        label: t("export.list.title"),
         icon: "download-outline",
-        description: t("export.body"),
+        description: t("export.list.body"),
         onPress: () => setPage("export"),
       },
       {
@@ -333,18 +363,29 @@ export function ListMenuSheet({
    * be read back. CSV second because it is the one that gets opened in a
    * spreadsheet, and a person who is already in a spreadsheet is looking for that
    * one and not for the other.
+   *
+   * **Disabled while one is in flight**, which is the only way this page can be on
+   * screen during an export at all: the panel closes before the request, so the way
+   * back here is to open the menu again mid-download. `exporting` is a ref and this
+   * is a render, so it cannot be read here — a ref read during render is the value
+   * of the last render, and by the time the person presses anything the answer has
+   * moved. `running` is the same fact as state, so it re-renders the panel when it
+   * changes and the rows grey out under the finger instead of swallowing the press
+   * with nothing on screen to say why.
    */
   const formats: SheetOption[] = [
     {
       key: "json",
       label: t("export.format.json"),
       icon: "code-slash-outline",
+      disabled: running,
       onPress: () => void exportar(requestFor("json")),
     },
     {
       key: "csv",
       label: t("export.format.csv"),
       icon: "grid-outline",
+      disabled: running,
       onPress: () => void exportar(requestFor("csv")),
     },
   ];
@@ -357,7 +398,17 @@ export function ListMenuSheet({
         : page === "share"
           ? t("share.subtitle", { name: list.title })
           : page === "export"
-            ? t("export.format")
+            ? /*
+                The format, or the wait — **because the panel can be reopened while
+                the file is still coming.**
+
+                The rows are disabled in that state and a greyed-out pair of rows
+                with no explanation is a broken menu. `export.running` is the same
+                sentence Settings puts under its own row for the same reason, and it
+                is the only thing here that tells the person the press did land and
+                was not lost.
+              */
+              (running ? t("export.running") : t("export.format"))
             : t("lists.deleteTitle", { what: list.title });
 
   return (

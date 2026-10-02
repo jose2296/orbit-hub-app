@@ -186,12 +186,17 @@ export default function SettingsScreen() {
             describing the wait. `ListRow` has no `loading`, and it is not getting one
             for this — it is the row every screen in the app draws, and a prop that
             only one caller reads is a prop the next caller will read wrongly.
+
+            **And no `chevron`**, which is the other half of saying so. Every other
+            row on this screen that has one goes somewhere; this one stays put and
+            the panel comes up over it. A chevron promises a screen that is not
+            there, and the comment about the old "Términos y privacidad" row below
+            is about exactly this — a row that looked navigable and was not.
           */}
           <ListRow
             icon="download-outline"
             title={t('settings.export')}
             subtitle={running ? t('export.running') : t('settings.export.body')}
-            chevron
             disabled={running}
             onPress={() => void handleExport()}
           />

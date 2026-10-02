@@ -851,6 +851,13 @@ const es = {
   // falla por una clave que todavia nadie ha escrito.
   "export.title": "Exportar mis datos",
   "export.body": "Una copia de todo tu contenido, en JSON.",
+  // Las de una lista, y no las de arriba: `export.title` dice "mis datos" y aqui es
+  // una lista, y la pagina que abre ofrece los dos formatos y no solo JSON. La
+  // misma frase que la de la cuenta estaria contando mas cosas de las que se
+  // llevan —o de las que llevarian si el menu dejara elegir CSV y luego no lo
+  // hiciera.
+  "export.list.title": "Exportar esta lista",
+  "export.list.body": "Los elementos de esta lista, en JSON o CSV.",
   "export.running": "Preparando el fichero…",
   "export.done.one": "{count} elemento",
   "export.done.other": "{count} elementos",
@@ -1813,6 +1820,8 @@ const en: Record<TranslationKey, string> = {
   "settings.export.body": "Download a copy of all your content.",
   "export.title": "Export my data",
   "export.body": "A copy of all your content, in JSON.",
+  "export.list.title": "Export this list",
+  "export.list.body": "The items in this list, as JSON or CSV.",
   "export.running": "Preparing the file…",
   "export.done.one": "{count} item",
   "export.done.other": "{count} items",
