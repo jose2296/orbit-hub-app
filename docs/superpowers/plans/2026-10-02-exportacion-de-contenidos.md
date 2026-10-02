@@ -173,7 +173,9 @@ year; release_date; image_url; provider; external_id; created_at; updated_at
 
 `listExportSchema` lleva `format`, `version`, `exportedAt`, `account` (sin `displayName`: un fichero de una lista no necesita el nombre de la cuenta), `workspace: z.object({ id, name })`, `folder: z.object({ id, name }).nullable()`, `list: listSchema`, `items: z.array(listItemSchema)`, `counts: z.object({ items: countSchema })`.
 
-`noteTemplateSchema` **no** extiende `nodeAccessSchema`, así que no lleva `role` ni `shared` y la fila de la base de datos mapea directa. `listSchema`, `listItemSchema` y `noteSchema` **sí** los llevan y la tabla no los tiene: los pone el servicio (ver Task 3).
+`noteTemplateSchema` y `workspaceSchema` **no** extienden `nodeAccessSchema`, así que no llevan `role` ni `shared` y su fila mapea directa.
+
+**`folderSchema`, `listSchema`, `listItemSchema` y `noteSchema` sí lo extienden** —son las cuatro únicas que lo hacen, en `workspace.ts` líneas 221, 337, 401 y 428— y `role: membershipRoleSchema` **no tiene `.default()`**, o sea que es obligatorio en las cuatro. Las tablas no tienen esa columna: la pone el servicio (ver Task 3). Olvidarse de las carpetas rompe `accountExportSchema.parse` en la primera fila de carpeta que salga.
 
 Añade la línea a `index.ts`.
 
@@ -349,6 +351,8 @@ async function bajar(api: TestServer, path: string, token: string) {
 
 Fixtures: listas e items se crean por `/sync/push`, igual que en `test/lists.test.ts` — `espacioPropio` da el espacio y el `sync()` local da el resto. Copia la forma exacta de `createList` y `createItem` de ese fichero (`entity: 'list'` con `payload: { workspaceId, kind, title }`, `entity: 'list_item'` con `payload: { listId, title }`), y **no** los importes de ahí: son locales a ese fichero.
 
+**Crea también al menos una CARPETA y mete una lista dentro de ella** (`entity: 'folder'` con `payload: { workspaceId, name }`, y la lista con `folderId`). Sin una carpeta en los fixtures, el error de `role` en las carpetas no lo caza nadie: un `accountExportSchema.parse()` sobre un sobre sin carpetas pasa igual, y el fallo sale en producción la primera vez que alguien tiene una carpeta. La carpeta es lo que convierte esa aserción en una puerta y no en un adorno.
+
 Los casos:
 
 - `GET /account/export` da 200, `content-type` empieza por `application/json`, `content-disposition` empieza por `attachment;`, `cache-control` es `no-store`.
@@ -385,6 +389,8 @@ Debajo de `sendData`, con el comentario que explica por qué existe una excepci�
 El camino de autorización es **exactamente** el que ya usa el resto: `visibleWorkspaceIds(userId)` para la cuenta, y para una lista, cargarla y comprobar su espacio con la misma pregunta que hace `getList`. **Copia ese comportamiento, incluida la frase de por qué la comprobación va después de la carga**: un recurso invisible y uno inexistente devuelven lo mismo, y por eso sale 404 y no 403.
 
 `role` en cada fila sale de `memberships.role` para su espacio; `shared: false`. Es lo que hace `contentQueryService` y `note-service.ts` y no hay una razon distinta para hacerlo de otra manera aquí.
+
+**`role` va en CARPETAS, listas, items y notas.** Son las cuatro entidades que extienden `nodeAccessSchema` (`workspace.ts` 221, 337, 401, 428) y `role: membershipRoleSchema` no tiene `.default()`: es obligatorio. `workspaceSchema` y `noteTemplateSchema` **no** lo llevan y sus filas mapean directas. Este es el error más fácil de cometer de toda la tarea, porque `contentQueryService` casi nunca devuelve carpetas y copiarse sus filtros y sus mapeos hace que las carpetas se olviden en silencio.
 
 Los siete select: `workspaces`, `folders`, `lists`, `listItems`, `notes`, `attachments`, `noteTemplates`. Los tres últimos cuelgan de los anteriores por id, no por rango. **Ninguno con `isNull(deletedAt)`.**
 
