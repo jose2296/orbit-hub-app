@@ -103,7 +103,7 @@ export default function ListScreen() {
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, setOrderMode } = useLists({});
+  const { lists, setOrderMode, setTagColor } = useLists({});
   const list = useMemo(
     () => lists.find((item) => item.id === listId) ?? null,
     [lists, listId],
@@ -783,6 +783,19 @@ export default function ListScreen() {
         listId={listId}
         mode={editing && editing.itemId === "" ? "create" : "edit"}
         startOn={editing?.page ?? "edit"}
+        tagColors={list?.tagColors ?? {}}
+        onTagColor={(tag, color) => {
+          /*
+           * `setTagColor` plans from **this** `list`, and not from the cache it
+           * has just written, so two colour writes before the next render would
+           * both plan from the same map and the second one would quietly eat the
+           * first. One tap on one swatch is one write of one label —the sheet
+           * closes the strip as it writes— so the only way to get two is two
+           * deliberate taps, and by then the `list` this render has is the one
+           * the first write produced. The same property `updateList` has.
+           */
+          if (list) void setTagColor(list, tag, color);
+        }}
         onClose={() => setEditing(null)}
       />
     </Screen>
