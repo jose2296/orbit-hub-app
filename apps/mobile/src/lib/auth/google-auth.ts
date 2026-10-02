@@ -3,7 +3,7 @@ import * as AuthSession from 'expo-auth-session';
 import { useAuthRequest as useGoogleProviderRequest } from 'expo-auth-session/providers/google';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AppState, Linking, Platform } from 'react-native';
 
 import { authClient } from './auth-client';
@@ -249,6 +249,7 @@ export function useGoogleAuthRequest(): GoogleAuthRequest {
      * a `never`, que es como se rompe la llamada a `remove()`.
      */
     const ref: { sub?: ReturnType<typeof Linking.addEventListener> } = {};
+    const espira = useRef<ReturnType<typeof setTimeout> | null>(null);
     const refEstado: { sub?: ReturnType<typeof AppState.addEventListener> } = {};
 
     const redirect = new Promise<string>((resolve) => {
@@ -258,32 +259,34 @@ export function useGoogleAuthRequest(): GoogleAuthRequest {
     });
 
     /*
-     * Y el otro final: el usuario cierra la pestaña con la X y no hay redirect.
-     * Sin esto la promesa no se cumple nunca, la escucha se queda puesta y el
-     * botón queda desactivado para siempre —peor que el fallo que se arregla.
+     * **Y solo el deep link. Ni carrera, ni margen, ni reloj.**
      *
-     * Ojo a no hacerlo al revés que antes: aquí la app volver al frente **no**
-     * significa que se canceló, significa que el deep link viene de camino. Se le
-     * da un margen corto y, si en ese margen no ha llegado nada, es que de verdad
-     * se canceló.
+     * Se尝试 lo contrario y falló: se le daba al `AppState` de vuelta al frente un
+     * margen de 1500 ms para detectar que el usuario canceló. Ese margen lo inventé,
+     * y en un móvil de verdad el `Linking` llega más tarde: **el reloj ganaba y el
+     * `code` se tiraba sin canjear**, en silencio. El síntoma era el mismo de antes
+     * —la pantalla `auth/google` en blanco y sin entrar— y el arreglo tampoco.
+     *
+     * Cancelación y deep link no se distinguen por el reloj, se distinguen por el
+     * paso del tiempo: si en dos minutos no ha llegado el enlace, es que se cerró.
+     * Ese es el único reloj que se pone, y es largo a propósito.
      */
     const espera = new Promise<null>((resolve) => {
-      refEstado.sub = AppState.addEventListener('change', (state) => {
-        if (state !== 'active') return;
-        setTimeout(() => resolve(null), 1500);
-      });
+      refEstado.sub = AppState.addEventListener('change', () => {});
+      espira.current = setTimeout(() => resolve(null), 120_000);
     });
 
     const soltar = () => {
       ref.sub?.remove();
       refEstado.sub?.remove();
+      if (espira.current) clearTimeout(espira.current);
     };
 
     try {
       await WebBrowser.openBrowserAsync(url);
-    } catch {
+    } catch (error) {
       soltar();
-      return null;
+      throw error;
     }
 
     const llegada = await Promise.race([redirect, espera]);
@@ -291,7 +294,7 @@ export function useGoogleAuthRequest(): GoogleAuthRequest {
 
     if (!llegada) {
       await WebBrowser.dismissBrowser().catch(() => {});
-      return null;
+      throw new Error('GOOGLE_LOGIN_CANCELLED');
     }
 
     // El navegador sigue abierto detrás: sin esto el usuario tiene que cerrarlo
@@ -303,7 +306,7 @@ export function useGoogleAuthRequest(): GoogleAuthRequest {
     }
 
     const code = new URL(llegada).searchParams.get('code');
-    if (!code) return null;
+    if (!code) throw new Error('GOOGLE_LOGIN_NO_CODE');
 
     await authClient.loginWithGoogleCode({
       code,

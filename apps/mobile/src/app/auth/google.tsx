@@ -1,4 +1,5 @@
 import { APP_SCHEME } from '@orbit-hub/config';
+import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
@@ -22,6 +23,7 @@ import { useTheme } from '@/theme';
 export default function GoogleCallbackScreen() {
   const theme = useTheme();
   const t = useTranslation();
+  const router = useRouter();
   const [standalone, setStandalone] = useState(false);
 
   useEffect(() => {
@@ -91,12 +93,29 @@ export default function GoogleCallbackScreen() {
   }, []);
 
   /*
-   * Y en nativo no se dibuja nada. El deep link deberia ser invisible: el
-   * canje va por `openAuthSessionAsync`, la sesion se guarda y la pantalla de
-   * entrada se retira sola. Un "completando…" durante un instante seria ruido, y
-   * si se queda ahi es que el canje no volvio — que es un fallo que se dice en
-   * la propia pantalla de entrada, no en una pagina de paso.
+   * **Y en nativo no se dibuja nada: se sale de aqui.**
+   *
+   * Antes esta ruta se quedaba esperando en una pantalla vacia, y habia que
+   * darle a atras a mano. Medido en un movil real: el login entraba bien y el
+   * usuario se quedaba mirando una pantalla en blanco con la ruta en la
+   * cabecera, teniendo que pulsar atras para ver su dashboard.
+   *
+   * El motivo es que el deep link le dice a expo-router que venga aqui, y el
+   * canje —que va por su cuenta, en `promptNativo`— no le dice a nadie que
+   * vuelva a salir. Nada mas va a mover el router, asi que esta ruta tiene que
+   * moverse sola.
+   *
+   * A donde va es a `/`, que es la entrada de la app. **Sin comprobar si hay
+   * sesion a proposito**: si el login se completo, `/` lleva al dashboard y el
+   * layout decide; si el usuario cancelo, `/` lleva a la pantalla de entrada.
+   * Comprobarlo aqui haria falta esperar a la sesion, y dejaria el mismo callejon
+   * sin salida cuando el canje no llega — que es el caso en el que mas hace falta
+   * un sitio al que volver.
    */
+  useEffect(() => {
+    if (Platform.OS !== 'web') router.replace('/');
+  }, [router]);
+
   if (Platform.OS !== 'web') return null;
 
   return (
