@@ -872,6 +872,11 @@ function TaskRow({
           // El asa de arrastrar va encima, en el borde derecho, y la insignia de
           // urgencia se solapaba con ella. Se le deja sitio: dos cosas que se
           // pisan no se leen, y ademas el que va debajo no se puede pulsar.
+          //
+          // Y los 28 pt se los queda el **nombre**, no solo el hueco de la derecha:
+          // el icono ha pasado a la linea del titulo y el nombre ya no es el primer
+          // hijo de la fila, asi que el ancho del sitio reservado va al final de la
+          // linea y el `flexShrink: 1` de `styles.nombre` es lo que cede de ahi.
           paddingRight: theme.spacing.lg + styles.dragHandle.width,
         },
       ]}
@@ -880,70 +885,98 @@ function TaskRow({
           pressing it opens the pictures rather than the row. */}
       <Checkbox checked={item.completed} onToggle={onToggle} label="" />
 
-      {/* El icono va a la derecha de la casilla, y no en el borde de la fila: al
-          otro extremo se leía como una foto de la lista y no como el icono de
-          esta fila, y con la casilla al lado se sabe de un vistazo qué vas a
-          marcar y qué has marcado.
-
-          Y sin icono **no hay nada**: ni dibujo ni hueco.
-
-          El `+` que se dibujaba aquí cuando no había icono ya no está: Sayía
-          "añade un icono" en casi todas las tareas de todas las listas, y lo decía
-          en el sitio donde debería estar el nombre. Lo que lo sustituye es nada, y
-          un hueco vacío tampoco: el nombre empezaría pegado a la casilla y la fila
-          se llenaría de aire, que es un espacio vacío mayor.
-
-          Y por eso esto ni siquiera es una `View` vacía: un objetivo invisible del
-          ancho de un dedo junto a cada nombre sin icono abriría el selector de
-          iconos con un toque que parecía estar en el nombre. */}
-      {item.icon ? (
-        <Pressable
-          testID={`item-icon-${item.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={t("icons.ofItem", { name: item.title })}
-          hitSlop={8}
-          onPress={onIcon}
-          style={styles.iconSlot}
-        >
-          <ItemIcon
-            icon={item.icon}
-            style={item.iconStyle}
-            color={item.iconColor}
-          />
-        </Pressable>
-      ) : null}
-
+      {/*
+        The column, and it has two children that take part in layout: the line of
+        the title and the line of the labels. The `gap: 2` is the distance under the
+        title and it is the same number it has always been — the other two children,
+        `nombreLargo.sheet` and `pistaNombre.node`, were never counted by it and
+        still are not: the sheet is a `Modal`, which on web is a portal out of this
+        box entirely, and the hint is `position: absolute`, and a child in either
+        of those is not a flex item for `gap` to put anything between. */}
       <View style={[styles.flex, { gap: 2 }]}>
-        {/* The name opens the row. It used to be wired to the delete: one tap
-            and the thing you were reading was gone, with nothing said and
-            nothing to undo.
+        {/*
+          The icon and the name, **on one line**, and that line is the whole fix.
 
-            It is the press and not the row behind it, so this one box carries both
-            gestures: a tap opens the item, a long one opens the whole name.
+          The icon used to be a **sibling of this column**, and `styles.item` has
+          `alignItems: "center"`, so it centred against *the title plus whatever is
+          under it*: on a task with a badge or labels the icon sat below the title
+          and on a task with neither it sat centred, and two rows that look alike
+          had their icon at two heights with no reason for it. Inside the line of
+          the title it is centred on **that** line, and the badge and the labels go
+          to a line of their own, so nothing under the title can move it again.
 
-            And `styles.nombre` is an empty object on purpose — read its comment
-            before anyone puts a `flex` on it. */}
-        <Pressable
-          onPress={onEdit}
-          onLongPress={nombreLargo.onLongPress}
-          accessibilityRole="button"
-          accessibilityLabel={item.title}
-          {...pistaNombre.props}
-          style={styles.nombre}
-        >
-          <AppText
-            variant="body"
-            tone={item.completed ? "subtle" : "default"}
-            style={item.completed ? styles.strike : undefined}
-            numberOfLines={2}
+          The icon is still to the right of the checkbox and not on the far edge
+          of the row: out there it read as a picture of the list instead of the
+          icon of **this** row, and with the checkbox beside it you can tell at a
+          glance what you are going to tick and what you have ticked.
+
+          And with no icon **nothing is drawn**: no glyph and no reserved space. The
+          `+` that used to sit here when there was no icon is gone — it said "add an
+          icon" on almost every task of every list, and it said it in the place
+          where the name should be. What replaced it is nothing, and an empty gap
+          is not nothing either: the name would start glued to the checkbox and the
+          row would fill with air, which is a larger empty space. So the titles of
+          the rows with an icon start a few points further right than the ones
+          without, which has been asked for twice.
+
+          And that is why this is not even an empty `View`: an invisible target the
+          width of a finger next to every name without an icon would open the icon
+          picker on a tap that looked like it was on the name.
+
+          The `gap` is the row's own `spacing.md` and it is not a new number: the
+          icon has not moved, it has moved its parent. */}
+        <View style={[styles.titulo, { gap: theme.spacing.md }]}>
+          {item.icon ? (
+            <Pressable
+              testID={`item-icon-${item.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={t("icons.ofItem", { name: item.title })}
+              hitSlop={8}
+              onPress={onIcon}
+              style={styles.iconSlot}
+            >
+              <ItemIcon
+                icon={item.icon}
+                style={item.iconStyle}
+                color={item.iconColor}
+              />
+            </Pressable>
+          ) : null}
+
+          {/* The name opens the row. It used to be wired to the delete: one tap
+              and the thing you were reading was gone, with nothing said and
+              nothing to undo.
+
+              It is the press and not the row behind it, so this one box carries both
+              gestures: a tap opens the item, a long one opens the whole name. */}
+          <Pressable
+            onPress={onEdit}
+            onLongPress={nombreLargo.onLongPress}
+            accessibilityRole="button"
+            accessibilityLabel={item.title}
+            {...pistaNombre.props}
+            style={styles.nombre}
           >
-            {item.title}
-          </AppText>
-        </Pressable>
+            <AppText
+              variant="body"
+              tone={item.completed ? "subtle" : "default"}
+              style={item.completed ? styles.strike : undefined}
+              numberOfLines={2}
+            >
+              {item.title}
+            </AppText>
+          </Pressable>
+        </View>
         {nombreLargo.sheet}
         {pistaNombre.node}
 
-        {/* The urgency and the labels, **on the same line**, under the name.
+        {/* The urgency and the labels, **on the same line**, and **that is the
+            second line of the column** — drawn only when there is a badge or at
+            least one label, so a task with neither is a single line. It is a line
+            of its own, and not part of the line of the title, because the icon
+            shares the line of the title and nothing that is under it may move it:
+            while the two were one column centred together, the icon went down with
+            the labels.
 
             The urgency used to be on the right edge of the row, in the same column
             as the drag handle, where it read as part of the row's trailing
@@ -1045,7 +1078,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  /** La fila de la insignia de urgencia y las etiquetas, bajo el nombre. */
+  /**
+   * La linea del icono y del nombre, y **`alignItems: "center"` aqui es el arreglo**.
+   *
+   * El icono es hijo de esta linea, no hermano de la columna: asi se centra contra
+   * la linea del titulo y no contra el titulo mas lo que haya debajo. Antes lo
+   * centraba el `alignItems: "center"` de `styles.item` contra las dos lineas
+   * juntas, y por eso una fila con insignia lo tenia mas abajo que otra que no la
+   * tenia.
+   *
+   * Y el `flexShrink` va en el nombre y no aqui, y porque **esta linea es ahora una
+   * fila y antes no lo era**: `react-native-web@0.21.2` pone `flexShrink: 0` en
+   * todas sus `View` (`node_modules/react-native-web/dist/exports/View/index.js`,
+   * `view$raw`), y en una columna la caja del nombre se estiraba al ancho de la
+   * columna mientras que en una fila con `flexShrink: 0` se queda con su ancho de
+   * contenido y empuja el resto hacia la derecha. El `minWidth: 0` de `styles.flex`
+   * sigue haciendo lo que hacia —que la columna pueda encogerse— y el
+   * `numberOfLines={2}` del nombre sigue poniendo el tope de dos lineas. El
+   * comentario de `styles.nombre` lo cuenta entero, porque es su historia.
+   */
+  titulo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  /**
+   * La segunda linea de la columna: la insignia de urgencia y las etiquetas, bajo
+   * el nombre.
+   *
+   * Y no lleva `flexGrow`: el nombre manda en la altura de la linea que comparten.
+   * Antes las dos lineas eran el unico hijo que ocupaba sitio de la columna, asi
+   * que un nombre largo —dos lineas de texto— se comia la separacion del `gap` y
+   * las pastillas se pegaban a la ultima renglon. La insignia y las etiquetas estan
+   * bajo el nombre, no pegadas a el.
+   */
   meta: {
     flexDirection: "row",
     /*
@@ -1127,7 +1192,7 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   /**
-   * The pressable that wraps the title, and **it must not be a flex child**.
+   * The pressable that wraps the title, and **it must not be a flex child.**
    *
    * Symptom: in a release build of Android the row shows its checkbox, its icon
    * and the counters — every one of them styled — and **no title at all**. The
@@ -1141,10 +1206,28 @@ const styles = StyleSheet.create({
    * it, which has a fixed `width: 24`, survives. On web the same tree lays out,
    * because the browser gives an unstyled element its content width.
    *
-   * So: no flex, no absolute, nothing. It measures what it wraps, which is the
+   * So: no `flex`, no absolute, nothing. It measures what it wraps, which is the
    * only thing that was ever wanted — the title is as long as it is.
+   *
+   * **And `flexShrink` is the one thing here that is not "no flex".** It used to be
+   * the parent's job alone: this box was a child of a **column**, where the cross
+   * axis stretched it to the column's width and its own width never came into it.
+   * It is now a child of a **row** — the line of the title, beside the icon — and
+   * in a row the width is exactly what the box decides. `react-native-web@0.21.2`
+   * writes `flexShrink: 0` on every `View` it makes (`view$raw`, in
+   * `node_modules/react-native-web/dist/exports/View/index.js`), so without this
+   * the name would keep its full text width, ignore the `numberOfLines={2}` above
+   * it and push the right edge of the row past the edge of the screen.
+   *
+   * So the number here is **not** a `flex: 1` — which is the thing that made
+   * Android's flexbox give this box a width of zero — but a **shrink**, which is
+   * the other half of the same property and not the half that did that.
+   * `minWidth: 0` on `styles.flex` still does its own job: it is the *column* that
+   * has to be able to give up room.
    */
-  nombre: {},
+  nombre: {
+    flexShrink: 1,
+  },
   flex: {
     flex: 1,
     // A child of a `flex` does not go below its content by default, so the

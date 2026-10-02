@@ -470,6 +470,122 @@ const linesOfRow = (tab, itemId, tags) =>
   `);
 
 /**
+ * El icono, el nombre y la segunda línea de una fila, con sus cajas de verdad.
+ *
+ * Lo que se mide, y por qué cada cosa con la caja que la envuelve:
+ *
+ *  - **el icono** por su `testID`, que es el `Pressable` entero —24 pt de ancho y
+ *    el alto que le dé el glifo— y no el glifo de dentro. El `Pressable` es lo que
+ *    se centra en la línea del título, así que es lo que tiene que salir centrado.
+ *  - **el nombre** por su `aria-label`, que es el `Pressable` del nombre, y de ahí
+ *    a la hoja de texto de dentro: el `Pressable` es una columna que se estira al
+ *    alto de la línea, y lo que debe coincidir con el icono es el texto.
+ *  - **la segunda línea** subiendo desde la primera pastilla hasta su padre, que es
+ *    la `View` de `styles.meta`. Subir **un** nivel y no dos a propósito: el padre
+ *    de la pastilla es la línea de las pastillas y el abuelo es la columna, y medir
+ *    la columna daría siempre la misma caja para las dos filas que se comparan.
+ *
+ * Y se devuelve el **borde del contenido** de la fila, no su borde: la caja de la
+ * fila lleva el `padding` de `theme.spacing.lg` alrededor, así que comparar una y
+ * otra caja por su `top` sin quitar ese `padding` compararía la distancia al borde
+ * de la pantalla con la distancia al texto.
+ */
+const rowBoxes = (tab, itemId, title) =>
+  tab.evaluate(`
+    (() => {
+      const fila = document.querySelector('[data-testid=${JSON.stringify(`item-row-${itemId}`)}]');
+      if (!fila) return null;
+      const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
+      const r = fila.getBoundingClientRect();
+      const cs = getComputedStyle(fila);
+      const borde = {
+        top: r.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth),
+        left: r.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth),
+        right: r.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth),
+      };
+      const caja = (el) => {
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return {
+          x: Math.round(b.x * 10) / 10,
+          y: Math.round(b.y * 10) / 10,
+          width: Math.round(b.width * 10) / 10,
+          height: Math.round(b.height * 10) / 10,
+          right: Math.round(b.right * 10) / 10,
+          bottom: Math.round(b.bottom * 10) / 10,
+          centroY: Math.round((b.top + b.height / 2) * 10) / 10,
+        };
+      };
+
+      const icono = fila.querySelector('[data-testid=' + JSON.stringify("item-icon-" + ${JSON.stringify(itemId)}) + ']');
+
+      // Por atributo y no por selector: el nombre es texto de usuario y puede
+      // traer comillas y espacios, y un selector con eso dentro no falla del
+      // modo que avisa — falla sin encontrar nada.
+      const nombre = [...fila.querySelectorAll("[aria-label]")]
+        .find((el) => el.getAttribute("aria-label") === ${JSON.stringify(title)});
+      const hoja = nombre
+        ? [...nombre.querySelectorAll("div,span,p")].find(
+            (el) => el.children.length === 0 && limpio(el.textContent) === ${JSON.stringify(title)},
+          )
+        : null;
+      const csTexto = hoja ? getComputedStyle(hoja) : null;
+
+      // La primera pastilla por texto, y no "la primera caja de radio 999": la
+      // insignia de urgencia también lo es, y el padre de la insignia y el de la
+      // pastilla son el mismo nodo, así que esto aguanta las dos. La insignia se
+      // busca aparte para poder decir cuál de las dos cosas había.
+      const todas = [...fila.querySelectorAll("div")].filter((el) => {
+        const s = getComputedStyle(el);
+        return (
+          s.borderTopLeftRadius === "999px" &&
+          s.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+          el.getBoundingClientRect().width > 0
+        );
+      });
+      const primera = todas[0] ?? null;
+      const meta = primera ? primera.parentElement : null;
+
+      return {
+        fila: { ...caja(fila), borde },
+        icono: caja(icono),
+        titulo: caja(hoja),
+        cajaNombre: caja(nombre),
+        // La linea del titulo, que es el padre del nombre: sin ella no se puede
+        // decir si el nombre empieza en el sitio o 24 pt mas adentro, porque el
+        // hueco del icono se mide contra esa linea y no contra el borde de la fila,
+        // que esta a 42 pt mas a la izquierda por la casilla y el hueco de la fila.
+        lineaTitulo: caja(nombre ? nombre.parentElement : null),
+        // La casilla, que se queda centrada contra la fila entera y no contra la
+        // linea del titulo. Se mide para dejar el numero dicho, no para
+        // comprobarlo: es lo que se pidio que no se tocase.
+        casilla: caja(fila.querySelector('[role="checkbox"]')),
+        lineas: hoja
+          ? Math.max(
+              1,
+              Math.round(
+                hoja.getBoundingClientRect().height /
+                  (parseFloat(csTexto.lineHeight) || parseFloat(csTexto.fontSize) * 1.2),
+              ),
+            )
+          : null,
+        meta: caja(meta),
+        primeraCaja: todas.length > 0 ? limpio(todas[0].textContent) : null,
+        /**
+         * Cuántas líneas de texto ocupa **todo** el nombre, y no cuántas ocupa el
+         * nodo de texto: con "Aceite de oliva virgen extra para la cena del
+         * viernes" el AppText lleva numberOfLines={2} y es el Pressable del nombre
+         * el que se estira a las dos líneas, porque es una columna con
+         * alignItems: stretch.
+         */
+        altoNombre: nombre
+          ? Math.round(nombre.getBoundingClientRect().height * 10) / 10
+          : null,
+      };
+    })()
+  `);
+
+/**
  * En qué página está la hoja y qué tiras de color hay abiertas.
  *
  * "La hoja sigue en la página de etiquetas" se lee de si existe algún botón de
@@ -685,6 +801,42 @@ async function waitForRows(tab, { expect = 1, timeout = 45000 } = {}) {
 }
 
 /**
+ * Una captura, **con las fuentes cargadas**, y por eso no es `tab.screenshot`.
+ *
+ * Las capturas son para mirar, y una captura sin las fuentes no se puede mirar:
+ * los iconos de las filas son glifos de uso privado de la fuente `ionicons`, y
+ * **mientras esa fuente no está cargada el navegador no dibuja nada en su lugar** —
+ * ni el glifo, ni un cuadrado de sustitución. Las dieciséis capturas de este archivo
+ * se llevaron las seis de la lista sin un solo icono, con el hueco reservado y el
+ * nombre corrido a la derecha, que es exactamente la disposición que este trabajo
+ * cambia: la imagen enseña a medias lo contrario de lo que dice.
+ *
+ * `waitForRows` espera a que haya filas, y las filas llegan antes que la fuente. Se
+ * pregunta al propio `document.fonts` en vez de esperar un tiempo, y se pregunta su
+ * **estado** y no su promesa: `document.fonts.ready`, con `awaitPromise` de CDP, se
+ * quedó sin responder —60 s de reloj por comando, uno por captura— porque en una
+ * página con el servidor de desarrollo detrás esa promesa no acaba de asentarse
+ * nunca. `document.fonts.status` se lee con el `until` de más abajo, que tiene el
+ * plazo desde node y por tanto siempre termina.
+ *
+ * **Lo que se mide en la 10b no depende de esto**: las cajas del icono y del nombre
+ * las da `getBoundingClientRect`, y una fuente que todavía no ha cargado no las
+ * cambia de sitio, sólo su contenido. Pero una fuente que no está cambia el alto de
+ * la caja del glifo —20 pt con la fuente, 22 sin ella— y por eso el número de la
+ * última ejecución es el de una captura con la fuente ya en su sitio.
+ */
+async function shot(tab, path) {
+  const fuentes = await until(
+    "las fuentes",
+    () => tab.evaluate(`document.fonts.status`),
+    (v) => v === "loaded",
+    { timeout: 15000, every: 400 },
+  );
+  if (!fuentes.ok) note("las fuentes no han terminado de cargar; la captura va sin iconos");
+  await tab.screenshot(path);
+}
+
+/**
  * Espera a que algo llegue a ser un valor, en vez de leerlo una vez.
  *
  * `tagColors` no se mueve hasta que la escritura local vuelve de la caché, y la
@@ -811,6 +963,9 @@ try {
     pan: randomUUID(),
     leche: randomUUID(),
     huevos: randomUUID(),
+    tomates: randomUUID(),
+    aceite: randomUUID(),
+    mermelada: randomUUID(),
   };
   const itemB = {
     pan: randomUUID(),
@@ -858,19 +1013,83 @@ try {
         op("list_item", itemA.pan, {
           listId: listaA,
           title: "Pan",
-          position: 0,
+          // Las tres filas que ya estaban pasan al final porque las tres nuevas
+          // ocupan el 0, el 1 y el 2, y dos filas con la misma posición no tienen un
+          // orden que dos ejecuciones lean igual.
+          position: 3,
           icon: "pan",
           iconStyle: "outline",
           iconColor: "amber",
           tags: ETIQUETAS_PAN,
         }),
-        op("list_item", itemA.leche, { listId: listaA, title: "Leche", position: 1, tags: [] }),
+        op("list_item", itemA.leche, { listId: listaA, title: "Leche", position: 4, tags: [] }),
         op("list_item", itemA.huevos, {
           listId: listaA,
           title: "Huevos",
-          position: 2,
+          position: 5,
           priority: "high",
           tags: ETIQUETAS_HUEVOS,
+        }),
+        /*
+         * Las tres filas que esta comprobación no tenía, y que son la mitad de lo
+         * que ahora mide.
+         *
+         * **El agujero era este**: en la semilla de antes "Pan" tenía icono pero no
+         * urgencia, y "Huevos" y "Nevera" tenían urgencia pero no icono. Así que
+         * **ninguna de las dieciséis capturas llegó a poner un icono sobre una fila
+         * con algo debajo**: la fila con icono se veía bien porque no tenía nada
+         * debajo, y la que tenía insignia no tenía icono que se le descadrase. Un
+         * paso de verificación que no pone nunca en pantalla el caso que motiva la
+         * tarea verifica que no se ha roto lo de antes.
+         *
+         * "Tomates" es esa fila — **icono, insignia y etiquetas a la vez** — y las
+         * tres van las primeras para que salir en las capturas no dependa de que la
+         * sexta quepa en una pantalla de 844.
+         */
+        op("list_item", itemA.tomates, {
+          listId: listaA,
+          title: "Tomates",
+          position: 0,
+          icon: "verdura",
+          iconStyle: "outline",
+          iconColor: "red",
+          priority: "medium",
+          tags: ["Mercadona", "perejil"],
+        }),
+        /*
+         * Y "Aceite de oliva" es el otro extremo: **icono y nada debajo**. Sin
+         * insignia ni etiquetas la fila es una sola línea, y con un nombre de una
+         * línea es **comparable con "Tomates" punto por punto**, que es lo que hace
+         * falta para que "a la misma altura" signifique algo: el icono va centrado en
+         * la línea del título, así que un título de dos líneas lo baja medio bloque
+         * a propósito y comparar los dos sería medir dos títulos distintos.
+         */
+        op("list_item", itemA.aceite, {
+          listId: listaA,
+          title: "Aceite de oliva",
+          position: 1,
+          icon: "aceite",
+          iconStyle: "fill",
+          iconColor: "olive",
+          tags: [],
+        }),
+        /*
+         * Y "Mermelada" es el tercer dato: **icono, nada debajo y dos líneas de
+         * nombre**. Al meter el icono en la línea del título el nombre pasó de ser un
+         * hijo de una columna —donde su caja se estiraba al ancho de la columna— a
+         * ser un hijo de una fila, y en una fila el ancho lo decide la caja:
+         * react-native-web escribe flexShrink: 0 en todas sus View. Esta fila es la
+         * que se sale de la pantalla si eso no está mirado, y la que dice que el
+         * icono se centra también en un bloque de dos líneas.
+         */
+        op("list_item", itemA.mermelada, {
+          listId: listaA,
+          title: "Mermelada de frutales de temporada para el desayuno",
+          position: 2,
+          icon: "dulces",
+          iconStyle: "fill",
+          iconColor: "purple",
+          tags: [],
         }),
         op("list_item", itemB.pan, { listId: listaB, title: "Pan", position: 0, tags: ETIQUETAS_PAN }),
         op("list_item", itemB.colada, {
@@ -1033,7 +1252,7 @@ try {
   // el índice aquí y lo comparaba en la línea siguiente, con `collectProblems`
   // escribiendo en el mismo array: cero microsegundos de ventana, una comprobación
   // que no podía fallar, y además el comprobar de verdad se saltaba el arranque.
-  await goToList(listaA, 3);
+  await goToList(listaA, 6);
   check(
     "nada ha fallado en la consola desde que se abrió la pestaña",
     problems.length === problemasDesdeElPrincipio,
@@ -1168,7 +1387,7 @@ try {
       note(
         `${nombre}-${esquema}: relleno ${leido.fill} (${schemeOfFill(leido.fill)}), texto ${leido.textColor}`,
       );
-      await tab.screenshot(`${SHOTS}/${nombre}-${esquema === "light" ? "claro" : "oscuro"}.png`);
+      await shot(tab, `${SHOTS}/${nombre}-${esquema === "light" ? "claro" : "oscuro"}.png`);
       if (listId === listaA) {
         repartoDeColores(await pillsOfRow(tab, itemA.huevos, ETIQUETAS_HUEVOS), `${nombre} Huevos ${esquema}`);
       } else {
@@ -1177,7 +1396,7 @@ try {
     }
   };
 
-  await capturas(listaA, 3, "etiquetas-01-lista-compra");
+  await capturas(listaA, 6, "etiquetas-01-lista-compra");
   await capturas(listaB, 4, "etiquetas-02-lista-semana");
 
   for (const esquema of ["light", "dark"]) {
@@ -1187,7 +1406,8 @@ try {
     await openLabels(listaA, itemA.huevos, "Huevos");
     await pressTestIdRaw(tab, `tag-color-button-urgente`);
     await sleep(900);
-    await tab.screenshot(
+    await shot(
+      tab,
       `${SHOTS}/etiquetas-03-hoja-etiquetas-${esquema === "light" ? "claro" : "oscuro"}.png`,
     );
     await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
@@ -1267,7 +1487,7 @@ try {
     await tab.send("Emulation.setEmulatedMedia", {
       features: [{ name: "prefers-color-scheme", value: esquema }],
     });
-    await goToList(listaA, 3);
+    await goToList(listaA, 6);
     const a = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.pan}"]`);
     await goToList(listaB, 4);
     const b = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemB.pan}"]`);
@@ -1376,7 +1596,7 @@ try {
   /* ----------------------------------------------------------------- 4 ------ */
   section("4. Cambiar un color cambia todas las filas que llevan la etiqueta");
 
-  await goToList(listaA, 3);
+  await goToList(listaA, 6);
   const enHuevos = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.huevos}"]`);
   const esperadoHuevos = toRgb(expectedTextColor("red", "light"));
   check(
@@ -1397,7 +1617,7 @@ try {
     `urgente deduce ${urgenteDeducedido} y en claro la pastilla pinta ${urgenteAntes?.textColor}`,
   );
 
-  await goToList(listaA, 3);
+  await goToList(listaA, 6);
   const urgenteReload = await pillOf(tab, "urgente", `[data-testid="item-row-${itemA.huevos}"]`);
   check(
     "el color deducido es el mismo en una segunda carga",
@@ -1637,7 +1857,7 @@ try {
       `los otros acentos salen del token, no del DOM, calculados aquí con la misma cuenta sobre ${SCHEME.light.fill}: orbit ${acentoEnToken("#3B63E0").toFixed(2)}:1, violet ${acentoEnToken("#7C3AED").toFixed(2)}:1, amber ${acentoEnToken("#C2740A").toFixed(2)}:1, rose ${acentoEnToken("#D42D5C").toFixed(2)}:1. El esmeralda medido es el mas flojo de los cinco: ${rBorde.toFixed(2)}:1`,
     );
   }
-  await tab.screenshot(`${SHOTS}/etiquetas-04-acento-esmeralda-claro.png`);
+  await shot(tab, `${SHOTS}/etiquetas-04-acento-esmeralda-claro.png`);
   // El mismo boton abierto con el acento por defecto al lado, que es la
   // comparacion que hace falta: 3.02:1 del esmeralda contra 4.64:1 del orbit se
   // ven en dos ficheros, no en dos numeros.
@@ -1647,7 +1867,7 @@ try {
   await openLabels(listaA, itemA.huevos, "Huevos");
   await pressTestIdRaw(tab, `tag-color-button-Mercadona`);
   await sleep(800);
-  await tab.screenshot(`${SHOTS}/etiquetas-04b-acento-orbit-claro.png`);
+  await shot(tab, `${SHOTS}/etiquetas-04b-acento-orbit-claro.png`);
   await tab.evaluate(
     `(() => { localStorage.setItem("orbithub:appearance", JSON.stringify({ appearance: "system", accent: "orbit" })); return true; })()`,
   );
@@ -1728,6 +1948,211 @@ try {
       .join("; "),
   );
 
+  /* ---------------------------------------------------------------- 10b ------ */
+  section("10b. El icono y el nombre en su propia línea");
+
+/*
+   * Lo que nunca se había mirado, y la razón de que esta sección exista.
+   *
+   * El icono era **hermano de la columna del nombre** y `styles.item` lleva
+   * `alignItems: "center"`, así que se centraba contra el nombre *más lo que hubiera
+   * debajo*. En una tarea con insignia el icono bajaba y en una sin ella quedaba
+   * centrado, y dos tareas parecidas tenían el icono a dos alturas sin motivo. Y
+   * ninguna de las dieciséis capturas de este archivo lo llegó a poner en
+   * pantalla, porque la semilla no tenía **ninguna fila con icono y algo debajo a
+   * la vez**: "Pan" tenía icono y nada más, y "Huevos" y "Nevera" tenían insignia
+   * y ningún icono.
+   *
+   * Aquí hay tres filas y dos preguntas, y son distintas porque se parecen:
+   *
+   *  - **dentro de una fila**: el icono y el nombre están centrados el uno en el
+   *    otro. Da igual cuántas líneas haya debajo, porque ya no son parte de la misma
+   *    caja.
+   *  - **entre dos filas**: el icono está a la misma distancia del borde de la fila
+   *    con segunda línea que sin ella. Y aquí sí hacen falta dos filas **con el
+   *    mismo número de líneas de nombre**, porque el icono va centrado en la línea
+   *    del título: con un nombre de dos líneas baja medio bloque a propósito, y
+   *    comparar eso con un nombre de una línea sería medir dos títulos distintos.
+   *
+   * La tercera fila, la del nombre de 52 caracteres, es el otro extremo: dos
+   * líneas de nombre y nada debajo, que es donde se ve si el nombre se sale —al
+   * pasar de ser hijo de una columna a hijo de una fila— y si el icono se sigue
+   * centrando en un bloque más alto que él.
+   */
+  await goToList(listaA, 6);
+  const filas = {
+    conDebajo: await rowBoxes(tab, itemA.tomates, "Tomates"),
+    sinDebajo: await rowBoxes(tab, itemA.aceite, "Aceite de oliva"),
+    nombreLargo: await rowBoxes(
+      tab,
+      itemA.mermelada,
+      "Mermelada de frutales de temporada para el desayuno",
+    ),
+  };
+
+  for (const [k, v] of Object.entries(filas)) {
+    if (!v) continue;
+    note(
+      `${k}: fila de ${Math.round(v.fila.width)}×${Math.round(v.fila.height)} pt, contenido desde x=${Math.round(v.fila.borde.left)}; ` +
+        `línea del título en x=${v.lineaTitulo?.x}, y=${v.lineaTitulo?.y}, alto ${v.lineaTitulo?.height}; ` +
+        `icono ${v.icono ? `${Math.round(v.icono.width)}×${Math.round(v.icono.height)} en x=${v.icono.x}, y=${v.icono.y}, centro ${v.icono.centroY}` : "sin icono"}; ` +
+        `nombre ${v.lineas} línea(s), x=${v.titulo?.x}, y=${v.titulo?.y}, centro ${v.titulo?.centroY}, caja de alto ${v.altoNombre}; ` +
+        `segunda línea ${v.meta ? `en y=${v.meta.y}, alto ${v.meta.height}` : "no dibujada"} (primera pastilla: "${v.primeraCaja ?? "—"}")`,
+    );
+  }
+
+  // Media posición de píxel es lo que queda de un reparto en dos mitades, así que
+  // el margen es de 1 pt y no de 0: el fallo que hay que cazar aquí es de **decenas**
+  // de puntos, no de décimas, y un margen de 0 sólo daría falsos fallos.
+  const TOLERANCIA = 1;
+
+  // **Dentro de la fila**: el icono y el nombre comparten el centro. Ésta es la
+  // comprobación que Antes fallaba —sin nada debajo el icono se centraba contra el
+  // nombre entero y con algo debajo contra el nombre más la segunda línea— y por eso
+  // se escribe para las tres filas y no sólo para una.
+  const descuadres = Object.entries(filas)
+    .filter(([, v]) => v?.icono && v?.titulo)
+    .map(([k, v]) => [k, Math.abs(v.icono.centroY - v.titulo.centroY)]);
+  check(
+    "el icono y el nombre están a la misma altura dentro de la fila, haya o no haya segunda línea",
+    descuadres.length === 3 && descuadres.every(([, d]) => d <= TOLERANCIA),
+    descuadres.map(([k, d]) => `${k}: ${d} pt de diferencia de centro`).join("; "),
+  );
+
+  // Y lo mismo contra la **línea** en vez de contra el texto, que es la caja que
+  // lleva el `alignItems: "center"` y la que de verdad dice "centrado": con un
+  // nombre de dos líneas la línea es más alta que el texto del nodo y el centro es
+  // el mismo, pero conviene que el número salga de las dos cajas y no de una.
+  const contraLinea = Object.entries(filas)
+    .filter(([, v]) => v?.icono && v?.lineaTitulo)
+    .map(([k, v]) => [k, Math.abs(v.icono.centroY - v.lineaTitulo.centroY)]);
+  check(
+    "el icono está centrado en la línea del título, no en la fila entera",
+    contraLinea.length === 3 && contraLinea.every(([, d]) => d <= TOLERANCIA),
+    contraLinea.map(([k, d]) => `${k}: ${d} pt`).join("; "),
+  );
+
+  // **Entre filas**: la pregunta que la persona ha hecho, y la que hace falta con
+  // dos filas del mismo número de líneas. El nombre arranca en el borde del
+  // contenido y el icono a la misma distancia de ese borde haya o no haya una
+  // segunda línea debajo.
+  const desdeElBorde = (v, caja) =>
+    v && caja ? Math.round((caja.y - v.fila.borde.top) * 10) / 10 : null;
+  const losDos = Object.entries(filas)
+    .filter(([k]) => k !== "nombreLargo")
+    .map(([k, v]) => [
+      k,
+      {
+        lineas: v?.lineas,
+        nombre: desdeElBorde(v, v?.titulo),
+        icono: desdeElBorde(v, v?.icono),
+      },
+    ]);
+  note(
+    losDos
+      .map(
+        ([k, v]) =>
+          `${k}: nombre a ${v.nombre} pt del borde del contenido, icono a ${v.icono} pt, nombre de ${v.lineas} línea(s)`,
+      )
+      .join(" | "),
+  );
+  check(
+    "el icono y el nombre arrancan a la misma altura con segunda línea y sin ella",
+    losDos.length === 2 &&
+      losDos[0][1].lineas === losDos[1][1].lineas &&
+      Math.abs((losDos[0][1].icono ?? Infinity) - (losDos[1][1].icono ?? Infinity)) <= TOLERANCIA &&
+      Math.abs((losDos[0][1].nombre ?? Infinity) - (losDos[1][1].nombre ?? Infinity)) <= TOLERANCIA,
+    losDos
+      .map(
+        ([k, v]) =>
+          `${k} (${v.lineas} línea(s) de nombre): icono a ${v.icono} pt, nombre a ${v.nombre} pt del borde de la fila`,
+      )
+      .join("; "),
+  );
+
+  // La segunda línea **solo si hay algo**. Se mira que no exista ninguna caja de
+  // pastilla en la fila que no tiene ni insignia ni etiquetas, y no que "no se vea
+  // ninguna": que el `View` no llegue al DOM es lo que se quiere, porque un hueco
+  // vacío en la columna es justo lo que se pidió que no hubiera.
+  check(
+    "una tarea sin insignia ni etiquetas no dibuja la segunda línea",
+    filas.sinDebajo?.meta === null &&
+      filas.nombreLargo?.meta === null &&
+      filas.conDebajo?.meta !== null,
+    `la de una sola línea tiene ${filas.sinDebajo?.meta === null ? "ninguna caja de pastilla" : "una caja de pastilla"} y la otra tiene la segunda línea en y=${filas.conDebajo?.meta?.y ?? "—"}`,
+  );
+
+  // Y nada se sale. El nombre de "Mermelada" son 52 caracteres en una fila de 390:
+  // es el caso en el que el nombre pasó de ser un hijo de una columna —donde su caja
+  // se estiraba al ancho de la columna— a ser un hijo de una fila, y en una fila el
+  // ancho lo decide la caja, que en react-native-web nace con flexShrink: 0.
+  const anchoUtil = filas.nombreLargo?.fila
+    ? filas.nombreLargo.fila.borde.right - filas.nombreLargo.fila.borde.left
+    : null;
+  // Solo se comparan las cajas que existen: un `-Infinity` dentro del `Math.max`
+  // daría una comprobación que no puede fallar, que es justo lo que se vino aquí a
+  // arreglar.
+  const desborde = Object.entries(filas)
+    .filter(([, v]) => v?.fila && v?.titulo)
+    .map(([k, v]) => {
+      const cajas = [v.titulo, v.cajaNombre, v.meta].filter(Boolean).map((c) => c.right);
+      return [k, Math.max(...cajas) - v.fila.borde.right];
+    });
+  check(
+    "un nombre de 52 caracteres no se sale de su fila, y tampoco la segunda línea",
+    desborde.length === 3 && desborde.every(([, d]) => d <= 1),
+    `${Math.round(anchoUtil ?? 0)} pt de ancho útil; ` +
+      desborde
+        .map(([k, d]) => `${k}: ${Math.round(d)} pt ${d > 0 ? "por fuera" : "de holgura"}`)
+        .join(", "),
+  );
+  check(
+    "el nombre largo ocupa dos líneas y no se corta en una",
+    filas.nombreLargo?.lineas === 2,
+    `"Mermelada de frutales de temporada para el desayuno" en ${filas.nombreLargo?.lineas} línea(s), ${Math.round(filas.nombreLargo?.titulo?.width ?? 0)} pt de ancho de un total de ${Math.round(anchoUtil ?? 0)}`,
+  );
+
+  // Y **sin hueco reservado** cuando no hay icono. La referencia es la **línea del
+  // título** y no el borde de la fila: el borde de la fila está 42 pt más a la
+  // izquierda por la casilla (30) y el hueco de la fila (12), y comparar el nombre
+  // contra ese borde mide la casilla, no el hueco del icono.
+  const sinIcono = await rowBoxes(tab, itemA.leche, "Leche");
+  const huecos = {
+    sinIcono: sinIcono?.titulo?.x - sinIcono?.lineaTitulo?.x,
+    conIcono: filas.conDebajo?.titulo?.x - (filas.conDebajo?.icono?.x + filas.conDebajo?.icono?.width),
+  };
+  note(
+    `hueco entre el borde de la línea del título y el nombre: ${huecos.sinIcono} pt en la fila sin icono y ${huecos.conIcono} pt en la que lo tiene, y el nombre ocupa ${Math.round(sinIcono?.titulo?.width ?? 0)} pt de un total de ${Math.round(sinIcono?.lineaTitulo?.width ?? 0)}`,
+  );
+  check(
+    "una fila sin icono no deja hueco: el nombre empieza en el borde de su línea",
+    sinIcono?.icono === null &&
+      huecos.sinIcono !== null &&
+      Math.abs(huecos.sinIcono) <= 1 &&
+      Math.abs(huecos.conIcono) <= 13,
+    `sin icono el nombre está a ${huecos.sinIcono} pt del borde de la línea y no hay ningún nodo con el testID del icono; con icono está a ${huecos.conIcono} pt, que es el hueco de spacing.md que hay entre el icono y el nombre`,
+  );
+
+  /*
+   * Y lo que **no** se ha tocado, medido para que el número quede dicho y no sea
+   * una opinión: la casilla se centra contra **la fila entera**, porque
+   * `styles.item` conserva su `alignItems: "center"` y la casilla no se ha movido.
+   *
+   * Eso significa que en una fila de dos líneas la casilla ya no comparte el centro
+   * con el icono, y antes sí lo compartía —no por casualidad, sino porque los dos
+   * se centraban contra la misma caja—. Es el precio de que el icono se centre
+   * contra **su** línea, y se dejó así porque es lo que se pidió; se anota aquí
+   * para que quien mire las capturas vea el número y no lo busque.
+   */
+  note(
+    Object.entries(filas)
+      .map(
+        ([k, v]) =>
+          `${k}: la casilla está a ${v.casilla ? Math.round(v.casilla.centroY - v.lineaTitulo.centroY) : "—"} pt del centro de la línea del título`,
+      )
+      .join(" | "),
+  );
+
   section("11. Los dos '+' de la hoja de etiquetas");
   // "Leche" y no "Huevos", y por un motivo que la primera ejecución destapó: la
   // fila de "ya usadas en esta lista" **filtra las etiquetas que la tarea ya
@@ -1803,7 +2228,7 @@ try {
   /* ------------------------------------------------------- las capturas ------ */
   section("12. Lo que queda en pantalla después de todos los cambios");
 
-  await capturas(listaA, 3, "etiquetas-05-compra-despues");
+  await capturas(listaA, 6, "etiquetas-05-compra-despues");
   await capturas(listaB, 4, "etiquetas-06-semana-despues");
 
   for (const esquema of ["light", "dark"]) {
@@ -1813,7 +2238,8 @@ try {
     await openLabels(listaA, itemA.huevos, "Huevos");
     await pressTestIdRaw(tab, `tag-color-button-urgente`);
     await sleep(800);
-    await tab.screenshot(
+    await shot(
+      tab,
       `${SHOTS}/etiquetas-07-hoja-etiquetas-despues-${esquema === "light" ? "claro" : "oscuro"}.png`,
     );
     await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
@@ -1823,7 +2249,8 @@ try {
     // dos se necesitan en una imagen para juzgarlos; medidos solos son dos
     // numeros, y a 130 pt de separacion no se pueden comparar de memoria.
     await openLabels(listaA, itemA.leche, "Leche");
-    await tab.screenshot(
+    await shot(
+      tab,
       `${SHOTS}/etiquetas-08-los-dos-mas-${esquema === "light" ? "claro" : "oscuro"}.png`,
     );
     await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
