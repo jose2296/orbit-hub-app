@@ -48,6 +48,7 @@ import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { drawerWidth } from "@/lib/layout/measure";
+import { routeForList } from "@/lib/lists/route";
 import { useTheme } from "@/theme";
 
 import type { SpacesTree } from "@/hooks/use-spaces-tree";
@@ -960,7 +961,7 @@ function ListBranch({
           accessibilityLabel={list.title}
           {...pista.props}
           onLongPress={nombreLargo.onLongPress}
-          onPress={() => onOpen(`/(app)/list/${list.id}`)}
+          onPress={() => onOpen(routeForList(list))}
           style={({ pressed }) => [
             styles.item,
             styles.flex,

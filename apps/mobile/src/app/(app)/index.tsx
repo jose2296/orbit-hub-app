@@ -27,6 +27,7 @@ import {
   withoutPinnedList,
 } from "@/lib/dashboard/pin";
 import { cardMark } from "@/lib/dashboard/card-kind";
+import { routeForList } from "@/lib/lists/route";
 import type { ListKind } from "@orbit-hub/contracts";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -341,7 +342,7 @@ export default function HomeScreen() {
           count: list.itemCount,
         }),
         emoji: list.emoji,
-        href: `/(app)/list/${list.id}`,
+        href: routeForList(list),
         mark: cardMark({ kind: list.kind }),
       };
     },

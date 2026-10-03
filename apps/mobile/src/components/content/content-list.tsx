@@ -22,6 +22,7 @@ import {
   type ContentRow,
 } from "@/lib/content-order";
 import { saveContentOrder } from "@/lib/content-order-save";
+import { routeForList } from "@/lib/lists/route";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -149,7 +150,10 @@ export function ContentList({
         return;
       }
       if (row.kind === "list") {
-        router.push(`/(app)/list/${row.id}`);
+        // `toRow.list` always copies the list's kind, and `tasks` is only here for
+        // a row assembled by hand: it is where a list used to open, so a row that
+        // arrives without a kind still goes to the screen it always went to.
+        router.push(routeForList({ id: row.id, kind: row.listKind ?? "tasks" }));
         return;
       }
       router.push(`/(app)/note/${row.id}`);

@@ -19,6 +19,7 @@ import { useLists } from "@/hooks/use-lists";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
 import { listPlacement, needsSpaceChoice } from "@/lib/lists/placement";
+import { routeForList } from "@/lib/lists/route";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 import type { TranslationKey } from "@/lib/i18n";
@@ -95,7 +96,10 @@ export default function ListsScreen() {
         kind: newKind,
       });
       setTitle("");
-      router.push(`/(app)/list/${id}`);
+      // The kind the list was created with is the one the form chose, and it is
+      // the only thing here that says whether the new list is a board: `createList`
+      // hands back an id and nothing else.
+      router.push(routeForList({ id, kind: newKind }));
     } finally {
       setCreating(false);
     }
@@ -142,7 +146,7 @@ export default function ListsScreen() {
                     `${list.emoji ? `${list.emoji} ` : ""}${list.title}`,
                   )
                 }
-                onPress={() => router.push(`/(app)/list/${list.id}`)}
+                onPress={() => router.push(routeForList(list))}
                 style={({ pressed }) => [
                   styles.row,
                   {

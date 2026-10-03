@@ -11,6 +11,7 @@ import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
 import { useListItems, useLocalSearch } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
+import { routeForList } from '@/lib/lists/route';
 import { useTheme } from '@/theme';
 import type { SearchResult } from '@orbit-hub/contracts';
 
@@ -48,7 +49,14 @@ export default function SearchScreen() {
       return;
     }
     if (result.scope === 'list' || result.scope === 'list_item') {
-      router.push(`/(app)/list/${result.listId ?? result.id}`);
+      // The hit carries the kind of the list it lives in, so a board opens as a
+      // board. It is null only for a row whose list is not in the local cache — the
+      // search read the row and not its parent — and `tasks` is the screen that
+      // link opened before, which is where a board hit lands until the task
+      // screen sends it on.
+      router.push(
+        routeForList({ id: result.listId ?? result.id, kind: result.kind ?? 'tasks' }),
+      );
       return;
     }
     if (result.scope === 'note') {
