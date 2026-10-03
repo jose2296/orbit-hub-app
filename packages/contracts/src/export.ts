@@ -9,6 +9,7 @@ import {
   noteSchema,
   noteTemplateSchema,
   workspaceSchema,
+  type ListKind,
 } from './workspace';
 
 /**
@@ -152,3 +153,49 @@ export const LIST_EXPORT_CSV_COLUMNS = [
   'created_at',
   'updated_at',
 ] as const;
+
+/**
+ * The header of a CSV of a board: `LIST_EXPORT_CSV_COLUMNS` with `completado`
+ * traded for `estado`, in the very same place, and nothing else moved.
+ *
+ * The place is the whole reason this is a second list and not an extra column
+ * at the end. A CSV is read by position and not by header name, and index 3 is
+ * where the column that stopped meaning anything the day a list could carry
+ * states instead of a checkbox was standing: `estado` says which column a task
+ * is in, and `completado` on a board says nothing at all. Appending it instead
+ * of replacing it would keep the fifteen columns and push `year` from index 8 to
+ * index 9, so every reader that indexes into a row — the tests that take a
+ * film's year out of a CSV, and any spreadsheet somebody built on top of this
+ * export — would read the wrong cell.
+ *
+ * Fifteen columns either way, so a row of a board is as wide as a row of any
+ * other list and both are read with the same code.
+ */
+export const BOARD_EXPORT_CSV_COLUMNS = [
+  'id',
+  'titulo',
+  'tipo',
+  'estado',
+  'prioridad',
+  'tags',
+  'posicion',
+  'anotacion',
+  'year',
+  'release_date',
+  'image_url',
+  'provider',
+  'external_id',
+  'created_at',
+  'updated_at',
+] as const;
+
+/**
+ * The columns of a CSV of items, by kind of list.
+ *
+ * The kind decides and nothing else does. A board is the only list whose tasks
+ * carry a column instead of a checkbox, and every other kind holds `[]` in
+ * `states`, so there is nothing else on the list that could tell them apart.
+ */
+export function exportCsvColumnsFor(kind: ListKind): readonly string[] {
+  return kind === 'board' ? BOARD_EXPORT_CSV_COLUMNS : LIST_EXPORT_CSV_COLUMNS;
+}
