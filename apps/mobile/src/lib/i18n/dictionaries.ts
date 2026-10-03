@@ -935,6 +935,7 @@ const es = {
   "lists.filter.all": "Todas",
   "lists.kindLabel": "Tipo de lista",
   "lists.kind.tasks": "Tareas",
+  "lists.kind.board": "Tablero",
   "lists.kind.movies": "Películas",
   "lists.kind.books": "Libros",
   "lists.kind.series": "Series",
@@ -951,6 +952,19 @@ const es = {
   "lists.delete": "Eliminar lista",
   "lists.showCompleted": "Mostrar los ya completados",
   "lists.notFound": "Esta lista ya no existe",
+
+  /*
+    El tablero. Solo dos frases, y las dos son estados vacios: el resto de lo que
+    dice un tablero son nombres y numeros que ya estan en las listas.
+
+    La segunda **no promete un boton que no hay.** Un tablero sin estados es legal
+    en el contrato y el cliente siembra cuatro al crearlo, asi que se llega aqui
+    desde un tablero importado o editado a mano. Decirlo como lo que es es mejor
+    que ofrecer anadir un estado desde una pantalla donde todavia no se puede.
+  */
+  "board.emptyColumn": "Sin tareas",
+  "board.noStates":
+    "Este tablero no tiene estados, así que no puede enseñar tareas.",
 
   "items.empty.title": "Nada por aquí",
   "items.empty.body": "Añade el primer elemento a esta lista.",
@@ -1908,6 +1922,7 @@ const en: Record<TranslationKey, string> = {
   "lists.filter.all": "All",
   "lists.kindLabel": "List type",
   "lists.kind.tasks": "Tasks",
+  "lists.kind.board": "Board",
   "lists.kind.movies": "Movies",
   "lists.kind.books": "Books",
   "lists.kind.series": "Series",
@@ -1924,6 +1939,10 @@ const en: Record<TranslationKey, string> = {
   "lists.delete": "Delete list",
   "lists.showCompleted": "Show completed items",
   "lists.notFound": "This list no longer exists",
+
+  /* The board. Two phrases, and both of them are empty states. */
+  "board.emptyColumn": "No tasks",
+  "board.noStates": "This board has no states, so it cannot show any tasks.",
 
   "items.empty.title": "Nothing here yet",
   "items.empty.body": "Add the first item to this list.",
