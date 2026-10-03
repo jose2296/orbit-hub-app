@@ -38,7 +38,7 @@ Las cinco clases de entrada que el spec insinua pero que ninguna prueba suya eje
 
 ---
 
-### Tarea 1: Los contratos
+### Task 1: Los contratos
 
 **Ficheros:**
 - Crear: `packages/contracts/src/board.ts`
@@ -141,7 +141,7 @@ Expected: compila. Si falla en `apps/mobile/src/lib/lists/kind.ts` por los tres 
 
 ---
 
-### Tarea 2: La migracion y el esquema
+### Task 2: La migracion y el esquema
 
 **Ficheros:**
 - Crear: `apps/api/drizzle/0021_board_states.sql` (lo escribe `db:generate`)
@@ -236,7 +236,7 @@ Expected: PASS.
 
 ---
 
-### Tarea 3: El invariante en el servidor
+### Task 3: El invariante en el servidor
 
 Esta es la tarea que hace que un tablero no pueda quedar corrupto, y la que evita que el proximo que anada un campo repita la cicatriz.
 
@@ -346,7 +346,7 @@ Expected: PASS.
 
 ---
 
-### Tarea 4: La exportacion
+### Task 4: La exportacion
 
 **Ficheros:**
 - Modificar: `packages/contracts/src/export.ts` (al final, junto a `LIST_EXPORT_CSV_COLUMNS`)
@@ -439,7 +439,7 @@ Expected: PASS los dos, **sin tocar ninguna de las cinco aserciones existentes**
 
 ---
 
-### Tarea 5: La logica pura del tablero
+### Task 5: La logica pura del tablero
 
 Todo el comportamiento del tablero que se puede probar de verdad va aqui, como funciones puras. Es la tarea mas grande del lado movil y la que mas pruebas lleva.
 
@@ -533,7 +533,7 @@ Expected: PASS.
 
 ---
 
-### Tarea 6: `routeForList` y el registro de la ruta
+### Task 6: `routeForList` y el registro de la ruta
 
 **Ficheros:**
 - Crear: `apps/mobile/src/lib/lists/route.ts`
@@ -605,7 +605,7 @@ Expected: PASS. El typecheck falla porque la pantalla nueva esta vacia: ponle un
 
 ---
 
-### Tarea 7: Extraer `TaskRow` y arreglar el test de fuente
+### Task 7: Extraer `TaskRow` y arreglar el test de fuente
 
 Esta tarea no añade nada al tablero. Deshace un riesgo: la `TaskRow` vive dentro de `list/[listId].tsx`, un fichero de 1240 lineas, y el tablero necesita la misma fila sin casilla. Copiarla es una fila de mas que se va a desincronizar; importarla desde un fichero de ruta es peor.
 
@@ -666,7 +666,7 @@ Expected: PASS los dos.
 
 ---
 
-### Tarea 8: La pantalla, sin gesto todavia
+### Task 8: La pantalla, sin gesto todavia
 
 **Ficheros:**
 - Modificar: `apps/mobile/src/app/(app)/board/[listId].tsx`
@@ -757,7 +757,7 @@ Abre un tablero en claro y en oscuro y anota en el terminal **lo que ves y que s
 
 ---
 
-### Tarea 9: El gesto de swipe
+### Task 9: El gesto de swipe
 
 **Ficheros:**
 - Modificar: `apps/mobile/src/app/(app)/board/[listId].tsx`
@@ -844,7 +844,7 @@ Comprueba los tres en el navegador con el dedo **y con el raton**: el gesto es e
 
 ---
 
-### Tarea 10: La hoja de estado
+### Task 10: La hoja de estado
 
 **Ficheros:**
 - Crear: `apps/mobile/src/components/lists/state-picker-sheet.tsx`
@@ -885,7 +885,7 @@ Toca una tarea, cambia de estado, cierra. **Comprueba que la tarea se mueve sin 
 
 ---
 
-### Tarea 11: El editor de estados, parte 1
+### Task 11: El editor de estados, parte 1
 
 **Ficheros:**
 - Crear: `apps/mobile/src/components/lists/state-editor-sheet.tsx`
@@ -926,7 +926,7 @@ Anade un estado, renombralo, cambiale el color, **cierra y vuelve a abrir el tab
 
 ---
 
-### Tarea 12: El editor de estados, parte 2
+### Task 12: El editor de estados, parte 2
 
 La parte que no puede perder datos. Esta tarea es la que mas se revisa.
 
@@ -1002,7 +1002,7 @@ Tres pruebas, en este orden porque cada una depende de la anterior:
 
 ---
 
-### Tarea 13: Reordenar tareas dentro de un estado
+### Task 13: Reordenar tareas dentro de un estado
 
 **Ficheros:**
 - Modificar: `apps/mobile/src/app/(app)/board/[listId].tsx`
@@ -1028,7 +1028,7 @@ Reordena dentro de una columna, **sal de la pantalla sin tocar nada mas, y vuelv
 
 ---
 
-### Tarea 14: Filtros, modo de orden fijo y solo lectura
+### Task 14: Filtros, modo de orden fijo y solo lectura
 
 **Ficheros:**
 - Modificar: `apps/mobile/src/app/(app)/board/[listId].tsx`
@@ -1061,7 +1061,7 @@ Filtra por etiqueta en el tablero: solo desaparecen las que no la tienen, y **el
 
 ---
 
-### Tarea 15: Verificacion en navegador
+### Task 15: Verificacion en navegador
 
 No es un extra: es la unica forma de comprobar lo que se dibuja, porque este repo no tiene tests de componentes.
 
@@ -1095,7 +1095,7 @@ Repite el punto 3 **con la app sin conexion**. La tarea se mueve en pantalla y s
 
 ---
 
-### Tarea 16: Los documentos
+### Task 16: Los documentos
 
 **Ficheros:**
 - Modificar: `docs/roadmap.md` (Fase 3)
