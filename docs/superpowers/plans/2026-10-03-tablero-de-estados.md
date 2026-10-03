@@ -434,7 +434,13 @@ Expected: PASS.
 - Consume: `ListKind` del contrato.
 - Produce: `BOARD_EXPORT_CSV_COLUMNS`, `exportCsvColumnsFor(kind)`.
 
-**`LIST_EXPORT_CSV_COLUMNS` no se toca.** Esta fijada en cinco aserciones de dos ficheros (`export.test.ts:572,587` y `export-builders.test.ts:376,503,520,548`, una de ellas `toHaveLength(15)` y otra con el comentario *"year es la columna 9"*). Convertirla en funcion las rompe todas. Se **anade** una funcion al lado.
+**`LIST_EXPORT_CSV_COLUMNS` no se toca.** Hay **cinco aserciones de dos ficheros** que la
+citan: `export.test.ts:573` y `export-builders.test.ts:397,524,541,569`, la ultima
+`expect(LIST_EXPORT_CSV_COLUMNS).toHaveLength(15)`. Aparte hay un **comentario** en
+`export.test.ts:588` que fija `year` en el indice 8 como documentacion — no es una
+asercion, pero si el orden se mueve el comentario pasa a mentir y por eso tampoco puede
+moverse. Convertir la constante en funcion rompe las cinco. Se **anade** una funcion al
+lado.
 
 - [ ] **Paso 1: escribir el test que falla**
 
