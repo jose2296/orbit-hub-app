@@ -78,7 +78,7 @@ it("acepta un hex libre", () => {
 it("convierte un nombre viejo de la paleta en su hex", () => {
   // Un build anterior guardaba "green". No se puede descartar: es un color que
   // alguien eligió, y perderlo en silencio es peor que perder el formato.
-  expect(sanitiseTagColors({ Mercadona: "green" })).toEqual({ Mercadona: "#0E9F6E" });
+  expect(sanitiseTagColors({ Mercadona: "green" })).toEqual({ Mercadona: "#16A34A" });
 });
 
 it("descarta lo que no es un color y conserva lo demas", () => {
@@ -146,7 +146,7 @@ Expected: **limpio**. Si algo sigue quejándose de `ItemIconColor`, es un consum
 
 - [ ] **Step 6: Actualizar el test de la API que fija el formato viejo**
 
-`apps/api/test/sync.test.ts` tiene `expect(list.body.data.tagColors).toEqual({ Mercadona: 'green' })`. Pasa a `toEqual({ Mercadona: '#0E9F6E' })` y el comentario de al lado, que dice "el que no pudo se descartó en vez de guardarse", debe actualizarse: ahora lo que no puede es `"no-es-un-color"`, y lo que **no** puede pasar es un nombre viejo siendo descartado.
+`apps/api/test/sync.test.ts` tiene `expect(list.body.data.tagColors).toEqual({ Mercadona: 'green' })`. Pasa a `toEqual({ Mercadona: '#16A34A' })` y el comentario de al lado, que dice "el que no pudo se descartó en vez de guardarse", debe actualizarse: ahora lo que no puede es `"no-es-un-color"`, y lo que **no** puede pasar es un nombre viejo siendo descartado.
 
 Run: `npm run test --workspace @orbit-hub/api`
 Expected: PASS.
@@ -179,12 +179,26 @@ git commit -m "El color de una etiqueta es un hex, y los nombres viejos se convi
 
 ```ts
 it("el relleno es el color mezclado con la superficie", () => {
-  // 14% de #0E9F6E sobre #FFFFFF.
-  expect(labelPillColors("#0E9F6E", "#FFFFFF", "light").fill).toBe("#E9FAF3");
+  // La composicion se afirma con `mixHex` y no con un hex escrito a mano: el
+  // redondeo del ultimo canal es lo unico que haria fallar un numero fijo, y eso
+  // no es lo que este test comprueba.
+  expect(labelPillColors("#16A34A", "#FFFFFF", "light").fill).toBe(
+    mixHex("#16A34A", "#FFFFFF", 0.14),
+  );
+});
+
+it("mixHex interpola y redondea", () => {
+  // 127.5 rounds to 128: el unico valor de la mezcla que no admite dos respuestas.
+  expect(mixHex("#000000", "#FFFFFF", 0.5)).toBe("#808080");
+  expect(mixHex("#16A34A", "#FFFFFF", 0)).toBe("#16A34A");
+  expect(mixHex("#16A34A", "#FFFFFF", 1)).toBe("#FFFFFF");
 });
 
 it("el texto llega a 4.5:1 contra su propio relleno", () => {
-  for (const color of ["#0E9F6E", "#C2740A", "#2563EB", "#9333EA", "#E11D48"]) {
+  // Los hex son de `ICON_COLORS`, la paleta de doce. **No** son los del tema:
+  // `success` es #0E9F6E y `green` de la paleta es #16A34A, y con el valor
+  // equivocado la pastilla se dibujaria de un color y se guardaria otro.
+  for (const color of ["#16A34A", "#D97706", "#2563EB", "#9333EA", "#E11D48"]) {
     for (const scheme of ["light", "dark"] as const) {
       const surface = scheme === "light" ? "#FFFFFF" : "#111827";
       const { fill, text } = labelPillColors(color, surface, scheme);
@@ -210,7 +224,7 @@ it("lee con un blanco puro y con un negro puro", () => {
 
 it("un hex libre sale tal cual y un nombre viejo sale en su hex", () => {
   expect(tagColorHex("#3B5FDE")).toBe("#3B5FDE");
-  expect(tagColorHex("green")).toBe("#0E9F6E");
+  expect(tagColorHex("green")).toBe("#16A34A");
 });
 ```
 
