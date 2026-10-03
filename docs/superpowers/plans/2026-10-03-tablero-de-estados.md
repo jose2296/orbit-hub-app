@@ -841,6 +841,10 @@ En el formulario de lista nueva, `'board'` aparece en el selector de tipo con su
 
 En `list/[listId].tsx`, despues de resolver la lista, si `list.kind === 'board'` hace `router.replace(`/board/${listId}`)` y devuelve `null` mientras tanto. Es lo que evita que un enlace viejo enseñe la pantalla de tareas de un tablero.
 
+**Tres sitios dependen de que esta redireccion exista.** Busqueda, contenido de espacio y catalogo llaman a `routeForList` con `list?.kind ?? 'tasks'`, porque ahi el tipo de la lista no siempre esta a mano, y el respaldo los manda a `/list/:id`. Hoy eso acaba bien porque `list/[listId].tsx` resuelve su lista del **mismo** `useLists({})` de la cache local, que se vuelve a leer en cada notificacion del store, asi que en cuanto la lista llega la redireccion se dispara sola.
+
+**Pero eso es una cadena de dos eslabones y este es el segundo.** Si la redireccion se borrara, los tres caerian a `/list/:id` y a la pantalla de tareas **sin que nada fallara y sin que ninguna prueba lo notara**. Por eso los tres llevan el `?? 'tasks'` con el motivo escrito al lado, y por eso este paso no es opcional aunque la funcion ya este: es lo que cierra la cadena. Sialguna vez decides no hacer la redireccion, **cambia los tres sitios a la vez**, no uno.
+
 - [ ] **Paso 9: comprobarlo en un navegador**
 
 ```
