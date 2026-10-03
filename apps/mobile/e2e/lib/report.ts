@@ -1,18 +1,44 @@
 import { writeFileSync } from 'node:fs';
 import type { Verdict } from './guard.ts';
 
-export type AreaResult = { area: string; flows: number; maestroOk: boolean; guard: Verdict };
+export type AreaResult = {
+  area: string;
+  flows: number;
+  maestroOk: boolean;
+  guard: Verdict;
+  /**
+   * Los flujos que Maestro dice que fallaron, uno por linea, como
+   * `<flujo>: <motivo>`.
+   *
+   * **Por que son cadenas y no un objeto.** Esto no es un dato de la app: es el
+   * texto que se imprime en el informe, y lo unico que hay que hacer con el es
+   * escribirlo. Lo que si necesita estructura -saber que flujos fallaron, para no
+   * atribuir un motivo conocido a un area roja por otra causa- lo resuelve
+   * `fallosDeMaestro`, aqui mismo, y de una sola vez.
+   */
+  fallidos: string[];
+};
 
 /**
- * El ancho del nombre del area en la tabla.
+ * Ancho **minimo** de la columna del nombre del area, no un tope.
  *
  * Los nombres llevan prefijo numerico -`01-onboarding`- y eso ya los ordena de a
- * ojo; el ancho solo alinea el numero de flujos. Veintiocho deja sitio de sobra
- * para los nombres de las nueve areas del plan y no parte ninguno en dos.
+ * ojo; el ancho solo alinea el numero de flujos. Lo que **no** hace es cortar:
+ * con `padEnd(n).slice(0, n)` un nombre largo se partia a media palabra, y la fila
+ * que nombra el area que fallo es la que menos puede perder un trozo. Un nombre
+ * de 40 caracteres ensancha la fila y la deja intacta.
  */
 const ANCHO_AREA = 28;
 
-const ancho = (texto: string, n: number) => texto.padEnd(n).slice(0, n);
+/**
+ * Donde empieza el nombre del area: el veredicto, cinco de ancho, y dos espacios.
+ *
+ * Es un dato y no una cuenta suelta porque las lineas de detalle van debajo y
+ * tienen que caer en la misma columna, o se leen como filas de otro area.
+ */
+const COLUMNA = 7;
+
+const ancho = (texto: string, n: number) => texto.padEnd(n);
 
 /**
  * Las areas que hoy estan en rojo por un motivo que ya se sabe, y no es el arnes.
@@ -23,11 +49,13 @@ const ancho = (texto: string, n: number) => texto.padEnd(n).slice(0, n);
  * nuestro. Con esta nota, el fichero dice el motivo en el sitio donde se mira el
  * motivo.
  *
- * **Por que se imprime solo si el area sigue en rojo.** Es lo que la deja de
- * caducar por si sola: en cuanto se arregle la tecla de atras, `01-onboarding`
- * pasa, la nota desaparece y el informe vuelve a ser un informe. Una nota fija
- * seria un fallo documentado que un dia contradiria a la tabla de al lado, y un
- * informe que se contradice a si mismo no se lee.
+ * **Por que se imprime solo si los flujos que nombra fallan de verdad.** Una nota
+ * que se apoya en el area puede afirmar algo falso: si `01-onboarding` se pone roja
+ * porque `welcome` ha regresado mientras `privacy` y `terms` siguen en verde, la
+ * nota diria que los que fallan son los dos que nombra -y estan en verde- y
+ * anadiria que van a pasar solos cuando se arregle. El keying por los flujos lo
+ * impide: `conocidosVivos` exige que esten los, y ademas que el guardian no tenga
+ * nada que decir, porque con el guardian en rojo el motivo es el guardian.
  *
  * Y por que la lista es de datos y no un parrafo: anadir un area a la fase 2 con
  * un fallo conocido es escribir una linea mas aqui, no reescribir un texto.
@@ -41,52 +69,113 @@ const CONOCIDOS: { area: string; flujos: string[]; porque: string }[] = [
 ];
 
 /**
+ * Los flujos que Maestro admite que fallaron, con su motivo.
+ *
+ * La forma que se busca es la que Maestro imprime por flujo:
+ * `[Failed] privacy (1m 2s) (Assertion is false: id: screen-welcome is visible)`.
+ * El motivo se coje con el **ultimo** parentesis y no con el primero, porque el
+ * motivo puede traer parentesis dentro -`text is "E2E List (beta)" is visible`- y
+ * un parser que para en el primero pierde el resto y devuelve un motivo
+ * truncado, que es peor que ninguno: parece un motivo.
+ *
+ * **Por que el parser devuelve una lista vacia en vez de un motivo generico.**
+ * Porque una lista vacia y `Maestro fallo` son cosas distintas y el informe las
+ * pinta distinto: la primera dice "no se ha podido leer por que fallo", que es
+ * verdad y ademas es la senal de que este parser se ha roto al cambiar la version
+ * de Maestro. La segunda prometeria un motivo que el informe no tiene.
+ *
+ * Sin ancla al principio de linea y al final: si un flujo falla con dos
+ * afirmaciones falsas, Maestro repite el `Failed` por cada una, y cada repeticion
+ * es un fallo real que nombrar.
+ */
+const FALLIDO = /^\s*\[Failed\]\s+(\S+)\s+\([^)]*\)\s+\((.*)\)\s*$/;
+
+export function fallosDeMaestro(output: string): string[] {
+  const salida: string[] = [];
+  for (const linea of output.split('\n')) {
+    const m = FALLIDO.exec(linea);
+    if (m) salida.push(`${m[1]}: ${m[2]}`);
+  }
+  return salida;
+}
+
+/** `3 flujos`, `1 flujo`, `0 flujos`: el cero va en plural, como se cuenta. */
+function flujos(n: number): string {
+  return `${String(n).padStart(2)} ${n === 1 ? 'flujo ' : 'flujos'}`;
+}
+
+/** Lo que se imprime cuando Maestro fallo y su salida no dice por que. */
+const SIN_MOTIVO = 'Maestro fallo y no se ha podido leer por que: mira la salida del area';
+
+/**
  * El recuento va por areas y no por flujos.
  *
  * Una carrera con cuarenta flujos y un area rota es un fallo, no un 39/40: el
  * total de flujos no dice nada de como esta la app, porque depende de cuantos
  * flujos se hayan escrito y eso es decision de quien los escribe, no de la app. El
  * estado de la app es el de sus areas.
+ *
+ * **Y un area sin flujos no cuenta como sana.** No fallo, pero tampoco se probo
+ * nada, y un `1/1 areas sin fallo` debajo de una fila que dice "no he probado
+ * nada" son dos frases que se contradicen en el mismo fichero. La fila lleva su
+ * propio veredicto -`NADA`- y el recuento la deja fuera. Que la carrera siga
+ * saliendo con codigo 0 es otra decision, y es correcta: montar un area nueva no
+ * debe poner en rojo la carrera de quien todavia no ha escrito sus flujos.
  */
 export function renderReport(resultados: AreaResult[]): string {
   const lineas: string[] = [];
+  const n = resultados.length;
+  lineas.push(`arnes E2E android - ${n} ${n === 1 ? 'area recorrida' : 'areas recorridas'}`);
   lineas.push(
-    `arnes E2E android - ${resultados.length} area${resultados.length === 1 ? '' : 's'} recorrid${resultados.length === 1 ? 'a' : 'as'}`,
-  );
-  lineas.push(
-    'PASA: el area entera en verde y el guardian sin nada que decir. FALLA: el motivo va en su linea.',
+    'PASA: el area entera en verde y el guardian sin nada que decir. ' +
+      'FALLA: el motivo va en su fila o en las de debajo. ' +
+      'NADA: el area no tiene flujos y no se ha probado nada.',
   );
   lineas.push('');
 
   for (const r of resultados) {
-    // `PASA` solo si las dos cosas: el area entera en verde **y** el guardian sin
-    // nada que decir. Con el guardian mirando para otro lado, un area en verde es
-    // un area de la que no se sabe nada.
-    const veredicto = r.guard.ok && r.maestroOk ? 'PASA' : 'FALLA';
+    // Tres veredictos y no dos. `NADA` es el area sin flujos: sin excepcion que
+    // capturar ni codigo de salida distinto, porque ahi no ha pasado nada -nada
+    // fallo, y nada se probo-, y un `PASA` ahi seria una afirmacion que el
+    // informe no puede sostener.
+    let veredicto: string;
     let motivo: string;
-    if (!r.guard.ok) motivo = r.guard.problems.join(' | ');
-    else if (!r.maestroOk) motivo = 'Maestro fallo';
-    // El area sin flujos es el unico caso en que `PASA` no significa "todo bien":
-    // Maestro sale con codigo 0 cuando no ha probado nada, asi que un area vacia
-    // entra en verde. El runner ya lo avisa por pantalla -`aviso: el area X no
-    // tiene flujos`-, pero el aviso se va con la consola y el informe se queda.
-    else if (r.flows === 0) motivo = 'sin flujos que probar: verde por no haber probado nada';
-    else motivo = 'ok';
-    lineas.push(`${veredicto}  ${ancho(r.area, ANCHO_AREA)}${String(r.flows).padStart(3)} flujos  ${motivo}`);
+    if (r.flows === 0) {
+      veredicto = 'NADA';
+      motivo = 'sin flujos que probar';
+    } else if (!r.guard.ok) {
+      veredicto = 'FALLA';
+      motivo = r.guard.problems.join(' | ');
+    } else if (!r.maestroOk) {
+      veredicto = 'FALLA';
+      // La cuenta de flujos caidos, no la palabra de que fallo la herramienta:
+      // los nombres y los motivos estan en las lineas de debajo, y "2 de 3 flujos
+      // fallaron" es el principio de esas lineas en una sola fila.
+      motivo = r.fallidos.length > 0 ? `${r.fallidos.length} de ${r.flows} flujos fallaron` : SIN_MOTIVO;
+    } else {
+      veredicto = 'PASA';
+      motivo = 'ok';
+    }
+    lineas.push(`${veredicto.padEnd(COLUMNA - 2)}  ${ancho(r.area, ANCHO_AREA)}${flujos(r.flows)}  ${motivo}`);
+    // Los flujos que fallaron, uno por linea. **Debajo y no en la fila**: la
+    // tabla se lee de un vistazo y el detalle se lee cuando se busca el motivo, y
+    // un motivo largo metido en la fila parte la tabla en dos.
+    for (const f of r.fallidos) lineas.push(`${' '.repeat(COLUMNA)}${f}`);
   }
 
-  const sanas = resultados.filter((r) => r.guard.ok && r.maestroOk).length;
+  const sanas = resultados.filter((r) => r.flows > 0 && r.guard.ok && r.maestroOk).length;
   lineas.push('');
   lineas.push(`${sanas}/${resultados.length} areas sin fallo`);
 
   // La leyenda de abajo no es un adorno: sin ella, un `FALLA` sin mas se lee como
   // un arnes roto, y esa es la lectura que hace que nadie mire el motivo de la
-  // linea de al lado -que es donde esta la causa.
+  // fila de al lado -que es donde esta la causa.
   lineas.push('');
-  lineas.push('Un area en FALLA no es el arnes roto: el motivo va en su linea, y puede ser de la app.');
+  lineas.push(
+    'Un area en FALLA no es el arnes roto: el motivo va en su fila o en las de debajo, y puede ser de la app.',
+  );
 
-  const conocidos = conocidosVivos(resultados);
-  for (const k of conocidos) {
+  for (const k of conocidosVivos(resultados)) {
     // Una sola linea, larga, sin plegarla: plegarla partiria el nombre de los
     // flujos entre dos lineas y el informe se lee igual de bien en cualquier
     // editor, que ya envuelve solo.
@@ -99,15 +188,29 @@ export function renderReport(resultados: AreaResult[]): string {
 }
 
 /**
- * Los motivos conocidos que **siguen siendo verdad** en esta carrera: los que
- * nombran un area que esta en `resultados` y que ha fallado.
+ * Los motivos conocidos que **siguen siendo verdad** en esta carrera.
  *
- * Un area en verde es la senal de que el motivo ya no aplica, y entonces la nota
- * no se imprime: nadie tiene que acordarse de borrar un texto que ya no dice la
- * verdad.
+ * Las tres condiciones son las tres cosas que tienen que cumplirse a la vez: el
+ * area es la nombrada, el guardian no tiene nada que decir -con el guardian en
+ * rojo manda el guardian-, y **los flujos nombrados estan entre los que Maestro
+ * dice que fallaron**. La tercera es la que hace que la nota no pueda afirmar
+ * sobre un area roja por otra causa.
+ *
+ * El prefijo `<flujo>: ` es el que escribe `fallosDeMaestro` y el que se busca
+ * aqui: las dos mitades usan el mismo formato, asi que hay un solo sitio donde se
+ * pueden desincronizar. Y si el parser se rompe y devuelve una lista vacia, la
+ * nota **no** se imprime, que es la direccion en que conviene equivocarse.
  */
 function conocidosVivos(resultados: AreaResult[]): typeof CONOCIDOS {
-  return CONOCIDOS.filter((k) => resultados.some((r) => r.area === k.area && !(r.guard.ok && r.maestroOk)));
+  return CONOCIDOS.filter((k) =>
+    resultados.some(
+      (r) =>
+        r.area === k.area &&
+        r.guard.ok &&
+        !r.maestroOk &&
+        k.flujos.every((f) => r.fallidos.some((linea) => linea.startsWith(`${f}: `))),
+    ),
+  );
 }
 
 /**

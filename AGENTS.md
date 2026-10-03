@@ -43,10 +43,11 @@ the editor unresolved references, and drew a `+` that scrolled away, and every o
 those was found in a browser in the time it would have taken to boot an emulator.
 
 What the browser cannot tell you is a native selection handle or a system keyboard. That
-is what `npm run e2e:android` is for: it walks the app on a real device, drives it with
-Maestro, and fails on a screen that does not come up. It is a smoke walkthrough, not a
-test of behaviour — it does not check that a save saved what you typed — and it is
-deliberately not part of `npm run check` and not in CI. See `apps/mobile/e2e/README.md`.
+is what `npm run e2e:android` is for: it walks the app on the attached device or emulator,
+drives it with Maestro, and fails on a screen that does not come up. It is a smoke
+walkthrough, not a test of behaviour — it does not check that a save saved what you typed —
+and it is deliberately not part of `npm run check` and not in CI. See
+`apps/mobile/e2e/README.md`.
 
 **The obligation.** A new screen, sheet or option ships with its flow: one file under
 `apps/mobile/e2e/maestro/flows/<area>/`, asserted on `testID` and never on translated

@@ -68,6 +68,13 @@ Las tres candidatas eran **Maestro**, **Detox** y **seguir con scripts de `adb`*
 5. **El informe cuenta areas, no flujos**, y sale de la carrera con codigo distinto de cero si
    alguna falla. Una carrera con cuarenta flujos y un area rota es un fallo, no un 39/40.
 
+   El informe vive en `capturas/android/informe.txt` y lo pinta `apps/mobile/e2e/lib/report.ts`. No
+   es una foto ni un "ok": una fila por area con su veredicto y, debajo, **el flujo que fallo con su
+   motivo** leido de la salida de Maestro. Sin esa parte el artefacto dice donde fallo y no que, que
+   es justo lo que un `.png` por area ya hacia mal. Un area sin flujos lleva su propio veredicto -
+   `NADA`, ni verde ni rojo- y no cuenta como sana, para que el recuento no pueda afirmar que se ha
+   probado algo que no se probo.
+
 ## Consecuencias
 
 - **La app gana `testID` en las pantallas por las que pasa.** Se acepta a cambio de no tener un
@@ -81,7 +88,9 @@ Las tres candidatas eran **Maestro**, **Detox** y **seguir con scripts de `adb`*
 - **Un area puede estar en rojo por un defecto de la app, y eso se dice en el informe.** Hoy
   `01-onboarding` lo esta: la tecla de atras de Android sale de la aplicacion en vez de desapilar, y
   los flujos estan escritos como deben. No se ha tapado, porque taparlo habria sido cambiar el
-  flujo para que la suite no lo encontrara.
+  flujo para que la suite no lo encontrara. Y esa nota se imprime **solo mientras los flujos que
+  nombra sean los que esten fallando**: apoyada en el area, atribuiria un fallo conocido a un area
+  roja por otra causa, y prometeria un arreglo que no tocaria ese fallo.
 - **Detecta pantallas rotas y rutas cerradas. No detecta logica incorrecta**, y no debe presentarse
   como si lo hiciera. Que al guardar se guarde el texto correcto es otro nivel, mas caro, y queda
   fuera a proposito.

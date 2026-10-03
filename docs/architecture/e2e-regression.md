@@ -29,7 +29,7 @@ texto correcto es otro nivel y mas caro, y esta fuera a proposito.
 | `lib/maestro.ts` | La invocacion de Maestro, y las claves de config que ya no existen |
 | `lib/guard.ts` | El veredicto: proceso y buffer de crash |
 | `lib/stack.ts` | Levantar y parar API y Metro, y no tocar lo que ya estaba en pie |
-| `lib/report.ts` | La tabla del informe, y solo la tabla |
+| `lib/report.ts` | La tabla del informe, y el parseo de los flujos que fallaron |
 | `seed/e2e-account.ts` | Dos cuentas verificadas, con datos de verdad, y sus ids |
 
 El runner es el unico que sabe el orden de todo. Y casi todas las piezas se prueban sin el
@@ -111,7 +111,20 @@ eso es decision de quien los escribe, no estado de la app.
 Y el recuento no es decorativo: el runner sale con codigo distinto de cero si alguna area falla, que
 es lo que hace que esto se pueda mirar en un script sin leer el fichero.
 
-Cuando `01-onboarding` este en rojo, el informe lo dice en su ultima linea. La linea roja actual -
-la tecla de atras de Android sale de la aplicacion en vez de desapilar - es un defecto **de la app**,
-no del arnes, y no se ha tapado: los flujos estan escritos como deben. Esa nota se imprime solo
-mientras el area siga en rojo, asi que se retira sola el dia que la app se arregle.
+**Lo que hay debajo de cada fila es lo que hace que el fichero se basta solo.** Una fila dice que
+area fallo y cuantos flujos, y debajo estan los que fallaron con el motivo tal cual lo imprimio
+Maestro -`fallosDeMaestro` los saca de la misma salida que el runner tira al salir-. Un informe que
+solo dice `Maestro fallo` dice que herramienta fallo, no por que, y obliga a tener la consola delante.
+Cuando el parseo no encuentra nada se dice que no se ha podido leer, en vez de inventar un motivo: un
+motivo a medias es peor que ninguno, porque parece un motivo.
+
+Un area **sin flujos** lleva `NADA` y no cuenta como sana. No fallo y no se probo, y un `1/1 areas
+sin fallo` debajo de una fila que dice "no he probado nada" son dos frases que se contradicen en el
+mismo fichero. La carrera sigue saliendo con codigo 0: montar un area nueva no debe poner en rojo la
+carrera de quien todavia no ha escrito sus flujos.
+
+Cuando `01-onboarding` este en rojo por la tecla de atras, el informe lo dice en su ultima linea. La
+linea roja actual -la tecla de atras sale de la aplicacion en vez de desapilar- es un defecto **de la
+app**, no del arnes, y no se ha tapado: los flujos estan escritos como deben. Esa nota se imprime
+solo si **los dos flujos que nombra son los que han fallado**, para que no pueda aparecer el dia que
+`01-onboarding` se ponga roja por otra causa, y se retira sola cuando la app se arregle.

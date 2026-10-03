@@ -8,7 +8,7 @@ import { adb, appPid, clearLogcat, crashLines, forceStop, requireOneDevice, scre
 import { parseAreaFlag, resolveAreas } from './lib/areas.ts';
 import { verdict } from './lib/guard.ts';
 import { runMaestro } from './lib/maestro.ts';
-import { renderReport, writeReport, type AreaResult } from './lib/report.ts';
+import { renderReport, writeReport, fallosDeMaestro, type AreaResult } from './lib/report.ts';
 import { ensureService, type Service } from './lib/stack.ts';
 import { seed, writeSeedEnv } from './seed/e2e-account.ts';
 
@@ -175,7 +175,17 @@ try {
     const guard = verdict(antes, { pid: appPid(serial) }, crashLines(serial));
     screenshot(serial, join(CAPTURAS, `${area.name}.png`));
 
-    resultados.push({ area: area.name, flows: area.flows.length, maestroOk: code === 0, guard });
+    // `fallidos` sale de la salida de Maestro, que ya estaba en la mano y se
+    // tiraba. Sin el, `Maestro fallo` en el informe es el nombre de la
+    // herramienta que fallo y no el motivo, y el unico sitio donde estaba el
+    // motivo son las lineas que se imprimen aqui y se pierden al salir.
+    resultados.push({
+      area: area.name,
+      flows: area.flows.length,
+      maestroOk: code === 0,
+      guard,
+      fallidos: fallosDeMaestro(output),
+    });
     const mal = !guard.ok ? guard.problems.join(' | ') : code === 0 ? 'ok' : 'Maestro fallo';
     const bien = guard.ok && code === 0;
     if (!bien) fallos += 1;
