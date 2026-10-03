@@ -2,6 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // `e2e/` runs under `node file.ts`, and ESM does not resolve `./x` to
+    // `./x.ts`. The entry point has to name the extension, and this is what lets
+    // tsc accept that. The project only ever runs `tsc --noEmit`, so permitting
+    // the extension changes nothing about the output.
+    "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
