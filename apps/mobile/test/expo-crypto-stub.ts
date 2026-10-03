@@ -1,0 +1,25 @@
+/**
+ * The bit of `expo-crypto` a Node test can actually have.
+ *
+ * The module cannot be loaded outside a device bundle, and the first thing that
+ * fails is a global Metro defines:
+ *
+ *   ReferenceError: __DEV__ is not defined
+ *   node_modules/expo-modules-core/src/sweet/setUpJsLogger.fx.ts:9:1
+ *
+ * `expo-crypto` reaches for `expo-modules-core` at import time, so a test that
+ * touches a module that mints an id fails before a single assertion runs — and
+ * the error says nothing about what was being tested. `react-native` is aliased
+ * here for the same reason and with the same trade: the file cannot be read at
+ * all, so it is replaced rather than mocked.
+ *
+ * **`randomUUID()` answers with the platform's own, on purpose.** Node has Web
+ * Crypto, the app has the native one, and both give a fresh uuid. A stub that
+ * returned a constant would be enough to load the module and useless to test:
+ * "two boards never share a column" and "every column has an id of its own"
+ * would pass against a `board.ts` that minted one id and handed it out again,
+ * which is the bug those tests exist for.
+ */
+export function randomUUID(): string {
+  return globalThis.crypto.randomUUID();
+}

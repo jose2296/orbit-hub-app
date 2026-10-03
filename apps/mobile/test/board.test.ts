@@ -66,14 +66,17 @@ function estadosDe(...ids: string[]): BoardStates {
 }
 
 /**
- * The first column, read without the `?.` that `noUncheckedIndexedAccess` forces
- * on every `states[0]`, so the tests read as the rule they are about.
+ * A column read off the array, without the `?.` that `noUncheckedIndexedAccess`
+ * forces on every `states[0]`, so the tests read as the rule they are about and a
+ * list that lost a column fails here instead of quietly returning undefined.
  */
-function primero(states: BoardStates): BoardState {
-  const first = states[0];
-  if (!first) throw new Error('the test needs a list with at least one state');
-  return first;
+function columna(states: BoardStates, index: number): BoardState {
+  const state = states[index];
+  if (!state) throw new Error(`the test needs a state at index ${index}`);
+  return state;
 }
+
+const primero = (states: BoardStates): BoardState => columna(states, 0);
 
 /** How many of `items` are drawn somewhere on this board. */
 function contadasEnElTablero(items: ListItem[], states: BoardStates): number {
@@ -89,9 +92,9 @@ describe('una tarea sin estado cae en el primero', () => {
     // state and the pull brought the row back. If this answers null instead of
     // the first state, those tasks disappear off the board without a word.
     const states = defaultStates();
-    const item = itemDe({ stateId: null });
-    expect(stateOf(states, item.stateId)?.id).toBe(states[0].id);
-    expect(stateOf(states, 'borrado-en-otro-dispositivo')?.id).toBe(states[0].id);
+    const item = itemDe({ id: 'nueva', stateId: null });
+    expect(stateOf(states, item.stateId)?.id).toBe(primero(states).id);
+    expect(stateOf(states, 'borrado-en-otro-dispositivo')?.id).toBe(primero(states).id);
   });
 
   it('y sale en su columna, no en ninguna', () => {
@@ -103,7 +106,7 @@ describe('una tarea sin estado cae en el primero', () => {
     const items = [
       itemDe({ id: 'nula', stateId: null }),
       itemDe({ id: 'huerfana', stateId: 'borrado-en-otro-dispositivo' }),
-      itemDe({ id: 'wip', stateId: primero(states).id, position: 4 }),
+      itemDe({ id: 'wip', stateId: columna(states, 2).id, position: 4 }),
     ];
     expect(
       tasksInState(items, states, primero(states).id).map((i) => i.id),
@@ -115,10 +118,13 @@ describe('una tarea sin estado cae en el primero', () => {
 describe('contar incluye las nulas cuando el estado es el primero', () => {
   it('sin esto, borrar el primero las haria saltar solas', () => {
     const states = defaultStates();
-    const items = [itemDe({ stateId: null }), itemDe({ stateId: states[1].id })];
+    const items = [
+      itemDe({ id: 'nula', stateId: null }),
+      itemDe({ id: 'ready', stateId: columna(states, 1).id }),
+    ];
     // The first one takes the nulls; the second only takes its own.
-    expect(countInState(items, states, states[0].id)).toBe(1);
-    expect(countInState(items, states, states[1].id)).toBe(1);
+    expect(countInState(items, states, primero(states).id)).toBe(1);
+    expect(countInState(items, states, columna(states, 1).id)).toBe(1);
   });
 
   it('y tambien las que apuntan a un estado que ya no esta', () => {
@@ -127,12 +133,12 @@ describe('contar incluye las nulas cuando el estado es el primero', () => {
     // get deleted without a word.
     const states = defaultStates();
     const items = [
-      itemDe({ stateId: 'borrado' }),
-      itemDe({ stateId: 'borrado' }),
-      itemDe({ stateId: primero(states).id }),
+      itemDe({ id: 'huerfana-1', stateId: 'borrado' }),
+      itemDe({ id: 'huerfana-2', stateId: 'borrado' }),
+      itemDe({ id: 'backlog', stateId: primero(states).id }),
     ];
     expect(countInState(items, states, primero(states).id)).toBe(3);
-    expect(countInState(items, states, states[1].id)).toBe(0);
+    expect(countInState(items, states, columna(states, 1).id)).toBe(0);
   });
 });
 
@@ -142,7 +148,10 @@ describe('una lista sin columnas no tiene nada que dibujar', () => {
     // kind has one. Reading a column out of it would mean inventing a board in
     // every list the app has.
     const states: BoardStates = [];
-    const items = [itemDe({ stateId: null }), itemDe({ stateId: 'lo-que-sea' })];
+    const items = [
+      itemDe({ id: 'nula', stateId: null }),
+      itemDe({ id: 'ajena', stateId: 'lo-que-sea' }),
+    ];
     expect(tasksInState(items, states, 'lo-que-sea')).toEqual([]);
     expect(tasksInState(items, states, null)).toEqual([]);
     expect(countInState(items, states, null)).toBe(0);
@@ -297,15 +306,6 @@ describe('mover una columna', () => {
     expect(moveState(states, 5, 0)).toBe(states);
     expect(moveState(states, 1, 1)).toBe(states);
   });
-
-  it('y mover una columna no toca las tareas que hay en ella', () => {
-    // The columns are a field of the list and the tasks are rows of another one:
-    // this returns a new order for the array and nothing else.
-    const states = estadosDe('a', 'b');
-    const items = [itemDe({ id: 'a1', stateId: 'a', position: 0 })];
-    moveState(states, 0, 1);
-    expect(items).toEqual([itemDe({ id: 'a1', stateId: 'a', position: 0 })]);
-  });
 });
 
 describe('editar un estado', () => {
@@ -359,6 +359,16 @@ describe('editar un estado', () => {
     const states = estadosDe('a');
     expect(editState(states, 'b', { title: 'Nada' })).toBe(states);
   });
+
+  it('editar sin cambiar nada devuelve el mismo array', () => {
+    // The editor writes the list row when it is handed a different array, and
+    // opening a column and saving it unchanged is not an edit: it is a write of a
+    // whole field that a person did not ask for, and it loses somebody else's
+    // concurrent change of the same board.
+    const states = estadosDe('a');
+    expect(editState(states, 'a', {})).toBe(states);
+    expect(editState(states, 'a', { title: 'A' })).toBe(states);
+  });
 });
 
 describe('borrar un estado', () => {
@@ -375,12 +385,13 @@ describe('borrar un estado', () => {
     // The order that matters is in the delete sheet: the tasks move first, with
     // the destination written by hand, and the column goes after them.
     const states = defaultStates();
+    const wip = columna(states, 2).id;
     const tasks = [
       itemDe({ id: 'nula', stateId: null }),
-      itemDe({ id: 'wip', stateId: states[2].id }),
+      itemDe({ id: 'wip', stateId: wip }),
     ];
     removeState(states, primero(states).id);
-    expect(tasks.map((t) => t.stateId)).toEqual([null, states[2].id]);
+    expect(tasks.map((t) => t.stateId)).toEqual([null, wip]);
   });
 
   it('un id que no esta devuelve el mismo array', () => {
