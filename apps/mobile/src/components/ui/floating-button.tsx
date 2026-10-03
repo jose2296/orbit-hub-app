@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet } from "react-native";
 
+import { useA11yHint } from "@/components/ui/a11y-hint";
 import { isWide } from "@/components/ui/sheet";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -41,20 +42,45 @@ export function FloatingButton({
    * in a row has been told nothing about which one.
    */
   label,
+  /**
+   * What happens when it is pressed, in one sentence.
+   *
+   * Optional because a screen whose panel already says what it is does not need to
+   * repeat it. It goes through `useA11yHint`, so on the web it is the
+   * `aria-describedby` of a hidden node and on native it is the real hint — the
+   * `accessibilityHint` prop that a screen used to spread onto its own copy of this
+   * button and that React Native Web deletes at the boundary.
+   */
+  hint,
+  /**
+   * So a script that drives the browser can find this button.
+   *
+   * A prop and not a rule: the button is the same on every screen and its label is
+   * the same word on all of them, so a script has nothing to tell two of them apart
+   * by. The screens that create a task pass the id the task screen has always used,
+   * which is what lets one click drive both of them.
+   */
+  testID,
 }: {
   onPress: () => void;
   label?: string;
+  hint?: string;
+  testID?: string;
 }) {
   const theme = useTheme();
   const t = useTranslation();
   const wide = isWide();
   const size = wide ? 52 : 58;
+  const pista = useA11yHint(hint);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label ?? t("create.title")}
-      onPress={onPress}
+    <>
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={label ?? t("create.title")}
+        {...pista.props}
+        onPress={onPress}
       style={({ pressed }) => [
         styles.fab,
         {
@@ -76,8 +102,35 @@ export function FloatingButton({
         color={theme.colors.onAccent}
       />
     </Pressable>
+      {/* The node beside the button and not inside it: a hint that is a child of
+          the control is announced as part of its name. */}
+      {pista.node}
+    </>
   );
 }
+
+/**
+ * The two numbers of the corner, **named because something else has to reserve the
+ * space they take.**
+ *
+ * A screen whose content scrolls under this button has to leave room for it, and
+ * the room is `bottom + size`. Both numbers belong to the button: a caller that
+ * wrote "20" or "58" in its own file is the second copy of a decision that shows
+ * up as a card somebody cannot tap.
+ */
+const FAB_RIGHT = 20;
+const FAB_BOTTOM = 24;
+
+/**
+ * How far up from the edge of the screen this button reaches, **as the larger of
+ * the two sizes.**
+ *
+ * `isWide()` picks between them and a caller that wanted the exact figure would
+ * have to ask it again and keep the two answers in step. The largest is the figure
+ * that is never too small, and too much empty space at the end of a scroll is a much
+ * cheaper mistake than a card under the button.
+ */
+export const FLOATING_BUTTON_INSET = FAB_BOTTOM + 58;
 
 const styles = StyleSheet.create({
   fab: {
@@ -97,8 +150,8 @@ const styles = StyleSheet.create({
       contenedor.
     */
     position: "absolute",
-    right: 20,
-    bottom: 24,
+    right: FAB_RIGHT,
+    bottom: FAB_BOTTOM,
     alignItems: "center",
     justifyContent: "center",
     elevation: 9,

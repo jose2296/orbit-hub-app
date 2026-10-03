@@ -1,12 +1,11 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 
-import { useA11yHint } from "@/components/ui/a11y-hint";
 import { BoardColumn } from "@/components/lists/board-column";
 import { BoardTabs } from "@/components/lists/board-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FloatingButton } from "@/components/ui/floating-button";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { Screen } from "@/components/ui/screen";
 import { useListItems, useLists } from "@/hooks/use-lists";
@@ -210,8 +209,6 @@ export default function BoardScreen() {
     });
   }
 
-  const pistaCrear = useA11yHint(t("itemCreate.titleHint"));
-
   if (!listId) {
     return (
       <Screen>
@@ -257,6 +254,23 @@ export default function BoardScreen() {
   if (isLoadingItems) return null;
 
   return (
+    /*
+      `edgeToEdge` **and** the `+` in the `overlay`, and both are the same reason:
+      the board fills the window, so the gap `Screen` normally leaves at the bottom
+      would be a strip of nothing under it.
+
+      **The button is the app's button and not a copy of it.** It was a hand-written
+      `Pressable` lifted from the list screen, and it showed: 56 points against the
+      shared 52/58, corners 16/16 against 20/24, a glyph of 26 against 24/28 — **the
+      plus changed size between `/list/:id` and `/board/:id`**, which is the whole
+      argument the shared component is in the codebase for. And `overlay` and not a
+      child, because a child of a scroller cannot be fixed to the window on the web.
+
+      **A board with no way to add a task would be a screen nobody can put anything
+      into.** The row that is created lands in the **first** column, which is what
+      `stateId: null` means and is why creating a task here is the same code that
+      creates one on any other list.
+    */
     <Screen
       scroll={false}
       width="full"
@@ -267,6 +281,14 @@ export default function BoardScreen() {
         colorTo: workspace?.colorTo,
         wash: workspace?.wash,
       }}
+      overlay={
+        <FloatingButton
+          testID="item-create-button"
+          label={t("itemCreate.title")}
+          hint={t("itemCreate.titleHint")}
+          onPress={() => setEditing({ itemId: "", page: "edit" })}
+        />
+      }
     >
       {/*
         The box whose `onLayout` measures the board, and it is the **content box of
@@ -370,36 +392,6 @@ export default function BoardScreen() {
       </View>
 
       {/*
-        The one button that adds to this list, in the same corner as on every
-        screen of the app: it is the same task row and the same panel, so it is the
-        same button. A board with no way to add a task would be a screen nobody can
-        put anything into, and the row that is created lands in the **first**
-        column, which is what `stateId: null` means and is why creating a task here
-        is the same code that creates one on any other list.
-      */}
-      <Pressable
-        testID="item-create-button"
-        accessibilityRole="button"
-        accessibilityLabel={t("itemCreate.title")}
-        {...pistaCrear.props}
-        onPress={() => setEditing({ itemId: "", page: "edit" })}
-        style={({ pressed }) => [
-          styles.createButton,
-          theme.shadow.floating,
-          {
-            bottom: theme.spacing.lg,
-            right: theme.spacing.lg,
-            borderRadius: theme.radius.pill,
-            backgroundColor: theme.colors.accent,
-            opacity: pressed ? 0.8 : 1,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={26} color={theme.colors.onAccent} />
-      </Pressable>
-      {pistaCrear.node}
-
-      {/*
         The panel of a task, mounted for good and opened by its prop. **It is the
         panel of the list screen and not another one**, and the reason is the same
         as the one that put the panel in `item-edit-sheet.tsx`: a task of a board is
@@ -449,12 +441,5 @@ const styles = StyleSheet.create({
    */
   pista: {
     flex: 1,
-  },
-  createButton: {
-    position: "absolute",
-    width: 56,
-    height: 56,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });
