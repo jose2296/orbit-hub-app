@@ -1004,7 +1004,16 @@ Una fila por estado con **punto, titulo y contador**, mas un «+ Anadir» abajo.
 
 - [ ] **Paso 2: anadir un estado**
 
-`onChange([...states, nuevo])`. El id lo genera `crypto.randomUUID()` dentro de `newState`. **No se manda nada al servidor hasta que se cierra la hoja**: cada cambio de la hoja es un estado local, y al cerrar se llama `updateList(list, { states })` **una vez**. Editar cuatro colores seguidos es un push, no cuatro.
+`onChange([...states, nuevo])`. El id lo genera `Crypto.randomUUID()` dentro de `newState`.
+**No se manda nada al servidor hasta que se cierra la hoja**: cada cambio de la hoja es un
+estado local, y al cerrar se llama `updateList(list, { states })` **una vez**. Editar cuatro
+colores seguidos es un push, no cuatro.
+
+**`newState` devuelve `null` en dos casos, y los dos hay que mirar:** cuando se llega al
+tope, y cuando el titulo va en blanco. El primero ya lo cubre el boton apagado; el segundo
+**no**: si la hoja llama `onChange([...states, nuevo])` con un `null` dentro, manda un array
+que el contrato rechaza. Comprueba el `null` **antes** de llamar a `onChange`, y con el
+titulo recortado, no en crudo.
 
 - [ ] **Paso 3: renombrar y colorear**
 
@@ -1058,6 +1067,11 @@ it('borrar un estado no cambia el estado de las tareas', () => {
 - [ ] **Paso 2: el asa de arrastrar**
 
 En cada fila, un asa a la izquierda. Es la decision que se tomo: lo rapido y lo que la gente espera, ocupando sitio en todas las filas y habiendo que acertarla en web. Al soltar, `moveState(states, from, to)` y `onChange`. **Las dos columnas de arrastre de la app no se pisan** porque la hoja tapa el tablero y solo hay una en pantalla.
+
+**Recorta `to` antes de llamar a `moveState`.** Con un destino de `states.length` o mayor,
+`nextOrderFromDrop` devuelve el mismo array y la columna "se mueve" sin moverse: gesto sin
+efecto y sin error. El `dropTargetIndex` de `lib/lists/drag.ts` ya recorta a `total - 1`
+para las listas; aqui hay que hacerlo igual.
 
 - [ ] **Paso 3: el borrado de un estado vacio**
 
