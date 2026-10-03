@@ -141,7 +141,15 @@ Expected: compila. Si falla en `apps/mobile/src/lib/lists/kind.ts` por los tres 
 
 ---
 
-### Task 2: La migracion y el esquema
+### Task 2: La migracion, el esquema y el campo hasta la fila
+
+Anade las columnas y lleva el campo nuevo desde la fila de Postgres hasta el tipo
+que pinta la pantalla. Las dos cosas son la misma idea: en Zod v4 un `.default()` hace
+el campo **obligatorio en el tipo de salida**, asi que en cuanto `states` y `stateId`
+existen en el contrato, todos los sitios que construyen un `List` o un `ListItem` a
+mano tienen que decir el campo nuevo. Si esta tarea solo anadiera las columnas, el
+monorepo se quedaria sin compilar y `npm run check` —que es la definicion de hecho de
+`AGENTS.md`— no se podria ni mirar hasta el final.
 
 **Ficheros:**
 - Crear: `apps/api/drizzle/0021_board_states.sql` (lo escribe `db:generate`)
@@ -149,10 +157,14 @@ Expected: compila. Si falla en `apps/mobile/src/lib/lists/kind.ts` por los tres 
 - Modificar: `apps/api/src/db/content-schema.ts:303-344` (`lists`) y `350-395` (`listItems`)
 - Modificar: `apps/api/src/db/constants.ts:52-60` (`LIST_KINDS`) y `104-145` (`SYNC_WRITABLE_FIELDS`)
 - Modificar: `apps/mobile/src/hooks/use-lists.ts:681-727` (`updateItem`)
+- Modificar: `apps/api/src/modules/lists/content-query-service.ts:120,171,220` (los tres mapeos fila -> contrato)
+- Modificar: `apps/api/src/modules/export/export-service.ts:82,112`
+- Modificar: `apps/mobile/src/lib/lists/item-record.ts:54,101` y `lib/lists/duplicate.ts:162`
+- Modificar: los ocho ficheros de test con fixtures que nombra el paso 12
 
 **Interfaces:**
-- Consume: nada de la tarea 1 en el codigo; los nombres de columna vienen del spec.
-- Produce: `lists.states` (`jsonb`, `notNull`, `default []`), `listItems.stateId` (`varchar(36)`, nullable), `ListKindName` incluyendo `'board'`, `SYNC_WRITABLE_FIELDS.list` con `'states'` y `.list_item` con `'stateId'`, y **`updateItem` aceptando `stateId`**.
+- Consume: de la Task 1, `BoardStates` y `ListKind` con `'board'`.
+- Produce: `lists.states` (`jsonb`, `notNull`, `default []`), `listItems.stateId` (`varchar(36)`, nullable), `ListKindName` incluyendo `'board'`, `SYNC_WRITABLE_FIELDS.list` con `'states'` y `.list_item` con `'stateId'`, **`updateItem` aceptando `stateId`**, y **el monorepo entero compilando**.
 
 - [ ] **Paso 1: escribir el test que falla**
 
@@ -226,13 +238,72 @@ En `constants.ts`, `LIST_KINDS` gana `'board'`. En `SYNC_WRITABLE_FIELDS`, `'sta
 
 En `apps/mobile/src/hooks/use-lists.ts:681`, anade `stateId?: string | null;` al tipo de `changes`. **Firmate en la firma, no en el cuerpo**: la que se llama es `updateItem(item, changes)`, con la fila entera y no su id, y todo el plan llama asi. Sin esto el tablero no puede mover una tarea y no hay ninguna prueba que lo delate, porque el resto de la app no escribe ese campo.
 
-- [ ] **Paso 8: pasar el test**
+- [ ] **Paso 8: la lectura, de la fila al contrato**
+
+En `apps/api/src/modules/lists/content-query-service.ts` hay **tres** mapeos de fila a
+contrato y los tres necesitan el campo: el de `listLists` (~120), el de `getList`
+(~171) y el de la busqueda (~220). Los dos primeros anaden `states: row.states` y el
+tercero `stateId: row.stateId`.
+
+Este fichero no lo toca ninguna otra tarea del plan, y sin el no hay forma de que un
+estado llegue nunca a la pantalla.
+
+- [ ] **Paso 9: los literales de la exportacion**
+
+`apps/api/src/modules/export/export-service.ts:82,112` construye `List` y `ListItem` a
+mano para el sobre de exportacion. Anade `states` y `stateId`. El JSON de una lista sin
+estados sale con `states: []`, que es lo que el contrato dice de una fila que no los
+tiene.
+
+- [ ] **Paso 10: los constructores del cliente**
+
+`apps/mobile/src/lib/lists/item-record.ts` tiene el sitio donde se construye una fila
+para escribir, y su comentario ya avisa de que *"el campo que falta es el ultimo que se
+anochio"*. Anade `stateId` en `newListItem` y su tipo de entrada, y `states` donde se
+construye una lista.
+
+`apps/mobile/src/lib/lists/duplicate.ts:162` propaga `stateId` al duplicar una tarea.
+**Si no se propaga, duplicar una tarea en Ready la deja en el primer estado**, y es un
+fallo silencioso: la duplicada aparece, y en la columna equivocada.
+
+- [ ] **Paso 11: `newListItem` acepta un estado**
+
+`NewListItemInput` gana `stateId?: string | null`, para que crear una tarea en un
+tablero siga siendo el mismo camino que crearla en cualquier otra lista. El tablero no
+lo usa todavia —crea siempre en el primero— pero el campo tiene que existir ya, porque
+anadirlo despues es volver a romper los quince sitios.
+
+- [ ] **Paso 12: las fixtures de los tests**
+
+Ocho ficheros. Los que declaran el campo como opcional (`stateId?: string | null`) y el
+tipo de salida lo exige presente: `apps/mobile/test/done-match.test.ts`,
+`item-presentation.test.ts`, `media-card.test.ts`, `media-filter.test.ts`,
+`provider-ref.test.ts` y `pin.test.ts` (este con `states: []`). Y en la API,
+`apps/api/test/export-builders.test.ts`.
+
+**Ojo con `export-builders.test.ts`: la Task 5 vuelve a tocarlo.** Anade solo la fixture
+y deja las cinco aserciones que cuentan columnas como estan.
+
+- [ ] **Paso 13: el typecheck entero, en verde**
 
 ```
-cd /Users/jose/orca/workspaces/orbit-hub/Kanban && npm run test -w @orbit-hub/api -- test/lists.test.ts
+cd /Users/jose/orca/workspaces/orbit-hub/Kanban && npm run build:packages && npm run typecheck
 ```
 
-Expected: PASS.
+Expected: **todo pasa.** Los unicos dos fallos que se permiten son los de
+`apps/mobile/src/lib/lists/kind.ts` (los tres mapas exhaustivos, que son de la Task 8 y
+los provoca el compilador). Cualquier otro error significa que queda un sitio por
+propagar.
+
+- [ ] **Paso 14: pasar los tests de los ficheros tocados**
+
+```
+cd /Users/jose/orca/workspaces/orbit-hub/Kanban && npm run test -w @orbit-hub/api && npm run test -w @orbit-hub/mobile
+```
+
+Expected: PASS los dos. La API levanta PGlite con la migracion 0021 ya aplicada, asi que
+esto tambien comprueba que el SQL de la migracion es valido de verdad y no solo que
+TypeScript lo acepta.
 
 ---
 
