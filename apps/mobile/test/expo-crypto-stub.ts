@@ -19,6 +19,16 @@
  * "two boards never share a column" and "every column has an id of its own"
  * would pass against a `board.ts` that minted one id and handed it out again,
  * which is the bug those tests exist for.
+ *
+ * **This is partial and there is no more of it than there is here.**
+ * `digestStringAsync`, `CryptoDigestAlgorithm` and `CryptoEncoding` are missing,
+ * and `google-auth.ts:127-132` uses all three. No test imports that module today,
+ * so nothing is broken; the first one that does gets a
+ * `TypeError: ... is not a function` about a name in this file instead of the
+ * `__DEV__` that explains why the real module cannot be loaded, and that sends
+ * the search somewhere else. A test that needs them has to add them here, and the
+ * comment above is the reason it was not done blind: a stub is here to answer the
+ * platform's question, not to stand in for the module.
  */
 export function randomUUID(): string {
   return globalThis.crypto.randomUUID();

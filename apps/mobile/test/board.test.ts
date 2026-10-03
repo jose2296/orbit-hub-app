@@ -223,6 +223,61 @@ describe('anadir un estado', () => {
   });
 });
 
+describe('el orden dentro de una columna', () => {
+  it('desempata por createdAt cuando dos tareas comparten posicion', () => {
+    // Two rows with the same position is not a theory: a task that arrives from
+    // another device takes a position somebody else already had, and the contract
+    // does not break that tie. Without this second criterion the order of those
+    // two rows is whatever the sort leaves alone — which is the order the rows
+    // came in, and that order is the order the pull happened to deliver.
+    const states = estadosDe('a');
+    const items = [
+      itemDe({
+        id: 'nueva',
+        stateId: 'a',
+        position: 3,
+        createdAt: '2026-05-01T00:00:00.000Z',
+      }),
+      itemDe({
+        id: 'vieja',
+        stateId: 'a',
+        position: 3,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ];
+    expect(tasksInState(items, states, 'a').map((i) => i.id)).toEqual([
+      'vieja',
+      'nueva',
+    ]);
+  });
+
+  it('y el renumerado usa ese mismo orden', () => {
+    // The map a drop writes comes out of the same comparison, so the tie-break
+    // has to reach the positions too: a column whose two tied rows are written
+    // 1 and 0 in one pull and 0 and 1 in the next is a column that reorders
+    // itself while nobody touches it.
+    const states = estadosDe('a');
+    const items = [
+      itemDe({
+        id: 'nueva',
+        stateId: 'a',
+        position: 3,
+        createdAt: '2026-05-01T00:00:00.000Z',
+      }),
+      itemDe({
+        id: 'vieja',
+        stateId: 'a',
+        position: 3,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ];
+    expect([...renumberWithinState(items, states, 'a')]).toEqual([
+      ['vieja', 0],
+      ['nueva', 1],
+    ]);
+  });
+});
+
 describe('renumerar dentro de un estado', () => {
   it('devuelve el mapa de cambios de esa columna, de 0 a n-1', () => {
     // What the caller wants is the `position` to write in each row, so this is a
@@ -421,15 +476,33 @@ describe('lo que sale de aqui lo acepta el contrato', () => {
     // The states are one field of the list: one value the schema refuses fails
     // every save of that board from then on, so the arrays this file returns are
     // measured against the schema that will read them on the next pull.
+    //
+    // **The id used here is one that really exists.** The states of a board born
+    // today carry uuids, so editing "a" would hand the same array straight back
+    // and the schema would be handed the four defaults untouched: three
+    // assertions that read as coverage of the schema while checking nothing. The
+    // id is `primero(states).id` for that reason.
     const states = defaultStates();
+    const primeroId = primero(states).id;
     const nuevo = newState(states, 'Revisión');
     expect(nuevo).not.toBeNull();
     expect(() => boardStatesSchema.parse(states)).not.toThrow();
     expect(() => boardStatesSchema.parse([...states, nuevo])).not.toThrow();
-    expect(() => boardStatesSchema.parse(editState(states, 'a', { title: 'x'.repeat(60) }))).not.toThrow();
     expect(() =>
-      boardStatesSchema.parse(editState(states, 'a', { color: 'chartreuse' as ItemIconColor })),
+      boardStatesSchema.parse(
+        editState(states, primeroId, { title: 'x'.repeat(60) }),
+      ),
     ).not.toThrow();
-    expect(() => boardStatesSchema.parse(removeState(states, 'a'))).not.toThrow();
+    expect(() =>
+      boardStatesSchema.parse(
+        editState(states, primeroId, { color: 'chartreuse' as ItemIconColor }),
+      ),
+    ).not.toThrow();
+    // The count as well, because "does not throw" alone cannot tell a removal from
+    // a function that removed nothing: both hand the schema three valid states
+    // when it works and four when it does not.
+    const quedan = removeState(states, primeroId);
+    expect(() => boardStatesSchema.parse(quedan)).not.toThrow();
+    expect(quedan).toHaveLength(3);
   });
 });
