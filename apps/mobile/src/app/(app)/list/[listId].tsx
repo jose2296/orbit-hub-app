@@ -924,8 +924,16 @@ function TaskRow({
           picker on a tap that looked like it was on the name.
 
           The `gap` is the row's own `spacing.md` and it is not a new number: the
-          icon has not moved, it has moved its parent. */}
-        <View style={[styles.titulo, { gap: theme.spacing.md }]}>
+          icon has not moved, it has moved its parent.
+
+          Y el `testID` es para poder distinguir esta línea de la columna en una
+          medición, que es lo único para lo que está: `nombre.parentElement` vale
+          para las dos —en el árbol de antes esta línea **era** la columna— y medir
+          contra lo que resulta por casualidad mide lo que se quiera. */}
+        <View
+          testID={`item-title-line-${item.id}`}
+          style={[styles.titulo, { gap: theme.spacing.md }]}
+        >
           {item.icon ? (
             <Pressable
               testID={`item-icon-${item.id}`}
@@ -1105,11 +1113,16 @@ const styles = StyleSheet.create({
    * La segunda linea de la columna: la insignia de urgencia y las etiquetas, bajo
    * el nombre.
    *
-   * Y no lleva `flexGrow`: el nombre manda en la altura de la linea que comparten.
-   * Antes las dos lineas eran el unico hijo que ocupaba sitio de la columna, asi
-   * que un nombre largo —dos lineas de texto— se comia la separacion del `gap` y
-   * las pastillas se pegaban a la ultima renglon. La insignia y las etiquetas estan
-   * bajo el nombre, no pegadas a el.
+   * Y no lleva `flexGrow`, y la razon es mas corta de lo que parece: **una caja
+   * hermana no puede comerse el `gap` de su columna.** El `gap` va entre hijos, y
+   * los dos hijos de aqui —esta linea y la del nombre— tienen su alto por su cuenta,
+   * de modo que un nombre de dos lineas no se come nada: la separacion se queda en
+   * los 2 pt de `styles.flex` y las pastillas van dos puntos mas abajo.
+   *
+   * Lo que si haria un `flexGrow` es repartir el alto sobrante entre las dos lineas
+   * en vez de dejar el hueco al final de la columna, y repartir en una columna con
+   * hueco al final es exactamente la disposicion que se pidio quitar. Asi que
+   * la decision es "no", y no hace falta mas historia que esa.
    */
   meta: {
     flexDirection: "row",

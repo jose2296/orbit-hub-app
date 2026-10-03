@@ -285,7 +285,7 @@ function toRgb(hex) {
  */
 function comoHex(color) {
   const texto = String(color).trim();
-  // `#abc` y `#aabbcc` no son `#RRGGBB`; se нормаizan aquí y no en la cuenta.
+  // `#abc` y `#aabbcc` no son `#RRGGBB`; se normalizan aquí y no en la cuenta.
   if (/^#[0-9a-f]{3}$/i.test(texto)) {
     return `#${texto[1]}${texto[1]}${texto[2]}${texto[2]}${texto[3]}${texto[3]}`.toLowerCase();
   }
@@ -484,16 +484,32 @@ const linesOfRow = (tab, itemId, tags) =>
  *    la `View` de `styles.meta`. Subir **un** nivel y no dos a propósito: el padre
  *    de la pastilla es la línea de las pastillas y el abuelo es la columna, y medir
  *    la columna daría siempre la misma caja para las dos filas que se comparan.
+ *  - **la línea del título** por su `testID`, `item-title-line-<id>`, y **no** por
+ *    `nombre.parentElement`, que era lo que había. El nombre padre es la línea
+ *    ahora, pero en el árbol de antes la línea del título no existía y el padre del
+ *    nombre **era** la columna: las dos dan la misma caja en el layout viejo y la
+ *    misma caja en el nuevo, así que medir contra lo que salía por ahí no distinguía
+ *    un mundo del otro. Está medido —11,5 pt contra 0— y está en la 10b.
  *
  * Y se devuelve el **borde del contenido** de la fila, no su borde: la caja de la
  * fila lleva el `padding` de `theme.spacing.lg` alrededor, así que comparar una y
  * otra caja por su `top` sin quitar ese `padding` compararía la distancia al borde
  * de la pantalla con la distancia al texto.
+ *
+ * Los `testID` se buscan **recorriendo los `[data-testid]` y comparando el
+ * atributo**, que es lo que hace `pressTestIdRaw` desde `2bbcba8`: un `testID` con
+ * texto de usuario puesto dentro de las comillas de un selector rompe la consulta
+ * entera en lugar de no encontrar nada, y un id que hoy es un UUID puede no serlo
+ * mañana.
  */
 const rowBoxes = (tab, itemId, title) =>
   tab.evaluate(`
     (() => {
-      const fila = document.querySelector('[data-testid=${JSON.stringify(`item-row-${itemId}`)}]');
+      const porTestId = (raiz, id) =>
+        [...raiz.querySelectorAll("[data-testid]")].find(
+          (d) => d.getAttribute("data-testid") === id,
+        );
+      const fila = porTestId(document, ${JSON.stringify(`item-row-${itemId}`)});
       if (!fila) return null;
       const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
       const r = fila.getBoundingClientRect();
@@ -517,7 +533,7 @@ const rowBoxes = (tab, itemId, title) =>
         };
       };
 
-      const icono = fila.querySelector('[data-testid=' + JSON.stringify("item-icon-" + ${JSON.stringify(itemId)}) + ']');
+      const icono = porTestId(fila, "item-icon-" + ${JSON.stringify(itemId)});
 
       // Por atributo y no por selector: el nombre es texto de usuario y puede
       // traer comillas y espacios, y un selector con eso dentro no falla del
@@ -551,11 +567,22 @@ const rowBoxes = (tab, itemId, title) =>
         icono: caja(icono),
         titulo: caja(hoja),
         cajaNombre: caja(nombre),
-        // La linea del titulo, que es el padre del nombre: sin ella no se puede
-        // decir si el nombre empieza en el sitio o 24 pt mas adentro, porque el
-        // hueco del icono se mide contra esa linea y no contra el borde de la fila,
-        // que esta a 42 pt mas a la izquierda por la casilla y el hueco de la fila.
-        lineaTitulo: caja(nombre ? nombre.parentElement : null),
+        // La linea del titulo, por su testID y no por ser el padre del nombre: sin
+        // ella no se puede decir si el nombre empieza en el sitio o 24 pt mas
+        // adentro, porque el hueco del icono se mide contra esa linea y no contra
+        // el borde de la fila, que esta a 42 pt mas a la izquierda por la casilla y
+        // el hueco de la fila.
+        lineaTitulo: caja(porTestId(fila, "item-title-line-" + ${JSON.stringify(itemId)})),
+        /**
+         * Y si el icono es **hijo** de esa linea, que es la comprobacion que puede
+         * fallar: el arbol de antes lo tenia de hermano de la columna, y medido
+         * sobre las mismas tres filas da "hijo: no" ahi y "hijo: si" aqui.
+         *
+         * Va en la misma lectura porque decidirlo desde node exigiria traer el
+         * arbol entero, y la pregunta es de una linea.
+         */
+        iconoEsHijoDeLaLinea:
+          !!icono && !!nombre && icono.parentElement === porTestId(fila, "item-title-line-" + ${JSON.stringify(itemId)}),
         // La casilla, que se queda centrada contra la fila entera y no contra la
         // linea del titulo. Se mide para dejar el numero dicho, no para
         // comprobarlo: es lo que se pidio que no se tocase.
@@ -721,11 +748,22 @@ const chipActions = (tab, tag) =>
     })()
   `);
 
-/** El color que la hoja cree que tiene ahora una etiqueta, por su `aria-label`. */
+/**
+ * El color que la hoja cree que tiene ahora una etiqueta, por su `aria-label`.
+ *
+ * Y el `testID` se busca **por atributo**, como en `pressTestIdRaw` y no como en la
+ * primera versión de esta función. Aquí el texto **es de la persona**: una etiqueta
+ * con un espacio, unas comillas o un corchete produce un `testID` que, puesto dentro
+ * de las comillas de un selector, no da "no se encuentra" sino que rompe la
+ * consulta entera —que es el modo de fallo que no avisa—. Comparando el atributo
+ * como la cadena que es, el nombre puede llevar lo que lleve.
+ */
 const resolvedColor = (tab, tag) =>
   tab.evaluate(`
     (() => {
-      const el = document.querySelector('[data-testid=' + JSON.stringify("tag-color-button-" + ${JSON.stringify(tag)}) + ']');
+      const el = [...document.querySelectorAll("[data-testid]")].find(
+        (d) => d.getAttribute("data-testid") === "tag-color-button-" + ${JSON.stringify(tag)},
+      );
       if (!el) return null;
       const label = el.getAttribute("aria-label") || "";
       const m = label.match(/ahora ([^,]+)$/);
@@ -812,27 +850,42 @@ async function waitForRows(tab, { expect = 1, timeout = 45000 } = {}) {
  * cambia: la imagen enseña a medias lo contrario de lo que dice.
  *
  * `waitForRows` espera a que haya filas, y las filas llegan antes que la fuente. Se
- * pregunta al propio `document.fonts` en vez de esperar un tiempo, y se pregunta su
- * **estado** y no su promesa: `document.fonts.ready`, con `awaitPromise` de CDP, se
- * quedó sin responder —60 s de reloj por comando, uno por captura— porque en una
- * página con el servidor de desarrollo detrás esa promesa no acaba de asentarse
- * nunca. `document.fonts.status` se lee con el `until` de más abajo, que tiene el
- * plazo desde node y por tanto siempre termina.
+ * pregunta a `document.fonts` y se pregunta por la fuente **concreta**, y no por el
+ * estado: `document.fonts.status === "loaded"` es cierto de momento a momento, antes
+ * de que expo-inyecte el `@font-face` de los iconos, así que una espera por el
+ * estado no espera nada y deja pasar exactamente el caso que viene a evitar. Lo que
+ * dice si la fuente está es `document.fonts.check("18px ionicons")`, que es falso
+ * mientras no haya una fuente cargada que cubra esa familia.
  *
- * **Lo que se mide en la 10b no depende de esto**: las cajas del icono y del nombre
- * las da `getBoundingClientRect`, y una fuente que todavía no ha cargado no las
- * cambia de sitio, sólo su contenido. Pero una fuente que no está cambia el alto de
- * la caja del glifo —20 pt con la fuente, 22 sin ella— y por eso el número de la
- * última ejecución es el de una captura con la fuente ya en su sitio.
+ * Y no se espera `document.fonts.ready`, que con `awaitPromise` de CDP se quedó sin
+ * responder —60 s de reloj por comando, uno por captura— porque en una página con el
+ * servidor de desarrollo detrás esa promesa no acaba de asentarse nunca.
+ *
+ * **El alto de la caja del glifo depende de esto, y medido**: con la fuente
+ * bloqueada por CDP la caja mide **22 pt** y `check()` da falso; con la fuente
+ * cargada mide **20 pt** y `check()` da cierto. Son dos números para la misma fila
+ * en la misma pantalla, y por eso la 10b espera a la fuente antes de medir en vez
+ * de escribir un número que depende de si el navegador llegó a tiempo.
+ *
+ * Y una espera que puede fallar **no puede terminar en silencio**: una captura sin
+ * la fuente se sigue escribiendo —para que haya una imagen que mirar y se vea que
+ * le falta el glifo— pero se cuenta, y se comprueba al final junto al resto.
  */
-async function shot(tab, path) {
-  const fuentes = await until(
-    "las fuentes",
-    () => tab.evaluate(`document.fonts.status`),
-    (v) => v === "loaded",
-    { timeout: 15000, every: 400 },
+let capturasSinFuente = 0;
+async function esperarIconos(tab) {
+  return until(
+    "la fuente de los iconos",
+    () => tab.evaluate(`document.fonts.check("18px ionicons")`),
+    (v) => v === true,
+    { timeout: 20000, every: 400 },
   );
-  if (!fuentes.ok) note("las fuentes no han terminado de cargar; la captura va sin iconos");
+}
+async function shot(tab, path) {
+  const fuente = await esperarIconos(tab);
+  if (!fuente.ok) {
+    capturasSinFuente += 1;
+    note(`la fuente de los iconos no ha llegado a tiempo; ${path} va sin glifos`);
+  }
   await tab.screenshot(path);
 }
 
@@ -1605,6 +1658,54 @@ try {
     `la pastilla de Mercadona en Huevos es ${enHuevos?.textColor}, y la de Pan ${pastillaAAtras?.textColor}`,
   );
 
+  /*
+   * **La misma etiqueta en dos filas de la misma lista, y el mismo color en las dos.**
+   *
+   * Esto viene de una pregunta que **la vista no puede contestar**: mirando la
+   * captura, la pastilla de "Mercadona" parecía más gris en "Pan" que en "Huevos", y
+   * a ojo no hay manera de saber si es un fallo o si son el mismo color en dos
+   * vecindarios distintos. La respuesta es que las dos pintan lo mismo —las dos caen
+   * al texto del tema— y lo que cambia es el contraste local de cada una con lo que
+   * tiene alrededor.
+   *
+   * Y la respuesta estaba **contestada por leer el código**: que las dos filas
+   * reciben el mismo objeto de `list?.tagColors ?? {}`, que `TagChip` es una función
+   * pura de `(tag, mapa, tema)` y que el `style` de su `AppText` va el último del
+   * arreglo, con lo que el `tone` de la fila no puede modularlo. Tres cosas que hay
+   * que leer, y que se pueden leer mal.
+   *
+   * Con la semilla nueva "Mercadona" está en **tres** filas de la lista A —Pan,
+   * Tomates y Huevos— así que la comparación tiene tres lados y no dos: si una fila
+   * se llegara a pintar con un mapa que no es el de la lista, esto lo dice con
+   * números y no con una impresión.
+   *
+   * Se comparan las dos propiedades de las que sale el color que se ve: el texto y el
+   * relleno. No el ancho, ni la posición, ni el borde: dos pastillas del mismo texto
+   * en filas distintas tienen cajas distintas por la letra de al lado.
+   */
+  const mercadonaEnLasTres = [
+    ["Pan", await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.pan}"]`)],
+    ["Tomates", await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.tomates}"]`)],
+    ["Huevos", await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.huevos}"]`)],
+  ];
+  const primera = mercadonaEnLasTres[0][1];
+  note(
+    mercadonaEnLasTres
+      .map(([k, p]) => `${k}: texto ${p?.textColor}, relleno ${p?.fill}`)
+      .join(" | "),
+  );
+  check(
+    "la misma etiqueta se pinta igual en todas las filas de la lista que la llevan",
+    primera !== null &&
+      primera !== undefined &&
+      mercadonaEnLasTres.every(
+        ([, p]) => p !== null && p?.textColor === primera.textColor && p?.fill === primera.fill,
+      ),
+    `Pan, Tomates y Huevos llevan "Mercadona" y las tres la pintan con el texto ${primera?.textColor} sobre ${primera?.fill}: ${
+      primera?.textColor === esperadoHuevos ? "el del tema, que es lo que la regla de contraste manda para el rojo en claro" : "lo que sea, y está en las tres"
+    }`,
+  );
+
   /* ----------------------------------------------------------------- 5 ------ */
   section("5. Una etiqueta sin color elegido pinta el deducido, y el mismo en la segunda carga");
 
@@ -1974,12 +2075,38 @@ try {
    *    del título: con un nombre de dos líneas baja medio bloque a propósito, y
    *    comparar eso con un nombre de una línea sería medir dos títulos distintos.
    *
-   * La tercera fila, la del nombre de 52 caracteres, es el otro extremo: dos
+   * La tercera fila, la del nombre de 51 caracteres, es el otro extremo: dos
    * líneas de nombre y nada debajo, que es donde se ve si el nombre se sale —al
    * pasar de ser hijo de una columna a hijo de una fila— y si el icono se sigue
    * centrando en un bloque más alto que él.
    */
   await goToList(listaA, 6);
+
+  // Media posición de píxel es lo que queda de un reparto en dos mitades, así que
+  // el margen es de 1 pt y no de 0: el fallo que hay que cazar aquí es de **decenas**
+  // de puntos, no de décimas, y un margen de 0 sólo daría falsos fallos.
+  const TOLERANCIA = 1;
+
+  /*
+   * Y **antes** de leer las cajas de abajo, la fuente de los iconos. Va antes y no
+   * después por una razón concreta que costó una ejecución: primero iba después, así
+   * que las cajas ya estaban leídas cuando la fuente llegaba —o no— y el `note` de
+   * al lado decía "sí estaba" sobre una medición hecha sin ella. Una espera que no
+   * gobierna lo que viene detrás no es una espera.
+   *
+   * Y mueve el número, y hay que decirlo: la caja del glifo mide **22 pt antes de
+   * que la fuente esté y 20 pt con ella**, y no es una carrera que se queda como
+   * salga —medido en dos cargas seguidas, las cajas pasan de 22 a 20 en el mismo
+   * segundo en que `document.fonts.check` pasa a verdadero—. El descentrado del
+   * icono dentro de su línea es la mitad de esa diferencia, o sea 1 pt: el mismo en
+   * las tres filas, y por eso **ninguna de las diferencias que se comprueban aquí
+   * cambia**. Lo que cambia es el alto de una caja de la que no depende ninguna
+   * comprobación, y que sin la fuente es la caja de una letra que no está.
+   */
+  const fuenteParaMedir = await esperarIconos(tab);
+  note(
+    `la fuente de los iconos ${fuenteParaMedir.ok ? "sí estaba" : `no ha llegado (${Math.round(fuenteParaMedir.waited / 1000)} s de espera)`} antes de leer las cajas`,
+  );
   const filas = {
     conDebajo: await rowBoxes(tab, itemA.tomates, "Tomates"),
     sinDebajo: await rowBoxes(tab, itemA.aceite, "Aceite de oliva"),
@@ -2001,15 +2128,15 @@ try {
     );
   }
 
-  // Media posición de píxel es lo que queda de un reparto en dos mitades, así que
-  // el margen es de 1 pt y no de 0: el fallo que hay que cazar aquí es de **decenas**
-  // de puntos, no de décimas, y un margen de 0 sólo daría falsos fallos.
-  const TOLERANCIA = 1;
-
   // **Dentro de la fila**: el icono y el nombre comparten el centro. Ésta es la
-  // comprobación que Antes fallaba —sin nada debajo el icono se centraba contra el
+  // comprobación que antes fallaba —sin nada debajo el icono se centraba contra el
   // nombre entero y con algo debajo contra el nombre más la segunda línea— y por eso
   // se escribe para las tres filas y no sólo para una.
+  //
+  // **Y es comprobable: medido contra el árbol de antes, esta misma cuenta da 11,5 pt
+  // en la fila con insignia y etiquetas y 0 en las otras dos.** El nombre "antes"
+  // no es retórico, es el otro árbol de este mismo repositorio, con la misma semilla
+  // y en el mismo navegador.
   const descuadres = Object.entries(filas)
     .filter(([, v]) => v?.icono && v?.titulo)
     .map(([k, v]) => [k, Math.abs(v.icono.centroY - v.titulo.centroY)]);
@@ -2019,17 +2146,37 @@ try {
     descuadres.map(([k, d]) => `${k}: ${d} pt de diferencia de centro`).join("; "),
   );
 
-  // Y lo mismo contra la **línea** en vez de contra el texto, que es la caja que
-  // lleva el `alignItems: "center"` y la que de verdad dice "centrado": con un
-  // nombre de dos líneas la línea es más alta que el texto del nodo y el centro es
-  // el mismo, pero conviene que el número salga de las dos cajas y no de una.
+  /**
+   * **Que el icono sea hijo de la línea del título**, que es el arreglo dicho en
+   * palabras, y la comprobación que de verdad puede fallar.
+   *
+   * Antes esta comprobación era una distancia —el centro del icono contra el centro
+   * de la línea— y **no podía fallar**: medido en los dos árboles da 0 en los dos,
+   * porque en el árbol viejo `styles.item` centraba el icono contra la columna, que
+   * es justo lo que el padre del nombre devolvía, así que la distancia era cero
+   * justamente en el mundo donde estaba mal. Una comprobación que da 0 en las dos
+   * versiones no vigila nada, y este bloque ya lleva dos.
+   *
+   * La distancia contra la línea se queda como `note`, que es lo que es: el número
+   * que produce la pertenencia, no una prueba por sí mismo. La que prueba es si el
+   * icono **es hijo** de la línea, y eso en el árbol viejo da "no" en las tres filas
+   * y aquí da "sí".
+   */
+  const hijos = Object.entries(filas).map(([k, v]) => [k, v?.iconoEsHijoDeLaLinea === true]);
   const contraLinea = Object.entries(filas)
     .filter(([, v]) => v?.icono && v?.lineaTitulo)
     .map(([k, v]) => [k, Math.abs(v.icono.centroY - v.lineaTitulo.centroY)]);
+  note(
+    `distancia del icono al centro de su línea (lo que produce la pertenencia, no una prueba): ${contraLinea
+      .map(([k, d]) => `${k} ${d} pt`)
+      .join("; ")}`,
+  );
   check(
-    "el icono está centrado en la línea del título, no en la fila entera",
-    contraLinea.length === 3 && contraLinea.every(([, d]) => d <= TOLERANCIA),
-    contraLinea.map(([k, d]) => `${k}: ${d} pt`).join("; "),
+    "el icono es hijo de la línea del título, y no hermano de su columna",
+    hijos.length === 3 && hijos.every(([, esHijo]) => esHijo),
+    hijos
+      .map(([k, esHijo]) => `${k}: el nodo item-icon-${esHijo ? " está dentro de" : " NO está dentro de"} la línea del título`)
+      .join("; "),
   );
 
   // **Entre filas**: la pregunta que la persona ha hecho, y la que hace falta con
@@ -2082,7 +2229,7 @@ try {
     `la de una sola línea tiene ${filas.sinDebajo?.meta === null ? "ninguna caja de pastilla" : "una caja de pastilla"} y la otra tiene la segunda línea en y=${filas.conDebajo?.meta?.y ?? "—"}`,
   );
 
-  // Y nada se sale. El nombre de "Mermelada" son 52 caracteres en una fila de 390:
+  // Y nada se sale. El nombre de "Mermelada" son 51 caracteres en una fila de 390:
   // es el caso en el que el nombre pasó de ser un hijo de una columna —donde su caja
   // se estiraba al ancho de la columna— a ser un hijo de una fila, y en una fila el
   // ancho lo decide la caja, que en react-native-web nace con flexShrink: 0.
@@ -2099,8 +2246,8 @@ try {
       return [k, Math.max(...cajas) - v.fila.borde.right];
     });
   check(
-    "un nombre de 52 caracteres no se sale de su fila, y tampoco la segunda línea",
-    desborde.length === 3 && desborde.every(([, d]) => d <= 1),
+    "un nombre de 51 caracteres no se sale de su fila, y tampoco la segunda línea",
+    desborde.length === 3 && desborde.every(([, d]) => d <= TOLERANCIA),
     `${Math.round(anchoUtil ?? 0)} pt de ancho útil; ` +
       desborde
         .map(([k, d]) => `${k}: ${Math.round(d)} pt ${d > 0 ? "por fuera" : "de holgura"}`)
@@ -2128,8 +2275,15 @@ try {
     "una fila sin icono no deja hueco: el nombre empieza en el borde de su línea",
     sinIcono?.icono === null &&
       huecos.sinIcono !== null &&
-      Math.abs(huecos.sinIcono) <= 1 &&
-      Math.abs(huecos.conIcono) <= 13,
+      huecos.conIcono !== null &&
+      // La mitad sin icono es la que lleva el requisito, y va a cero: un hueco
+      // reservado se nota ahí. La mitad con icono va **acotada por los dos lados**,
+      // porque con un `Math.abs(...) <= 13` también pasaba un 0 —el icono pegado al
+      // nombre— y un 24 —el hueco del doble—, y son dos maneras de no fallar. Los
+      // dos números salen del `spacing.md` de la fila, que es 12.
+      Math.abs(huecos.sinIcono) <= TOLERANCIA &&
+      huecos.conIcono >= 12 - TOLERANCIA &&
+      huecos.conIcono <= 12 + TOLERANCIA,
     `sin icono el nombre está a ${huecos.sinIcono} pt del borde de la línea y no hay ningún nodo con el testID del icono; con icono está a ${huecos.conIcono} pt, que es el hueco de spacing.md que hay entre el icono y el nombre`,
   );
 
@@ -2148,7 +2302,11 @@ try {
     Object.entries(filas)
       .map(
         ([k, v]) =>
-          `${k}: la casilla está a ${v.casilla ? Math.round(v.casilla.centroY - v.lineaTitulo.centroY) : "—"} pt del centro de la línea del título`,
+          `${k}: la casilla está a ${
+            v?.casilla && v?.lineaTitulo
+              ? Math.round(v.casilla.centroY - v.lineaTitulo.centroY)
+              : "—"
+          } pt del centro de la línea del título`,
       )
       .join(" | "),
   );
@@ -2259,6 +2417,27 @@ try {
 
   /* ----------------------------------------------------------------- 13 ----- */
   section("13. La consola, al final de todo");
+
+  /*
+   * Las capturas sin la fuente de los iconos se cuentan aquí y no en el `shot()`.
+   *
+   * `shot()` no puede fallar la ejecución desde dentro —no está dentro de nada que
+   * devuelva un código de salida— y una espera que falla en silencio deja el mismo
+   * fichero en disco que una espera que va bien, que es justo el modo de fallo que
+   * la primera versión tenía: dieciséis imágenes sin un solo glifo que nadie miró
+   * porque el guion iba en verde.
+   *
+   * La imagen **se escribe igual** en el caso de fallo, a propósito: para que haya
+   * algo que mirar y se vea que le falta el glifo. Lo que no puede pasar es que eso
+   * salga en verde.
+   */
+  check(
+    "ninguna captura se tomó sin la fuente de los iconos",
+    capturasSinFuente === 0,
+    capturasSinFuente === 0
+      ? "las siete capturas esperando a document.fonts.check(\"18px ionicons\")"
+      : `${capturasSinFuente} de las capturas se tomaron sin la fuente de los iconos: están en el disco y son las que hay que mirar antes de creerse nada de ellas`,
+  );
 
   /**
    * Lo que esta comprobación quita, y por qué, y sólo por qué.

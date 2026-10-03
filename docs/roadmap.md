@@ -1724,6 +1724,36 @@ a la vez significa que sobrevive una versión. El coste está asumido y escrito.
 | Cuatro claves de i18n × dos idiomas | `tags.color`, `tags.changeColor`, `tags.choosingColor`, `tags.backToDerivedOf` |
 | `scripts/verify-tag-colors.mjs` | La comprobación, en un navegador real. Sale 1 si algo no encaja |
 
+### Lo que las capturas de este bloque no llegaban a mostrar
+
+**Ninguna de las dieciséis imágenes de la primera ejecución tenía un solo icono
+dibujado.** Los iconos de las filas son glifos de uso privado de la fuente
+`ionicons`, y `tab.screenshot` se disparaba en cuanto la lista tenía filas —y las
+filas llegan antes que la fuente—, así que el navegador no tenía nada que dibujar
+en su lugar: ni el glifo, ni un cuadrado de sustitución. No era que la fuente no
+llegara nunca; es que nadie la estaba esperando.
+
+La consecuencia no es sólo que las imágenes salieran incompletas. Es que **la fila se
+ha podido discutir como si estuviera vista cuando no había un solo icono en la
+pantalla**: la línea del título, el hueco reservado y la alineación del nombre son
+justo lo que un glifo permite juzgar, y de eso las capturas no decían nada. Es la
+razón de que el arreglo de alinear el icono con el título —que vino después— pasara
+sin que ninguna imagen lo contradijera.
+
+Lo que **sí** sobrevive a que las capturas no tuvieran iconos, porque no necesita
+un glifo para mirarse: los colores de las pastillas y el reparto de la fila de ocho,
+el ancho de la etiqueta de 40 caracteres, el contraste del borde del botón de color,
+las medidas de los dos botones dentro de la pastilla y las dos filas con etiquetas en
+el mismo sitio. Todas leen estilos y cajas, y todas se mids aparte de las imágenes.
+
+Ahora la comprobación **espera a la fuente antes de capturar** —`document.fonts.check`
+sobre la familia concreta, no el estado del conjunto, que es cierto antes de que la
+fuente exista— y **cuenta las capturas que se tomaron sin ella**, de modo que una
+imagen sin glifos sale en rojo en vez de pasar en verde. El alto de la caja del glifo
+depende de la fuente —**22 pt sin ella y 20 pt con ella, medido**, y es la razón de
+que el número de esa primera ejecución y el de ahora no sean el mismo en la caja del
+icono, aunque en las distancias que importan sean los mismos.
+
 ### Lo que casi se ha hecho mal, y se ha visto en el navegador
 
 **La semilla de la comprobación era degenerada y la comprobación pasaba.** El plan
@@ -1753,10 +1783,17 @@ comprobar que la misma etiqueta se ve distinta en dos listas leyendo el color de
 texto de la pastilla. Es falso: el color del texto **no es** el color de la etiqueta,
 porque la pastilla escribe en el color del tema cuando el suyo no llega a 4.5:1, y
 ni el verde elegido ni el rosa deducido llegan en claro. Las dos pastillas de
-"Mercadona" se ven **idénticas píxel a píxel** en el tema claro. Lo que se comprueba
-ahora es lo que la lista promete —que las dos listas no comparten el color— leído
-del `aria-label` del botón, que nombra los doce en cualquier esquema, **y además**
-midiendo y diciendo qué se ve en pantalla.
+"Mercadona" pintan **el mismo color** en el tema claro, y lo que se comprobó es
+justo eso: que las dos pintan el texto del tema, leyendo el color de cada una del
+DOM. Lo que **no** se comprobó —y lo que por un momento se escribió aquí— es que
+se vieran idénticas píxel a píxel, y no se pueden ver: son dos ficheros distintos,
+con vecindarios distintos, y mirando la captura la de "Pan" parece más gris que la
+de "Huevos" siendo el mismo color. Es el contraste local de cada una con lo que
+tiene alrededor, y por eso la pregunta de si dos pastillas del mismo texto pintan
+igual la contesta una comparación de los colores leídos y no una mirada. Lo que se
+comprueba ahora es lo que la lista promete —que las dos listas no comparten el
+color— leído del `aria-label` del botón, que nombra los doce en cualquier esquema,
+**y además** midiendo y diciendo qué se ve en pantalla.
 
 ### Lo que se ha medido, y no se ha supuesto
 
