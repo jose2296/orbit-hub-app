@@ -25,12 +25,14 @@ Para que nadie lo "arregle" otra vez:
   salia con codigo 0**, que es exactamente como parece un `generate` que no tenia
   nada que hacer.
   * **Dos trampas al buscarlo en `node_modules/drizzle-kit/bin.cjs`, y las dos
-    dicen lo contrario.** Hay un objeto columna que si admite la clave —
-    `column`, con `autoincrement: booleanType().optional()`— y es el de `tableV3`,
-    del esquema `pgSchemaV3`, que no esta en la union. Y hay dos esquemas con
-    `version: "7"`: `pgSchemaV7`, que pasa por `tableV7` y `columnV7`, y
-    `pgSchema`, que es el que usa `generate` y pasa por `column2`. El que decide
-    es `column2`.
+    dicen lo contrario.** Hay **tres** objetos columna que si admiten la clave,
+    cada uno con `autoincrement: booleanType().optional()`, y los tres son de
+    otros motores: `column`, el de `tableV3`, de mysql; `column3`, el de
+    singlestore; y `column4`, el de sqlite. De postgres no hay ninguno, y
+    `pgSchemaV3` tampoco va a `column`: va por `tableV32`, y de ahi a `column2`.
+    Y hay dos esquemas con `version: "7"`: `pgSchemaV7`, que pasa por `tableV7`
+    y `columnV7`, y `pgSchema`, que es el que usa `generate` y pasa por
+    `column2`. El que decide es `column2`.
   * Esto se ha reproducido con la version fijada en `apps/api/package.json`
     (`drizzle-kit@0.31.11`), restaurando las tres instantaneas con la clave y
     ejecutando `generate` sobre una copia de `meta/`: imprime las tres lineas de

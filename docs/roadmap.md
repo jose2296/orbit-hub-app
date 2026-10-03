@@ -1851,13 +1851,15 @@ color— leído del `aria-label` del botón, que nombra los doce en cualquier es
   forma útil es otra pregunta.
 - **Que la ruta de escritura lleve el mapa.** `use-lists.ts` manda al crear la
   copia `workspaceId`, `title`, `kind`, `folderId` y `emoji`, y **`tagColors` no
-  está en ese `payload`**. Una lista duplicada conserva los colores en el dispositivo
-  que la duplicó y los pierde en cuanto entra otro: no viajan hasta el siguiente
-  pull. No es un olvido de este bloque —`tags` y `orderMode` tampoco viajan, y es
-  anterior—, pero el mapa se copia igual en `duplicate.ts` y en la fila se pinta,
-  así que aquí se ve bien y en el otro dispositivo no. **Lo que se ha probado es
-  el plan de duplicación**, que es una función pura: que el `payload` que se
-  encola lleve el mapa no se ha probado, y es lo que habría que mirar.
+  está en ese `payload`**. El mapa se copia igual en `duplicate.ts` y la fila se
+  pinta con él, así que **se ve bien hasta el siguiente `pull`, y en el mismo
+  dispositivo que hizo la copia**: `filaDe`, en `sync-service.ts`, arma el
+  `payload` con el registro del servidor y `upsertCached` lo pisa sin condición,
+  de modo que el mapa desaparece también de la copia local. Al otro dispositivo no
+  llega nunca. No es un olvido de este bloque —`tags` y `orderMode` tampoco
+  viajan, y es anterior—. **Lo que se ha probado es el plan de duplicación**, que
+  es una función pura: que el `payload` que se encola lleve el mapa no se ha
+  probado, y es lo que habría que mirar.
 - **Dos personas cambiando colores a la vez.** El mapa entero viaja en una operación y
   sobrevive una versión. El plan lo acepta como coste de no añadir una entidad de
   sincronización, y aquí no se ha tocado.
