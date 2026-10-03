@@ -111,7 +111,31 @@ export default function BoardScreen() {
     return porEstado;
   }, [items, states]);
 
-  /** The width the board is given, measured, and zero until it has been. */
+  /**
+ * The tasks of each column, **computed once per change and not once per render.**
+ *
+ * `tasksInState` filters and sorts the whole list, so calling it inside the
+ * `states.map` of the render meant a full pass over the list of tasks per column on
+ * every render — and this screen renders on every notification of the store and on
+ * every press of a tab. The memo makes it one pass per change of the tasks or of the
+ * columns, and it hands each `BoardColumn` **the same array** while nothing has
+ * changed, which is what lets a column tell that it does not have to draw itself
+ * again.
+ *
+ * The counts above are a separate memo and stay separate on purpose: those use
+ * `countInState`, which counts in one pass and **does not sort**, and `board.ts`
+ * says why asking it for the number is not the same as counting a filtered list.
+ */
+const columnas = useMemo(
+  () =>
+    states.map((state) => ({
+      state,
+      tasks: tasksInState(items, states, state.id),
+    })),
+  [items, states],
+);
+
+/** The width the board is given, measured, and zero until it has been. */
   const [ancho, setAncho] = useState(0);
   /**
    * The height of the track, measured, and zero until it has been.
@@ -358,7 +382,7 @@ export default function BoardScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: gapColumnas }}
           >
-            {states.map((state) => (
+            {columnas.map(({ state, tasks }) => (
               /*
                 The width goes on a wrapper and not on `BoardColumn`, and that is
                 where the measurement lands rather than inside the column.
@@ -390,10 +414,7 @@ export default function BoardScreen() {
               >
                 <BoardColumn
                   state={state}
-                  // `tasksInState` and not a filter of this component's own: it is
-                  // the function that resolves a null `stateId` to the first
-                  // column, and a row created on a board has nothing else.
-                  tasks={tasksInState(items, states, state.id)}
+                  tasks={tasks}
                   tagColors={list.tagColors ?? {}}
                   readOnly={readOnly}
                   onOpenTask={(item) =>
