@@ -3,7 +3,7 @@ import type { TagColors } from "@orbit-hub/contracts";
 
 import { luminanceDe } from "../workspace/wash";
 import { COLOR_QUE_NO_ES, clamp01, hslToHex, rgbToHsl } from "../workspace/hsl";
-import { ICON_COLOR_KEYS, ICON_COLORS, iconColor } from "./item-icons";
+import { ICON_COLOR_KEYS, iconColor } from "./item-icons";
 
 /**
  * What writing a label's colour should leave in the map.
@@ -144,6 +144,48 @@ export function labelTextColor(
  * hacia blanco— y por eso sigue siendo un parametro y no una deduccion del
  * relleno: es lo que hace que la pastilla se vea como tinta en claro y como luz en
  * oscuro, que es el mismo criterio con el que el resto de la app elige sus tintes.
+ * El color que se busca **no** esta en HSL: HSL solo mueve la luminosidad, y el
+ * tono y la saturacion son los del color elegido, que es lo que se quiere conservar.
+ * Lo que no se conserva es el tono **en el extremo**, que no tiene ninguno.
+ *
+ * ---
+ *
+ * **Lo que se ve, medido, porque no es lo que uno esperaria: el texto se va
+ * lejos.** Al 14% de tinte el relleno es sutil —una luminancia de WCAG de 0.15 a
+ * 0.35 en los doce de la paleta— y para llegar a 4.5:1 sobre el, el texto tiene que
+ * recorrer **entre el 22% y el 68% del rango de luminosidad**: la cuenta no se
+ * queda cerca del color elegido, se va. Consecuencias, todas medidas sobre los
+ * doce con las superficies reales (`#F0F2F8` y `#1B2231`):
+ *
+ * - En el tema claro, **once de los doce salen por debajo de luminancia 0.036**, o
+ *   sea indistinguibles de negro a los ojos; el unico que no, `brown`, sale hacia
+ *   el otro extremo en `#FCEBE0`. `red` queda en `#260606`, `purple` en `#10031B`.
+ * - Dos de los doce se van al otro extremo: `teal` en oscuro sale en `#FDFFFF`,
+ *   de luminancia **0.996** —blanco con un punto de rojo, a un paso de `#FFFFFF`—
+ *   y `brown` en claro en `#FCEBE0`, de luminancia 0.855. Sobre una rejilla de
+ *   101.306 colores, **el 0.33% sale en `#000000` y el 0.88% en `#FFFFFF`**, y son
+ *   justamente los casos en los que el extremo no tiene tono que conservar.
+ *
+ * **O sea: el color elegido se reconoce en el relleno y no en el texto.** No es el
+ * mismo tono del color elegido —no lo es, y el que diga lo contrario esta
+ * equivocado—, es el tono mas cercano al color elegido que todavia se lee. La
+ * garantia de que se lee es total; la de que se parece, no, y esa es la diferencia
+ * con la puerta anterior: **antes el texto era un color que nadie habia elegido**,
+ * el del tema, y ahora es el de la persona, movido. Sigue siendo mejor, pero no es
+ * lo mismo, y conviene no contarlo como si lo fuera.
+ *
+ * **Y el precio de llegar a 4.5:1 son esos puntos de recorrido, no el paso de la
+ * cuenta** —un paso mas fino devuelve el mismo color— sino el 14% de mezcla. Quien
+ * quiera que el texto se parezca mas al color elegido tiene **una sola palanca y es
+ * `MEZCLA_DE_LA_PASTILLA`**: subirla acerca el relleno al color y acorta el viaje,
+ * y bajarla hace lo contrario. Cuanto se puede subir sin perder legibilidad es la
+ * pregunta abierta de esta funcion, y la razon por la que el 14% no esta canonizado
+ * en ningun sitio mas que en la constante de arriba. El numero que dice por que no
+ * se puede subir sin mas es el color de la marca: **`success` `#0E9F6E` esta a
+ * 3.03:1 sobre `surfaceMuted` claro** —la puerta lo rechazaba por eso—, y este
+ * archivo lo saca de ahi **moviéndolo**, no bajando el relleno: pastilla `#2EAB81`
+ * con texto `#053827`, a 4.53:1. El mismo `success` en oscuro son `#108E65` y
+ * `#02120D`, a 4.64:1.
  */
 export function labelPillColors(
   colour: string,
@@ -162,11 +204,12 @@ export function labelPillColors(
   // extremo mas cercano al esquema se queda corto cuando el relleno sale tan
   // saturado que ningun aclarado lo salva. Medido sobre `#111827`: ambar `#D97706`
   // —uno de los doce, no un color raro— da un relleno `#BD6A0B` al que el blanco
-  // solo llega a **4.02:1**, y de ahi no sube mas porque el relleno ya esta en
-  // `L = 0.21` y el blanco tiene 1.0. El mismo ambar, **oscureciendolo**, llega a
-  // **4.65:1**. Lo mismo le pasa a `neutral`, `green` y `orange` sobre la
-  // superficie oscura, o sea a cuatro de los doce: sin la segunda vuelta, cuatro
-  // pastillas de la paleta salen por debajo de la linea en el tema oscuro.
+  // solo llega a **4.02:1**, y de ahi no sube mas porque el relleno ya esta en una
+  // **luminancia de WCAG de 0.21** y el blanco tiene 1.0. El mismo ambar,
+  // **oscureciendolo**, llega a **4.65:1**. Lo mismo le pasa a `neutral`, `green` y
+  // `orange` sobre la superficie oscura, o sea a cuatro de los doce: sin la segunda
+  // vuelta, cuatro pastillas de la paleta salen por debajo de la linea en el tema
+  // oscuro.
   //
   // Y el peor de los dos extremos no es raro: un negro o un blanco elegidos a mano
   // dan un relleno casi igual que la superficie, y su texto solo se salva dando la
@@ -192,21 +235,25 @@ export function labelPillColors(
    * color que sea, porque `hslToHex(h, s, 0)` da `#000000` y `hslToHex(h, s, 1)` da
    * `#FFFFFF` para cualquier `h` y cualquier `s`.
    *
-   * Y **de esos dos, uno siempre se lee**. El negro pasa de 4.5:1 sobre cualquier
-   * relleno con `L >= 0.175` y el blanco sobre cualquier relleno con
-   * `L <= 0.183` —las dos bandas salen de `(L + 0.05) / 0.05`, y se pisan entre
-   * 0.175 y 0.183—, asi que no hay ningun relleno contra el que los dos extremos
-   * fallen a la vez. Ese es el argumento entero, y por eso la funcion no tiene un
-   * `return` de emergencia: si se llegara aqui, seria porque el paso o el numero de
-   * pasos ya no alcanzan los dos extremos, que es un typecheck y no una pastilla
-   * gris. El `throw` de abajo es ese typecheck, escrito como codigo.
+   * Y **de esos dos, uno siempre se lee**. Aqui `L` es la **luminancia relativa de
+   * WCAG** —la de `luminanceDe`, de 0 a 1— y **no** la `l` de HSL que se mueve
+   * arriba: para el mismo relleno `#BD6A0B`, la de WCAG es 0.21 y la de HSL es 0.39,
+   * asi que leer una como la otra cambia la cuenta por un factor de dos. El negro
+   * pasa de 4.5:1 sobre cualquier relleno con `L >= 0.175` y el blanco sobre
+   * cualquiera con `L <= 0.183` —las dos bandas salen de `(L + 0.05) / 0.05`, y se
+   * pisan entre 0.175 y 0.183—, asi que no hay ningun relleno contra el que los dos
+   * extremos fallen a la vez. Ese es el argumento entero, y por eso la funcion no
+   * tiene un `return` de emergencia: si se llegara aqui, seria porque el paso o el
+   * numero de pasos ya no alcanzan los dos extremos, que es un typecheck y no una
+   * pastilla gris. El `throw` de abajo es ese typecheck, escrito como codigo.
    *
    * Ese es el motivo por el que **la puerta de contraste se borra y no se mueve**:
-   * antes la unica salida a un color ilegible era el color del tema, que es un
-   * color que nadie eligio y que ademas no siempre se leia —la puerta media contra
-   * `surfaceMuted` y el texto del tema venia de otra parte—. Aqui la salida es el
-   * mismo tono del color elegido, movido hasta que se lee sobre el relleno que ese
-   * mismo color produce.
+   * antes la unica salida a un color ilegible era el color del tema, que es un color
+   * que nadie eligio. Aqui la salida es el **tono mas cercano al color elegido que
+   * todavia se lee** sobre el relleno que ese mismo color produce —mas cercano, no
+   * el mismo, y en el extremo no conserva ninguno: el bloque de arriba tiene las
+   * medidas de hasta donde se llega—. Lo que cambia no es que ahora salga el color
+   * de otra persona: sale el de esta, movido hasta que se puede leer.
    *
    * **Y quien venga a mirar si aqui falta una guarda: no falta ninguna.** Que no
    * haya un `return` de reserva al final no es que se haya olvidado; el `throw` que
@@ -220,21 +267,40 @@ export function labelPillColors(
  * Cuanto se mezcla el color de una pastilla con la superficie.
  *
  * **14%, dentro del 12-15% que pide la spec, y no un token**: es la proporcion de
- * una insignia contra su fondo, no una distancia de la reticula de la app, asi
- * que no
- * pertenece a `theme.spacing` —que no tiene numeros entre 1 y 2— sino a la regla
+ * una insignia contra su fondo, no una distancia de la reticula de la app, asi que
+ * no pertenece a `theme.spacing` —que no tiene numeros entre 1 y 2— sino a la regla
  * que la usa. Subirlo o bajarlo cambia los doce rellenos de la app a la vez, asi
  * que es un numero que se cambia aqui y con un motivo, no en el componente.
+ *
+ * **Es tambien la unica palanca sobre el aspecto de la pastilla.** El texto tiene
+ * que recorrer entre el 22% y el 68% de la luminosidad para llegar a 4.5:1 sobre
+ * un tinte del 14%, y esa distancia es la que hace que el color elegido se lea en el
+ * relleno y no en el texto; el paso de la cuenta no cambia nada de eso. El bloque
+ * de `labelPillColors` tiene las cifras y el motivo por el que `success` no deja
+ * subir mas.
  */
 const MEZCLA_DE_LA_PASTILLA = 0.14;
 
 /**
  * El paso con el que se busca el texto legible, y cuantos pasos hay.
  *
- * **De dos en dos, porque es lo mas fino que no recorre el tinte entero para nada**
- * (la spec): un punto de luminosidad se ve a simple vista como un tinte distinto
- * sobre el mismo color, y dos ya no se distinguen del propio redondeo de los
- * canales. En la practica se para en el primero o en el segundo.
+ * **De dos en dos, y el motivo no es el que parece.** La version anterior de este
+ * comentario decia que 2 era "lo mas fino que no recorre el tinte entero para
+ * nada", y es falso por partida doble. Medido sobre los doce de la paleta, en los
+ * dos esquemas: la cuenta se para entre **11 y 34 pasos**, o sea entre el **22% y
+ * el 68%** del rango de luminosidad —no en el primero ni en el segundo—; el caso
+ * mas largo es `teal` en oscuro, que tiene que subir hasta casi el blanco, y el mas
+ * corto `teal` y `olive` en claro, que bajan 22 puntos.
+ *
+ * **Ademas un paso mas fino no cambia el resultado**, que es lo que deja al
+ * "no se pasa de largo" sin trabajo: con 0.01 la cuenta se para en el doble de
+ * pasos y sale **el mismo color** —`teal` en claro da `#042D29` con 0.02 y con
+ * 0.01, `amber` en claro `#4E2B02` con los dos, `olive` en claro `#0F1803` contra
+ * `#121C03`—. Asi que lo que decide el aspecto de la pastilla **no es este numero
+ * sino el porcentaje de la mezcla**, y quien tenga que cambiar el aspecto va al
+ * `MEZCLA_DE_LA_PASTILLA` de arriba, no a este paso. Aqui 2 es solo la resolucion
+ * con la que la cuenta encuentra el sitio, y es suficiente para que el texto caiga
+ * en un color que se puede leer en el codigo y no en un decimal de mas.
  *
  * **60 pasos, y son de sobra.** La cuenta solo necesita llegar al extremo, y desde
  * cualquier punto de 0 a 1 eso son 50 pasos; 60 deja margen para que el paso se
@@ -244,8 +310,8 @@ const PASO_DE_LUMINOSIDAD = 0.02;
 const PASOS_DE_LUMINOSIDAD = 60;
 
 /**
- * El color de una etiqueta tal como se pinta: un hex que se pasa entero, el hex
- * de un nombre viejo de la paleta, o el neutro.
+ * El color de una etiqueta tal como se pinta: un hex que se pasa entero —y
+ * normalizado—, el hex de un nombre viejo de la paleta, o el neutro.
  *
  * **No es `iconColor` y no puede serlo.** `iconColor` devuelve el neutro para lo
  * que no conoce, asi que un hex libre —`#3B5FDE`, el que alguien elige en el
@@ -255,14 +321,36 @@ const PASOS_DE_LUMINOSIDAD = 60;
  * el neutro solo para lo que no es ninguna de las dos cosas. No hay un tercer
  * validador de hex en este archivo, y el que hay es el del contrato.
  *
+ * **"Tal cual" y "normalizado" son dos cosas, y aqui gana lo segundo.** El brief
+ * decia que un hex sale *tal cual*; lo que sale es **el mismo color en la forma que
+ * el resto del repositorio habla**: `#3b5fde` sale `#3B5FDE` y `#abc` sale
+ * `#AABBCC`. No es una traicion de "tal cual" —`#ABC` y `#AABBCC` son el mismo azul
+ * y `#3b5fde` y `#3B5FDE` tambien—: es que lo que llega por el cable puede venir
+ * en minusculas de una build vieja, y un mapa donde `#3b5fde` y `#3B5FDE` son
+ * colores distintos es un mapa en el que la misma etiqueta tiene dos colores y
+ * solo uno esta en pantalla. **Que el mapa y la pastilla hablen los dos la misma
+ * forma de ese hex es el motivo de que la normalizacion este aqui y no en el
+ * contrato solo**: `sanitiseTagColors` ya normaliza lo que se guarda, asi que si
+ * esta no lo hiciera, lo que se dibujaria y lo que se guardaria serian dos
+ * cadenas del mismo color. Hay un test que lo afirma con las dos formas.
+ *
  * **La paleta no esta copiada aqui.** Los doce salen de `ICON_COLORS` en
- * `item-icons.ts` —que se exporta para esto—, que es donde ya vivian y donde se
- * pueden cambiar. Y la puerta es `ICON_COLOR_KEYS.includes` antes de mirar la
- * tabla, no `ICON_COLORS[colour] ?? ...`: la tabla es un objeto literal, asi que
+ * `item-icons.ts`, que es donde ya vivian y donde se pueden cambiar, y de ahi
+ * tambien sale el neutro: **la ultima rama es `iconColor("neutral")` y no
+ * `ICON_COLORS.neutral`** para que la politica de "lo que no se conoce es neutro"
+ * tenga **un solo sitio**, el `??` de `iconColor`. Las dos cosas leerian el mismo
+ * objeto hoy, pero si manana la reserva de un icono cambia, una copia de esa
+ * decision en este archivo seria la que se queda atras —la segunda copia es
+ * siempre la que no se actualiza— y este archivo no la necesita para nada.
+ *
+ * Y la puerta es `ICON_COLOR_KEYS.includes` antes de mirar la tabla, no
+ * `ICON_COLORS[colour] ?? ...`: la tabla es un objeto literal, asi que
  * `ICON_COLORS["toString"]` es una **funcion**, y un color escrito con esa palabra
  * —o un `__proto__` colado en el mapa— saldria como una funcion donde tiene que
- * haber un hex. El contrato ya tiene el mismo cuidado en `sanitiseTagColors`, con
- * el mismo porque.
+ * haber un hex. **`iconColor` no hace esa pregunta** —`iconColor("toString")`
+ * devuelve `Object.prototype.toString`—, asi que el fallo es real y lo resuelve
+ * quien llama, que es esta linea. El contrato ya tiene el mismo cuidado en
+ * `sanitiseTagColors`, con el mismo porque.
  */
 export function tagColorHex(colour: string): string {
   const hex = normalizaColor(colour);
@@ -273,7 +361,7 @@ export function tagColorHex(colour: string): string {
   // es texto libre y `" green "` es el color que alguien eligio, no otro.
   const nombre = typeof colour === "string" ? colour.trim() : "";
   const esDeLaPaleta = (ICON_COLOR_KEYS as readonly string[]).includes(nombre);
-  return esDeLaPaleta ? iconColor(nombre) : ICON_COLORS.neutral;
+  return esDeLaPaleta ? iconColor(nombre) : iconColor("neutral");
 }
 
 /**
@@ -292,6 +380,17 @@ export function tagColorHex(colour: string): string {
  * de CSS rechaza **en silencio**. Un `t` fuera de rango es un error de quien
  * llama, y aqui sale como un tinte entero sin que se note.
  *
+ * **Y el `Number.isFinite` va antes del recorte y no por debajo, porque
+ * `clamp01` no limpia un `NaN`.** `clamp01` es `Math.min(Math.max(valor, 0), 1)`, y
+ * las tres de `Math` devuelven `NaN` cuando una entrada es `NaN`: un `t` de `NaN`
+ * llegaba a `Math.round`, `"NaN".toString(16)` es la cadena `"NaN"`, y el retorno
+ * era literalmente **`#NANNANNAN`** —la mitad del hex, en mayusculas y con el
+ * formato perfecto, que es justo lo que el parser de CSS acepta sin quejarse y
+ * que React Native se traga sin error—. Medido antes del arreglo, no supuesto.
+ * El `0` del ternario es el mismo default que usa `hslToHex` veinte lineas mas
+ * abajo, por el mismo motivo: un `NaN` en una cuenta de color tiene que salir como
+ * un numero, no como una cadena que parece un color.
+ *
  * **Un color que no se puede leer sale como `COLOR_QUE_NO_ES` y no como
  * `#NANNAN`**, por el mismo motivo y con el mismo cuidado que `hslToHex`: una
  * cadena que no es un color debe ser un color que se puede dibujar.
@@ -302,7 +401,7 @@ export function mixHex(a: string, b: string, t: number): string {
   if (!desde || !hasta) {
     return COLOR_QUE_NO_ES;
   }
-  const cuanto = clamp01(t);
+  const cuanto = Number.isFinite(t) ? clamp01(t) : 0;
   const canal = (indice: 0 | 1 | 2) =>
     Math.round(desde[indice] + (hasta[indice] - desde[indice]) * cuanto)
       .toString(16)

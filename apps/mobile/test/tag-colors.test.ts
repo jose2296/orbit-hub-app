@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 
 import { iconColor } from "@/lib/lists/item-icons";
 import {
-  MIN_LABEL_CONTRAST,
   contrastRatio,
   labelPillColors,
   mixHex,
@@ -328,6 +327,14 @@ describe("el mapa que sale saneado lo acepta el contrato", () => {
 /**
  * Los seis tests de abajo son la regla de la pastilla, y el primero de todos es
  * el que explica por que este archivo no tiene una puerta de contraste.
+ *
+ * **El 4.5 va escrito a mano en todos ellos y no se lee de
+ * `MIN_LABEL_CONTRAST`, y es a proposito**: el comentario de la constante —en
+ * `tag-colors.ts`— dice que el test la escribe para que bajarla produzca un test
+ * rojo, y leerla haria que las dos cosas bajaran a la vez y el suite entero
+ * siguiera en verde. Ese es el unico sitio del repositorio donde la cifra sobrevive
+ * a que `tag-color-plan.test.ts` lo borre la Tarea 3, asi que si alguna vez se
+ * afloja el umbral, que sea este archivo el que se ponga rojo y no una pantalla.
  */
 describe("la pastilla deriva relleno y texto", () => {
   it("el relleno es el color mezclado con la superficie", () => {
@@ -346,6 +353,33 @@ describe("la pastilla deriva relleno y texto", () => {
     expect(mixHex("#16A34A", "#FFFFFF", 1)).toBe("#FFFFFF");
   });
 
+  it("mixHex no saca nunca un color que no se pueda dibujar", () => {
+    // El comentario de `mixHex` promete que una entrada mala sale como un color
+    // real, y **`clamp01` no cumplia eso con un `NaN`**: `clamp01` es
+    // `Math.min(Math.max(valor, 0), 1)` y las tres devuelven `NaN` cuando una
+    // entrada es `NaN`, asi que `Math.round(NaN).toString(16)` es la cadena `"NaN"`
+    // y el retorno era `#NANNANNAN`. Eso no es un color invalido cualquiera: tiene
+    // la forma de un `#RRGGBB`, en mayusculas, y el parser de CSS se lo traga sin
+    // decir nada, de modo que el fallo es **una pastilla invisible** y no una
+    // pantalla roja. Medido antes del arreglo.
+    const malos: [string, string, number][] = [
+      ["#000000", "#FFFFFF", Number.NaN],
+      ["#000000", "#FFFFFF", Number.POSITIVE_INFINITY],
+      ["#000000", "#FFFFFF", Number.NEGATIVE_INFINITY],
+      ["#000000", "#FFFFFF", 2],
+      ["#000000", "#FFFFFF", -2],
+      ["nada", "#FFFFFF", 0.5],
+      ["#000000", "tampoco", 0.5],
+      ["#000000", "#FFFFFF", 0.5],
+    ];
+    for (const [a, b, t] of malos) {
+      const salida = mixHex(a, b, t);
+      // `esHex` es el validador del movil, que es el que tendria que avisar.
+      expect(esHex(salida), `${a} + ${b} al ${t} salio ${salida}`).toBe(true);
+      expect(salida, `${a} + ${b} al ${t}`).not.toMatch(/[^0-9A-F#]/);
+    }
+  });
+
   it("el texto llega a 4.5:1 contra su propio relleno", () => {
     // Los hex son de `ICON_COLORS`, la paleta de doce. **No** son los del tema:
     // `success` es #0E9F6E y `green` de la paleta es #16A34A, y con el valor
@@ -354,7 +388,7 @@ describe("la pastilla deriva relleno y texto", () => {
       for (const scheme of ["light", "dark"] as const) {
         const surface = scheme === "light" ? "#FFFFFF" : "#111827";
         const { fill, text } = labelPillColors(color, surface, scheme);
-        expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(MIN_LABEL_CONTRAST);
+        expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(4.5);
       }
     }
   });
@@ -364,19 +398,35 @@ describe("la pastilla deriva relleno y texto", () => {
     // sale casi igual que ella. El texto tiene que leerse contra ESE relleno.
     const surface = "#F0F2F8";
     const { fill, text } = labelPillColors("#EFF1F7", surface, "light");
-    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(MIN_LABEL_CONTRAST);
+    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("lee con un blanco puro y con un negro puro", () => {
     expect(contrastRatio(labelPillColors("#FFFFFF", "#FFFFFF", "light").text, labelPillColors("#FFFFFF", "#FFFFFF", "light").fill))
-      .toBeGreaterThanOrEqual(MIN_LABEL_CONTRAST);
+      .toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(labelPillColors("#000000", "#111827", "dark").text, labelPillColors("#000000", "#111827", "dark").fill))
-      .toBeGreaterThanOrEqual(MIN_LABEL_CONTRAST);
+      .toBeGreaterThanOrEqual(4.5);
   });
 
   it("un hex libre sale tal cual y un nombre viejo sale en su hex", () => {
     expect(tagColorHex("#3B5FDE")).toBe("#3B5FDE");
     expect(tagColorHex("green")).toBe("#16A34A");
+  });
+
+  it("un hex sale normalizado, que no es lo mismo que tal cual", () => {
+    // El brief decia "tal cual" y aqui sale normalizado, y la diferencia es el
+    // motivo del test: `#3b5fde` y `#3B5FDE` son el mismo azul pero **dos cadenas
+    // distintas**, y un mapa de colores en el que las dos existen es un mapa en el
+    // que una etiqueta tiene dos colores y solo uno esta en pantalla. El contrato
+    // ya normaliza lo que se guarda —`sanitiseTagColors`— asi que si la pastilla no
+    // normalizara, **se dibujaria una cadena y se guardaria otra del mismo color**,
+    // y el fallo no aparece en ningun sitio.
+    expect(tagColorHex("#3b5fde")).toBe("#3B5FDE");
+    expect(tagColorHex("#AbC")).toBe("#AABBCC");
+    expect(tagColorHex("  #3b5fde  ")).toBe("#3B5FDE");
+    expect(tagColorHex("3b5fde")).toBe("#3B5FDE");
+    // Y el nombre tambien se recorta, por lo mismo que la clave en el mapa.
+    expect(tagColorHex(" green ")).toBe("#16A34A");
   });
 
   // ---- los que el brief no pide y que este archivo necesita igual ----
@@ -425,17 +475,19 @@ describe("la pastilla deriva relleno y texto", () => {
     // que sale ya tan oscuro que no hay ningun aclarado que lo salve. Si algun dia
     // cambia el tinte y el blanco si llega, este test se pone rojo y avisa de que
     // la justificacion de la segunda vuelta ya no es la de antes.
-    expect(contrastRatio("#FFFFFF", fill)).toBeLessThan(MIN_LABEL_CONTRAST);
+    expect(contrastRatio("#FFFFFF", fill)).toBeLessThan(4.5);
     // Y lo segundo es lo que se hace con eso: oscurecer. 4.65:1 sobre el mismo
     // relleno, y un texto del lado del relleno y no del lado del blanco.
-    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(MIN_LABEL_CONTRAST);
+    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(4.5);
     expect(text).not.toBe("#FFFFFF");
   });
 
   it("ningun color se queda sin leer, ni claro ni al reves", () => {
     // La promesa del archivo, comprobada sobre una rejilla y no sobre doce
-    // valores: 6 tonos x 5 saturaciones x 11 luminosidades, en los dos esquemas,
-    // son 660 pastillas y todas tienen que leerse contra su propio relleno.
+    // valores: 6 tonos x 5 saturaciones x 11 luminosidades en los dos esquemas, son
+    // 660 llamadas a `labelPillColors` sobre **227 colores distintos** —las filas de
+    // luminosidad baja son el mismo gris sea cual sea el tono— y todas tienen que
+    // leerse contra su propio relleno.
     //
     // Una rejilla y no la paleta porque la paleta son doce colores que la app
     // eligió hace años, y **el color de una etiqueta ya no son doce**: es
@@ -450,7 +502,7 @@ describe("la pastilla deriva relleno y texto", () => {
             const surface = scheme === "light" ? "#FFFFFF" : "#111827";
             const { fill, text } = labelPillColors(hex, surface, scheme);
             expect(contrastRatio(text, fill), `${hex} sobre ${surface}`).toBeGreaterThanOrEqual(
-              MIN_LABEL_CONTRAST,
+              4.5,
             );
           }
         }
