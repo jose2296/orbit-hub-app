@@ -38,13 +38,29 @@ const PRIORITY_ICON: Record<Exclude<Priority, "none">, IconName> = {
   high: "warning",
 };
 
-/** One task row, shared by the pending and the completed sections. */
+/**
+ * One task row, shared by the pending and the completed sections.
+ *
+ * And by the board, which is the reason it is a component and not a local
+ * function: a board row is this same row, because a task of a board is the same
+ * task — the same icon, the same title, the same urgency, the same labels. Only
+ * two things differ, and both are props rather than a second component:
+ *
+ * - **`onToggle` is optional.** A board task is not ticked, it is *in a state*, so
+ *   there is nothing to tick it with. Without this prop no checkbox is drawn at
+ *   all, and the row takes the space the box would have taken rather than
+ *   leaving a gap where it used to be.
+ * - **`edgeColor` is optional, and paints nothing when absent.** The flat list has
+ *   no state to colour, and does not pass one, so the row it draws is the row it
+ *   drew before this prop existed.
+ */
 export function TaskRow({
   item,
   tagColors,
   onToggle,
   onEdit,
   onIcon,
+  edgeColor,
 }: {
   item: ListItem;
   /**
@@ -57,9 +73,29 @@ export function TaskRow({
    * belongs to is to be told.
    */
   tagColors: TagColors;
-  onToggle: () => void;
+  /**
+   * What ticking this task does, and **the reason the checkbox is optional**.
+   *
+   * There is no sensible default here: with no `onToggle` the box is not drawn
+   * greyed out or disabled, it is not drawn, because a disabled box in the margin
+   * of every row of a board is furniture saying nothing.
+   */
+  onToggle?: () => void;
   onEdit: () => void;
   onIcon: () => void;
+  /**
+   * The colour of the state down the left edge, **on a board**.
+   *
+   * A column of a board is already headed by the name of its state, so the colour
+   * is not there to label the column — it is there so a row keeps saying which
+   * state it is in when it is read away from its column: in a search, in a card
+   * that shows a task from elsewhere, or scrolled under a sticky header.
+   *
+   * Not a theme token: it is the colour of the **state**, which is chosen per
+   * list and is not part of the palette the app resolves by name. It is handed in,
+   * not looked up, for the same reason `tagColors` is.
+   */
+  edgeColor?: string;
 }) {
   const theme = useTheme();
   const t = useTranslation();
@@ -88,12 +124,32 @@ export function TaskRow({
           // y con el icono en la linea del titulo ese hueco era ademas lo que
           // empujaba el nombre hacia el borde. Lo que cede ahora cuando el nombre
           // es largo es el `flexShrink: 1` de `styles.nombre`.
+          // The edge is inside the padding, not outside it: the colour has to be
+          // flush against the left of the row, or it reads as a border of the
+          // column rather than as part of the task. So it is a border on a box
+          // that has no padding of its own, drawn **only when there is a colour** —
+          // the flat list passes none, and a `borderLeftWidth: 0` is not the same
+          // thing as no border on web, where it can still take a pixel.
+          ...(edgeColor
+            ? { borderLeftWidth: 3, borderLeftColor: edgeColor }
+            : null),
         },
       ]}
     >
-      {/* The icon is its own target: it is a picture of what to buy, and
-          pressing it opens the pictures rather than the row. */}
-      <Checkbox checked={item.completed} onToggle={onToggle} label="" />
+      {/*
+        The checkbox, **and only when something can tick it.**
+
+        A board row has no `onToggle`, because a task there is in a state rather
+        than done, and a box in the margin of every row would be a control that
+        says nothing. `null` rather than a disabled box for the same reason: a
+        greyed-out tick is furniture, and the row is already saying what it is.
+
+        The `label=""` is untouched and must stay: it is the thing that keeps an
+        empty `Text` with `flex: 1` out of the checkbox, which measured 755 points
+        of a row's 754 and ate the title. See `styles.nombre` and `checkbox.tsx`. */}
+      {onToggle ? (
+        <Checkbox checked={item.completed} onToggle={onToggle} label="" />
+      ) : null}
 
       {/*
         The column, and it has two children that take part in layout: the line of

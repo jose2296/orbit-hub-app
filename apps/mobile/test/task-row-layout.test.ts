@@ -103,6 +103,43 @@ describe('la fila de una tarea no reserva el asa de arrastrar', () => {
   });
 });
 
+/**
+ * The row is shared by two screens now, and a shared component that one of them
+ * cannot use is not shared.
+ *
+ * These three are the two differences between a list row and a board row, and
+ * they are assertions about the source for the same reason as everything else
+ * here: the question is whether the **optional** parts are optional, and the only
+ * way to see that in `node` is to read the props and the condition.
+ */
+describe('la fila sabe dibujarse sin casilla y con filo de estado', () => {
+  it('la casilla se dibuja solo si hay algo que marque', () => {
+    // Optional in the props, and **not defaulted to a no-op**: a `onToggle` that
+    // did nothing would draw a box that lies about the task being tickable.
+    expect(taskRow).toContain('onToggle?: () => void');
+    // And the box is inside a condition on it, not rendered and hidden.
+    expect(taskRow).toContain('{onToggle ? (');
+    // The empty label stays. This is the one that measured 755 of 754 points.
+    expect(taskRow).toContain('onToggle={onToggle} label=""');
+  });
+
+  it('el filo de color solo existe cuando le pasan un color', () => {
+    expect(taskRow).toContain('edgeColor?: string');
+    // Conditional, not `edgeColor ?? theme.colors.border`: the flat list must draw
+    // exactly what it drew before this prop existed, and a default colour would
+    // put an edge on every row of every list.
+    expect(taskRow).toContain('...(edgeColor');
+    expect(taskRow).toContain('borderLeftColor: edgeColor');
+  });
+
+  it('las dos pantallas usan la misma fila, y solo una pasa la casilla', () => {
+    // The screen imports it rather than redefining it: two `function TaskRow` in
+    // the repo is the thing this move exists to stop.
+    expect(listId).toContain('from "@/components/lists/task-row"');
+    expect(listId).not.toContain('function TaskRow');
+  });
+});
+
 describe('la cabecera se gasta el hueco de la barra de estado', () => {
   /**
    * The navigator draws the header from the top of the window and does not inset
