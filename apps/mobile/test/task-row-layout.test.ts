@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
  * suite runs in `node` with React Native stubbed, so nothing measures a pixel and
  * nothing can catch Yoga. What it can do is stop the four shapes below from
  * coming back, which is what happened once already — see `styles.nombre` in
- * `list/[listId].tsx` for a comment that blamed the wrong file and fixed nothing.
+ * `components/lists/task-row.tsx` for a comment that blamed the wrong file and
+ * fixed nothing.
  *
  * The measurements that found them are in the comments on the code they guard, and
  * they were taken on an Android release build (API 35), not reasoned about.
@@ -21,6 +22,7 @@ const src = (ruta: string) => readFileSync(join(RAIZ, ruta), 'utf8');
 const checkbox = src('src/components/ui/checkbox.tsx');
 const badge = src('src/components/ui/badge.tsx');
 const listId = src('src/app/(app)/list/[listId].tsx');
+const taskRow = src('src/components/lists/task-row.tsx');
 const appHeader = src('src/components/ui/app-header.tsx');
 const screen = src('src/components/ui/screen.tsx');
 const spaceBand = src('src/components/workspace/space-band.tsx');
@@ -75,6 +77,11 @@ describe('la fila de una tarea no reserva el asa de arrastrar', () => {
    * of every list.
    */
   it('no tiene paddingRight de asa', () => {
+    // `taskRow` and not the screen: the row is a component of its own, and a
+    // `not.toContain` on a file the row no longer lives in would pass for the
+    // wrong reason. The screen is still asserted on, below, for the shapes it
+    // decides itself.
+    expect(taskRow).not.toContain('dragHandle');
     expect(listId).not.toContain('dragHandle');
   });
 
@@ -86,12 +93,12 @@ describe('la fila de una tarea no reserva el asa de arrastrar', () => {
     // the badge and the labels moved to a **second** line under it, so that the
     // icon and the title line up between rows. The badge is still first on that
     // line, so it is still the one that survives.
-    expect(listId).toContain('metaTag');
+    expect(taskRow).toContain('metaTag');
     // And the second line is drawn only when there is something to draw.
-    expect(listId).toContain(
+    expect(taskRow).toContain(
       '{item.priority !== "none" || item.tags.length > 0 ? (',
     );
-    const meta = listId.slice(listId.indexOf('metaTag: {'));
+    const meta = taskRow.slice(taskRow.indexOf('metaTag: {'));
     expect(meta).toContain('flexShrink: 1');
   });
 });
