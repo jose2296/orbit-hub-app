@@ -196,7 +196,13 @@ y no cambiaba nada.
 - `boardStateSchema`, nuevo y exportado.
 - `listSchema.states`, con el default `[]`.
 - `listItemSchema.stateId`, nullable.
-- `LIST_EXPORT_CSV_COLUMNS` deja de ser una `const` fija y pasa a derivarse del `kind`.
+- `BOARD_EXPORT_CSV_COLUMNS`, nuevo, y `exportCsvColumnsFor(kind)` que devuelve una
+  u otra segun el tipo de lista. **`LIST_EXPORT_CSV_COLUMNS` no se toca**: esta
+  fijada en cinco aserciones de dos ficheros de test —una de ellas un
+  `toHaveLength(15)` y otra con el comentario de que `year` es el indice 8—, y
+  convertirla en funcion las rompe todas. Por el mismo motivo `estado` va en la
+  posicion donde estaba `completado`, para que `year` siga en el indice 8 y esas
+  cinco aserciones sigan siendo ciertas.
 
 Los mapas exhaustivos que avisan por tipos al añadir `'board'`, y que hay que arreglar
 en el mismo commit porque el compilador los señala uno a uno:
