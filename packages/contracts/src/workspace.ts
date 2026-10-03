@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ITEM_ICON_COLORS, ITEM_ICONS } from "./item-icons.js";
+import { tagColorSchema } from "./tag-colors.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
 import { userSchema } from "./auth";
@@ -269,6 +270,8 @@ export {
 } from "./item-icons.js";
 export type { ItemIcon, ItemIconCategory, ItemIconColor } from "./item-icons.js";
 
+export { tagColorSchema, derivedTagColor, sanitiseTagColors } from "./tag-colors.js";
+export type { TagColors } from "./tag-colors.js";
 
 /**
  * The ways a list can be ordered.
@@ -317,6 +320,21 @@ export const listSchema = syncableEntitySchema
     description: z.string().max(1000).nullable().default(null),
     emoji: z.string().max(16).nullable().default(null),
     tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    /**
+     * The colours of the labels of this list, and only the ones somebody chose.
+     *
+     * A label's colour is a property of the **list**, so everyone looking at a
+     * shared list sees "Mercadona" in the same colour, and changing it recolours
+     * every task that carries it at once. On the task it would mean two tasks
+     * with the same label in two colours, and then the colour says nothing.
+     *
+     * Absent means "nobody chose", and the label falls back to
+     * `derivedTagColor(tag)`, which is why existing labels get a colour the moment
+     * this ships and why there is no backfill to run. That fallback can be
+     * `neutral` — it is one of the twelve — so the key being absent is the only
+     * thing that records the choice; the colour itself does not.
+     */
+    tagColors: tagColorSchema.default({}),
     position: z.number().int().min(0),
     itemCount: z.int().min(0).default(0),
     /**

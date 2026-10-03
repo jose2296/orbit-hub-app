@@ -78,10 +78,20 @@ describe('la fila de una tarea no reserva el asa de arrastrar', () => {
     expect(listId).not.toContain('dragHandle');
   });
 
-  it('la insignia y las etiquetas viven en la misma linea y las etiquetas ceden', () => {
-    expect(listId).toContain('metaTags');
-    // The badge is what must survive twenty labels, so the labels shrink.
-    const meta = listId.slice(listId.indexOf('metaTags'));
+  it('la insignia y las etiquetas ceden, y viven en su propia linea', () => {
+    // The badge is what must survive twenty labels, so the labels are the ones
+    // that shrink. That intent is unchanged.
+    //
+    // What changed is the line: the icon moved into the line of the title, and
+    // the badge and the labels moved to a **second** line under it, so that the
+    // icon and the title line up between rows. The badge is still first on that
+    // line, so it is still the one that survives.
+    expect(listId).toContain('metaTag');
+    // And the second line is drawn only when there is something to draw.
+    expect(listId).toContain(
+      '{item.priority !== "none" || item.tags.length > 0 ? (',
+    );
+    const meta = listId.slice(listId.indexOf('metaTag: {'));
     expect(meta).toContain('flexShrink: 1');
   });
 });

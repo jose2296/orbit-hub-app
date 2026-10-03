@@ -124,6 +124,7 @@ function list(over: Partial<List> = {}): List {
     description: null,
     emoji: null,
     tags: [],
+    tagColors: {},
     position: 0,
     itemCount: 0,
     orderMode: 'manual',

@@ -1,8 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import type { ListItem, Priority } from "@orbit-hub/contracts";
+import type {
+  ItemIconColor,
+  ListItem,
+  Priority,
+  TagColors,
+} from "@orbit-hub/contracts";
+import { derivedTagColor } from "@orbit-hub/contracts";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,8 +23,14 @@ import { tagsByFrequency } from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
 
 import { ItemIcon, IconPickerPanel } from "./icon-picker";
+import { TagChip } from "./tag-chip";
 import { completedMatch } from "@/lib/lists/done-match";
-import { iconLabel } from "@/lib/lists/item-icons";
+import {
+  ICON_COLOR_KEYS,
+  ICON_COLOR_LABEL,
+  iconColor,
+  iconLabel,
+} from "@/lib/lists/item-icons";
 
 type Page = "edit" | "icon" | "tags";
 
@@ -37,6 +49,25 @@ export interface ItemEditSheetProps {
   mode?: "edit" | "create";
   /** The page to open on, so a tap on the icon goes straight to the icons. */
   startOn?: Page;
+  /** This list's chosen label colours, and the only ones there are. */
+  tagColors: TagColors;
+  /**
+   * Called with the colour chosen for a label, or `null` for the one that sends
+   * it back to the colour deduced from its name.
+   *
+   * It lands on the list and not on the task, which is why the signature has no
+   * task in it: one write recolours every row that carries the label.
+   *
+   * **It may hand back the write, and this panel waits for it** — hence
+   * `void | Promise<void>`, so a caller with nothing to wait for can ignore it.
+   * The chosen colour arrives at `tagColors` only after the store has been
+   * written and read back, so a strip that closed on the tap had nothing on
+   * screen to show for it: the tap read as one that did nothing, and the button's
+   * own words ("now Red") were a round trip out of date. The strip therefore
+   * waits for the write and closes with it, in the same render that repaints the
+   * pill.
+   */
+  onTagColor: (tag: string, color: ItemIconColor | null) => void | Promise<void>;
   onClose: () => void;
   /** Called after the row is gone, so the screen can put itself right. */
   onDeleted?: () => void;
@@ -87,6 +118,8 @@ export function ItemEditSheet({
   listId,
   mode = "edit",
   startOn = "edit",
+  tagColors,
+  onTagColor,
   onClose,
   onDeleted,
 }: ItemEditSheetProps) {
@@ -99,18 +132,61 @@ export function ItemEditSheet({
   const [title, setTitle] = useState(item?.title ?? "");
   const [annotation, setAnnotation] = useState(item?.annotation ?? "");
   const [newTag, setNewTag] = useState("");
+  /*
+   * Which label has its colour strip open, and one at a time: two strips open
+   * would be two sets of twelve dots on one panel, and the second one is not
+   * where anybody was looking.
+   *
+   * It is the *label* and not a boolean, so the two rows of labels —the ones
+   * this task carries and the ones the list already has— can share it and a
+   * label that lives in one of them opens from there. A label cannot be in both,
+   * which is what `labels` filters out.
+   */
+  const [colorDe, setColorDe] = useState<string | null>(null);
+  /*
+   * Whether a colour is being written right now, and **one write at a time**.
+   *
+   * It exists because the strip waits for the write it started (see
+   * `onTagColor`), and a strip that is waiting is a strip that can be tapped
+   * again: two taps inside one write would plan both from the same captured
+   * `list` and the second would eat the first. Closing the strip on the tap was
+   * what stopped that before; the guard replaces the closing as the thing that
+   * stops it.
+   */
+  const [guardando, setGuardando] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
   // Reopening always starts where the tap asked to start, on a fresh copy of
   // what the row has now and not on what it had when the panel was created.
+  //
+  // **The dependency is the row's `id` and not the row**, and that is the whole
+  // difference between "the panel opens where the tap asked" and "the panel
+  // throws you out of the page you are on every time anything is written".
+  //
+  // `items` is re-read from the cache on every local write, and it returns new
+  // objects every time, so with `item` in the dependency list this effect ran
+  // again on every write — and `setPage(startOn)` is a *reset to where the tap
+  // asked*, which for someone who got here by pressing the name of the row is
+  // `"edit"`, not the labels page they had just opened. Choosing a label's colour
+  // writes the list, so every colour chosen dumped the panel back on the first
+  // page and coloured labels cost three taps each.
+  //
+  // Nothing of this changes when a row is edited while the panel is open: the
+  // panel has its own draft (`title`, `annotation`) and reads the rest live, and
+  // `item` changing identity is not a reason to reset which page a person is on.
+  const idDelItem = item?.id ?? null;
   useEffect(() => {
-    if (item) {
-      setPage(startOn);
-      setTitle(item.title);
-      setAnnotation(item.annotation ?? "");
-      setNewTag("");
-    }
-  }, [item, startOn]);
+    if (!item) return;
+    setPage(startOn);
+    setTitle(item.title);
+    setAnnotation(item.annotation ?? "");
+    setNewTag("");
+    // And the strip with it: `colorDe` is state of this component and the panel
+    // stays mounted while it is closed (it returns `null` rather than being
+    // unmounted), so a panel closed with a strip open came back with that same
+    // strip open, pointing at a label the person had not asked about this time.
+    setColorDe(null);
+  }, [idDelItem, startOn]);
 
   // Creating always starts empty, every time it is opened.
   useEffect(() => {
@@ -156,6 +232,25 @@ export function ItemEditSheet({
   const pistaIcon = useA11yHint(t("itemEdit.iconHint"));
   const pistaTags = useA11yHint(t("itemEdit.tagsHint"));
   const pistaMarkDone = useA11yHint(t("itemEdit.markDoneHint"));
+  /*
+   * One hint for every colour button on this panel, and not one per label: it
+   * says what the strip is *for*, and what it is for does not change with the
+   * label. The label is already in the button's own `accessibilityLabel`, which
+   * is where the name belongs.
+   */
+  const pistaColor = useA11yHint(t("tags.backToDerived"));
+
+  /**
+   * The colour a label is painted in right now.
+   *
+   * The chosen one if there is one and the deduced one if there is not, and
+   * **never nothing**: there is no state in which a label has no colour, which is
+   * why this has no `?? undefined` branch and why the same expression is in
+   * `TagChip`. It is here because the button that opens the strip has to *say*
+   * the colour out loud, in the words the dictionary has for it.
+   */
+  const colorOf = (tag: string): ItemIconColor =>
+    tagColors[tag] ?? derivedTagColor(tag);
 
   if (!isNew && !item) return null;
 
@@ -204,6 +299,50 @@ export function ItemEditSheet({
         ? shown.tags.filter((row) => row !== tag)
         : [...shown.tags, tag],
     });
+
+  /**
+   * A tap on one swatch: one write, and the strip closes **after** it.
+   *
+   * Two things are happening here and both were measured, not chosen:
+   *
+   * - **The await.** `tagColors` is what the pills are painted from, and it only
+   *   moves once the store has been written and read back, so a strip that closed
+   *   on the tap left that tap with nothing on screen: the strip disappearing was
+   *   the whole of it, and the colour landed some milliseconds later with nothing
+   *   to connect the two. Awaiting means the strip unmounts in the **same commit**
+   *   that repaints the pill —the hook's `setLists` and the two state changes
+   *   below are queued in one batch and React 18 flushes them in one pass— so the
+   *   tap has its consequence in the frame that answered it, and the button's
+   *   "now Red" is true when it is last read.
+   *
+   *   What that does **not** give is the chosen swatch sitting there ringed for an
+   *   extra frame: React never renders between the write and the close, and making
+   *   it render would mean awaiting a frame after the write, which buys nothing an
+   *   eye can see. A ring on the tap itself would mean optimising the colour into
+   *   local state first, which is what `icon-picker.tsx` does with its own swatches
+   *   and is deliberately not done here: this ring is read back from the store, and
+   *   a ring that is not what the store says is a lie while it is on screen.
+   * - **The guard.** That open strip is a second tap away, and `setTagColor`
+   *   plans from the `list` its caller captured: two taps inside one write would
+   *   both plan from the same map and the second would silently eat the first.
+   *   `guardando` is what keeps it to one write. The write is a local one, so
+   *   this is milliseconds; nothing in this app reports a failed write, and the
+   *   `finally` closes the strip either way, so a write that throws cannot leave
+   *   the panel stuck open.
+   */
+  const pickColor = async (tag: string, option: ItemIconColor | null) => {
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      await onTagColor(tag, option);
+    } finally {
+      setGuardando(false);
+      // Only closes its own strip: the write takes long enough for somebody to
+      // open another label's colours, and closing that one instead would be a
+      // strip that opened and vanished on its own.
+      setColorDe((current) => (current === tag ? null : current));
+    }
+  };
 
   /** Writes the row for the first time, with everything the panel was given. */
   const create = async () => {
@@ -532,42 +671,67 @@ export function ItemEditSheet({
 
         {page === "tags" ? (
           <View style={{ gap: theme.spacing.md }}>
+            {/* The labels this task carries. Each one is a `TagChip` —the same
+                pill the row draws, in the same colour, because the colour is the
+                list's and not this panel's— with the two things you can do to it
+                inside it: take it off, or give it a colour.
+                `alignItems: "center"` stays on this row, and it is **not** what
+                keeps a pill from stretching when the row wraps: every pill carries
+                its own `alignSelf: "flex-start"`, and a child's `align-self` wins
+                over the row's `alignItems`. It stays as the default for whatever
+                else is dropped on this row without an `alignSelf` of its own, and
+                because the list row builds its line of pills the same way. */}
             <View
               style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}
             >
               {shown.tags.map((tag) => (
-                <Pressable
-                  key={tag}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("tags.remove", { name: tag })}
-                  onPress={() => toggleTag(tag)}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    {
-                      borderRadius: theme.radius.pill,
-                      backgroundColor: theme.colors.accent,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <AppText
-                    variant="caption"
-                    style={{ color: theme.colors.onAccent }}
-                  >
-                    {tag}
-                  </AppText>
-                  <Ionicons
-                    name="close"
-                    size={11}
-                    color={theme.colors.onAccent}
-                  />
-                </Pressable>
+                <Fragment key={tag}>
+                  <TagChip tag={tag} colors={tagColors}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t("tags.remove", { name: tag })}
+                      hitSlop={8}
+                      onPress={() => toggleTag(tag)}
+                      style={({ pressed }) => [
+                        styles.chipAction,
+                        {
+                          borderRadius: theme.radius.pill,
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="close"
+                        size={11}
+                        color={theme.colors.textMuted}
+                      />
+                    </Pressable>
+                    <TagColorButton
+                      tag={tag}
+                      color={colorOf(tag)}
+                      open={colorDe === tag}
+                      hintProps={pistaColor.props}
+                      onPress={() => setColorDe(colorDe === tag ? null : tag)}
+                    />
+                  </TagChip>
+                  {colorDe === tag ? (
+                    <TagColorStrip
+                      tag={tag}
+                      chosen={tagColors[tag]}
+                      onPick={(option) => void pickColor(tag, option)}
+                    />
+                  ) : null}
+                </Fragment>
               ))}
             </View>
 
             {/* The labels already used in this list, with how many rows use them.
                 A label is per list and not per row: writing "Mercadona" on six
-                rows is one word you type, not six. */}
+                rows is one word you type, not six. And it is here, next to the
+                count, where a label can be given a colour *before* any task
+                carries it: a task you are editing cannot offer a label it does
+                not have, so without this row the first colour of a new label
+                would have to wait for a task to use it. */}
             {labels.length > 0 ? (
               <View style={{ gap: theme.spacing.xs }}>
                 <AppText variant="caption" tone="subtle">
@@ -582,25 +746,51 @@ export function ItemEditSheet({
                   ]}
                 >
                   {labels.map(({ tag, count }) => (
-                    <Pressable
-                      key={tag}
-                      accessibilityRole="button"
-                      accessibilityLabel={t("tags.put", { name: tag })}
-                      onPress={() => toggleTag(tag)}
-                      style={({ pressed }) => [
-                        styles.chip,
-                        {
-                          borderRadius: theme.radius.pill,
-                          borderWidth: 1,
-                          borderColor: theme.colors.border,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                    >
-                      <AppText variant="caption" tone="muted">
-                        {tag} · {count}
-                      </AppText>
-                    </Pressable>
+                    <Fragment key={tag}>
+                      <TagChip tag={tag} colors={tagColors}>
+                        {/* `TagChip` writes the name, so the count is what is
+                            left, and it goes first so the two buttons stay at
+                            the end of the pill. */}
+                        <AppText variant="caption" tone="muted">
+                          {`· ${count}`}
+                        </AppText>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={t("tags.put", { name: tag })}
+                          hitSlop={8}
+                          onPress={() => toggleTag(tag)}
+                          style={({ pressed }) => [
+                            styles.chipAction,
+                            {
+                              borderRadius: theme.radius.pill,
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="add"
+                            size={12}
+                            color={theme.colors.textMuted}
+                          />
+                        </Pressable>
+                        <TagColorButton
+                          tag={tag}
+                          color={colorOf(tag)}
+                          open={colorDe === tag}
+                          hintProps={pistaColor.props}
+                          onPress={() =>
+                            setColorDe(colorDe === tag ? null : tag)
+                          }
+                        />
+                      </TagChip>
+                      {colorDe === tag ? (
+                        <TagColorStrip
+                          tag={tag}
+                          chosen={tagColors[tag]}
+                          onPick={(option) => void pickColor(tag, option)}
+                        />
+                      ) : null}
+                    </Fragment>
                   ))}
                 </View>
               </View>
@@ -622,6 +812,10 @@ export function ItemEditSheet({
               disabled={newTag.trim().length === 0}
               onPress={addTag}
             />
+
+            {/* The hidden node every colour button on this page points at. One,
+                because the hint is the same for all of them. */}
+            {pistaColor.node}
           </View>
         ) : null}
 
@@ -635,6 +829,177 @@ export function ItemEditSheet({
         ) : null}
       </View>
     </Sheet>
+  );
+}
+
+/**
+ * The little palette button inside a pill, which opens the colours of that label.
+ *
+ * It is here and not written out twice because it is the same control on both
+ * rows of labels —the ones this task carries and the ones the list already has—
+ * and a copy of it that drifts from the original would give the two rows
+ * different `testID`s, which is the sort of thing a browser check then cannot
+ * find.
+ *
+ * The label says three things: which label it is, what colour that label has
+ * **now**, and whether its strip is open. The first two are the brief's; the
+ * third is here because the state was invisible twice over. `accentSoft` on
+ * `surfaceMuted` measures **1.003:1 to 1.073:1** — a tint no eye will see, across
+ * every accent and both schemes — and `accessibilityState.selected` does not reach
+ * the web: in `react-native-web@0.21.2` only `isDisabled` is read out of
+ * `accessibilityState` (`modules/AccessibilityUtil/isDisabled.js`), so no
+ * `aria-selected` is ever written. So the border carries it and the words carry
+ * it, which is what `sheet.tsx` does with its own trailing control.
+ */
+function TagColorButton({
+  tag,
+  color,
+  open,
+  hintProps,
+  onPress,
+}: {
+  tag: string;
+  /** The colour the label is painted in now, chosen or deduced. */
+  color: ItemIconColor;
+  /** Whether this label's strip is the open one. */
+  open: boolean;
+  /** The spread of `useA11yHint`, from the sheet: one hint node for all of them. */
+  hintProps: Record<string, string>;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  return (
+    <Pressable
+      testID={`tag-color-button-${tag}`}
+      accessibilityRole="button"
+      accessibilityLabel={t(
+        open ? "tags.choosingColor" : "tags.changeColor",
+        {
+          name: tag,
+          color: t(ICON_COLOR_LABEL[color]),
+        },
+      )}
+      {...hintProps}
+      accessibilityState={{ selected: open }}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chipAction,
+        {
+          borderRadius: theme.radius.pill,
+          backgroundColor: open ? theme.colors.accentSoft : "transparent",
+          /*
+           * El borde, y no solo el fondo: dos puntos de acento sobre la propia
+           * pastilla no se ven —1.0:1 medido, en los cinco acentos y los dos
+           * esquemas— y un estado que no se ve no es un estado. Ocupa su sitio
+           * **siempre**, para que el boton no crezca ni se mueva al alternar.
+           */
+          borderWidth: 2,
+          borderColor: open ? theme.colors.accent : "transparent",
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      <Ionicons
+        name="color-palette-outline"
+        size={10}
+        color={theme.colors.textMuted}
+      />
+    </Pressable>
+  );
+}
+
+/**
+ * The colours of one label: the twelve the app draws with, and the way back to
+ * the one its name gives it.
+ *
+ * **The first option is not a colour.** It is what the label goes back to when
+ * nobody has chosen for it, and it is drawn in the colour it would return to, so
+ * the option shows its own result instead of describing it. Pressing it sends
+ * `null`, which is "no colour **chosen**" — an absent key — and not a colour
+ * called `neutral`: there is no colour that means "nobody decided", because that
+ * is what the deduced one already is.
+ *
+ * The swatches are the icon picker's, numbers and all, and `styles.swatch` is
+ * defined again at the bottom of this file rather than imported: a style object
+ * exported out of a sibling component to save six lines is a coupling that two
+ * files then have to agree about, and a reviewer of one of them cannot see the
+ * other.
+ */
+function TagColorStrip({
+  tag,
+  chosen,
+  onPick,
+}: {
+  tag: string;
+  /** The colour chosen for this label, or `undefined` if none is. */
+  chosen: ItemIconColor | undefined;
+  onPick: (color: ItemIconColor | null) => void;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  return (
+    <View style={{ width: "100%", gap: theme.spacing.xs }}>
+      <AppText variant="caption" tone="subtle">
+        {t("tags.color")}
+      </AppText>
+      <View style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}>
+        <Pressable
+          testID={`tag-color-${tag}-derived`}
+          accessibilityRole="button"
+          accessibilityState={{ selected: chosen === undefined }}
+          accessibilityLabel={t("tags.backToDerivedOf", { name: tag })}
+          onPress={() => onPick(null)}
+          style={({ pressed }) => [
+            styles.swatch,
+            {
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: theme.colors.surfaceMuted,
+              borderColor: chosen === undefined ? theme.colors.text : "transparent",
+              borderWidth: chosen === undefined ? 3 : 0,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          {/* In the colour the label goes back to, and not in a generic one:
+              the whole point of the option is which colour that is. */}
+          <Ionicons
+            name="color-wand-outline"
+            size={18}
+            color={iconColor(derivedTagColor(tag))}
+          />
+        </Pressable>
+        {ICON_COLOR_KEYS.map((option) => {
+          const selected = chosen === option;
+          return (
+            <Pressable
+              key={option}
+              testID={`tag-color-${tag}-${option}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={t(ICON_COLOR_LABEL[option])}
+              onPress={() => onPick(option)}
+              style={({ pressed }) => [
+                styles.swatch,
+                {
+                  backgroundColor: iconColor(option),
+                  // El borde ocupa su sitio siempre —tres puntos o ninguno—
+                  // para que la fila no dé un salto al elegir y el punto no se mueva
+                  // bajo el dedo. Mismo criterio que `icon-picker.tsx`.
+                  borderColor: selected ? theme.colors.text : "transparent",
+                  borderWidth: selected ? 3 : 0,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -658,12 +1023,44 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
   },
-  chip: {
-    flexDirection: "row",
+  chipAction: {
+    /*
+     * The two little buttons inside a pill: the one that takes the label off and
+     * the one that opens its colours.
+     *
+     * A literal 24, and the same kind of literal as the 30 of the pills
+     * themselves in `icon-picker.tsx` and `tag-chip.tsx`: it is the size of a
+     * thing that is drawn, not spacing between things, and `SPACING` has no
+     * "size of a small tap target" in it. Bigger than the eleven- and
+     * twelve-point glyphs it holds, so the glyph is not the button.
+     *
+     * **Twenty y cuatro es lo que dice WCAG 2.5.8 AA, y es menos de lo que piden
+     * las dos plataformas.** Medido en el navegador por
+     * `scripts/verify-tag-colors.mjs` a 390×844: los dos botones son 24×24
+     * exactos (576 pt² cada uno) con **dos puntos de hueco** entre ellos, así que
+     * el botón de quitar la etiqueta y a dos píxeles de él hay… la pastilla. Y el
+     * `hitSlop={8}` de los dos Pressable **no llega al DOM en web**: en
+     * `react-native-web@0.21.2` `hitSlop` sólo aparece en `exports/Touchable`, y
+     * `Pressable` no lo pasa a `createDOMProps`, así que no hay ni atributo ni
+     * pseudo-elemento. En nativo sí hace su trabajo; en el navegador no hace nada.
+     *
+     * Formalmente pasa (SC 2.5.8 pide 24×24, y la excepción de espaciado se
+     * cumple porque los círculos de 24 de los dos botones no se tocan: sus
+     * centros están a 26). Por debajo de las guías de las dos plataformas, que
+     * piden 44 en iOS y 48 en Material. **No se ha cambiado por eso**, y la razón
+     * está escrita en el informe de la tarea 8: un objetivo de pulsación más
+     * grande se nota en la pastilla, y el ancho de una pastilla en un dedo es de
+     * las cosas que el navegador no puede medir. Es un número para decidir con un
+     * dispositivo delante, no con un `<div>`.
+     */
+    width: 24,
+    height: 24,
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 10,
-    height: 30,
     justifyContent: "center",
+  },
+  swatch: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
   },
 });

@@ -1,5 +1,5 @@
-import { ITEM_ICON_COLORS, isItemIcon } from "@orbit-hub/contracts";
-import type { ListItem } from "@orbit-hub/contracts";
+import { ITEM_ICON_COLORS, isItemIcon, sanitiseTagColors } from "@orbit-hub/contracts";
+import type { List, ListItem } from "@orbit-hub/contracts";
 
 /**
  * Building and reading a row of a list.
@@ -140,5 +140,33 @@ export function withListItemDefaults(value: unknown): ListItem {
         : "editor",
     shared: record.shared === true,
     deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
+  };
+}
+
+/**
+ * A list read from the cache or from the server, with the colours of its labels
+ * filled in.
+ *
+ * The same reason as `withListItemDefaults`, and the same hazard with a sharper
+ * edge: `readRecord` in `use-lists.ts` is a cast, not a parse, so a list that
+ * was cached before `tagColors` existed arrives with **no key at all** — not
+ * with an empty map. Every colour lookup would then be reading `undefined`, and
+ * the failure would show up as a row that paints no labels.
+ *
+ * **Only `tagColors`, and that is a real difference from the function above.**
+ * That one names every field, so a required field added to `listItemSchema`
+ * without being added here is a compile error. This one is a spread: it copies
+ * whatever the row has and fills in nothing else, so it carries every field the
+ * list has today and **will not notice the next required one** — it will just
+ * ship it missing. The spread is still the right shape, because a hand-written
+ * copy of a list's fields is a second place to forget one, and the failure here
+ * is the kind that only shows up in somebody's own cache.
+ */
+export function withListDefaults(value: unknown): List {
+  const record = (value ?? {}) as Record<string, unknown>;
+
+  return {
+    ...(record as unknown as List),
+    tagColors: sanitiseTagColors(record.tagColors),
   };
 }

@@ -1,6 +1,8 @@
 import type { Folder, List, Workspace } from "@orbit-hub/contracts";
 import { useEffect, useMemo, useState } from "react";
 
+import { withListDefaults } from "@/lib/lists/item-record";
+
 export interface SpacesTree {
   spaces: () => Workspace[];
   foldersOf: (workspaceId: string, parentId: string | null) => Folder[];
@@ -58,14 +60,19 @@ export function useSpacesTree(): SpacesTree {
       const listRecords = listRows
         .map((row) => {
           try {
-            return JSON.parse(row.payload) as List;
+            // Read the same way `useLists` reads, and for the same reason: this is
+            // a cast and not a parse, so a list cached before `tagColors` existed
+            // arrives with no key at all. `withListDefaults` is the one place that
+            // answers that, and this hook is where the drawer and the three
+            // pickers get their lists. The `catch` is still only about the JSON —
+            // `withListDefaults` answers an empty map for anything, so it cannot be
+            // what throws.
+            return withListDefaults(JSON.parse(row.payload));
           } catch {
             return null;
           }
         })
-        .filter(
-          (row): row is List => Boolean(row) && (row as List).deletedAt === null,
-        );
+        .filter((list): list is List => list !== null && list.deletedAt === null);
 
       if (!active) return;
       setFolders(folderRows);

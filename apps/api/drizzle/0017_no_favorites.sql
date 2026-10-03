@@ -3,7 +3,7 @@
 --
 -- Se borra la columna y no se marca: un favorito es un estado que la persona puso y
 -- que nadie mas necesita. Los datos de la tabla siguen intactos, y las filas que no
--- tenian el campoRead bien como `false`; lo que se pierde es poder preguntar por
+-- tenian el campo se leen bien como `false`; lo que se pierde es poder preguntar por
 -- ellas, y no habia ninguna pregunta que respondiera.
 --> statement-breakpoint
 ALTER TABLE "lists" DROP COLUMN "favorite";

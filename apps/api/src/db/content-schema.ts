@@ -13,6 +13,8 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
+import type { TagColors } from '@orbit-hub/contracts';
+
 import { users } from './auth-schema';
 import type {
   ItemIconColorName,
@@ -313,6 +315,14 @@ export const lists = pgTable(
     description: varchar('description', { length: 1000 }),
     emoji: varchar('emoji', { length: 16 }),
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    /**
+     * The colours of this list's labels, and only the ones somebody chose.
+     *
+     * Empty is the normal state and it is a real one: a label with no colour
+     * here falls back to the colour deduced from its name, which is computed and
+     * not stored, so the common list carries `{}` forever.
+     */
+    tagColors: jsonb('tag_colors').$type<TagColors>().notNull().default({}),
     position: integer('position').notNull().default(0),
     // How the items are read. It never renumbers anything: the manual order is
     // kept, so choosing an order to look at is not a way of losing it.

@@ -116,6 +116,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'description',
     'emoji',
     'tags',
+    'tagColors',
     'position',
     'kind',
     'orderMode',

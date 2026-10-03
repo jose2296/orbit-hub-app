@@ -1,0 +1,1 @@
+ALTER TABLE "lists" ADD COLUMN "tag_colors" jsonb DEFAULT '{}'::jsonb NOT NULL;

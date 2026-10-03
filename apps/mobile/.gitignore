@@ -4,3 +4,18 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+# Y sin embargo se versiona, por dos razones que ya han costado un CI rojo:
+#
+#  1. `tsconfig.json` lo nombra en `include`, asi que en un checkout limpio -
+#     que es lo que hace GitHub Actions - `tsc` lo da por encontrado y no
+#     carga `expo/types`. Sin esa carga, `touchAction` no existe en `ViewStyle`
+#     y `workspace-color-picker.tsx` no compila. Asi que el fichero falta
+#     justamente en el sitio donde hace falta, y solo existe en las maquinas
+#     que ya lo tienen, que es un fallo que no se ve.
+#  2. Su contenido es una sola linea, `/// <reference types="expo/types" />`,
+#     y no lo escribe la aplicacion. No hay nada que regenerar.
+#
+# La negacion va **fuera** del bloque de arriba a proposito: ese bloque lo
+# reescribe expo-cli y se comeria la excepcion.
+!expo-env.d.ts

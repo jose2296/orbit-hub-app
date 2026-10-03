@@ -671,6 +671,60 @@ describe('POST /sync/pull', () => {
     expect(list.body.data.orderMode).toBe('alphabetical');
   });
 
+  it('keeps the colours of a list, and does not keep the ones it cannot draw', async () => {
+    // The shape of the bug: a field in the table and in the contract but not in
+    // `SYNC_WRITABLE_FIELDS.list` is dropped in silence — the push answers
+    // `applied`, the version goes up, and nothing anywhere says so. It has
+    // happened four times (`wash` and `colorTo` among them). This test is the
+    // one that would have caught it.
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Colores');
+    const listId = randomUUID();
+
+    await push(user, [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: listId,
+        payload: {
+          workspaceId: workspace.id,
+          title: 'Compra',
+          kind: 'tasks',
+          tagColors: { Mercadona: 'green', Alcampo: 'ultralight' },
+        },
+      }),
+    ]);
+
+    const list = await api.get(`/lists/${listId}`, user.accessToken);
+    // The colour this build can draw is there...
+    expect(list.body.data.tagColors).toEqual({ Mercadona: 'green' });
+    // ...and the one it cannot was dropped rather than stored: the map is not
+    // the whole write, and the label it belonged to simply has no colour chosen,
+    // which is a state the map already has.
+    expect(list.body.data.tagColors).not.toHaveProperty('Alcampo');
+  });
+
+  it('leaves the colours of a list that was created without them at empty', async () => {
+    // The other half: a client that knows nothing about colours sends none, and
+    // the list is read with an empty map rather than with no key — the client
+    // would read `undefined` and every colour lookup would have to survive that.
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Sin colores');
+    const listId = randomUUID();
+
+    await push(user, [
+      operation({
+        entity: 'list',
+        kind: 'create',
+        entityId: listId,
+        payload: { workspaceId: workspace.id, title: 'Vacia', kind: 'tasks' },
+      }),
+    ]);
+
+    const list = await api.get(`/lists/${listId}`, user.accessToken);
+    expect(list.body.data.tagColors).toEqual({});
+  });
+
   it('leaves a field that was not sent at the value the contract gives it', async () => {
     // The other half: spreading the payload must not invent values. A client
     // that knows nothing about labels sends none, and the row is read with an

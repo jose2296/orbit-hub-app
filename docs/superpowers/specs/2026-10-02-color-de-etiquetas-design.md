@@ -1,6 +1,7 @@
 # El color de una etiqueta: uno por lista, y deducido cuando nadie lo elige
 
-Estado: por implementar.
+Estado: implementado. El bloque correspondiente de `docs/roadmap.md` es el que
+dice como ha quedado de verdad.
 
 Una etiqueta es texto libre que se escribe en una tarea: "Mercadona", "Alcampo",
 "casa". Hoy son una sola cadena de texto bajo el nombre, todas iguales. Este
@@ -16,7 +17,17 @@ entonces, sin haber tocado ninguna. Si mas tarde la pone azul, las seis pasan a 
 
 Y una etiqueta que nadie ha configurado **tiene color de todos modos**: uno que la
 app deduce de su nombre. Escribir "Alcampo" y no tocar ningun color produce una
-etiqueta con color, no una etiqueta gris.
+etiqueta con color, no una etiqueta sin color: el color se calcula siempre y no
+hay ningun estado en el que falte.
+
+Lo que **no** es cierto es que ese color sea el que se ve. El texto de la pastilla
+se escribe con el color de la etiqueta solo cuando ese color llega a 4.5:1 sobre
+el relleno de la pastilla, y si no se escribe en `theme.colors.text`: tres de los
+doce pasan el umbral en claro y tres **distintos** en oscuro, asi que **nueve de
+los doce se escriben en el color del tema** en uno u otro esquema, y ninguno se ve
+de su color en los dos. Este documento se escribio antes de esa puerta; el
+`roadmap.md` lo dice con sus numeros. Lo que no existe es una etiqueta sin color
+elegido, que es otra cosa, y lo que hay es una etiqueta cuyo texto es gris.
 
 Ese segundo punto es el que hace el trabajo mas facil, y por eso va primero: **el
 color es obligatorio, elegirlo es opcional.**
@@ -138,11 +149,20 @@ identificador —la identidad la sigue dando el texto— y porque quien quiera d
 elige el color a mano. Un hash que las repartiera sin repetir no es posible en general:
 la proxima etiqueta nueva volveria a chocar con otra.
 
-Tambien: dos de los doce (`amber` y `red`) se parecen a los colores de urgencia
-(`warning` y `danger`) de la insignia de prioridad. Son tokens distintos y no se
-confunden en la misma linea porque una es una pastilla con texto y la otra es un
-triangulo con un texto, pero una etiqueta ambar al lado de una insignia alta se leen
-las dos como "urgente". Es un aviso, no un bloqueo.
+**El aviso que queda no es el que este documento puso aqui.** Aqui decia que
+`amber` y `red` se parecen a los colores de urgencia (`warning` y `danger`) de la
+insignia de prioridad, y que una etiqueta ambar al lado de una insignia alta se
+leen las dos como "urgente". Con la puerta de contraste esa confusion no llega a
+darse: `red` no pasa el umbral en ninguno de los dos esquemas, asi que su pastilla
+no llega a verse roja, y `amber` solo se pinta en el oscuro, donde el `warning` es
+un amarillo claro y no el ambar quemado del claro. Se retira por eso, no porque de
+verdad no importara.
+
+La que si se ha medido es otra, y va en `roadmap.md`: **`amber` y `orange` son
+identicos a la vista en claro** y se distinguen en oscuro. Con doce colores y una
+pastilla de 12 px eso es un problema real —no se pueden leer dos etiquetas que
+difieren en un matiz que el ojo no separa—, asi que quien tenga las dos en la misma
+lista las distingue eligiendo el color a mano.
 
 ## La pagina de etiquetas del panel
 

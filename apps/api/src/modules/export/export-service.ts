@@ -88,6 +88,11 @@ function toList(
     description: row.description,
     emoji: row.emoji,
     tags: row.tags ?? [],
+    // Los colores de las etiquetas de la lista. `?? {}` y no `row.tagColors`: la
+    // columna es `notNull` para todo lo que escribio esta build, pero una fila de
+    // una build anterior a la columna llega sin nada, y aqui "sin nada" tambien
+    // tiene que ser un mapa, que es lo que espera quien lee el sobre.
+    tagColors: row.tagColors ?? {},
     position: row.position,
     // Contado sobre los items que viajan en este mismo fichero, no sobre los
     // vivos: un numero que no cuadra con el array de al lado es un numero que

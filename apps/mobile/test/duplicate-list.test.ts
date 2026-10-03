@@ -20,6 +20,9 @@ function source(overrides: Record<string, unknown> = {}) {
     tags: ['pendiente'],
     position: 3,
     orderMode: 'manual' as const,
+    // A list nobody has chosen a colour for yet: every label falls back to the
+    // colour its name hashes to.
+    tagColors: {},
     version: 4,
     itemCount: 2,
     ...overrides,
@@ -158,6 +161,36 @@ describe('planDuplication', () => {
 
     plan.list.tags.push('otro');
     expect(plan.list.tags).toEqual(['pendiente', 'otro']);
+  });
+
+  it('takes the label colours with it', () => {
+    // A copy of a list whose labels come out in one colour and that duplicates
+    // into another is a list that changed the moment it was duplicated, and
+    // nobody asked for it.
+    const plan = planDuplication(source({ tagColors: { pendiente: 'green' } }), items, {
+      newListId: 'list-2',
+      newItemId: () => 'new-1',
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    expect(plan.list.tagColors).toEqual({ pendiente: 'green' });
+  });
+
+  it('copies the label colours by value, not by reference', () => {
+    // Same reason as the tags above it: a later write to the copy must not reach
+    // back into the original's map. The original is held in a variable on
+    // purpose — asking `source()` for a second one would prove nothing about the
+    // first.
+    const original = source({ tagColors: { pendiente: 'green' } });
+    const plan = planDuplication(original, items, {
+      newListId: 'list-2',
+      newItemId: () => 'new-1',
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    plan.list.tagColors.pendiente = 'red';
+    expect(plan.list.tagColors).toEqual({ pendiente: 'red' });
+    expect(original.tagColors).toEqual({ pendiente: 'green' });
   });
 
   it('uses the given title and falls back to the original one', () => {
