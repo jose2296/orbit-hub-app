@@ -85,6 +85,35 @@ export interface DuplicationPlan {
   items: (Omit<ListItem, 'listId' | 'version'> & { listId: string; version: 0 })[];
 }
 
+/**
+ * The fields of a duplicated list the server is asked to write.
+ *
+ * `states` is named in the type rather than left to the index signature on
+ * purpose: it is the field a hand-written payload drops without a word, and
+ * naming it is what turns dropping it into a compile error instead of a board
+ * that comes back empty.
+ */
+export type DuplicationListPayload = Record<string, unknown> & {
+  states: BoardStates;
+};
+
+/** The same, one row down: the column a duplicated task is written in. */
+export type DuplicationItemPayload = Record<string, unknown> & {
+  stateId: string | null;
+};
+
+/**
+ * One item's payload next to the id it is written under.
+ *
+ * Paired rather than two parallel arrays because the hook enqueues by position,
+ * and a positional pairing with a fallback for a short array is a way to write an
+ * empty payload without saying so.
+ */
+export interface DuplicationItemWrite {
+  id: string;
+  payload: DuplicationItemPayload;
+}
+
 export interface DuplicationOptions {
   newListId: string;
   newItemId: () => string;
@@ -106,7 +135,7 @@ export interface DuplicationOptions {
 /**
  * Builds the list and the items a duplicate is made of.
  *
- * Three decisions are deliberate and tested:
+ * Four decisions are deliberate and tested:
  *
  * - Deleted and foreign items are left out. A tombstone is not something you
  *   want resurrected in a new list.
@@ -231,5 +260,60 @@ export function planDuplication(
       deletedAt: null,
     },
     items,
+  };
+}
+
+/**
+ * What a duplication asks the server to write: the payload of the copy's create,
+ * and the payload of each of its items.
+ *
+ * The second hand-written projection of the plan, and the first half of why a
+ * duplicated board used to come back empty. `planDuplication` builds the whole
+ * row — the copy the user sees — and the server only owns what is in
+ * `SYNC_WRITABLE_FIELDS`, so the payload is a strict subset of it and has to be
+ * named by hand somewhere. It used to be named in the middle of the hook, where
+ * nothing could read it, and the two fields the plan had just invented were the
+ * two it left out: the row looked right on the device until the next pull
+ * replaced the payload with the server's, and a board with no columns and tasks on
+ * ids that no longer exist is not an error anywhere in the chain.
+ *
+ * Every value comes from the plan and none is recomputed: a field derived twice is
+ * a field that can disagree with itself, and the plan is where the state ids are
+ * remapped.
+ */
+export function duplicationPayloads(plan: DuplicationPlan): {
+  list: DuplicationListPayload;
+  items: DuplicationItemWrite[];
+} {
+  return {
+    list: {
+      workspaceId: plan.list.workspaceId,
+      title: plan.list.title,
+      kind: plan.list.kind,
+      ...(plan.list.folderId ? { folderId: plan.list.folderId } : {}),
+      ...(plan.list.emoji ? { emoji: plan.list.emoji } : {}),
+      // Always, and not only when there is at least one column: this is the field
+      // that says whether the list is a board, and a create that leaves it out
+      // arrives as a board with nothing to draw and no way to know why.
+      states: plan.list.states,
+    },
+    items: plan.items.map((item) => ({
+      id: item.id,
+      payload: {
+        // The plan's own list id and not one passed in: they are the same value
+        // and a second one is a second place for them to disagree.
+        listId: plan.list.id,
+        title: item.title,
+        position: item.position,
+        ...(item.completed ? { completed: true } : {}),
+        // Same reason as the columns, one row down: without it every task arrives
+        // in the first column, on the copy and on the original alike.
+        stateId: item.stateId,
+        ...(item.priority !== 'none' ? { priority: item.priority } : {}),
+        ...(item.externalId ? { externalId: item.externalId } : {}),
+        ...(item.metadata ? { metadata: item.metadata } : {}),
+        ...(item.annotation ? { annotation: item.annotation } : {}),
+      },
+    })),
   };
 }

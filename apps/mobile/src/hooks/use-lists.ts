@@ -12,7 +12,7 @@ import { notePreviewBelowTitle } from "@orbit-hub/contracts";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { planDuplication } from "@/lib/lists/duplicate";
+import { duplicationPayloads, planDuplication } from "@/lib/lists/duplicate";
 import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
 import { planTagColorChange } from "@/lib/lists/tag-colors";
 import {
@@ -229,18 +229,18 @@ export function useLists(filters: ListFilters = {}) {
         })),
       ]);
 
+      // Which fields travel is not decided here. It is decided next to the plan
+      // that produced them, where a test can read it, because a projection of the
+      // plan written inside the hook is a projection nothing can check and the
+      // first field nobody remembers to add is the one that comes back missing.
+      const payloads = duplicationPayloads(plan);
+
       await enqueueOperation({
         kind: "create",
         entity: "list",
         entityId: listId,
         baseVersion: 0,
-        payload: {
-          workspaceId: plan.list.workspaceId,
-          title: plan.list.title,
-          kind: plan.list.kind,
-          ...(plan.list.folderId ? { folderId: plan.list.folderId } : {}),
-          ...(plan.list.emoji ? { emoji: plan.list.emoji } : {}),
-        },
+        payload: payloads.list,
       });
 
       if (plan.items.length > 0) {
@@ -248,21 +248,12 @@ export function useLists(filters: ListFilters = {}) {
         // there yet, and a hundred entries would otherwise mean a hundred
         // outbox rows.
         await enqueueOperations(
-          plan.items.map((item) => ({
+          payloads.items.map(({ id, payload }) => ({
             kind: "create" as const,
             entity: "list_item" as const,
-            entityId: item.id,
+            entityId: id,
             baseVersion: 0,
-            payload: {
-              listId,
-              title: item.title,
-              position: item.position,
-              ...(item.completed ? { completed: true } : {}),
-              ...(item.priority !== "none" ? { priority: item.priority } : {}),
-              ...(item.externalId ? { externalId: item.externalId } : {}),
-              ...(item.metadata ? { metadata: item.metadata } : {}),
-              ...(item.annotation ? { annotation: item.annotation } : {}),
-            },
+            payload,
           })),
         );
       }

@@ -293,7 +293,16 @@ function sanitisePayload(
       // `varchar(36)` behind it, so an id too long for the column is refused by
       // postgres as a value and not stored as a truncated one that matches no
       // state and silently swallows the task.
-      clean[key] = value === null ? null : String(value).slice(0, 36);
+      //
+      // And **the floor the contract already asks for**, which a ceiling alone
+      // does not give: `boardStateSchema.id` is `min(1).max(36)` precisely so an
+      // empty string becomes a rejected id instead of an id that matches no state
+      // and swallows every task that claims it. An empty string here is stored
+      // happily — it is a legal `varchar` — and the two disagree on exactly the
+      // edge this comment exists to cover, so the empty one becomes null: the
+      // same answer the contract gives it, and the one the invariant check reads.
+      const id = value === null ? null : String(value);
+      clean[key] = id !== null && id.length > 0 ? id.slice(0, 36) : null;
       continue;
     }
 

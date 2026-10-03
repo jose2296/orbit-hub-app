@@ -120,6 +120,37 @@ describe('lists through sync', () => {
 
     const response = await api.get(`/lists/${listId}`, user.accessToken);
     expect(response.body.data.states).toEqual(states);
+
+    // The kind is the other half of the round trip, and it is the one that can go
+    // without anybody noticing: `'board'` is not in the enum on the row, it is
+    // `LIST_KINDS` deciding whether to keep it, and if that list ever loses it the
+    // sanitiser degrades the kind to `'tasks'` — silently, because an unknown kind
+    // is a fallback and not a rejection — while `states` comes back exactly the
+    // same. The suite would stay green with every board in it turned into a list
+    // of tasks.
+    expect(response.body.data.kind).toBe('board');
+  });
+
+  it('stores an empty state id as no state at all', async () => {
+    // The floor the contract asks for and a ceiling alone does not give:
+    // `boardStateSchema.id` is `min(1).max(36)` so that an empty string is a
+    // rejected id rather than one that matches no state. An empty string is a
+    // perfectly legal `varchar`, so without the floor it was stored as it came,
+    // and the two disagreed on exactly the value they exist to catch.
+    //
+    // It reads back as null — which is the answer the contract gives it, and the
+    // one "the first column" — and not as the empty string it was sent as.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Sin columna');
+    const states = [{ id: 's1', title: 'Backlog', color: 'neutral' }];
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+    const itemId = await createItem(user, listId, { title: 'Huerfana', stateId: '' });
+
+    const response = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const item = response.body.data.items.find((row: { id: string }) => row.id === itemId);
+
+    expect(item.stateId).toBeNull();
+    expect(listItemsResponseSchema.safeParse(response.body.data).success).toBe(true);
   });
 
   it('rejects a list without a workspace', async () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { stateOf } from '@orbit-hub/contracts';
 import type { BoardStates } from '@orbit-hub/contracts';
 
-import { planDuplication } from '../src/lib/lists/duplicate';
+import { duplicationPayloads, planDuplication } from '../src/lib/lists/duplicate';
 
 /**
  * Duplicating a list copies its items, and the copy has to match the original in
@@ -452,5 +452,100 @@ describe('planDuplication', () => {
     });
 
     expect(plan.list.states).toEqual([]);
+  });
+});
+
+describe('what a duplication sends to the server', () => {
+  /*
+    The cache write and the outbox write are two different things, and the bug
+    this block exists for lived in the gap between them: the plan put the
+    columns in the copy, the cache holds them, and the payload did not. So the
+    board looked right on the device and came back empty after the next pull,
+    with an `applied` in the log and nothing in any test failing.
+
+    Which is why these read `duplicationPayloads` and not `planDuplication`. The
+    plan was already right; the payload is where it was lost.
+  */
+
+  const planDeUnTablero = () =>
+    planDuplication(boardSource(), boardItems, {
+      newListId: 'board-2',
+      newItemId: () => 'nueva-tarea',
+      newStateId: generadorDeIds('col'),
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+  it('carries the columns of the board and the column of each task', () => {
+    const plan = planDeUnTablero();
+    const payloads = duplicationPayloads(plan);
+
+    // The four columns the plan minted, in the payload and not only in the row.
+    expect(payloads.list.states).toEqual(plan.list.states);
+    expect(payloads.list.states.map((estado) => estado.title)).toEqual([
+      'Backlog',
+      'Ready',
+      'WIP',
+      'Done',
+    ]);
+
+    // And the column of every task, so the server stores the board with its
+    // tasks distributed instead of with all of them in the first one.
+    expect(payloads.items.map(({ payload }) => payload.stateId)).toEqual(
+      plan.items.map((item) => item.stateId),
+    );
+    expect(
+      payloads.items.map(({ payload }) => columnaDe(payloads.list.states, payload.stateId)),
+    ).toEqual(['Backlog', 'Ready', 'WIP', 'Done']);
+
+    // The tasks are written into the copy, not into the list they came from.
+    expect(payloads.items.every(({ payload }) => payload.listId === 'board-2')).toBe(true);
+  });
+
+  it('sends the same columns and columns-of-task as the row it just cached', () => {
+    // The two writes have to agree. When they disagreed the only symptom was a
+    // board that was right until the pull, so this is the assertion that names
+    // the actual defect rather than one of its two halves.
+    const plan = planDeUnTablero();
+    const payloads = duplicationPayloads(plan);
+
+    expect(JSON.parse(JSON.stringify(payloads.list.states))).toEqual(plan.list.states);
+    expect(payloads.items.map(({ payload }) => payload.stateId)).toEqual([
+      'col-1',
+      'col-2',
+      'col-3',
+      'col-4',
+    ]);
+  });
+
+  it('carries no columns for a list that is not a board', () => {
+    const plan = planDuplication(source(), items, {
+      newListId: 'list-2',
+      newItemId: () => 'new-1',
+      newStateId: generadorDeIds('col'),
+      now: '2026-06-01T00:00:00.000Z',
+    });
+    const payloads = duplicationPayloads(plan);
+
+    // Present and empty, rather than absent: the field says whether this is a
+    // board, and a payload without it is a list the server has to guess about.
+    expect(payloads.list.states).toEqual([]);
+    expect('states' in payloads.list).toBe(true);
+  });
+
+  it('sends a null column rather than dropping the field', () => {
+    const plan = planDuplication(
+      boardSource(),
+      [taskEnColumn('t1', 'Sin columna', null, 0)],
+      {
+        newListId: 'board-2',
+        newItemId: () => 'nueva-tarea',
+        newStateId: generadorDeIds('col'),
+        now: '2026-06-01T00:00:00.000Z',
+      },
+    );
+    const payloads = duplicationPayloads(plan);
+
+    expect(payloads.items[0]?.payload.stateId).toBeNull();
+    expect('stateId' in (payloads.items[0]?.payload ?? {})).toBe(true);
   });
 });
