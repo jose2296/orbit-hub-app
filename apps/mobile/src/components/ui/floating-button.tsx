@@ -7,6 +7,45 @@ import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
 /**
+ * The two numbers of the corner, **named because something else has to reserve the
+ * space they take.**
+ *
+ * A screen whose content scrolls under this button has to leave room for it, and
+ * the room is `bottom + size`. Both numbers belong to the button: a caller that
+ * wrote "20" or "58" in its own file is the second copy of a decision that shows
+ * up as a card somebody cannot tap.
+ */
+const FAB_RIGHT = 20;
+const FAB_BOTTOM = 24;
+
+/**
+ * The two sizes, **and they are tied to the inset below by name and not by
+ * memory.**
+ *
+ * `isWide()` picks between them, and `FLOATING_BUTTON_INSET` is written with
+ * `FAB_SIZE` because `board-column.tsx` reserves exactly that much at the bottom of
+ * every column of a board, so that the last card of the column under this button can
+ * be scrolled clear of it. **A `58` in the ternary and not in the inset is a hole six
+ * points deep in every column of every board, and nothing fails**: the cards still
+ * scroll, they just finish underneath the button. The two numbers are fifteen lines
+ * apart here and one glance apart in a reader's eye, so each is spelled once and used
+ * by name.
+ */
+const FAB_SIZE_WIDE = 52;
+const FAB_SIZE = 58;
+
+/**
+ * How far up from the edge of the screen this button reaches, **as the larger of
+ * the two sizes.**
+ *
+ * `isWide()` picks between them and a caller that wanted the exact figure would have
+ * to ask it again and keep the two answers in step. The largest is the figure that is
+ * never too small, and too much empty space at the end of a scroll is a much cheaper
+ * mistake than a card under the button.
+ */
+export const FLOATING_BUTTON_INSET = FAB_BOTTOM + FAB_SIZE;
+
+/**
  * The floating button, in the corner the thumb reaches.
  *
  * There is one of these in the app and there is only ever going to be one, in the
@@ -70,7 +109,7 @@ export function FloatingButton({
   const theme = useTheme();
   const t = useTranslation();
   const wide = isWide();
-  const size = wide ? 52 : 58;
+  const size = wide ? FAB_SIZE_WIDE : FAB_SIZE;
   const pista = useA11yHint(hint);
 
   return (
@@ -81,56 +120,33 @@ export function FloatingButton({
         accessibilityLabel={label ?? t("create.title")}
         {...pista.props}
         onPress={onPress}
-      style={({ pressed }) => [
-        styles.fab,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: theme.colors.accent,
-          // The CSS form of a shadow, for the same reason as the panel: the
-          // `shadow*` props are gone from React Native Web and warn on every
-          // render.
-          boxShadow: theme.shadow.floating.boxShadow,
-          opacity: pressed ? 0.85 : 1,
-        },
-      ]}
-    >
-      <Ionicons
-        name="add"
-        size={wide ? 24 : 28}
-        color={theme.colors.onAccent}
-      />
-    </Pressable>
+        style={({ pressed }) => [
+          styles.fab,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: theme.colors.accent,
+            // The CSS form of a shadow, for the same reason as the panel: the
+            // `shadow*` props are gone from React Native Web and warn on every
+            // render.
+            boxShadow: theme.shadow.floating.boxShadow,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ]}
+      >
+        <Ionicons
+          name="add"
+          size={wide ? 24 : 28}
+          color={theme.colors.onAccent}
+        />
+      </Pressable>
       {/* The node beside the button and not inside it: a hint that is a child of
           the control is announced as part of its name. */}
       {pista.node}
     </>
   );
 }
-
-/**
- * The two numbers of the corner, **named because something else has to reserve the
- * space they take.**
- *
- * A screen whose content scrolls under this button has to leave room for it, and
- * the room is `bottom + size`. Both numbers belong to the button: a caller that
- * wrote "20" or "58" in its own file is the second copy of a decision that shows
- * up as a card somebody cannot tap.
- */
-const FAB_RIGHT = 20;
-const FAB_BOTTOM = 24;
-
-/**
- * How far up from the edge of the screen this button reaches, **as the larger of
- * the two sizes.**
- *
- * `isWide()` picks between them and a caller that wanted the exact figure would
- * have to ask it again and keep the two answers in step. The largest is the figure
- * that is never too small, and too much empty space at the end of a scroll is a much
- * cheaper mistake than a card under the button.
- */
-export const FLOATING_BUTTON_INSET = FAB_BOTTOM + 58;
 
 const styles = StyleSheet.create({
   fab: {

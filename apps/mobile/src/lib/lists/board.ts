@@ -426,6 +426,19 @@ export function columnLayout(width: number, gap: number): BoardColumnLayout {
  * No clamping: the last column of a board whose columns do not all fit cannot sit
  * flush against the left edge, and the browser clamps the scroll to what there is.
  * That is correct and it is the same on both targets.
+ *
+ * **What this guarantees is the geometry and not that it works on native.** A
+ * screen reader of this comment will hear "the scroller is given the number that was
+ * measured" and take it for "so it is right everywhere", and it is not: `1140` — the
+ * fourth column of a 368-point track — **is not a multiple of the scroller's width**
+ * either. If native `pagingEnabled` re-corrects a programmatic `scrollTo` to a
+ * page boundary the way it re-corrects a flick, then `1140` is as exposed as the `813`
+ * this replaced, and the only thing that has changed is that `1140` is where the
+ * column's edge really is and `813` was 36 points short of it. **That has not been
+ * measured**: there is no simulator or device on this machine, and the browser
+ * normalises both versions to the same anchor, which is why a browser measurement
+ * cannot tell them apart. The gesture of Task 9 decides this on every target; this
+ * function is what it has to be right about.
  */
 export function columnOffset(
   index: number,

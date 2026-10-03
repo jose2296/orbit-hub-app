@@ -27,7 +27,7 @@ import { useTheme } from "@/theme";
  *
  * **One screen for the three targets, and the width is what decides.** A narrow
  * window shows one state full-screen; a wide one divides the width between as
- * many columns as fit at `ANCHO_MINIMO_COLUMNA` and scrolls sideways with
+ * many columns as fit at `BOARD_COLUMN_MIN_WIDTH` and scrolls sideways with
  * anchoring when they do not all fit. Two screens would have been two lists of
  * things that break separately — two sets of empty states, two of errors, two of
  * nothing — and the width already answers the question on its own.
