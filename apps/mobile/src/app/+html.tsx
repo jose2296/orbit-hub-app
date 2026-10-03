@@ -48,6 +48,47 @@ export default function Root({ children }: PropsWithChildren) {
   return (
     <html lang="es">
       <head>
+        {/*
+          **Aquí no va un `<title>`, y por eso el de la web salía vacío.**
+          Está en `app/_layout.tsx`, en `screenOptions.title`. Lo que ocurre es
+          que expo-router emite su propio `<title data-rh="true">` al exportar y
+          pone ahí el título de la ruta; uno escrito a mano aquí sale **después**
+          del suyo, y de los dos `<title>` que quedan en el documento se lee el
+          primero. Google leía el de expo-router, vacío, y rechazaba la
+          verificación de OAuth con *"el nombre de la app no coincide con el de
+          tu página principal"*.
+
+          Ese aviso no era un capricho de la revisión: sin título no hay ningún
+          nombre con el que comparar el de la pantalla de consentimiento.
+        */}
+        {/*
+          Un `<title>` escrito aquí sale **después** del que emite expo-router, y
+          de los dos que quedan en el documento se lee el primero. Se deja igual:
+          ayuda a los lectores que toman el último y no estorba al que sí importa,
+          que es el de `_layout.tsx`.
+        */}
+        <title>OrbitHub</title>
+        {/*
+          La verificación de Google de que el dominio es tuyo.
+
+          Google no deduce que `jrz-labs.com` es tuyo porque lo pongas en un
+          formulario: lo comprueba. Y la única forma de comprobarlo sin
+          configurarlo a mano es este `meta`, con el token que Google da en su
+          pantalla. Por eso está **vacío y commented**: el token es de una sola
+          aplicación y de un solo intento, y un token de verificación commiteado
+          es un token caducado en cuanto Google lo consume.
+
+          Mientras esté vacío, este `<meta>` no se renderiza — una etiqueta con
+          `content` vacío es ruido, no una verificación — así que la web sigue
+          funcionando igual. Ponerlo es un commit con la línea de abajo
+          descomentada y el valor que Google dé, y se borra en cuanto la
+          verificación pase.
+
+          La alternativa es un registro TXT en DNS, que no necesita tocar el
+          código y aguanta más: es lo que se usa cuando la web se despliega sin
+          poder tocar su HTML.
+        */}
+        {/* <meta name="google-site-verification" content="TOKEN_DE_GOOGLE" /> */}
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
@@ -57,6 +98,24 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F7FB" />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1020" />
         <meta name="description" content="OrbitHub — tus listas, tus notas y tus tareas en un solo sitio." />
+        {/*
+          Open Graph. El `<title>` ya lleva el nombre —lo pone `export-web.mjs`,
+          porque solo despues del export se puede asegurar— pero el nombre de una
+          app tambien sale por aquí, y es la mitad de lo que la verificacion de
+          OAuth de Google compara contra la pantalla de consentimiento.
+
+          `og:site_name` es el que dice el nombre de la *app*; `og:title` es el
+          de la pagina. Con el primero ausente, un crawler solo ve el `<title>`
+          y no hay nada mas que leer.
+        */}
+        <meta property="og:site_name" content="OrbitHub" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="OrbitHub" />
+        <meta
+          property="og:description"
+          content="OrbitHub — tus listas, tus notas y tus tareas en un solo sitio."
+        />
+        <meta property="og:url" content="https://orbithub-app.jrz-labs.com/" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

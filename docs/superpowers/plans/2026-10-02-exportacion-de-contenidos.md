@@ -315,10 +315,12 @@ git commit -m "El sobre y el CSV salen de los mismos registros, para que no pued
 - Consumes: todo lo de Task 1 y Task 2.
 - Produces:
   - `sendFile(res: Response, status: number, file: { body: string | Buffer; contentType: string; filename: string }): void`
-  - `ExportService.accountJson(userId: string): Promise<AccountExport>`
-  - `ExportService.listJson(userId: string, listId: string): Promise<ListExport>`
-  - `ExportService.listCsv(userId: string, listId: string): Promise<string>`
+  - `ExportService.accountJson(userId: string): Promise<ExportFile>`
+  - `ExportService.listJson(userId: string, listId: string): Promise<ExportFile>`
+  - `ExportService.listCsv(userId: string, listId: string): Promise<ExportFile>`
   - `export const exportService: ExportService`
+
+Los tres devuelven `ExportFile = { body: string; contentType: string; filename: string }`, que es exactamente lo que `sendFile` consume. **El nombre sale del servicio y no de la ruta, a propósito**: el servicio es lo único que ha cargado la lista, y si el nombre lo calculara la ruta tendría que volver a cargarla o recibirla como parámetro. Devolver el nombre junto al cuerpo es lo que hace imposible que el fichero se llame de una cosa en la cabecera y de otra en el móvil, que es lo que pasó cuando `listCsv` devolvía sólo el CSV y se quedaba sin título con el que nombrarlo.
 
 `sendFile` pone cuatro cabeceras y luego `res.status(status).send(body)`:
 `content-type` con `; charset=utf-8`, `cache-control: no-store`,
@@ -369,7 +371,7 @@ Los casos:
 - `GET /account/export?format=csv` da **422** con `error.code === 'validation_failed'`.
 - `GET /lists/<uuid-inexistente>/export` da 404.
 - Sin token, 401 en los dos endpoints.
-- `content-disposition` de una lista cuyo título tiene acentos: el `filename*` trae el título con el acento y el `filename` en ASCII no lo tiene.
+- `content-disposition` de una lista cuyo título tiene acentos: **`filename` y `filename*` traen el mismo slug ASCII, sin acento**. El slug sin acentos es deliberado —un móvil escribiendo en caché no puede nombrar un fichero con `á`— y como consecuencia no hay dos nombres distintos que poner: `exportFilename` ya devuelve ASCII, así que el `filename*` no lleva nada que percent-codificar. Un nombre con acento en `filename*` sería **peor**: hay clientes que ignoran `filename*` y se quedan con el ASCII, y los que lo honran escriben un fichero cuyo nombre no es el que dijo el servidor.
 
 - [ ] **Step 2: Correr los tests y verlos fallar**
 
@@ -393,6 +395,8 @@ El camino de autorización es **exactamente** el que ya usa el resto: `visibleWo
 **`role` va en CARPETAS, listas, items y notas.** Son las cuatro entidades que extienden `nodeAccessSchema` (`workspace.ts` 221, 337, 401, 428) y `role: membershipRoleSchema` no tiene `.default()`: es obligatorio. `workspaceSchema` y `noteTemplateSchema` **no** lo llevan y sus filas mapean directas. Este es el error más fácil de cometer de toda la tarea, porque `contentQueryService` casi nunca devuelve carpetas y copiarse sus filtros y sus mapeos hace que las carpetas se olviden en silencio.
 
 Los siete select: `workspaces`, `folders`, `lists`, `listItems`, `notes`, `attachments`, `noteTemplates`. Los tres últimos cuelgan de los anteriores por id, no por rango. **Ninguno con `isNull(deletedAt)`.**
+
+**Las plantillas se eligen por espacio O por authorship, no sólo por espacio.** Una plantilla personal tiene `workspaceId: null` —ahí vive, según su propio comentario del contrato—, así que filtrar por `eq(noteTemplates.workspaceId, id)` deja fuera justo las plantillas que el usuario escribió sin espacio. Y al revés, `workspaceId IS NULL` a secas trae las de otros. El filtro es `(inArray(workspaceId, wsIds) OR eq(createdBy, userId))`. Así entran las del espacio y las personales propias, y quedan fuera las de otros y **las que trae la aplicación** —`builtInKey` no nulo, `createdBy` nulo— que se reinstalan solas y no tienen por qué ocupar espacio en cada copia.
 
 El map de `metadata` es identidad: `metadata: row.metadata`. Sin `JSON.parse`, sin `JSON.stringify`, sin Selecting claves.
 
@@ -541,8 +545,17 @@ git commit -m "Pedir bytes sin parsearlos, que en un movil la respuesta va a un 
 - Produces:
   - `export const EXPORT_TIMEOUT_MS = 120_000`
   - `saveExport(args: { pending: PendingRequest; filename: string }): Promise<'downloaded' | 'shared'>`
+  - `readSavedEnvelope(args: { path: string; format: 'json' | 'csv' }): Promise<AccountExport | ListExport | null>` — **sólo nativo**
   - `exportErrorKey(error: unknown): TranslationKey | null`
-  - `useExport(): { running: boolean; run(args: { path: string; format: 'json' | 'csv'; title: string; fallbackId: string }): Promise<{ counts: ExportCounts | null } | null> }`
+  - `useExport(): UseExport`, donde `UseExport` expone `{ running: boolean; error: ApiError | null; filename: string | null; result: ExportResult | null; run(args: { path: string; format: 'json' | 'csv'; title: string; fallbackId: string }): Promise<ExportResult | null> }` y `ExportResult` es `{ counts: AccountExport['counts'] | ListExport['counts']; how: 'downloaded' | 'shared'; filename: string }`
+
+**Los `counts` salen del fichero, y eso obliga a que las dos plataformas los consigan de forma distinta.** En web, `send()` devuelve un `Response` cuyo `blob()` hay que leer igualmente, así que se parsea ese mismo `Response` y se le pasa a `saveExport` — un solo envío. En nativo **no hay ningún `Response` que parsear**: `File.downloadFileAsync` lleva los bytes del `Response` a un fichero de la caché y el `Response` no existe. La única forma de tener los `counts` ahí es releer el fichero recién escrito.
+
+Y releerlo es además lo correcto: **los números que se enseñan salen del fichero que ha quedado en disco**, no de una respuesta que nadie ha mirado. Si el fichero se escribió mal, los números no cuadran y se ve.
+
+`run()` lee `Platform.OS` una vez para decidir, y **ningún módulo nativo se importa fuera de `save.ts`**. Eso es lo que mantiene `save.ts` importable desde un test con el stub de `react-native`.
+
+El superset de `UseExport` —`error`, `filename`, `result`— no es adorno: sin ellos la Task 6 no puede pintar `export.saved` ni un error reintentable, y la hoja de resultado necesita el `how` para decir si el fichero se descargó o se compartió.
 
 `EXPORT_TIMEOUT_MS` es explícito y grande a propósito: `DEFAULT_TIMEOUT_MS` está puesto para JSON pequeño, y un export de varios megas lo termina contra un error de timeout que no es un timeout.
 
@@ -610,7 +623,6 @@ En `es` y en `en`, dentro del bloque de `settings.*` que ya existe, y manteniend
 
 ```
 "export.title":              "Exportar mis datos"
-"export.body":               "Una copia de todo tu contenido, en JSON."
 "export.running":            "Preparando el fichero…"
 "export.done.one":           "{count} elemento"
 "export.done.other":         "{count} elementos"
@@ -623,7 +635,7 @@ En `es` y en `en`, dentro del bloque de `settings.*` que ya existe, y manteniend
 "export.error.notFound":     "Ya no está, o nunca estuvo donde la buscabas."
 "export.error.rateLimited":  "Demasiadas exportaciones seguidas. Espera un momento."
 "export.error.unauthorized": "Tu sesión ha caducado. Vuelve a entrar."
-"export.error.unknown":      "Algo falló al preparar el fichero."
+"export.error.internal":     "Algo falló al preparar el fichero."
 "export.format":             "Formato"
 "export.format.csv":         "CSV — para Excel y Google Sheets"
 "export.format.json":        "JSON — copia completa"
@@ -652,7 +664,7 @@ El destino **no** lleva el `filename` que devuelve `exportFilename` como nombre 
 
 - [ ] **Step 7: `use-export.ts`**
 
-`run()` es un `async` que: monta `running`, llama a `apiRaw(path, { query: { format }, timeoutMs: EXPORT_TIMEOUT_MS })`, llama a `exportFilename` con `new Date().toISOString().slice(0, 10)`, llama a `saveExport`, y **parsea el sobre con `accountExportSchema` o `listExportSchema` del contrato para sacar los `counts`**. Que los `counts` los diga el propio fichero y no el cliente es el punto: el número que se enseña es el que va a salir por pantalla.
+`run()` es un `async` que: monta `running`, limpia `error` y `result`, llama a `apiRaw(path, { query: { format }, timeoutMs: EXPORT_TIMEOUT_MS })`, llama a `exportFilename` con `new Date().toISOString().slice(0, 10)`, y entrega el fichero a `saveExport`. Los `counts` salen del sobre, y **la forma de llegar al sobre depende de la plataforma** — ver la sección de Interfaces de esta misma tarea.
 
 El tipo que devuelve `run` es `AccountExport['counts'] | ListExport['counts']`, **derivado de los tipos del contrato y escrito así**. No declares una interfaz `ExportCounts` propia: una segunda definición de la forma de los `counts` es una que se queda vieja en cuanto el contrato cambie, y el typecheck no la caza.
 
@@ -702,7 +714,7 @@ git commit -m "Guardar el fichero en los tres sistemas, y expo-sharing porque no
 
 `type Page` pasa a ser `"options" | "rename" | "share" | "export" | "delete"`.
 
-El `SheetOption` va entre el de compartir y el de borrar: `key: "export"`, `icon: "download-outline"`, `label: t("export.title")`, `description: t("export.body")`, `onPress: () => setPage("export")`.
+El `SheetOption` va entre el de compartir y el de borrar: `key: "export"`, `icon: "download-outline"`, `label: t("export.list.title")`, `description: t("export.list.body")`, `onPress: () => setPage("export")`.
 
 La página es un `SheetOptions` con dos filas —`export.format.json` y `export.format.csv`, en ese orden— y `onPress` en cada una que hace `onClose()` y luego `void run(...)`. **`onClose()` antes de `run()`, no después**, por lo mismo que hace `duplicateList` en el fichero: la hoja se va y el trabajo sigue.
 

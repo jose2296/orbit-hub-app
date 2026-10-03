@@ -10,6 +10,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { READING_WIDTH } from "@/lib/layout/measure";
+import { useHeaderOwnsTopInset } from "@/components/ui/header-inset";
 import { SpaceBand, type SpaceBandProps } from "@/components/workspace/space-band";
 import { useTheme } from "@/theme";
 
@@ -106,6 +107,18 @@ export function Screen({
 }: ScreenProps) {
   const theme = useTheme();
 
+  /**
+   * Whether the bar above already spent the status bar's height.
+   *
+   * It has, on every screen of the `(app)` stack, because `AppHeader` takes
+   * `insets.top` so its buttons are not under the clock. Adding it here as well
+   * is the gap twice: measured on Android as a 24-point bar above a page that
+   * starts another 24 points down. Outside that stack there is no bar, so the
+   * inset is this screen's to take — which is what `false` gives it. See
+   * `header-inset.tsx`.
+   */
+  const cabeceraArriba = useHeaderOwnsTopInset();
+
   const padding = {
     padding: theme.spacing.lg,
     // Zero and not a smaller gap: the panel's promise is that the six rows of the
@@ -162,7 +175,7 @@ export function Screen({
 
   return (
     <SafeAreaView
-      edges={["top", "left", "right"]}
+      edges={cabeceraArriba ? ["left", "right"] : ["top", "left", "right"]}
       style={[styles.flex, { backgroundColor: theme.colors.background }, style]}
       testID={testID}
     >

@@ -3,7 +3,7 @@
     "name": "OrbitHub",
     "slug": "orbit-hub",
     "scheme": "orbithub",
-    "version": "0.1.3",
+    "version": "0.1.8",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.jrzlabs.orbithub",
-      "versionCode": 4,
+      "versionCode": 9,
       "predictiveBackGestureEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -42,7 +42,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#0B1020"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

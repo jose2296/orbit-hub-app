@@ -36,6 +36,30 @@ The mobile client unwraps the envelope in `apiRequest`, so screens and hooks onl
 `data`. A response that is not an envelope is passed through untouched, which keeps the client
 usable against endpoints that answer with a bare payload.
 
+Not every `2xx` goes through `sendData`. The ones that do not, as of this writing, are:
+
+- **Bytes, not JSON.** `GET /account/export` and `GET /lists/:id/export` answer with a file, a
+  `Content-Disposition: attachment` and `Cache-Control: no-store`, and they go through `sendFile`.
+  `GET /attachments/file/:key` is the older one and the reason this list is not two long: it
+  streams the stored object with an `inline` disposition rather than writing a body, because it
+  serves a signed, short lived URL instead of a request from the app.
+- **JSON without the envelope.** `PUT /attachments/upload/{*key}` answers a bare `{ ok: true }`
+  written straight to the response. The body of that request *is* the file, so the client on the
+  other end is a bucket upload rather than the app, and there is no `meta` to hand back.
+- **No body at all.** Nine routes answer `204` with `res.end()` — the deletes and the
+  leave/accept calls in `auth.ts`, `workspaces.ts`, `notes.ts` and `attachments.ts`. There is no
+  envelope to send on a response that has no content, and `apiRequest` checks the status before it
+  looks at the body, so it resolves those to `undefined` instead of failing on the empty text.
+
+This is a snapshot, not a guarantee. A route that stops going through `sendData` has a reason worth
+writing down here, and one that starts not going through it has one too: the reason it was allowed
+to be an exception is the thing the next reader is missing.
+
+Once `sendFile` has run the headers are on the wire, and `errorHandler` steps aside when
+`res.headersSent` is true — so a failure after the body started writing cannot be turned into a
+JSON error anymore. The streaming route carries the same hazard for the same reason: its headers
+are set before the first chunk goes out.
+
 ## Error codes
 
 | Code | Status | Meaning |

@@ -723,21 +723,26 @@ export default function ListScreen() {
         onClose={() => setMenuFor(null)}
       />
 
-      {/* El menu se monta cuando se pide y se desmonta al cerrar, que es como
-          decide abrirse: un menu siempre presente seria un menu que se abre solo
-          al cambiar la lista. */}
-      {menuOpen && list ? (
-        <ListMenuSheet
-          list={list}
-          folder={
-            list?.folderId
-              ? (folders.find((f) => f.id === list.folderId) ?? null)
-              : null
-          }
-          onClose={() => setMenuOpen(false)}
-          onDeleted={() => router.back()}
-        />
-      ) : null}
+      {/*
+        The menu is mounted for good and opens by its prop, **which is what
+        `useLastValue` was written for** — and not for tidiness: a menu that
+        unmounts on close takes the export down with it. Pressing a format calls
+        `onClose()` before asking for the file, so the panel leaves and the work
+        goes on behind it, and under a conditional mount that `onClose()` unmounts
+        this on the same frame the download starts. The sheet of results would then
+        arrive at a component that is not there, and the failure goes unpainted
+        again — which is the whole thing it exists to stop.
+      */}
+      <ListMenuSheet
+        list={menuOpen && list ? list : null}
+        folder={
+          list?.folderId
+            ? (folders.find((f) => f.id === list.folderId) ?? null)
+            : null
+        }
+        onClose={() => setMenuOpen(false)}
+        onDeleted={() => router.back()}
+      />
 
 
 
@@ -869,15 +874,11 @@ function TaskRow({
         {
           gap: theme.spacing.md,
           padding: theme.spacing.lg,
-          // El asa de arrastrar va encima, en el borde derecho, y la insignia de
-          // urgencia se solapaba con ella. Se le deja sitio: dos cosas que se
-          // pisan no se leen, y ademas el que va debajo no se puede pulsar.
-          //
-          // Y los 28 pt se los queda el **nombre**, no solo el hueco de la derecha:
-          // el icono ha pasado a la linea del titulo y el nombre ya no es el primer
-          // hijo de la fila, asi que el ancho del sitio reservado va al final de la
-          // linea y el `flexShrink: 1` de `styles.nombre` es lo que cede de ahi.
-          paddingRight: theme.spacing.lg + styles.dragHandle.width,
+// Sin `paddingRight` para el asa de arrastrar: **el asa ya no esta.**
+          // Reserve 28 pt a la derecha durante semanas para algo que no se dibuja,
+          // y con el icono en la linea del titulo ese hueco era ademas lo que
+          // empujaba el nombre hacia el borde. Lo que cede ahora cuando el nombre
+          // es largo es el `flexShrink: 1` de `styles.nombre`.
         },
       ]}
     >
@@ -1170,10 +1171,6 @@ const styles = StyleSheet.create({
   metaTag: {
     flexShrink: 1,
   },
-  /** Lo que ocupa el asa de arrastrar, en el borde derecho de la fila. */
-  dragHandle: {
-    width: 28,
-  },
   createButton: {
     position: "absolute",
     width: 56,
@@ -1205,38 +1202,46 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   /**
-   * The pressable that wraps the title, and **it must not be a flex child.**
+* The pressable that wraps the title. It is **not** a flex child that divides
+   * the row, and the reason is not the one this comment used to give.
    *
-   * Symptom: in a release build of Android the row shows its checkbox, its icon
-   * and the counters — every one of them styled — and **no title at all**. The
-   * `accessibilityLabel` of the icon, one line up, reads the title in full, so
-   * the data is there and the title is being dropped at layout time.
+   * Symptom this was written for: on Android the row showed its checkbox, its
+   * icon and the badge — every one of them styled — and **no title at all**, and
+   * an empty `{}` here was the fix that was believed to have done it. It did not
+   * fix it: `{}` is not a style, it changes nothing, and the title kept vanishing.
    *
-   * Why: its parent is already `flex: 1`, so this box has no width of its own,
-   * and a `Pressable` that is told how to divide a space rather than how much to
-   * occupy ends up occupying **zero** in Android's flexbox. A zero-width box clips
-   * everything inside it, and the `AppText` goes with it — while the icon beside
-   * it, which has a fixed `width: 24`, survives. On web the same tree lays out,
-   * because the browser gives an unstyled element its content width.
+   * **The cause was next door, not here.** The `Checkbox` to the left is given
+   * `label=""`, and it drew that empty label as an `AppText` with `flex: 1`. In
+   * Yoga the grow resolves against the space available to the whole checkbox,
+   * which is the rest of this row, so the checkbox grew to the row's full width —
+   * measured at 755 of the row's 754 points — and `styles.flex`, the title column
+   * sharing that row, got zero. Nothing to paint, and the badge crushed beside it.
+   * An empty element measures zero in a browser however it is styled, which is why
+   * the web was right and the phone was not.
    *
-   * So: no `flex`, no absolute, nothing. It measures what it wraps, which is the
-   * only thing that was ever wanted — the title is as long as it is.
+* So the fix is in `checkbox.tsx`, which no longer draws a label it was not
+   * given, and nothing here had to change for it to work. What is left here is
+   * a note not to "tidy" this into a `flex: 1`: the title is as long as it is,
+   * and a box told how to divide a space is a box that decides the title's width
+   * for it.
    *
-   * **And `flexShrink` is the one thing here that is not "no flex".** It used to be
-   * the parent's job alone: this box was a child of a **column**, where the cross
-   * axis stretched it to the column's width and its own width never came into it.
-   * It is now a child of a **row** — the line of the title, beside the icon — and
-   * in a row the width is exactly what the box decides. `react-native-web@0.21.2`
-   * writes `flexShrink: 0` on every `View` it makes (`view$raw`, in
-   * `node_modules/react-native-web/dist/exports/View/index.js`), so without this
-   * the name would keep its full text width, ignore the `numberOfLines={2}` above
-   * it and push the right edge of the row past the edge of the screen.
+   * **`flexShrink` below is a different bug and arrived separately.** The
+   * checkbox was starving the *column*; this is the name overflowing its own
+   * line, and it only became possible when the icon moved into that line. Before
+   * that the name was a child of a **column**, where the cross axis stretched it
+   * to the column's width and its own width never came into it. It is now a child
+   * of a **row** — the line of the title, beside the icon — and in a row the
+   * width is exactly what the box decides. `react-native-web@0.21.2` writes
+   * `flexShrink: 0` on every `View` it makes (`view$raw`, in
+   * `node_modules/react-native-web/dist/exports/View/index.js`), so without it the
+   * name kept its full text width, ignored the `numberOfLines={2}` above it and
+   * pushed the right edge of the row past the edge of the screen.
    *
-   * So the number here is **not** a `flex: 1` — which is the thing that made
-   * Android's flexbox give this box a width of zero — but a **shrink**, which is
-   * the other half of the same property and not the half that did that.
-   * `minWidth: 0` on `styles.flex` still does its own job: it is the *column* that
-   * has to be able to give up room.
+   * So the number below is **not** a `flex: 1` — which is the thing that made
+   * Android's flexbox give this box a width of zero, and which the checkbox was
+   * the real cause of anyway — but a **shrink**, the other half of the same
+   * property. `minWidth: 0` on `styles.flex` still does its own job: it is the
+   * *column* that has to be able to give up room.
    */
   nombre: {
     flexShrink: 1,

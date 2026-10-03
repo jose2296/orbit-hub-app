@@ -94,3 +94,7 @@ play-service-account*.json
 # nadie.
 /.worktrees/
 /.superpowers/
+
+# Capturas de depuracion sueltas en la raiz: se guardan en capturas/, que ya
+# esta ignorado, y estas se colaron por estar a un nivel de mas.
+web-*.png

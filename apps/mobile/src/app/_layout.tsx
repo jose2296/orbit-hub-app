@@ -5,7 +5,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 
 import { PosterFlightProvider } from '@/components/media/poster-flight';
 import { AppText } from '@/components/ui/text';
@@ -24,7 +24,22 @@ export default function RootLayout() {
     // filas arrastrables, y sin eso el navegador se queda con el dedo para
     // desplazar la lista y el arrastre no llega a empezar nunca.
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
+      {/*
+        `initialMetrics={initialWindowMetrics}`, and it is the fix for a header
+        that drew **under the status bar** on a phone with a notch.
+
+        Without it the provider has no insets on the first render: it paints a
+        frame with zeroes, `Screen`'s `SafeAreaView` adds no top padding, and the
+        header lands in the notification bar — with the drawer button and the
+        right-hand action underneath the clock, where you cannot tap them. The real
+        insets arrive a frame later, the padding appears, and the header jumps down.
+        On a device with no cutout there is nothing to correct, which is why it is
+        invisible in the browser and only shows up on the phone somebody bought.
+
+        The values come from the native module **synchronously**, before the first
+        render, so the first frame is already right.
+      */}
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <ThemeProvider>
           <I18nProvider>
             <SessionProvider>

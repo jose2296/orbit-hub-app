@@ -8,6 +8,7 @@ import {
 } from "@/components/layout/drawer";
 import { BackButton } from "@/components/ui/breadcrumbs";
 import { AppHeader } from "@/components/ui/app-header";
+import { HeaderOwnsTopInset } from "@/components/ui/header-inset";
 import {
   HeaderActionProvider,
   useHeaderActionSlot,
@@ -211,7 +212,16 @@ function AppNavigation() {
           is what happens to the app beside the menu: on a phone it is pushed to
           the right, on a wide screen it stays where it is and takes what the
           column is not using. See `Drawer`. */}
-      <Drawer wide={wide}>{stack}</Drawer>
+      <Drawer wide={wide}>
+        {/*
+          This stack's screens all have the header, and the header has already
+          taken the status bar's height so its buttons are not under the clock.
+          Saying so here is how `Screen` knows not to take it a second time: the gap
+          would otherwise be measured twice on a phone with a notch. See
+          `header-inset.tsx`.
+        */}
+        <HeaderOwnsTopInset>{stack}</HeaderOwnsTopInset>
+      </Drawer>
     </DrawerProvider>
   );
 }

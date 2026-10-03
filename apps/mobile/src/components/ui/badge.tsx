@@ -111,5 +111,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
+    /**
+     * And it does not shrink, **because a pill that gets narrow is not a pill.**
+     *
+     * Measured on an Android release build, in the urgency badge of a task row: the
+     * badge got 53 points wide and 145 tall, because "High" was ten points wide and
+     * wrapped to one letter per line, and the row was four times as tall as its
+     * content. The text was readable and the shape was not, which is the worst of
+     * both: it looked like a mistake and it still took the room.
+     *
+     * `flexShrink: 0` and not a `minWidth`: the label is the shortest thing on the
+     * line and it is what the whole badge is for, so the thing that yields is the
+     * one next to it — which is what `styles.metaTags` in the row already does.
+     */
+    flexShrink: 0,
   },
 });
