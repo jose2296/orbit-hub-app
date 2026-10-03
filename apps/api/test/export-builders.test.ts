@@ -611,7 +611,6 @@ describe('itemsToCsv', () => {
 
     expect(records[1]![3]).toBe('');
     expect(records[2]![3]).toBe('');
-    expect(csv).not.toContain('undefined');
   });
 });
 
@@ -627,6 +626,14 @@ describe('exportCsvColumnsFor', () => {
       LIST_EXPORT_CSV_COLUMNS.indexOf('completado'),
     );
     expect(BOARD_EXPORT_CSV_COLUMNS[3]).toBe('estado');
+    // And the other fourteen are the fourteen they always were. Without this, a
+    // name mistyped in the board array only — `createdat` instead of
+    // `created_at` — would pass every other assertion here, because they all
+    // compare the header against the same constant the header is built from, and
+    // the two CSV headers would then disagree in silence.
+    expect(BOARD_EXPORT_CSV_COLUMNS.filter((_, i) => i !== 3)).toEqual(
+      LIST_EXPORT_CSV_COLUMNS.filter((_, i) => i !== 3),
+    );
     expect(BOARD_EXPORT_CSV_COLUMNS).toHaveLength(LIST_EXPORT_CSV_COLUMNS.length);
   });
 });

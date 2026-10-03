@@ -133,8 +133,14 @@ export function exportFilename(args: {
 }
 
 /**
- * Cabecera CSV de la exportacion de una lista. Una sola definicion para que
- * el builder y el test no puedan separarse.
+ * The CSV header of a list that is not a board, and of every kind that keeps a
+ * checkbox. `exportCsvColumnsFor` is what the builder asks, so the builder and
+ * the test cannot read two different arrays.
+ *
+ * The board's is below: the same fifteen names, with `estado` where `completado`
+ * stands. The two are kept apart rather than folded into one another because the
+ * order of a CSV is its format, and a test asserting `year` at index 8 of this
+ * array is asserting that the format did not move.
  */
 export const LIST_EXPORT_CSV_COLUMNS = [
   'id',

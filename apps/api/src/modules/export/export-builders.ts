@@ -139,13 +139,18 @@ export function csvStateCell(list: List, item: ListItem): string {
 }
 
 /**
- * CSV de una lista: cabecera fija, celdas siempre entre comillas, filas separadas
- * por CRLF y todo el fichero empieza con BOM para que Excel no rompa las tildes.
+ * CSV of a list: cells always quoted, rows separated by CRLF, and the whole file
+ * starts with a BOM so Excel does not break the accents.
  *
- * The header comes from the contract asked about the kind of list, because a
- * board has no `completado` column and a list of any other kind has no `estado`
- * one. The BOM and the CRLF are not touched by that: they are what keeps Excel
- * from breaking the accents, and they are the same for every kind.
+ * The header is not a fixed one: there are two fixed headers and the kind of the
+ * list picks which, because a board has no `completado` column and a list of any
+ * other kind has no `estado` one. What `exportCsvColumnsFor` returns for the
+ * header and `csvStateCell` returns for the cell under index 3 come from the same
+ * decision, which is what keeps a cell from being written under a header that
+ * names something else.
+ *
+ * The BOM and the CRLF are the same either way: they are what keeps Excel from
+ * breaking the accents, and nothing about a board changes that.
  */
 export function itemsToCsv(args: { list: List; items: ListItem[] }): string {
   const header = exportCsvColumnsFor(args.list.kind).join(';');
