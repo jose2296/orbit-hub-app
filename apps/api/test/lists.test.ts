@@ -153,6 +153,120 @@ describe('lists through sync', () => {
     expect(listItemsResponseSchema.safeParse(response.body.data).success).toBe(true);
   });
 
+  it('rejects a task pointing at a column its list does not have', async () => {
+    // The server cannot leave a task in a limbo no screen knows how to draw, and
+    // the refusal has to be a refusal: not an `applied` that changed nothing,
+    // which is the scar `SYNC_WRITABLE_FIELDS` leaves behind. Reading the row back
+    // afterwards is what proves the guard ran *before* the insert rather than
+    // rejecting an operation that had already written the row.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [{ id: 's1', title: 'Backlog', color: 'neutral' }],
+    });
+    const itemId = randomUUID();
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'create',
+        entityId: itemId,
+        payload: { listId, title: 'Huerfana', stateId: 'no-existe' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('rejected');
+    expect(response.body.data.results[0].error).toContain('An item needs a state its list has');
+    const items = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(items.body.data.items.map((row: { id: string }) => row.id)).not.toContain(itemId);
+  });
+
+  it('rejects moving a task to a column its list does not have', async () => {
+    // The other half of the invariant, on the path that is easy to leave out:
+    // the create is refused where the row does not exist yet, and the update is
+    // where an id the list never had would arrive from a device that had it.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [{ id: 's1', title: 'Backlog', color: 'neutral' }],
+    });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    const before = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const version = before.body.data.items.find((row: { id: string }) => row.id === itemId).version;
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: version,
+        base: { stateId: 's1' },
+        payload: { stateId: 's2' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('rejected');
+    expect(response.body.data.results[0].error).toContain('An item needs a state its list has');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(after.body.data.items.find((row: { id: string }) => row.id === itemId).stateId).toBe('s1');
+  });
+
+  it('renames a task whose column is gone without touching the column', async () => {
+    // The guard only reads the state when the payload carries one, and this is the
+    // test that says so. A task can be left pointing at a column another device
+    // deleted, and from then on every edit to it — the title, an icon, its
+    // position — is an edit that does not mention the column. Checking the stored
+    // column unconditionally would make such a task uneditable: the only way out
+    // would be the exact write being refused, and nobody could retitle a card.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const states = [{ id: 's1', title: 'Backlog', color: 'neutral' }];
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    // The column disappears from another device: the task keeps pointing at it.
+    const before = await api.get(`/lists/${listId}`, user.accessToken);
+    await sync(user, [
+      {
+        entity: 'list',
+        kind: 'update',
+        entityId: listId,
+        baseVersion: before.body.data.version,
+        base: { states },
+        payload: { states: [] },
+      },
+    ]);
+
+    const items = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const stored = items.body.data.items.find((row: { id: string }) => row.id === itemId);
+    expect(stored.stateId).toBe('s1');
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: stored.version,
+        base: { title: 'Tarjeta' },
+        payload: { title: 'Tarjeta renombrada' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const renamed = after.body.data.items.find((row: { id: string }) => row.id === itemId);
+    expect(renamed.title).toBe('Tarjeta renombrada');
+    // Untouched, and still a column the list does not have: the guard reads the
+    // payload and not the row, so the orphan survives until a client that knows
+    // about the column writes one.
+    expect(renamed.stateId).toBe('s1');
+  });
+
   it('rejects a list without a workspace', async () => {
     const user = await createVerifiedUser(api);
     const response = await sync(user, [
