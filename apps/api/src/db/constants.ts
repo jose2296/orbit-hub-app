@@ -52,7 +52,9 @@ export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
  * Fields the client may write, per entity. Anything else is ignored.
  *
  * The kinds match the contract exactly: a list is one of these for good, and
- * never two at once.
+ * never two at once. `board` is one of them and not a flag on top of `tasks`,
+ * because the difference between them is what a task carries — a state or a
+ * checkbox — and a list that is both is a list whose rows nobody can draw.
  */
 export const LIST_KINDS = [
   'tasks',
@@ -60,6 +62,7 @@ export const LIST_KINDS = [
   'series',
   'movies_and_series',
   'books',
+  'board',
 ] as const;
 export type ListKindName = (typeof LIST_KINDS)[number];
 
@@ -108,6 +111,13 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   // version, so it looks like it worked and nothing changed. That is worse than a
   // rejection, because a rejection at least tells the person their choice did not
   // save, and this one looked like it saved for four whole rebuilds.
+  //
+  // `states` and `stateId` are the board's two, and they are named here because
+  // being on this list is **half** of writing them, not all of it: a key that is
+  // allowed and has no branch in `sanitisePayload` never reaches `clean` and is
+  // dropped exactly as quietly as a key that is not allowed. The two lists have
+  // to grow together, and the test that catches the half that is missing is
+  // `lists.test.ts` pushing a board and reading its states back.
   workspace: ['name', 'description', 'emoji', 'color', 'colorTo', 'wash'],
   folder: ['parentId', 'name', 'emoji', 'position'],
   list: [
@@ -120,6 +130,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'position',
     'kind',
     'orderMode',
+    'states',
   ],
   list_item: [
     'title',
@@ -133,6 +144,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'externalId',
     'metadata',
     'annotation',
+    'stateId',
   ],
   /**
    * `document` is on this list and the client is expected to send it, but the

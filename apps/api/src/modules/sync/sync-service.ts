@@ -8,6 +8,7 @@ import type {
   SyncPushResponse,
 } from '@orbit-hub/contracts';
 import {
+  MAX_BOARD_STATES,
   NOTE_DOCUMENT_MAX_BYTES,
   noteDocumentSchema,
   noteDocumentToPlainText,
@@ -282,6 +283,33 @@ function sanitisePayload(
       // that no longer exists is worse than no rule, because the allow-list says
       // the field is writable and this says otherwise.
       clean[key] = value === null ? null : String(value).slice(0, 2000);
+      continue;
+    }
+
+    if (key === 'stateId') {
+      // The column of the board this task is drawn in. Null is a real value and
+      // not a failure: it means "wherever the first column is", which is where a
+      // task created on any other kind of list lands. Cut to the width of the
+      // `varchar(36)` behind it, so an id too long for the column is refused by
+      // postgres as a value and not stored as a truncated one that matches no
+      // state and silently swallows the task.
+      clean[key] = value === null ? null : String(value).slice(0, 36);
+      continue;
+    }
+
+    if (key === 'states') {
+      // The columns of a board, as one array and not field by field: reordering,
+      // renaming and adding all travel in a single write, and a merge per column
+      // would be a merge nobody could resolve anyway.
+      //
+      // What lands here is only checked for being an array, and the shapes inside
+      // are the contract's business: the client is the only thing that builds
+      // them, and a board whose states are nonsense is drawn as a board with the
+      // columns it could read. Cutting to the contract's own cap keeps a payload
+      // from carrying more columns than a board is allowed to have.
+      clean[key] = Array.isArray(value)
+        ? (value as unknown[]).slice(0, MAX_BOARD_STATES)
+        : [];
       continue;
     }
 
