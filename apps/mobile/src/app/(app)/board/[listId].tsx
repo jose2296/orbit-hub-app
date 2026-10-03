@@ -113,6 +113,27 @@ export default function BoardScreen() {
 
   /** The width the board is given, measured, and zero until it has been. */
   const [ancho, setAncho] = useState(0);
+  /**
+   * The height of the track, measured, and zero until it has been.
+   *
+   * **It is a second measurement and not a flex rule, and the reason is a bug that
+   * only a column with more cards than fit shows.** The chain from the track down to
+   * the box of cards is a column of boxes on the web, and every one of them was
+   * sized by its content: `flexGrow: 1` fills what is left but **does not shrink**,
+   * and a box that is `flexShrink: 0` —which is what react-native-web gives every
+   * `View`, and what React Native does too— stays as tall as its content. Measured
+   * with seven cards in a track of 392: the column measured 610 and the box of cards
+   * never scrolled, so the board ran off the bottom of the window instead of
+   * scrolling inside its column.
+   *
+   * `flexShrink: 1` on the wrapper would fix the web and is exactly what must not
+   * be done there: on native that wrapper is a child of the **row** inside the
+   * scroll view, and shrinking in a row is shrinking the width, so four columns of
+   * 271 would be squeezed into the 392 of the track. **So the height is measured
+   * and handed down**, the same way the width is, and no flexbox has to have an
+   * opinion about it on either target.
+   */
+  const [altoPista, setAltoPista] = useState(0);
   /** Which column the board is anchored on, by index — the tabs' and the track's. */
   const [actual, setActual] = useState(0);
   const pista = useRef<ScrollView>(null);
@@ -331,6 +352,7 @@ export default function BoardScreen() {
             ref={pista}
             testID="board-track"
             style={styles.pista}
+            onLayout={(event) => setAltoPista(event.nativeEvent.layout.height)}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
@@ -349,26 +371,22 @@ export default function BoardScreen() {
                 narrow columns that all fit in one screen and none of which is a
                 column.
 
-                And the wrapper is also what `pagingEnabled` snaps:
-                react-native-web marks each **child of the track** as a snap point,
-                so the wrapper's left edge is the column's left edge and the browser
-                lands on the column and not on the gap in front of it.
+                And the wrapper is also what `pagingEnabled` snaps: react-native-web
+                marks each **child of the track** as a snap point, so the wrapper's
+                left edge is the column's left edge and the browser lands on the
+                column and not on the gap in front of it.
 
-                **`flexGrow: 1`, and the reason is one level of box that only the web
-                has.** On the web the snap point puts another box between the track
-                and this one, and that box is a **column** —so the cross axis of this
-                wrapper is its width, which is already decided, and its height is the
-                main axis, which is what grows.* React Native has no such box: its
-                children of a horizontal scroll view are stretched across the height
-                directly. Measured with it missing, at 1440 points: every column was
-                122 tall —its header and its empty state and nothing else— in a
-                track of 776, so the board was four short bars at the top of the
-                screen instead of four columns of it.
+                **Both of its numbers are measured, and neither is a flex rule.**
+                The width is `columnLayout`'s and the height is the track's own
+                layout, and the comment on `altoPista` says what happens when the
+                height is left to the boxes: nothing shrinks, a column with more
+                cards than fit is as tall as its content, and the board runs off the
+                bottom of the window.
               */
               <View
                 key={state.id}
                 testID={`board-slot-${state.id}`}
-                style={{ width: anchoColumna, flexGrow: 1 }}
+                style={{ width: anchoColumna, height: altoPista }}
               >
                 <BoardColumn
                   state={state}

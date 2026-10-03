@@ -4,6 +4,7 @@ import type { BoardState, ListItem, TagColors } from "@orbit-hub/contracts";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppText } from "@/components/ui/text";
+import { FLOATING_BUTTON_INSET } from "@/components/ui/floating-button";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { iconColor } from "@/lib/lists/item-icons";
 import { useTheme } from "@/theme";
@@ -145,7 +146,28 @@ export function BoardColumn({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.cajasContenido,
-          { gap: theme.spacing.sm, paddingBottom: theme.spacing.sm },
+          {
+            gap: theme.spacing.sm,
+            /*
+              The room for the board's `+`, **and the button's own number.**
+              Without it the last card of a column that happens to be the one under
+              the corner button has half of itself behind it: the button is drawn
+              over the content and the column ends where the window ends, so the
+              card cannot be scrolled clear of anything. `FLOATING_BUTTON_INSET` is
+              the button's `bottom` plus its larger size, and the column asks the
+              button rather than writing a number that would be the second copy of a
+              decision somebody else already made.
+
+              It is not `Screen`'s `bottomInset`, and that is not an oversight:
+              `screen.tsx` drops `bottomInset` when `edgeToEdge` is set, because the
+              two are the same job in different places — and a board whose columns
+              fill the window needs `edgeToEdge` or there is a band of background
+              under them. So the room is reserved inside the column that scrolls,
+              which is where it is needed and where a column narrower than the
+              button still gets it.
+            */
+            paddingBottom: FLOATING_BUTTON_INSET,
+          },
         ]}
       >
         {tasks.length === 0 ? (
@@ -186,30 +208,27 @@ export function BoardColumn({
 
 const styles = StyleSheet.create({
   /**
-   * The column, and **it has no width of its own.**
+   * The column, and **it has no width and no height of its own.**
    *
-   * The width is measured by the screen —one column, or as many as fit— and it
-   * arrives on a wrapper around this component, because inside the content box of
-   * a horizontal scroll view a child with no width takes **the width of its
-   * content**: neither React Native nor `react-native-web` gives a view a
-   * `flexBasis`, and both default to `flexShrink: 0`.
+   * Both are measured by the screen and handed down: the width through the wrapper
+   * around this component —inside the content box of a horizontal scroll view a
+   * child with no width takes **the width of its content**, because neither React
+   * Native nor `react-native-web` gives a view a `flexBasis`— and the height
+   * because nothing in the chain of boxes below the track would shrink. See the
+   * comment on `altoPista` in the screen for the measurement that came out of that.
    *
-   * **`flexGrow: 1` and not `flex: 1`, and the height is what it is for.** A
-   * `flex: 1` here would put `flex-basis: 0` on the main axis of whatever holds the
-   * column, and that is a **column** —the wrapper the screen wraps it in— so the
-   * basis would be its height. What fills a height is a grow with the basis left
-   * alone. It is the same on both targets: on native the wrapper is stretched
-   * across the height of the track and this fills it; on the web there is one more
-   * box between the two, because `pagingEnabled` marks each child of the track as a
-   * snap point, and it is a column too.
-   *
-   * Without it, every column is as tall as its own cards —measured at 122 points
-   * inside a track of 776— and the board is four short bars at the top of the
-   * screen instead of four columns of it.
+   * `flexGrow: 1` **and** `flexShrink: 1`, and the shrink is the half that is easy
+   * to leave out: the grow fills the box it is given and the shrink is what keeps a
+   * column with more cards than fit inside it instead of growing past the bottom of
+   * the window. Both act on the **height**, because the box that holds this column
+   * is a column on the two targets alike —the screen's wrapper is one, and the extra
+   * box `pagingEnabled` puts between the track and the wrapper on the web is one as
+   * well— so neither of them has an opinion about the width.
    */
   columna: {
     flexDirection: "column",
     flexGrow: 1,
+    flexShrink: 1,
     borderWidth: StyleSheet.hairlineWidth,
   },
   cabecera: {
@@ -252,6 +271,10 @@ const styles = StyleSheet.create({
    * The cards go edge to edge, so the last one is not glued to the bottom of the
    * column and the first one is not glued to the header. The column's own padding
    * already gives the sides.
+   *
+   * And it grows, so an empty column's `EmptyState` can sit in the middle of the
+   * box: without it the content is as tall as its own children and the empty state
+   * is at the top of the column, which reads as a list that was cut off.
    */
   cajasContenido: {
     flexGrow: 1,
