@@ -14,7 +14,10 @@
 
 - El contraste mínimo de una pastilla es **4.5:1** (`MIN_LABEL_CONTRAST`), medido contra **su propio relleno**, nunca contra un fondo supuesto.
 - El relleno de una pastilla es el color **mezclado con la superficie al 14%**.
-- El texto se deriva en pasos de **2 puntos de luminosidad HSL**, 60 pasos como máximo, hacia **negro en claro** y **blanco en oscuro**.
+- El texto se deriva en pasos de **2 puntos de luminosidad HSL**, 60 pasos como máximo, hacia **negro en claro** y **blanco en oscuro** —
+  **y, si con la dirección del esquema no alcanza, en la contraria.** Una sola dirección NO funciona: sobre el relleno oscuro
+  `#1B2231`, `neutral` se queda en 3.80:1 aclarándose y `blue` baja a 3.46:1 oscureciéndose. El contraste con blanco y con negro
+  **multiplican por 21** siempre, así que al menos uno de los dos es **√21 ≈ 4,58**: se tiene que poder llegar a los dos extremos.
 - Un hex se acepta con **tres o seis** dígitos, con `#` o sin él, y **se guarda siempre en seis**: `#fff` entra y se guarda `#FFFFFF`. `esHex` de `lib/workspace/hsl.ts` ya acepta los dos anchos **a propósito** —su comentario dice que estrecharlo convirtió un camino que funcionaba en el color de reserva, y que dos tests lo cazaron en una sola ejecución—, así que el mapa tiene una sola representación de cada color y no dos.
 - El mapa `lists.tagColors` guarda `etiqueta -> hex`. Los nombres de la paleta se **normalizan a hex** al pasar por `sanitiseTagColors`; el valor guardado nunca es un nombre.
 - `derivedTagColor(nombre)` **no cambia**: sigue siendo el FNV-1a dentro de los doce, y su valor golden no se toca.
@@ -248,9 +251,18 @@ it("el validador del movil y el del contrato aceptan lo mismo", () => {
 ```
 
   La razon de que este test exista: si un dia `esHex` se estrecha o `normalizaColor` se ensancha, el usuario tendria un campo que acepta un color y un mapa que lo guarda y otro que no. Son dos y solo uno puede tener razon.
-- `labelPillColors`: `fill = mixHex(hex, surface, 0.14)`; y `text` buscando desde `hex`, mover la luminosidad HSL de dos en dos hacia 0 (claro) o 100 (oscuro), parando cuando `contrastRatio(candidato, fill) >= MIN_LABEL_CONTRAST` o al llegar al extremo. 60 pasos. Devuelve el primer candidato que pasa.
+- `labelPillColors`: `fill = mixHex(hex, surface, 0.14)`. Para `text`, **dos barridos**: primero la dirección del esquema —luminosidad
+  HSL hacia 0 en claro, hacia 100 en oscuro—, y si tras 60 pasos no ha llegado a
+  `MIN_LABEL_CONTRAST`, **el barrido contrario**. El segundo no es opcional: la version de
+  una sola dirección **falla con cuatro de los doce** sobre el relleno oscuro.
+  Devuelve el primer candidato que pasa.
 
-  Deja escrito en el comentario **por qué converge**: oscurecer acaba en negro y aclarar en blanco, y negro sobre un relleno claro y blanco sobre uno oscuro siempre pasan. Ese es el motivo por el que desaparece la puerta de contraste en vez de moverse.
+  Deja escrito en el comentario **por qué converge**, y con la cuenta, no con la
+  intuicion: los contrastes con blanco y con negro **multiplican por 21** para
+  cualquier luminancia de relleno, `(1,05/(L+0,05))·((L+0,05)/0,05) = 21`, asi que
+  **al menos uno de los dos es √21 ≈ 4,58**. Ese es el motivo por el que desaparece la
+  puerta de contraste en vez de moverse, y por el que hacen falta **los dos**
+  barridos: hay que poder llegar a los dos extremos.
 
 - [ ] **Step 4: Correr y ver que pasa**
 
