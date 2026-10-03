@@ -124,12 +124,29 @@ export function TaskRow({
           // y con el icono en la linea del titulo ese hueco era ademas lo que
           // empujaba el nombre hacia el borde. Lo que cede ahora cuando el nombre
           // es largo es el `flexShrink: 1` de `styles.nombre`.
-          // The edge is inside the padding, not outside it: the colour has to be
-          // flush against the left of the row, or it reads as a border of the
-          // column rather than as part of the task. So it is a border on a box
-          // that has no padding of its own, drawn **only when there is a colour** —
-          // the flat list passes none, and a `borderLeftWidth: 0` is not the same
-          // thing as no border on web, where it can still take a pixel.
+          // The edge is a `borderLeft` on **this** box — the same one that carries
+          // the `padding.lg` at the top of this object, not a wrapper around it. So
+          // the border is drawn outside that padding, and what sits between the
+          // colour and the icon is the padding: 16 points, plus the 3 of the
+          // border. That is the point of doing it here rather than on a wrapper:
+          // flush against the left of the row, so a task keeps its colour on the
+          // edge instead of floating a padding away from it.
+          //
+          // **And it costs the row three points of content width.** The checkbox,
+          // the icon and the title all live inside the content box, and a border
+          // comes out of it, so a board row is three points narrower than a list
+          // row on the same device. The `styles.nombre` numbers were measured on a
+          // row **without** this border — and that row was already measuring 755 of
+          // its own 754 points — so nobody has measured what three more do to a
+          // title that is already capped at `numberOfLines={2}`. It is written down
+          // here rather than reasoned about here, and it is Task 8's to measure
+          // with the board in front of it.
+          //
+          // Painted **only when there is a colour**, and that is the whole reason
+          // it is a conditional spread and not `edgeColor ?? someBorder`: the flat
+          // list passes none and must draw what it drew before this prop existed,
+          // and on web a `borderLeftWidth: 0` still is not the same thing as no
+          // border at all.
           ...(edgeColor
             ? { borderLeftWidth: 3, borderLeftColor: edgeColor }
             : null),
@@ -200,6 +217,8 @@ export function TaskRow({
           testID={`item-title-line-${item.id}`}
           style={[styles.titulo, { gap: theme.spacing.md }]}
         >
+          {/* The icon is its own target: it is a picture of what to buy, and
+              pressing it opens the pictures rather than the row. */}
           {item.icon ? (
             <Pressable
               testID={`item-icon-${item.id}`}

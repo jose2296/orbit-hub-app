@@ -107,10 +107,14 @@ describe('la fila de una tarea no reserva el asa de arrastrar', () => {
  * The row is shared by two screens now, and a shared component that one of them
  * cannot use is not shared.
  *
- * These three are the two differences between a list row and a board row, and
- * they are assertions about the source for the same reason as everything else
- * here: the question is whether the **optional** parts are optional, and the only
- * way to see that in `node` is to read the props and the condition.
+ * Two of the three below are the differences between a list row and a board row:
+ * the checkbox, which a board row does not draw, and the colour down the left
+ * edge, which a list row does not paint. The third is not a difference between
+ * the two rows — it is about there being **one** row at all.
+ *
+ * All three assert on the source for the same reason as everything else here: the
+ * question is whether the **optional** parts are optional, and the only way to
+ * see that in `node` is to read the props and the condition.
  */
 describe('la fila sabe dibujarse sin casilla y con filo de estado', () => {
   it('la casilla se dibuja solo si hay algo que marque', () => {
@@ -132,9 +136,15 @@ describe('la fila sabe dibujarse sin casilla y con filo de estado', () => {
     expect(taskRow).toContain('borderLeftColor: edgeColor');
   });
 
-  it('las dos pantallas usan la misma fila, y solo una pasa la casilla', () => {
-    // The screen imports it rather than redefining it: two `function TaskRow` in
-    // the repo is the thing this move exists to stop.
+  it('la pantalla de listas usa la fila del componente, y no una suya', () => {
+    // **One** screen uses it today; the board is Task 8. So this does not claim
+    // anything about who passes what: it claims that the list screen draws the
+    // shared row and does not carry a second copy of it, because two
+    // `function TaskRow` in the repo is the thing this move exists to stop.
+    //
+    // Nothing here would notice who passes `onToggle` and who does not. That is
+    // not what this test is for, and a title that said it was would be the reason
+    // nobody notices.
     expect(listId).toContain('from "@/components/lists/task-row"');
     expect(listId).not.toContain('function TaskRow');
   });
