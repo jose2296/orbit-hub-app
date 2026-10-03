@@ -215,6 +215,74 @@ describe('lists through sync', () => {
     expect(after.body.data.items.find((row: { id: string }) => row.id === itemId).stateId).toBe('s1');
   });
 
+  it('moves a task from one column to another', async () => {
+    // Nothing else in this file says the move is allowed: both refusal tests pass
+    // just as well against a guard that refuses every column there is, because
+    // they never try one that exists.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [
+        { id: 's1', title: 'Backlog', color: 'neutral' },
+        { id: 's2', title: 'Ready', color: 'blue' },
+      ],
+    });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    const before = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const version = before.body.data.items.find((row: { id: string }) => row.id === itemId).version;
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: version,
+        base: { stateId: 's1' },
+        payload: { stateId: 's2' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(after.body.data.items.find((row: { id: string }) => row.id === itemId).stateId).toBe('s2');
+  });
+
+  it('reads an empty state on an update as no state at all', async () => {
+    // The guard has to read the payload that gets written and not the one that
+    // arrived: `sanitisePayload` turns `''` into the null that `isKnownStateId`
+    // accepts, and the raw string matches no column, so the same update is
+    // refused or applied depending on where it is read.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [{ id: 's1', title: 'Backlog', color: 'neutral' }],
+    });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    const before = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const version = before.body.data.items.find((row: { id: string }) => row.id === itemId).version;
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: version,
+        base: { stateId: 's1' },
+        payload: { stateId: '' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(after.body.data.items.find((row: { id: string }) => row.id === itemId).stateId).toBeNull();
+  });
+
   it('renames a task whose column is gone without touching the column', async () => {
     // The guard only reads the state when the payload carries one, and this is the
     // test that says so. A task can be left pointing at a column another device
