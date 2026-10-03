@@ -49,6 +49,23 @@ son `ItemIconColor` y a partir de aqui no pueden serlo: el icono sigue siendo un
 doce, la etiqueta es un hex. `ItemIconColor` se queda como esta para los iconos y
 aparece un `TagColor = string` para las etiquetas.
 
+### El hueco que este documento resuelve: los colores ya guardados
+
+Un build anterior guardaba **nombres** —`{ Mercadona: "green" }`—, porque el
+contrato era un enum de doce. Si el contrato pasa a aceptar solo hexes, **todos los
+colores que haya guardados se descartan en silencio** en la primera sanitizacion, y
+nadie ve un error: es justo lo que hace `sanitiseTagColors` con lo que no
+entiende.
+
+Asi que el contrato acepta **las dos cosas**: un hex, o un nombre de la paleta. Y
+**normaliza a hex al pasar por el servidor**, de modo que el mapa guardado tiene
+una sola representacion de cada color y a partir de ahi todo el mundo habla hex.
+Un nombre viejo se convierte en su hex; nunca se tira.
+
+La razon de no perderlos: son colores que **alguien eligio**, y un color elegido que
+desaparece sin decir nada es peor que un formato que se deja de aceptar. El
+formato puede quedarse viejo; la eleccion de una persona no.
+
 ### Lo que no cambia
 
 - La columna `lists.tagColors` es `jsonb` y sigue guardando un mapa
@@ -141,9 +158,18 @@ La matematica sale de `apps/mobile/src/lib/workspace/picker.ts` —`HUE_STRIP`,
 `hexToHsv`, `hsvToHex`, `puntoAHsv`, `puntoAHue`—, que ya esta suelta del selector
 de espacios y es lo unico que se reutiliza tal cual. Lo nuevo es interfaz.
 
-El hex se valida antes de aceptarse: seis digitos, con `#` o sin el. Un hex mal
-escrito se rechaza en el campo y no se guarda, porque un color que no existe en
-`tagColors` es un color que el servidor se come en silencio.
+El hex se valida antes de aceptarse, y se valida **con el mismo validador que el
+selector de espacios**: `esHex` de `lib/workspace/hsl.ts`, que acepta tres o seis
+digitos con o sin `#`. Este selector **no puede ser mas estrecho** —el mismo
+usuario, el mismo campo, dos reglas distintas— y ademas `esHex` esta asi a
+proposito: su comentario dice que estrecharlo convertio en el color de reserva un
+camino que funcionaba, y que dos tests lo cazaron en una sola ejecucion.
+
+Encima de `esHex`, el mapa **normaliza a seis digitos y a mayusculas**: `#fff`
+entra y se guarda `#FFFFFF`, y `#aabbcc` y `#AABBCC` son el mismo color y no dos.
+Lo que no tiene tres ni seis digitos se rechaza en el campo y no se guarda, porque
+un color que no existe en `tagColors` es un color que el servidor se come en
+silencio.
 
 ### Lo que se queda
 
