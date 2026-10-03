@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { requireOneDevice } from './lib/android.ts';
 import { ensureService, type Service } from './lib/stack.ts';
+import { seed, writeSeedEnv } from './seed/e2e-account.ts';
 
 // Tres niveles hacia arriba y no dos: este fichero es `apps/mobile/e2e/`, y
 // `capturas/` es donde `scripts/verify-android-screens.mjs` ha escrito siempre
@@ -91,7 +92,14 @@ try {
   for (const s of servicios) {
     console.log(`  ${s.started ? 'arrancado' : 'ya estaba en pie'}: ${s.label} (${s.url})`);
   }
-  console.log(`  API para el seed: ${API}`);
+  // El log de la API entra como variable y no como ruta escrita aqui: lo crea
+  // `ensureService` con la marca de la carrera, y el enlace de verificacion sale
+  // de ahi y de ningun otro sitio.
+  const sembrado = await seed({ api: API, apiLog: SALIDA_API });
+  const envFile = join(CAPTURAS, 'seed.env');
+  writeSeedEnv(envFile, sembrado);
+  console.log(`  sembrado: ${sembrado.email} (${sembrado.spaceName})`);
+  console.log(`  credenciales para los flujos: ${envFile}`);
   console.log(`  datos de la carrera: ${PGDATA}`);
   console.log(`  logs: ${SALIDA_API} y ${SALIDA_METRO}`);
 } finally {
