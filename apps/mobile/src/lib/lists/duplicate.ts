@@ -36,6 +36,14 @@ export interface DuplicableItem {
   title: string;
   position: number;
   completed: boolean;
+  /**
+   * The board column the task is drawn in, and it travels with the task.
+   *
+   * Copied rather than reset: a duplicate that appears in the first column
+   * instead of the one the original was in is a silent wrong answer — the row
+   * shows up, and in the wrong place.
+   */
+  stateId: string | null;
   priority: ListItemPriority;
   icon: ListItem["icon"];
   iconStyle: ListItem["iconStyle"];
@@ -104,6 +112,10 @@ export function planDuplication(
     title: item.title,
     position: index,
     completed: item.completed,
+    // Same rule as `completed` above, and for the same reason: the column is
+    // where the task is, and a copy that lands in the first one is a copy that
+    // looks right and is not.
+    stateId: item.stateId,
     priority: item.priority,
     icon: item.icon,
     // How it is drawn is part of how the row is, so a copy looks the same.
