@@ -673,10 +673,13 @@ export function useListItems(listId: string | undefined) {
   );
 
   /**
-   * Changes the fields of a row that are not its title or its state.
+   * Changes the fields of a row that are not its title or whether it is done.
    *
    * The icon and the labels are written the same way as everything else, local
    * first and into the outbox, so they work on a train and sync on their own.
+   *
+   * "Whether it is done" is `toggleCompleted` and not `stateId`: they are two
+   * different things that the word "state" used to be ambiguous about.
    */
   const updateItem = useCallback(
     async (
@@ -691,6 +694,15 @@ export function useListItems(listId: string | undefined) {
         title?: string;
         annotation?: string | null;
         priority?: Priority;
+        /**
+         * The board column this row moves to.
+         *
+         * In the signature and not in the body because nothing else in the app
+         * writes it yet: a board cannot be dragged until the board screen is
+         * there, and by then the only proof this field exists is that the
+         * compiler lets the drag compile.
+         */
+        stateId?: string | null;
       },
     ) => {
       if (!listId) return;
