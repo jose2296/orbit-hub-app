@@ -153,22 +153,25 @@ export function labelTextColor(
  * **Lo que se ve, medido, porque no es lo que uno esperaria: el texto se va
  * lejos.** Al 14% de tinte el relleno es sutil —luminancia de WCAG de **0.079 a
  * 0.351** en los doce de la paleta y los dos esquemas, y de 0.147 a 0.351 solo en
- * claro— y para llegar a 4.5:1 sobre el, el texto tiene que recorrer **entre el 22%
- * y el 68% del rango de luminosidad**: la cuenta no se queda cerca del color
- * elegido, se va. Consecuencias, todas medidas sobre los doce con las superficies
- * reales (`#F0F2F8` y `#1B2231`):
+ * claro— y para llegar a 4.5:1 sobre el, el texto tiene que recorrer **mucho
+ * camino en la luminosidad**: la cuenta no se queda cerca del color elegido, se va.
+ * Consecuencias, todas medidas sobre los doce con las superficies reales
+ * (`#F0F2F8` y `#1B2231`):
  *
  * - En el tema claro, **once de los doce salen por debajo de luminancia 0.036**, o
  *   sea indistinguibles de negro a los ojos; el unico que no, `brown`, sale hacia
  *   el otro extremo en `#FCEBE0`. `red` queda en `#260606`, `purple` en `#10031B`.
  * - Dos de los doce se van al otro extremo: `teal` en oscuro sale en `#FDFFFF`,
  *   de luminancia **0.996** —blanco con un punto de rojo, a un paso de `#FFFFFF`—
- *   y `brown` en claro en `#FCEBE0`, de luminancia 0.855. Y el extremo puro sale de
- *   verdad en algunos: en dos rejillas de **101.306** y **131.072** colores, entre
- *   **0.3% y 0.4%** sale en `#000000` y entre **0.9% y 1.0%** en `#FFFFFF` —un
- *   porcentaje y no una cifra, porque los dos son de la rejilla que se mida—, y en
- *   las dos el **minimo de contraste sale exactamente en 4.500**, que es lo que dice
- *   que la cuenta para en cuanto pasa y no cuando por casualidad pasa.
+ *   y `brown` en claro en `#FCEBE0`, de luminancia 0.855.
+ *
+ * **Que el extremo puro salga, sale; en cuantos casos, no se dice aqui a proposito.**
+ * Un porcentaje de eso depende de la rejilla que se mida y de si se divide por
+ * llamadas o por colores distintos, y salia distinto segun con cual: no describe la
+ * funcion, describe la muestra. Lo que si es cierto sin medirse es que **el bucle
+ * para en cuanto el contraste pasa**, asi que el texto de una pastilla nunca queda
+ * por encima de 4.5:1 mas de un paso —el del propio paso— y por eso el minimo sale
+ * pegado a la linea y no holgado.
  *
  * **O sea: el color elegido se reconoce en el relleno y no en el texto.** No es el
  * mismo tono del color elegido —no lo es, y el que diga lo contrario esta
@@ -220,10 +223,12 @@ export function labelPillColors(
   // llega tampoco, porque todos son mas claros y por tanto mas cercanos al
   // relleno. Se puede decidir antes de empezar: **basta con medir el extremo** —
   // en claro `contrastRatio("#000000", relleno) < 4.5`, y la vuelta entera esta
-  // perdida. Medido sobre los doce con las superficies reales: en claro le pasa a
-  // **1 de 12** (`brown`) y en oscuro a **4 de 12** (`neutral`, `green`, `amber`,
-  // `orange`, con el blanco como extremo imposible). Y las dos vueltas se reparten
-  // 19 y 5 de los 24 casos de la paleta.
+  // perdida. Sobre los doce de la paleta con las superficies reales, en claro le
+  // pasa a `brown` y en oscuro a `neutral`, `green`, `amber` y `orange` —cuatro de
+  // doce, y son justo los que salen hacia el extremo contrario al de su esquema—.
+  // Los doce con los dos esquemas estan clavados en `los doce colores de la paleta
+  // salen exactamente en estos hex`, en `tag-colors.test.ts`, y ahi se puede
+  // comprobar uno por uno que color salio de cada vuelta.
   //
   // El lado oscuro del tema es el mismo caso del reves: `amber` `#D97706` da un
   // relleno `#BD6A0B` al que el blanco **no llega a 4.02:1** porque su luminancia
@@ -231,11 +236,16 @@ export function labelPillColors(
   // de cual de los dos extremos toque: los dos son el mismo argumento, y estan los
   // dos probados en el bloque de abajo.
   //
-  // Y el peor de los dos extremos no es raro: un negro o un blanco elegidos a mano
-  // dan un relleno casi igual que la superficie, y su texto solo se salva dando la
-  // vuelta. Sin ella, esas dos —los colores que cualquiera elige primero— se
-  // dibujan ilegibles, y eso es peor que el gris que venia antes porque ahora la
-  // pastilla **parece** el color que la persona eligio.
+  // Y el caso que mas se nota no es un color raro sino el primero que elige
+  // cualquiera: **un negro o un blanco puestos a mano.** Con la superficie de su
+  // propio esquema los dos se resuelven en la primera vuelta —negro sobre la
+  // oscura, blanco sobre la clara—. Lo que necesita la vuelta es **el cruce**:
+  // negro sobre la superficie clara, y blanco sobre la oscura. Y ahi el relleno
+  // **no** sale "casi igual que la superficie", que es como lo decia este comentario
+  // antes: sale un tinte casi negro o casi blanco, o sea un relleno del que el
+  // color elegido solo se separa hacia el lado **contrario** al que esta buscando la
+  // cuenta. Sin la vuelta esas dos se dibujan ilegibles en un color que **parece**
+  // el que eligio la persona, que es peor que el gris de antes.
   for (let vuelta = 0; vuelta < 2; vuelta += 1) {
     const signo = primero * (vuelta === 0 ? 1 : -1);
     for (let paso = 1; paso <= PASOS_DE_LUMINOSIDAD; paso += 1) {
@@ -247,17 +257,19 @@ export function labelPillColors(
       // **La vuelta se acaba aqui, y es porque ya no queda nada que probar.** Del
       // resto de los `PASOS_DE_LUMINOSIDAD`, `clamp01` devuelve este mismo `objetivo`
       // —es el extremo— asi que todos evaluarian **el mismo candidato otra vez**: no
-      // es que sea lento, es que se esta midiendo el mismo numero cuarenta y pico
-      // veces. Medido sobre los doce con las superficies reales: `brown` en claro
-      // evaluaba 60 pasos de su primera vuelta, de los cuales **44 eran `#000000`
-      // repetido**, y gastaba **91** evaluaciones en total; con este `break` gasta
-      // **47** y sale en el mismo `#FCEBE0`. El maximo de la paleta pasa de 91 a 49.
+      // es que sea lento, es que se esta midiendo el mismo numero una vez tras otra.
       //
       // **No puede cambiar el resultado**, y no por opinion: del paso en que la
       // cuenta pisa el extremo, el candidato es identico y su veredicto tambien, de
       // modo que los pasos que quedan solo podrian repetir el "sigue sin pasar" que
-      // acaba de salir. La rejilla de `tag-colors.test.ts` —227 colores por los dos
-      // esquemas— es la que verifica que ningun hex se mueve.
+      // acaba de salir.
+      //
+      // Y lo que verifica que ningun hex se mueve es **`los doce colores de la
+      // paleta salen exactamente en estos hex`**, en `tag-colors.test.ts`: el que
+      // clava que color sale. **La rejilla de 227 colores no lo verifica** —comprueba
+      // que todo llega a 4.5:1, y a un `PASO` distinto llegaria igual con otros hex
+      // y la suite seguiria verde—, asi que si esto se documentara otra vez, que sea
+      // la tabla y no la rejilla.
       if (objetivo === 0 || objetivo === 1) {
         break;
       }
@@ -310,47 +322,39 @@ export function labelPillColors(
  * que la usa. Subirlo o bajarlo cambia los doce rellenos de la app a la vez, asi
  * que es un numero que se cambia aqui y con un motivo, no en el componente.
  *
- * **Es tambien la unica palanca sobre el aspecto de la pastilla.** El texto tiene
- * que recorrer entre el 22% y el 68% de la luminosidad para llegar a 4.5:1 sobre
- * un tinte del 14%, y esa distancia es la que hace que el color elegido se lea en el
- * relleno y no en el texto; el paso de la cuenta no la cambia —con 0.01 el hex sale
- * movido 5 de 255 en un canal, medido—, asi que quien quiera que el texto se parezca
- * mas al color elegido sube o baja aqui y no en el paso de abajo. El bloque de
- * `labelPillColors` tiene las cifras y el motivo por el que `success` no deja subir
- * mas.
+ * **Es tambien la unica palanca sobre el aspecto de la pastilla.** Para llegar a
+ * 4.5:1 sobre un tinte del 14%, el texto tiene que recorrer mucho camino en la
+ * luminosidad, y ese camino es el que hace que el color elegido se lea en el
+ * relleno y no en el texto. El paso de la cuenta no lo acorta: con un paso mas fino
+ * el hex sale practicamente el mismo, asi que quien quiera que el texto se parezca
+ * mas al color elegido sube o baja **aqui** y no toca el paso de abajo. El bloque de
+ * `labelPillColors` explica el porque con las cifras.
  */
 const MEZCLA_DE_LA_PASTILLA = 0.14;
 
 /**
  * El paso con el que se busca el texto legible, y cuantos pasos hay.
  *
- * **De dos en dos, y el motivo no es el que parece.** La version anterior de este
- * comentario decia que 2 era "lo mas fino que no recorre el tinte entero para
- * nada" y que la cuenta "se para en el primero o en el segundo". Las dos cosas son
- * falsas, y la segunda es la que justificaba el numero. Medido sobre los doce de la
- * paleta en los dos esquemas, con las superficies reales, **dentro de la vuelta que
- * gana**: entre **11 y 34 pasos**, o sea un 22%-68% del rango de luminosidad; el mas
- * largo `teal` en oscuro —34, hasta casi el blanco— y los mas cortos `olive` y
- * `teal` en claro, con 11.
+ * **De dos en dos, y la justificacion de antes era falsa.** Este comentario decia que
+ * 2 era "lo mas fino que no recorre el tinte entero para nada" y que la cuenta "se
+ * para en el primero o en el segundo". Las dos cosas son falsas: la cuenta se va
+ * hacia el extremo y se va lejos, como explica el bloque de `labelPillColors`.
+ * **No se pone aqui ninguna cuenta de pasos ni de evaluaciones** porque ninguna la
+ * comprueba un test, y un numero que nadie pueda reproducir es un numero que un dia
+ * empieza a estar mal sin que nadie se entere.
  *
- * **Y hacen falta mas pasos si se cuenta el trabajo de verdad.** Los 11-34 de antes
- * son los de la vuelta **que encuentra el color**; con la perdedora por delante, el
- * total de candidatos evaluados llega a **91** —`brown` en claro gasta 16 en la
- * vuelta que no puede funcionar y 31 en la que si, y antes del `break` del extremo
- * eran 60 en la primera—, y con ese `break`, que esta en el bucle de
- * `labelPillColors`, baja a **49**. Son dos medidas distintas y confundirlas es
- * facil: un "rango de 11 a 91" estaria contando evaluaciones y no pasos.
+ * **Lo que decide el aspecto de la pastilla es el porcentaje de la mezcla, no este
+ * numero.** Con un paso mas fino el hex sale practicamente el mismo —la diferencia es
+ * de milésimas—, asi que afinar la cuenta no acerca el texto al color elegido; eso se
+ * hace con `MEZCLA_DE_LA_PASTILLA`, que esta justo encima. Aqui 2 es la resolucion con
+ * la que la cuenta encuentra el sitio, y llega a un color que se puede leer en el
+ * codigo sin mas decimales de los necesarios.
  *
- * **Un paso mas fino no da el mismo color, pero da practicamente el mismo**, que es
- * lo que deja al "no se pasa de largo" sin trabajo: con 0.01 la cuenta se para en el
- * doble de pasos y sale **el mismo hex en 8 de los 24 casos** y uno **distinto en
- * 16**, con una diferencia maxima de **5 sobre 255 en un canal** —`accent` en claro,
- * `#0A0C6A` contra `#0A0C6F`—. Dos milésimas de luminosidad. Asi que lo que decide
- * el aspecto de la pastilla **no es este numero sino el porcentaje de la mezcla**, y
- * quien tenga que cambiar el aspecto va al `MEZCLA_DE_LA_PASTILLA` de arriba, no a
- * este paso. Aqui 2 es la resolucion con la que la cuenta encuentra el sitio, y es
- * suficiente para que el texto caiga en un color que se puede leer en el codigo y
- * no en un decimal de mas.
+ * **Y si cambia este numero, la tabla lo dice.** `los doce colores de la paleta
+ * salen exactamente en estos hex`, en `tag-colors.test.ts`, clava que color sale de
+ * los doce en los dos esquemas: es el unico sitio al que puede mirar este comentario
+ * para saber que el cambio no movio nada. **La rejilla de 227 colores no lo clava**,
+ * porque solo mira que todo llegue a 4.5:1.
  *
  * **60 pasos, y son de sobra** —de hecho, con el `break` del extremo **nunca se
  * llegan a gastar**: desde cualquier punto de 0 a 1, llegar al extremo son 50 pasos a
