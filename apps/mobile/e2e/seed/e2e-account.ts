@@ -32,6 +32,15 @@ export const NOMBRES = {
   otherUser: 'E2E Friend',
   spaceName: 'E2E Space',
   friendSpaceName: 'E2E Friend Space',
+  /**
+   * Colores de `WORKSPACE_COLORS`, y no inventados: la API no rechaza un color
+   * que no exista, lo cambia por `slate` en silencio, asi que un nombre falso
+   * devuelve `applied` y deja la fila con otro color del que se pidio. Escribir
+   * el color aqui no es por estilo: es la unica vez que se puede comprobar contra
+   * la lista sin tener que ir a leer la base.
+   */
+  spaceColor: 'teal',
+  friendSpaceColor: 'violet',
   friendNoteTitle: 'E2E Friend Note',
   folderName: 'E2E Folder',
   listTitle: 'E2E List',
@@ -205,7 +214,7 @@ export async function seed(options: { api: string; apiLog: string }): Promise<Se
     kind: 'create',
     entity: 'workspace',
     entityId: workspaceId,
-    payload: { name: NOMBRES.spaceName, color: 'teal' },
+    payload: { name: NOMBRES.spaceName, color: NOMBRES.spaceColor },
   });
   await push(api, ana.token, ana.userId, {
     kind: 'create',
@@ -240,6 +249,8 @@ export async function seed(options: { api: string; apiLog: string }): Promise<Se
     });
   }
 
+  // La nota de Ana al amigo: es lo que pone una fila en la bandeja del amigo y
+  // lo que le da a Ana una relacion `shared_with` en su pantalla de gente.
   await call(api, '/shares', {
     method: 'POST',
     token: ana.token,
@@ -261,7 +272,7 @@ export async function seed(options: { api: string; apiLog: string }): Promise<Se
     kind: 'create',
     entity: 'workspace',
     entityId: friendSpaceId,
-    payload: { name: NOMBRES.friendSpaceName, color: 'purple' },
+    payload: { name: NOMBRES.friendSpaceName, color: NOMBRES.friendSpaceColor },
   });
 
   /*
@@ -333,6 +344,15 @@ export async function seed(options: { api: string; apiLog: string }): Promise<Se
    * Cambiar cualquier fila de aqui obliga a cambiar el contrato de `Seeded`.
    * Estan medidas leyendo las filas con un proceso aparte, no contando
    * respuestas 200: un 200 no dice si la fila existe.
+   *
+   * Y nada lo comprueba: esta tabla es una descripcion, no una asercion. Lo mas
+   * parecido a una comprobacion que hay es `push` mirando que cada operacion
+   * saliera `applied`, y eso no habria detectado ni el color coercionado ni una
+   * fila que no llega a existir. Borrar esta tabla no rompe nada.
+   *
+   * `inbox 1` es de una carrera nueva, no un invariante: hay una sola fila que
+   * se puede colocar, asi que el primer flujo que la coloque se la lleva y
+   * cualquier flujo posterior que espere `inbox 1` vera 0.
    */
   return {
     email: ana.email,
