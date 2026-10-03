@@ -309,7 +309,22 @@ En `TagChip`, sustituye el `fill`/`text` fijo por una llamada a `labelPillColors
 
 `colors?.[tag]` es ahora un hex; `derivedTagColor(tag)` sigue devolviendo un nombre. **Pasa los dos por `tagColorHex`**, que es lo que hace que un nombre viejo guardado en el mapa siga pintándose en su color y no en neutral.
 
-Borra `labelTextColor` si nada más la usa, y borra `MIN_LABEL_CONTRAST` de este fichero si queda solo en `tag-colors.ts`. **No borres el constante del contrato** si algo lo importa.
+Borra `labelTextColor` — que tiene **una** llamada de produccion, en `tag-chip.tsx:61`, y seis
+de test en `tag-color-plan.test.ts`, que Task 3 borra—.
+
+**`MIN_LABEL_CONTRAST` NO se borra, en ningun caso.** `labelPillColors` lo usa, y es
+permanente: es el liston que la pastilla tiene que cruzar. El plan de antes decia
+"borralo si queda solo en este fichero", y despues de esta tarea **si** queda solo en
+este fichero —porque `labelTextColor` era la otra llamada— y borrarlo rompe la funcion
+que Task 4 y Task 5 heredan. Que el revisor de esta tarea loوصلo.
+
+Y los tests **deben llevar el 4.5 escrito a mano**, no leer el constante: este fichero
+dice en su cabecera que el test lo escribe a proposito para que bajen los dos a la vez,
+y los tests nuevos de esta tarea lo leen. Si alguien baja `MIN_LABEL_CONTRAST` a 4.0, con
+el test leyendo el constante **toda la suite se pone verde** mientras cada pastilla
+baja del liston en silencio. Hoy el unico sitio con un 4.5 escrito a mano es
+`tag-color-plan.test.ts`, **y Task 3 lo borra entero**: sin esto, la puerta se puede
+bajar sin que nada lo note.
 
 - [ ] **Step 4: Correr los dos Conjuntos**
 
