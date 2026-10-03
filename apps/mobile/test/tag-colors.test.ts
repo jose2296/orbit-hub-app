@@ -2,12 +2,14 @@ import {
   ITEM_ICON_COLORS,
   derivedTagColor,
   listSchema,
+  normalizaColor,
   sanitiseTagColors,
   tagColorSchema,
 } from "@orbit-hub/contracts";
 import { describe, expect, it } from "vitest";
 
 import { iconColor } from "@/lib/lists/item-icons";
+import { esHex } from "@/lib/workspace/hsl";
 
 describe("el color que deduce el nombre de una etiqueta", () => {
   it("es el mismo siempre para el mismo nombre", () => {
@@ -150,6 +152,43 @@ describe("el mapa de colores que se guarda", () => {
   it("no puede lanzar, con ningun hex que llegue", () => {
     for (const malo of ["", "#", "#12", "#1234567", "  ", "rgb(1,2,3)", null, 7, {}]) {
       expect(() => sanitiseTagColors({ Mercadona: malo })).not.toThrow();
+    }
+  });
+
+  it("el validador del movil y el del contrato aceptan lo mismo", () => {
+    // Hay dos validadores de hex en este repositorio y no pueden ser uno:
+    // `esHex` esta en el movil porque el selector de espacios lo usa desde antes de
+    // que existieran las etiquetas, y `normalizaColor` esta en el contrato porque
+    // `packages/contracts` no puede importar de `apps/mobile` y es el servidor —no
+    // el cliente— quien normaliza lo que se guarda.
+    //
+    // Lo que los ata es esta lista, y solo esta lista. Si un dia uno se estrecha o
+    // el otro se ensancha, el campo de un selector acepta un color que el mapa no
+    // guarda, y el color desaparece en silencio al pasar por el servidor, que es
+    // justo el fallo invisible que `normalizaColor` se carga con trim y con tres
+    // digitos para evitar. Son dos reglas y solo una puede tener razon.
+    //
+    // `"  #abc  "` esta aqui por el `trim`: los dos recortan hoy, y sin esta
+    // entrada un `trim` que se quittara de uno de los dos pasaria desapercibido.
+    // Y `"#abcd"` esta por el ensanchamiento mas probable que puede llegar: un hex
+    // con alfa. Los dos dicen que no hoy, y el que lo quiera tendra que mover los
+    // dos el mismo dia —que es lo que esta lista obliga.
+    for (const candidato of [
+      "#fff",
+      "fff",
+      "#FFFFFF",
+      "aabbcc",
+      "#AbC",
+      "#ff",
+      "#abcd",
+      "#gggggg",
+      "",
+      "  #abc  ",
+      7,
+      null,
+      undefined,
+    ]) {
+      expect(esHex(candidato)).toBe(normalizaColor(candidato) !== null);
     }
   });
 

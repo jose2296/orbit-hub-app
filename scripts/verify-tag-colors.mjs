@@ -194,6 +194,38 @@ const COLOR_NAME = {
 const COLOR_BY_NAME = Object.fromEntries(
   Object.entries(COLOR_NAME).map(([key, name]) => [name, key]),
 );
+const HEX_POR_CLAVE = Object.fromEntries(
+  Object.entries(ICON_HEX).map(([key, hex]) => [hex, key]),
+);
+
+/**
+ * La clave de la paleta de **lo que el botón de color de una etiqueta anuncia**, o
+ * `null` si no es ninguno de los doce.
+ *
+ * **Dos patas porque la app dice dos cosas, y antes de este cambio decía una.** Un
+ * color **deducido** lo anuncia por su nombre en español —"Verde"— y eso no ha
+ * cambiado: `derivedTagColor` sigue sacando un nombre de los doce. Un color
+ * **elegido** lo anuncia por su **hex**: desde que `sanitiseTagColors` normaliza a
+ * hex, `tagColors` no guarda un nombre, y el botón no tiene en el diccionario un
+ * nombre para un hex, así que lo lee tal cual.
+ *
+ * Sin la segunda pata, `COLOR_BY_NAME["#16A34A"]` es `undefined` y toda
+ * comprobación que lee un color elegido se va a `null` — que es como se rompe esto
+ * en silencio: no salta un error, salta un color que no está, y el mensaje de la
+ * comprobación dice `sin boton` de algo que sí tenía.
+ *
+ * **La pata del hex sale de `ICON_HEX`**, la copia de `ICON_COLORS` que ya estaba en
+ * este archivo, así que no es una segunda tabla: si un color se mueve en la app, las
+ * dos patas se mueven con él. Y el `Object.hasOwn` es por el motivo de siempre: un
+ * mapa hecho con `Object.fromEntries` tiene `Object.prototype`, así que
+ * `COLOR_BY_NAME["constructor"]` sin él sería la función `Object`.
+ */
+const claveDeColor = (dicho) => {
+  if (typeof dicho !== "string" || dicho === "") return null;
+  if (Object.hasOwn(COLOR_BY_NAME, dicho)) return COLOR_BY_NAME[dicho];
+  if (Object.hasOwn(HEX_POR_CLAVE, dicho)) return HEX_POR_CLAVE[dicho];
+  return null;
+};
 
 /**
  * El color que deduce el nombre de una etiqueta.
@@ -1329,8 +1361,9 @@ try {
   for (const etiqueta of ["Mercadona", ...SEED_LABELS.derivada]) {
     resueltos[etiqueta] = await resolvedColor(tab, etiqueta);
   }
-  const nombres = Object.values(resueltos).map((r) => r?.nombre ?? null);
-  const claves = nombres.map((n) => (n ? (COLOR_BY_NAME[n] ?? null) : null));
+  // `claveDeColor` y no `COLOR_BY_NAME[...]`: la elegida se anuncia por su hex y la
+  // deducida por su nombre, y las dos tienen que salir por aquí.
+  const claves = Object.values(resueltos).map((r) => claveDeColor(r?.nombre));
   check(
     "cada etiqueta resuelve a uno de los doce colores de la paleta",
     claves.length > 0 && claves.every((c) => c && ICON_COLORS.includes(c)),
@@ -1367,7 +1400,7 @@ try {
   const grises = todasA.filter((p) => p.textColor === toRgb(ICON_HEX.neutral));
   check(
     "ninguna pastilla cae en gris por defecto",
-    grises.every((p) => derivedTagColor(p.tag) === "neutral" || resueltos[p.tag]?.nombre === "Neutro"),
+    grises.every((p) => derivedTagColor(p.tag) === "neutral" || claveDeColor(resueltos[p.tag]?.nombre) === "neutral"),
     grises.length === 0 ? "ninguna" : grises.map((p) => p.tag).join(", "),
   );
 
@@ -1519,7 +1552,7 @@ try {
     await sleep(350);
     await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
     await sleep(700);
-    return COLOR_BY_NAME[r?.nombre ?? ""] ?? null;
+    return claveDeColor(r?.nombre);
   };
 
   const claveAAntes = await colorResueltoDe(listaA, itemA.pan, "Pan", "Mercadona");
@@ -1588,8 +1621,18 @@ try {
   const nombreEnA = await resolvedColor(tab, "Mercadona");
   check(
     "la lista A tiene el color que se le eligió a Mercadona",
-    COLOR_BY_NAME[nombreEnA?.nombre ?? ""] === "green",
+    claveDeColor(nombreEnA?.nombre) === "green",
     `${nombreEnA?.label ?? "sin boton"}`,
+  );
+  // **Y cómo lo dice**, que es una cosa distinta de cuál es. La semilla elige un
+  // color de la paleta, pero lo que llega al botón es el **hex** que el servidor
+  // guardó, y un hex no tiene nombre en el diccionario: el botón lo anuncia tal
+  // cual. Antes esto era imposible —un color elegido siempre era uno de los doce
+  // nombres— así que es exactamente el caso que hay que comprobar.
+  check(
+    "el botón de color anuncia el hex del color elegido, y no un nombre ni un undefined",
+    /^#[0-9A-F]{6}$/.test(nombreEnA?.nombre ?? ""),
+    `anuncia "${nombreEnA?.nombre ?? "nada"}" en "${nombreEnA?.label ?? "sin boton"}"`,
   );
 
   const abierto = await pressTestIdRaw(tab, `tag-color-button-Mercadona`);
@@ -1606,7 +1649,7 @@ try {
   const puestoEnRojo = await until(
     "el color de la etiqueta",
     async () => ({ color: await resolvedColor(tab, "Mercadona"), hoja: await sheetState(tab) }),
-    (v) => COLOR_BY_NAME[v?.color?.nombre ?? ""] === "red",
+    (v) => claveDeColor(v?.color?.nombre) === "red",
   );
   // **El fallo que encontró este archivo.** Elegir un color devuelve la hoja a la
   // página de edición. La escritura local relee la caché y devuelve objetos
@@ -1625,7 +1668,7 @@ try {
   const esperadoEnA = toRgb(expectedTextColor("red", "light"));
   check(
     "la etiqueta de A pasa a rojo, y se ve el color que la regla de contraste manda",
-    COLOR_BY_NAME[enAAhora?.nombre ?? ""] === "red" && pastillaAAtras?.textColor === esperadoEnA,
+    claveDeColor(enAAhora?.nombre) === "red" && pastillaAAtras?.textColor === esperadoEnA,
     `la hoja dice ${enAAhora?.nombre}, la pastilla pinta ${pastillaAAtras?.textColor}, y para rojo en claro la regla da ${esperadoEnA} (rojo puro ${toRgb(ICON_HEX.red)} da ${contrastRatio(ICON_HEX.red, SCHEME.light.fill).toFixed(2)}:1, o sea no llega a 4.5)`,
   );
 
@@ -1775,7 +1818,7 @@ try {
       pastilla: await pillOf(tab, "urgente"),
       hoja: await sheetState(tab),
     }),
-    (v) => COLOR_BY_NAME[v?.color?.nombre ?? ""] === "blue",
+    (v) => claveDeColor(v?.color?.nombre) === "blue",
     { timeout: 20000 },
   );
   check(
@@ -1794,7 +1837,7 @@ try {
   const servidorDurante = (await api(`/lists/${listaA}`, { token: await tokenDeLaApi() })).body?.data?.tagColors;
   check(
     "mientras no hay conexión el servidor no lo tiene",
-    servidorDurante?.urgente !== "blue",
+    servidorDurante?.urgente !== ICON_HEX.blue,
     `el servidor dice ${JSON.stringify(servidorDurante)}`,
   );
   const erroresPorCortar = problems.length - indiceAntesDeCortar;
@@ -1818,7 +1861,11 @@ try {
       const leido = (await api(`/lists/${listaA}`, { token: await tokenDeLaApi() })).body?.data?.tagColors;
       return leido;
     },
-    (m) => m?.urgente === "blue",
+    // **El hex, y no el nombre.** El servidor normaliza a hex al pasar por
+    // `sanitiseTagColors`, así que lo que llega aquí es `#2563EB`. Esperar `"blue"`
+    // haría que este `until` **nunca** se cumpliera —y su comprobación sería un
+    // falso rojo durante los casi tres minutos que tarda el vaciado—.
+    (m) => m?.urgente === ICON_HEX.blue,
     // El motor de sincronización se dispara con una escritura local, al
     // autenticarse, al volver la conexión y cada 120 s. Volver la conexión en el
     // navegador **no** es un evento que NetInfo vea (`navigator.onLine` sigue
@@ -1835,10 +1882,12 @@ try {
 
   const listaAApi = (await api(`/lists/${listaA}`, { token: await tokenDeLaApi() })).body?.data;
   const listaBApi = (await api(`/lists/${listaB}`, { token: await tokenDeLaApi() })).body?.data;
+  // Y otra vez el hex y no el nombre, por lo mismo: esto lee lo que el servidor
+  // guardó, y lo que guarda es un hex.
   check(
     "la lista A guardo su mapa entero",
-    listaAApi?.tagColors?.Mercadona === "red" &&
-      listaAApi?.tagColors?.urgente === "blue" &&
+    listaAApi?.tagColors?.Mercadona === ICON_HEX.red &&
+      listaAApi?.tagColors?.urgente === ICON_HEX.blue &&
       Object.keys(listaAApi?.tagColors ?? {}).length === 2,
     JSON.stringify(listaAApi?.tagColors),
   );
