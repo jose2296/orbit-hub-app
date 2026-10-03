@@ -1721,7 +1721,8 @@ a la vez significa que sobrevive una versión. El coste está asumido y escrito.
 | `apps/mobile/src/components/lists/tag-chip.tsx` | La pastilla. El color llega en un prop y **no se busca en ningún otro sitio**: un mapa a nivel de módulo indexado por el nombre de la etiqueta pinta igual las dos listas que comparten la palabra |
 | `apps/mobile/src/components/lists/item-edit-sheet.tsx` | La página de etiquetas de una tarea, el botón de color dentro de la pastilla y la tira de doce |
 | `apps/mobile/src/app/(app)/list/[listId].tsx` | La fila, que pasa a `TaskRow` el mapa de **su** lista |
-| Cuatro claves de i18n × dos idiomas | `tags.color`, `tags.changeColor`, `tags.choosingColor`, `tags.backToDerivedOf` |
+| `apps/mobile/src/lib/lists/duplicate.ts` | La copia del mapa al duplicar una lista, por valor, con dos pruebas: una que dice que la copia conserva los colores y otra que dice que escribir en la copia no repinta la original |
+| Cinco claves de i18n × dos idiomas | `tags.color`, `tags.changeColor`, `tags.choosingColor`, `tags.backToDerived`, `tags.backToDerivedOf` |
 | `scripts/verify-tag-colors.mjs` | La comprobación, en un navegador real. Sale 1 si algo no encaja |
 
 ### Lo que las capturas de este bloque no llegaban a mostrar
@@ -1848,6 +1849,15 @@ color— leído del `aria-label` del botón, que nombra los doce en cualquier es
 - **Un lector de pantalla.** El `aria-label` del botón de color es lo que dice el
   color en palabras y es un nombre accesible comprobable; que un VoiceOver lo lea de
   forma útil es otra pregunta.
+- **Que la ruta de escritura lleve el mapa.** `use-lists.ts` manda al crear la
+  copia `workspaceId`, `title`, `kind`, `folderId` y `emoji`, y **`tagColors` no
+  está en ese `payload`**. Una lista duplicada conserva los colores en el dispositivo
+  que la duplicó y los pierde en cuanto entra otro: no viajan hasta el siguiente
+  pull. No es un olvido de este bloque —`tags` y `orderMode` tampoco viajan, y es
+  anterior—, pero el mapa se copia igual en `duplicate.ts` y en la fila se pinta,
+  así que aquí se ve bien y en el otro dispositivo no. **Lo que se ha probado es
+  el plan de duplicación**, que es una función pura: que el `payload` que se
+  encola lleve el mapa no se ha probado, y es lo que habría que mirar.
 - **Dos personas cambiando colores a la vez.** El mapa entero viaja en una operación y
   sobrevive una versión. El plan lo acepta como coste de no añadir una entidad de
   sincronización, y aquí no se ha tocado.

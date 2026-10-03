@@ -1392,7 +1392,7 @@ try {
     `de esos ${clavesEnPantalla.size} deducidos, en claro se pintan ${pintados.size} colores distintos: ${[...pintados].join(", ")}`,
   );
   check(
-    "la fila de cobertura lleva los doce deducidos repartidos, con ambar junto a naranja",
+    `la fila de cobertura lleva los ${SEED_LABELS.cobertura.length} deducidos repartidos, con ambar junto a naranja`,
     new Set(SEED_LABELS.cobertura.map(derivedTagColor)).size >= 5,
     SEED_LABELS.cobertura.map((t) => `${t}→${derivedTagColor(t)}`).join(", "),
   );
@@ -1954,8 +1954,28 @@ try {
     // Y los otros acentos, como comparación y no como comprobación: salen del token,
     // no de un botón medido, y el orden se calcula aquí con la misma cuenta.
     const acentoEnToken = (hex) => contrastRatio(hex, SCHEME.light.fill);
+    const otros = {
+      orbit: acentoEnToken("#3B63E0"),
+      violet: acentoEnToken("#7C3AED"),
+      amber: acentoEnToken("#C2740A"),
+      rose: acentoEnToken("#D42D5C"),
+    };
+    /*
+     * Cuál de los cinco es el más flojo **sale de compararlos**, no de escribirlo:
+     * una frase que dice "el esmeralda es el más flojo" junto a cuatro números que
+     * tiene al lado es una afirmación que se queda vieja en cuanto uno de los
+     * cuatro se mueve, y aquí no hay nadie mirando. El `reduce` va con `<`, así que
+     * un empate se queda con el que va primero en la lista —que es el esmeralda, y
+     * solo por el orden en que se han escrito—; con estos cuatro tokens no hay
+     * empate, y si lo hubiera el texto lo delataría, porque el número que sale es
+     * el de los dos.
+     */
+    const flojo = [
+      ["esmeralda, medido del DOM", rBorde],
+      ...Object.entries(otros),
+    ].reduce((a, b) => (b[1] < a[1] ? b : a));
     note(
-      `los otros acentos salen del token, no del DOM, calculados aquí con la misma cuenta sobre ${SCHEME.light.fill}: orbit ${acentoEnToken("#3B63E0").toFixed(2)}:1, violet ${acentoEnToken("#7C3AED").toFixed(2)}:1, amber ${acentoEnToken("#C2740A").toFixed(2)}:1, rose ${acentoEnToken("#D42D5C").toFixed(2)}:1. El esmeralda medido es el mas flojo de los cinco: ${rBorde.toFixed(2)}:1`,
+      `los otros acentos salen del token, no del DOM, calculados aquí con la misma cuenta sobre ${SCHEME.light.fill}: ${Object.entries(otros).map(([k, v]) => `${k} ${v.toFixed(2)}:1`).join(", ")}. El más flojo de los cinco sale de comparar esos cuatro con el esmeralda medido a ${rBorde.toFixed(2)}:1, y es ${flojo[0]} a ${flojo[1].toFixed(2)}:1`,
     );
   }
   await shot(tab, `${SHOTS}/etiquetas-04-acento-esmeralda-claro.png`);

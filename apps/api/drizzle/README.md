@@ -2,9 +2,11 @@
 
 Esta carpeta son las migraciones de OrbitHub, en orden. El **SQL es la verdad**:
 `apps/api/test/helpers.ts` aplica esta carpeta committeada y nada mas, asi que
-las pruebas son evidencia sobre el SQL y nunca sobre las instantaneas de
-`meta/`. Cambiar `meta/` no cambia lo que ve la base de datos de las pruebas;
-cambiar un `.sql`, si.
+las pruebas son evidencia sobre el SQL y nunca sobre las instantaneas. Cambiar
+`meta/*_snapshot.json` no cambia lo que ve la base de datos de las pruebas.
+Cambiar `meta/_journal.json` **si**: `readMigrationFiles` recorre sus entradas y
+ejecuta un `.sql` por cada una, asi que una entrada que no este en el journal es
+una migracion que las pruebas no llegan a aplicar. Y cambiar un `.sql`, si.
 
 En `apps/api/package.json` hay tres scripts de drizzle: `db:generate`, que
 escribe una migracion nueva; `db:migrate`, que aplica las que ya estan; y
@@ -16,16 +18,28 @@ carpeta. En ninguno de los tres esta **`drizzle-kit up`**.
 Para que nadie lo "arregle" otra vez:
 
 * Las instantaneas `0014`, `0015` y `0016` llevaban una clave `autoincrement` que
-  el formato de instantanea `version: 7` —el mismo que dice el
-  `_journal.json`— rechaza: el objeto columna es `strict()` y no admite esa
-  clave. La herramienta imprimia `0014_snapshot.json data is malformed`, **no
-  escribia ningun fichero y salia con codigo 0**, que es exactamente como
-  parece un `generate` que no tenia nada que hacer.
+  el generador no admite. El validador es `backwardCompatiblePgSchema` —la union
+  de `pgSchemaV5`, `pgSchemaV6` y `pgSchema`— y **los tres llegan a la columna
+  por `column2`**, que es `strict()` y no tiene esa clave. La herramienta
+  imprimia `0014_snapshot.json data is malformed`, **no escribia ningun fichero y
+  salia con codigo 0**, que es exactamente como parece un `generate` que no tenia
+  nada que hacer.
+  * **Dos trampas al buscarlo en `node_modules/drizzle-kit/bin.cjs`, y las dos
+    dicen lo contrario.** Hay un objeto columna que si admite la clave —
+    `column`, con `autoincrement: booleanType().optional()`— y es el de `tableV3`,
+    del esquema `pgSchemaV3`, que no esta en la union. Y hay dos esquemas con
+    `version: "7"`: `pgSchemaV7`, que pasa por `tableV7` y `columnV7`, y
+    `pgSchema`, que es el que usa `generate` y pasa por `column2`. El que decide
+    es `column2`.
+  * Esto se ha reproducido con la version fijada en `apps/api/package.json`
+    (`drizzle-kit@0.31.11`), restaurando las tres instantaneas con la clave y
+    ejecutando `generate` sobre una copia de `meta/`: imprime las tres lineas de
+    `data is malformed`, no escribe nada y sale con codigo 0.
 * `0017`, `0018` y `0019` no tenian instantanea ninguna, y la ultima era `0016`:
   generar desde ahi volvia a emitir `notes`, `attachments`, `note_templates` y
   `people_follows` desde cero.
 
-Lo que se hizo: quitar la clave que el formato no admite —el esquema que
+Lo que se hizo: quitar la clave que el generador no admite —el esquema que
 describen `0014` a `0016` no cambia ni un bit— y producir las cuatro
 instantaneas que faltaban (`0017`, `0018`, `0019` y `0020`) con la propia
 herramienta, ejecutada contra el esquema del commit al que pertenece cada una y
