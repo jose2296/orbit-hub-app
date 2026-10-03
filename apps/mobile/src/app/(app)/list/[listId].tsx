@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
 import type { ListItem, ListOrderMode } from "@orbit-hub/contracts";
@@ -36,6 +36,7 @@ import {
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
+import { routeForList } from "@/lib/lists/route";
 import { providerRefOf } from "@/lib/lists/provider-ref";
 import { useTheme } from "@/theme";
 
@@ -81,6 +82,32 @@ export default function ListScreen() {
     () => lists.find((item) => item.id === listId) ?? null,
     [lists, listId],
   );
+
+  /**
+   * A board does not open here, and this is the link that closes the chain.
+   *
+   * `routeForList` sends boards to `/board/:id`, and it is called from three places
+   * that do not have the kind of the list to hand —search, the content of a space
+   * and the catalogue all write `list?.kind ?? 'tasks'`— so the fallback puts all
+   * three on `/list/:id`. This screen resolves the list out of the **same**
+   * `useLists({})` cache those callers read, which is re-read on every notification
+   * of the local store, so the moment the list arrives this runs and sends the
+   * person to the board.
+   *
+   * **Both links are needed and neither one is enough.** Without this one, those
+   * three callers land on the task screen of a board and nothing fails: it is close
+   * enough to the board not to look broken, and no test of a rendered screen would
+   * notice — this suite paints nothing. Without the other one, a link written by
+   * hand does the same. If this redirect is ever removed, **those three callers
+   * change at the same time**, not one of them.
+   *
+   * `replace` and not `push`, because a push would leave this screen in the stack
+   * under the board, and pressing back would come back here, which would send the
+   * person to the board again: a back button that appears to do nothing.
+   */
+  useEffect(() => {
+    if (list?.kind === "board") router.replace(routeForList(list));
+  }, [list, router]);
   const { workspaces } = useWorkspaces();
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === list?.workspaceId) ?? null,
@@ -367,6 +394,15 @@ export default function ListScreen() {
     }
     ir();
   }
+
+  /*
+    While the redirect travels. Nothing of this screen's own, because a list of
+    tasks flashing for a frame before the board arrives is a flash of the wrong
+    screen — and this branch is below every hook on purpose, which is the way this
+    app has already been bitten: "Rendered more hooks than during the previous
+    render" is a crash the typecheck accepts.
+  */
+  if (list?.kind === "board") return null;
 
   if (!listId) {
     return (
