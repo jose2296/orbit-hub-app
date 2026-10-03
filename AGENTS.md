@@ -31,18 +31,30 @@ npm run check       # typecheck + test + expo config
 
 Plus, for UI changes: verify on the **web**, in light and dark theme.
 
-Web is the only target that is checked by hand. The native ones are not: there is no
-simulator or device attached to this machine, and a change that is only measured
-through a checklist of assumptions is not a check. So a UI change is opened in a
-browser, driven to the screen, scrolled, and looked at — and a claim that it works
-on Android or iOS is a claim about a build nobody ran.
+The web is still checked by hand, and it is no longer the only target. There **is** an
+Android emulator on this machine and there is an automated smoke walkthrough for it:
+`npm run e2e:android`. **iOS still has nothing** — no simulator, no harness — so a
+claim about iOS is still a claim about a build nobody ran.
 
-That makes the web the place where platform-only bugs hide, and the notes editor is
-the standing example: it refused every picture, handed the editor unresolved
-references, and drew a `+` that scrolled away, and every one of those was found in
-a browser in the time it would have taken to boot an emulator. What the browser
-cannot tell you is a native selection handle or a system keyboard, and those stay
-unverified until somebody runs a device.
+So a UI change is opened in a browser, driven to the screen, scrolled, and looked at, in
+both themes. That is the cheapest target to check by hand and it is where platform-only
+bugs hide, and the notes editor is the standing example: it refused every picture, handed
+the editor unresolved references, and drew a `+` that scrolled away, and every one of
+those was found in a browser in the time it would have taken to boot an emulator.
+
+What the browser cannot tell you is a native selection handle or a system keyboard. That
+is what `npm run e2e:android` is for: it walks the app on a real device, drives it with
+Maestro, and fails on a screen that does not come up. It is a smoke walkthrough, not a
+test of behaviour — it does not check that a save saved what you typed — and it is
+deliberately not part of `npm run check` and not in CI. See `apps/mobile/e2e/README.md`.
+
+**The obligation.** A new screen, sheet or option ships with its flow: one file under
+`apps/mobile/e2e/maestro/flows/<area>/`, asserted on `testID` and never on translated
+text, plus its name in that area's `flowsOrder` — adding one and declaring the other are
+the same change. And UI work runs `npm run e2e:android` before it is called done. A green
+run that never reached the new thing is not a check either, and neither is a red line you
+can wave away: if `capturas/android/informe.txt` names an area in red, the change either
+broke it or it found a real defect, and both are worth reading before the commit.
 
 ## Where things live
 

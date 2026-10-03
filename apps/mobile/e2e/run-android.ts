@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adb, appPid, clearLogcat, crashLines, forceStop, requireOneDevice, screenshot } from './lib/android.ts';
 import { parseAreaFlag, resolveAreas } from './lib/areas.ts';
-import { verdict, type Verdict } from './lib/guard.ts';
+import { verdict } from './lib/guard.ts';
 import { runMaestro } from './lib/maestro.ts';
+import { renderReport, writeReport, type AreaResult } from './lib/report.ts';
 import { ensureService, type Service } from './lib/stack.ts';
 import { seed, writeSeedEnv } from './seed/e2e-account.ts';
 
@@ -128,7 +129,12 @@ try {
   const vacias = areas.filter((a) => a.flows.length === 0);
   for (const a of vacias) console.log(`  aviso: el area ${a.name} no tiene flujos`);
 
-  const resultados: { area: string; flows: number; maestroOk: boolean; guard: Verdict }[] = [];
+  // `AreaResult` y no la forma escrita aqui: el informe se pinta a partir de esta
+  // lista y de nada mas, asi que las dos cosas tienen que ser el mismo tipo. Con
+  // la forma duplicada, anadir un campo al informe obliga a acordarse de tocar
+  // las dos copias, y la copia que se olvida no da error de tipos: da un informe
+  // con un `undefined` en una fila.
+  const resultados: AreaResult[] = [];
   let fallos = 0;
 
   for (const area of areas) {
@@ -176,6 +182,18 @@ try {
     console.log(`  ${bien ? ' ok ' : 'FALLA'} ${area.name.padEnd(16)} ${mal}`);
     if (code !== 0) console.log(output.split('\n').slice(-15).join('\n'));
   }
+
+  // El informe, antes de decidir nada: es el artefacto de la carrera y se escribe
+  // tambien cuando la carrera sale bien. Va antes del `exitCode` y no dentro del
+  // `else` porque un informe que solo existe cuando algo fallo no sirve para
+  // comparar dos carreras, y comparar dos carreras es la mitad de para que exista.
+  // La tabla va tambien a pantalla porque el `exitCode` no se ve: una carrera que
+  // falla en un script se lee por su codigo, y una que se lee por sus lineas dice
+  // QUE fallo.
+  const informe = join(CAPTURAS, 'informe.txt');
+  writeReport(informe, resultados);
+  console.log(`\n${renderReport(resultados)}\n`);
+  console.log(`informe: ${informe}`);
 
   // Un area vacia no es un fallo, pero una carrera sin un solo area tampoco es una
   // carrera: `resolveAreas` lanza si el directorio no existe, y esto avisa del otro

@@ -13,6 +13,7 @@
 | [0009](0009-one-native-editor.md) | One native note editor everywhere, HTML as the format | Accepted |
 | [0031](0031-compartir.md) | Compartir: un vinculo, y el sitio lo elige quien lo recibe | Accepted |
 | [0032](0032-personas.md) | Personas: un directorio de con quien ya has tratado | Accepted |
+| [0033](0033-regresion-e2e-android.md) | Regresion E2E en Android con Maestro, y el guardian de crasheo alrededor | Accepted |
 
 ## Format
 
