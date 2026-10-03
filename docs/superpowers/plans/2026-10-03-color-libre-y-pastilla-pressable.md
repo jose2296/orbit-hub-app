@@ -45,7 +45,17 @@ Cinco entradas que el spec insinúa y que es fácil no cubrir. Cada una tiene su
 
 **Files:**
 - Modify: `packages/contracts/src/tag-colors.ts`
+- Modify: `apps/mobile/src/hooks/use-lists.ts:327` — `setTagColor`
+- Modify: `apps/mobile/src/lib/lists/tag-colors.ts:22` — `planTagColorChange`, y `:115` — `labelTextColor`
+- Modify: `apps/mobile/src/components/lists/item-edit-sheet.tsx` — `onTagColor`, `pickColor`, `colorOf` y las props de `TagColorStrip`
 - Test: `apps/mobile/test/tag-colors.test.ts` — **los tests de `sanitiseTagColors` ya viven aqui**, no hay que crear un fichero de pruebas en el contrato. Se anaden aqui los nuevos.
+
+> **Por que toca cuatro ficheros mas.** Cambiar `TagColors` de
+> `Record<string, ItemIconColor>` a `Record<string, string>` deja de compilar todo
+> lo que toma el color como enum, y **`use-lists.ts` no es de ninguna otra tarea**.
+> Esta tarea **ensancha las firmas, sin cambiar comportamiento**; el comportamiento
+> nuevo llega en la Tarea 5 sobre el mismo `item-edit-sheet.tsx`. La API no se toca:
+> `content-schema.ts:325` usa `TagColors` como `$type` y no asume el enum.
 
 **Interfaces:**
 - Consumes: nada de otras tareas.
@@ -122,17 +132,29 @@ En `packages/contracts/src/tag-colors.ts`:
 Run: el mismo comando.
 Expected: PASS los cinco.
 
-- [ ] **Step 5: Actualizar el test de la API que fija el formato viejo**
+- [ ] **Step 5: Ensanchar las cuatro firmas que toman el color**
+
+Sin cambiar comportamiento, solo el tipo:
+
+- `use-lists.ts:327` — `setTagColor(list, tag, color: string | null)`, y quita `ItemIconColor` del import si se queda sin uso.
+- `tag-colors.ts:22` — `planTagColorChange(map, tag, color: string | null)`.
+- `tag-colors.ts:115` — `labelTextColor(colour: string, ...)`. **Esta la borra la Tarea 3**; aquí solo se ensancha para que el arbol compile.
+- `item-edit-sheet.tsx` — `onTagColor` (`:70`), `pickColor` (`:333`), `colorOf` (`:252`) y las props de `TagColorStrip` (`:863`, `:938`, `:939`), todas a `string`.
+
+Run: `npm run typecheck --workspace @orbit-hub/mobile`
+Expected: **limpio**. Si algo sigue quejándose de `ItemIconColor`, es un consumidor que no estaba en la lista y hay que encontrarlo antes de seguir.
+
+- [ ] **Step 6: Actualizar el test de la API que fija el formato viejo**
 
 `apps/api/test/sync.test.ts` tiene `expect(list.body.data.tagColors).toEqual({ Mercadona: 'green' })`. Pasa a `toEqual({ Mercadona: '#0E9F6E' })` y el comentario de al lado, que dice "el que no pudo se descartó en vez de guardarse", debe actualizarse: ahora lo que no puede es `"no-es-un-color"`, y lo que **no** puede pasar es un nombre viejo siendo descartado.
 
 Run: `npm run test --workspace @orbit-hub/api`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add packages/contracts/src/tag-colors.ts apps/mobile/test/tag-colors.test.ts apps/api/test/sync.test.ts
+git add packages/contracts/src/tag-colors.ts apps/mobile/src/hooks/use-lists.ts apps/mobile/src/lib/lists/tag-colors.ts "apps/mobile/src/components/lists/item-edit-sheet.tsx" apps/mobile/test/tag-colors.test.ts apps/api/test/sync.test.ts
 git commit -m "El color de una etiqueta es un hex, y los nombres viejos se convierten"
 ```
 
@@ -266,7 +288,13 @@ Borra `labelTextColor` si nada más la usa, y borra `MIN_LABEL_CONTRAST` de este
 - [ ] **Step 4: Correr los dos Conjuntos**
 
 Run: `npx vitest run apps/mobile/test/tag-colors.test.ts` y `npm run test --workspace @orbit-hub/mobile`
-Expected: PASS. Si algún test viejo falla por `labelTextColor`, ese test **fixa la puerta que se está quitando**: bórralo y deja en su lugar el de arriba.
+Expected: PASS.
+
+**Y borra aqui, no en la Tarea 7, los dos tests que fijan la puerta de contraste**:
+`"usa el color del tema cuando el de la etiqueta no se lee"` y `"pinta el color
+del tema antes que un color que no se puede calcular"`. Fijan exactamente lo que
+esta tarea quita, asi que entre la Tarea 3 y la Tarea 7 el arbol estaria en rojo, y
+la Tarea 7 leeria tests que ya no existen. En su lugar queda el de arriba.
 
 - [ ] **Step 5: Commit**
 
@@ -510,7 +538,13 @@ git commit -m "La insignia y la pastilla abren la tarea, sin envoltorio"
 
 - [ ] **Step 1: Las comprobaciones nuevas, en el script**
 
-Las 55 que hay **siguen siendo 55**: se añaden, no se sustituyen. Y las dos que hoy fijan la puerta de contraste ("usa el color del tema cuando el de la etiqueta no se lee" y "pinta el color del tema antes que un color que no se puede calcular") **se borran**, porque fijan justo lo que este trabajo quita; en su lugar van las suyas:
+**Lo que hay que conservar es todo lo demas**, no un numero: el script crece, y las **dos** comprobaciones
+de la puerta de contraste —"usa el color del tema cuando el de la etiqueta no se lee" y
+"pinta el color del tema antes que un color que no se puede calcular"— **quedan borradas desde la
+Tarea 3**, porque fijan justo lo que este trabajo quita. Cada comprobacion existente que siga
+siendo cierta se queda; y si al mirar el resultado una se ha quedado sin sentido, **se dice en
+el informe en vez de borrarse por su cuenta**: el script no comprueba sus propios conteos, asi
+que una borrada de mas no suena en ninguna parte. En su lugar van estas:
 
 - **`el texto de la pastilla nunca sale en el color del tema`** — leído del DOM, en claro y en oscuro, para al menos un color de cada uno de los doce deducidos y para tres hex libres. Compara el color computado del texto con `theme.colors.text` de cada esquema.
 - **`el texto llega a 4.5:1 contra su propio relleno`** — la misma cuenta, por pastilla, con la aritmética de `contrastRatio` metida en el navegador.
