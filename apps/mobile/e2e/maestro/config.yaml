@@ -1,0 +1,21 @@
+appId: com.jrzlabs.orbithub
+name: OrbitHub regression
+
+# Etiquetas de los flujos, para correr una parte y no otra. Los flujos llevan las
+# suyas en la cabecera; estas son las que el harness puede pasar con
+# `--include-tags`, y una que no este aqui no la puede filtrar nadie.
+tags:
+  - smoke
+  - gesture
+
+executionOrder:
+  # Parar en la primera afirmacion falsa, que es lo que el plan pedia con
+  # `failOnEveryAssert: true`. Ese nombre ya no existe en Maestro 2.11: measured, con
+  # `javap` sobre `WorkspaceConfig$ExecutionOrder` de `maestro-orchestra-models.jar`
+  # 2.11.0, sus dos unicas propiedades son `continueOnFailure` y `flowsOrder`, y un
+  # `config.yaml` con `failOnEveryAssert` dentro no arranca -
+  # `Unknown Property: failOnEveryAssert`. `continueOnFailure: false` es lo mismo:
+  # el flujo para en el primer fallo en vez de seguir y reportar una avalancha, de
+  # la cual solo el primero es real -los demas ya estan limitados por lo que hizo el
+  # anterior-.
+  continueOnFailure: false

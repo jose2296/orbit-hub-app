@@ -1,0 +1,20 @@
+appId: com.jrzlabs.orbithub
+tags: [smoke]
+---
+# El arranque sin sesion, con los datos limpiados.
+#
+# `clearState` y no un simple `launchApp` porque esta suite no empieza por la
+# sesion sino por la falta de ella: sin esto el emulador que somebody dejo con una
+# sesion abierta devuelve el panel, y el flujo se pasa probando el panel.
+#
+# Y `assertVisible: { id: ... }` y no `assertVisible: screen-welcome`: una cadena
+# suelta en un comando de Maestro es un selector de TEXTO, no de identificador, asi
+# que la forma corta busca un nodo que se llame "screen-welcome" y no lo hay nunca.
+# Measured: con la forma corta los tres flujos fallan con `Assertion is false:
+# "screen-welcome" is visible` mientras la pantalla esta ahi y su
+# `resource-id="screen-welcome"` esta en el arbol que Maestro mismo guarda.
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: screen-welcome
+- takeScreenshot: capturas/android/01-welcome

@@ -1,0 +1,16 @@
+appId: com.jrzlabs.orbithub
+tags: [smoke]
+---
+# Los terminos, y la vuelta. La misma forma que la privacidad y por el mismo
+# motivo: enlace del aviso, afirmacion al volver, y nada de coordenadas.
+- launchApp
+- assertVisible:
+    id: screen-welcome
+- tapOn:
+    id: welcome-terms
+- assertVisible:
+    id: screen-terms
+- back
+- assertVisible:
+    id: screen-welcome
+- takeScreenshot: capturas/android/03-terms

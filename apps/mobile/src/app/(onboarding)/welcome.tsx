@@ -22,7 +22,7 @@ export default function WelcomeScreen() {
   const t = useTranslation();
 
   return (
-    <Screen>
+    <Screen testID="screen-welcome">
       <View style={styles.header}>
         <LogoMark size={56} />
         <View style={{ gap: theme.spacing.sm }}>

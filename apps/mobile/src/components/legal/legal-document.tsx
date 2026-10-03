@@ -9,6 +9,15 @@ export interface LegalDocumentProps {
   /** From the dictionary, because the header above draws it in the app's language. */
   title: string;
   document: LegalDocumentData;
+  /**
+   * El marcador de la pantalla, reenviado a la raiz de `Screen`.
+   *
+   * Una prop y no nada escrito dentro: `/privacy` y `/terms` son las dos rutas por
+   * las que se llega aqui y cada una necesita el suyo, y un nombre puesto dentro
+   * del componente seria el mismo en las dos -una pantalla con el nombre de la
+   * otra- y ningun flujo podria afirmar donde esta.
+   */
+  testID?: string;
 }
 
 /**
@@ -25,11 +34,11 @@ export interface LegalDocumentProps {
  * and a privacy policy read at 16 px with a 23 px line is a wall rather than a
  * page of reading.
  */
-export function LegalDocument({ title, document }: LegalDocumentProps) {
+export function LegalDocument({ title, document, testID }: LegalDocumentProps) {
   const theme = useTheme();
 
   return (
-    <Screen width="reading">
+    <Screen width="reading" testID={testID}>
       <View style={{ gap: theme.spacing.xs }}>
         <AppText variant="title">{title}</AppText>
         <AppText variant="caption" tone="subtle">

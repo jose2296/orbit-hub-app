@@ -19,5 +19,5 @@ import { LEGAL_PRIVACY } from '@/content/legal';
 export default function PrivacyScreen() {
   const t = useTranslation();
 
-  return <LegalDocument title={t('legal.privacy.title')} document={LEGAL_PRIVACY} />;
+  return <LegalDocument testID="screen-privacy" title={t('legal.privacy.title')} document={LEGAL_PRIVACY} />;
 }

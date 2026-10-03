@@ -114,5 +114,17 @@ export function screenshot(serial: string, file: string): void {
   // Straight to the file, with no shell in between. Interpolating a serial and a
   // path into `sh -c` means a space, a quote or a `$` in either one decides what
   // runs; passing the same words as an argv cannot.
-  writeFileSync(file, execFileSync(ADB, ['-s', serial, 'exec-out', 'screencap', '-p']));
+  //
+  // `maxBuffer` es obligatorio y no es un adorno. `execFileSync` corta la salida
+  // del hijo en un megasibyte por defecto y lanza `ENOBUFS` al pasarse: un PNG de
+  // 1080x2400 pesa entre 1 y 2 megas, y el de este emulador medido 1_058_378
+  // bytes -nueve mil por encima del limite-. Con el limite por defecto esta funcion
+  // falla en una pantalla con muchos pixeles distintos y se pasa en otra con menos,
+  // que es peor que no funcionar: el harness escribe la captura que prueba que ha
+  // mirado la app, y que falle depende de lo que haya en la pantalla. 32 MB es muy
+  // superior a cualquier captura real y sigue siendo un tope.
+  writeFileSync(
+    file,
+    execFileSync(ADB, ['-s', serial, 'exec-out', 'screencap', '-p'], { maxBuffer: 32 * 1024 * 1024 }),
+  );
 }

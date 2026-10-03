@@ -4,7 +4,10 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { requireOneDevice } from './lib/android.ts';
+import { adb, appPid, clearLogcat, crashLines, forceStop, requireOneDevice, screenshot } from './lib/android.ts';
+import { parseAreaFlag, resolveAreas } from './lib/areas.ts';
+import { verdict, type Verdict } from './lib/guard.ts';
+import { runMaestro } from './lib/maestro.ts';
 import { ensureService, type Service } from './lib/stack.ts';
 import { seed, writeSeedEnv } from './seed/e2e-account.ts';
 
@@ -20,6 +23,10 @@ const CAPTURAS = join(RAIZ, 'capturas', 'android');
 // dejase el arbol de artefactos puesto sin haber hecho nada.
 const serial = requireOneDevice();
 console.log(`arnes E2E: dispositivo ${serial}`);
+
+// Las banderas se leen antes que nada mas porque no pueden fallar, y asi el error
+// de una bandera mal escrita sale antes que el de un servicio que no arranco.
+const flags = parseAreaFlag(process.argv.slice(2));
 
 mkdirSync(CAPTURAS, { recursive: true });
 
@@ -92,6 +99,17 @@ try {
   for (const s of servicios) {
     console.log(`  ${s.started ? 'arrancado' : 'ya estaba en pie'}: ${s.label} (${s.url})`);
   }
+  // `adb reverse` y no `adb forward`, y los dos puertos: la app corre DENTRO del
+  // emulador y pide `127.0.0.1:8081` a Metro y `127.0.0.1:4011` a la API, porque
+  // esas son las direcciones que se le han pasado. El loopback de un emulador es el
+  // suyo propio -el host es `10.0.2.2`-, asi que sin esto el bundle no se descarga
+  // y la API no contesta, y el fallo se lee como "la app esta rota" en vez de como
+  // "falta un puerto". Sin excepcion que capturar: un reverse que no se puede poner
+  // es un fallo de la carrera, no un aviso.
+  for (const puerto of [PUERTO_METRO, PUERTO_API]) {
+    adb(['reverse', `tcp:${puerto}`, `tcp:${puerto}`], serial);
+  }
+  console.log(`  adb reverse: ${PUERTO_METRO} y ${PUERTO_API} apuntando al host`);
   // El log de la API entra como variable y no como ruta escrita aqui: lo crea
   // `ensureService` con la marca de la carrera, y el enlace de verificacion sale
   // de ahi y de ningun otro sitio.
@@ -105,6 +123,52 @@ try {
   console.log(`  credenciales para los flujos: ${envFile}`);
   console.log(`  datos de la carrera: ${PGDATA}`);
   console.log(`  logs: ${SALIDA_API} y ${SALIDA_METRO}`);
+
+  const areas = resolveAreas(join(RAIZ, 'apps/mobile/e2e/maestro/flows'), flags.only);
+  const vacias = areas.filter((a) => a.flows.length === 0);
+  for (const a of vacias) console.log(`  aviso: el area ${a.name} no tiene flujos`);
+
+  const resultados: { area: string; flows: number; maestroOk: boolean; guard: Verdict }[] = [];
+  let fallos = 0;
+
+  for (const area of areas) {
+    // El estado y el buffer se limpian por area: sin esto, el primer area hereda
+    // el pid de la anterior y el crash que dejo la ultima corrida, y se los
+    // carga a el.
+    forceStop(serial);
+    clearLogcat(serial);
+    const antes = { pid: appPid(serial) };
+
+    const flows = flags.flow ? [join(area.dir, flags.flow)] : area.dir;
+    // La siembra entera en el entorno, no solo lo que los flujos de hoy necesitan:
+    // es lo que le hara falta a un flujo con sesion, y `Seeded` ya es un mapa de
+    // cadenas. Sin escribir un `.env`: Maestro lee `${...}` del entorno, y ahi es
+    // donde el plan prohibio escribir ficheros.
+    const { code, output } = runMaestro(flows, {
+      cwd: RAIZ,
+      env: { ...sembrado },
+    });
+
+    const guard = verdict(antes, { pid: appPid(serial) }, crashLines(serial));
+    screenshot(serial, join(CAPTURAS, `${area.name}.png`));
+
+    resultados.push({ area: area.name, flows: area.flows.length, maestroOk: code === 0, guard });
+    const mal = !guard.ok ? guard.problems.join(' | ') : code === 0 ? 'ok' : 'Maestro fallo';
+    const bien = guard.ok && code === 0;
+    if (!bien) fallos += 1;
+    console.log(`  ${bien ? ' ok ' : 'FALLA'} ${area.name.padEnd(16)} ${mal}`);
+    if (code !== 0) console.log(output.split('\n').slice(-15).join('\n'));
+  }
+
+  // Un area vacia no es un fallo, pero una carrera sin un solo area tampoco es una
+  // carrera: `resolveAreas` lanza si el directorio no existe, y esto avisa del otro
+  // caso, que es un directorio con subdirectorios y ninguno con flujos.
+  if (areas.length === 0) {
+    console.error('  no hay ningun area que recorrer');
+    process.exitCode = 1;
+  } else if (fallos > 0) {
+    process.exitCode = 1;
+  }
 } finally {
   for (const s of servicios) await s.stop();
 }

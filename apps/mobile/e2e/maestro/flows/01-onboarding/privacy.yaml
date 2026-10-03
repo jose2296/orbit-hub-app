@@ -1,0 +1,25 @@
+appId: com.jrzlabs.orbithub
+tags: [smoke]
+---
+# La politica de privacidad, y la vuelta.
+#
+# Se llega por el enlace del aviso legal y no por una deep link: el enlace es lo
+# que hay que probar, porque una deep link se abriria aunque el enlace estuviese
+# roto. Y el enlace se toca por su `id`, que es como Maestro ve un `testID`: una
+# cadena suelta seria un selector de texto y el texto de los dos enlaces sale del
+# diccionario. La razon de que un `testID` dentro de otro `Text` no valiera esta en
+# `legal-notice.tsx`.
+- launchApp
+- assertVisible:
+    id: screen-welcome
+- tapOn:
+    id: welcome-privacy
+- assertVisible:
+    id: screen-privacy
+# Volver es parte del flujo, no limpieza: un flujo que se queda con una hoja
+# abierta deja al siguiente mirando donde no toca, y ese fallo se lee como un fallo
+# del siguiente.
+- back
+- assertVisible:
+    id: screen-welcome
+- takeScreenshot: capturas/android/02-privacy
