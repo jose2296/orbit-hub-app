@@ -60,6 +60,20 @@ describe('la direccion del arrastre', () => {
     expect(nextPageFor(0, 600, 4, 1)).toBe(0);
     expect(nextPageFor(0, 0, 4, 1)).toBe(1);
   });
+
+  /**
+   * When the travel and the speed disagree, the travel wins, and this is the
+   * panel's rule and not a new one: the velocity only breaks the tie of a finger
+   * that had already come back, so it is asked only when there is no travel to
+   * ask. The case is a drag to the left whose last two fingers flick back to the
+   * right — the finger is coming home, but it went 140 points that way, and paging
+   * backwards from that would move the column away from where the finger has been
+   * for the whole gesture.
+   */
+  it('el travel manda sobre una velocidad que dice lo contrario', () => {
+    expect(nextPageFor(-140, 600, 4, 1)).toBe(2);
+    expect(nextPageFor(140, -600, 4, 2)).toBe(1);
+  });
 });
 
 describe('los umbrales', () => {
