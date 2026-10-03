@@ -73,6 +73,20 @@ export function nextPageFor(
   distance = BOARD_SWIPE_DISTANCE,
   minVelocity = BOARD_SWIPE_VELOCITY,
 ): number {
+  /**
+   * A worklet, **and that is a requirement rather than an optimisation**: the
+   * gesture that calls this runs on the interface thread, and a plain function
+   * called from there does not answer — it is a function of the JavaScript thread
+   * being called from another one. On the web the two threads are the same and the
+   * missing directive is invisible, which is exactly why it has to be written down
+   * here rather than found out on a phone: **it is the same reason
+   * `lib/dashboard/panel.ts` carries twelve of them.**
+   *
+   * A worklet is still an ordinary function, so the same code answers on the
+   * interface thread and in a test.
+   */
+  'worklet';
+
   // Before the arithmetic, because with no columns there is no column at every
   // index and `count - 1` is the one bound that is below zero.
   if (count < 1) return 0;

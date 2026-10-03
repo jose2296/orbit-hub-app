@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { LayoutChangeEvent } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
 
 import type { BoardStates } from "@orbit-hub/contracts";
 
@@ -8,6 +13,22 @@ import { AppText } from "@/components/ui/text";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { iconColor } from "@/lib/lists/item-icons";
 import { useTheme } from "@/theme";
+
+/**
+ * How much of the strip's own width the pills travel for a whole column of drag.
+ *
+ * **A fraction and not a number of points**, and the reason is that the track and
+ * the strip are two different widths: at a 400-point window the track moves a
+ * column of 380 and the strip is 368 wide, so a fixed displacement would be a
+ * slightly different parallax on a phone than on a tablet, and the only width
+ * that makes it agree everywhere is the width of the strip itself.
+ *
+ * A third of it is what makes the parallax noticeable without it reading as
+ * movement: the pills lag about 35 points behind the columns for every 100 the
+ * finger travels, which is enough to feel like there are two layers and not enough
+ * to look like the names are sliding away.
+ */
+const PARALAJE_TIRA = 0.35;
 
 export interface BoardTabsProps {
   /** The columns, **in the order of the array**, which is the order they are drawn. */
@@ -29,6 +50,19 @@ export interface BoardTabsProps {
    * column that is not there is worse than one that highlights nothing.
    */
   currentId: string | null;
+  /**
+   * How far along the board the finger is, **zero at rest and signed**, and it is
+   * what the pills travel by while the columns travel further.
+   *
+   * **A shared value and not a `number`, and that is a cost and not a style.** This
+   * changes on every frame of a drag, so a `number` in React state would re-render
+   * the whole strip — **twenty-four pills at the contract's cap** — sixty times a
+   * second, on top of the re-render of the screen that would have carried the
+   * number. The scroll offset a few lines down is kept in a ref for the same
+   * reason and says so in as many words; a shared value is that, plus being
+   * readable inside an animated style with no render at all.
+   */
+  progress: SharedValue<number>;
   /** Which column the board should be anchored on. */
   onSelect: (id: string) => void;
 }
@@ -64,16 +98,45 @@ export interface BoardTabsProps {
  * centring a pill that is already visible would slide the strip under a tap for
  * no reason. When there *is* more, the pill is centred so the name and the count
  * are both readable rather than half off the edge.
+ *
+ * **And it moves less than the board while a finger is on the board**, which is
+ * the whole of the parallax and the reason for the `progress` prop: the idea is
+ * the one in `components/ui/media-carousel.tsx`, where a row of titles gathers
+ * towards the middle of the window and you can see what is coming before you get
+ * to it. Here the pills travel 35 per cent of what the columns travel, so the name
+ * of the column on the other side of the edge arrives before the column does.
  */
 export function BoardTabs({
   states,
   counts,
   currentId,
+  progress,
   onSelect,
 }: BoardTabsProps) {
   const theme = useTheme();
   const t = useTranslation();
   const tira = useRef<ScrollView>(null);
+
+  /**
+   * How wide the strip is, **as a shared value and not as a state.**
+   *
+   * The animated style below reads it sixty times a second while a finger travels,
+   * and a state would be a render of every pill for every one of those reads. It is
+   * written from the same `onLayout` that fills `anchoTira`, because the state is
+   * still needed: the effect that centres the pill compares against it, and that
+   * comparison is a decision and not an animation.
+   */
+  const ancho = useSharedValue(0);
+
+  /**
+   * The displacement of the pills, **and it is read from a shared value and not
+   * from a number**, so a drag moves the strip without rendering any of it.
+   */
+  const estilo = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: progress.value * (ancho.value || 1) * PARALAJE_TIRA },
+    ],
+  }));
 
   /**
    * Where each pill is and how wide it is, measured rather than assumed: pill
@@ -137,9 +200,11 @@ export function BoardTabs({
       style={styles.tira}
       horizontal
       showsHorizontalScrollIndicator={false}
-      onLayout={(event: LayoutChangeEvent) =>
-        setAnchoTira(event.nativeEvent.layout.width)
-      }
+      onLayout={(event: LayoutChangeEvent) => {
+        const width = event.nativeEvent.layout.width;
+        ancho.value = width;
+        setAnchoTira(width);
+      }}
       // Two numbers and not an event: `onContentSizeChange` has always been called
       // with the width and the height of the content, on native and on
       // react-native-web alike (`ScrollView/index.js` in the latter), and the
@@ -149,28 +214,54 @@ export function BoardTabs({
         desplazamiento.current = event.nativeEvent.contentOffset.x;
       }}
       scrollEventThrottle={32}
-      contentContainerStyle={[styles.contenido, { gap: theme.spacing.xs }]}
+      contentContainerStyle={styles.contenido}
     >
-      {states.map((state) => {
-        const count = counts.get(state.id) ?? 0;
-        const activa = state.id === currentId;
-        const color = iconColor(state.color);
+      {/*
+        The row of pills, **in an `Animated.View` of their own, and that is where
+        the parallax is.**
 
-        return (
-          <Pressable
-            key={state.id}
-            testID={`board-tab-${state.id}`}
-            onLayout={(event: LayoutChangeEvent) => {
-              const { x, width } = event.nativeEvent.layout;
-              setCajas((previas) =>
-                previas[state.id]?.x === x && previas[state.id]?.width === width
-                  ? previas
-                  : { ...previas, [state.id]: { x, width } },
-              );
-            }}
-            onPress={() => onSelect(state.id)}
-            accessibilityRole="tab"
-            /*
+        It cannot be the `contentContainerStyle`: Reanimated animates the `style`
+        prop of a component and reads `props.style` when it attaches one, so an
+        animated style handed to `contentContainerStyle` is quietly ignored — the
+        strip would sit still and the parallax would be a number in a prop that
+        nothing draws. And it cannot be the strip's own `style` either: a
+        transform on the scroll view takes its **box** sideways, which leaves 129
+        points of empty strip on the right while a drag is in flight — measured at a
+        400-point window, where the strip is 368 wide and a whole column of travel
+        moves the pills 129 — and draws the first pill out over the padding the
+        screen gave the board.
+
+        So the pills get a box inside the strip, which moves with them and is cut
+        by the strip at both ends. The gap moved in with them, which is what keeps
+        the pills the same distance apart while they travel, and the strip's own
+        scroll — the one that centres the chosen pill — is untouched: `cajas` still
+        measures positions inside this box, and the box starts where the content
+        container starts.
+      */}
+      <Animated.View
+        style={[styles.pastillas, { gap: theme.spacing.xs }, estilo]}
+      >
+        {states.map((state) => {
+          const count = counts.get(state.id) ?? 0;
+          const activa = state.id === currentId;
+          const color = iconColor(state.color);
+
+          return (
+            <Pressable
+              key={state.id}
+              testID={`board-tab-${state.id}`}
+              onLayout={(event: LayoutChangeEvent) => {
+                const { x, width } = event.nativeEvent.layout;
+                setCajas((previas) =>
+                  previas[state.id]?.x === x &&
+                  previas[state.id]?.width === width
+                    ? previas
+                    : { ...previas, [state.id]: { x, width } },
+                );
+              }}
+              onPress={() => onSelect(state.id)}
+              accessibilityRole="tab"
+              /*
               Which one is chosen, **in both the spellings the two platforms read.**
 
               Measured in the browser: with only `accessibilityState={{ selected }}`
@@ -182,42 +273,42 @@ export function BoardTabs({
               is what VoiceOver and TalkBack read. `Segmented` had to write its
               `aria-checked` by hand for the same reason.
             */
-            aria-selected={activa}
-            accessibilityState={{ selected: activa }}
-            // The number is spoken with its word and not as a bare digit, which is
-            // what a screen reader would otherwise read. `lists.itemCount` is the
-            // same phrase the row of a list uses, so it is one thing to hear.
-            accessibilityLabel={`${state.title}, ${t(pluralKey("lists.itemCount", count), {
-              count,
-            })}`}
-            style={({ pressed }) => [
-              styles.pastilla,
-              {
-                gap: theme.spacing.sm,
-                paddingVertical: theme.spacing.sm,
-                paddingHorizontal: theme.spacing.md,
-                borderRadius: theme.radius.pill,
-                // The two halves of one pair, and both written here so that they
-                // are read together: the chosen pill is filled with the theme's text
-                // colour and its label is the theme's background, which is the pair
-                // the two themes were drawn to guarantee.
-                backgroundColor: activa
-                  ? theme.colors.text
-                  : theme.colors.surfaceMuted,
-                opacity: pressed ? 0.75 : 1,
-              },
-            ]}
-          >
-            {/* The colour of the state, as a dot and not as the name's colour: it is
+              aria-selected={activa}
+              accessibilityState={{ selected: activa }}
+              // The number is spoken with its word and not as a bare digit, which is
+              // what a screen reader would otherwise read. `lists.itemCount` is the
+              // same phrase the row of a list uses, so it is one thing to hear.
+              accessibilityLabel={`${state.title}, ${t(pluralKey("lists.itemCount", count), {
+                count,
+              })}`}
+              style={({ pressed }) => [
+                styles.pastilla,
+                {
+                  gap: theme.spacing.sm,
+                  paddingVertical: theme.spacing.sm,
+                  paddingHorizontal: theme.spacing.md,
+                  borderRadius: theme.radius.pill,
+                  // The two halves of one pair, and both written here so that they
+                  // are read together: the chosen pill is filled with the theme's text
+                  // colour and its label is the theme's background, which is the pair
+                  // the two themes were drawn to guarantee.
+                  backgroundColor: activa
+                    ? theme.colors.text
+                    : theme.colors.surfaceMuted,
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              {/* The colour of the state, as a dot and not as the name's colour: it is
                 the one thing on the pill that can carry a mid-tone without anybody
                 having to read a word in it. */}
-            <View
-              style={[styles.punto, { backgroundColor: color, borderRadius: theme.radius.pill }]}
-            />
-            <AppText
-              variant="callout"
-              numberOfLines={1}
-              /*
+              <View
+                style={[styles.punto, { backgroundColor: color, borderRadius: theme.radius.pill }]}
+              />
+              <AppText
+                variant="callout"
+                numberOfLines={1}
+                /*
                 The chosen pill's label is the theme's **background**, written as a
                 style and not as a tone: the fill of that pill *is* the theme's text
                 colour, so `tone="default"` —which is `colors.text`— would be text
@@ -226,25 +317,26 @@ export function BoardTabs({
                 spelled out here. `style` goes last in `AppText`'s array, which is
                 what lets it win over the tone beside it.
               */
-              style={
-                activa
-                  ? { color: theme.colors.background, fontWeight: "600" }
-                  : undefined
-              }
-              tone={activa ? "default" : "muted"}
-            >
-              {state.title}
-            </AppText>
-            <AppText
-              variant="caption"
-              style={activa ? { color: theme.colors.background } : undefined}
-              tone={activa ? "default" : "subtle"}
-            >
-              {count}
-            </AppText>
-          </Pressable>
-        );
-      })}
+                style={
+                  activa
+                    ? { color: theme.colors.background, fontWeight: "600" }
+                    : undefined
+                }
+                tone={activa ? "default" : "muted"}
+              >
+                {state.title}
+              </AppText>
+              <AppText
+                variant="caption"
+                style={activa ? { color: theme.colors.background } : undefined}
+                tone={activa ? "default" : "subtle"}
+              >
+                {count}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </Animated.View>
     </ScrollView>
   );
 }
@@ -278,6 +370,19 @@ const styles = StyleSheet.create({
    */
   contenido: {
     alignItems: "center",
+  },
+  /**
+   * The row of pills inside the strip, **and `flexDirection: 'row'` written down
+   * rather than inherited.**
+   *
+   * The content container of a horizontal scroll view is a row, so the wrapper
+   * would lay its pills out side by side even without this. It is written anyway
+   * because the wrapper is the box the parallax moves, and a row that became a
+   * column the day somebody reordered two styles would put the four states under
+   * each other — taller than the strip, cut off by it, and with nothing failing.
+   */
+  pastillas: {
+    flexDirection: "row",
   },
   pastilla: {
     flexDirection: "row",

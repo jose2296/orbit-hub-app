@@ -1,6 +1,15 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { BoardColumn } from "@/components/lists/board-column";
 import { BoardTabs } from "@/components/lists/board-tabs";
@@ -19,8 +28,34 @@ import {
   countInState,
   tasksInState,
 } from "@/lib/lists/board";
+import { nextPageFor } from "@/lib/lists/board-paging";
 import { routeForList } from "@/lib/lists/route";
 import { useTheme } from "@/theme";
+
+/**
+ * How much of a column comes back when there is no column to go to.
+ *
+ * The track moves a third of the way and stops, rather than letting the end of the
+ * board come into view. A column that will not go is one somebody has already
+ * tried, and the resistance is what says so without a line of text — and it is the
+ * same number the panel's pager uses, for the same reason: a page that will not go
+ * is a page you have tried already.
+ */
+const EDGE_RESISTANCE = 3.4;
+
+/**
+ * How long the track takes to come back under the column it is going to.
+ *
+ * From the distance it has left to travel and not a fixed number, and the same
+ * three numbers the panel's pager settles its track with. The finger stopped
+ * somewhere and the board has to get from *there* to the column it is heading for:
+ * a fixed duration makes a track that had nearly arrived crawl and one that had
+ * barely started race past, and a swipe that changes speed depending on how much
+ * of it was left reads as two different gestures.
+ */
+const PAGE_SPEED = 2.6;
+const PAGE_MIN = 90;
+const PAGE_MAX = 320;
 
 /**
  * The board of a list.
@@ -51,17 +86,26 @@ import { useTheme } from "@/theme";
  * snaps to each child. So on a tablet, where three columns fit, a flick moves
  * three columns at once instead of one. It is not fixed by passing `snapToInterval`
  * as well: on both platforms `pagingEnabled` wins over the interval, so the second
- * prop would be read by nobody. The alternatives are to drop `pagingEnabled` in the
- * wide case, which loses the per-column snap that the web gets for free, or to
- * wait for the swipe of Task 9, which is the gesture that decides this on every
- * target anyway. **This is unverified on a device**: no simulator or phone is
- * attached to this machine, and the only target that was looked at is the browser.
+ * prop would be read by nobody. **The swipe below is what replaces it**, and it is
+ * the reason the snap is left alone rather than removed: the gesture decides which
+ * column the board lands on, on every target, and it hands that decision to
+ * `irA` — which scrolls to `columnOffset` and not to a page. **This is unverified
+ * on a device**: no simulator or phone is attached to this machine, and the only
+ * target that was looked at is the browser.
  *
- * **There is no swipe yet.** The gesture that moves from one state to the next is
- * Task 9, and the cards cannot be picked up until Task 13. This screen is the
- * board as it is painted before either of those: it is deliberate that this is the
- * task where it can be *looked* at, because a swipe nobody has seen drawn is a
- * swipe nobody has checked.
+ * **The swipe is the panel's swipe, and it is here because the two of them cannot
+ * both be horizontal.** `panel-grid.tsx` turns a screen with a `Pan` that claims
+ * the finger sideways and lets it go vertically — `activeOffsetX([-14, 14])` to
+ * claim it and **`failOffsetY([-12, 12])` to give the vertical back** — and the
+ * board's gesture is the same gesture with the same numbers, because it is the same
+ * finger crossing a screen sideways to show what is next. **`failOffsetY` is the
+ * whole of what makes this safe**: a card that is dragged up and down to reorder
+ * itself inside its column has to be able to do that without fighting a pager, and
+ * the guard is what lets the vertical through to the column's own scroll. Which
+ * column it lands on is `nextPageFor`, a pure function in `lib/lists/` with the
+ * panel's thresholds in it, and it moves **one** column at a time: a swipe pages,
+ * it does not carry a card, and moving a card to another column is a sheet rather
+ * than a gesture.
  */
 export default function BoardScreen() {
   const theme = useTheme();
@@ -112,30 +156,30 @@ export default function BoardScreen() {
   }, [items, states]);
 
   /**
- * The tasks of each column, **computed once per change and not once per render.**
- *
- * `tasksInState` filters and sorts the whole list, so calling it inside the
- * `states.map` of the render meant a full pass over the list of tasks per column on
- * every render — and this screen renders on every notification of the store and on
- * every press of a tab. The memo makes it one pass per change of the tasks or of the
- * columns, and it hands each `BoardColumn` **the same array** while nothing has
- * changed, which is what lets a column tell that it does not have to draw itself
- * again.
- *
- * The counts above are a separate memo and stay separate on purpose: those use
- * `countInState`, which counts in one pass and **does not sort**, and `board.ts`
- * says why asking it for the number is not the same as counting a filtered list.
- */
-const columnas = useMemo(
-  () =>
-    states.map((state) => ({
-      state,
-      tasks: tasksInState(items, states, state.id),
-    })),
-  [items, states],
-);
+   * The tasks of each column, **computed once per change and not once per render.**
+   *
+   * `tasksInState` filters and sorts the whole list, so calling it inside the
+   * `states.map` of the render meant a full pass over the list of tasks per column on
+   * every render — and this screen renders on every notification of the store and on
+   * every press of a tab. The memo makes it one pass per change of the tasks or of the
+   * columns, and it hands each `BoardColumn` **the same array** while nothing has
+   * changed, which is what lets a column tell that it does not have to draw itself
+   * again.
+   *
+   * The counts above are a separate memo and stay separate on purpose: those use
+   * `countInState`, which counts in one pass and **does not sort**, and `board.ts`
+   * says why asking it for the number is not the same as counting a filtered list.
+   */
+  const columnas = useMemo(
+    () =>
+      states.map((state) => ({
+        state,
+        tasks: tasksInState(items, states, state.id),
+      })),
+    [items, states],
+  );
 
-/** The width the board is given, measured, and zero until it has been. */
+  /** The width the board is given, measured, and zero until it has been. */
   const [ancho, setAncho] = useState(0);
   /**
    * The height of the track, measured, and zero until it has been.
@@ -177,7 +221,40 @@ const columnas = useMemo(
    * below**, which is the whole of what keeps a jump from landing short.
    */
   const gapColumnas = theme.spacing.md;
-  const { columnWidth: anchoColumna } = columnLayout(ancho, gapColumnas);
+  const { columnWidth: anchoColumna, columns: columnasQueCaben } = columnLayout(
+    ancho,
+    gapColumnas,
+  );
+
+  /**
+   * How far apart two columns are, **and it is `columnOffset(1, …)` rather than
+   * `anchoColumna + gapColumnas` written here.**
+   *
+   * The gesture needs that number on the interface thread, sixty times a second,
+   * and a worklet cannot be trusted with a sum it was handed as two pieces: the gap
+   * between the columns is the term that Task 8 got wrong, and putting it in a
+   * worklet is putting it in the one place where no test can reach it. So the step
+   * is asked of the function that owns it and the gesture is given the answer.
+   */
+  const pasoColumna = columnOffset(1, anchoColumna, gapColumnas);
+
+  /** How many columns the board has, as a plain number for the worklets. */
+  const cuantasColumnas = states.length;
+
+  /**
+   * Whether there is anywhere to page to at all.
+   *
+   * **Both halves have to be true and the second one is the one that is easy to
+   * forget.** A board of one column has nothing after it, and a board whose
+   * columns all fit at the width it has has nothing off screen — so a gesture that
+   * turned a page there would be a track that moves against the finger and comes
+   * back, which reads as a broken control rather than as an end of the board.
+   * `columns` from `columnLayout` says it without measuring anything: the count it
+   * divides the width into is the count that fits, so `columns >= states.length`
+   * is exactly "every column is already on screen".
+   */
+  const sePuedePaginar =
+    cuantasColumnas > 1 && columnasQueCaben < cuantasColumnas;
 
   const readOnly = list?.role === "viewer";
 
@@ -253,6 +330,207 @@ const columnas = useMemo(
       animated: true,
     });
   }
+
+  /**
+   * How far the track is from where the scroller left it, **and zero at rest.**
+   *
+   * A displacement and not a position, and that is the whole difference between
+   * this and the panel's track. There, the resting place moves with the page and
+   * the style added a displacement to it, which is right while a finger is down
+   * and wrong the instant the page changes: the panel counted the page twice and
+   * overshot it. **Here the scroller is what holds the position** — `irA` scrolls
+   * it and the snap holds it — and this is only what the finger has done to it
+   * since, so the value it comes back to is always zero and there is nothing to
+   * count twice.
+   */
+  const trackX = useSharedValue(0);
+  /**
+   * Where that displacement was when the finger went down.
+   *
+   * A swipe that interrupts the settling of the previous one starts from wherever
+   * the track has got to, not from zero: reading a shared value from a worklet
+   * without freezing it is a copy that is one frame behind, and the drag would
+   * begin by jumping. So the value is frozen on `onStart`, which is what
+   * `origin` does in `panel-grid.tsx` for the same reason.
+   */
+  const origin = useSharedValue(0);
+  /**
+   * Whether a finger is on the track right now.
+   *
+   * The rubber band is a thing a *finger* meets, so it is applied only while there
+   * is one. The settling animation moves `trackX` as well, and a band applied to
+   * an animation would read a correct resting place as a pull past the end of the
+   * board and shrink it — which is how a page turn used to end with the columns a
+   * third of a column away from where the tabs said they were.
+   */
+  const fingerDown = useSharedValue(false);
+  /**
+   * Whether the gesture that is finishing has already decided where the track goes.
+   *
+   * A `Pan` calls `onEnd` and then `onFinalize`, in that order, every time, so the
+   * two must not both animate the track: one of them decides and the other one
+   * knows it has.
+   */
+  const settled = useSharedValue(false);
+
+  /**
+   * Where the columns are, **and it is one number for the track and for the tabs.**
+   *
+   * The room is in columns and not in pages, because a page here is a column: at
+   * the first column there is nothing to the left and at the last there is nothing
+   * to the right, so a drag past either end meets a third of its own travel and
+   * stops. Without it, dragging right on the last column would slide the whole
+   * board sideways and leave a column's worth of empty track on the left, which is
+   * the one thing a board of four columns must never look like.
+   *
+   * **Past the end, only the part past the end is resisted, and by a third.** Not
+   * the whole travel: resisting all of it makes a legal swipe feel heavy for its
+   * whole length, which is a different complaint from the one this fixes.
+   *
+   * And it is here, and not inside the animated style, because the tabs read the
+   * same thing: measured in the browser at the last column with a 300-point drag,
+   * the columns moved **84** — `(300 − 14) / 3.4`, the 14 being the slop the
+   * gesture waits before it starts counting — while the pills moved **97**, because
+   * they were reading the travel the finger had made and not the travel there was
+   * room for. **The strip was running away from the board at the one moment both
+   * were supposed to be saying there is nowhere to go**, and the only way that does
+   * not come back is one number read by the two.
+   */
+  const movido = useDerivedValue(() => {
+    const roomLeft = actual * pasoColumna;
+    const roomRight = (cuantasColumnas - 1 - actual) * pasoColumna;
+    let m = trackX.value;
+    if (fingerDown.value) {
+      if (m > roomLeft) m = roomLeft + (m - roomLeft) / EDGE_RESISTANCE;
+      if (m < -roomRight) m = -roomRight + (m + roomRight) / EDGE_RESISTANCE;
+    }
+    return m;
+  });
+
+  const estiloPista = useAnimatedStyle(() => ({
+    transform: [{ translateX: movido.value }],
+  }));
+
+  /**
+   * How far along the board the finger is, **as a fraction of one column and with a
+   * sign**, and it is what the tabs move by.
+   *
+   * **Out of `movido` and not out of `trackX`**, so the fraction is of the travel
+   * there was room for and not of the travel the finger asked for — the note on
+   * `movido` says what the other one measured.
+   *
+   * Cut at one, and for the same reason the media carousel cuts its gathering at
+   * one: a drag of 900 points in a column of 380 is a distance of two and a half
+   * columns, and two and a half times the strip's width would fling the pills out
+   * of the strip while the finger is still down. Past a whole column of travel the
+   * strip is simply as far along as it is going to say.
+   */
+  const progreso = useDerivedValue(() => {
+    if (pasoColumna <= 0) return 0;
+    return Math.max(-1, Math.min(1, movido.value / pasoColumna));
+  });
+
+  /**
+   * Finishing a swipe, wherever the finger let go of it.
+   *
+   * **Two things happen at once and they are the two halves of one move.** The
+   * displacement the finger left goes back to zero under an animation, and the
+   * board is asked to settle on the column the swipe decided on. They are in the
+   * same direction by construction — the drag went one way and the column it
+   * reaches is that way — so the columns keep travelling in one direction and only
+   * change speed, and there is no frame where the track is in two places.
+   *
+   * Which column it goes to is `nextPageFor`, the pure function: far enough or
+   * fast enough, in the direction of the travel, one column at a time, never past
+   * either end. It is not decided here because a threshold decided in a component
+   * is a threshold no test can reach.
+   *
+   * The duration is what is left of the displacement and not a fixed number — see
+   * `PAGE_SPEED`. It is compared with nothing: **the scroll of the scroller is
+   * animated by the platform and its duration is not ours to pick**, so this is a
+   * sensible number rather than a matched one, and the columns settle on the edge
+   * of the column either way because that is the number `irA` is given.
+   */
+  const settle = (velocity: number) => {
+    'worklet';
+    const next = nextPageFor(trackX.value, velocity, cuantasColumnas, actual);
+    const left = Math.abs(trackX.value);
+    trackX.value = withTiming(0, {
+      duration: Math.min(Math.max(left / PAGE_SPEED, PAGE_MIN), PAGE_MAX),
+      easing: Easing.out(Easing.cubic),
+    });
+    return next;
+  };
+
+  /**
+   * Turning the column with a swipe.
+   *
+   * **`failOffsetY([-12, 12])` is the whole of what makes this safe, and it is not
+   * a detail.** A column scrolls vertically when it has more tasks than fit, and a
+   * card is going to be dragged up and down to be reordered inside its column; both
+   * of those are the vertical axis, and a gesture that claimed it would leave a
+   * board where you cannot scroll a column and cannot move a card. So the pan takes
+   * the finger only once it has clearly gone **sideways** (`activeOffsetX`), and
+   * gives the vertical straight back (`failOffsetY`) — which is the reservation
+   * Task 13 reorders inside of, and the reason that gesture can be written at all.
+   *
+   * It is on the track and not on the cards, and for the same reason inverted: a
+   * card that is picked up to be moved does not have to argue with a pager about
+   * which of the two gestures owns the finger, because the card is above the track
+   * and a finger that went down on one never reaches it.
+   *
+   * `touchAction="pan-y"` is **web only and it is load-bearing.** React Native
+   * Gesture Handler writes `touch-action: none` on whatever view a gesture is
+   * attached to, which on the web would take the vertical away from the columns
+   * underneath it: a column with more cards than fit would stop scrolling under a
+   * finger, which is the bug the height of the track was measured to fix. `pan-y`
+   * says the browser may pan vertically and not horizontally, which leaves the
+   * columns their scroll and leaves the horizontal drag to this gesture.
+   */
+  const swipe = Gesture.Pan()
+    .enabled(sePuedePaginar)
+    .activeOffsetX([-14, 14])
+    .failOffsetY([-12, 12])
+    .onStart(() => {
+      // The gesture found the track here, wherever a page turn that is still
+      // animating had left it. Reading the shared value without freezing it would
+      // give a copy from the frame before, and a swipe that interrupted the last
+      // one would begin with a jump.
+      origin.value = trackX.value;
+      fingerDown.value = true;
+      settled.value = false;
+    })
+    .onUpdate((event) => {
+      // The columns go with the finger. Not a nicety: a column that appears only
+      // once the finger has let go makes the board feel like it decided on its
+      // own, and there is no way to stop halfway and change your mind.
+      trackX.value = origin.value + event.translationX;
+    })
+    .onEnd((event) => {
+      const next = settle(event.velocityX);
+      settled.value = true;
+      const id = states[next]?.id;
+      // Through `irA` and not a second jump of its own: a swipe and a tap on a tab
+      // have to be the same move, and `irA` is where `columnOffset` is read from.
+      if (id && next !== actual) runOnJS(irA)(id);
+    })
+    .onFinalize(() => {
+      // The finger is off the track, so the band stops: whatever is still moving is
+      // the animation finishing, and a band applied to that would drag a correct
+      // resting place back towards where the finger let go.
+      fingerDown.value = false;
+      if (settled.value) {
+        // `onEnd` already sent the track where it was going.
+        settled.value = false;
+        return;
+      }
+      // Cancelled, or the gesture lost to the column's own scroll before it ever
+      // became a swipe: back to where the scroller is, which is nowhere.
+      trackX.value = withTiming(0, {
+        duration: PAGE_MIN,
+        easing: Easing.out(Easing.cubic),
+      });
+    });
 
   if (!listId) {
     return (
@@ -362,6 +640,7 @@ const columnas = useMemo(
           states={states}
           counts={counts}
           currentId={states[actual]?.id ?? null}
+          progress={progreso}
           onSelect={irA}
         />
 
@@ -372,61 +651,93 @@ const columnas = useMemo(
           that has not been sized yet.
         */}
         {anchoColumna > 0 ? (
-          <ScrollView
-            ref={pista}
-            testID="board-track"
-            style={styles.pista}
-            onLayout={(event) => setAltoPista(event.nativeEvent.layout.height)}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: gapColumnas }}
-          >
-            {columnas.map(({ state, tasks }) => (
-              /*
-                The width goes on a wrapper and not on `BoardColumn`, and that is
-                where the measurement lands rather than inside the column.
+          /*
+            The box that clips the track, **and it is here because the displacement
+            is on the scroll view itself.**
 
-                Inside the content box of a horizontal scroll view a child with no
-                width takes **the width of its content**: neither React Native nor
-                `react-native-web` gives a view a `flexBasis`, and both default to
-                `flexShrink: 0`, so a column that is not given a width is as wide as
-                its longest card — which on a board of four short titles is four
-                narrow columns that all fit in one screen and none of which is a
-                column.
+            Reanimated animates the `style` prop and nothing else: it reads
+            `props.style` when it attaches an animated style and has never heard of
+            `contentContainerStyle`, so the only place the columns can be moved
+            from is the scroller — and a scroller that moves sideways takes its own
+            box with it. Translated a whole column to the left at column zero, the
+            box's right edge is 380 points past the right of the screen and its
+            left edge is off the left of it, and the sliver of the column behind
+            that is **the last 16 points of the previous column drawn outside the
+            padding the screen gave the board**, over the background of the app.
 
-                And the wrapper is also what `pagingEnabled` snaps: react-native-web
-                marks each **child of the track** as a snap point, so the wrapper's
-                left edge is the column's left edge and the browser lands on the
-                column and not on the gap in front of it.
-
-                **Both of its numbers are measured, and neither is a flex rule.**
-                The width is `columnLayout`'s and the height is the track's own
-                layout, and the comment on `altoPista` says what happens when the
-                height is left to the boxes: nothing shrinks, a column with more
-                cards than fit is as tall as its content, and the board runs off the
-                bottom of the window.
-              */
-              <View
-                key={state.id}
-                testID={`board-slot-${state.id}`}
-                style={{ width: anchoColumna, height: altoPista }}
+            Clipping at the padding is what the content container did for free, and
+            this box is how it is done without it: `flex: 1` on it and on the track,
+            so the clip is exactly the edge of the track.
+          */
+          <View style={styles.recorte}>
+            <GestureDetector gesture={swipe} touchAction="pan-y">
+              {/*
+                `Animated.ScrollView` and not a `ScrollView`, for the reason in the
+                box above and not as a style: an animated style on a plain view is
+                quietly ignored, so the columns would page with nothing moving under
+                the finger — working, and feeling like the board had changed its
+                mind on its own. TypeScript says as much, which is the good kind of
+                saying.
+              */}
+              <Animated.ScrollView
+                ref={pista}
+                testID="board-track"
+                style={[styles.pista, estiloPista]}
+                onLayout={(event) =>
+                  setAltoPista(event.nativeEvent.layout.height)
+                }
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: gapColumnas }}
               >
-                <BoardColumn
-                  state={state}
-                  tasks={tasks}
-                  tagColors={list.tagColors ?? {}}
-                  readOnly={readOnly}
-                  onOpenTask={(item) =>
-                    setEditing({ itemId: item.id, page: "edit" })
-                  }
-                  onOpenIcon={(item) =>
-                    setEditing({ itemId: item.id, page: "icon" })
-                  }
-                />
-              </View>
-            ))}
-          </ScrollView>
+                {columnas.map(({ state, tasks }) => (
+                  /*
+                  The width goes on a wrapper and not on `BoardColumn`, and that is
+                  where the measurement lands rather than inside the column.
+
+                  Inside the content box of a horizontal scroll view a child with no
+                  width takes **the width of its content**: neither React Native nor
+                  `react-native-web` gives a view a `flexBasis`, and both default to
+                  `flexShrink: 0`, so a column that is not given a width is as wide as
+                  its longest card — which on a board of four short titles is four
+                  narrow columns that all fit in one screen and none of which is a
+                  column.
+
+                  And the wrapper is also what `pagingEnabled` snaps: react-native-web
+                  marks each **child of the track** as a snap point, so the wrapper's
+                  left edge is the column's left edge and the browser lands on the
+                  column and not on the gap in front of it.
+
+                  **Both of its numbers are measured, and neither is a flex rule.**
+                  The width is `columnLayout`'s and the height is the track's own
+                  layout, and the comment on `altoPista` says what happens when the
+                  height is left to the boxes: nothing shrinks, a column with more
+                  cards than fit is as tall as its content, and the board runs off the
+                  bottom of the window.
+                */
+                  <View
+                    key={state.id}
+                    testID={`board-slot-${state.id}`}
+                    style={{ width: anchoColumna, height: altoPista }}
+                  >
+                    <BoardColumn
+                      state={state}
+                      tasks={tasks}
+                      tagColors={list.tagColors ?? {}}
+                      readOnly={readOnly}
+                      onOpenTask={(item) =>
+                        setEditing({ itemId: item.id, page: "edit" })
+                      }
+                      onOpenIcon={(item) =>
+                        setEditing({ itemId: item.id, page: "icon" })
+                      }
+                    />
+                  </View>
+                ))}
+              </Animated.ScrollView>
+            </GestureDetector>
+          </View>
         ) : null}
       </View>
 
@@ -480,5 +791,19 @@ const styles = StyleSheet.create({
    */
   pista: {
     flex: 1,
+  },
+  /**
+   * The box that clips the track while a finger is on it.
+   *
+   * `flex: 1` so it is exactly the size of the track inside it, and
+   * `overflow: hidden` so a track that has been dragged a whole column sideways is
+   * cut at the edge of the track and not 380 points past it. Both platforms read
+   * it: react-native-web writes it as `overflow: hidden` and React Native clips
+   * there too, so there is one rule and not a web one with a native guess beside
+   * it.
+   */
+  recorte: {
+    flex: 1,
+    overflow: "hidden",
   },
 });
