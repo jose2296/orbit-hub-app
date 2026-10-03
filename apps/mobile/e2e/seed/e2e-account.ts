@@ -35,9 +35,12 @@ export const NOMBRES = {
   /**
    * Colores de `WORKSPACE_COLORS`, y no inventados: la API no rechaza un color
    * que no exista, lo cambia por `slate` en silencio, asi que un nombre falso
-   * devuelve `applied` y deja la fila con otro color del que se pidio. Escribir
-   * el color aqui no es por estilo: es la unica vez que se puede comprobar contra
-   * la lista sin tener que ir a leer la base.
+   * devuelve `applied` y deja la fila con otro color del que se pidio.
+   *
+   * Estar aqui es lo que los hace comprobables sin base de datos: el test los
+   * recorre contra la lista de verdad, asi que un color inventado se ve en la
+   * suite en vez de en un color gris dos fases despues. Escritos en el push, el
+   * mismo fallo no lo ve ni el test ni la siembra.
    */
   spaceColor: 'teal',
   friendSpaceColor: 'violet',
@@ -156,13 +159,23 @@ async function registrar(api: string, nombre: string, apiLog: string) {
 }
 
 /**
- * Una operacion por push, y cada una comprobada.
+ * Una operacion por push, y cada una con su resultado mirado.
  *
  * En lote, una operacion rechazada vuelve con HTTP 200 y `status: "rejected"`, y
  * una siembra que se queda con el codigo de respuesta se pasa de largo por una
  * nota que no existe y falla tres pasos mas tarde, compartiendo algo que no esta.
- * Cada fila se ha vuelto a leer de la base con un proceso aparte; los codigos de
- * respuesta no dicen nada de eso.
+ * Eso si lo tapa esta comprobacion, y es lo unico que tapa.
+ *
+ * **Lo que comprueba es que el servidor la acepte, no que guarde lo que se le
+ * pidio.** `applied` no dice nada del campo: la API limpia el payload antes de
+ * escribirlo y cambia en silencio lo que no reconoce -un color que no exista
+ * vuelve `applied` y se guarda como otro-. Medido: asi se colo un color
+ * inventado en un espacio, y el push en verde no lo delato.
+ *
+ * Donde si se comprueba el valor, campo a campo, esta al lado de donde se escribe:
+ * los colores en `NOMBRES`, y `e2e-account.test.ts` los recorre contra
+ * `WORKSPACE_COLORS`. Para el resto -los titulos, los conteos- no hay nada
+ * automatico: la lectura de la base fue manual y no esta en el repo.
  */
 async function push(
   api: string,

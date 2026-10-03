@@ -1,5 +1,6 @@
+import { WORKSPACE_COLORS } from '@orbit-hub/contracts';
 import { describe, expect, it } from 'vitest';
-import { verificationTokenFor } from './e2e-account';
+import { NOMBRES, verificationTokenFor } from './e2e-account';
 
 const linea = (email: string, token: string) =>
   `[email] verification link https://orbit.example/verify-email?token=${token} for ${email}`;
@@ -38,5 +39,37 @@ describe('verificationTokenFor', () => {
     expect(verificationTokenFor([linea('ana@example.com', 'de-ana'), reset], 'ana@example.com')).toBe(
       'de-ana',
     );
+  });
+});
+
+/**
+ * Los colores que la siembra envia, contra la lista que los define.
+ *
+ * Sin este caso un color inventado pasa: `sync-service.ts` limpia el payload y
+ * cambia en silencio lo que no reconoce, asi que el push vuelve `applied` y el
+ * espacio se guarda con otro color del pedido. Ya paso con `purple`, que se
+ * guardo como `slate` sin que nada lo notara.
+ *
+ * Recorre los valores de `NOMBRES` en vez de escribir `'teal'` y `'violet'` otra
+ * vez: repetir los nombres aqui seria un segundo sitio donde anadir un color y
+ * olvidarse de anadirlo alli. Anadir un color a la siembra lo anade aqui solo.
+ */
+describe('los colores que envia la siembra', () => {
+  it('estan todos en WORKSPACE_COLORS', () => {
+    const enviados = Object.entries(NOMBRES)
+      .filter(([clave]) => clave.endsWith('Color'))
+      // `as string` porque `items` es una tupla de solo lectura y ensucia el tipo
+      // del valor; aqui solo se comparan nombres de color.
+      .map(([clave, valor]) => [clave, valor as string] as const);
+    // Si la siembra dejara de enviar colores, esto pasaria por vacio. Sin un
+    // color que comprobar, el caso de arriba no miraria nada.
+    expect(enviados.length).toBeGreaterThan(0);
+
+    // La lista se ensancha a `string` antes de buscar, como hace
+    // `sync-service.ts` con la misma lista: si no, `includes` pide un nombre de
+    // la union y el filtro se queja de tipos en vez de de colores.
+    const permitidos: readonly string[] = WORKSPACE_COLORS;
+    const fuera = enviados.filter(([, valor]) => !permitidos.includes(valor));
+    expect(fuera.map(([clave, valor]) => `${clave}=${valor}`)).toEqual([]);
   });
 });
