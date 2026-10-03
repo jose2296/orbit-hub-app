@@ -193,7 +193,7 @@ Expected: 6 passed.
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { pickDevice } from './android';
+import { parseDevices, pickDevice } from './android';
 
 describe('pickDevice', () => {
   it('elige el unico dispositivo conectado', () => {
@@ -212,9 +212,18 @@ describe('pickDevice', () => {
   it('dice que no hay ninguno cuando no hay ninguno', () => {
     expect(() => pickDevice([])).toThrow(/no hay/);
   });
+});
 
-  it('ignora los dispositivos que no estan en estado device', () => {
-    expect(pickDevice([{ serial: 'emulator-5554', state: 'offline' }])).toBe('emulator-5554');
+describe('parseDevices', () => {
+  it('se queda con los que estan en estado device', () => {
+    // La filtracion vive aqui y no en pickDevice: pickDevice recibe una lista ya
+    // filtrada. Probarlo con un `offline` ahi pasaria por la razon equivocada.
+    const salida = ['List of devices attached', 'emulator-5554\tdevice', 'ZY3\tunauthorized', ''].join('\n');
+    expect(parseDevices(salida)).toEqual([{ serial: 'emulator-5554', state: 'device' }]);
+  });
+
+  it('descarta la cabecera de adb devices', () => {
+    expect(parseDevices('List of devices attached\n')).toEqual([]);
   });
 });
 ```
@@ -247,15 +256,22 @@ export function adb(args: string[], serial?: string): string {
   });
 }
 
-/** `adb devices` filtered to the ones actually usable. */
-export function devices(): Device[] {
-  const salida = adb(['devices']);
+/**
+ * The pure half of `adb devices`: everything not in state `device` is dropped
+ * here. Split out so it can be tested — `devices()` itself shells out to adb and
+ * cannot be.
+ */
+export function parseDevices(salida: string): Device[] {
   return salida
     .split('\n')
     .slice(1)
     .map((linea) => linea.trim().split(/\s+/))
     .filter((partes): partes is [string, string] => partes.length >= 2 && partes[1] === 'device')
     .map(([serial, state]) => ({ serial, state }));
+}
+
+export function devices(): Device[] {
+  return parseDevices(adb(['devices']));
 }
 
 export function pickDevice(conectados: Device[]): string {
@@ -317,7 +333,7 @@ export function screenshot(serial: string, file: string): void {
 - [ ] **Step 11: Run the android tests and watch them pass**
 
 Run: `npm run test --workspace @orbit-hub/mobile -- android.test.ts`
-Expected: 4 passed.
+Expected: 5 passed.
 
 - [ ] **Step 12: Prove the primitives against the real emulator**
 
@@ -357,7 +373,7 @@ Expected: `arnes E2E: dispositivo emulator-5554` from both. The root passthrough
 - [ ] **Step 15: Run the full workspace test suite**
 
 Run: `npm run test --workspace @orbit-hub/mobile`
-Expected: every pre-existing test still passes, plus the 10 new ones. A change to `vitest.config.ts` that narrowed the glob would show up here and nowhere else.
+Expected: 797 pre-existing tests still pass, plus the new ones under `e2e/lib/`. A change to `vitest.config.ts` that narrowed the glob would show up here and nowhere else.
 
 - [ ] **Step 16: Commit**
 
@@ -542,6 +558,8 @@ Expected: 4 passed.
 
 `apps/mobile/e2e/run-android.ts`:
 
+Replace the whole file — Task 1 left it as a single log line — with this:
+
 ```ts
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -549,13 +567,6 @@ import { fileURLToPath } from 'node:url';
 import { requireOneDevice } from './lib/android';
 import { ensureService, type Service } from './lib/stack';
 
-const RAIZ = fileURLToPath(new URL('../..', import.meta.url));
-const requireOneDevice_ = requireOneDevice;
-```
-
-Replace that last line with the real body — the imports above are the ones it needs:
-
-```ts
 const RAIZ = fileURLToPath(new URL('../..', import.meta.url));
 const CAPTURAS = join(RAIZ, 'capturas', 'android');
 mkdirSync(CAPTURAS, { recursive: true });
@@ -604,8 +615,6 @@ try {
   for (const s of servicios) await s.stop();
 }
 ```
-
-Delete the `RAIZ`/`requireOneDevice_` placeholder lines from the first block — they are shown only to name the imports.
 
 - [ ] **Step 6: Run it and watch both services come up**
 
@@ -975,6 +984,8 @@ This is the task where the crash guard meets a real flow. The negative test is t
 - Modify: `apps/mobile/src/app/(onboarding)/welcome.tsx` (add `testID`)
 - Modify: `apps/mobile/src/app/privacy.tsx` (add `testID`)
 - Modify: `apps/mobile/src/app/terms.tsx` (add `testID`)
+- Modify: `apps/mobile/src/components/legal/legal-notice.tsx` (add `testID` to the two links)
+- Modify: `apps/mobile/src/components/legal/legal-document.tsx` (add a forwarded `testID` prop)
 - Modify: `apps/mobile/e2e/run-android.ts`
 
 **Interfaces:**
@@ -1019,7 +1030,7 @@ describe('resolveAreas', () => {
     expect(() => resolveAreas(base, 'onboarding')).toThrow(/01-onboarding/);
   });
 
-  it('una area sin flujos se_avisa, pero no se cuela como trabajo hecho', () => {
+  it('una area sin flujos se avisa, pero no se cuela como trabajo hecho', () => {
     const areas = resolveAreas(raiz({ '01-onboarding': [], '02-auth': ['sign-in.yaml'] }));
     expect(areas.find((a) => a.name === '01-onboarding')!.flows).toEqual([]);
   });
@@ -1097,11 +1108,29 @@ curl -Ls "https://get.maestro.mobile.dev" | bash
 
 Expected: a version string. Java 17 is already on this machine, which is what Maestro needs. If the install fails, stop and report it — the plan does not have a second driver.
 
-- [ ] **Step 6: Add the three screen markers the flows need**
+- [ ] **Step 6: Add the four screen markers and the two link markers the flows need**
 
-`privacy.tsx` and `terms.tsx` do not render `<Screen>`, so they take an explicit `testID` on their root `View`/`Text` wrapper — `screen-privacy` and `screen-terms`. `welcome.tsx` uses `<Screen>`; add `testID="screen-welcome"` to it.
+Three screens render `<Screen>`, which already forwards `testID` to its root, so each takes one prop:
 
-One line each, kebab-case, area-prefixed, matching `screen-<name>` from the spec.
+- `apps/mobile/src/app/(onboarding)/welcome.tsx` — `<Screen>` becomes `<Screen testID="screen-welcome">`
+- `apps/mobile/src/app/privacy.tsx` — this one does **not** render `<Screen>`; it renders `<LegalDocument>`. Give `LegalDocument` a `testID` prop forwarded to its root `View`, and pass `testID="screen-privacy"`.
+- `apps/mobile/src/app/terms.tsx` — same, `testID="screen-terms"`.
+
+The two legal links also need markers, because their labels are translated (`t('legal.links.terms')`) and a translated label is not a selector. Both live in `apps/mobile/src/components/legal/legal-notice.tsx`, on the `AppText` inside each `Link` — `AppTextProps extends TextProps` and spreads `...rest` onto the `Text`, so `testID` passes straight through:
+
+```tsx
+<Link key={`enlace-${indice}`} href={parte.href} asChild>
+  <AppText
+    variant="caption"
+    tone="accent"
+    testID={parte.href === '/terms' ? 'welcome-terms' : 'welcome-privacy'}
+  >
+    {t(parte.href === '/terms' ? 'legal.links.terms' : 'legal.links.privacy')}
+  </AppText>
+</Link>
+```
+
+The links are reachable while signed out precisely because `welcome.tsx` renders `<LegalNotice />` — do not move them behind the session, and do not reach for `settings.tsx`, which is the only other place they appear and sits behind the auth wall.
 
 - [ ] **Step 7: Write `config.yaml`**
 
@@ -1134,7 +1163,7 @@ tags: [smoke]
 - takeScreenshot: capturas/android/01-welcome
 ```
 
-`privacy.yaml` and `terms.yaml` reach the legal screens from the welcome links; both are linked from `welcome.tsx`, so if those links have no stable marker yet, add `testID="welcome-privacy"` and `testID="welcome-terms"` to them in the same commit — a flow that has to guess a coordinate is a flow that will break silently.
+`privacy.yaml` and `terms.yaml` reach the legal screens from the two links in `LegalNotice` on the welcome screen, whose markers Step 6 adds. Tap the marker, never a coordinate.
 
 ```yaml
 appId: com.jrzlabs.orbithub
