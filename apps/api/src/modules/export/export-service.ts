@@ -93,6 +93,10 @@ function toList(
     // una build anterior a la columna llega sin nada, y aqui "sin nada" tambien
     // tiene que ser un mapa, que es lo que espera quien lee el sobre.
     tagColors: row.tagColors ?? {},
+    // The columns of a board, and `?? []` for the same reason as the colours
+    // above: a row from a build that predates the column has to come out as the
+    // empty array the contract calls "no board here", not as nothing at all.
+    states: row.states ?? [],
     position: row.position,
     // Contado sobre los items que viajan en este mismo fichero, no sobre los
     // vivos: un numero que no cuadra con el array de al lado es un numero que
@@ -115,6 +119,10 @@ function toItem(row: typeof listItems.$inferSelect, role: MembershipRoleName): L
     title: row.title,
     position: row.position,
     completed: row.completed,
+    // La columna del tablero tal cual esta guardada, y sin guarda por el mismo
+    // motivo que `icon`: una copia a la que le falta el dato es peor que una
+    // copia con un dato que este build no sabe dibujar.
+    stateId: row.stateId ?? null,
     priority: row.priority,
     // Tal cual esta almacenado, sin guarda, y **el cast es el precio de esa
     // decision**. La columna es texto libre; `listItemSchema` describe el

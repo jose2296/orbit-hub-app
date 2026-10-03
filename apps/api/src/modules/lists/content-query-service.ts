@@ -127,6 +127,11 @@ export class ContentQueryService {
       emoji: row.emoji,
       tags: row.tags,
       tagColors: row.tagColors ?? {},
+      // `?? []` and not `row.states`: a row written before the column arrived
+      // comes back without it, and a list is a list whether or not it is a
+      // board. The default is also what the contract says a row with no states
+      // is, so the two agree on what "no board here" looks like.
+      states: row.states ?? [],
       position: row.position,
       version: row.version,
       itemCount: 0,
@@ -178,6 +183,7 @@ export class ContentQueryService {
       emoji: row.emoji,
       tags: row.tags,
       tagColors: row.tagColors ?? {},
+      states: row.states ?? [],
       position: row.position,
       role: (roles.get(row.workspaceId) ?? 'viewer') as List['role'],
       shared: false,
@@ -223,6 +229,10 @@ export class ContentQueryService {
       title: row.title,
       position: row.position,
       completed: row.completed,
+      // The column of the board this row is drawn in, or null on every list that
+      // is not one. Null is not a missing answer: it is where the row is drawn on
+      // a list that has no columns.
+      stateId: row.stateId ?? null,
       priority: row.priority,
       // An icon this build does not know is no icon, and not a broken row: the
       // column is free text and a future build can write a key this one has
