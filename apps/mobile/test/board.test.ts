@@ -13,7 +13,11 @@ import type {
 } from '@orbit-hub/contracts';
 
 import {
+  BOARD_COLUMN_MIN_WIDTH,
+  BOARD_SINGLE_COLUMN_BELOW,
   canDeleteState,
+  columnLayout,
+  columnOffset,
   countInState,
   defaultStates,
   editState,
@@ -468,6 +472,127 @@ describe('se puede borrar un estado', () => {
     expect(canDeleteState(states, 2)).toBe(true);
     expect(canDeleteState(states, -1)).toBe(false);
     expect(canDeleteState(states, 3)).toBe(false);
+  });
+});
+
+/**
+ * The two arithmetics of the track, **with the numbers a browser measured** and
+ * not with invented examples.
+ *
+ * Every width below is the content box of a real window, read off the running
+ * screen: 368 is a 400-point window, 800 is a 1120-point one with the drawer open,
+ * and 1120 is a 1440-point one with the drawer open. The gap is `spacing.md`.
+ */
+const HUECO = 12;
+
+describe('como se reparte el ancho entre las columnas', () => {
+  it('un ancho de movil es un estado a pantalla completa', () => {
+    // 368 points of track and four columns would be four cards 80 wide each, which
+    // is not a board and is not a list either.
+    const wide = columnLayout(368, HUECO);
+    expect(wide.singleColumn).toBe(true);
+    expect(wide.columns).toBe(1);
+    expect(wide.columnWidth).toBe(368);
+  });
+
+  it('el umbral son 720 puntos, y esta Decidido por los dos lados', () => {
+    // One point either side, because a threshold that is only checked from one
+    // side is a threshold nobody has checked.
+    expect(columnLayout(719, HUECO).singleColumn).toBe(true);
+    expect(columnLayout(720, HUECO).singleColumn).toBe(false);
+  });
+
+  it('reparte lo que sobra y no deja el tablero desplazado con todo a la vista', () => {
+    // **The arithmetic that broke.** Four columns of 280 and three gaps of 12 ask
+    // for 1156 of 1120, so the board scrolled 36 points with every column already
+    // on screen. With the gap inside the division the four columns and the three
+    // gaps are exactly the track.
+    const wide = columnLayout(1120, HUECO);
+    expect(wide.columns).toBe(4);
+    expect(wide.columnWidth).toBe(271);
+    const occupied =
+      wide.columnWidth * wide.columns + HUECO * (wide.columns - 1);
+    expect(occupied).toBeLessThanOrEqual(1120);
+    expect(occupied).toBeCloseTo(1120, 5);
+  });
+
+  it('a 920 no caben cuatro columnas, porque los huecos tambien ocupan', () => {
+    // The half of that arithmetic that **920** is where it bites, and not 1120:
+    // 4 × 230 + 3 × 12 = 956 of 920, so counting the columns as `width / 230`
+    // says four fit, the floor of 230 kicks in and the board scrolls 36 points
+    // with every column on screen. At 1120 both counts agree on four, which is
+    // exactly why a check at one width can sit where the bug is invisible.
+    const wide = columnLayout(920, HUECO);
+    expect(wide.columns).toBe(3);
+    expect(wide.columnWidth).toBeCloseTo(896 / 3, 5);
+  });
+
+  it('ningun ancho deja el tablero desplazado mientras quepan todas las columnas', () => {
+    // The invariant over the whole range rather than in one place, for the reason
+    // the case above gives: it only fails at some widths. The thousandth is float
+    // noise from the division, not a column.
+    for (let width = BOARD_SINGLE_COLUMN_BELOW; width <= 1600; width += 7) {
+      const { columnWidth, columns } = columnLayout(width, HUECO);
+      const occupied = columnWidth * columns + HUECO * (columns - 1);
+      expect(occupied).toBeLessThanOrEqual(width + 0.001);
+    }
+  });
+
+  it('medido en 800 son tres columnas de 258 y pico, y tambien quedan enteras', () => {
+    const wide = columnLayout(800, HUECO);
+    expect(wide.singleColumn).toBe(false);
+    expect(wide.columns).toBe(3);
+    expect(wide.columnWidth).toBeCloseTo(776 / 3, 5);
+    const occupied =
+      wide.columnWidth * wide.columns + HUECO * (wide.columns - 1);
+    expect(occupied).toBeLessThanOrEqual(800);
+  });
+
+  it('ninguna columna sale mas estrecha que el minimo', () => {
+    // The floor is what happens if the arithmetic is ever wrong in the other
+    // direction, and it is checked over the whole range rather than in one place:
+    // a width that asked for more columns than fit would hand out cards that
+    // cannot be read.
+    for (let width = BOARD_SINGLE_COLUMN_BELOW; width <= 1600; width += 7) {
+      const wide = columnLayout(width, HUECO);
+      expect(wide.columnWidth).toBeGreaterThanOrEqual(BOARD_COLUMN_MIN_WIDTH);
+    }
+  });
+
+  it('sin medir no hay ancho, y la caja que mide se dibuja igualmente', () => {
+    // Zero, and not the minimum: a screen that hides its measuring box until it
+    // has a width never measures one, which is a blank board with no error. The
+    // reason it is zero is in `columnLayout`.
+    expect(columnLayout(0, HUECO).columnWidth).toBe(0);
+  });
+});
+
+describe('donde esta el borde izquierdo de una columna', () => {
+  it('cuenta el hueco que hay delante de ella', () => {
+    // **The arithmetic that was left half done.** `index * columnWidth` lands
+    // three gaps short on the fourth column: 813 where the column starts at 849.
+    expect(columnOffset(3, 271, HUECO)).toBe(849);
+    expect(columnOffset(3, 271, HUECO) - 3 * 271).toBe(3 * HUECO);
+  });
+
+  it('la primera columna es el origen y la siguiente empieza donde acaba la anterior', () => {
+    // The same claim from the other side, and it is the one that says the gap is
+    // counted once: column i ends at `offset(i) + columnWidth` and column i+1
+    // starts at `offset(i+1)`, so between them there is exactly one gap.
+    expect(columnOffset(0, 271, HUECO)).toBe(0);
+    for (const index of [0, 1, 2, 3]) {
+      expect(columnOffset(index + 1, 271, HUECO)).toBe(
+        columnOffset(index, 271, HUECO) + 271 + HUECO,
+      );
+    }
+  });
+
+  it('con una sola columna a pantalla completa el desplazamiento es el de la ventana', () => {
+    // 368 of track and four states: the third one is two pages in, which is what
+    // the tabs measured in the browser (1140 of scroll for four columns of 368 and
+    // three gaps of 12).
+    const { columnWidth } = columnLayout(368, HUECO);
+    expect(columnOffset(3, columnWidth, HUECO)).toBe(3 * 380);
   });
 });
 

@@ -14,38 +14,14 @@ import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
-import { countInState, tasksInState } from "@/lib/lists/board";
+import {
+  columnLayout,
+  columnOffset,
+  countInState,
+  tasksInState,
+} from "@/lib/lists/board";
 import { routeForList } from "@/lib/lists/route";
 import { useTheme } from "@/theme";
-
-/**
- * From this width up, a board shows more than one column.
- *
- * **720 is `READING_WIDTH`, and that is not a coincidence.** Every screen of the
- * app caps its content at that width so a line of text is not a line that runs
- * from the left edge of a laptop to the right one; a board is `width="full"` and
- * does not cap itself, because its columns are measured against what there is. The
- * number is where "a screen's worth of columns" and "a screen's worth of reading"
- * meet, and it is `READING_WIDTH` and not a number of columns because the answer
- * changes with what the window is: **a phone-width window is one state full-screen,
- * and a tablet-width one is a board.** Measured: 720 gives three columns of 232,
- * 800 gives three of 259, 1120 gives four of 271, and 368 — a 400-point window with
- * the drawer closed — gives one column of the whole width.
- */
-const UMBRAL_UNA_COLUMNA = 720;
-
-/**
- * The narrowest a column is drawn, **and it is 230 rather than 320.**
- *
- * The wide number came first and was wrong: in a track of 1120 —a 1440-point
- * window with the drawer open— it fits three columns of 320 and leaves a board of
- * eight half out of sight. At 230 the same track fits four. **Five or six columns
- * at once is what makes a board readable at a glance**, and comparing columns is
- * the whole point of a board: it needs more than one in the same look. A card with
- * a title, an icon and two labels is comfortable at 230, and a title has two lines
- * to be comfortable in.
- */
-const ANCHO_MINIMO_COLUMNA = 230;
 
 /**
  * The board of a list.
@@ -143,51 +119,21 @@ export default function BoardScreen() {
   const pista = useRef<ScrollView>(null);
 
   /**
-   * How many columns fit, and how wide each one is.
+   * How wide a column is, and **the arithmetic is not here.**
    *
-   * **Measured, and not a `snapToInterval`.** The interval would be the obvious
-   * way to tell a scroller how wide a page is, and on the web it does not exist:
-   * `react-native-web@0.21` ignores `snapToInterval` and implements only
-   * `pagingEnabled`, as CSS scroll-snap over the children. So the number has to be
-   * computed here from the width the box reports, and the box is the content box of
-   * the screen rather than the window, because the screen's padding comes off
-   * first.
+   * `columnLayout` owns it, in `lib/lists/board.ts`, with its tests and with the
+   * two numbers that broke it: the count that left the board scrolling 36 points
+   * with every column on screen, and the width that did not discount the gaps. The
+   * screen's whole part is to hand it a measured width and a gap and to draw what
+   * comes back — the alternative is a formula in a component that a test cannot
+   * reach and a careless edit can undo without anything noticing.
    *
-   * **Two behaviours and one screen.** Below `UMBRAL_UNA_COLUMNA` a column is the
-   * whole width and one state is all there is; above it, as many columns as fit at
-   * `ANCHO_MINIMO_COLUMNA`, and a sideways scroll with anchoring when they do not
-   * all fit.
-   *
-   * **The gaps come out of the division, and that is measured rather than
-   * reasoned.** Dividing the width by the number of columns and adding a gap
-   * afterwards is the obvious way and it does not add up: with four columns at 280
-   * and three gaps of 12 in a track of 1120, the columns ask for 1156 and **the
-   * board always scrolls 36 points with every column already on screen**. So the
-   * gap is part of what a column costs — `cuantasCaben` counts `ancho + gap` over
-   * `ANCHO_MINIMO_COLUMNA + gap`, and the width of each one is what is left after
-   * the gaps of the ones before it are taken out.
-   *
-   * `Math.max` with the minimum stays as the floor. With the division above it
-   * cannot be reached — a count that fits at 230 also fits after the gap is
-   * discounted — and if it ever were, the board would scroll, which is what a
-   * column narrower than it can be read is worth.
+   * The gap is the theme's `spacing.md` because a gap is spacing and the spacing is
+   * the theme's, and **the same number has to be the one `columnOffset` is given
+   * below**, which is the whole of what keeps a jump from landing short.
    */
   const gapColumnas = theme.spacing.md;
-  const cuantasCaben = Math.max(
-    1,
-    Math.floor((ancho + gapColumnas) / (ANCHO_MINIMO_COLUMNA + gapColumnas)),
-  );
-  const unaSolaColumna = ancho < UMBRAL_UNA_COLUMNA;
-  /** Zero while the board has not been measured, which is what keeps it hidden. */
-  const anchoColumna =
-    ancho <= 0
-      ? 0
-      : unaSolaColumna
-        ? ancho
-        : Math.max(
-            ANCHO_MINIMO_COLUMNA,
-            (ancho - gapColumnas * (cuantasCaben - 1)) / cuantasCaben,
-          );
+  const { columnWidth: anchoColumna } = columnLayout(ancho, gapColumnas);
 
   const readOnly = list?.role === "viewer";
 
@@ -245,13 +191,23 @@ export default function BoardScreen() {
    * effect on `actual` so that the swipe of Task 9, which also sets `actual`,
    * settles where the gesture left it instead of fighting it with a second
    * `scrollTo`.
+   *
+   * **The offset is `columnOffset` and not `index * anchoColumna`**, which is the
+   * same mistake as the one the width arithmetic had: it leaves the gap between
+   * the columns out of the sum, and a jump to the fourth column lands three gaps
+   * short. On the web the snap hides it. On native it does not, because
+   * `pagingEnabled` pages by multiples of the scroller, so the number given is a
+   * valid page and not the column's edge.
    */
   function irA(id: string) {
     const index = states.findIndex((state) => state.id === id);
     // An id that is not a column of this board is not something to scroll to.
     if (index < 0) return;
     setActual(index);
-    pista.current?.scrollTo({ x: index * anchoColumna, animated: true });
+    pista.current?.scrollTo({
+      x: columnOffset(index, anchoColumna, gapColumnas),
+      animated: true,
+    });
   }
 
   const pistaCrear = useA11yHint(t("itemCreate.titleHint"));
