@@ -1,4 +1,5 @@
 import type {
+  BoardStates,
   ShareNodeType,
   SyncConflict,
   SyncOperation,
@@ -10,6 +11,7 @@ import type {
 import {
   MAX_BOARD_STATES,
   NOTE_DOCUMENT_MAX_BYTES,
+  isKnownStateId,
   noteDocumentSchema,
   noteDocumentToPlainText,
   sanitiseTagColors,
@@ -500,7 +502,8 @@ export class SyncService {
     return (note['workspaceId'] as string | null) ?? null;
   }
 
-  private async workspaceOfListItem(item: StoredEntity, userId: string): Promise<string | null> {
+  /** The list a row belongs to. `null` when the row does not say which one. */
+  private async listOfItem(item: StoredEntity): Promise<StoredEntity | null> {
     const listId = item['listId'] as string | null;
     if (!listId) return null;
 
@@ -508,6 +511,13 @@ export class SyncService {
     if (!list) {
       throw HttpError.notFound('List not found');
     }
+    return list;
+  }
+
+  /** The space a row belongs to, read off the list it already looked up. */
+  private async workspaceOfListItem(item: StoredEntity, userId: string): Promise<string | null> {
+    const list = await this.listOfItem(item);
+    if (list === null) return null;
     void userId;
     return (list['workspaceId'] as string | null) ?? null;
   }
@@ -632,6 +642,17 @@ export class SyncService {
             nodeId: operation.entityId,
           });
 
+          // The column the item claims is checked against the columns the list
+          // has, from the row just read. A task pointing at a state no screen can
+          // draw is refused rather than stored: an unknown field is dropped in
+          // silence and the push still answers `applied`, and this is the other
+          // half of that rule — being writable is not being valid.
+          const states = (owner['states'] as BoardStates) ?? [];
+          const stateId = (payload['stateId'] as string | null) ?? null;
+          if (!isKnownStateId(states, stateId)) {
+            throw HttpError.validation('An item needs a state its list has');
+          }
+
           const row = await syncRepository.insertEntity('list_item', {
             ...payload,
             id: operation.entityId,
@@ -741,10 +762,28 @@ export class SyncService {
         nodeId: operation.entityId,
       });
     } else if (entity === 'list_item') {
-      await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId, {
+      const list = await this.listOfItem(existing);
+      await this.assertCanWrite((list?.['workspaceId'] as string | null) ?? null, userId, {
         nodeType: 'list_item',
         nodeId: operation.entityId,
       });
+
+      // The state is read from the sanitised payload and not from the raw one,
+      // because the raw one carries keys that are never written and this has to
+      // look at the same keys that are. Sanitising twice is also how the two
+      // answers to "what does this payload say" drift apart.
+      const limpio = sanitisePayload('list_item', operation.payload);
+      // And only when the payload carries a state at all. An item can be left
+      // pointing at a column another device deleted, and from then on every edit
+      // to it — a title, an icon, its position — is one that does not mention the
+      // column. Checking the stored value would make such an item uneditable, and
+      // the only write that could rescue it is the write being refused.
+      if ('stateId' in limpio) {
+        const states = (list?.['states'] as BoardStates) ?? [];
+        if (!isKnownStateId(states, (limpio['stateId'] as string | null) ?? null)) {
+          throw HttpError.validation('An item needs a state its list has');
+        }
+      }
     } else if (entity === 'note') {
       await this.assertCanWrite(this.workspaceOfNote(existing), userId, {
         nodeType: 'note',
