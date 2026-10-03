@@ -431,6 +431,46 @@ describe("la pastilla deriva relleno y texto", () => {
 
   // ---- los que el brief no pide y que este archivo necesita igual ----
 
+  it("los doce colores de la paleta salen exactamente en estos hex", () => {
+    // **La tabla entera, no el umbral.** La rejilla de abajo comprueba que todo
+    // llega a 4.5:1, pero eso lo cumpliria tambien una cuenta que landing en otro
+    // sitio; lo que esta tabla fija es **que color sale**, y es lo que hace que los
+    // numeros que hay escritos en los comentarios de `tag-colors.ts` sean
+    // comprobables: si el paso, el porcentaje de mezcla o el corte del extremo se
+    // mueven, esta tabla se pone roja y los comentarios quedan mintiendo solos.
+    //
+    // Superficies **las del tema**, `#F0F2F8` y `#1B2231`, y no las del brief
+    // (`#FFFFFF` y `#111827`), que son de otro tema. Nombre, texto de claro, relleno
+    // de claro, contraste, texto de oscuro, relleno de oscuro, contraste.
+    const esperado = [
+      ["neutral", "#303540", "#98A0B3", 4.69, "#16181D", "#7A8397", 4.67],
+      ["accent", "#0A0C6A", "#777AF2", 4.59, "#EFF0FE", "#595CD6", 4.73],
+      ["green", "#073719", "#35AE62", 4.7, "#031309", "#179147", 4.7],
+      ["olive", "#0F1803", "#648D30", 4.68, "#C2F085", "#466F14", 4.54],
+      ["amber", "#4E2B02", "#DC8828", 4.55, "#1C1001", "#BE6B0C", 4.71],
+      ["orange", "#451A04", "#EB6E2D", 4.85, "#0B0401", "#CD5011", 4.6],
+      ["red", "#260606", "#DF4343", 4.52, "#FADEDE", "#C12528", 4.65],
+      ["rose", "#23050B", "#E33B61", 4.61, "#FBE3E8", "#C51E45", 4.73],
+      ["purple", "#10031B", "#A04EEC", 4.56, "#EBD9FB", "#8231D0", 4.8],
+      ["blue", "#04102C", "#4177ED", 4.56, "#D7E2FB", "#245AD1", 4.67],
+      ["teal", "#042D29", "#2DA198", 4.72, "#FDFFFF", "#0F847C", 4.54],
+      ["brown", "#FCEBE0", "#9F592F", 4.59, "#F4B48C", "#813C13", 4.54],
+    ] as const;
+
+    for (const [nombre, textoClaro, rellenoClaro, contrasteClaro, textoOscuro, rellenoOscuro, contrasteOscuro] of esperado) {
+      const hex = iconColor(nombre);
+      const claro = labelPillColors(hex, "#F0F2F8", "light");
+      expect(claro.text, `${nombre} en claro`).toBe(textoClaro);
+      expect(claro.fill, `${nombre} en claro`).toBe(rellenoClaro);
+      expect(contrastRatio(claro.text, claro.fill), `${nombre} en claro`).toBeCloseTo(contrasteClaro, 2);
+
+      const oscuro = labelPillColors(hex, "#1B2231", "dark");
+      expect(oscuro.text, `${nombre} en oscuro`).toBe(textoOscuro);
+      expect(oscuro.fill, `${nombre} en oscuro`).toBe(rellenoOscuro);
+      expect(contrastRatio(oscuro.text, oscuro.fill), `${nombre} en oscuro`).toBeCloseTo(contrasteOscuro, 2);
+    }
+  });
+
   it("los doce nombres salen por el mismo camino que los dibuja la app", () => {
     // `tagColorHex` existe **por no ser** `iconColor`: aquella devuelve el neutro
     // para lo que no conoce, asi que un hex libre volveria gris. Esa diferencia es
