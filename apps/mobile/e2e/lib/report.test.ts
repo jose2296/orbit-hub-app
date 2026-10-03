@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fallosDeMaestro, renderReport, writeReport } from './report';
+import { fallosDeMaestro, renderReport, saleEnRojo, veredictoArea, writeReport } from './report';
 
 const bien = {
   area: '01-onboarding',
@@ -25,6 +25,94 @@ const vacio = {
   guard: { ok: true, problems: [] },
   fallidos: [],
 };
+// El area vacia tal como la deja el runner: `forceStop` para la app antes del area
+// y sin un flujo no hay nada que la levante, asi que el guardian responde que no hay
+// proceso. Es el caso que hacia que la consola dijera `FALLA ... la app se cerro` y
+// el informe `NADA ... sin flujos que probar` en la misma carrera.
+const vacioSinProceso = {
+  ...vacio,
+  guard: { ok: false, problems: ['la app se cerro — no hay proceso'] },
+};
+
+/**
+ * El veredicto de un area, que es lo que decide a la vez la fila del informe y el
+ * codigo de salida del runner.
+ *
+ * Estaba escrito en los dos sitios: la fila lo tenia comprobado y el `exitCode` no,
+ * y el `exitCode` era el que mentia -un area sin flujos salia en rojo por el guardian
+ * diciendo que la app se habia cerrado cuando no habia llegado a existir-. Con la
+ * decision en una sola funcion y el runner llamandola, la fila y el codigo de salida
+ * ya no pueden separarse; estos son los casos que los tenian separados.
+ */
+describe('veredictoArea', () => {
+  it('un area sin flujos es NADA, aunque el guardian diga que no hay proceso', () => {
+    // El caso que se dio, medido. A un area vacia nada la levanta, asi que el
+    // guardian solo puede decir `la app se cerro`, y eso no es un sintoma: es que no
+    // habia nada que cerrar. Montar un area nueva no puede poner en rojo la carrera.
+    const v = veredictoArea(vacioSinProceso);
+    expect(v.estado).toBe('NADA');
+    expect(v.motivo).toBe('sin flujos que probar');
+    // El motivo entero y entero, y no un `toContain` laxo: decir `la app se cerro` al
+    // lado de la fila de un area vacia es justo la mentira que se esta corrigiendo.
+    expect(v.motivo).not.toContain('se cerro');
+  });
+
+  it('un area con flujos que se queda sin proceso es FALLA, y lo dice', () => {
+    // La otra mitad, que no se puede relajar con la anterior: aqui si se ha probado
+    // algo, la app estaba en pie al empezar, y ahora no esta. Es un fallo real y se
+    // queda rojo.
+    const v = veredictoArea({ ...bien, guard: { ok: false, problems: ['la app se cerro — no hay proceso'] } });
+    expect(v.estado).toBe('FALLA');
+    expect(v.motivo).toContain('se cerro');
+  });
+
+  it('un area con flujos en verde pasa, y una que fallo en Maestro no', () => {
+    expect(veredictoArea(bien).estado).toBe('PASA');
+    expect(veredictoArea(mal).estado).toBe('FALLA');
+    // Y el motivo de un fallo de Maestro cuenta los flujos que se han corrido, que
+    // con `--flow` es uno y no los que tiene el area.
+    expect(
+      veredictoArea({ ...mal, flows: 1, guard: bien.guard, fallidos: ['lista: Motivo'] }).motivo,
+    ).toBe('1 de 1 flujos fallaron');
+  });
+
+  it('la fila y el recuento se pintan con el mismo veredicto que decide el codigo', () => {
+    // Las tres mitades -la palabra de la fila, el recuento de sanas y el rojo de la
+    // carrera- salen de aqui. Con una condicion escrita en el runner, las tres podian
+    // decir cosas distintas en el mismo fichero, y solo se comprobaba una.
+    const casos = [
+      bien,
+      mal,
+      vacio,
+      vacioSinProceso,
+      { ...bien, area: '02-auth', maestroOk: false },
+    ] as const;
+    const informe = renderReport([...casos]);
+    const filas = informe.split('\n').filter((l) => /^(PASA|FALLA|NADA)\s/.test(l));
+    expect(filas).toHaveLength(casos.length);
+    expect(filas.map((f) => f.trim().split(/\s+/)[0])).toEqual(
+      casos.map((c) => veredictoArea(c).estado),
+    );
+    const sanas = casos.filter((c) => veredictoArea(c).estado === 'PASA').length;
+    expect(informe).toContain(`${sanas}/${casos.length} areas sin fallo`);
+  });
+});
+
+/**
+ * La otra mitad del codigo de salida, que estaba en el runner como un `fallos += 1`
+ * sin comprobar. Ahora es esta funcion, y por eso hay un sitio donde se puede romper.
+ */
+describe('saleEnRojo', () => {
+  it('solo un FALLA pone la carrera en rojo', () => {
+    expect(saleEnRojo([])).toBe(false);
+    expect(saleEnRojo([bien])).toBe(false);
+    // Un area vacia, con y sin guardian en contra: montar un area nueva sale con
+    // codigo 0, que es lo que el README y el informe ya prometian.
+    expect(saleEnRojo([vacio])).toBe(false);
+    expect(saleEnRojo([vacio, vacioSinProceso])).toBe(false);
+    expect(saleEnRojo([bien, vacio, mal])).toBe(true);
+  });
+});
 
 describe('renderReport', () => {
   it('una linea por area, con su numero de flujos', () => {

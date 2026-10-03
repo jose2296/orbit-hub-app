@@ -33,8 +33,8 @@ tags: [smoke]
 # del siguiente.
 #
 # Y volver con la tecla de atras **hoy falla**, y con razon: la tecla de atras de
-# Android sale de la aplicacion en vez de desapilar. No es el arnes. Ver el informe
-# de la tarea 4.
+# Android sale de la aplicacion en vez de desapilar. No es el arnes, y el por que
+# esta escrito en `apps/mobile/e2e/README.md`.
 - back
 - assertVisible:
     id: screen-welcome

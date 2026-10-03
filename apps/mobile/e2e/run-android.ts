@@ -5,10 +5,17 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adb, appPid, clearLogcat, crashLines, forceStop, requireOneDevice, screenshot } from './lib/android.ts';
-import { parseAreaFlag, resolveAreas } from './lib/areas.ts';
+import { corrida, parseAreaFlag, resolveAreas } from './lib/areas.ts';
 import { verdict } from './lib/guard.ts';
 import { runMaestro } from './lib/maestro.ts';
-import { renderReport, writeReport, fallosDeMaestro, type AreaResult } from './lib/report.ts';
+import {
+  renderReport,
+  writeReport,
+  fallosDeMaestro,
+  saleEnRojo,
+  veredictoArea,
+  type AreaResult,
+} from './lib/report.ts';
 import { ensureService, type Service } from './lib/stack.ts';
 import { seed, writeSeedEnv } from './seed/e2e-account.ts';
 
@@ -135,7 +142,6 @@ try {
   // las dos copias, y la copia que se olvida no da error de tipos: da un informe
   // con un `undefined` en una fila.
   const resultados: AreaResult[] = [];
-  let fallos = 0;
 
   for (const area of areas) {
     // El estado y el buffer se limpian por area: sin esto, el primer area hereda
@@ -162,12 +168,12 @@ try {
     clearLogcat(serial);
     const antes = { pid: appPid(serial) };
 
-    const flows = flags.flow ? [join(area.dir, flags.flow)] : area.dir;
+    const { flujo, cuantos } = corrida(area, flags.flow);
     // La siembra entera en el entorno, no solo lo que los flujos de hoy necesitan:
     // es lo que le hara falta a un flujo con sesion, y `Seeded` ya es un mapa de
     // cadenas. Sin escribir un `.env`: Maestro lee `${...}` del entorno, y ahi es
     // donde el plan prohibio escribir ficheros.
-    const { code, output } = runMaestro(flows, {
+    const { code, output } = runMaestro(flujo, {
       cwd: RAIZ,
       env: { ...sembrado },
     });
@@ -179,17 +185,29 @@ try {
     // tiraba. Sin el, `Maestro fallo` en el informe es el nombre de la
     // herramienta que fallo y no el motivo, y el unico sitio donde estaba el
     // motivo son las lineas que se imprimen aqui y se pierden al salir.
-    resultados.push({
+    //
+    // Y `flows` es `cuantos` de `corrida`, no `area.flows.length`: lo que se ha
+    // corrido. Con `--flow` son uno, y decir tres era el informe pesando su propia
+    // cobertura -el numero va en la fila y en la cuenta de caidos, y los dos
+    // mienten a la vez-.
+    const resultado: AreaResult = {
       area: area.name,
-      flows: area.flows.length,
+      flows: cuantos,
       maestroOk: code === 0,
       guard,
       fallidos: fallosDeMaestro(output),
-    });
-    const mal = !guard.ok ? guard.problems.join(' | ') : code === 0 ? 'ok' : 'Maestro fallo';
-    const bien = guard.ok && code === 0;
-    if (!bien) fallos += 1;
-    console.log(`  ${bien ? ' ok ' : 'FALLA'} ${area.name.padEnd(16)} ${mal}`);
+    };
+    resultados.push(resultado);
+    // El veredicto sale de `veredictoArea`, la misma funcion que pinta la fila del
+    // informe, y no de una condicion escrita aqui. Estaba escrita, y era
+    // `guard.ok && code === 0`: `true` para un area sin flujos, mientras el
+    // `verdict` de esa area es rojo porque a un area vacia nada la levanta. La
+    // consola decia `FALLA ... la app se cerro` y el informe de la vez decia
+    // `NADA ... sin flujos que probar`, y de los dos solo uno era verdad. Aqui ya
+    // no hay nada que decidir: el area vacia es `NADA`, y `saleEnRojo` no cuenta un
+    // `NADA`.
+    const { estado, motivo } = veredictoArea(resultado);
+    console.log(`  ${estado.padEnd(5)} ${area.name.padEnd(16)} ${motivo}`);
     if (code !== 0) console.log(output.split('\n').slice(-15).join('\n'));
   }
 
@@ -208,10 +226,15 @@ try {
   // Un area vacia no es un fallo, pero una carrera sin un solo area tampoco es una
   // carrera: `resolveAreas` lanza si el directorio no existe, y esto avisa del otro
   // caso, que es un directorio con subdirectorios y ninguno con flujos.
+  //
+  // Y el rojo sale de `saleEnRojo`, no de un contador que se lleva aqui: un
+  // `fallos += 1` por area era la mitad del `exitCode` duplicada al lado de la otra
+  // mitad que pinta el informe, y solo una de las dos estaba comprobada. La que
+  // no se miraba era justo la que decidia el codigo de salida.
   if (areas.length === 0) {
     console.error('  no hay ningun area que recorrer');
     process.exitCode = 1;
-  } else if (fallos > 0) {
+  } else if (saleEnRojo(resultados)) {
     process.exitCode = 1;
   }
 } finally {

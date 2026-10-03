@@ -107,6 +107,66 @@ function flujos(n: number): string {
 /** Lo que se imprime cuando Maestro fallo y su salida no dice por que. */
 const SIN_MOTIVO = 'Maestro fallo y no se ha podido leer por que: mira la salida del area';
 
+export type VeredictoArea = { estado: 'PASA' | 'FALLA' | 'NADA'; motivo: string };
+
+/**
+ * El veredicto de un area. **Aqui, y no tambien en el runner.**
+ *
+ * El codigo de salida estaba en el runner con la misma condicion escrita otra vez y
+ * sin la mitad que falta -`guard.ok && code === 0`, que para un area sin flujos es
+ * `true` mientras el `verdict` de esa area es rojo-. Y el `verdict` lo es porque
+ * `forceStop` para la app antes del area y sin un flujo no hay nada que la levante:
+ * un area vacia salia en la consola como `FALLA ... la app se cerro`, accusando a
+ * una app que nadie habia abierto, mientras el informe de la misma carrera decia
+ * `NADA ... sin flujos que probar`. Los dos artefactos de la misma carrera se
+ * contradecian, y el que se lee sin abrir el otro -la linea de consola- es el que
+ * miente. Una fila con `NADA` y un codigo de salida en rojo no son dos estilos de
+ * lo mismo: son dos verdades, y solo una es cierta.
+ *
+ * **Tres estados y no dos, porque "no ha pasado nada" no es "todo bien".** Con dos,
+ * el `NADA` de la fila y el `true` del runner tienen que existir en sitios
+ * distintos, y dos sitios son uno de mas para que una decision se separe de su
+ * lectura.
+ *
+ * **El area vacia se decide antes que el guardian, y no por descuido.** En un area
+ * sin flujos no se ha probado nada, y lo unico que el guardian puede decir es que
+ * no hay proceso: eso no es un sintoma, es que no habia nada. El orden lo fija aqui
+ * y no en quien llama, que es donde se volveria a equivocar uno de los dos.
+ */
+export function veredictoArea(r: AreaResult): VeredictoArea {
+  if (r.flows === 0) {
+    return { estado: 'NADA', motivo: 'sin flujos que probar' };
+  }
+  if (!r.guard.ok) {
+    return { estado: 'FALLA', motivo: r.guard.problems.join(' | ') };
+  }
+  if (!r.maestroOk) {
+    // La cuenta de flujos caidos, no la palabra de que fallo la herramienta: los
+    // nombres y los motivos estan en las lineas de debajo, y "2 de 3 flujos
+    // fallaron" es el principio de esas lineas en una sola fila.
+    return {
+      estado: 'FALLA',
+      motivo:
+        r.fallidos.length > 0 ? `${r.fallidos.length} de ${r.flows} flujos fallaron` : SIN_MOTIVO,
+    };
+  }
+  return { estado: 'PASA', motivo: 'ok' };
+}
+
+/**
+ * Si la carrera sale en rojo, que es lo unico que el runner decide con su codigo de
+ * salida. **Un `FALLA` y nada mas.**
+ *
+ * Montar un area nueva no puede poner en rojo la carrera de quien todavia no ha
+ * escrito sus flujos: por eso `NADA` no es un fallo. Y un area **con** flujos que se
+ * queda sin proceso sigue siendo un fallo -ahi si se ha probado algo y no estaba-,
+ * que es lo que `veredictoArea` ya resuelve en la fila. Las dos mitades del codigo
+ * de salida estan aqui y en ningun sitio mas, y por eso esta comprobada aqui.
+ */
+export function saleEnRojo(resultados: AreaResult[]): boolean {
+  return resultados.some((r) => veredictoArea(r).estado === 'FALLA');
+}
+
 /**
  * El recuento va por areas y no por flujos.
  *
@@ -118,9 +178,10 @@ const SIN_MOTIVO = 'Maestro fallo y no se ha podido leer por que: mira la salida
  * **Y un area sin flujos no cuenta como sana.** No fallo, pero tampoco se probo
  * nada, y un `1/1 areas sin fallo` debajo de una fila que dice "no he probado
  * nada" son dos frases que se contradicen en el mismo fichero. La fila lleva su
- * propio veredicto -`NADA`- y el recuento la deja fuera. Que la carrera siga
- * saliendo con codigo 0 es otra decision, y es correcta: montar un area nueva no
- * debe poner en rojo la carrera de quien todavia no ha escrito sus flujos.
+ * propio veredicto -`NADA`- y el recuento la deja fuera, porque las dos cosas -
+ * fila y recuento- se pintan con `veredictoArea`, que es la misma que decide el
+ * codigo de salida del runner: que la carrera salga con codigo 0 al montar un area
+ * nueva no es una promesa del documento, es que `saleEnRojo` no cuenta un `NADA`.
  */
 export function renderReport(resultados: AreaResult[]): string {
   const lineas: string[] = [];
@@ -134,36 +195,21 @@ export function renderReport(resultados: AreaResult[]): string {
   lineas.push('');
 
   for (const r of resultados) {
-    // Tres veredictos y no dos. `NADA` es el area sin flujos: sin excepcion que
-    // capturar ni codigo de salida distinto, porque ahi no ha pasado nada -nada
-    // fallo, y nada se probo-, y un `PASA` ahi seria una afirmacion que el
-    // informe no puede sostener.
-    let veredicto: string;
-    let motivo: string;
-    if (r.flows === 0) {
-      veredicto = 'NADA';
-      motivo = 'sin flujos que probar';
-    } else if (!r.guard.ok) {
-      veredicto = 'FALLA';
-      motivo = r.guard.problems.join(' | ');
-    } else if (!r.maestroOk) {
-      veredicto = 'FALLA';
-      // La cuenta de flujos caidos, no la palabra de que fallo la herramienta:
-      // los nombres y los motivos estan en las lineas de debajo, y "2 de 3 flujos
-      // fallaron" es el principio de esas lineas en una sola fila.
-      motivo = r.fallidos.length > 0 ? `${r.fallidos.length} de ${r.flows} flujos fallaron` : SIN_MOTIVO;
-    } else {
-      veredicto = 'PASA';
-      motivo = 'ok';
-    }
-    lineas.push(`${veredicto.padEnd(COLUMNA - 2)}  ${ancho(r.area, ANCHO_AREA)}${flujos(r.flows)}  ${motivo}`);
+    // La fila sale de `veredictoArea`, la misma funcion que decide el codigo de
+    // salida, y no de una condicion escrita aqui: la tabla y el `exitCode` cuentan
+    // areas de la misma manera o se contradicen en el mismo fichero.
+    const { estado, motivo } = veredictoArea(r);
+    lineas.push(`${estado.padEnd(COLUMNA - 2)}  ${ancho(r.area, ANCHO_AREA)}${flujos(r.flows)}  ${motivo}`);
     // Los flujos que fallaron, uno por linea. **Debajo y no en la fila**: la
     // tabla se lee de un vistazo y el detalle se lee cuando se busca el motivo, y
     // un motivo largo metido en la fila parte la tabla en dos.
     for (const f of r.fallidos) lineas.push(`${' '.repeat(COLUMNA)}${f}`);
   }
 
-  const sanas = resultados.filter((r) => r.flows > 0 && r.guard.ok && r.maestroOk).length;
+  // `PASA` y no "no es `FALLA`": un area sin flujos tampoco es un `FALLA`, y aqui no
+  // cuenta. Las dos listas salen del mismo sitio que la fila de arriba, asi que el
+  // `1/1 areas sin fallo` de debajo no puede contradecir a un `NADA` de arriba.
+  const sanas = resultados.filter((r) => veredictoArea(r).estado === 'PASA').length;
   lineas.push('');
   lineas.push(`${sanas}/${resultados.length} areas sin fallo`);
 

@@ -57,6 +57,10 @@ run that never reached the new thing is not a check either, and neither is a red
 can wave away: if `capturas/android/informe.txt` names an area in red, the change either
 broke it or it found a real defect, and both are worth reading before the commit.
 
+There is one standing red line today, and it is the app's: `01-onboarding` fails because
+the Android back key leaves the app instead of popping. It is named in the report's last
+line and in `apps/mobile/e2e/README.md`, and it is not yours to fix in passing.
+
 ## Where things live
 
 | Need                              | Location                                        |

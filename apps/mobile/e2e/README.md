@@ -12,16 +12,20 @@ El diseno entero esta en [`docs/architecture/e2e-regression.md`](../../../docs/a
 ```bash
 npm run e2e:android                             # todo
 npm run e2e:android -- --area 01-onboarding     # un area
+npm run e2e:android -- --area=01-onboarding     # lo mismo: vale con y sin `=`
 npm run e2e:android -- --area 01-onboarding --flow privacy.yaml
 ```
 
 Hoy `flows/` solo tiene `01-onboarding`: los otros nombres de area son del plan y aun no existen, asi
 que copiarlos tal cual falla a proposito. El `--` final del script de la raiz tambien es a proposito
-(sin el, npm se come las banderas), y un `--area` mal escrito **falla** listando los nombres validos
-en vez de correr en verde sin haber probado nada.
+(sin el, npm se come las banderas), y tanto un `--area` mal escrito como una bandera que no existe
+**fallan** en vez de correr en verde sin haber probado nada: el primero listando los nombres validos,
+la segunda diciendo que lo unico que hay son `--area` y `--flow`. Con `--flow` la fila del informe
+dice `1 flujo`, no los que tiene el area: el numero del informe es lo que se ha corrido.
 El arnes levanta la API y Metro si no estan, hace `adb reverse` de los dos puertos -sin eso la app
 muestra un recuadro rojo-, siembra una cuenta con sus datos, corre, y sale con codigo distinto de
-cero si algo fallo. Todo queda en `capturas/android/`: `informe.txt` con una fila por area y **el flujo que fallo con su motivo debajo**, mas una captura, los logs y las credenciales.
+cero si **alguna area sale en `FALLA`**. Un area sin flujos lleva `NADA` y no pone la carrera en rojo:
+aun no hay nada que probar, y no es un fallo. Todo queda en `capturas/android/`: `informe.txt` con una fila por area y **el flujo que fallo con su motivo debajo**, mas una captura, los logs y las credenciales.
 
 ## Anadir un flujo
 
@@ -47,6 +51,20 @@ kebab-case con prefijo de area: `screen-<nombre>` para la raiz de la pantalla -l
 `<Screen>`-, y `<area>-<que-hace>` para lo demas: `item-menu-button`, `content-filter-note`, `done-tray-toggle`, `notes-create`. Todos existen hoy en `src/`.
 
 **Por que `testID` y no texto:** la app es bilingue, y un selector de texto se rompe en cuanto se retoca una palabra de un idioma. La unica cadena que un flujo puede afirmar es una del seed.
+
+## Lo que el guardian mira, y lo que todavia no
+
+Ademas de lo que Maestro afirma, el arnes mira el proceso y el buffer de crash al cerrar cada area,
+porque Maestro no lee `logcat` y no ve un relanzamiento en silencio.
+
+**Tres senales vigilan hoy:** que no quede proceso, un `FATAL EXCEPTION` en el buffer, o un
+`JavascriptException` -que es como muere una app Expo-. Una cuarta esta implementada y probada y
+**no se puede ejecutar**: el pid que ha cambiado, que es el relanzamiento en silencio, porque el
+runner para la app antes de cada area y la linea de base siempre es "no hay proceso". Se deja
+cableada y se dice en los tres sitios donde se decide -`lib/guard.ts`, la pagina de
+[arquitectura](../../../docs/architecture/e2e-regression.md) y el
+[ADR 0033](../../../docs/architecture/adr/0033-regresion-e2e-android.md)- en vez de presentarla como
+una comprobacion que vigila. El arreglo de verdad es que Maestro devuelva el pid que levanto la app.
 
 ## Hoy hay una linea roja, y es de la app
 

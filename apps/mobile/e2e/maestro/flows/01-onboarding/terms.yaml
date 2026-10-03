@@ -15,8 +15,9 @@ tags: [smoke]
     id: welcome-terms
 - assertVisible:
     id: screen-terms
-# La tecla de atras sale de la aplicacion en vez de desapilar; ver el informe de la
-# tarea 4. Es lo unico que deja estos dos flujos en rojo.
+# La tecla de atras sale de la aplicacion en vez de desapilar; el por que esta
+# escrito en `apps/mobile/e2e/README.md`. Es lo unico que deja estos dos flujos
+# en rojo.
 - back
 - assertVisible:
     id: screen-welcome

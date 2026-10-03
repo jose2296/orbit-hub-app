@@ -49,8 +49,10 @@ la app: el segundo llega con su nombre en el informe y el primero con una foto.
 4. **La siembra**, por HTTP contra la API real, y el token de verificacion **leido del log de la
    API**, que es de donde sale con `EMAIL_TRANSPORT=console`.
 5. **El bucle de areas.** Por area: `forceStop`, `logcat -c`, la linea de base, Maestro con el
-   directorio entero, el veredicto y una captura.
-6. **El informe**, y el `exitCode` segun si alguna area fallo.
+   directorio entero -o con un solo flujo si viene `--flow`-, el veredicto y una captura.
+6. **El informe**, y el `exitCode` segun si alguna area fallo. Las banderas aceptan las dos formas,
+   `--area x` y `--area=x`, y un `--...` que no sea de las dos lanza: un flag mal escrito que se pasa
+   sin quejarse es una carrera entera en verde sin haber corrido lo que se le pidio.
 
 Todo lleva marca de carrera en el nombre -el log, los datos, las credenciales-: un `seed.env` de
 nombre fijo sobrevive a la carrera siguiente y sus credenciales apuntan a una base de datos que ya
@@ -120,8 +122,16 @@ motivo a medias es peor que ninguno, porque parece un motivo.
 
 Un area **sin flujos** lleva `NADA` y no cuenta como sana. No fallo y no se probo, y un `1/1 areas
 sin fallo` debajo de una fila que dice "no he probado nada" son dos frases que se contradicen en el
-mismo fichero. La carrera sigue saliendo con codigo 0: montar un area nueva no debe poner en rojo la
-carrera de quien todavia no ha escrito sus flujos.
+mismo fichero.
+
+Y la carrera sale con codigo 0 al montar un area nueva. **No es una promesa del documento: es que la
+fila, el recuento de sanas y el codigo de salida salen de la misma funcion**, `veredictoArea`, y el
+rojo lo decide `saleEnRojo`, que cuenta areas en `FALLA` y solo eso. Antes cada uno tenia su propia
+condicion y el runner llevaba un `fallos += 1` sin comprobar: un area vacia salia en rojo por el
+guardian -que responde `la app se cerro` porque `forceStop` para la app y sin un flujo no hay nada
+que la levante-, mientras el informe de la misma carrera decia `NADA`. Un area **con** flujos que se
+queda sin proceso sigue siendo un fallo, y por el mismo camino: ahi si se ha probado algo y no
+estaba.
 
 Cuando `01-onboarding` este en rojo por la tecla de atras, el informe lo dice en su ultima linea. La
 linea roja actual -la tecla de atras sale de la aplicacion en vez de desapilar- es un defecto **de la

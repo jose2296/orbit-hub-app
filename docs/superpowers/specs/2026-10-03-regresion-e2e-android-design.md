@@ -1,6 +1,10 @@
 # Un recorrido por toda la app en Android, y la obligacion de que cada pantalla nueva traiga su prueba
 
-Estado: por implementar.
+Estado: implementado, y en su fase 1: el arnes, el stack, el guardian y **tres pantallas de
+veintinueve** -`welcome`, `privacy` y `terms`-. Las veintiseis restantes y las cuarenta hojas son
+fase 2, y las trae de una en una la obligacion de `AGENTS.md`. De las cuatro senales del guardian,
+tres vigilan; la cuarta esta cableada y no se puede ejecutar, y eso esta escrito mas abajo y no se
+cuenta como cuatro.
 
 Hoy hay diecisiete scripts `verify-*.mjs` que se escribieron uno detras de otro para
 mirar pantallas concretas, y `scripts/verify-android-screens.mjs` recorre **siete**
@@ -67,23 +71,33 @@ que cada uno ve una cosa que el otro no ve.
 
 ## El guardian de crasheo
 
-El envoltorio corre Maestro **una vez por directorio de area** —nueve ejecuciones,
-no cien—, limpiando `logcat` y anotando el pid antes y despues de cada una. Asi el
-arranque de Maestro se amortiza y aun asi cada fallo dice *que area* fallo; luego se
-re-ejecutan los flujos de esa area uno a uno y sale el flujo exacto.
+El envoltorio corre Maestro **una vez por directorio de area** —una ejecucion por area, no una
+por flujo—, limpiando `logcat` y anotando el pid antes y despues de cada una. Asi el arranque de
+Maestro se amortiza y aun asi cada fallo dice *que area* fallo; luego se re-ejecutan los flujos de
+esa area uno a uno y sale el flujo exacto.
 
 El guardian da el run por fallado ante cualquiera de estas cuatro cosas:
 
-| Senal | Por que |
-| --- | --- |
-| No hay pid | La app se cerro |
-| El pid **cambio** | Relanzo en silencio: en nativo casi siempre es un crash |
-| `FATAL EXCEPTION` en `-b crash` | Crash nativo |
-| `JavascriptException` en `-b crash` | Excepcion de JS, que es como muere una app Expo |
+| Senal | Corre hoy | Por que |
+| --- | --- | --- |
+| No hay pid | si | La app se cerro |
+| El pid **cambio** | **no: cableada y sin ejecutar** | Relanzo en silencio: en nativo casi siempre es un crash |
+| `FATAL EXCEPTION` en `-b crash` | si | Crash nativo |
+| `JavascriptException` en `-b crash` | si | Excepcion de JS, que es como muere una app Expo |
 
-La comprobacion del pid es la que hace que las otras tres signifiquen algo, y es la
-que ya resulto ser la leccion mas cara del repositorio: sin ella, seis pasos dieron
-verde mientras la app no se habia movido de sitio.
+**Tres de las cuatro vigilan; la cuarta no puede llegar a correr.** El envoltorio para la app antes
+de cada area, asi que la linea de base siempre es "no hay proceso" y el pid que cambio no se
+compara nunca. Se deja implementada y probada, y escrita como lo que es en `lib/guard.ts`, en el
+ADR 0033 y en la pagina de arquitectura, en vez de presentarla como una comprobacion que vigila.
+Quitar el `forceStop` de ahi la alcanzaria y traeria un problema peor: el pid del area siguiente
+seria el de un estado que nadie ha comprobado. El arreglo de verdad es que Maestro devuelva el pid
+que levanto la app, y no cabe en esta fase.
+
+La leccion mas cara del repositorio -en `verify-android-screens.mjs` seis pasos dieron verde con la
+app sin moverse de sitio, porque mirar el proceso solo no dice si un toque ha dado en algo- es la
+que trae el guardian entero, y de ella sale tambien que los flujos affirmen `testID`: que se llegara
+a una pantalla. **No es la comparacion de pid**, que es justo la parte que hoy no se ejecuta, y
+atribuirsela seria hacerle un merito a la rama muerta y quitarselo a las tres que vigilan.
 
 ## Que hay que sembrar para que el recorrido signifique algo
 
@@ -96,7 +110,7 @@ externa, y con `EMAIL_TRANSPORT=console` el correo de verificacion sale por el l
 del servidor. `scripts/seed-people.mjs` ya usa exactamente ese truco. No hay que
 inventar nada: es lo que hay.
 
-`apps/mobile/e2e/seed/e2e-account.mjs` siembra una cuenta **verificada** con:
+`apps/mobile/e2e/seed/e2e-account.ts` siembra una cuenta **verificada** con:
 
 - un espacio de trabajo, una carpeta dentro, y una lista con tareas —la cadena
   entera, porque los ids se referencian entre si—
@@ -105,8 +119,10 @@ inventar nada: es lo que hay.
   compartarle; sin ella, `people`, `shared` e `invitations` se recorren vacios y no
   demuestran nada
 
-Y devuelve sus ids por `--env`, para que los flujos nichan en algo real en vez de en
-coordenadas.
+Y devuelve sus ids para que los flujos nichen en algo real en vez de en coordenadas: el
+volante se los pasa a Maestro por el entorno, que es donde Maestro lee `${...}`, y escribe
+ademas un `seed.env` por carrera con las credenciales, para que las de una carrera no
+puedan sobrevivir a la siguiente.
 
 ## Donde vive
 
@@ -125,9 +141,15 @@ apps/mobile/e2e/
       07-workspaces/            # espacios, detalle, carpeta, crear, color, compartir
       08-people-shares/         # personas, selector, invitaciones, compartido
       09-system/                # ajustes, dispositivos, sincronizacion, busqueda
-  seed/e2e-account.mjs
-  run-android.mjs
+  seed/e2e-account.ts
+  run-android.ts
 ```
+
+**Es el arbol entero, no el de hoy.** De el existen `flows/01-onboarding/` con sus tres
+flujos, y nada mas: las otras ocho areas son fase 2, y `maestro/config.yaml` y
+`maestro/subflows/` no llegaron a hacer falta -cada flujo trae su `appId` y sus `tags`, y
+el `config.yaml` que fija el orden es **uno por area**, dentro de ella-. Lo que hay esta en
+`apps/mobile/e2e/`.
 
 **Por area, y no por pantalla.** Una hoja nueva que se anada a `[listId].tsx` tiene
 que caer en `04-lists/`, que es donde alguien la va a buscar. Organizado por
@@ -139,8 +161,8 @@ se concentran en cuatro pantallas de detalle.
 
 | Fase | Alcance | Objetivos |
 | --- | --- | --- |
-| 1 | Arnes, stack, guardian, y las 7 pantallas ya probadas | ~7 |
-| 2 | Las pantallas simples que faltan | ~22 |
+| 1 | Arnes, stack, guardian, y las 3 pantallas de onboarding (**hecha**) | 3 |
+| 2 | Las pantallas simples que faltan | ~26 |
 | 3 | Pantallas de detalle y sus hojas (los 102 usos) | ~30 |
 | 4 | Overlays, selectores, cajon, compartir | ~40 |
 | 5 | Retirar los 17 `verify-*.mjs` de un solo uso | — |
@@ -228,14 +250,23 @@ mirar.
 ```bash
 npm run e2e:android                          # el recorrido entero
 npm run e2e:android -- --area 04-lists       # solo un area
+npm run e2e:android -- --area=04-lists       # lo mismo: valen las dos formas
 npm run e2e:android -- --area 04-lists --flow item-menu.yaml
 ```
 
 El envoltorio exige **exactamente un** dispositivo conectado —fallo claro con cero o
 con varios—, levanta la API y Metro si no estan, siembra, corre, vigila, imprime la
 tabla, guarda capturas en `capturas/android/` y sale con codigo distinto de cero si
-algo fallo. El informe es una tabla de texto, como el `pantallas.txt` que ya genera
-`verify-android-screens.mjs`, porque una foto sola no dice donde fallo.
+alguna area sale en `FALLA`. Un area sin flujos lleva `NADA` y no pone la carrera en
+rojo: montar un area nueva no es un fallo. El informe es una tabla de texto, como el
+`pantallas.txt` que ya genera `verify-android-screens.mjs`, porque una foto sola no dice
+donde fallo.
+
+Y una bandera mal escrita **falla**: un `--area` que no existe lista los nombres validos, y
+un `--...` que no sea `--area` o `--flow` dice que no lo entiende. Las dos formas -
+`--area x` y `--area=x`- valen igual, porque un flag que solo entiende una se calla en
+la otra, y un flag callado convierte una carrera entera en una carrera que no ha
+corrido lo que se le pidio.
 
 ## Consecuencias
 

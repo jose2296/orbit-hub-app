@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseAreaFlag, resolveAreas } from './areas';
+import { corrida, parseAreaFlag, resolveAreas, type Area } from './areas';
 
 function raiz(contenido: Record<string, string[] | { flows: string[]; flowsOrder?: string[] }>): string {
   const base = mkdtempSync(join(tmpdir(), 'areas-'));
@@ -113,6 +113,36 @@ describe('resolveAreas y el orden declarado', () => {
   });
 });
 
+/**
+ * Lo que se corre y lo que el informe cuenta tienen que ser la misma verdad, y por
+ * eso salen de la misma funcion.
+ */
+describe('corrida', () => {
+  const area = (flows: string[]): Area => ({ name: '01-onboarding', dir: '/flujos/01-onboarding', flows });
+
+  it('sin --flow corre el area entera y cuenta lo que tiene', () => {
+    expect(corrida(area(['a.yaml', 'b.yaml', 'c.yaml']))).toEqual({
+      flujo: '/flujos/01-onboarding',
+      cuantos: 3,
+    });
+  });
+
+  it('con --flow corre un solo fichero y cuenta uno, no los del area', () => {
+    // **El numero del informe es la cobertura que dice haber medido.** Con
+    // `--flow=privacy.yaml` se corre un flujo, y la fila decia `3 flujos` y el
+    // motivo `1 de 3`: un `1 de 3` que no se puede leer sin pensar, y que parece
+    // que el area entera se probo y dos tercios fellaron.
+    expect(corrida(area(['a.yaml', 'b.yaml', 'c.yaml']), 'b.yaml')).toEqual({
+      flujo: join('/flujos/01-onboarding', 'b.yaml'),
+      cuantos: 1,
+    });
+  });
+
+  it('un area vacia sin --flow se cuenta como cero', () => {
+    expect(corrida(area([])).cuantos).toBe(0);
+  });
+});
+
 describe('parseAreaFlag', () => {
   it('lee --area', () => {
     expect(parseAreaFlag(['--area', '04-lists'])).toStrictEqual({ only: '04-lists' });
@@ -125,6 +155,46 @@ describe('parseAreaFlag', () => {
     expect(parseAreaFlag([])).toStrictEqual({});
   });
 
+  it('lee la forma con igual, que es la que escriben npm y los CLIs', () => {
+    // **La forma que faltaba.** Con solo `--area x`, `--area=04-lists` no era ni una
+    // bandera ni un valor, no se miraba, y el resultado era `{}`: el runner recorria
+    // todas las areas en vez de una y no se quejaba. La carrera entera en verde por
+    // una ortografia, que es justo lo que `parseAreaFlag` existe para que no pase.
+    expect(parseAreaFlag(['--area=04-lists'])).toStrictEqual({ only: '04-lists' });
+    expect(parseAreaFlag(['--area=04-lists', '--flow=item-menu.yaml'])).toStrictEqual({
+      only: '04-lists',
+      flow: 'item-menu.yaml',
+    });
+    // Y la misma bandera con las dos formas mezcladas, que es como se escribe cuando
+    // se pega la primera de otra pagina y la segunda de la linea de comandos.
+    expect(parseAreaFlag(['--area=04-lists', '--flow', 'item-menu.yaml'])).toStrictEqual({
+      only: '04-lists',
+      flow: 'item-menu.yaml',
+    });
+  });
+
+  it('la forma con igual llega al area que dice, y no a todas', () => {
+    // Lo que importa no es que se lea, es que se llegue. Con dos areas delante, la
+    // forma con igual que se ignoraba producia una carrera entera: el recuento de
+    // areas del informe habria delatado el error, si alguien lo mirase.
+    const base = raiz({ '01-onboarding': ['welcome.yaml'], '04-lists': ['lista.yaml'] });
+    const flags = parseAreaFlag(['--area=04-lists']);
+    expect(resolveAreas(base, flags.only).map((a) => a.name)).toEqual(['04-lists']);
+  });
+
+  it('una bandera que no existe lanza, en vez de recorrer todas las areas', () => {
+    // Ignorarla es el fallo anterior escrito de otra forma, y mas facil de cometer:
+    // `--areas`, `--are`, `--dry-run`. El runner no dice nada, la carrera se pone
+    // entera y no ha corrido lo que se le pidio.
+    expect(() => parseAreaFlag(['--areas=04-lists'])).toThrow(/--area/);
+    expect(() => parseAreaFlag(['--are', '04-lists'])).toThrow(/--area/);
+    expect(() => parseAreaFlag(['--dry-run'])).toThrow(/--area/);
+    // Y tampoco se acepta un argumento suelto: el runner no tiene ninguna forma de
+    // leerlo, asi que aceptarlo en silencio seria volver a dejar pasar lo que se le
+    // pasa sin querer.
+    expect(() => parseAreaFlag(['01-onboarding'])).toThrow(/01-onboarding/);
+  });
+
   it('una bandera sin valor lanza, en vez de recorrer todas las areas', () => {
     // Sin esto, `--area` a secas devuelve `{}`, que el runner lee como "sin area":
     // recorre todas en vez de ninguna y no se queja. El guard de Review Focus 5 se
@@ -133,5 +203,9 @@ describe('parseAreaFlag', () => {
     expect(() => parseAreaFlag(['--flow'])).toThrow(/--flow/);
     // Un "valor" que es otra bandera es el mismo error escrito de otra forma.
     expect(() => parseAreaFlag(['--area', '--flow', 'x.yaml'])).toThrow(/--area/);
+    // Y el mismo error con el `=` sin valor detras, que es la forma nueva y no
+    // estaba cubierta por el caso de al lado.
+    expect(() => parseAreaFlag(['--area='])).toThrow(/--area/);
+    expect(() => parseAreaFlag(['--area=', '--flow=x.yaml'])).toThrow(/--area/);
   });
 });
