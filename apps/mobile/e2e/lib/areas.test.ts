@@ -36,10 +36,23 @@ describe('resolveAreas', () => {
 
 describe('parseAreaFlag', () => {
   it('lee --area', () => {
-    expect(parseAreaFlag(['--area', '04-lists'])).toEqual({ only: '04-lists' });
+    expect(parseAreaFlag(['--area', '04-lists'])).toStrictEqual({ only: '04-lists' });
   });
 
   it('devuelve undefined cuando no hay bandera', () => {
-    expect(parseAreaFlag([])).toEqual({});
+    // `toStrictEqual` y no `toEqual`: `toEqual` no distingue `{}` de
+    // `{ only: undefined, flow: undefined }`, asi que la afirmacion pasaria con una
+    // `parseAreaFlag` que devolviera las dos claves explicitas y nadie lo sabria.
+    expect(parseAreaFlag([])).toStrictEqual({});
+  });
+
+  it('una bandera sin valor lanza, en vez de recorrer todas las areas', () => {
+    // Sin esto, `--area` a secas devuelve `{}`, que el runner lee como "sin area":
+    // recorre todas en vez de ninguna y no se queja. El guard de Review Focus 5 se
+    // queda sin comprobar por un espacio de mas en la linea de comandos.
+    expect(() => parseAreaFlag(['--area'])).toThrow(/--area/);
+    expect(() => parseAreaFlag(['--flow'])).toThrow(/--flow/);
+    // Un "valor" que es otra bandera es el mismo error escrito de otra forma.
+    expect(() => parseAreaFlag(['--area', '--flow', 'x.yaml'])).toThrow(/--area/);
   });
 });

@@ -9,9 +9,28 @@ export const PAQUETE = process.env.PAQUETE ?? 'com.jrzlabs.orbithub';
 
 export type Device = { serial: string; state: string };
 
+/**
+ * Tope de la salida de un hijo de adb, en bytes.
+ *
+ * `execFileSync` corta en un megasibyte por defecto y lanza `ENOBUFS` al pasarse,
+ * asi que el tope hay que ponerlo aqui y no donde duela: `crashLines` lee
+ * `logcat -d -b crash` por esta misma funcion, y esa es la lectura de la que
+ * depende el veredicto entero. Un `ENOBUFS` ahi no es un fallo de la lectura, es el
+ * harness entero tirando la prueba que no podia hacer -y `crashLines` lanza a
+ * proposito cuando adb falla, porque un buffer de fallos que no se ha podido leer no
+ * es un buffer limpio-.
+ *
+ * 64 MB es muy superior a lo que devuelve cualquiera de estas llamadas en la
+ * practica -`logcat -c` no devuelve nada, `devices` dos lineas, `pidof` un numero-,
+ * y sigue siendo un tope: `adb` colgado escribiendo sin parar no se come la memoria
+ * de la maquina sin limite.
+ */
+const MAX_BUFFER_ADB = 64 * 1024 * 1024;
+
 export function adb(args: string[], serial?: string): string {
   return execFileSync(ADB, [...(serial ? ['-s', serial] : []), ...args], {
     encoding: 'utf8',
+    maxBuffer: MAX_BUFFER_ADB,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }

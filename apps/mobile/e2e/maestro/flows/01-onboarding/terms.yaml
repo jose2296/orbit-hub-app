@@ -4,12 +4,19 @@ tags: [smoke]
 # Los terminos, y la vuelta. La misma forma que la privacidad y por el mismo
 # motivo: enlace del aviso, afirmacion al volver, y nada de coordenadas.
 - launchApp
-- assertVisible:
-    id: screen-welcome
+# El motivo de `extendedWaitUntil` y de la espera antes del toque esta en
+# `privacy.yaml` y en `welcome.yaml`, con las medidas.
+- extendedWaitUntil:
+    visible:
+      id: screen-welcome
+    timeout: 60000
+- waitForAnimationToEnd
 - tapOn:
     id: welcome-terms
 - assertVisible:
     id: screen-terms
+# La tecla de atras sale de la aplicacion en vez de desapilar; ver el informe de la
+# tarea 4. Es lo unico que deja estos dos flujos en rojo.
 - back
 - assertVisible:
     id: screen-welcome

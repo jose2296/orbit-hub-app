@@ -10,8 +10,20 @@ tags: [smoke]
 # diccionario. La razon de que un `testID` dentro de otro `Text` no valiera esta en
 # `legal-notice.tsx`.
 - launchApp
-- assertVisible:
-    id: screen-welcome
+# Tras el arranque, `extendedWaitUntil`: el motivo y la medida estan en
+# `welcome.yaml`. Aqui no hay `clearState`, pero el flujo anterior deja la app
+# recien cerrada -el `back` sale de la aplicacion-, asi que esto tambien es un
+# arranque en frio.
+- extendedWaitUntil:
+    visible:
+      id: screen-welcome
+    timeout: 60000
+# Y una espera antes del toque: Maestro **reintenta las afirmaciones y no los
+# toques**. Los dos enlaces estan al final de la pantalla -y 2250 de 2400- y en un
+# build de depuracion se cruzan con el aviso de LogBox, que sale por abajo del todo.
+# Con el marcador presente y en su sitio, y el toque dando en el centro exacto de sus
+# limites, la navegacion no ocurria: measured, dos veces.
+- waitForAnimationToEnd
 - tapOn:
     id: welcome-privacy
 - assertVisible:
@@ -19,6 +31,10 @@ tags: [smoke]
 # Volver es parte del flujo, no limpieza: un flujo que se queda con una hoja
 # abierta deja al siguiente mirando donde no toca, y ese fallo se lee como un fallo
 # del siguiente.
+#
+# Y volver con la tecla de atras **hoy falla**, y con razon: la tecla de atras de
+# Android sale de la aplicacion en vez de desapilar. No es el arnes. Ver el informe
+# de la tarea 4.
 - back
 - assertVisible:
     id: screen-welcome

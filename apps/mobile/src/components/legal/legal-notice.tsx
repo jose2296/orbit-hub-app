@@ -35,6 +35,17 @@ import { splitNotice } from '@/lib/legal/notice';
  * La fila con `flexWrap` conserva el aspecto de frase: son las mismas palabras en
  * el mismo orden y el mismo centrado, y lo que cambia es que ahora pueden cortarse
  * entre partes y no solo dentro de una.
+ *
+ * **Lo que cambia de verdad es el arbol de accesibilidad.** Antes era un solo nodo
+ * `TextView` con dos `ClickableSpan` dentro; ahora son nodos hermanos, uno por
+ * parte, y los dos enlaces son `View` con su `resource-id`. Measured, en el
+ * `uiautomator dump` de la pantalla de bienvenida: un nodo de frase y dos botones
+ * hijos pasa a cinco nodos -tres de texto y dos de enlace-, y el `testID` de los
+ * enlaces solo existe en la forma nueva. Un lector de pantalla pasa a leer la
+ * frase de consentimiento por trozos: el texto y el enlace se anuncian como
+ * elementos distintos, que es lo que ya hacia con los enlaces y ahora hace tambien
+ * con la frase. Es el precio de que los enlaces tengan un marcador estable, y es un
+ * precio de verdad, no un detalle de implementacion.
  */
 export function LegalNotice() {
   const t = useTranslation();
@@ -47,7 +58,13 @@ export function LegalNotice() {
           // Each part is now a `Text` of its own instead of a span inside one, and
           // the default is `body`, 16 px — so a bare `<AppText>{parte.value}</AppText>`
           // here would render 16 px text inside a 12 px sentence.
-          <AppText key={`texto-${indice}`} variant="caption" tone="subtle">
+          //
+          // `align="center"` en cada parte y no solo en la fila: una parte que se
+          // corte a dos lineas se queda con su propia caja, y sin esto el texto
+          // dentro de esa caja se pegaria a la izquierda mientras las demas van
+          // centradas. Con una sola linea no se nota; con la frase en ingles, que
+          // es mas larga, es justo cuando se nota.
+          <AppText key={`texto-${indice}`} variant="caption" tone="subtle" align="center">
             {parte.value}
           </AppText>
         ) : (

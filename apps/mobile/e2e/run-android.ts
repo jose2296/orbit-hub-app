@@ -135,6 +135,23 @@ try {
     // El estado y el buffer se limpian por area: sin esto, el primer area hereda
     // el pid de la anterior y el crash que dejo la ultima corrida, y se los
     // carga a el.
+    //
+    // Y por eso `antes.pid` es `null` en TODAS las areas, no solo en la primera.
+    // **La segunda rama de `verdict` -el pid que cambia, el relanzamiento en
+    // silencio, el fallo que este reposito ha tenido dos veces (`8b75b37` y
+    // `513bbbb`)- no se puede ejecutar nunca con este cableado.** Medido y escrito
+    // aqui al lado, como la tabla del contrato de la siembra, para que no se lea
+    // como que funciona.
+    //
+    // Por que no se arregla aqui: llegar a esa rama pide leer el pid con la app ya
+    // en pie, y la app solo la levanta el `launchApp` de Maestro, que va dentro
+    // del area. Quitarel `forceStop` de aqui subiria el pid de un area al que la
+    // anterior dejo como lo dejo -una hoja abierta, una sesion, un proceso a
+    // medio morir-, y el pid del area siguiente seria el de un estado que nadie ha
+    // comprobado. Review Focus 3, y es un problema peor que una rama que no se
+    // ejecuta. El arreglo de verdad es que Maestro devuelva el pid que levanto la
+    // app, o que el propio flujo lo deje escrito; ninguno de los dos cabe en esta
+    // tarea, asi que aqui se deja el agujero abierto y a la vista.
     forceStop(serial);
     clearLogcat(serial);
     const antes = { pid: appPid(serial) };

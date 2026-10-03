@@ -16,7 +16,7 @@
     "start": "npm run start --workspace @orbit-hub/mobile",
     "web": "npm run web --workspace @orbit-hub/mobile",
     "android": "npm run android --workspace @orbit-hub/mobile",
-    "e2e:android": "npm run e2e:android --workspace @orbit-hub/mobile",
+    "e2e:android": "npm run e2e:android --workspace @orbit-hub/mobile --",
     "ios": "npm run ios --workspace @orbit-hub/mobile",
     "export:web": "npm run export:web --workspace @orbit-hub/mobile",
     "api": "npm run dev --workspace @orbit-hub/api",

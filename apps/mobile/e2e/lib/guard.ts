@@ -10,6 +10,12 @@ export type Verdict = { ok: boolean; problems: string[] };
  * The pid change is the signal that costs the most when it is missing. Without
  * it, six steps went green in `verify-android-screens.mjs` while the app never
  * left the same screen: taps that land on nothing do not crash anything.
+ *
+ * **Second branch, currently unreachable.** `run-android.ts` force-stops the app
+ * before reading the baseline, so it passes `null` and this check never runs - in
+ * any area, not just the first. The function is correct and tested; the wiring does
+ * not reach it. Why that is not papered over is written where the decision was
+ * made, next to the `forceStop` in the runner.
  */
 export function verdict(
   before: { pid: string | null },

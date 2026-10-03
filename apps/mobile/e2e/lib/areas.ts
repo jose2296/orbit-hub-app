@@ -50,15 +50,31 @@ function area(root: string, nombre: string): Area {
   };
 }
 
+/**
+ * Lee `--area` y `--flow` de los argumentos de `node`.
+ *
+ * A mano y no con un parser de flags: son dos, y `process.argv.slice(2)` es lo que
+ * hay que recorrer igual.
+ *
+ * **Una bandera sin valor lanza.** Sin este caso, `--area` a secas deja `only` en
+ * `undefined`, que es exactamente lo mismo que no haberla pasado: el guard de las
+ * areas mal escritas -que es el motivo de existir de `--area` - se queda sin
+ * comprobar y el runner recorre todas las areas en vez de ninguna, sin quejarse.
+ * Una bandera mal escrita que se pasa sin quejarse es la carrera en verde que este
+ * reposito ya pago una vez. Se lanza tambien cuando el "valor" es otra bandera -
+ * `--area --flow x`-, que es el mismo error escrito de otra forma.
+ */
 export function parseAreaFlag(argv: string[]): { only?: string; flow?: string } {
   const salida: { only?: string; flow?: string } = {};
-  // A mano y no con un parser de flags: son dos, y `process.argv.slice(2)` es lo
-  // que hay que recorrer igual. Una bandera sin valor no inventa uno -`--area` a
-  // secas deja `only` en `undefined`-, y eso devuelve todas las areas en vez de
-  // ninguna: mas trabajo del que se pedia, no menos, y sin complaintarse.
   for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === '--area') salida.only = argv[i + 1];
-    if (argv[i] === '--flow') salida.flow = argv[i + 1];
+    const bandera = argv[i];
+    if (bandera !== '--area' && bandera !== '--flow') continue;
+    const valor = argv[i + 1];
+    if (valor === undefined || valor.startsWith('--')) {
+      throw new Error(`${bandera} necesita un valor`);
+    }
+    if (bandera === '--area') salida.only = valor;
+    else salida.flow = valor;
   }
   return salida;
 }

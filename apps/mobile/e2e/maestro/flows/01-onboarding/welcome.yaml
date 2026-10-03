@@ -6,15 +6,21 @@ tags: [smoke]
 # `clearState` y no un simple `launchApp` porque esta suite no empieza por la
 # sesion sino por la falta de ella: sin esto el emulador que somebody dejo con una
 # sesion abierta devuelve el panel, y el flujo se pasa probando el panel.
-#
-# Y `assertVisible: { id: ... }` y no `assertVisible: screen-welcome`: una cadena
-# suelta en un comando de Maestro es un selector de TEXTO, no de identificador, asi
-# que la forma corta busca un nodo que se llame "screen-welcome" y no lo hay nunca.
-# Measured: con la forma corta los tres flujos fallan con `Assertion is false:
-# "screen-welcome" is visible` mientras la pantalla esta ahi y su
-# `resource-id="screen-welcome"` esta en el arbol que Maestro mismo guarda.
 - launchApp:
     clearState: true
-- assertVisible:
-    id: screen-welcome
+# Y `extendedWaitUntil` y no `assertVisible` para lo que viene justo despues: tras
+# un `clearState` hay un arranque en frio, y la ventana de reintento de
+# `assertVisible` se agota antes. Measured en este emulador: `screen-welcome` aparece
+# a los **26.3 s** con el bundle de Metro recien servido y a los **3.7 s** con el
+# bundle ya caliente, y la afirmacion normal daba error a los 17.5 s con la app
+# abierta y la pantalla en negro. Un 60 s deja margen de sobra para el peor caso
+# medido, y sigue siendo un tope.
+#
+# Esto y el `{ id: ... }` de abajo son las dos formas de que este flujo no sea uno
+# que depende del dia: un selector que no es un selector, y una espera que no
+# llega.
+- extendedWaitUntil:
+    visible:
+      id: screen-welcome
+    timeout: 60000
 - takeScreenshot: capturas/android/01-welcome

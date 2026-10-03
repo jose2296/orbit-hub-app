@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDevices, pickDevice } from './android';
 
 describe('pickDevice', () => {
@@ -34,5 +37,38 @@ describe('parseDevices', () => {
       { serial: 'ZY22', state: 'device' },
       { serial: 'emulator-5554', state: 'device' },
     ]);
+  });
+});
+
+/**
+ * El techo de `execFileSync` son un megasibyte, y ahi se perdio una captura entera
+ * en la primera carrera de este arnes -`ENOBUFS` con un PNG de 1_058_378 bytes-. Un
+ * techo que no se puede ver es un techo que se vuelve a quitar: por eso se afirma
+ * aqui, con un adb de mentira que devuelve mas de un megasibyte.
+ *
+ * `ANDROID_ADB` se lee al cargar el modulo, asi que la importacion es dinamica y con
+ * `resetModules`: en el import estatico de arriba la constante ya esta fijada a la
+ * de esta maquina y el test no probaria nada.
+ */
+afterEach(() => {
+  delete process.env.ANDROID_ADB;
+  vi.resetModules();
+});
+
+describe('adb', () => {
+  it('aguanta una salida de mas de un megasibyte', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'adb-'));
+    const guion = join(dir, 'adb');
+    // Dos megas de stdout. `yes` esta en el PATH de todo macOS y `head` tambien, y
+    // el guion no necesita permiso de nada mas que ser ejecutable.
+    writeFileSync(guion, '#!/bin/sh\nyes 0123456789012345678901234567890123456789 | head -c 2000000\n', 'utf8');
+    chmodSync(guion, 0o755);
+    process.env.ANDROID_ADB = guion;
+
+    vi.resetModules();
+    const { adb } = await import('./android');
+    const salida = adb(['devices']);
+
+    expect(salida.length).toBeGreaterThan(1024 * 1024);
   });
 });

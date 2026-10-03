@@ -1,27 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-
-/**
- * El `config.yaml` del proyecto de Maestro, encontrado desde este fichero y no
- * desde el directorio de trabajo.
- *
- * Sin `--config`, Maestro busca un `config.yaml` en la raiz de su espacio de
- * trabajo, que es el directorio desde el que se lanza -la raiz del repo-. El
- * nuestro esta en `e2e/maestro/`, asi que sin esto Maestro no lo leeria y su
- * `executionOrder.continueOnFailure` se quedaria en el valor por defecto sin que
- * nada lo dijera.
- *
- * El directorio de trabajo se queda en la raiz del repo a proposito, y no en
- * `e2e/maestro/`: es lo que pone las rutas relativas de los flujos -los
- * `takeScreenshot`, que escriben `capturas/android/`- junto al resto del
- * artefactado del arnes. Measured: con `cwd` en la raiz, un
- * `takeScreenshot: capturas/android/01-welcome` deja el fichero en
- * `~/.maestro/tests/<carrera>/<flujo>/takeScreenshot/capturas/android/`, no en el
- * repo, que es donde lo buscaria quien lo vaya a mirar.
- */
-const CONFIG = fileURLToPath(new URL('../maestro/config.yaml', import.meta.url));
 
 /**
  * Donde esta el binario.
@@ -46,23 +25,57 @@ export function runMaestro(
       `no encuentro Maestro en ${bin}. Instalalo con: curl -Ls "https://get.maestro.mobile.dev" | bash`,
     );
   }
-  // El directorio entero y no la lista de flujos de dentro: Maestro los descubre
-  // abajo y los corre en orden, que en 2.11 es siempre asi -no hay ningun
-  // `executionOrder.ordered` que poner a false-, asi que pasarle los nombres aqui
-  // obligaria a decidir en este fichero el orden que ya se decide en el flujo.
+  // `cwd` es la raiz del repo, y no `e2e/maestro/`, porque es lo que deja las rutas
+  // relativas de los flujos cerca del resto del artefactado. Y aun asi no las deja
+  // donde uno las busca: measured, un `takeScreenshot: capturas/android/01-welcome`
+  // acaba en `~/.maestro/tests/<carrera>/<flujo>/takeScreenshot/capturas/android/`
+  // con cualquier `cwd`. Lo que si llega a `capturas/android/` es el
+  // `screenshot()` del runner, uno por area.
+  //
+  // El directorio entero y no la lista de flujos de dentro: Maestro descubre los
+  // `.yaml` de abajo. **El orden NO se fija aqui**, y no por decision sino porque
+  // no se puede sin acoplar las areas -ver el bloque de `flowsOrder` de mas
+  // abajo-.
   //
   // `NOOP` como formato y no `JUNIT`: este harness solo necesita el texto para
   // imprimirlo cuando algo falla, y el HTML y el XML de Maestro salen igualmente
   // en su directorio de artefactos de cada carrera.
+  //
+  // **No hay `--config`.** Se quito en este commit, y no por sobra de codigo sino
+  // porque medido contra Maestro 2.11.0 no queda una sola clave que haga algo:
+  //
+  //   - `executionOrder.ordered` y `executionOrder.failOnEveryAssert` ya no existen.
+  //     Measured: `Unknown Property: ordered` / `failOnEveryAssert` al arrancar, y
+  //     `javap` sobre `WorkspaceConfig$ExecutionOrder` de
+  //     `maestro-orchestra-models.jar` 2.11.0 confirma que sus dos unicas
+  //     propiedades son `continueOnFailure` y `flowsOrder`.
+  //   - `executionOrder.continueOnFailure` se acepta pero no cambia nada de lo que
+  //     se mide aqui: `false` y `true` corrieron los tres flujos igual. Lo que si
+  //     hacia falta -parar el flujo en su primera afirmacion falsa, que es lo que
+  //     pedia `failOnEveryAssert`-, ya es lo por defecto: measured, un flujo con
+  //     dos afirmaciones falsas reporta solo la primera y la segunda no llega a
+  //     ejecutarse -solo hay un `screen-hierarchy/step-004-*` en sus artefactos-.
+  //   - `appId`, `name` y `tags` se aceptan y no se consultan. Measured: un flujo
+  //     sin su propio `appId` falla con `Config Field Required` aunque el
+  //     `config.yaml` de este proyecto lo trajera. Los tres flujos traigan el suyo,
+  //     y por eso el fichero puede desaparecer sin que nada se note.
+  //
+  // Dejar el fichero solo con comentarios tampoco vale: Maestro lo rechaza con
+  // `Failed to parse file ... List is empty.`, asi que un `config.yaml` aqui solo
+  // puede existir si tiene claves, y no queda ninguna que no sea decoracion.
+  //
+  // Cuando una fase posterior quiera un orden fijo, `executionOrder.flowsOrder` es
+  // la clave -esta measured y funciona-, pero es una lista **por espacio de
+  // trabajo**: nombrar ahi los flujos de `01-onboarding` los volveria obligatorios
+  // para todas las areas. Por eso el orden se defiende de otra manera, y es la
+  // unica que no acopla: cada flujo termina afirmando que ha vuelto a donde
+  // empezo, de modo que uno que se queda con una hoja abierta no rompe al
+  // siguiente, sea cual sea el orden en que corran.
   const args = ['test', '--format', 'NOOP'];
-  // Solo si existe: el flag es opcional y un `config.yaml` borrado no puede ser la
-  // razon de que un flujo no corra.
-  if (existsSync(CONFIG)) args.push('--config', CONFIG);
   // `...flujos` y no `...flowsPath`: el `spread` de una cadena reparte sus
   // CARACTERES, y un directorio de area acabaria pasado a Maestro como `/`, `U`,
-  // `s`, `e`... Uno de esos es un flujo que no existe y el otro es una bandera que
-  // Maestro no conocia. Measured, no supuesto: `Flow path does not exist:
-  // <raiz>/U`, de `.../flows/01-onboarding`.
+  // `s`, `e`... Cada uno de esos es un flujo que no existe. Measured, no supuesto:
+  // `Flow path does not exist: <raiz>/U`, de `.../flows/01-onboarding`.
   const flujos = Array.isArray(flowsPath) ? flowsPath : [flowsPath];
   args.push(...flujos);
   for (const tag of opts.includeTags ?? []) args.push('--include-tags', tag);
