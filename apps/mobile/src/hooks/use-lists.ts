@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { duplicationPayloads, planDuplication } from "@/lib/lists/duplicate";
 import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
 import { planTagColorChange } from "@/lib/lists/tag-colors";
+import { defaultStates } from "@/lib/lists/board";
 import {
   newListItem,
   withListDefaults,
@@ -105,6 +106,27 @@ export function useLists(filters: ListFilters = {}) {
       const id = Crypto.randomUUID();
       const now = new Date().toISOString();
 
+      /**
+       * The columns of a board, **minted here and not in the form that asked for
+       * the list.**
+       *
+       * There are three places in the app that create a list —the form of the lists
+       * screen, the sheet of a space and the sheet of a folder— and the kind is
+       * chosen in each of them. Seeding in whichever of the three the caller
+       * happened to be is how two of them end up creating boards **with no columns
+       * at all**, and that failure is silent: the board opens, the screen has
+       * nothing to draw, and nothing anywhere says the list was created without its
+       * states. It is the same argument as the one behind `routeForList`, which
+       * exists so that three callers cannot disagree about where a list opens.
+       *
+       * **The client mints them and the server never does.** The ids come from
+       * `defaultStates()` at this instant, so two boards made one after the other
+       * have four different ids each: two boards that shared column ids would be one
+       * board wearing two names, and renaming a column in either of them would move
+       * the other's tasks.
+       */
+      const states = input.kind === "board" ? defaultStates() : [];
+
       await store.upsertCached([
         {
           entity: "list",
@@ -124,6 +146,16 @@ export function useLists(filters: ListFilters = {}) {
             emoji: input.emoji ?? null,
             tags: [],
             position: 0,
+            // `manual`, which is the contract's own default and the only order a
+            // board has. It is written because **this payload is built by hand**,
+            // and a field that is not written here is a field that every screen
+            // reading it has to read with a fallback.
+            orderMode: "manual",
+            // The columns of a board, and `[]` for everything else, which is the
+            // value `withListDefaults` fills in anyway. It is written for the same
+            // reason as `orderMode`, and for a board it is the difference between
+            // four columns on screen and a blank page.
+            states,
             version: 0,
             itemCount: 0,
             createdAt: now,
@@ -144,6 +176,10 @@ export function useLists(filters: ListFilters = {}) {
           title: input.title,
           kind: input.kind,
           ...(input.emoji ? { emoji: input.emoji } : {}),
+          // Only for a board, and that is a decision and not an omission: `manual`
+          // is already the default of the column, so sending it for every other
+          // kind would be a field written to say what was going to happen anyway.
+          ...(input.kind === "board" ? { states, orderMode: "manual" } : {}),
         },
       });
 
