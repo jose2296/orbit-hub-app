@@ -35,11 +35,11 @@ export interface BoardColumnProps {
    * Whether this board can be written to at all.
    *
    * **It is in the interface this screen fixed and nothing reads it yet.** The
-   * gesture of Task 9 and the two sheets of Tasks 10 and 14 are what read it, and
-   * the screen is already using it to decide whether to mount the sheet. A prop
-   * that faked an effect here —greyed cards, cards that ignore the tap— would be
-   * a lie in the code that somebody would have to find and undo, and the honest
-   * version of "not wired yet" is a comment that says so.
+   * gesture of Task 9 and the two sheets of Tasks 10 and 14 are what read it; the
+   * screen hands the role straight through and this component does not branch on
+   * it. A prop that faked an effect here —greyed cards, cards that ignore the
+   * tap— would be a lie in the code that somebody would have to find and undo,
+   * and the honest version of "not wired yet" is a comment that says so.
    */
   readOnly: boolean;
   /** Opens the task. */
@@ -122,7 +122,7 @@ export function BoardColumn({
         <AppText variant="callout" style={styles.nombre} numberOfLines={1}>
           {state.title}
         </AppText>
-        {/* The number and not the phrase.** The whole header has to fit in a
+        {/* The number and not the phrase. The whole header has to fit in a
             230-point column, and "4 elementos" beside "Waiting for review" leaves
             the name two thirds of the column; the phrase is what the header is
             *read* as, above, and a screen reader is the one that needs the words. */}

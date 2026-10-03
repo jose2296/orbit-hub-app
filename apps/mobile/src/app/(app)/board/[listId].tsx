@@ -24,24 +24,26 @@ import { useTheme } from "@/theme";
  * **720 is `READING_WIDTH`, and that is not a coincidence.** Every screen of the
  * app caps its content at that width so a line of text is not a line that runs
  * from the left edge of a laptop to the right one; a board is `width="full"` and
- * does not cap itself, because its columns are measured against what there is.
- * The number is where "a page's worth of columns" and "a page's worth of reading"
- * meet, and it is `READING_WIDTH` rather than a number of columns because **one
- * state a screen is a phone, and five is a board**: any width at which five
- * columns of 230 fit is a width at which the answer has to be "more than one".
+ * does not cap itself, because its columns are measured against what there is. The
+ * number is where "a screen's worth of columns" and "a screen's worth of reading"
+ * meet, and it is `READING_WIDTH` and not a number of columns because the answer
+ * changes with what the window is: **a phone-width window is one state full-screen,
+ * and a tablet-width one is a board.** Measured: 720 gives three columns of 232,
+ * 800 gives three of 259, 1120 gives four of 271, and 368 — a 400-point window with
+ * the drawer closed — gives one column of the whole width.
  */
 const UMBRAL_UNA_COLUMNA = 720;
 
 /**
  * The narrowest a column is drawn, **and it is 230 rather than 320.**
  *
- * The wide number came first and was wrong: at 320 a laptop shows four columns of
- * a board that has eight, so half of it is a scroll. At 230 five or six are on
- * screen at once, and **five or six columns of a board is what makes it readable
- * at a glance** — the point of a board is comparing columns, and comparing them
- * needs more than one in the same eye movement. A card with a title, an icon and
- * two labels is comfortable at 230, and a title has two lines to be comfortable
- * in.
+ * The wide number came first and was wrong: in a track of 1120 —a 1440-point
+ * window with the drawer open— it fits three columns of 320 and leaves a board of
+ * eight half out of sight. At 230 the same track fits four. **Five or six columns
+ * at once is what makes a board readable at a glance**, and comparing columns is
+ * the whole point of a board: it needs more than one in the same look. A card with
+ * a title, an icon and two labels is comfortable at 230, and a title has two lines
+ * to be comfortable in.
  */
 const ANCHO_MINIMO_COLUMNA = 230;
 
@@ -71,9 +73,9 @@ const ANCHO_MINIMO_COLUMNA = 230;
  * **What `pagingEnabled` does on a wide native screen is a page, not a column, and
  * it is written down here rather than measured.** React Native's `pagingEnabled`
  * snaps to the size of the scroller —one window at a time— where the web version
- * snaps to each child. So on a tablet, where five columns fit, a flick moves five
- * columns at once instead of one. It is not fixed by passing `snapToInterval` as
- * well: on both platforms `pagingEnabled` wins over the interval, so the second
+ * snaps to each child. So on a tablet, where three columns fit, a flick moves
+ * three columns at once instead of one. It is not fixed by passing `snapToInterval`
+ * as well: on both platforms `pagingEnabled` wins over the interval, so the second
  * prop would be read by nobody. The alternatives are to drop `pagingEnabled` in the
  * wide case, which loses the per-column snap that the web gets for free, or to
  * wait for the swipe of Task 9, which is the gesture that decides this on every
