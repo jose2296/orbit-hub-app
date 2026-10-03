@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 
@@ -20,11 +20,15 @@ export function adb(args: string[], serial?: string): string {
  * The pure half of `adb devices`: everything not in state `device` is dropped
  * here. Split out so it can be tested — `devices()` itself shells out to adb and
  * cannot be.
+ *
+ * The header goes because it does not look like a device row, not because it is
+ * the first line. Dropping by position throws away whatever happens to be first,
+ * and if that happens to be a real device then `pickDevice` sees fewer devices
+ * than exist — the one thing it exists to prevent.
  */
 export function parseDevices(salida: string): Device[] {
   return salida
     .split('\n')
-    .slice(1)
     .map((linea) => linea.trim().split(/\s+/))
     .filter((partes): partes is [string, string] => partes.length >= 2 && partes[1] === 'device')
     .map(([serial, state]) => ({ serial, state }));
@@ -61,21 +65,42 @@ export function appPid(serial: string, pkg: string = PAQUETE): string | null {
   }
 }
 
+/**
+ * The crash lines the device admits to, `FATAL EXCEPTION` first.
+ *
+ * An adb failure is NOT an empty buffer. Swallowing it here would let a harness
+ * with a wrong `adb` path see a clean crash log and pass every flow, which is the
+ * worst way for this harness to be wrong. It throws instead, so the run dies at
+ * the step that could not talk to the device.
+ *
+ * `FATAL EXCEPTION` is a dead native process; `JavascriptException` is a red
+ * screen that may well have recovered. Reporting the native crash in preference
+ * to the JS one matches the order the signals are checked in, and this array is
+ * ordered so `crashes[0]` is the one that matters. Order within each kind is the
+ * buffer's own.
+ */
 export function crashLines(serial: string): string[] {
-  try {
-    return adb(['logcat', '-d', '-b', 'crash', '-v', 'brief'], serial)
-      .split('\n')
-      .filter((linea) => /FATAL EXCEPTION|JavascriptException/.test(linea));
-  } catch {
-    return [];
-  }
+  const lineas = adb(['logcat', '-d', '-b', 'crash', '-v', 'brief'], serial)
+    .split('\n')
+    .filter((linea) => /FATAL EXCEPTION|JavascriptException/.test(linea));
+  return [
+    ...lineas.filter((linea) => linea.includes('FATAL EXCEPTION')),
+    ...lineas.filter((linea) => linea.includes('JavascriptException')),
+  ];
 }
 
 export function clearLogcat(serial: string): void {
   adb(['logcat', '-c'], serial);
 }
 
-/** Review Focus 2: the baseline pid has to belong to this run, not the last one. */
+/**
+ * Asks the system to kill the app. Swallows the failure on purpose: a package
+ * that was not running is the state this is trying to reach.
+ *
+ * It does NOT reset the baseline pid, and it does not clear the log. Reading a
+ * baseline that belongs to this run is the caller's job, and it needs clearLogcat
+ * and forceStop in that order, before the first `appPid`.
+ */
 export function forceStop(serial: string, pkg: string = PAQUETE): void {
   try {
     adb(['shell', 'am', 'force-stop', pkg], serial);
@@ -86,5 +111,8 @@ export function forceStop(serial: string, pkg: string = PAQUETE): void {
 
 export function screenshot(serial: string, file: string): void {
   mkdirSync(dirname(file), { recursive: true });
-  execFileSync('sh', ['-c', `"${ADB}" -s ${serial} exec-out screencap -p > "${file}"`]);
+  // Straight to the file, with no shell in between. Interpolating a serial and a
+  // path into `sh -c` means a space, a quote or a `$` in either one decides what
+  // runs; passing the same words as an argv cannot.
+  writeFileSync(file, execFileSync(ADB, ['-s', serial, 'exec-out', 'screencap', '-p']));
 }

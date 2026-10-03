@@ -28,7 +28,11 @@ describe('parseDevices', () => {
     expect(parseDevices(salida)).toEqual([{ serial: 'emulator-5554', state: 'device' }]);
   });
 
-  it('descarta la cabecera de adb devices', () => {
-    expect(parseDevices('List of devices attached\n')).toEqual([]);
+  it('no descarta la primera linea si es un dispositivo de verdad', () => {
+    const salida = 'ZY22\tdevice\nemulator-5554\tdevice\n';
+    expect(parseDevices(salida)).toEqual([
+      { serial: 'ZY22', state: 'device' },
+      { serial: 'emulator-5554', state: 'device' },
+    ]);
   });
 });

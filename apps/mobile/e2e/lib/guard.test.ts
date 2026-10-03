@@ -27,8 +27,14 @@ describe('verdict', () => {
     expect(v.problems[0]).toContain('FATAL EXCEPTION');
   });
 
+  it('el pid que cambia manda sobre el crash del buffer', () => {
+    const v = verdict(vivo, { pid: '5151' }, ['FATAL EXCEPTION: main']);
+    expect(v.problems).toHaveLength(1);
+    expect(v.problems[0]).toContain('5151');
+  });
+
   it('un proceso muerto se reporta como muerto, no como crash', () => {
-    // El buffer puede tener lneas de antes. El sintoma que manda es la ausencia
+    // El buffer puede tener lineas de antes. El sintoma que manda es la ausencia
     // de proceso, y reportar las dos cosas mete ruido en el informe.
     const v = verdict(vivo, muerto, ['FATAL EXCEPTION: main']);
     expect(v.problems).toHaveLength(1);
