@@ -96,7 +96,10 @@ try {
   // `ensureService` con la marca de la carrera, y el enlace de verificacion sale
   // de ahi y de ningun otro sitio.
   const sembrado = await seed({ api: API, apiLog: SALIDA_API });
-  const envFile = join(CAPTURAS, 'seed.env');
+  // Con marca de carrera, como los logs: un `seed.env` de nombre fijo sobrevive
+  // a la carrera siguiente y entonces sus credenciales apuntan a una base de
+  // datos que ya no existe, que es un fallo que se lee como "el arnes no siembra".
+  const envFile = join(CAPTURAS, `seed-${MARCA}.env`);
   writeSeedEnv(envFile, sembrado);
   console.log(`  sembrado: ${sembrado.email} (${sembrado.spaceName})`);
   console.log(`  credenciales para los flujos: ${envFile}`);
