@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export type Area = { name: string; dir: string; flows: string[] };
@@ -59,13 +59,105 @@ const CONFIG_AREA = 'config.yaml';
  */
 function area(root: string, nombre: string): Area {
   const dir = join(root, nombre);
-  return {
-    name: nombre,
-    dir,
-    flows: readdirSync(dir)
-      .filter((f) => f.endsWith('.yaml') && f !== CONFIG_AREA)
-      .sort(),
-  };
+  const flows = readdirSync(dir)
+    .filter((f) => f.endsWith('.yaml') && f !== CONFIG_AREA)
+    .sort();
+  exigirOrden(nombre, dir, flows);
+  return { name: nombre, dir, flows };
+}
+
+/**
+ * Los dos conjuntos tienen que ser el mismo: los `flowsOrder` que declara el
+ * `config.yaml` del area y los `.yaml` que hay en ella.
+ *
+ * **Por que(set-)igualdad y no "contar los mismos".** Los dos fallos que deja fuera
+ * son los dos que Maestro no avisa: measured, un flujo que no esta en la lista **se
+ * corre igual**, despues y en un hueco sin decidir, asi que el area sigue en verde y
+ * ha dejado de tener orden. Y un renombrado deja a la vez las dos listas
+ * desiguales -un nombre que ya no existe y un fichero que nadie nombra-, que es el
+ * caso mas probable porque renombrar es lo que se hace al reutilizar un flujo.
+ *
+ * **Por que lanza y no avisa.** Es el mismo motivo que el area mal escrita de mas
+ * arriba: un area que se corre en un orden que nadie escribio no es una carrera que
+ * valga, y con el aviso del reparto de shards de Maestro encima -que dice `the
+ * number of flows (0)` y no dice nada de esto- nadie se enteraria. Aqui el aviso lo
+ * ve quien anade el flujo, que es quien tiene que arreglarlo, y el mensaje dice
+ * exactamente que falta y que sobra.
+ *
+ * Un area **sin** `flowsOrder` no se comprueba: es el estado por defecto de un area
+ * nueva, y obligar a que nazca con un `config.yaml` seria otra cosa.
+ */
+function exigirOrden(area: string, dir: string, flows: string[]): void {
+  const declarados = flowsOrderDe(dir);
+  if (declarados === null) return;
+  const sinDeclarar = flows.map(sinYaml).filter((f) => !declarados.includes(f));
+  const sinFichero = declarados.filter((d) => !flows.includes(`${d}.yaml`));
+  if (sinDeclarar.length === 0 && sinFichero.length === 0) return;
+  const partes: string[] = [];
+  if (sinDeclarar.length > 0) partes.push(`sin declarar en flowsOrder: ${sinDeclarar.join(', ')}`);
+  if (sinFichero.length > 0) partes.push(`en flowsOrder sin fichero: ${sinFichero.join(', ')}`);
+  throw new Error(
+    `el area ${area} y su ${CONFIG_AREA} no dicen lo mismo - ${partes.join('; ')}. ` +
+      'Anadir un flujo y anadirlo a flowsOrder son el mismo trabajo.',
+  );
+}
+
+function sinYaml(nombre: string): string {
+  return nombre.endsWith('.yaml') ? nombre.slice(0, -'.yaml'.length) : nombre;
+}
+
+/**
+ * Los `flowsOrder` de un `config.yaml` de area, o `null` si no hay `flowsOrder`.
+ *
+ * **Un lector de YAML hecho a mano, y a proposito.** `js-yaml` y `yaml` estan en
+ * `node_modules` porque los trajeron Expo y Metro, no porque `@orbit-hub/mobile` los
+ * declare: importarlos seria una dependencia fantasma que se rompe el dia que Metro
+ * cambie su arbol. Anadir un parser al arbol de la app para leer una lista de tres
+ * nombres seria mas caro que lo que protege.
+ *
+ * Lo que este lector **no** hace es adivinar: dos formas -`flowsOrder: [a, b]` en una
+ * linea y el bloque de `- a` debajo- y cualquier otra cosa lanza. Un orden mal leido
+ * en silencio seria el fallo que la comprobacion de arriba existe para cazar.
+ */
+function flowsOrderDe(dir: string): string[] | null {
+  let texto: string;
+  try {
+    texto = readFileSync(join(dir, CONFIG_AREA), 'utf8');
+  } catch {
+    return null;
+  }
+  const lineas = texto.split('\n');
+  const clave = lineas.findIndex((l) => /^\s*flowsOrder\s*:/.test(l));
+  if (clave === -1) return null;
+
+  const enUnaLinea = /flowsOrder\s*:\s*\[([^\]]*)\]/.exec(lineas[clave]!);
+  if (enUnaLinea) return enUnaLinea[1]!.split(',').map(sinComillas).filter(Boolean);
+  if (/:/.test(lineas[clave]!) && lineas[clave]!.includes('flowsOrder')) {
+    const resto = lineas[clave]!.slice(lineas[clave]!.indexOf('flowsOrder') + 'flowsOrder'.length + 1).trim();
+    if (resto !== '' && !resto.startsWith('#')) {
+      throw new Error(`${CONFIG_AREA}: no se entiende "flowsOrder: ${resto}" en ${dir}`);
+    }
+  }
+
+  const sangriaDeLaClave = sangria(lineas[clave]!);
+  const nombres: string[] = [];
+  for (let i = clave + 1; i < lineas.length; i += 1) {
+    const linea = lineas[i]!;
+    if (linea.trim() === '' || linea.trim().startsWith('#')) continue;
+    if (sangria(linea) <= sangriaDeLaClave) break;
+    const item = /^\s*-\s*(.+?)\s*$/.exec(linea);
+    if (!item) throw new Error(`${CONFIG_AREA}: no se entiende la linea "${linea.trim()}" de flowsOrder en ${dir}`);
+    nombres.push(sinComillas(item[1]!));
+  }
+  return nombres;
+}
+
+function sangria(linea: string): number {
+  return linea.length - linea.trimStart().length;
+}
+
+function sinComillas(valor: string): string {
+  return valor.replace(/^["']|["']$/g, '').trim();
 }
 
 /**
