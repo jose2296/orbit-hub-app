@@ -116,8 +116,13 @@ export type IconColorKey = (typeof ITEM_ICON_COLORS)[number];
  * The colour is a key and not a value, for the reason the space colour is a key:
  * the app draws the ones it offers, so there is no colour nobody can read on a
  * small shape and no picker of fifty shades on a phone.
+ *
+ * **Exported because a label draws out of it too** —`tagColorHex`, in
+ * `./tag-colors`— and the alternative was a second, hand-written copy of the
+ * twelve. It was not exported before that, and the plan that asked for the
+ * function said it was; exporting it is the cheap door, and it cannot drift.
  */
-const ICON_COLORS: Record<IconColorKey, string> = {
+export const ICON_COLORS: Record<IconColorKey, string> = {
   neutral: "#8A93A8",
   accent: "#6366F1",
   green: "#16A34A",
