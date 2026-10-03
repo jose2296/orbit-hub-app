@@ -23,6 +23,7 @@ function item(partial: Partial<ListItem> & { id: string }): ListItem {
     title: 'Algo',
     position: 0,
     completed: false,
+    stateId: null,
     priority: 'none',
     icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
     tags: [],

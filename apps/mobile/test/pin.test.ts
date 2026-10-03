@@ -44,6 +44,7 @@ function list(partial: Partial<List> = {}): List {
     emoji: null,
     tags: [],
     tagColors: {},
+    states: [],
     position: 0,
     itemCount: 0,
     orderMode: "manual",

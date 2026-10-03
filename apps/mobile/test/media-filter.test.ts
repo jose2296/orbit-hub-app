@@ -17,6 +17,7 @@ function makeItem(partial: Partial<ListItem> & { externalId: string | null }): L
     title: "Matrix",
     position: 0,
     completed: false,
+    stateId: null,
     priority: "none",
     icon: null,
     iconStyle: "outline" as const,
