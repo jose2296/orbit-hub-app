@@ -248,6 +248,12 @@ tercero `stateId: row.stateId`.
 Este fichero no lo toca ninguna otra tarea del plan, y sin el no hay forma de que un
 estado llegue nunca a la pantalla.
 
+**Con `?? []` y `?? null`, no en crudo.** Una fila escrita por una build anterior no
+tiene `states`, y el precedente ya esta escrito en `export-service.ts:95`:
+`tagColors: row.tagColors ?? {}`, con el comentario que explica que la fila puede venir
+de antes del campo. Sin el `??`, una lista antigua revienta al leerla en vez de salir
+con `states: []`.
+
 - [ ] **Paso 9: los literales de la exportacion**
 
 `apps/api/src/modules/export/export-service.ts:82,112` construye `List` y `ListItem` a
@@ -780,6 +786,15 @@ Expected: FAIL en `lib/lists/kind.ts` y en `contracts/src/workspace.ts` (si la t
 - [ ] **Paso 2: los tres mapas y los dos diccionarios**
 
 En `kind.ts`: `LIST_KIND_ICON.board` con un icono de `Ionicons.glyphMap` que ya exista en el set; `LIST_KIND_LABEL.board` con la clave `lists.kind.board`; `LIST_KIND_ORDER` con `'board'` **despues de `'tasks'`**, porque un tablero es una lista de tareas con estados y va al lado. En `dictionaries.ts`, `lists.kind.board` en las dos tablas (la de las lineas ~937 y la de las ~1910), con el texto que toque en cada idioma.
+
+**`LIST_KIND_ORDER` no da error de compilador si se te olvida.** Es un `ListKind[]`, no
+un `Record`, asi que `board` simplemente no esta y nada protesta: el tablero se queda
+fuera del selector de tipo de lista sin que ninguna prueba ni el typecheck lo digan.
+Anadelo aunque el compilador no lo pida.
+
+Y `LIST_KIND_LABEL` es un `Record<ListKind, TranslationKey>`, con `TranslationKey =
+keyof typeof es` y `en: Record<TranslationKey, string>`: la clave nueva **obliga a las
+dos entradas del diccionario**, en español y en ingles, o no compila.
 
 - [ ] **Paso 3: `board-tabs.tsx`**
 
