@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BOARD_EXPORT_CSV_COLUMNS,
   EXPORT_FORMAT_VERSION,
   LIST_EXPORT_CSV_COLUMNS,
+  exportCsvColumnsFor,
   type AccountExport,
   type ExportedAttachment,
   type Folder,
@@ -15,6 +17,7 @@ import {
 
 import {
   accountExportEnvelope,
+  csvStateCell,
   itemsToCsv,
   listExportEnvelope,
   metadataCell,
@@ -138,6 +141,22 @@ function list(over: Partial<List> = {}): List {
     deletedAt: null,
     ...over,
   };
+}
+
+/**
+ * A board with two columns, which is the smallest one where a task can be in
+ * something other than the first — the case where writing a state's id instead
+ * of its title would be visible.
+ */
+function board(over: Partial<List> = {}): List {
+  return list({
+    kind: 'board',
+    states: [
+      { id: 's1', title: 'Por hacer', color: 'neutral' },
+      { id: 's2', title: 'Hecho', color: 'green' },
+    ],
+    ...over,
+  });
 }
 
 function workspace(over: Partial<Workspace> = {}): Workspace {
@@ -548,6 +567,81 @@ describe('itemsToCsv', () => {
 
   it('la cabecera tiene quince columnas', () => {
     expect(LIST_EXPORT_CSV_COLUMNS).toHaveLength(15);
+  });
+
+  it('la cabecera de un tablero son las columnas del tablero', () => {
+    const csv = itemsToCsv({ list: board(), items: [] });
+
+    const records = parseCsvRecords(csv);
+
+    expect(records[0]).toEqual([...BOARD_EXPORT_CSV_COLUMNS]);
+    expect(records[0]).not.toContain('completado');
+  });
+
+  it('escribe el titulo del estado de la tarea, no su id', () => {
+    const csv = itemsToCsv({
+      list: board(),
+      items: [item({ id: 'i1', stateId: 's1' }), item({ id: 'i2', stateId: 's2' })],
+    });
+
+    const records = parseCsvRecords(csv);
+
+    expect(records[1]![3]).toBe('Por hacer');
+    expect(records[2]![3]).toBe('Hecho');
+    // The row is still fifteen cells wide: both headers have the same number of
+    // columns, which is what lets a spreadsheet read a board and a list with the
+    // same code.
+    expect(records[1]).toHaveLength(BOARD_EXPORT_CSV_COLUMNS.length);
+    // The id does not travel. It is the one thing in the row that says nothing
+    // to whoever opens the file in a spreadsheet.
+    expect(csv).not.toContain('"s1"');
+    expect(csv).not.toContain('"s2"');
+  });
+
+  it('deja vacia la celda de estado de un tablero que aun no tiene columnas', () => {
+    const csv = itemsToCsv({
+      // `states: []` is what a list that is not a board yet carries, and the
+      // contract allows it: there is no state to name, so the cell says nothing
+      // instead of saying an id.
+      list: list({ kind: 'board' }),
+      items: [item({ stateId: null }), item({ id: 'i2', stateId: 's1' })],
+    });
+
+    const records = parseCsvRecords(csv);
+
+    expect(records[1]![3]).toBe('');
+    expect(records[2]![3]).toBe('');
+    expect(csv).not.toContain('undefined');
+  });
+});
+
+describe('exportCsvColumnsFor', () => {
+  it('el CSV de un tablero lleva estado y no completado', () => {
+    expect(exportCsvColumnsFor('board')).toBe(BOARD_EXPORT_CSV_COLUMNS);
+    expect(exportCsvColumnsFor('board')).not.toContain('completado');
+    expect(exportCsvColumnsFor('tasks')).toBe(LIST_EXPORT_CSV_COLUMNS);
+    expect(exportCsvColumnsFor('tasks')).not.toContain('estado');
+    // And the state takes the place `completado` had, so that no other column
+    // moves and `year` stays at the index the rest of the suite reads it from.
+    expect(BOARD_EXPORT_CSV_COLUMNS.indexOf('estado')).toBe(
+      LIST_EXPORT_CSV_COLUMNS.indexOf('completado'),
+    );
+    expect(BOARD_EXPORT_CSV_COLUMNS[3]).toBe('estado');
+    expect(BOARD_EXPORT_CSV_COLUMNS).toHaveLength(LIST_EXPORT_CSV_COLUMNS.length);
+  });
+});
+
+describe('csvStateCell', () => {
+  it('una tarea sin estado cae en la primera columna, como en la pantalla', () => {
+    expect(csvStateCell(board(), item({ stateId: null }))).toBe('Por hacer');
+    // An id another device deleted lands in the first one too: that is what
+    // `stateOf` does, and therefore what the person looking at the board sees.
+    expect(csvStateCell(board(), item({ stateId: 'columna-borrada' }))).toBe('Por hacer');
+  });
+
+  it('una lista sin columnas escribe una celda vacia, no el id', () => {
+    expect(csvStateCell(list({ kind: 'board' }), item({ stateId: 's1' }))).toBe('');
+    expect(csvStateCell(list({ kind: 'board' }), item({ stateId: null }))).toBe('');
   });
 });
 
