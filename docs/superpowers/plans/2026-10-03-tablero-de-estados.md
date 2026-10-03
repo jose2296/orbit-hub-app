@@ -602,7 +602,9 @@ Filtran comparando contra `stateOf(states, item.stateId).id` en vez de contra `i
 
 - [ ] **Paso 4: `renumberWithinState`, `moveState`, `editState`, `removeState`, `canDeleteState`**
 
-`renumberWithinState(items, stateId): Map<string, number>` devuelve **solo** las tareas de ese estado, renumeradas `0..n-1` en su orden actual. No devuelve un array de items: devuelve el mapa de cambios, porque quien lo llama lo que quiere es saber que `position` escribe en cada fila.
+`renumberWithinState(items, states, stateId): Map<string, number>` devuelve **solo** las tareas de ese estado, renumeradas `0..n-1` en su orden actual. No devuelve un array de items: devuelve el mapa de cambios, porque quien lo llama lo que quiere es saber que `position` escribe en cada fila.
+
+**Recibe `states`, y no por simetria con el resto.** Sin el array no se puede resolver la regla, y la primera columna es casi toda filas con `stateId` nulo —`newListItem` los escribe asi—, con lo que una firma de dos argumentos deja **arrastrar en la primera columna sin renumerar a nadie**: un gesto que no hace nada y que no escribe nada en ningun log. **No anadas una sobrecarga de dos argumentos por comodidad.**
 
 `canDeleteState(states, index): boolean` es `states.length > 1 && index >= 0 && index < states.length`.
 
@@ -1108,7 +1110,7 @@ Tres pruebas, en este orden porque cada una depende de la anterior:
 
 - [ ] **Paso 2: el destino**
 
-Mientras se arrastra, se calcula el destino con `renumberWithinState(items, stateId)` y una funcion pura de destino en `lib/lists/reorder.ts` que ya existe para las listas: `dropTargetIndex` y `nextOrderFromDrop` de `apps/mobile/src/lib/lists/drag.ts` y `drag-shift.ts`. **Reutiliza esas, no escribas otras**: la aritmetica de soltar en un hueco ya esta probada y ya se rompio una vez.
+Mientras se arrastra, se calcula el destino con `renumberWithinState(items, states, stateId)` —**tres argumentos**— y una funcion pura de destino en `lib/lists/reorder.ts` que ya existe para las listas: `dropTargetIndex` y `nextOrderFromDrop` de `apps/mobile/src/lib/lists/drag.ts` y `drag-shift.ts`. **Reutiliza esas, no escribas otras**: la aritmetica de soltar en un hueco ya esta probada y ya se rompio una vez.
 
 - [ ] **Paso 3: al soltar**
 
