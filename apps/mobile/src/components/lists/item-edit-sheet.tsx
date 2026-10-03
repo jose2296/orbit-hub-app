@@ -49,6 +49,22 @@ export interface ItemEditSheetProps {
   mode?: "edit" | "create";
   /** The page to open on, so a tap on the icon goes straight to the icons. */
   startOn?: Page;
+  /**
+   * Whether this list has a "done" at all, and **the board is the one that does
+   * not.**
+   *
+   * A task on a board is in a state and not completed — that is the whole reason a
+   * board is a `kind` of its own — so the tick is not drawn here either. It is a
+   * prop and not a branch on the kind because this panel does not read the list's
+   * kind anywhere else, and adding one would make it depend on a field it has no
+   * other reason to want.
+   *
+   * What it costs to leave it on is not that the tick fails: `completed` is a real
+   * field and the write succeeds. It is that **nothing on a board reads it**, so
+   * pressing it looks like it worked and the board is identical afterwards — the
+   * same reason `TaskRow` does not draw a checkbox for a board row.
+   */
+  showCompleted?: boolean;
   /** This list's chosen label colours, and the only ones there are. */
   tagColors: TagColors;
   /**
@@ -118,6 +134,7 @@ export function ItemEditSheet({
   listId,
   mode = "edit",
   startOn = "edit",
+  showCompleted = true,
   tagColors,
   onTagColor,
   onClose,
@@ -541,8 +558,11 @@ export function ItemEditSheet({
             {/* Whether it is done, as a thing you can change and not as a badge
                 you can only read. A shopping list lives on this: "I already
                 bought the milk" puts the row back in the pending section, and
-                the only place to say that is the row itself. */}
-            {!isNew ? (
+                the only place to say that is the row itself.
+
+                **And not on a board**, where "done" is a state and this write is
+                read by nothing — see `showCompleted`. */}
+            {!isNew && showCompleted ? (
               <>
                 <Pressable
                   accessibilityRole="button"
