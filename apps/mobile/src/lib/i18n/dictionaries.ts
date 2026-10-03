@@ -954,13 +954,13 @@ const es = {
   "lists.notFound": "Esta lista ya no existe",
 
   /*
-    El tablero. Solo dos frases, y las dos son estados vacios: el resto de lo que
-    dice un tablero son nombres y numeros que ya estan en las listas.
+    The board. Two phrases, and both of them are empty states: everything else a
+    board says is a name and a number that the lists already have a word for.
 
-    La segunda **no promete un boton que no hay.** Un tablero sin estados es legal
-    en el contrato y el cliente siembra cuatro al crearlo, asi que se llega aqui
-    desde un tablero importado o editado a mano. Decirlo como lo que es es mejor
-    que ofrecer anadir un estado desde una pantalla donde todavia no se puede.
+    The second one **promises no button that is not there.** A board with no states
+    is legal in the contract and the client seeds four on creation, so this is
+    reached from a board imported or edited by hand — and saying what it is beats
+    offering to add a state from a screen that cannot yet.
   */
   "board.emptyColumn": "Sin tareas",
   "board.noStates":
@@ -1940,7 +1940,11 @@ const en: Record<TranslationKey, string> = {
   "lists.showCompleted": "Show completed items",
   "lists.notFound": "This list no longer exists",
 
-  /* The board. Two phrases, and both of them are empty states. */
+  /*
+    The board. Two phrases, and both of them are empty states — everything else it
+    says is a name and a number the lists already have a word for. The second one
+    promises no button that is not there, and the note above it says why.
+  */
   "board.emptyColumn": "No tasks",
   "board.noStates": "This board has no states, so it cannot show any tasks.",
 

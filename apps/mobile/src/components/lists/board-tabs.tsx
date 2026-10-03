@@ -39,12 +39,13 @@ export interface BoardTabsProps {
  *
  * **It stays in both widths, and that is the decision that is easy to get wrong.**
  * On a narrow screen it is the only way to know which states exist and how many
- * tasks are in each. On a wide one, where five or six columns are visible at
- * once, it looks redundant — and it is not: the board shows as many columns as
- * fit, so **the sixth state of a board with eight is not on screen**, and the
- * strip is what makes it reachable in one tap instead of by scrolling the track
- * to find it. A strip that only appeared on narrow screens would be the one place
- * where "there is more to the right" is impossible to act on.
+ * tasks are in each. On a wide one, where four columns are visible at once in the
+ * widest track measured —1120 points, which is a 1440-point window with the drawer
+ * open, and a fifth would need about 1200— it looks redundant, and it is not: the
+ * board shows as many columns as fit, so **the fifth state of a board with eight is
+ * not on screen**, and the strip is what makes it reachable in one tap instead of by
+ * scrolling the track to find it. A strip that only appeared on narrow screens would
+ * be the one place where "there is more to the right" is impossible to act on.
  *
  * **The active pill is filled with the theme's text colour, not with the state's.**
  * The state colour is a mid-tone from the icon palette (`ICON_COLORS` in
@@ -276,11 +277,11 @@ const styles = StyleSheet.create({
    * other must not do.
    */
   contenido: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   pastilla: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   /**
    * The dot of the state colour.
