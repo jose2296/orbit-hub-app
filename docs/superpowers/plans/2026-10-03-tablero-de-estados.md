@@ -938,10 +938,22 @@ export function nextPageFor(
 ): number {
   const passed =
     Math.abs(offset) >= distance || Math.abs(velocity) >= minVelocity;
+  // Un desplazamiento **negativo** avanza: el contenido se va hacia la izquierda y
+  // enseña la columna siguiente. Por eso se resta el signo y no se suma.
   const step = passed ? Math.sign(offset || velocity) : 0;
-  return Math.max(0, Math.min(count - 1, current + step));
+  return Math.max(0, Math.min(count - 1, current - step));
 }
 ```
+
+**El signo va restado.** El `+` del borrador original no pasaba su propio paso 1:
+`nextPageFor(-140, 0, 4, 1)` daba 0 en vez de 2. Lo vio el implementador al escribir la
+prueba antes que el cuerpo, que es justo el orden en el que se ven estas cosas.
+
+- [ ] **Paso 3b: `count === 0` no sale del rango**
+
+`nextPageFor(0, 0, 0, 0)` tiene que devolver `0` o `null`, **nunca `-1`**: el `Math.min(count - 1,
+…)` de arriba da `-1` con `count = 0`, y ese valor es el indice de una columna que no existe.
+Si la pantalla lo pasa a un `scrollTo`, pasa `-1 * ancho` a un scroller.
 
 - [ ] **Paso 4: el gesto en la pantalla**
 
@@ -949,9 +961,25 @@ Copia el patron de `panel-grid.tsx:1473-1530` tal cual: `Gesture.Pan().activeOff
 
 - [ ] **Paso 5: el paralaje de las pestañas**
 
-`BoardTabs` **gana una prop nueva**, `progress: number` en 0..1, y con ella el desplazamiento del contenido a `progress * anchoDeLasPestanas * 0.35`. El factor 0.35 es el que hace que el paralaje se note sin marear.
+`BoardTabs` **gana una prop**, `progress`, y con ella el desplazamiento del contenido a
+`progress * anchoDeLasPestanas * 0.35`. El factor 0.35 es el que hace que el paralaje se note
+sin marear.
 
-La idea es la de `components/ui/media-carousel.tsx`: se ve por donde vas antes de llegar. El progreso sale del mismo gesto, del `trackX` dividido por el ancho de la pagina.
+**Que sea el `SharedValue` de Reanimated y no un `number` de React.** Un numero en estado de
+React re-renderiza las 24 pastillas del tablero **sesenta veces por segundo, en el dispositivo
+que es el dedo**. El paralaje no es estado: es la posicion del gesto, y va por la misma via que
+la pista. Un `SharedValue` se lee con `useAnimatedStyle` y no toca el render.
+
+El progreso sale del mismo gesto, del `trackX` dividido por el ancho de la pagina.
+
+**Y las pestañas y la pista tienen que leer lo mismo.** El paralaje leia el viaje del dedo y la
+pista lo leia **con banda elástica**, asi que **en el extremo las pestanas corrian mas que la
+pista**: 95 puntos de pestana contra 84 de pista, que es el numero que mide la resistencia.
+Las dos leen `movido`.
+
+Ojo tambien con `contentContainerStyle`: **Reanimated no lo anima**, solo `props.style`. Y un
+`transform` en el `style` de un scroller se lleva su caja, con lo que la columna anterior se
+sale del padding o la tira queda con 129 puntos de hueco. De ahi las dos cajas de mas.
 
 - [ ] **Paso 6: comprobarlo en un navegador, con dedo y con trackpad**
 
