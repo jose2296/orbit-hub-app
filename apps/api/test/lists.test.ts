@@ -107,6 +107,21 @@ describe('lists through sync', () => {
     }
   });
 
+  it('reads the states of a board back as they were sent', async () => {
+    // The server seeds nothing: the client mints the states and sends them, so
+    // what is checked here is the round trip, not a seeding that does not exist.
+    const states = [
+      { id: 's1', title: 'Backlog', color: 'neutral' },
+      { id: 's2', title: 'Ready', color: 'blue' },
+    ];
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+
+    const response = await api.get(`/lists/${listId}`, user.accessToken);
+    expect(response.body.data.states).toEqual(states);
+  });
+
   it('rejects a list without a workspace', async () => {
     const user = await createVerifiedUser(api);
     const response = await sync(user, [
