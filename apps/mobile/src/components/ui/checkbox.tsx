@@ -4,6 +4,15 @@ import { useTheme } from '@/theme';
 
 import { AppText } from './text';
 
+/**
+ * The side of the box, in points. Exported because something has to line up with
+ * it: in a task row the checkbox shares the line of the title, and the line of the
+ * labels underneath has to start where the title does and not where the checkbox
+ * does. A number written twice is a number that goes stale quietly — the box
+ * changes and the indent stays, and nothing says so.
+ */
+export const CHECKBOX_BOX_SIZE = 22;
+
 export interface CheckboxProps {
   checked: boolean;
   onToggle: () => void;
@@ -35,8 +44,8 @@ export function Checkbox({
         style={[
           styles.box,
           {
-            width: 22,
-            height: 22,
+            width: CHECKBOX_BOX_SIZE,
+            height: CHECKBOX_BOX_SIZE,
             borderRadius: theme.radius.sm,
             borderColor: checked ? theme.colors.accent : theme.colors.borderStrong,
             backgroundColor: checked ? theme.colors.accent : 'transparent',
