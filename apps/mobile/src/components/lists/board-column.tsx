@@ -186,21 +186,30 @@ export function BoardColumn({
 
 const styles = StyleSheet.create({
   /**
-   * The column, and **it has no width and no `flex` of its own**.
+   * The column, and **it has no width of its own.**
    *
-   * The width is measured by the screen —one column, or as many as fit— and a
-   * `flex: 1` here would be worse than nothing: inside the content box of a
-   * horizontal scroll view the main axis is the one whose size the content
-   * decides, so `flex: 1` on a child of it resolves against a box that has no
-   * size yet. That is the reason the track passes a width down rather than
-   * letting the columns divide the space between them.
+   * The width is measured by the screen —one column, or as many as fit— and it
+   * arrives on a wrapper around this component, because inside the content box of
+   * a horizontal scroll view a child with no width takes **the width of its
+   * content**: neither React Native nor `react-native-web` gives a view a
+   * `flexBasis`, and both default to `flexShrink: 0`.
    *
-   * The height comes from the other axis: a horizontal scroll view stretches its
-   * children across its own height, so the column fills the track and the box of
-   * cards below the header takes what is left.
+   * **`flexGrow: 1` and not `flex: 1`, and the height is what it is for.** A
+   * `flex: 1` here would put `flex-basis: 0` on the main axis of whatever holds the
+   * column, and that is a **column** —the wrapper the screen wraps it in— so the
+   * basis would be its height. What fills a height is a grow with the basis left
+   * alone. It is the same on both targets: on native the wrapper is stretched
+   * across the height of the track and this fills it; on the web there is one more
+   * box between the two, because `pagingEnabled` marks each child of the track as a
+   * snap point, and it is a column too.
+   *
+   * Without it, every column is as tall as its own cards —measured at 122 points
+   * inside a track of 776— and the board is four short bars at the top of the
+   * screen instead of four columns of it.
    */
   columna: {
     flexDirection: "column",
+    flexGrow: 1,
     borderWidth: StyleSheet.hairlineWidth,
   },
   cabecera: {

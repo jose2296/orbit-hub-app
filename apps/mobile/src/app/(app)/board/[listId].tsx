@@ -153,12 +153,28 @@ export default function BoardScreen() {
    *
    * **Two behaviours and one screen.** Below `UMBRAL_UNA_COLUMNA` a column is the
    * whole width and one state is all there is; above it, as many columns as fit at
-   * `ANCHO_MINIMO_COLUMNA`, each one `ancho / cuantasCaben`, and a sideways scroll
-   * with anchoring when they do not all fit. `Math.max` with the minimum is what
-   * makes the last one wider than the others rather than narrower than they can be
-   * read.
+   * `ANCHO_MINIMO_COLUMNA`, and a sideways scroll with anchoring when they do not
+   * all fit.
+   *
+   * **The gaps come out of the division, and that is measured rather than
+   * reasoned.** Dividing the width by the number of columns and adding a gap
+   * afterwards is the obvious way and it does not add up: with four columns at 280
+   * and three gaps of 12 in a track of 1120, the columns ask for 1156 and **the
+   * board always scrolls 36 points with every column already on screen**. So the
+   * gap is part of what a column costs — `cuantasCaben` counts `ancho + gap` over
+   * `ANCHO_MINIMO_COLUMNA + gap`, and the width of each one is what is left after
+   * the gaps of the ones before it are taken out.
+   *
+   * `Math.max` with the minimum stays as the floor. With the division above it
+   * cannot be reached — a count that fits at 230 also fits after the gap is
+   * discounted — and if it ever were, the board would scroll, which is what a
+   * column narrower than it can be read is worth.
    */
-  const cuantasCaben = Math.max(1, Math.floor(ancho / ANCHO_MINIMO_COLUMNA));
+  const gapColumnas = theme.spacing.md;
+  const cuantasCaben = Math.max(
+    1,
+    Math.floor((ancho + gapColumnas) / (ANCHO_MINIMO_COLUMNA + gapColumnas)),
+  );
   const unaSolaColumna = ancho < UMBRAL_UNA_COLUMNA;
   /** Zero while the board has not been measured, which is what keeps it hidden. */
   const anchoColumna =
@@ -166,7 +182,10 @@ export default function BoardScreen() {
       ? 0
       : unaSolaColumna
         ? ancho
-        : Math.max(ANCHO_MINIMO_COLUMNA, ancho / cuantasCaben);
+        : Math.max(
+            ANCHO_MINIMO_COLUMNA,
+            (ancho - gapColumnas * (cuantasCaben - 1)) / cuantasCaben,
+          );
 
   const readOnly = list?.role === "viewer";
 
@@ -274,9 +293,10 @@ export default function BoardScreen() {
     );
   }
 
-  // Not measured, or the tasks have not been read: one frame of nothing rather
-  // than four columns that say "no tasks" and then fill in.
-  if (anchoColumna <= 0 || isLoadingItems) return null;
+  // The tasks are read from the local cache, which arrives after the first paint.
+  // A frame of nothing is better than four columns that say "no tasks" and then
+  // fill in under the eye.
+  if (isLoadingItems) return null;
 
   return (
     <Screen
@@ -295,6 +315,13 @@ export default function BoardScreen() {
         the screen** and not the window: the screen's own padding comes off first,
         so a phone of 430 is 398 here and the arithmetic is about the space the
         columns really have.
+
+        **And it renders whatever the measurement says.** It was behind a
+        `return null` while `anchoColumna` was zero — the box that measures the
+        width inside the branch that needs the width — and the board never painted
+        anything at all: an empty screen with the title of the board in the header
+        and no way to tell a broken screen from an empty one. Measured in the
+        browser, at 1440 points, with no error anywhere.
       */}
       <View
         testID="board-track-area"
@@ -313,56 +340,75 @@ export default function BoardScreen() {
           onSelect={irA}
         />
 
-        <ScrollView
-          ref={pista}
-          testID="board-track"
-          style={styles.pista}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: theme.spacing.md }}
-        >
-          {states.map((state) => (
-            /*
-              The width goes on a wrapper and not on `BoardColumn`, and that is
-              where the measurement lands rather than inside the column.
+        {/*
+          The track waits for the measurement, and that is the only thing it waits
+          for: a column of zero width is a column nobody can read, and one frame of
+          a strip of tabs with nothing under it is the honest version of a column
+          that has not been sized yet.
+        */}
+        {anchoColumna > 0 ? (
+          <ScrollView
+            ref={pista}
+            testID="board-track"
+            style={styles.pista}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: gapColumnas }}
+          >
+            {states.map((state) => (
+              /*
+                The width goes on a wrapper and not on `BoardColumn`, and that is
+                where the measurement lands rather than inside the column.
 
-              Inside the content box of a horizontal scroll view a child with no
-              width takes **the width of its content**: neither React Native nor
-              `react-native-web` gives a view a `flexBasis`, and both default to
-              `flexShrink: 0`, so a column that is not given a width is as wide as
-              its longest card — which on a board of four short titles is four
-              narrow columns that all fit in one screen and none of which is a
-              column.
+                Inside the content box of a horizontal scroll view a child with no
+                width takes **the width of its content**: neither React Native nor
+                `react-native-web` gives a view a `flexBasis`, and both default to
+                `flexShrink: 0`, so a column that is not given a width is as wide as
+                its longest card — which on a board of four short titles is four
+                narrow columns that all fit in one screen and none of which is a
+                column.
 
-              And the wrapper is also what `pagingEnabled` snaps: react-native-web
-              marks each **child of the track** as a snap point, so the wrapper's
-              left edge is the column's left edge and the browser lands on the
-              column and not on the gap in front of it.
-            */
-            <View
-              key={state.id}
-              testID={`board-slot-${state.id}`}
-              style={{ width: anchoColumna }}
-            >
-              <BoardColumn
-                state={state}
-                // `tasksInState` and not a filter of this component's own: it is
-                // the function that resolves a null `stateId` to the first
-                // column, and a row created on a board has nothing else.
-                tasks={tasksInState(items, states, state.id)}
-                tagColors={list.tagColors ?? {}}
-                readOnly={readOnly}
-                onOpenTask={(item) =>
-                  setEditing({ itemId: item.id, page: "edit" })
-                }
-                onOpenIcon={(item) =>
-                  setEditing({ itemId: item.id, page: "icon" })
-                }
-              />
-            </View>
-          ))}
-        </ScrollView>
+                And the wrapper is also what `pagingEnabled` snaps:
+                react-native-web marks each **child of the track** as a snap point,
+                so the wrapper's left edge is the column's left edge and the browser
+                lands on the column and not on the gap in front of it.
+
+                **`flexGrow: 1`, and the reason is one level of box that only the web
+                has.** On the web the snap point puts another box between the track
+                and this one, and that box is a **column** —so the cross axis of this
+                wrapper is its width, which is already decided, and its height is the
+                main axis, which is what grows.* React Native has no such box: its
+                children of a horizontal scroll view are stretched across the height
+                directly. Measured with it missing, at 1440 points: every column was
+                122 tall —its header and its empty state and nothing else— in a
+                track of 776, so the board was four short bars at the top of the
+                screen instead of four columns of it.
+              */
+              <View
+                key={state.id}
+                testID={`board-slot-${state.id}`}
+                style={{ width: anchoColumna, flexGrow: 1 }}
+              >
+                <BoardColumn
+                  state={state}
+                  // `tasksInState` and not a filter of this component's own: it is
+                  // the function that resolves a null `stateId` to the first
+                  // column, and a row created on a board has nothing else.
+                  tasks={tasksInState(items, states, state.id)}
+                  tagColors={list.tagColors ?? {}}
+                  readOnly={readOnly}
+                  onOpenTask={(item) =>
+                    setEditing({ itemId: item.id, page: "edit" })
+                  }
+                  onOpenIcon={(item) =>
+                    setEditing({ itemId: item.id, page: "icon" })
+                  }
+                />
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
       </View>
 
       {/*
@@ -440,6 +486,8 @@ const styles = StyleSheet.create({
    * on each column: a border would put a line at the left of the first column and
    * at the right of the last, and that reads as the track itself having edges. What
    * tells one column from the next is inside `BoardColumn`, on its own muted fill.
+   * And it is `gapColumnas` — the same number the widths are divided by — because a
+   * separator that is not in the arithmetic is a separator that overflows.
    */
   pista: {
     flex: 1,

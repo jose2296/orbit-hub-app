@@ -95,10 +95,26 @@ export function BoardTabs({
   const actual = currentId ? cajas[currentId] : undefined;
 
   useEffect(() => {
-    // Nothing to centre: the strip has not been measured, there is nothing off
+    // Nothing to centre: the strip has not been measured, or there is nothing off
     // screen, or the board has no columns to point at.
     if (!actual || anchoTira <= 0) return;
-    if (anchoContenido <= anchoTira) return;
+
+    if (anchoContenido <= anchoTira) {
+      /*
+        Everything fits, **so the strip goes back to the beginning.**
+        Without this the offset of a strip that was scrolled when it did not fit
+        survives the resize that made it fit: measured at 1120 points after being
+        scrolled at 400, the four pills sat 31 points to the right of the left edge
+        of the track, out of line with the column they name. Not a `scrollTo`
+        without an animation — it is a correction, and a corrected position does
+        not travel.
+      */
+      if (desplazamiento.current !== 0) {
+        desplazamiento.current = 0;
+        tira.current?.scrollTo({ x: 0, animated: false });
+      }
+      return;
+    }
 
     const izquierda = actual.x;
     const derecha = actual.x + actual.width;
@@ -117,6 +133,7 @@ export function BoardTabs({
     <ScrollView
       ref={tira}
       testID="board-tabs"
+      style={styles.tira}
       horizontal
       showsHorizontalScrollIndicator={false}
       onLayout={(event: LayoutChangeEvent) =>
@@ -152,6 +169,19 @@ export function BoardTabs({
             }}
             onPress={() => onSelect(state.id)}
             accessibilityRole="tab"
+            /*
+              Which one is chosen, **in both the spellings the two platforms read.**
+
+              Measured in the browser: with only `accessibilityState={{ selected }}`
+              the four tabs of the strip carry `role="tab"` and **no `aria-selected`
+              at all** —not on the chosen one either. `react-native-web@0.21.2`
+              builds its ARIA out of the `aria-*` props and ignores the state object
+              for this one (`createDOMProps`, which reads `aria-selected` and calls
+              `accessibilitySelected` deprecated), while on native the state object
+              is what VoiceOver and TalkBack read. `Segmented` had to write its
+              `aria-checked` by hand for the same reason.
+            */
+            aria-selected={activa}
             accessibilityState={{ selected: activa }}
             // The number is spoken with its word and not as a bare digit, which is
             // what a screen reader would otherwise read. `lists.itemCount` is the
@@ -219,6 +249,24 @@ export function BoardTabs({
 }
 
 const styles = StyleSheet.create({
+  /**
+   * The strip is **as tall as its pills and no taller.**
+   *
+   * It has to be said because the default is the opposite of it: React Native Web
+   * writes `flexGrow: 1` on every scroll view it makes (`commonStyle` in
+   * `react-native-web/dist/exports/ScrollView/index.js`), so a horizontal strip in a
+   * column that also holds the track grows into what is left and the two share it.
+   * Measured in the browser at 1440 points: the strip took 424 of the 828 points of
+   * height and the columns got the other 388, with four tabs drawn in a band as tall
+   * as the cards.
+   *
+   * React Native itself gives a scroll view no grow, so this is the same value on
+   * both targets and only the web needed it written down.
+   */
+  tira: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   /**
    * The strip's own box, and **no padding of its own on purpose**: the strip lives
    * inside the same padded box as the track of columns, so the first pill and the
