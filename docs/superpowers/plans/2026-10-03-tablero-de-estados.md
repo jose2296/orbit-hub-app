@@ -853,6 +853,25 @@ cd /Users/jose/orca/workspaces/orbit-hub/Kanban && npm run web
 
 Abre un tablero en claro y en oscuro y anota en el terminal **lo que ves y que se rompio**. Segun `docs/verificacion-en-navegador.md`, esto no se sustituye con ninguna suposicion.
 
+### Los fallos que solo aparecen al abrirla, y por que esta tarea lleva una vuelta
+
+La pantalla del tablero tiene **fallos que el typecheck no ve y que ninguna prueba de
+`lib/lists/board.ts` puede ver**: uno de layout de `ScrollView` en web, uno de
+`flexGrow` de react-native-web, uno de la aritmetica del reparto, y uno de caja blanca
+por una guarda que esperaba una medida que todavia no se habia tomado.
+
+Por eso el paso 9 no es "comprueba que funciona" y ya. Y por eso **la Task 15 tiene que
+dejar un script que se pueda volver a correr**, no una lista de pasos que alguien hizo una
+vez. El repo ya tiene el utensilio exacto: `scripts/verify-drawer.mjs` se escribio para
+*"el cajon empujaba dos veces, y por eso media pantalla no se ve"*, que es la misma clase
+de fallo. Los `testID` que deja la pantalla —`board-track-area`, `board-track`,
+`board-slot-*`, `board-tabs`— son la mitad del trabajo: son lo que allows medir.
+
+Y una regla que sale de aqui: **la aritmetica de reparto del ancho no vive dentro del
+componente.** `cuantasCaben` y `anchoColumna` son la decision de la que salio uno de esos
+cuatro fallos; si viven en el componente, se pueden deshacer en una edicion sin que nada se
+entere. Van a `lib/lists/board.ts` con sus pruebas, como las otras nueve.
+
 ---
 
 ### Task 9: El gesto de swipe
