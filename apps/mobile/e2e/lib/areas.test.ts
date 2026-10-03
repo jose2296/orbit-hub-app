@@ -32,6 +32,16 @@ describe('resolveAreas', () => {
     const areas = resolveAreas(raiz({ '01-onboarding': [], '02-auth': ['sign-in.yaml'] }));
     expect(areas.find((a) => a.name === '01-onboarding')!.flows).toEqual([]);
   });
+
+  it('el config.yaml de un area no cuenta como flujo suyo', () => {
+    // Cada area lleva su `config.yaml` con su `flowsOrder`, y termina en `.yaml`
+    // como los flujos. Contarlo haria que el area dijera que tiene cuatro flujos
+    // cuando tiene tres, y el informe de la tarea 5 sale de ahi.
+    const areas = resolveAreas(
+      raiz({ '01-onboarding': ['welcome.yaml', 'privacy.yaml', 'config.yaml'] }),
+    );
+    expect(areas[0]!.flows).toEqual(['privacy.yaml', 'welcome.yaml']);
+  });
 });
 
 describe('parseAreaFlag', () => {

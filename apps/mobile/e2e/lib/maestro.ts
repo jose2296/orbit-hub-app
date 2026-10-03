@@ -33,44 +33,48 @@ export function runMaestro(
   // `screenshot()` del runner, uno por area.
   //
   // El directorio entero y no la lista de flujos de dentro: Maestro descubre los
-  // `.yaml` de abajo. **El orden NO se fija aqui**, y no por decision sino porque
-  // no se puede sin acoplar las areas -ver el bloque de `flowsOrder` de mas
-  // abajo-.
+  // `.yaml` de abajo. El **orden lo fija el `config.yaml` de cada area**, con su
+  // `flowsOrder`; aqui no hay nada que decidir. Que cada area lleve el suyo y no uno
+  // compartido es lo que permite fijarlo sin acoplar las areas -measured: Maestro
+  // descubre solo el `config.yaml` del directorio que se le pasa-.
   //
   // `NOOP` como formato y no `JUNIT`: este harness solo necesita el texto para
   // imprimirlo cuando algo falla, y el HTML y el XML de Maestro salen igualmente
   // en su directorio de artefactos de cada carrera.
   //
   // **No hay `--config`.** Se quito en este commit, y no por sobra de codigo sino
-  // porque medido contra Maestro 2.11.0 no queda una sola clave que haga algo:
+  // porque medido contra Maestro 2.11.0 no queda una sola clave que pueda ir en un
+  // fichero **compartido**:
   //
   //   - `executionOrder.ordered` y `executionOrder.failOnEveryAssert` ya no existen.
   //     Measured: `Unknown Property: ordered` / `failOnEveryAssert` al arrancar, y
   //     `javap` sobre `WorkspaceConfig$ExecutionOrder` de
   //     `maestro-orchestra-models.jar` 2.11.0 confirma que sus dos unicas
   //     propiedades son `continueOnFailure` y `flowsOrder`.
-  //   - `executionOrder.continueOnFailure` se acepta pero no cambia nada de lo que
-  //     se mide aqui: `false` y `true` corrieron los tres flujos igual. Lo que si
-  //     hacia falta -parar el flujo en su primera afirmacion falsa, que es lo que
-  //     pedia `failOnEveryAssert`-, ya es lo por defecto: measured, un flujo con
-  //     dos afirmaciones falsas reporta solo la primera y la segunda no llega a
-  //     ejecutarse -solo hay un `screen-hierarchy/step-004-*` en sus artefactos-.
+  //   - `executionOrder.continueOnFailure` depende de la otra. **Sin `flowsOrder` no
+  //     hace nada**: measured, `false` y `true` corrieron los tres flujos igual. Con
+  //     `flowsOrder` al lado si manda -`continueOnFailure: false` mas una lista de
+  //     tres nombres aborta los que quedan: `Flow ccc failed and continueOnFailure is
+  //     set to false, aborting running sequential Flows`-. Asi que "esta clave esta
+  //     muerta" era verdad solo para el fichero sin lista, y de ahi el error: si
+  //     alguien anade orden a un area, esta clave empieza a cortar el area.
+  //     Aqui la de cada area va a `true` a proposito, para que un flujo que falle no
+  //     esconda al siguiente.
   //   - `appId`, `name` y `tags` se aceptan y no se consultan. Measured: un flujo
   //     sin su propio `appId` falla con `Config Field Required` aunque el
   //     `config.yaml` de este proyecto lo trajera. Los tres flujos traigan el suyo,
   //     y por eso el fichero puede desaparecer sin que nada se note.
   //
-  // Dejar el fichero solo con comentarios tampoco vale: Maestro lo rechaza con
-  // `Failed to parse file ... List is empty.`, asi que un `config.yaml` aqui solo
-  // puede existir si tiene claves, y no queda ninguna que no sea decoracion.
+  // Y lo que si hacia falta -parar el flujo en su primera afirmacion falsa, que es
+  // lo que pedia `failOnEveryAssert`-, ya es lo por defecto: measured, un flujo con
+  // dos afirmaciones falsas reporta solo la primera y la segunda no llega a
+  // ejecutarse -solo hay un `screen-hierarchy/step-004-*` en sus artefactos-.
   //
-  // Cuando una fase posterior quiera un orden fijo, `executionOrder.flowsOrder` es
-  // la clave -esta measured y funciona-, pero es una lista **por espacio de
-  // trabajo**: nombrar ahi los flujos de `01-onboarding` los volveria obligatorios
-  // para todas las areas. Por eso el orden se defiende de otra manera, y es la
-  // unica que no acopla: cada flujo termina afirmando que ha vuelto a donde
-  // empezo, de modo que uno que se queda con una hoja abierta no rompe al
-  // siguiente, sea cual sea el orden en que corran.
+  // Lo que no hacia falta y se perdia sin darse cuenta: el orden. Sin `flowsOrder`
+  // Maestro corre en el orden que devuelve el sistema de ficheros -measured, en una
+  // prueba salio `bbb, aaa, ccc`-, y con `welcome.yaml` usando `clearState: true`
+  // mientras los otros dos no, un orden asi hacia depender el resultado de donde
+  // cayera el fichero. Por eso hay un `config.yaml` por area.
   const args = ['test', '--format', 'NOOP'];
   // `...flujos` y no `...flowsPath`: el `spread` de una cadena reparte sus
   // CARACTERES, y un directorio de area acabaria pasado a Maestro como `/`, `U`,

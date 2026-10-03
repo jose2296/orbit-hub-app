@@ -1,0 +1,58 @@
+# El orden de los flujos de ESTA area, y solo de esta.
+#
+# Aqui dentro, no en un `config.yaml` compartido: measured, Maestro descubre solo el
+# que encuentra en el directorio que se le pasa, y el runner le pasa un area. Con uno
+# por area, el orden se fija area por area y dos areas no se acoplan -que era el
+# miedo que impedia hacerlo antes-.
+#
+# **Los nombres van SIN la extension.** Measured: `flowsOrder: [ccc, aaa, bbb]` ordena
+# la ejecucion; `[ccc.yaml, aaa.yaml, bbb.yaml]` no ordena nada y deja el orden de
+# descubrimiento. Un `.yaml` aqui es un `.yaml` que no hace nada, y se lee como que si.
+#
+# **El orden que hay, y por que este.**
+#
+# `welcome` el primero, y por dos razones que se pueden comprobar. Es el unico flujo
+# con `clearState: true`, o sea el unico que borra: si va el ultimo no molesta, pero si
+# fuera en medio dejaria a los de despues contra un estado recien borrado, y eso es
+# justo lo que hacia que el area pareciera accidentalmente a salvo. Y es el mas
+# barato -una espera y nada mas-, asi que una app que no llega ni a la pantalla de
+# bienvenida falla en segundos y no despues de dos arranques en frio.
+#
+# `privacy` y `terms` detras, en orden de nombre: son estructuralmente iguales, asi
+# que no hay nada que elegir entre ellos. Lo que se quiere es que el orden este
+# escrito, no que salga bien: measured, sin esto Maestro los corre en el orden que
+# devuelve el sistema de ficheros -en una carrera de prueba salio `bbb, aaa, ccc`-, y
+# ese orden cambia entre maquinas.
+#
+# `continueOnFailure: true` a proposito, y no por convenience. Esta clave solo se
+# respeta **cuando hay `flowsOrder`**: measured, con las dos juntas un flujo que falla
+# aborta el resto -`Flow ccc failed and continueOnFailure is set to false, aborting
+# running sequential Flows`-, y sin `flowsOrder` no aborta nunca. Aqui lo que interesa
+# es lo contrario: que un flujo que falle no esconda al siguiente, y que el runner
+# pueda nombrar los tres fallos del area en vez de solo el primero.
+#
+# Y un flujo NUEVO que no se meta en la lista **se corre igualmente**, detras y en un
+# hueco sin decidir. Measured. No rompe nada, pero entonces el area ha vuelto a no
+# tener orden, asi que anadir un flujo y anadirlo aqui es el mismo trabajo.
+#
+# **ESTE FICHERO PRODUCE UN AVISO QUE PARECE PEOR DE LO QUE ES.** Al correr el area:
+#
+#   Requested 1 shards, but it cannot be higher than the number of flows (0).
+#   Will use 1 shards instead.
+#
+# El `(0)` es mentira: el area tiene tres flujos y los tres se corrieron. Es un
+# aviso de Maestro y aparece **siempre que hay `flowsOrder`**, con o sin `flows` al
+# lado -measured, quitar este fichero lo quita y volver a ponerlo lo trae de vuelta-.
+# Se busco una forma de callarlo y no hay ninguna desde la configuracion: `flows`
+# cuenta como patron de inclusion, no como cuenta de flujos.
+#
+# No afecta a nada -es un aviso, el reparto que acabaria elegiendo es de un shard, que
+# es justo lo que se quiere, y los flujos van en orden-. Se deja y se escribe aqui
+# porque un "0 flows" en la salida de un arnes es exactamente la linea que hace sospechar
+# que no se ha probado nada, y quien lo lea tiene que encontrar la respuesta al lado.
+executionOrder:
+  flowsOrder:
+    - welcome
+    - privacy
+    - terms
+  continueOnFailure: true

@@ -33,6 +33,17 @@ export function resolveAreas(root: string, only?: string): Area[] {
 }
 
 /**
+ * El nombre del fichero de configuracion de Maestro dentro de un area.
+ *
+ * Cada area lleva el suyo, con su `flowsOrder` -measured: Maestro descubre solo el que
+ * encuentra en el directorio que se le pasa, asi que uno por area es lo que permite
+ * fijar el orden de un area sin acoplar las demas-. El nombre va aqui y no repetido
+ * en el filtro porque es el unico fichero de esta lista que no es un flujo, y por
+ * eso tiene que ser un dato y no una condicion escrito en una linea.
+ */
+const CONFIG_AREA = 'config.yaml';
+
+/**
  * Un area sin flujos se devuelve igual, con la lista vacia.
  *
  * No es un error: un area que se ha creado y todavia no tiene flujos escrito es
@@ -40,13 +51,20 @@ export function resolveAreas(root: string, only?: string): Area[] {
  * areas. El que avisa de ello es el bucle del runner, que lo dice en pantalla, y
  * `flows` sigue vacio de modo que un area sin trabajo nunca se cuela como trabajo
  * hecho.
+ *
+ * Y `config.yaml` fuera de los flujos, aunque acabe en `.yaml` como ellos: no es un
+ * flujo que se pueda correr -Maestro tampoco lo corre, measured- y contarlo haria que
+ * el area dijera que tiene cuatro flujos cuando tiene tres, y que `--flow
+ * config.yaml` pareciera una opcion.
  */
 function area(root: string, nombre: string): Area {
   const dir = join(root, nombre);
   return {
     name: nombre,
     dir,
-    flows: readdirSync(dir).filter((f) => f.endsWith('.yaml')).sort(),
+    flows: readdirSync(dir)
+      .filter((f) => f.endsWith('.yaml') && f !== CONFIG_AREA)
+      .sort(),
   };
 }
 
