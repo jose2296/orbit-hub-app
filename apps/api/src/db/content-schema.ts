@@ -13,7 +13,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-import type { TagColors } from '@orbit-hub/contracts';
+import type { BoardStates, TagColors } from '@orbit-hub/contracts';
 
 import { users } from './auth-schema';
 import type {
@@ -330,6 +330,20 @@ export const lists = pgTable(
       .$type<ListOrderModeName>()
       .notNull()
       .default('manual'),
+    /**
+     * The columns of a board, and the order of the array is the order of the
+     * columns.
+     *
+     * One column and not a table: the states are part of the list the way its
+     * labels are, they are always read with the list and never alone, and a
+     * table would buy a foreign key that nothing here can enforce — the server
+     * cannot check a row against another row without a second query, and this is
+     * the check the Task 3 makes on every write instead.
+     *
+     * Empty is the normal state and it is a real one: every list that is not a
+     * board carries `[]` and never has to invent a column.
+     */
+    states: jsonb('states').$type<BoardStates>().notNull().default([]),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -357,6 +371,17 @@ export const listItems = pgTable(
     title: varchar('title', { length: 300 }).notNull(),
     position: integer('position').notNull().default(0),
     completed: boolean('completed').notNull().default(false),
+    /**
+     * The column of the board this row is drawn in, as an id out of the list's
+     * `states`.
+     *
+     * Nullable, and null is the ordinary case: a task with no state of its own is
+     * drawn in the first one, so creating a task on a board is the same code that
+     * creates a task on any other list. There is no foreign key because `states`
+     * is a column of the list and not a table — the invariant is checked on every
+     * write instead of being declared here.
+     */
+    stateId: varchar('state_id', { length: 36 }),
     priority: varchar('priority', { length: 8 })
       .$type<'none' | 'low' | 'medium' | 'high'>()
       .notNull()

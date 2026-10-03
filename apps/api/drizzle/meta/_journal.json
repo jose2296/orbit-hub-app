@@ -141,6 +141,13 @@
       "when": 1790935154581,
       "tag": "0020_list_tag_colors",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791042691415,
+      "tag": "0021_spicy_master_chief",
+      "breakpoints": true
     }
   ]
 }
