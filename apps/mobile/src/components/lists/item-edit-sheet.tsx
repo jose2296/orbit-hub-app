@@ -2,12 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import type {
-  ItemIconColor,
-  ListItem,
-  Priority,
-  TagColors,
-} from "@orbit-hub/contracts";
+import type { ListItem, Priority, TagColors } from "@orbit-hub/contracts";
 import { derivedTagColor } from "@orbit-hub/contracts";
 
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +26,7 @@ import {
   iconColor,
   iconLabel,
 } from "@/lib/lists/item-icons";
+import type { IconColorKey } from "@/lib/lists/item-icons";
 
 type Page = "edit" | "icon" | "tags";
 
@@ -67,7 +63,7 @@ export interface ItemEditSheetProps {
    * waits for the write and closes with it, in the same render that repaints the
    * pill.
    */
-  onTagColor: (tag: string, color: ItemIconColor | null) => void | Promise<void>;
+  onTagColor: (tag: string, color: string | null) => void | Promise<void>;
   onClose: () => void;
   /** Called after the row is gone, so the screen can put itself right. */
   onDeleted?: () => void;
@@ -249,8 +245,7 @@ export function ItemEditSheet({
    * `TagChip`. It is here because the button that opens the strip has to *say*
    * the colour out loud, in the words the dictionary has for it.
    */
-  const colorOf = (tag: string): ItemIconColor =>
-    tagColors[tag] ?? derivedTagColor(tag);
+  const colorOf = (tag: string): string => tagColors[tag] ?? derivedTagColor(tag);
 
   if (!isNew && !item) return null;
 
@@ -330,7 +325,7 @@ export function ItemEditSheet({
    *   `finally` closes the strip either way, so a write that throws cannot leave
    *   the panel stuck open.
    */
-  const pickColor = async (tag: string, option: ItemIconColor | null) => {
+  const pickColor = async (tag: string, option: string | null) => {
     if (guardando) return;
     setGuardando(true);
     try {
@@ -860,7 +855,7 @@ function TagColorButton({
 }: {
   tag: string;
   /** The colour the label is painted in now, chosen or deduced. */
-  color: ItemIconColor;
+  color: string;
   /** Whether this label's strip is the open one. */
   open: boolean;
   /** The spread of `useA11yHint`, from the sheet: one hint node for all of them. */
@@ -869,6 +864,14 @@ function TagColorButton({
 }) {
   const theme = useTheme();
   const t = useTranslation();
+  // The dictionary has a name for each of the twelve and nothing for a hex that
+  // somebody chose, so the hex itself is what gets read out. Nothing today can
+  // write one here — the strip only offers the twelve — and saying so is cheaper
+  // than a colour that announces itself as `undefined`.
+  const clave = color as IconColorKey;
+  const nombre = ICON_COLOR_KEYS.includes(clave)
+    ? ICON_COLOR_LABEL[clave]
+    : undefined;
 
   return (
     <Pressable
@@ -878,7 +881,7 @@ function TagColorButton({
         open ? "tags.choosingColor" : "tags.changeColor",
         {
           name: tag,
-          color: t(ICON_COLOR_LABEL[color]),
+          color: nombre ? t(nombre) : color,
         },
       )}
       {...hintProps}
@@ -935,8 +938,8 @@ function TagColorStrip({
 }: {
   tag: string;
   /** The colour chosen for this label, or `undefined` if none is. */
-  chosen: ItemIconColor | undefined;
-  onPick: (color: ItemIconColor | null) => void;
+  chosen: string | undefined;
+  onPick: (color: string | null) => void;
 }) {
   const theme = useTheme();
   const t = useTranslation();

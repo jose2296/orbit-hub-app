@@ -37,12 +37,14 @@ describe('una lista leida de la cache', () => {
 
   it('descarta del mapa lo que no es un color, y conserva lo demas', () => {
     // Una fila de una build futura puede escribir una clave que este build no
-    // sabe pintar. Se cae la clave, no el mapa.
+    // sabe pintar. Se cae la clave, no el mapa. Y un nombre viejo de la paleta se
+    // conserva **convertido**: es un color que alguien eligio, y lo que se pierde
+    // en silencio es peor que lo que se deja de aceptar.
     expect(
       withListDefaults(
         listRow({ tagColors: { Mercadona: 'green', Alcampo: 'ultralight' } }),
       ).tagColors,
-    ).toEqual({ Mercadona: 'green' });
+    ).toEqual({ Mercadona: '#16A34A' });
   });
 
   it('no pierde ningun otro campo de la lista', () => {
@@ -52,6 +54,6 @@ describe('una lista leida de la cache', () => {
     expect(lista.id).toBe('lista-1');
     expect(lista.title).toBe('Compra');
     expect(lista.orderMode).toBe('manual');
-    expect(lista.tagColors).toEqual({ Mercadona: 'red' });
+    expect(lista.tagColors).toEqual({ Mercadona: '#DC2626' });
   });
 });

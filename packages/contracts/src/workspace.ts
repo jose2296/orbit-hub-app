@@ -270,7 +270,13 @@ export {
 } from "./item-icons.js";
 export type { ItemIcon, ItemIconCategory, ItemIconColor } from "./item-icons.js";
 
-export { tagColorSchema, derivedTagColor, sanitiseTagColors } from "./tag-colors.js";
+export {
+  TAG_HEX,
+  tagColorSchema,
+  derivedTagColor,
+  normalizaColor,
+  sanitiseTagColors,
+} from "./tag-colors.js";
 export type { TagColors } from "./tag-colors.js";
 
 /**

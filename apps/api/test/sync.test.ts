@@ -690,18 +690,31 @@ describe('POST /sync/pull', () => {
           workspaceId: workspace.id,
           title: 'Compra',
           kind: 'tasks',
-          tagColors: { Mercadona: 'green', Alcampo: 'ultralight' },
+          // `'green'` is the format a build before the colour was free wrote: a
+          // name of the twelve, not a hex. It has to come out as the hex it was
+          // drawn in — **not** dropped. Dropping it is what this whole change is
+          // about not doing, and it is invisible: no error, no 422, the label just
+          // goes back to the colour deduced from its name.
+          tagColors: {
+            Mercadona: 'green',
+            Alcampo: '#3B5FDE',
+            Lidl: 'no-es-un-color',
+          },
         },
       }),
     ]);
 
     const list = await api.get(`/lists/${listId}`, user.accessToken);
-    // The colour this build can draw is there...
-    expect(list.body.data.tagColors).toEqual({ Mercadona: 'green' });
-    // ...and the one it cannot was dropped rather than stored: the map is not
-    // the whole write, and the label it belonged to simply has no colour chosen,
-    // which is a state the map already has.
-    expect(list.body.data.tagColors).not.toHaveProperty('Alcampo');
+    // The old name is stored as the hex it always was drawn in, and a free hex is
+    // stored as itself: from here on everything in this map is a hex.
+    expect(list.body.data.tagColors).toEqual({
+      Mercadona: '#16A34A',
+      Alcampo: '#3B5FDE',
+    });
+    // ...and what is not a colour at all was dropped rather than stored: the map
+    // is not the whole write, and the label it belonged to simply has no colour
+    // chosen, which is a state the map already has.
+    expect(list.body.data.tagColors).not.toHaveProperty('Lidl');
   });
 
   it('leaves the colours of a list that was created without them at empty', async () => {

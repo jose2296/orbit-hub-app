@@ -7,6 +7,8 @@ import {
 } from "@orbit-hub/contracts";
 import { describe, expect, it } from "vitest";
 
+import { iconColor } from "@/lib/lists/item-icons";
+
 describe("el color que deduce el nombre de una etiqueta", () => {
   it("es el mismo siempre para el mismo nombre", () => {
     // El que no puede fallar: un `Math.random()` en el render daria un color
@@ -51,9 +53,13 @@ describe("el color que deduce el nombre de una etiqueta", () => {
 });
 
 describe("el mapa de colores que se guarda", () => {
-  it("deja fuera lo que no es un color y conserva lo demas", () => {
+  it("un nombre viejo sale en su hex y lo demas se cae", () => {
+    // El caso que hace que esto no sea un filtro: `"green"` es lo que hay escrito
+    // en la base de datos de quien uso la app antes de que el color fuera libre, y
+    // lo que se guarda es `#16A34A`, el verde con el que siempre se pinto. Lo que
+    // no es un color —ni hex ni nombre— se cae igualmente: no hay a que convertirlo.
     expect(sanitiseTagColors({ Mercadona: "green", Alcampo: "ultralight" })).toEqual({
-      Mercadona: "green",
+      Mercadona: "#16A34A",
     });
   });
 
@@ -91,7 +97,7 @@ describe("el mapa de colores que se guarda", () => {
     const justa = "M".repeat(40);
     expect(
       sanitiseTagColors({ "   ": "green", [larga]: "green", [justa]: "red" }),
-    ).toEqual({ [justa]: "red" });
+    ).toEqual({ [justa]: "#DC2626" });
   });
 
   it("guarda la clave ya recortada", () => {
@@ -100,8 +106,64 @@ describe("el mapa de colores que se guarda", () => {
     // y un mapa con `" Mercadona "` no se encontraria nunca. Ademas `tagColorSchema`
     // recorta tambien, asi que los dos medios dicen lo mismo y no hay dos mapas.
     expect(sanitiseTagColors({ "  Mercadona  ": "green" })).toEqual({
-      Mercadona: "green",
+      Mercadona: "#16A34A",
     });
+  });
+
+  it("acepta un hex libre", () => {
+    expect(sanitiseTagColors({ Mercadona: "#3B5FDE" })).toEqual({
+      Mercadona: "#3B5FDE",
+    });
+  });
+
+  it("convierte un nombre viejo de la paleta en su hex", () => {
+    // Un build anterior guardaba "green". No se puede descartar: es un color que
+    // alguien eligió, y perderlo en silencio es peor que perder el formato.
+    expect(sanitiseTagColors({ Mercadona: "green" })).toEqual({
+      Mercadona: "#16A34A",
+    });
+  });
+
+  it("descarta lo que no es un color y conserva lo demas", () => {
+    expect(sanitiseTagColors({ Mercadona: "#3B5FDE", Alcampo: "no-es-un-color" })).toEqual({
+      Mercadona: "#3B5FDE",
+    });
+  });
+
+  it("amplia un hex de tres digitos a seis", () => {
+    // `esHex` ya acepta los dos anchos y hay un motivo escrito: estrecharlo
+    // convertio en el color de reserva un camino que funcionaba. `#fff` es blanco
+    // sin ambiguedad, y el mapa guarda una sola forma de cada color.
+    expect(sanitiseTagColors({ Mercadona: "#fff" })).toEqual({
+      Mercadona: "#FFFFFF",
+    });
+    expect(sanitiseTagColors({ Mercadona: "#AbC" })).toEqual({
+      Mercadona: "#AABBCC",
+    });
+  });
+
+  it("descarta lo que no tiene tres ni seis digitos", () => {
+    expect(sanitiseTagColors({ Mercadona: "#ff" })).toEqual({});
+    expect(sanitiseTagColors({ Mercadona: "#fffffff" })).toEqual({});
+  });
+
+  it("no puede lanzar, con ningun hex que llegue", () => {
+    for (const malo of ["", "#", "#12", "#1234567", "  ", "rgb(1,2,3)", null, 7, {}]) {
+      expect(() => sanitiseTagColors({ Mercadona: malo })).not.toThrow();
+    }
+  });
+
+  it("convierte cada nombre de la paleta en el hex que la app lo dibuja", () => {
+    // La tabla de nombres a hex esta copiada a mano en el contrato, porque
+    // `packages/contracts` no puede importar de `apps/mobile`. Este test es lo que
+    // ata las dos copias: si un dia `ICON_COLORS` cambia de valor y el contrato no,
+    // una etiqueta que alguien eligio en verde se guardaria en el verde viejo y
+    // nadie veria el cambio en ninguna pantalla.
+    for (const nombre of ITEM_ICON_COLORS) {
+      expect(sanitiseTagColors({ Mercadona: nombre })).toEqual({
+        Mercadona: iconColor(nombre),
+      });
+    }
   });
 });
 
@@ -134,12 +196,15 @@ describe("el campo de la lista", () => {
       updatedAt: new Date().toISOString(),
       role: "owner",
       shared: false,
-      tagColors: { Mercadona: "green" },
+      tagColors: { Mercadona: "#3B5FDE" },
     });
-    expect(lista.tagColors).toEqual({ Mercadona: "green" });
+    expect(lista.tagColors).toEqual({ Mercadona: "#3B5FDE" });
   });
 
-  it("rechaza un color que no esta en la paleta", () => {
+  it("rechaza un valor que no es ni texto", () => {
+    // Lo que el contrato comprueba del color ya no es la paleta —no la tiene— sino
+    // que sea un string. El sitio que sabe si es un color es `sanitiseTagColors`, y
+    // antes esto rechazaba `"ultralight"` porque el color era una de doce.
     expect(() =>
       listSchema.parse({
         id: crypto.randomUUID(),
@@ -152,7 +217,7 @@ describe("el campo de la lista", () => {
         updatedAt: new Date().toISOString(),
         role: "owner",
         shared: false,
-        tagColors: { Mercadona: "ultralight" },
+        tagColors: { Mercadona: 7 },
       }),
     ).toThrow();
   });
@@ -191,6 +256,19 @@ describe("el mapa que sale saneado lo acepta el contrato", () => {
       // aqui es que se pierde y que el objeto que sale sigue siendo un objeto
       // normal, sin envenenar `Object.prototype` para el resto de la aplicacion.
       { ["__proto__"]: "green", Mercadona: "blue" },
+      // Y ahora del otro lado: un **valor** que se parece a una clave del
+      // prototipo. La tabla de nombres a hex es un objeto literal, asi que
+      // `PALETA_A_HEX["constructor"]` es la funcion `Object`, y sin perguntar antes
+      // a `ITEM_ICON_COLORS` un color escrito con la palabra "constructor" se
+      // guardaba como una funcion —y el mapa que sale deja de ser uno que
+      // `tagColorSchema` acepta, que es la unica promesa de esta funcion.
+      { Mercadona: "constructor" },
+      { Mercadona: "toString" },
+      { Mercadona: "hasOwnProperty" },
+      { Mercadona: "__proto__" },
+      // Y el caso de verdad: que se convierta el nombre viejo y no se guarde la
+      // palabra, que es justo lo que se perdia antes de que existiera `PALETA_A_HEX`.
+      { Mercadona: "green" },
     ];
 
     for (const entrada of entradas) {

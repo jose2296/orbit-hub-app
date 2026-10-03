@@ -1,4 +1,4 @@
-import type { ItemIconColor, TagColors } from "@orbit-hub/contracts";
+import type { TagColors } from "@orbit-hub/contracts";
 
 import { luminanceDe } from "../workspace/wash";
 import { iconColor } from "./item-icons";
@@ -19,7 +19,7 @@ import { iconColor } from "./item-icons";
 export function planTagColorChange(
   current: TagColors,
   tag: string,
-  color: ItemIconColor | null,
+  color: string | null,
 ): TagColors {
   // Start from a copy, so the map the caller passed is not the map that changes.
   // `null` deletes the key; anything else sets it. Nothing else in the map moves.
@@ -112,7 +112,7 @@ export function contrastRatio(a: string, b: string): number {
  * quien ya lo tiene a mano.
  */
 export function labelTextColor(
-  colour: ItemIconColor,
+  colour: string,
   fill: string,
   fallback: string,
 ): string {
