@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { stateOf } from '@orbit-hub/contracts';
+import type { BoardStates } from '@orbit-hub/contracts';
+
 import { planDuplication } from '../src/lib/lists/duplicate';
 
 /**
@@ -23,6 +26,10 @@ function source(overrides: Record<string, unknown> = {}) {
     // A list nobody has chosen a colour for yet: every label falls back to the
     // colour its name hashes to.
     tagColors: {},
+    // Not a board, so no columns. A real list carries the empty array rather than
+    // nothing, and the plan has to be able to tell that from a board whose
+    // columns were lost.
+    states: [],
     version: 4,
     itemCount: 2,
     ...overrides,
@@ -92,11 +99,80 @@ const items = [
   },
 ];
 
+/**
+ * A board: four columns and one task in each.
+ *
+ * The four columns are what make the copy's ids matter. A copy that carries them
+ * over has tasks pointing at columns of the *original*, and `stateOf` draws an id
+ * it does not know in the first column — so the copy comes out looking plausible
+ * with every task in Backlog, and nothing anywhere says so.
+ */
+const COLUMNAS: BoardStates = [
+  { id: 'col-backlog', title: 'Backlog', color: 'neutral' },
+  { id: 'col-ready', title: 'Ready', color: 'blue' },
+  { id: 'col-wip', title: 'WIP', color: 'amber' },
+  { id: 'col-done', title: 'Done', color: 'green' },
+];
+
+function boardSource(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'board-1',
+    workspaceId: 'ws-1',
+    folderId: null,
+    kind: 'board' as const,
+    title: 'Tablero',
+    description: null,
+    emoji: null,
+    tags: [],
+    position: 0,
+    orderMode: 'manual' as const,
+    tagColors: {},
+    states: COLUMNAS,
+    ...overrides,
+  };
+}
+
+function taskEnColumn(id: string, title: string, stateId: string | null, position: number) {
+  return {
+    id,
+    listId: 'board-1',
+    title,
+    position,
+    completed: false,
+    stateId,
+    priority: 'none' as const,
+    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    tags: [] as string[],
+    externalId: null,
+    metadata: null,
+    annotation: null,
+    deletedAt: null,
+  };
+}
+
+const boardItems = [
+  taskEnColumn('t1', 'Sin empezar', 'col-backlog', 0),
+  taskEnColumn('t2', 'Lista para hacer', 'col-ready', 1),
+  taskEnColumn('t3', 'A medias', 'col-wip', 2),
+  taskEnColumn('t4', 'Terminada', 'col-done', 3),
+];
+
+/** Ids that count up, so a test can say which column of the copy a task is in. */
+function generadorDeIds(prefix: string): () => string {
+  let n = 0;
+  return () => `${prefix}-${(n += 1)}`;
+}
+
+/** The column a task is drawn in, which is what a person actually sees. */
+const columnaDe = (states: BoardStates, stateId: string | null | undefined) =>
+  stateOf(states, stateId)?.title;
+
 describe('planDuplication', () => {
   it('copies only the items of the source list that are not deleted', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -110,6 +186,7 @@ describe('planDuplication', () => {
         let n = 0;
         return () => `new-${(n += 1)}`;
       })(),
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -121,6 +198,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -134,6 +212,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -146,6 +225,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -160,6 +240,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -174,6 +255,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(source({ tagColors: { pendiente: 'green' } }), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -189,6 +271,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(original, items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -201,12 +284,14 @@ describe('planDuplication', () => {
     const withTitle = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
       title: 'Películas 2027',
     });
     const without = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -217,6 +302,7 @@ describe('planDuplication', () => {
       planDuplication(source(), items, {
         newListId: 'list-2',
         newItemId: () => 'new-1',
+        newStateId: () => 'estado-1',
         now: '2026-06-01T00:00:00.000Z',
         title: '   ',
       }).list.title,
@@ -227,6 +313,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -237,6 +324,7 @@ describe('planDuplication', () => {
     const plan = planDuplication(source(), [], {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
@@ -248,10 +336,121 @@ describe('planDuplication', () => {
     const plan = planDuplication(source(), items, {
       newListId: 'list-2',
       newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
       now: '2026-06-01T00:00:00.000Z',
     });
 
     expect(plan.list.version).toBe(0);
     expect(plan.items.every((item) => item.version === 0)).toBe(true);
+  });
+
+  it('duplicates a board with its own columns and leaves every task in the one it was in', () => {
+    const plan = planDuplication(boardSource(), boardItems, {
+      newListId: 'board-2',
+      newItemId: () => 'nueva-tarea',
+      newStateId: generadorDeIds('col'),
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    // Four columns, and none of them is one of the original's. Sharing the ids is
+    // the failure this test exists for: the copy would then be the *same* four
+    // columns wearing a second name, and a rename in either list would move the
+    // other list's tasks.
+    expect(plan.list.kind).toBe('board');
+    expect(plan.list.states.map((estado) => estado.title)).toEqual([
+      'Backlog',
+      'Ready',
+      'WIP',
+      'Done',
+    ]);
+    expect(plan.list.states.map((estado) => estado.id)).toEqual(['col-1', 'col-2', 'col-3', 'col-4']);
+    expect(plan.list.states.some((estado) => COLUMNAS.some((o) => o.id === estado.id))).toBe(false);
+
+    // The assertion that matters, and the one a copy with borrowed ids fails: not
+    // "the ids look different" but "the task is still in the column it was in".
+    // Read through `stateOf`, because that is the function that hides the bug by
+    // drawing an unknown id in the first column.
+    expect(plan.items.map((item) => columnaDe(plan.list.states, item.stateId))).toEqual([
+      'Backlog',
+      'Ready',
+      'WIP',
+      'Done',
+    ]);
+    // And the same read on the original, so the two lists are known to be alike.
+    expect(boardItems.map((item) => columnaDe(COLUMNAS, item.stateId))).toEqual([
+      'Backlog',
+      'Ready',
+      'WIP',
+      'Done',
+    ]);
+  });
+
+  it('copies the columns by value, not by reference', () => {
+    // Same reason as the tags and the label colours above: a later write to the
+    // copy's columns must not reach back into the original's. The original is
+    // held in a variable on purpose, for the reason the label colours are.
+    const original = boardSource();
+    const plan = planDuplication(original, boardItems, {
+      newListId: 'board-2',
+      newItemId: () => 'nueva-tarea',
+      newStateId: generadorDeIds('col'),
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    plan.list.states[1]!.title = 'Preparada';
+    plan.list.states.push({ id: 'col-5', title: 'Archive', color: 'teal' });
+
+    expect(plan.list.states[1]!.title).toBe('Preparada');
+    expect(plan.list.states).toHaveLength(5);
+    expect(original.states.map((estado) => estado.title)).toEqual([
+      'Backlog',
+      'Ready',
+      'WIP',
+      'Done',
+    ]);
+  });
+
+  it('leaves a task without a column without one, and does not carry an id that points at nothing', () => {
+    // A task with no column of its own is drawn in the first one, and that has to
+    // stay true in the copy: the copy has a first column of its own, and handing
+    // the task an id would be choosing a column nobody chose.
+    const sinColumna = [taskEnColumn('t1', 'Sin columna', null, 0)];
+    // The second shape: a task already pointing at a column the list does not
+    // have. It can only be a row that was broken before the duplication, and it
+    // stays broken in the copy rather than travelling a reference to the
+    // original's board.
+    const colgando = [taskEnColumn('t2', 'Colgante', 'col-que-no-existe', 0)];
+
+    const planSinColumna = planDuplication(boardSource(), sinColumna, {
+      newListId: 'board-2',
+      newItemId: () => 'nueva-tarea',
+      newStateId: generadorDeIds('col'),
+      now: '2026-06-01T00:00:00.000Z',
+    });
+    const planColgando = planDuplication(boardSource(), colgando, {
+      newListId: 'board-2',
+      newItemId: () => 'nueva-tarea',
+      newStateId: generadorDeIds('col'),
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    expect(planSinColumna.items[0]?.stateId).toBeNull();
+    expect(planColgando.items[0]?.stateId).toBeNull();
+    // Null in both cases, and both therefore drawn in the copy's first column.
+    expect(columnaDe(planSinColumna.list.states, planSinColumna.items[0]?.stateId)).toBe('Backlog');
+    expect(columnaDe(planColgando.list.states, planColgando.items[0]?.stateId)).toBe('Backlog');
+  });
+
+  it('does not invent columns for a list that is not a board', () => {
+    // The other half of the empty array: a list with no columns duplicates into a
+    // list with no columns, rather than into one whose columns were invented.
+    const plan = planDuplication(source(), items, {
+      newListId: 'list-2',
+      newItemId: () => 'new-1',
+      newStateId: generadorDeIds('col'),
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    expect(plan.list.states).toEqual([]);
   });
 });

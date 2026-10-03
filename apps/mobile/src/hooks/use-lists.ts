@@ -190,6 +190,11 @@ export function useLists(filters: ListFilters = {}) {
           // Same for the colours of the labels: a copy whose "Mercadona" comes
           // out in another colour is a list that changed by being duplicated.
           tagColors: source.tagColors,
+          // And the same for the columns of a board. The copy gets its own, which
+          // is why the ids come from this hook and not from the plan: two lists
+          // sharing column ids would have their tasks moved by a rename in
+          // either of them.
+          states: source.states,
         },
         (await store.listCachedItems(source.id)).map((row) =>
           readRecord<ListItem>(row),
@@ -197,6 +202,7 @@ export function useLists(filters: ListFilters = {}) {
         {
           newListId: listId,
           newItemId: () => Crypto.randomUUID(),
+          newStateId: () => Crypto.randomUUID(),
           now: nowIso(),
           ...(input?.title ? { title: input.title } : {}),
         },

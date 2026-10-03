@@ -1,4 +1,5 @@
 import type {
+  BoardStates,
   ListItem,
   ListKind,
   ListOrderMode,
@@ -28,6 +29,15 @@ export interface DuplicationSource {
   orderMode: ListOrderMode;
   /** The chosen colours of the labels, so the copy reads the same way. */
   tagColors: TagColors;
+  /**
+   * The columns of the board, when the list is one.
+   *
+   * Required and not optional because a list that is not a board carries the
+   * empty array, which is a real value and not an absence: the same rule the
+   * column on the server follows, so that "no board here" has one spelling in
+   * both places.
+   */
+  states: BoardStates;
 }
 
 export interface DuplicableItem {
@@ -78,6 +88,17 @@ export interface DuplicationPlan {
 export interface DuplicationOptions {
   newListId: string;
   newItemId: () => string;
+  /**
+   * Mints the ids of the copy's states.
+   *
+   * A parameter and not a `Crypto.randomUUID()` in here for the reason
+   * `newItemId` is one: this function is the pure plan, and a generator that
+   * comes from the outside is what lets a test say which column a task landed in.
+   * Required rather than defaulted, because a caller that forgets it is then a
+   * compile error instead of a copy whose columns come from somewhere the test
+   * cannot see.
+   */
+  newStateId: () => string;
   now: string;
   title?: string;
 }
@@ -93,18 +114,37 @@ export interface DuplicationOptions {
  *   duplicating one should not take it away from the original.
  * - The completed state travels with each item, because a list duplicated
  *   half way through is usually duplicated *with* the progress.
+ * - A board's columns are duplicated as **new** columns, new ids and all, and
+ *   every task is moved to the new id of the column it was in. Copying the ids
+ *   instead would tie two lists' tasks to the same columns, and the first rename
+ *   in either of them would move the other one's tasks.
  */
 export function planDuplication(
   source: DuplicationSource,
   allItems: DuplicableItem[],
   options: DuplicationOptions,
 ): DuplicationPlan {
-  const { newListId, newItemId, now } = options;
+  const { newListId, newItemId, newStateId, now } = options;
   const title = options.title?.trim() || source.title;
 
   const eligible = allItems
     .filter((item) => item.listId === source.id && item.deletedAt === null)
     .sort((a, b) => a.position - b.position);
+
+  /*
+    The copy's columns, with ids of their own, and the map that says which new id
+    stands for which old one.
+
+    By value, for the reason the tags and the label colours are: two lists that
+    share an array share the objects in it, and renaming a column in the copy
+    would rename it in the original while moving the original's tasks with it.
+  */
+  const remapeo = new Map<string, string>();
+  const estados = source.states.map((estado) => {
+    const id = newStateId();
+    remapeo.set(estado.id, id);
+    return { ...estado, id };
+  });
 
   const items = eligible.map((item, index) => ({
     id: newItemId(),
@@ -112,10 +152,25 @@ export function planDuplication(
     title: item.title,
     position: index,
     completed: item.completed,
-    // Same rule as `completed` above, and for the same reason: the column is
-    // where the task is, and a copy that lands in the first one is a copy that
-    // looks right and is not.
-    stateId: item.stateId,
+    /*
+      The column of the copy, which is **not** the column of the original: the
+      states above are new states, so an id carried over as it is points at a
+      column that does not exist in the copy. That failure is invisible, because
+      an unknown id is drawn in the first column — the board comes out looking
+      plausible and with the tasks in the wrong place — and it only becomes real
+      for somebody the day a column is renamed.
+
+      Three cases, and the last two are not the same:
+      - null stays null: "the first column" means the first column of each list,
+        and the copy has a first column of its own;
+      - an id the map knows becomes the new id of the same column, so a task
+        keeps the column it was in and only its address changes;
+      - an id the map does not know becomes null. It can only be a row that was
+        already pointing at nothing in the original, and it stays that way: a
+        dangling id draws in the first column just the same, while null says so
+        and does not leave a task holding a reference to the original's board.
+    */
+    stateId: item.stateId === null ? null : (remapeo.get(item.stateId) ?? null),
     priority: item.priority,
     icon: item.icon,
     // How it is drawn is part of how the row is, so a copy looks the same.
@@ -154,6 +209,10 @@ export function planDuplication(
       // Copied by value, same rule as the tags above: a later write to the copy's
       // map must not recolour the original.
       tagColors: { ...source.tagColors },
+      // The columns the tasks above were just moved into. A copy of a board with
+      // no columns is a board that draws nothing, and it draws nothing without
+      // saying why: there is no first column to fall back to in an empty array.
+      states: estados,
       itemCount: items.length,
       /*
         Yours and editable, and it does not inherit from the source.
