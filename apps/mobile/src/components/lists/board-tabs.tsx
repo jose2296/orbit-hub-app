@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { LayoutChangeEvent } from "react-native";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import Animated, {
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 
 import type { BoardStates } from "@orbit-hub/contracts";
@@ -26,6 +31,14 @@ import { useTheme } from "@/theme";
  * to look like the names are sliding away.
  */
 const PARALAJE_TIRA = 0.35;
+
+/**
+ * Below this the parallax counts as over, **and it is a fraction of a page and not
+ * of a point** because `progress` is a fraction: 0.001 of a page of 380 is **0.4
+ * points**, which is under a pixel, so the strip stops waiting at the moment the
+ * pills have stopped being visibly out of place.
+ */
+const PARALAJE_EN_REPOSO = 0.001;
 
 export interface BoardTabsProps {
   /** The columns, **in the order of the array**, which is the order they are drawn. */
@@ -150,9 +163,31 @@ export function BoardTabs({
    */
   const desplazamiento = useRef(0);
 
+  /**
+   * How many times the parallax has come to rest, **in two pieces because only one
+   * of them is read on the interface thread.**
+   *
+   * The count is a shared value so the reaction below can increment it where the
+   * animation runs, and the state is the copy that makes React run the effect
+   * again. `setCentrado(finParalaje.value)` passes the number rather than the
+   * setter's own function so that nothing that closes over a ref crosses into a
+   * worklet's closure — see the note on the reaction.
+   */
+  const finParalaje = useSharedValue(0);
+  const [centrado, setCentrado] = useState(0);
+
   const actual = currentId ? cajas[currentId] : undefined;
 
-  useEffect(() => {
+  /**
+   * Put the chosen pill in the middle of the strip, **if it is not already in
+   * sight.**
+   *
+   * On a wide board the whole strip is narrower than the window and every pill is
+   * already visible, and centring one that is on screen would slide the strip under
+   * a tap for no reason — which is what the `onContentSizeChange` comparison below
+   * is for.
+   */
+  const centrar = useCallback(() => {
     // Nothing to centre: the strip has not been measured, or there is nothing off
     // screen, or the board has no columns to point at.
     if (!actual || anchoTira <= 0) return;
@@ -175,17 +210,64 @@ export function BoardTabs({
     }
 
     const izquierda = actual.x;
-    const derecha = actual.x + actual.width;
+    const derecha = izquierda + actual.width;
     const visibleIzquierda = desplazamiento.current;
     const visibleDerecha = visibleIzquierda + anchoTira;
     if (izquierda >= visibleIzquierda && derecha <= visibleDerecha) return;
 
-    const x = Math.max(
-      0,
-      Math.round(izquierda - (anchoTira - actual.width) / 2),
-    );
+    const x = Math.max(0, Math.round(izquierda - (anchoTira - actual.width) / 2));
     tira.current?.scrollTo({ x, animated: true });
   }, [actual, anchoTira, anchoContenido]);
+
+  /**
+   * Centre it **when the parallax is over, and not while it is moving.**
+   *
+   * `cajas` measures the pills inside the row that the parallax is a transform on,
+   * so during a swipe the chosen pill is drawn up to `0.35 x stripWidth` = **129
+   * points** from where it was measured — and centring it there is centring it
+   * where it is *about to stop being*.
+   *
+   * The second half of the reason is worse, and it is the same one the track had:
+   * the strip's own `scrollTo` animates on the platform's clock while the parallax
+   * animates on ours. Measured, the strip's smooth scroll takes **350 ms for 283
+   * points** and **500 to 600 ms for 1140**, and the parallax is over in **90**, so
+   * the two do not fight today — but only because one of them happens to be four
+   * to six times shorter, and that is a coincidence of two platforms' curves
+   * rather than anything anybody decided.
+   *
+   * So the centring **waits**, and runs once the parallax is over. Not a correction
+   * to the arithmetic: at rest the parallax is zero and `cajas` is the truth, so the
+   * only thing that had to change is *when* this runs.
+   */
+  useEffect(() => {
+    if (Math.abs(progress.value) > PARALAJE_EN_REPOSO) return;
+    centrar();
+  }, [centrar, centrado]);
+
+  /**
+   * And the run that was waiting, **counted rather than flagged.**
+   *
+   * A boolean would do the same job and be one line shorter, except that setting it
+   * to the value it already has does not re-run the effect, and this has to fire
+   * once per page turn — a long swipe is four page turns in a second. The counter
+   * is a shared value because the reaction that increments it runs on the interface
+   * thread, and only a number crosses to the other side: **a function that closes
+   * over a ref does not belong in a worklet's closure**, and `centrar` closes over
+   * two of them.
+   */
+  useAnimatedReaction(
+    () => progress.value,
+    (ahora, antes) => {
+      if (
+        antes !== null &&
+        Math.abs(antes) > PARALAJE_EN_REPOSO &&
+        Math.abs(ahora) <= PARALAJE_EN_REPOSO
+      ) {
+        finParalaje.value = finParalaje.value + 1;
+        runOnJS(setCentrado)(finParalaje.value);
+      }
+    },
+  );
 
   return (
     <ScrollView
@@ -364,17 +446,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   /**
-   * The row of pills inside the strip, **and `flexDirection: 'row'` written down
-   * rather than inherited.**
+   * The row of pills inside the strip, **and it carries the strip's own two
+   * properties now that the pills are one level deeper.**
    *
-   * The content container of a horizontal scroll view is a row, so the wrapper
-   * would lay its pills out side by side even without this. It is written anyway
-   * because the wrapper is the box the parallax moves, and a row that became a
-   * column the day somebody reordered two styles would put the four states under
-   * each other — taller than the strip, cut off by it, and with nothing failing.
+   * `flexDirection: 'row'` because the content container of a horizontal scroll
+   * view is a row and the wrapper would inherit that — written down because the
+   * wrapper is the box the parallax moves, and a row that became a column the day
+   * somebody reordered two styles would put the four states under each other,
+   * taller than the strip, cut off by it, with nothing failing.
+   *
+   * `alignItems: 'center'` because it **used to be on the content container and
+   * stopped reaching anything** the day the pills moved in here: the container's
+   * only child is the wrapper, so a pill one point taller than its neighbours would
+   * now stretch the row instead of being centred in it. The four pills are the same
+   * height today and nothing looks different — which is exactly why it is written
+   * here and not left where it was quietly reaching nothing.
    */
   pastillas: {
     flexDirection: "row",
+    alignItems: "center",
   },
   pastilla: {
     flexDirection: "row",
