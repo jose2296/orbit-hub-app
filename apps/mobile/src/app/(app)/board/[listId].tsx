@@ -271,6 +271,23 @@ export default function BoardScreen() {
    */
   const pasoColumna = columnOffset(1, anchoColumna, gapColumnas);
 
+  /**
+   * Where every column starts inside the track, **asked of `columnOffset` one
+   * column at a time and not summed here.**
+   *
+   * The worklet needs the edge of the column a swipe lands on, and the sum that
+   * gets there — `index * (width + gap)` — is the one Task 8 got wrong by leaving
+   * the gaps out. So the offsets are worked out here, with the function that owns
+   * the arithmetic, and the worklet reads a number out of an array.
+   */
+  const offsets = useMemo(
+    () =>
+      states.map((_, index) =>
+        columnOffset(index, anchoColumna, gapColumnas),
+      ),
+    [states, anchoColumna, gapColumnas],
+  );
+
   /** How many columns the board has, as a plain number for the worklets. */
   const cuantasColumnas = states.length;
 
@@ -402,7 +419,7 @@ export default function BoardScreen() {
     const index = states.findIndex((state) => state.id === id);
     // An id that is not a column of this board is not something to scroll to.
     if (index < 0) return;
-    const x = columnOffset(index, anchoColumna, gapColumnas);
+    const x = offsets[index] ?? 0;
     setActual(index);
     // Written here and not only from `onScroll`, because the first scroll event of
     // an animated jump arrives a frame or more after the jump is asked for — and a
@@ -410,6 +427,27 @@ export default function BoardScreen() {
     // has already left. See `scrollPrevio`.
     scrollPrevio.value = x;
     pista.current?.scrollTo({ x, animated: true });
+  }
+
+  /**
+   * Where a swipe puts the board, **and the scroller is moved without animating
+   * it.**
+   *
+   * This is the other half of `settle`, and it is a different function from `irA`
+   * because a tab tap and a swipe are two different moves: a tap has no finger
+   * travel under it, so the platform's own smooth scroll is the whole of the
+   * animation and nothing competes with it, while a swipe has `trackX` carrying
+   * the rest of the journey and two animations would add up to a path that is not
+   * monotonic. `settle`'s comment has the numbers.
+   *
+   * `scrollPrevio` is **not** written here: the worklet has already written it,
+   * from the interface thread, before this runs.
+   */
+  function asentarEn(next: number) {
+    const x = offsets[next];
+    if (x === undefined) return;
+    pista.current?.scrollTo({ x, animated: false });
+    setActual(next);
   }
 
   /**
@@ -536,28 +574,67 @@ export default function BoardScreen() {
   /**
    * Finishing a swipe, wherever the finger let go of it.
    *
-   * **Two things happen at once and they are the two halves of one move.** The
-   * displacement the finger left goes back to zero under an animation, and the
-   * board is asked to settle on the column the swipe decided on. They are in the
-   * same direction by construction — the drag went one way and the column it
-   * reaches is that way — so the columns keep travelling in one direction and only
-   * change speed, and there is no frame where the track is in two places.
+   * **One clock, and the whole journey is on it.** The scroller is put where the
+   * swipe decided **without animating it**, and `trackX` carries the columns the
+   * rest of the way to the column's edge. That is a change from what this did
+   * before, and the reason is a measurement rather than a preference — with both
+   * halves animating, the two paths were added up and the sum went backwards:
    *
-   * Which column it goes to is `nextPageFor`, the pure function: far enough or
-   * fast enough, in the direction of the travel, one column at a time, and never
-   * past either end of the **pager** — `paginas`, which is what the scroller can
-   * reach and not how many states the board has. It is not decided here because a
-   * threshold decided in a component is a threshold no test can reach.
+   * - the displacement the finger left was `285` on a 600-point drag, so
+   *   `285 / 2.6 =` **110 ms** of `Easing.out(cubic)`, which at 35 ms has already
+   *   eaten `1 - (1 - 0.318)³ =` **70%** of it, **201 points**;
+   * - the platform's smooth scroll, measured by tapping a tab and sampling
+   *   `scrollLeft` twenty-four times: **1.4% of 1140 points after 64 ms** on the
+   *   narrow board, and **2.8% of 283 after 35 ms** on the wide one — a
+   *   one-column scroll of 380 has done about **11** of its points by then;
+   * - so at 35 ms the columns had gone **201 − 11 = 190 points the wrong way**, and
+   *   at 110 ms, with the transform finished and the scroll at 11% of its own, they
+   *   were **243 points behind** before starting forward again. Nothing in that
+   *   path is a page turn; it is a page turn with a stamp on it.
    *
-   * The duration is what is left of the displacement and not a fixed number — see
-   * `PAGE_SPEED`. It is compared with nothing: **the scroll of the scroller is
-   * animated by the platform and its duration is not ours to pick**, so this is a
-   * sensible number rather than a matched one, and the columns settle on the edge
-   * of the column either way because that is the number `irA` is given.
+   * With the scroll instant there is one animation, **the path is monotonic by
+   * construction**, and the columns and the pills move together because they read
+   * `movido`.
+   *
+   * Which column it goes to is `nextPageFor`, the pure function: far enough or fast
+   * enough, in the direction of the travel, one column at a time, and never past
+   * either end of the **pager** — `paginas`, which is what the scroller can reach.
+   *
+   * **`movido` and not `trackX` for the re-base**, because `movido` is what is on
+   * screen: at the end of the board the finger's travel and the board's movement
+   * are not the same number, and re-basing from the raw one would leave the two out
+   * of step by whatever the band took.
+   *
+   * **The duration is now the whole journey and not this track's share of it**,
+   * which is what `PAGE_SPEED` has always meant in the panel — there `settle` works
+   * out `left` against the **destination** and animates all of it, and the three
+   * numbers are 2.6 points per millisecond between floors of 90 and 320. Before
+   * this, `left` was only the part the scroller was not covering and the same three
+   * numbers meant something else.
    */
   const settle = (velocity: number) => {
     'worklet';
     const next = nextPageFor(trackX.value, velocity, paginas, actual);
+    const objetivo = offsets[next] ?? scrollPrevio.value;
+    /**
+     * The scroller is about to move by `rebase`, so the transform moves with it:
+     * the two are equal and opposite and the columns do not move a point at the
+     * moment of the change.
+     *
+     * **Which of the two lands first is not decided here, and on native it cannot
+     * be**: the transform is written from this thread and the scroll is a command
+     * to the platform's own queue, so they are two queues and one of them is a
+     * frame late whichever order they are issued in. On the web they are the same
+     * thread — `runOnJS` there is a microtask, which flushes before the paint — and
+     * there is no frame between them. **What a late one costs is one column's
+     * displacement for one frame**, and the only way there is no such thing is for
+     * the scroller not to hold the position at all, which is what `panel-grid`
+     * does by having no scroller under its track. That is a bigger change than this
+     * one and it costs the wheel, so it is not taken here; it is written down so
+     * that whoever reads this knows the number is a cost and not a detail.
+     */
+    trackX.value = movido.value + (objetivo - scrollPrevio.value);
+    scrollPrevio.value = objetivo;
     const left = Math.abs(trackX.value);
     trackX.value = withTiming(0, {
       duration: Math.min(Math.max(left / PAGE_SPEED, PAGE_MIN), PAGE_MAX),
@@ -613,10 +690,9 @@ export default function BoardScreen() {
     .onEnd((event) => {
       const next = settle(event.velocityX);
       settled.value = true;
-      const id = states[next]?.id;
-      // Through `irA` and not a second jump of its own: a swipe and a tap on a tab
-      // have to be the same move, and `irA` is where `columnOffset` is read from.
-      if (id && next !== actual) runOnJS(irA)(id);
+      // Even when the swipe did not change the page: the scroller still has to be
+      // told where the board is, and `asentarEn` is the one place that says so.
+      runOnJS(asentarEn)(next);
     })
     .onFinalize(() => {
       // The finger is off the track, so the band stops: whatever is still moving is
