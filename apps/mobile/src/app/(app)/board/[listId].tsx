@@ -33,6 +33,7 @@ import {
   maxTrackScroll,
   nextPageFor,
   parallaxPage,
+  scrollTargetFor,
   trackContentWidth,
   trackRoomAt,
 } from "@/lib/lists/board-paging";
@@ -632,11 +633,36 @@ export default function BoardScreen() {
   const settle = (velocity: number) => {
     'worklet';
     const next = nextPageFor(trackX.value, velocity, paginas, actual);
-    const objetivo = offsets[next] ?? scrollPrevio.value;
     /**
-     * The scroller is about to move by `rebase`, so the transform moves with it:
-     * the two are equal and opposite and the columns do not move a point at the
-     * moment of the change.
+     * **The destination is clipped to what the scroller can reach, and that is not
+     * a detail of the animation — it is the whole reason the animation is right.**
+     *
+     * `next` is a column and `objetivo` was its offset, but a column is not always
+     * an offset the scroller has: `anchorableColumns` exists because a wide board has
+     * states that cannot be anchored, and a tab tap can select one of those, so
+     * `offsets[next]` can be past the end. **The browser clips the scroll and
+     * nothing below compensates it** — the re-base on the next line charges the
+     * transform a displacement the scroller is never going to make.
+     *
+     * Measured in the browser at 1440 with five states, `offsets`
+     * `[0, 283, 566, 849, 1132]` and `maxScroll` 283: the fifth state's tab, which
+     * the scroller puts at its maximum of 283, and then a **20-point** drag — far
+     * below the 56 that counts, so it should have done nothing at all. Clipped, the
+     * re-base is 0 and the track springs home over `PAGE_MIN` from six points.
+     * Unclipped, `trackX` was at **848** on the first frame — three columns — and
+     * back to zero **285 ms** later.
+     *
+     * **So the answer is the clipped one and the tab keeps the unclipped one**, which
+     * is the point of having `settle` return `next` separately: the fifth state is
+     * the fifth state whatever the scroller can do with it, and the board is where
+     * the scroller can put it. `scrollTargetFor` is where the clip lives, with its
+     * reasons, and it is a pure function so that the numbers are testable.
+     */
+    const objetivo = scrollTargetFor(offsets[next], scrollPrevio.value, maxScroll);
+    /**
+     * The scroller is about to move by `objetivo - scrollPrevio`, so the transform
+     * moves with it: the two are equal and opposite and the columns do not move a
+     * point at the moment of the change.
      *
      * **Which of the two lands first is not decided here, and on native it cannot
      * be**: the transform is written from this thread and the scroll is a command
@@ -647,8 +673,9 @@ export default function BoardScreen() {
      * displacement for one frame**, and the only way there is no such thing is for
      * the scroller not to hold the position at all, which is what `panel-grid`
      * does by having no scroller under its track. That is a bigger change than this
-     * one and it costs the wheel, so it is not taken here; it is written down so
-     * that whoever reads this knows the number is a cost and not a detail.
+     * one, and it costs more than the wheel: on all three targets it takes the
+     * track's own touch scrolling and its `pagingEnabled` with it, and the paging is
+     * what lets a column with more cards than fit scroll by itself.
      */
     trackX.value = movido.value + (objetivo - scrollPrevio.value);
     scrollPrevio.value = objetivo;

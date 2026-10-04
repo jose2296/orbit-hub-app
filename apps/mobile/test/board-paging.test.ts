@@ -7,6 +7,7 @@ import {
   maxTrackScroll,
   nextPageFor,
   parallaxPage,
+  scrollTargetFor,
   trackContentWidth,
   trackRoomAt,
 } from '../src/lib/lists/board-paging';
@@ -535,5 +536,101 @@ describe('un arrastre que no cuenta no mueve nada', () => {
     // Y una que si se mueve vuelve al rango, porque ya es un paso y un paso se
     // recorta al paginador.
     expect(nextPageFor(-900, 0, 4, -4)).toBe(0);
+  });
+});
+
+/**
+ * Where the scroller is actually put, which is not always where the column asked for.
+ *
+ * **The invariant this exists to protect is the re-base's**, and it is one line:
+ * `settle` charges the transform a displacement of `objetivo - scrollPrevio`, which
+ * is only true if the scroller moves by exactly that. **The browser clips the
+ * scroll** when `objetivo` is past the end and the scroller then moves by **less**
+ * than the transform was charged, and nothing gives the difference back.
+ */
+describe('donde acaba el scroller, que no es donde pedia la columna', () => {
+  /**
+   * **The literal case, with every number written out.**
+   *
+   * 1440 wide, five states, four columns of 271 in a track of 1120: `offsets`
+   * `[0, 283, 566, 849, 1132]` and `maxScroll` 283. `anchorableColumns(5, 283, 283)`
+   * is **2**, so only the first two columns are pages — and the fifth state's tab
+   * puts the scroller at its maximum of 283.
+   *
+   * A 20-point drag from there — which does not count, so `nextPageFor` answers the
+   * fifth state itself — and its offset of **1132** is three columns past what the
+   * scroller has. Clipped it is **283**, which is where the scroller already is, so
+   * the re-base is **0** and the track springs home from the six points the finger
+   * left. Unclipped the transform is charged **849** it will never get back.
+   *
+   * Measured in the browser before the clip: `trackX` at **848** on the first frame
+   * and zero **285 ms** later, on a gesture that had to do nothing.
+   */
+  it('cinco estados a lo ancho: la quinta columna se recorta a 283', () => {
+    const offsets = [0, 283, 566, 849, 1132];
+    const maxScroll = 283;
+    expect(anchorableColumns(5, maxScroll, 283)).toBe(2);
+    // La quinta columna elegida con una pestana: la respuesta es ella misma.
+    const next = nextPageFor(-20, 0, 2, 4);
+    expect(next).toBe(4);
+    // El indice se lee con `??` por `noUncheckedIndexedAccess`, y aqui lo que
+    // se lee es el numero del caso y no su ausencia.
+    const destino = offsets[next] ?? -1;
+    expect(destino).toBe(1132);
+
+    // Y el scroller, en su maximo, se queda ahi.
+    expect(scrollTargetFor(destino, 283, maxScroll)).toBe(283);
+    // El rebasing con el recorte es cero; sin el recorte serian 849 puntos.
+    expect(destino - 283).toBe(849);
+  });
+
+  it('una columna alcanzable no se toca, que es lo que se quiere decir con recortarla', () => {
+    const offsets = [0, 380, 760, 1140, 1520];
+    const maxScroll = 1520;
+    for (const next of [0, 1, 2, 3]) {
+      const destino = offsets[next] ?? -1;
+      expect(scrollTargetFor(destino, destino, maxScroll)).toBe(destino);
+    }
+    // Y con el scroller en otro sitio, que es lo que pasa al interrumpir un scroll.
+    expect(scrollTargetFor(offsets[2], 380, maxScroll)).toBe(760);
+    expect(scrollTargetFor(offsets[0], 1520, maxScroll)).toBe(0);
+  });
+
+  it('por debajo de cero es cero, porque un scroll negativo no es una posicion', () => {
+    expect(scrollTargetFor(-40, 100, 283)).toBe(0);
+    // Y con el scroller ya en cero y un destino negativo, sigue en cero.
+    expect(scrollTargetFor(-1, 0, 283)).toBe(0);
+  });
+
+  it('un destino desconocido es donde esta el scroller, que es no ir a ningun sitio', () => {
+    // Las columnas todavia no medidas dan `undefined` en el array de offsets.
+    expect(scrollTargetFor(undefined, 283, 283)).toBe(283);
+    expect(scrollTargetFor(undefined, 0, 283)).toBe(0);
+  });
+
+  it('un destino que no es un numero es donde esta el scroller tambien', () => {
+    // Una anchura sin medir es `NaN`, y `Math.min` con `NaN` devuelve `NaN`, que
+    // un `scrollTo` se come como si fuera cero sin decir nada.
+    expect(scrollTargetFor(Number.NaN, 283, 283)).toBe(283);
+    expect(scrollTargetFor(Number.POSITIVE_INFINITY, 283, 283)).toBe(283);
+    expect(scrollTargetFor(Number.NEGATIVE_INFINITY, 283, 283)).toBe(283);
+  });
+
+  it('un recorrido maximo sin medir es cero, y no un NaN que se cuela en el scroll', () => {
+    expect(scrollTargetFor(380, 0, Number.NaN)).toBe(0);
+    expect(scrollTargetFor(380, 283, Number.NaN)).toBe(283);
+    // Y un maximo negativo es cero, no un scroll hacia atras.
+    expect(scrollTargetFor(380, 283, -50)).toBe(283);
+  });
+
+  /**
+   * **And it is not `Math.min` alone**, which is the version that looks right and
+   * is not: it leaves a negative offset alone, and the whole of the below-zero case
+   * is that a negative scroll is not a position.
+   */
+  it('recorta por los dos lados y no solo por arriba', () => {
+    expect(scrollTargetFor(-100, 0, 1520)).toBe(0);
+    expect(scrollTargetFor(99999, 0, 1520)).toBe(1520);
+    expect(scrollTargetFor(760, 0, 1520)).toBe(760);
   });
 });

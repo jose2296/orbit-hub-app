@@ -189,6 +189,61 @@ export function nextPageFor(
   return Math.max(0, Math.min(last, Math.min(last, current) + step));
 }
 
+/**
+ * Where the scroller has to be put, **as a point it can actually reach.**
+ *
+ * The answer is one of three numbers, and the third one is the whole of why this is
+ * a function and not a line in the screen.
+ *
+ * `nextPageFor` says which **column** the board is anchored on, and that is not
+ * always a column the scroller can put at the left edge: `anchorableColumns` exists
+ * precisely because a wide board has states that cannot be anchored, and a tab tap
+ * can select one of those. So the column comes back as a **page**, and the page's
+ * offset is `offsets[page]`, which for a board of one column visible is `page × 380`
+ * with the gap inside it and for a wide board is whatever falls out of the division
+ * — and for the pages that do not exist it is past the end of the scroller.
+ *
+ * **The browser clamps that and nothing compensates it.** The re-base in `settle` is
+ * `movido + (objetivo - scrollPrevio)`, which assumes the scroller moves by exactly
+ * `objetivo - scrollPrevio`. Clipped to 283 out of an ordered 1132, the scroller
+ * moves 0, the transform is charged a full 849 it will never get back, and the
+ * columns fly three columns to the right and spring home. Measured in the browser at
+ * 1440 with five states — `offsets` `[0, 283, 566, 849, 1132]`, `maxScroll` 283 — the
+ * fifth state's tab followed by a **20-point** drag, which should have done nothing:
+ * `trackX` at **848** on the first frame and back to zero 285 ms later.
+ *
+ * So the target is clamped here, to `[0, maxScroll]`, and the order matters:
+ *
+ * 1. **below zero, zero.** A negative scroll is not a position, and `scrollTo` with
+ *    one is a scroller that goes somewhere it cannot come back from on some targets.
+ * 2. **past the end, the end.** This is the case above, and it is the one that has to
+ *    clamp: the scroller's own maximum *is* the answer, and handing back
+ *    `scrollPrevio` instead would be a lie when the scroller is already past it.
+ * 3. **otherwise the offset the column asked for**, and that is what the re-base and
+ *    the tab both mean.
+ *
+ * **An unknown offset is the scroller's own position, unchanged.** That is what a
+ * caller that has not measured the columns yet hands over, and the only safe answer
+ * to "where do I go from where I am" is "nowhere".
+ */
+export function scrollTargetFor(
+  offset: number | undefined,
+  scrollLeft: number,
+  maxScroll: number,
+): number {
+  'worklet';
+
+  const at = Number.isFinite(scrollLeft) ? scrollLeft : 0;
+  // A track whose own maximum is not a number, or is a negative one, has no
+  // reachable destination at all: `maxScroll` is zero until the track has been laid
+  // out and cannot be below zero after it has. **So the end of the range is where
+  // the scroller already is**, which makes every destination "stay here" instead of
+  // turning a `NaN` into a `scrollTo` to zero that nobody asked for.
+  const end = Number.isFinite(maxScroll) && maxScroll >= 0 ? maxScroll : at;
+  if (offset === undefined || !Number.isFinite(offset)) return at;
+  return Math.max(0, Math.min(end, offset));
+}
+
 /** How far a track can be dragged each way, both in points. */
 export interface TrackRoom {
   /**
