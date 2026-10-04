@@ -201,6 +201,15 @@ export default function BoardScreen() {
    * never scrolled, so the board ran off the bottom of the window instead of
    * scrolling inside its column.
    *
+   * `flexShrink: 1` on the wrapper would fix the web and is exactly what must not
+   * be done there: on native that wrapper is a child of the **row** inside the
+   * scroll view, and shrinking in a row is shrinking the width, so four columns of
+   * 271 would be squeezed into the 392 of the track. **So the height is measured
+   * and handed down**, the same way the width is, and no flexbox has to have an
+   * opinion about it on either target.
+   */
+  const [altoPista, setAltoPista] = useState(0);
+
   /**
    * The track's own width, measured, **and not the width of the box that measures
    * the board.**
@@ -212,29 +221,15 @@ export default function BoardScreen() {
    * 1120 at 1440 with the drawer open — and using the outer one anyway would be a
    * number that happens to be right, which is the kind this file has been bitten by
    * twice.
+   *
+   * **It is a second `onLayout` and not a second read of the first one**, because
+   * the box that measures the board is the one *around* the track and its layout
+   * event fires first. So there is one render with a positive column width and a
+   * zero track width, and in it `maxScroll` is 0 and the band is closed. Nothing can
+   * be dragged in that frame: the gesture is not on a track that has no width yet,
+   * and a finger that arrives before that is told to wait.
    */
   const [anchoPista, setAnchoPista] = useState(0);
-  /**
-   * The height of the track, measured, and zero until it has been.
-   *
-   * **It is a second measurement and not a flex rule, and the reason is a bug that
-   * only a column with more cards than fit shows.** The chain from the track down to
-   * the box of cards is a column of boxes on the web, and every one of them was
-   * sized by its content: `flexGrow: 1` fills what is left but **does not shrink**,
-   * and a box that is `flexShrink: 0` —which is what react-native-web gives every
-   * `View`, and what React Native does too— stays as tall as its content. Measured
-   * with seven cards in a track of 392: the column measured 610 and the box of cards
-   * never scrolled, so the board ran off the bottom of the window instead of
-   * scrolling inside its column.
-   *
-   * `flexShrink: 1` on the wrapper would fix the web and is exactly what must not
-   * be done there: on native that wrapper is a child of the **row** inside the
-   * scroll view, and shrinking in a row is shrinking the width, so four columns of
-   * 271 would be squeezed into the 392 of the track. **So the height is measured
-   * and handed down**, the same way the width is, and no flexbox has to have an
-   * opinion about it on either target.
-   */
-  const [altoPista, setAltoPista] = useState(0);
   /** Which column the board is anchored on, by index — the tabs' and the track's. */
   const [actual, setActual] = useState(0);
   const pista = useRef<ScrollView>(null);
@@ -525,19 +520,26 @@ export default function BoardScreen() {
    * whole length, which is a different complaint from the one this fixes.
    *
    * And it is here, and not inside the animated style, because the tabs read the
-   * same thing: measured in the browser at the last state of a 400-point board with
-   * a 300-point drag, the columns moved **83** and the pills moved **95**, because
-   * the pills were reading the travel the finger had made and the columns the travel
-   * there was room for. **The strip was running away from the board at the one moment
+   * same thing. **Measured at the last state of a 400-point board with a 300-point
+   * drag, with the broken version: the columns moved 83 and the pills 95.** The
+   * pills were reading the travel the finger had made and the columns the travel
+   * there was room for, so **the strip ran away from the board at the one moment
    * both were supposed to be saying there is nowhere to go**, and the only way that
    * does not come back is one number read by the two.
    *
-   * Both numbers are measured and both are the *banded* ones, which is the whole of
-   * what this note is for: the finger travelled 300 and the gesture does not start
-   * counting for 14 of them, and the band then divides what is left by 3.4 —
-   * `(300 - 14) / 3.4 =` 84, read as **83**. Writing 84 here would have been the
-   * calculated number passed off as the measured one, which is the mistake this
-   * comment exists to prevent.
+   * **Those two numbers are of the version that was broken, and they are here for
+   * that and not as a claim about this one.** With one number for both, the same
+   * gesture reads **pista −83 y pastillas −28**: the same 83 for the columns —
+   * `(300 - 14) / 3.4 =` 84, read as 83 — and 28 for the pills, which is `83 ×
+   * 0.3389` where `0.3389 = 368 / 380 × 0.35` is the parallax of a 400-point board.
+   * So the ratio here is **0.34**, the factor, where it was **1.14**.
+   *
+   * The two numbers also say the other half of the story and it is worth saying
+   * twice, because it is the half that hides: **the finger's 300 points are not
+   * 83.** The gesture does not start counting for the 14 points of slop and the
+   * band then divides what is left by 3.4, so `trackX` is −286 and `movido` is
+   * −83. A comment whose whole argument is a number has to be explicit about which
+   * of the two it is quoting, and 84 is the calculated one — measured is 83.
    */
   const movido = useDerivedValue(() => {
     let m = trackX.value;
@@ -585,19 +587,27 @@ export default function BoardScreen() {
    * swipe decided **without animating it**, and `trackX` carries the columns the
    * rest of the way to the column's edge. That is a change from what this did
    * before, and the reason is a measurement rather than a preference — with both
-   * halves animating, the two paths were added up and the sum went backwards:
+   * halves animating, the two paths were added up and the sum went backwards. **All
+   * three numbers below are from the 400-point board**, because mixing boards is
+   * how a measurement turns into a figure that is true of nothing:
    *
    * - the displacement the finger left was `285` on a 600-point drag, so
-   *   `285 / 2.6 =` **110 ms** of `Easing.out(cubic)`, which at 35 ms has already
-   *   eaten `1 - (1 - 0.318)³ =` **70%** of it, **201 points**;
-   * - the platform's smooth scroll, measured by tapping a tab and sampling
-   *   `scrollLeft` twenty-four times: **1.4% of 1140 points after 64 ms** on the
-   *   narrow board, and **2.8% of 283 after 35 ms** on the wide one — a
+   *   `285 / 2.6 =` **110 ms** of `out(cubic)`, which at 35 ms has already eaten
+   *   `1 - (1 - 0.318)³ =` **70%** of it, and `285 × 0.70 =` **201 points**;
+   * - the platform's smooth scroll on that same board, measured by tapping a tab
+   *   and sampling `scrollLeft` twenty-four times for the 1140 points of three
+   *   columns: **1.4% of 1140 after 64 ms**, so at 35 ms it is under **1%**, and a
    *   one-column scroll of 380 has done about **11** of its points by then;
-   * - so at 35 ms the columns had gone **201 − 11 = 190 points the wrong way**, and
-   *   at 110 ms, with the transform finished and the scroll at 11% of its own, they
-   *   were **243 points behind** before starting forward again. Nothing in that
-   *   path is a page turn; it is a page turn with a stamp on it.
+   * - so at 35 ms the columns had gone `201 - 11 =` **190 points the wrong way**,
+   *   and at 110 ms, with the transform finished and the scroll at 11% of its own,
+   *   they were **243 points behind** before starting forward again. Nothing in
+   *   that path is a page turn; it is a page turn with a stamp on it.
+   *
+   * **The other measurement of the scroll, 2.8% of 283 after 35 ms, is the
+   * 1440-point board and it is not in the sum.** 2.8% of 283 is 8, and turning
+   * that into "11 of a 380" is exactly how the figure above was wrong the first
+   * time: a number of one board offered as a number of another, and the sum of the
+   * three was therefore of nothing at all.
    *
    * With the scroll instant there is one animation, **the path is monotonic by
    * construction**, and the columns and the pills move together because they read

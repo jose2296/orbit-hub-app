@@ -149,6 +149,27 @@ export function nextPageFor(
   const step = passed ? -Math.sign(offset || velocity) : 0;
 
   /**
+   * **A drag that was not a swipe is left exactly where it was.**
+   *
+   * `step` is zero in two quite different cases and they used to fall through to the
+   * same line: a finger that stopped short, and a swipe the pager could not honour
+   * because it was already at an end. The second one is a real answer and the first
+   * one is nothing at all, and **the clamp below cannot tell them apart** — with
+   * `current` at 4 and a two-page pager, `Math.min(last, current)` is 1 whatever the
+   * step was, so a 20-point drag that never travelled far enough to count came back
+   * with the answer "page 1". Measured in the browser at 1440 with five states: the
+   * tab went from the fifth state to the second, on a gesture that had moved the
+   * board four points, and `board-paging.ts`'s own note on `BOARD_SWIPE_DISTANCE`
+   * says a slow short drag does nothing.
+   *
+   * **So nothing happened means the answer is the page that was already there**,
+   * including a column the pager cannot anchor: that is what a tab tap chose and
+   * what the board is showing, and moving the tab off it would be the app correcting
+   * a choice the user made, on a gesture that was not a request.
+   */
+  if (step === 0) return current;
+
+  /**
    * The last page, **and `current` is put inside it before the step is counted.**
    *
    * Not after, and that order is the whole of it. A tab tap can select a column
@@ -159,6 +180,10 @@ export function nextPageFor(
    * with two pages: measured in the browser at 1440, page 1 for a swipe to the
    * right from the fifth state. Counting the step from the nearest page instead
    * gives page 0, which is where the finger went.
+   *
+   * The `Math.max(0, …)` is for a `current` of `-1` or less, which is what a caller
+   * that has not read the board yet passes; a page is an index and an index cannot
+   * be negative.
    */
   const last = pages - 1;
   return Math.max(0, Math.min(last, Math.min(last, current) + step));

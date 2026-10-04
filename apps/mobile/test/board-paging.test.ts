@@ -484,3 +484,56 @@ describe('la pagina del paralaje', () => {
     expect(parallaxPage(0, 0)).toBe(0);
   });
 });
+
+/**
+ * A drag that never travelled far enough to count changes nothing.
+ *
+ * **And the case that needs it is a board where the pager is shorter than the
+ * states**, because that is the only place where the clamp and the step can
+ * disagree: with `current` inside the pager, `Math.min(last, current)` is `current`
+ * and `+ 0` changes nothing whatever. With five states and two pages, `current` of 4
+ * is outside, the clamp answers 1, and a gesture that moved the board four points
+ * took the tab from the fifth state to the second.
+ *
+ * Measured in the browser at 1440 before this: a 20-point drag — which is past the
+ * 14 of `activeOffsetX` and so activates the gesture, and far short of the 56 that
+ * counts — with the fifth state selected, and the tab moved to the second while
+ * `scrollLeft` did not move at all.
+ */
+describe('un arrastre que no cuenta no mueve nada', () => {
+  it('dentro del paginador, ni el mas corto cambia la pagina', () => {
+    expect(nextPageFor(0, 0, 4, 2)).toBe(2);
+    expect(nextPageFor(20, 0, 4, 2)).toBe(2);
+    expect(nextPageFor(-20, 0, 4, 2)).toBe(2);
+    expect(nextPageFor(0, 100, 4, 2)).toBe(2);
+  });
+
+  it('fuera del paginador tampoco, y ese es el que lo necesita', () => {
+    // Cinco estados, dos paginas, el quinto estado elegido con una pestana.
+    expect(anchorableColumns(5, 283, 283)).toBe(2);
+    // Por debajo del umbral de distancia y sin velocidad.
+    expect(nextPageFor(-20, 0, 2, 4)).toBe(4);
+    expect(nextPageFor(20, 0, 2, 4)).toBe(4);
+    expect(nextPageFor(0, 0, 2, 4)).toBe(4);
+    // Y por debajo del umbral de velocidad, que es el otro brazo del "o".
+    expect(nextPageFor(0, 419, 2, 4)).toBe(4);
+    expect(nextPageFor(0, -419, 2, 4)).toBe(4);
+    // Justo en el umbral ya cuenta, y entra al paginador por el lado del dedo.
+    expect(nextPageFor(-56, 0, 2, 4)).toBe(1);
+    expect(nextPageFor(56, 0, 2, 4)).toBe(0);
+  });
+
+  /**
+   * **The one that has no answer: a page is an index, and a caller that has not read
+   * the board yet passes a negative one.** A drag of nothing returns it as it came,
+   * because the drag did nothing, and the index it returns is the index it was
+   * given. That is deliberate and it is written down: the caller here is a screen
+   * that holds `actual`, and `actual` starts at 0.
+   */
+  it('una columna negativa que no se mueve se devuelve tal cual', () => {
+    expect(nextPageFor(0, 0, 4, -4)).toBe(-4);
+    // Y una que si se mueve vuelve al rango, porque ya es un paso y un paso se
+    // recorta al paginador.
+    expect(nextPageFor(-900, 0, 4, -4)).toBe(0);
+  });
+});
