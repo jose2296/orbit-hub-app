@@ -11,13 +11,16 @@ tags: [smoke]
 # `legal-notice.tsx`.
 - launchApp
 # Tras el arranque, `extendedWaitUntil`: el motivo y la medida estan en
-# `welcome.yaml`. Aqui no hay `clearState`, pero el flujo anterior deja la app
-# recien cerrada -el `back` sale de la aplicacion-, asi que esto tambien es un
-# arranque en frio.
+# `welcome.yaml`. Y el tope es el mismo por una razon que solo se ve aqui: este flujo
+# espera una pantalla caliente -el `back` del flujo anterior la deja en pie-, pero con
+# `continueOnFailure: true` corre **igual** cuando el anterior fallo, y entonces
+# hereda su arranque en frio con la descarga de los 13 MB del bundle. Con el tope
+# pequeno de antes, un fallo de `welcome` se convertia en dos fallos en vez de uno, y
+# el informe senalaba dos problemas donde solo habia uno.
 - extendedWaitUntil:
     visible:
       id: screen-welcome
-    timeout: 60000
+    timeout: 180000
 # Y una espera antes del toque: Maestro **reintenta las afirmaciones y no los
 # toques**. Los dos enlaces estan al final de la pantalla -y 2250 de 2400- y en un
 # build de depuracion se cruzan con el aviso de LogBox, que sale por abajo del todo.
@@ -32,9 +35,12 @@ tags: [smoke]
 # abierta deja al siguiente mirando donde no toca, y ese fallo se lee como un fallo
 # del siguiente.
 #
-# Y volver con la tecla de atras **hoy falla**, y con razon: la tecla de atras de
-# Android sale de la aplicacion en vez de desapilar. No es el arnes, y el por que
-# esta escrito en `apps/mobile/e2e/README.md`.
+# Y volver con la **tecla de atras de hardware**, no con el boton de la cabecera:
+# es lo que fallaba y es lo que se comprueba. Medido: con
+# `android.predictiveBackGestureEnabled` en `true` la tecla cerraba la aplicacion en
+# vez de desapilar, porque React Native solo registra su `OnBackPressedCallback`
+# cuando `SDK_INT >= 36 && targetSdkVersion >= 36`, y el emulador es API 35. El
+# motivo y el precio del arreglo estan en el ADR 0034.
 - back
 - assertVisible:
     id: screen-welcome

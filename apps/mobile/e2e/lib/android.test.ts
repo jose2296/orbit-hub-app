@@ -2,7 +2,38 @@ import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseDevices, pickDevice } from './android';
+import { parseDevices, pickDevice, xmlPrefsMetro } from './android';
+
+describe('xmlPrefsMetro', () => {
+  it('deja el host del dev server en las preferencias por defecto de la app', () => {
+    expect(xmlPrefsMetro('localhost:8095')).toContain(
+      '<string name="debug_http_host">localhost:8095</string>',
+    );
+  });
+
+  it('no deja que el puerto cierre el elemento y se cuele otro nombre', () => {
+    // El puerto viene de `E2E_METRO_PORT`, o sea de fuera. Sin escapar, un valor con
+    // un `>` cerraria el `<string>` y escribiria una preferencia mas en un fichero de
+    // la app.
+    const xml = xmlPrefsMetro('8095</string><string name="debug_server_host">x');
+    expect(xml).not.toContain('<string name="debug_server_host">');
+    expect(xml).toContain('&lt;/string&gt;');
+  });
+
+  it('escapa tambien el ampersand, que en XML llega antes que el resto', () => {
+    // En el orden de reemplazo de abajo `&` va primero a proposito: si se escapara
+    // despues, `&lt;` se convertiria en `&amp;lt;` y el XML quedaria mal formado.
+    expect(xmlPrefsMetro('a&b')).toContain('>a&amp;b<');
+  });
+
+  it('termina en salto de linea, porque el fichero que se escribe con `cat` lo espera', () => {
+    // Sin el salto final, el `cat > fichero` deja la ultima linea sin cerrar en
+    // cuanto el proceso escribe algo mas, y un `SharedPreferences` a medio escribir no
+    // se lee: la app vuelve a su valor por defecto en silencio. Es el fallo que esta
+    // funcion existe para evitar, reintroducido por un byte.
+    expect(xmlPrefsMetro('localhost:8095').endsWith('</map>\n')).toBe(true);
+  });
+});
 
 describe('pickDevice', () => {
   it('elige el unico dispositivo conectado', () => {

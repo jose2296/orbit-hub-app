@@ -22,9 +22,11 @@ que copiarlos tal cual falla a proposito. El `--` final del script de la raiz ta
 **fallan** en vez de correr en verde sin haber probado nada: el primero listando los nombres validos,
 la segunda diciendo que lo unico que hay son `--area` y `--flow`. Con `--flow` la fila del informe
 dice `1 flujo`, no los que tiene el area: el numero del informe es lo que se ha corrido.
-El arnes levanta la API y Metro si no estan, hace `adb reverse` de los dos puertos -sin eso la app
-muestra un recuadro rojo-, siembra una cuenta con sus datos, corre, y sale con codigo distinto de
-cero si **alguna area sale en `FALLA`**. Un area sin flujos lleva `NADA` y no pone la carrera en rojo:
+El arnes levanta la API y Metro, siembra una cuenta con sus datos, corre, y sale con codigo distinto de
+cero si **alguna area sale en `FALLA`**. Levantar los dos lleva mas de lo que parece: elige un **puerto
+libre** para cada uno -el 8081 es el primero que se mira, no el unico-, hace `adb reverse` de los dos, y
+**le dice a la app de que puerto es su Metro**, porque si no la app baja el bundle de quien este en el
+8081 del host, que puede ser otro checkout de este mismo repositorio. Un area sin flujos lleva `NADA` y no pone la carrera en rojo:
 aun no hay nada que probar, y no es un fallo. Todo queda en `capturas/android/`: `informe.txt` con una fila por area y **el flujo que fallo con su motivo debajo**, mas una captura, los logs y las credenciales.
 
 ## Anadir un flujo
@@ -52,6 +54,26 @@ kebab-case con prefijo de area: `screen-<nombre>` para la raiz de la pantalla -l
 
 **Por que `testID` y no texto:** la app es bilingue, y un selector de texto se rompe en cuanto se retoca una palabra de un idioma. La unica cadena que un flujo puede afirmar es una del seed.
 
+## Si un area sale en FALLA
+
+Antes de mirar la app, mira **de que bundle esta corriendo**. Un area en rojo con este arnes no
+significa "la app esta rota": significa, primero, que hay que descartar que la app no este ejecutando
+esta rama. El sintoma es identico en los dos casos -los flujos no ven ningun `testID`-, y el segundo
+no deja ninguna otra pista.
+
+```bash
+adb -s <serial> shell run-as com.jrzlabs.orbithub \
+  cat files/BridgelessReactNativeDevBundle.js > /tmp/bundle.js
+grep -c 'screen-welcome' /tmp/bundle.js   # 0 = el bundle no es de esta rama
+```
+
+Si sale `0`, el problema no es la app: es que otro Metro -el de otro checkout de este repo, o de otro
+proyecto- tiene el 8081 del host y la app le esta pidiendo el bundle a el. Pasa porque **React Native
+ignora `adb reverse` en el emulador**: lee la preferencia `debug_http_host` y, si no esta, cae a
+`10.0.2.2`, que es la IP del host vista desde el emulador. Por eso el arnes escribe esa preferencia
+con `run-as`. El motivo entero, con las mediciones, esta en el
+[ADR 0035](../../../docs/architecture/adr/0035-dev-server-del-arnes.md).
+
 ## Lo que el guardian mira, y lo que todavia no
 
 Ademas de lo que Maestro afirma, el arnes mira el proceso y el buffer de crash al cerrar cada area,
@@ -66,12 +88,26 @@ cableada y se dice en los tres sitios donde se decide -`lib/guard.ts`, la pagina
 [ADR 0033](../../../docs/architecture/adr/0033-regresion-e2e-android.md)- en vez de presentarla como
 una comprobacion que vigila. El arreglo de verdad es que Maestro devuelva el pid que levanto la app.
 
-## Hoy hay una linea roja, y es de la app
+## `01-onboarding` estuvo en rojo, y por que no lo esta
 
-`01-onboarding` sale en rojo: `privacy` y `terms` terminan pulsando `back` y afirmando que se ha
-vuelto a `screen-welcome`, y la tecla de atras de Android **sale de la aplicacion** en vez de
-desapilar; el boton de la cabecera si funciona. Es un defecto de la app, no del arnes: los flujos
-estan escritos como deben y pasan solos cuando la app se arregle. El informe lo dice en su ultima
-linea, y solo mientras sean **esos dos flujos** los que fallen: si el area se pone roja por otra cosa, la nota no culpa a un fallo del que nadie sabe nada.
+Hubo un `FALLA` permanente en `privacy` y `terms`: los dos terminan pulsando `back` y afirmando que
+se ha vuelto a `screen-welcome`, y la tecla de atras de hardware **cerraba la aplicacion** en vez de
+desapilar. El boton de la cabecera funcionaba, lo que hacia que el fallo pareciera del flujo.
+
+No era un defecto de la app: era `android.predictiveBackGestureEnabled: true` en `app.json`. Ese flag
+pone `android:enableOnBackInvokedCallback="true"` en el manifiesto, y React Native 0.86 registra su
+`OnBackPressedCallback` **solo** cuando `SDK_INT >= 36 && targetSdkVersion >= 36`. Con
+`targetSdk = 36` y el emulador en API 35, no hay nadie que consuma la tecla y el sistema termina la
+activity. En API 36 y superiores funciona, que es por que nadie lo habia visto.
+
+El arreglo es una linea -el flag a `false`-, y su precio es perder la animacion de gesto predictivo
+en API 36+. El motivo, la medida y el por que se acepta estan en el
+[ADR 0034](../../../docs/architecture/adr/0034-back-de-android.md). Por eso los dos flujos pulsan la
+**tecla de hardware** y no el boton: es lo que fallaba, y ahora es la regresion.
+
+Mientras el defecto estaba vivo, el informe imprimia una nota de "conocido y sin arreglar" debajo de
+la fila. Se retiro sola al arreglarse -solo se imprime si los flujos que nombra son los que han
+fallado de verdad- y la tabla con ella; la regla para volver a traerla esta en el
+[ADR 0033](../../../docs/architecture/adr/0033-regresion-e2e-android.md).
 
 Lo que el arnes **no** comprueba: que al guardar se guardara el texto correcto, ni logica, ni capturas comparadas entre carreras. Es humo, y se presenta como humo.

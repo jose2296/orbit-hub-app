@@ -41,34 +41,6 @@ const COLUMNA = 7;
 const ancho = (texto: string, n: number) => texto.padEnd(n);
 
 /**
- * Las areas que hoy estan en rojo por un motivo que ya se sabe, y no es el arnes.
- *
- * **Por que esto vive en el informe y no solo en el README.** Un informe que dice
- * `FALLA` sin decir mas se lee como un arnes roto, y quien lo encuentra dentro de
- * tres semanas no va a abrir el README para comprobar si el fallo es suyo o
- * nuestro. Con esta nota, el fichero dice el motivo en el sitio donde se mira el
- * motivo.
- *
- * **Por que se imprime solo si los flujos que nombra fallan de verdad.** Una nota
- * que se apoya en el area puede afirmar algo falso: si `01-onboarding` se pone roja
- * porque `welcome` ha regresado mientras `privacy` y `terms` siguen en verde, la
- * nota diria que los que fallan son los dos que nombra -y estan en verde- y
- * anadiria que van a pasar solos cuando se arregle. El keying por los flujos lo
- * impide: `conocidosVivos` exige que esten los, y ademas que el guardian no tenga
- * nada que decir, porque con el guardian en rojo el motivo es el guardian.
- *
- * Y por que la lista es de datos y no un parrafo: anadir un area a la fase 2 con
- * un fallo conocido es escribir una linea mas aqui, no reescribir un texto.
- */
-const CONOCIDOS: { area: string; flujos: string[]; porque: string }[] = [
-  {
-    area: '01-onboarding',
-    flujos: ['privacy', 'terms'],
-    porque: 'la tecla de atras de Android sale de la aplicacion en vez de desapilar',
-  },
-];
-
-/**
  * Los flujos que Maestro admite que fallaron, con su motivo.
  *
  * La forma que se busca es la que Maestro imprime por flujo:
@@ -182,6 +154,29 @@ export function saleEnRojo(resultados: AreaResult[]): boolean {
  * fila y recuento- se pintan con `veredictoArea`, que es la misma que decide el
  * codigo de salida del runner: que la carrera salga con codigo 0 al montar un area
  * nueva no es una promesa del documento, es que `saleEnRojo` no cuenta un `NADA`.
+ *
+ * **Lo que se quita de aqui, y por que se puede quitar.** Hasta el arreglo de la
+ * tecla de atras, el informe imprimia debajo una nota por cada area con un fallo
+ * conocido **de la app**: `01-onboarding` en rojo porque el boton de atras de
+ * Android salia de la aplicacion en vez de desapilar. La nota vivia en el informe y
+ * no solo en el README porque quien encuentra el fichero dentro de tres semanas no
+ * abre el README para ver si el fallo es suyo, y era lo que impedia leer un `FALLA`
+ * como un arnes roto.
+ *
+ * El defecto se arreglo -`android.predictiveBackGestureEnabled` a `false`, con el
+ * motivo y el precio en el ADR 0034- y la nota se retiro sola, que es exactamente
+ * lo que se escribio para que hiciera: solo se imprime mientras los flujos que
+ * nombra sean los que Maestro dice que han fallado. Y al quedarse la lista vacia se
+ * fue **la maquinaria con ella**: una tabla de conocidos sin entradas, un filtro
+ * sobre ella y sus pruebas son codigo que no puede fallar y comprobaciones que no
+ * miran la app.
+ *
+ * Volver a traerla es anadir una tabla y un filtro, y hay una regla que no se puede
+ * relajar: **la nota solo se imprime si los flujos que nombra son los que fallan**,
+ * y solo si el guardian no tiene nada que decir. Apoyada en el area sola, atribuiria
+ * un fallo conocido a un area roja por otra causa y prometeria un arreglo que no
+ * tocaria ese fallo. La regla quedo escrita en el ADR 0033 para el dia que haga
+ * falta.
  */
 export function renderReport(resultados: AreaResult[]): string {
   const lineas: string[] = [];
@@ -215,48 +210,15 @@ export function renderReport(resultados: AreaResult[]): string {
 
   // La leyenda de abajo no es un adorno: sin ella, un `FALLA` sin mas se lee como
   // un arnes roto, y esa es la lectura que hace que nadie mire el motivo de la
-  // fila de al lado -que es donde esta la causa.
+  // fila de al lado -que es donde esta la causa-. Por eso se queda **siendo la
+  // ultima linea** aunque ya no haya ninguna nota de fallo conocido debajo: es la
+  // que manda a mirar el motivo, y el motivo sigue siendo el de la fila.
   lineas.push('');
   lineas.push(
     'Un area en FALLA no es el arnes roto: el motivo va en su fila o en las de debajo, y puede ser de la app.',
   );
 
-  for (const k of conocidosVivos(resultados)) {
-    // Una sola linea, larga, sin plegarla: plegarla partiria el nombre de los
-    // flujos entre dos lineas y el informe se lee igual de bien en cualquier
-    // editor, que ya envuelve solo.
-    lineas.push(
-      `conocido y sin arreglar: ${k.flujos.join(' y ')} de ${k.area} caen en su paso \`back\` porque ${k.porque}. No lo causa el arnes: pasan cuando se arregle.`,
-    );
-  }
-
   return lineas.join('\n');
-}
-
-/**
- * Los motivos conocidos que **siguen siendo verdad** en esta carrera.
- *
- * Las tres condiciones son las tres cosas que tienen que cumplirse a la vez: el
- * area es la nombrada, el guardian no tiene nada que decir -con el guardian en
- * rojo manda el guardian-, y **los flujos nombrados estan entre los que Maestro
- * dice que fallaron**. La tercera es la que hace que la nota no pueda afirmar
- * sobre un area roja por otra causa.
- *
- * El prefijo `<flujo>: ` es el que escribe `fallosDeMaestro` y el que se busca
- * aqui: las dos mitades usan el mismo formato, asi que hay un solo sitio donde se
- * pueden desincronizar. Y si el parser se rompe y devuelve una lista vacia, la
- * nota **no** se imprime, que es la direccion en que conviene equivocarse.
- */
-function conocidosVivos(resultados: AreaResult[]): typeof CONOCIDOS {
-  return CONOCIDOS.filter((k) =>
-    resultados.some(
-      (r) =>
-        r.area === k.area &&
-        r.guard.ok &&
-        !r.maestroOk &&
-        k.flujos.every((f) => r.fallidos.some((linea) => linea.startsWith(`${f}: `))),
-    ),
-  );
 }
 
 /**

@@ -303,103 +303,59 @@ describe('fallosDeMaestro', () => {
 });
 
 /**
- * El informe tiene que decir que esta linea roja tiene un motivo conocido, o se
- * lee como un arnes roto. Y el motivo se imprime **solo mientras siga siendo
- * verdad**: en cuanto los flujos que nombra pasan, la nota desaparece sola y el
- * fichero vuelve a ser solo un informe.
+ * Lo que se retiro con el arreglo de la tecla de atras, y lo que se queda.
+ *
+ * El informe imprimia una nota por cada area con un fallo conocido **de la app** -
+ * `01-onboarding` en rojo porque el boton de atras salia de la aplicacion- y esa
+ * nota solo se imprimia mientras los flujos que nombraba fueran los que Maestro
+ * decia que habian fallado. El defecto se arreglo, la lista se quedo vacia y la
+ * tabla de conocidos se borro con ella: una tabla sin entradas, un filtro sobre ella
+ * y sus pruebas son codigo que no puede fallar.
+ *
+ * Lo que no se borro es la leyenda que la acompanaba, y que ahora es la ultima linea
+ * del fichero. Estas pruebas son suyas: si desaparece, un `FALLA` vuelve a leerse
+ * como un arnes roto sin que nadie mire el motivo de la fila de al lado.
  */
-describe('renderReport y la linea roja conocida', () => {
-  const onboarding = (fallidos: string[]) => ({
-    area: '01-onboarding',
-    flows: 3,
-    maestroOk: false,
-    guard: { ok: true, problems: [] },
-    fallidos,
+describe('renderReport y la leyenda final', () => {
+  it('la ultima linea manda a mirar el motivo de la fila y no acusa al arnes', () => {
+    const lineas = renderReport([bien, mal]).split('\n');
+    const ultima = lineas[lineas.length - 1]!;
+    expect(ultima).toContain('no es el arnes roto');
+    expect(ultima).toContain('motivo va en su fila o en las de debajo');
+    // Y dice que puede ser de la app, que es lo que hacia falta para no leer el
+    // rojo como un fallo del arnes.
+    expect(ultima).toContain('puede ser de la app');
   });
-  const nota = 'conocido y sin arreglar';
 
-  it('con los flujos que nombra fallando de verdad, dice el motivo y que no lo causa el arnes', () => {
-    const informe = renderReport([
-      onboarding([
-        'privacy: Assertion is false: id: screen-welcome is visible',
-        'terms: Assertion is false: id: screen-welcome is visible',
+  it('la leyenda se imprime tambien con la carrera en verde', () => {
+    // No es decorado condicional a que algo falle: el fichero se abre cuando se busca
+    // un motivo, y ese motivo es el `FALLA` de una fila de arriba. Leyendola solo
+    // cuando hay rojo, estaria justo en el dia que hace falta.
+    expect(renderReport([bien]).split('\n').pop()).toContain('no es el arnes roto');
+  });
+
+  it('no queda ninguna nota de fallo conocido en el informe', () => {
+    // La lista se borro, asi que el informe no puede afirmar ya que ningun fallo es
+    // conocido. Este texto es el que se imprimia entonces: si vuelve a aparecer sin
+    // una lista que lo sostenga, el informe estaria afirmando un motivo que nadie
+    // ha comprobado.
+    const informes = [
+      renderReport([bien]),
+      renderReport([mal]),
+      renderReport([vacio]),
+      renderReport([
+        {
+          ...mal,
+          area: '01-onboarding',
+          fallidos: ['privacy: Assertion is false: id: screen-welcome is visible'],
+        },
       ]),
-    ]);
-    expect(informe).toContain(nota);
-    expect(informe).toContain('privacy');
-    expect(informe).toContain('terms');
-    expect(informe).toContain('No lo causa el arnes');
-  });
-
-  it('con el area en verde, la nota no aparece', () => {
-    // El dia que se arregle la tecla de atras, esto es lo que evita que el
-    // informe siga detectando un fallo que ya no existe.
-    expect(renderReport([bien])).not.toContain(nota);
-  });
-
-  it('la nota no aparece si el area roja es otra', () => {
-    // Con los mismos nombres de flujo a proposito: un area de la fase 2 puede
-    // tener sus propios `privacy.yaml` y `terms.yaml`, y la nota **nombra**
-    // `01-onboarding`. Sin mirar el area, un area de listas en rojo se
-    // aparecerian los dos flujos que nombra aunque no sean los suyos.
-    const otra = onboarding([
-      'privacy: Assertion is false: id: screen-welcome is visible',
-      'terms: Assertion is false: id: screen-welcome is visible',
-    ]);
-    expect(renderReport([{ ...otra, area: '04-lists', flows: 5 }])).not.toContain(nota);
-  });
-
-  it('NO aparece si el area roja fallo por otra causa y sus flujos siguen en verde', () => {
-    // **El caso que keying por el area no puede coger.** `welcome` ha regresado
-    // mientras `privacy` y `terms` pasan. La nota, apoyada en el area, diria que
-    // los que fallan son los dos que nombra -y estan en verde-, y prometeria que
-    // van a pasar solos cuando se arregle la tecla de atras. Aqui no se arregla
-    // ninguna tecla de atras: el fallo es otro y todavia nadie lo sabe.
-    const informe = renderReport([
-      onboarding(['welcome: Assertion is false: id: screen-welcome is visible']),
-    ]);
-    expect(informe).not.toContain(nota);
-    // Y el motivo real sigue estando, que es lo que hace que el informe siga
-    // siendo suficiente sin la nota.
-    expect(informe).toContain('welcome: Assertion is false: id: screen-welcome is visible');
-  });
-
-  it('NO aparece si solo fallo uno de los dos flujos que nombra', () => {
-    // La nota afirma que los dos caen por la tecla de atras. Con uno solo la
-    // afirmacion es media verdad, y media verdad en un informe es mentira.
-    const informe = renderReport([
-      onboarding(['privacy: Assertion is false: id: screen-welcome is visible']),
-    ]);
-    expect(informe).not.toContain(nota);
-  });
-
-  it('NO aparece con un area en verde aunque la lista de flujos diga otra cosa', () => {
-    // Registro contradictorio: Maestro dijo que el area esta bien y aun asi
-    // arrives flujos caidos. No puede pasar -los dos salen del mismo `code`-,
-    // pero el guard tiene las tres condiciones y esta es la tercera: sin ella,
-    // quitar `!r.maestroOk` del keying no romperia nada y seria codigo muerto
-    // creyendo que protege.
-    const verde = {
-      ...onboarding([
-        'privacy: Assertion is false: id: screen-welcome is visible',
-        'terms: Assertion is false: id: screen-welcome is visible',
-      ]),
-      maestroOk: true,
-    };
-    expect(renderReport([verde])).not.toContain(nota);
-  });
-
-  it('NO aparece si el guardian tiene algo que decir', () => {
-    // Con el guardian en rojo el motivo es el guardian, y la nota se apropiaria
-    // de un fallo que no es suyo.
-    const conCrash = {
-      ...onboarding([
-        'privacy: Assertion is false: id: screen-welcome is visible',
-        'terms: Assertion is false: id: screen-welcome is visible',
-      ]),
-      guard: { ok: false, problems: ['la app se cerro - no hay proceso'] },
-    };
-    expect(renderReport([conCrash])).not.toContain(nota);
+      renderReport([]),
+    ];
+    for (const informe of informes) {
+      expect(informe).not.toMatch(/conocido y sin arreglar/);
+      expect(informe).not.toMatch(/No lo causa el arnes/);
+    }
   });
 });
 

@@ -24,11 +24,11 @@ texto correcto es otro nivel y mas caro, y esta fuera a proposito.
 | Fichero | Que hace |
 | --- | --- |
 | `run-android.ts` | El guion: dispositivo, servicios, seed, bucle de areas, informe |
-| `lib/android.ts` | `adb` con `maxBuffer`, pid, lineas de crash, `forceStop`, capturas |
+| `lib/android.ts` | `adb` con `maxBuffer`, pid, lineas de crash, `forceStop`, capturas, `limpiaDatos` y `apuntaMetro` |
 | `lib/areas.ts` | Las areas son los subdirectorios de `flows/`; flags y `flowsOrder` |
 | `lib/maestro.ts` | La invocacion de Maestro, y las claves de config que ya no existen |
 | `lib/guard.ts` | El veredicto: proceso y buffer de crash |
-| `lib/stack.ts` | Levantar y parar API y Metro, y no tocar lo que ya estaba en pie |
+| `lib/stack.ts` | Levantar y parar API y Metro, no tocar lo que ya estaba en pie, y elegir puertos libres |
 | `lib/report.ts` | La tabla del informe, y el parseo de los flujos que fallaron |
 | `seed/e2e-account.ts` | Dos cuentas verificadas, con datos de verdad, y sus ids |
 
@@ -43,13 +43,40 @@ la app: el segundo llega con su nombre en el informe y el primero con una foto.
 2. **La API y Metro**, si no estan ya escuchando. `ensureService` mide el puerto, arranca lo que
    falta con su `PGLITE_DATA_DIR` y su `EMAIL_TRANSPORT=console` de la carrera, y al terminar
    para solo lo que arranco el.
-3. **`adb reverse` de los dos puertos.** Y no es un adorno: la app corre DENTRO del emulador y pide
-   `127.0.0.1` al host, asi que sin el reverse el bundle no baja y lo que se ve es un recuadro rojo
-   que se lee como "la app esta rota".
+3. **Los puertos libres, `adb reverse`, y decirle a la app de donde es su Metro.** Las tres cosas
+   hacen falta y el orden es parte del contrato. `eligePuerto` sube desde el puerto pedido hasta
+   encontrar uno libre: sin eso, `ensureService` encuentra el 8081 con `/status` respondiendo, dice
+   "ya estaba en pie" y **no arranca su Metro**. `adb reverse` pone los dos puertos a disposicion de
+   la app... y por si solo **no** sirve, que es lo que se creyo al reves durante semanas: React Native
+   ignora el reverse en el emulador, lee la preferencia `debug_http_host` y, si no esta, cae a
+   `10.0.2.2` -la IP del host vista desde el emulador-, que no pasa por ningun reverse. Por eso
+   `apuntaMetro` escribe esa preferencia con `run-as`, y por eso el `pm clear` de `limpiaDatos` va
+   **antes**: el orden inverso deja la app sin la preferencia y bajando el bundle de quien este en el
+   8081 del host. Todo el detalle y las mediciones estan en el
+   [ADR 0035](adr/0035-dev-server-del-arnes.md).
+
+   Y esto tiene una consecuencia de diagnostico que es la parte cara: **un area en rojo no significa
+   "la app esta rota".** El sintoma es identico cuando la app baja el bundle de otro checkout de este
+   repositorio -los flujos no ven ningun `testID`- y ese caso no deja ninguna otra pista. Antes de
+   mirar la app hay que mirar el bundle, y el comando esta en el
+   [README del arnes](../../apps/mobile/e2e/README.md).
 4. **La siembra**, por HTTP contra la API real, y el token de verificacion **leido del log de la
    API**, que es de donde sale con `EMAIL_TRANSPORT=console`.
-5. **El bucle de areas.** Por area: `forceStop`, `logcat -c`, la linea de base, Maestro con el
-   directorio entero -o con un solo flujo si viene `--flow`-, el veredicto y una captura.
+5. **El bucle de areas.** Por area: `forceStop`, `logcat -c`, `pm clear` y la preferencia del dev
+   server -en ese orden-, la linea de base, Maestro con el directorio entero -o con un solo flujo si
+   viene `--flow`-, el veredicto y una captura.
+
+   El `pm clear` va aqui y no en el flujo porque es lo que garantiza el arranque sin sesion que
+   `welcome.yaml` necesita, y porque **borra la preferencia** que el paso anterior acaba de escribir:
+   medido, con la preferencia antes del `pm clear` la app arranca en el panel sin un solo `testID` de
+   la rama, y al reves llega a `screen-welcome`. `welcome.yaml` por eso va con un `launchApp` pelado.
+
+   Y el precio de limpiar por area es un arranque en frio de verdad: el `pm clear` borra tambien la
+   cache del bundle, o sea que el primer flujo de cada area descarga los 13 MB otra vez. Medido,
+   `screen-welcome` aparece a los **51 s** en frio y a los 3.7 s con la cache. Los tres flujos de
+   `01-onboarding` llevan por eso un tope de 180 s, y no solo `welcome`: con `continueOnFailure: true`
+   cada uno corre aunque los anteriores fallen, y entonces hereda el arranque en frio. Con el tope de
+   60 s que habia antes fallaban los tres por nueve segundos.
 6. **El informe**, y el `exitCode` segun si alguna area fallo. Las banderas aceptan las dos formas,
    `--area x` y `--area=x`, y un `--...` que no sea de las dos lanza: un flag mal escrito que se pasa
    sin quejarse es una carrera entera en verde sin haber corrido lo que se le pidio.
@@ -133,8 +160,20 @@ que la levante-, mientras el informe de la misma carrera decia `NADA`. Un area *
 queda sin proceso sigue siendo un fallo, y por el mismo camino: ahi si se ha probado algo y no
 estaba.
 
-Cuando `01-onboarding` este en rojo por la tecla de atras, el informe lo dice en su ultima linea. La
-linea roja actual -la tecla de atras sale de la aplicacion en vez de desapilar- es un defecto **de la
-app**, no del arnes, y no se ha tapado: los flujos estan escritos como deben. Esa nota se imprime
-solo si **los dos flujos que nombra son los que han fallado**, para que no pueda aparecer el dia que
-`01-onboarding` se ponga roja por otra causa, y se retira sola cuando la app se arregle.
+**Y que un area en rojo pueda ser un defecto de la app, con su motivo escrito en el informe.** Hubo
+uno: la tecla de atras de Android salia de la aplicacion en vez de desapilar. No se tapo -tapar
+seria cambiar el flujo para que la suite no lo encontrara-, se arreglo
+(`android.predictiveBackGestureEnabled` a `false`, con el motivo y el precio en el
+[ADR 0034](adr/0034-back-de-android.md)), y la nota del informe **se retiro sola**, que es lo que se
+escribio para que hiciera. `01-onboarding` esta en verde.
+
+La regla que queda de ese intento, y que es la parte cara, es como se decide imprimir la nota: **si
+y solo si los flujos que nombra son los que Maestro ha dicho que fallaron**, el guardian no tiene
+nada que decir y el area no ha salido en verde. Apoyada en el area sola prometeria un arreglo que no
+tocaria ese fallo, que es peor que no decir nada. Con la lista de conocidos vacia la tabla y su
+filtro se borraron -codigo que no puede fallar no se mantiene-, y el sitio donde se busca cuando
+haga falta es el `JSDoc` de `renderReport` y el [ADR 0033](adr/0033-regresion-e2e-android.md).
+
+Lo que el informe **no** puede prometer nunca: que un area en verde signifique que la app esta bien
+mas alla de lo que afirman sus flujos. Es humo, y por eso lo dice en la leyenda que cierra el
+fichero.

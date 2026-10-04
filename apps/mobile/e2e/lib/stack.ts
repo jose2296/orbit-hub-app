@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, openSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { dirname } from 'node:path';
 
 export type Service = {
@@ -79,6 +80,85 @@ function pararGrupo(pid: number | undefined): void {
   } catch {
     /* ya estaba muerto, o nunca llego a existir */
   }
+}
+
+/**
+ * Si el puerto se puede coger ahora mismo, intentandolo de verdad.
+ *
+ * Intentar y soltar es la unica respuesta fiable. Preguntar "hay alguien ahi" por
+ * otra via -un `lsof`, un `/status`- dice lo mismo pero no sabe de quien es- deja
+ * una carrera entre la pregunta y el uso, y ademas obliga a decidir con una
+ * heuristica de quien es el dueno.
+ *
+ * Cierra el servidor y su socket antes de devolver, y no en un `finally`: si el
+ * `listen` falla el servidor ya esta cerrado y no hay nada que cerrar.
+ */
+export async function puertoLibre(puerto: number): Promise<boolean> {
+  // **Un solo bind no los ve a todos, y medido es asimetrico.** En macOS un socket en
+  // `::` con IPv6 dual-stack choca con otro bind a `::` y con uno a `0.0.0.0`, pero un
+  // servidor que solo escucha en `127.0.0.1` no se ve desde ninguno de los dos. Y al
+  // reves, un servidor en `0.0.0.0` no se ve desde `::`. La tabla entera:
+  //
+  //     escucha      | bind ::  | bind 0.0.0.0 | bind 127.0.0.1
+  //     -------------|----------|-------------|---------------
+  //     127.0.0.1    | LIBRE    | LIBRE       | OCUPADO
+  //     ::           | OCUPADO  | OCUPADO     | LIBRE
+  //     0.0.0.0      | LIBRE    | OCUPADO     | LIBRE
+  //
+  // Por eso se prueban los tres y el puerto se da por ocupado en cuanto UNO falla:
+  // cada fila de esa tabla tiene al menos un bind que la pilla, y preguntar por uno
+  // solo deja un agujero. Con un solo bind el hueco es real y el arnes lo pisa: con
+  // el bind a `::` creia tener el 8081, no arranco su Metro, reuso el del checkout
+  // de al lado -que sirve otro codigo-, y los tres flujos de `01-onboarding` se
+  // cayeron en su primera asercion sin que el arnes dijera por que.
+  for (const host of DIRECCIONES_DE_BIND) {
+    if (!(await bindUno(puerto, host))) return false;
+  }
+  return true;
+}
+
+/** Bind y cierre en una direccion. `false` si el puerto esta cogido ahi. */
+function bindUno(puerto: number, host: string): Promise<boolean> {
+  return new Promise<boolean>((resuelve) => {
+    const servidor = createServer();
+    servidor.once('error', () => resuelve(false));
+    servidor.listen(puerto, host, () => servidor.close(() => resuelve(true)));
+  });
+}
+
+/**
+ * Las tres, y en este orden. La de `::` primero porque es donde escuchan Metro y la
+ * API por defecto, y la de `127.0.0.1` la ultima porque es la unica que ve un
+ * servidor atado solo al loopback -y la que hace falsa la pregunta si se prueba
+ * sola-.
+ */
+const DIRECCIONES_DE_BIND = ['::', '0.0.0.0', '127.0.0.1'];
+
+/**
+ * El primer puerto libre a partir de `desde`, y `desde` si lo hay. La funcion pura
+ * de `eligePuerto`, para poder probarla sin ocupar puertos de verdad.
+ *
+ * Sube y no baja, y no es capricho: los puertos que se elige son los que se pasan a
+ * Metro y a la API, y bajando se acabaria en el rango de sistema.
+ *
+ * Lanza si en el rango no hay ninguno. Devolver el ultimo y dejar que el siguiente
+ * paso falle al arrancar es peor: el fallo llegaria un minuto despues y sin decir
+ * que el problema era el puerto.
+ */
+export async function primerLibre(
+  desde: number,
+  cuantos: number,
+  libre: (puerto: number) => boolean | Promise<boolean>,
+): Promise<number> {
+  for (let i = 0; i < cuantos; i++) {
+    if (await libre(desde + i)) return desde + i;
+  }
+  throw new Error(`no hay ningun puerto libre entre ${desde} y ${desde + cuantos - 1}`);
+}
+
+/** `primerLibre` sobre `puertoLibre`, que es como la usa el arnes. */
+export function eligePuerto(desde: number, cuantos = 20): Promise<number> {
+  return primerLibre(desde, cuantos, puertoLibre);
 }
 
 export async function ensureService(opts: EnsureOptions): Promise<Service> {

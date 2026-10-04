@@ -57,9 +57,33 @@ run that never reached the new thing is not a check either, and neither is a red
 can wave away: if `capturas/android/informe.txt` names an area in red, the change either
 broke it or it found a real defect, and both are worth reading before the commit.
 
-There is one standing red line today, and it is the app's: `01-onboarding` fails because
-the Android back key leaves the app instead of popping. It is named in the report's last
-line and in `apps/mobile/e2e/README.md`, and it is not yours to fix in passing.
+There is one thing about the harness worth knowing before you blame it, and it is a config
+line rather than a bug: Android's hardware back button only works with
+`android.predictiveBackGestureEnabled` set to `false`. With it on, React Native 0.86 registers
+its back callback only when `SDK_INT >= 36 && targetSdkVersion >= 36`, so on any device below
+API 36 the key closes the app instead of popping — which is how `01-onboarding` was a standing
+red line here until it was fixed. The reason, the measurement and the price of turning the
+flag off are in [ADR 0034](docs/architecture/adr/0034-back-de-android.md), and that gate is
+the first thing to look at if you raise `targetSdk` or try a new emulator. The `privacy` and
+`terms` flows press the hardware key on purpose: that is the regression they cover. No area is
+red today.
+
+And one thing worth knowing before reading a red area as a broken app, because it cost a
+day: a red area usually means the app is **not running this branch**. React Native ignores
+`adb reverse` on an emulator — it reads the `debug_http_host` preference and falls back to
+`10.0.2.2`, which is the host as the emulator sees it — so if another checkout of this repo
+has a dev server on port 8081, the app downloads that one's bundle and no flow can see a
+single `testID` from here. Nothing says so. Before reading the app:
+
+```bash
+adb -s <serial> shell run-as com.jrzlabs.orbithub \
+  cat files/BridgelessReactNativeDevBundle.js > /tmp/bundle.js
+grep -c 'screen-welcome' /tmp/bundle.js   # 0 = wrong bundle, not a broken app
+```
+
+The harness writes that preference itself and picks a free port, so this should not happen
+— but it happened, and the fix is in
+[ADR 0035](docs/architecture/adr/0035-dev-server-del-arnes.md).
 
 ## Where things live
 

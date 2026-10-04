@@ -14,19 +14,22 @@
 # `welcome` el primero, y por dos razones que se pueden comprobar.
 #
 # La primera es el punto de partida de los otros dos. `privacy` y `terms` hacen
-# `launchApp` **sin** `clearState` y esperan a `screen-welcome`, o sea que necesitan
+# `launchApp` **sin** limpiar datos y esperan a `screen-welcome`, o sea que necesitan
 # una app sin sesion y les da igual cual sea: una recien borrada les sirve, y tambien
 # les sirve la que este en el sitio. Y ahi esta el problema, que no es que no aguanten
 # un estado recien borrado -es justo lo que buscan- sino que el estado que hereda un
 # flujo es el que dejo el de antes, sin que nadie mire lo que era. `welcome` es el
-# unico que borra, o sea el unico que pone ese punto de partida, asi que mientras va
-# primero lo pone el en vez de quien habia corrido antes. Al reves -uno de ellos
-# delante de `welcome`- lo que se rompe no es el que wipea a los de despues; es que el
-# primero entra sin saber que se ha encontrado.
+# unico que necesita el arranque sin sesion, o sea el unico que pone ese punto de
+# partida -el `pm clear` lo hace el runner, una vez por area, y por eso el area entera
+# lo tiene y no solo el primero-, asi que mientras va primero lo pone el en vez de
+# quien habia corrido antes. Al reves -uno de ellos delante de `welcome`- lo que se
+# rompe no es el que wipea a los de despues; es que el primero entra sin saber que se
+# ha encontrado.
 #
 # Y la segunda es el precio: es el flujo mas barato -una espera y nada mas-, asi que
 # una app que no llega ni a la pantalla de bienvenida falla en segundos y no despues
-# de dos arranques en frio.
+# de dos arranques en frio. Y con el `pm clear` en el runner eso se cumple el: el
+# bundle sale de la cache, o no sale.
 #
 # `privacy` y `terms` detras, en orden de nombre: son estructuralmente iguales, asi
 # que no hay nada que elegir entre ellos. Lo que se quiere es que el orden este

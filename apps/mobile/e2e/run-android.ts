@@ -4,7 +4,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adb, appPid, clearLogcat, crashLines, forceStop, requireOneDevice, screenshot } from './lib/android.ts';
+import { adb, appPid, apuntaMetro, clearLogcat, crashLines, forceStop, limpiaDatos, requireOneDevice, screenshot } from './lib/android.ts';
 import { corrida, parseAreaFlag, resolveAreas } from './lib/areas.ts';
 import { verdict } from './lib/guard.ts';
 import { runMaestro } from './lib/maestro.ts';
@@ -16,7 +16,7 @@ import {
   veredictoArea,
   type AreaResult,
 } from './lib/report.ts';
-import { ensureService, type Service } from './lib/stack.ts';
+import { eligePuerto, ensureService, type Service } from './lib/stack.ts';
 import { seed, writeSeedEnv } from './seed/e2e-account.ts';
 
 // Tres niveles hacia arriba y no dos: este fichero es `apps/mobile/e2e/`, y
@@ -38,8 +38,25 @@ const flags = parseAreaFlag(process.argv.slice(2));
 
 mkdirSync(CAPTURAS, { recursive: true });
 
-const PUERTO_API = process.env.E2E_API_PORT ?? '4011';
-const PUERTO_METRO = process.env.E2E_METRO_PORT ?? '8081';
+// Los puertos se eligen libres, no se toman. El pedido `8081` es solo el primero
+// que se mira: si lo tiene alguien, el arnes sube. No es una comodidad.
+//
+// La razon es `apuntaMetro` de mas abajo leida al reves: sin saber de quien es un
+// puerto no hay forma de decir si el Metro que contesta es el de este checkout, y
+// un Metro ajeno no es "un Metro que ya estaba en pie": sirve otro codigo, y la app
+// se baja ese bundle. Medido: el bundle del dispositivo tenia los `testID` de `main`
+// y ninguno de los de esta rama, con los tres flujos de `01-onboarding` en rojo.
+//
+// La API se busca a partir de la siguiente al de Metro, no desde su pedido: si
+// ambos|subieran por separado desde 8081 podrian parar en el mismo puerto, y el
+// segundo `ensureService` encontraria al primero ya escuchando.
+const pedidoMetro = Number(process.env.E2E_METRO_PORT ?? 8081);
+const pedidoApi = Number(process.env.E2E_API_PORT ?? 4011);
+const PUERTO_METRO = await eligePuerto(pedidoMetro);
+// La API empieza por encima del puerto que se le acabo de dar a Metro, y no por el
+// suyo, para que los dos no puedan parar en el mismo sitio: `primerLibre` pregunta
+// por uno solo y no sabe nada del otro.
+const PUERTO_API = await eligePuerto(Math.max(pedidoApi, PUERTO_METRO + 1));
 const API = `http://127.0.0.1:${PUERTO_API}/api/v1`;
 const WEB = `http://127.0.0.1:${PUERTO_METRO}`;
 
@@ -67,7 +84,7 @@ try {
       cmd: 'npm',
       args: ['run', 'start', '--workspace', '@orbit-hub/api'],
       env: {
-        PORT: PUERTO_API,
+        PORT: String(PUERTO_API),
         PGLITE_DATA_DIR: PGDATA,
         EMAIL_TRANSPORT: 'console',
       },
@@ -86,7 +103,7 @@ try {
         '@orbit-hub/mobile',
         '--',
         '--port',
-        PUERTO_METRO,
+        String(PUERTO_METRO),
       ],
       env: {
         // Sin esto la app apunta a 4000, que es lo que dice `.env.example`, y la
@@ -107,17 +124,42 @@ try {
   for (const s of servicios) {
     console.log(`  ${s.started ? 'arrancado' : 'ya estaba en pie'}: ${s.label} (${s.url})`);
   }
+  // Y se dice de donde salio el puerto. Sin esta linea, una carrera que arranque en
+  // 8083 porque el 8081 lo tiene otro proceso parece la de siempre y no explica por
+  // que los puertos de este informe no son los del `.env.example`.
+  if (PUERTO_METRO !== pedidoMetro || PUERTO_API !== pedidoApi) {
+    console.log(`  puertos: Metro ${PUERTO_METRO} (pedido ${pedidoMetro}), API ${PUERTO_API} (pedido ${pedidoApi})`);
+  }
   // `adb reverse` y no `adb forward`, y los dos puertos: la app corre DENTRO del
-  // emulador y pide `127.0.0.1:8081` a Metro y `127.0.0.1:4011` a la API, porque
-  // esas son las direcciones que se le han pasado. El loopback de un emulador es el
-  // suyo propio -el host es `10.0.2.2`-, asi que sin esto el bundle no se descarga
-  // y la API no contesta, y el fallo se lee como "la app esta rota" en vez de como
-  // "falta un puerto". Sin excepcion que capturar: un reverse que no se puede poner
-  // es un fallo de la carrera, no un aviso.
+  // emulador y su loopback es el suyo propio. Sin excepcion que capturar: un reverse
+  // que no se puede poner es un fallo de la carrera, no un aviso.
   for (const puerto of [PUERTO_METRO, PUERTO_API]) {
     adb(['reverse', `tcp:${puerto}`, `tcp:${puerto}`], serial);
   }
+  // Y despues lo que hace que el reverseSirva de algo, que va antes de los reverses
+  // en la explicacion y despues en el codigo porque no se puede probar hasta que los
+  // puertos estan puestos.
+  //
+  // Y despues lo que hace que el reverse sirva de algo, que va antes de los
+  // reverses en la explicacion y despues en el codigo porque no se puede probar
+  // hasta que los puertos estan puestos.
+  //
+  // `adb reverse` solo, NO basta, y esto se creyo al reves durante semanas: la app no
+  // pide el bundle por su loopback. React Native lee la preferencia
+  // `debug_http_host` y, si no esta, cae a `10.0.2.2` -la IP del host vista desde el
+  // emulador-, que no pasa por ningun reverse. Medido: la conexion TCP de la app era
+  // `10.0.2.2:8081` (`1F91` en hex) mientras el reverse apuntaba a otro sitio, y el
+  // bundle que ejecutaba traia los `testID` que ya existian en `main` y ninguno de los
+  // de esta rama, con los tres flujos de `01-onboarding` en rojo sin que el arnes
+  // dijera por que.
+  //
+  // **El orden de las dos lineas de aqui es lo que no se puede cambiar.** `pm clear`
+  // antes que la preferencia, nunca al reves: el primero borra el directorio de datos
+  // -y con el la propia preferencia-, y `limpiaDatos` deja escrito por que.
+  limpiaDatos(serial);
+  apuntaMetro(String(PUERTO_METRO), serial);
   console.log(`  adb reverse: ${PUERTO_METRO} y ${PUERTO_API} apuntando al host`);
+  console.log(`  dev server de la app: localhost:${PUERTO_METRO} (preference debug_http_host)`);
   // El log de la API entra como variable y no como ruta escrita aqui: lo crea
   // `ensureService` con la marca de la carrera, y el enlace de verificacion sale
   // de ahi y de ningun otro sitio.
@@ -166,6 +208,12 @@ try {
     // tarea, asi que aqui se deja el agujero abierto y a la vista.
     forceStop(serial);
     clearLogcat(serial);
+    // Y aqui tambien, antes de la preferencia: si un flujo limpio los datos -y
+    // `welcome` lo hace-, la preferencia se ha ido con ellos y el area siguiente
+    // bajaria el bundle del host equivocado. Es el mismo orden que arriba y por el
+    // mismo motivo, y va aqui porque por area es donde un flujo puede haber limpiado.
+    limpiaDatos(serial);
+    apuntaMetro(String(PUERTO_METRO), serial);
     const antes = { pid: appPid(serial) };
 
     const { flujo, cuantos } = corrida(area, flags.flow);

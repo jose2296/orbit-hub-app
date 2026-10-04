@@ -72,9 +72,13 @@ export function runMaestro(
   //
   // Lo que no hacia falta y se perdia sin darse cuenta: el orden. Sin `flowsOrder`
   // Maestro corre en el orden que devuelve el sistema de ficheros -measured, en una
-  // prueba salio `bbb, aaa, ccc`-, y con `welcome.yaml` usando `clearState: true`
-  // mientras los otros dos no, un orden asi hacia depender el resultado de donde
-  // cayera el fichero. Por eso hay un `config.yaml` por area.
+  // prueba salio `bbb, aaa, ccc`-. Por eso hay un `config.yaml` por area.
+  //
+  // Y el `clearState: true` que `welcome.yaml` tuvo hasta que `limpiaDatos` lo quito de
+  // ahi era el otro cabo de esa atadura: es un `pm clear`, y borra la preferencia
+  // `debug_http_host` de la que depende `apuntaMetro`, con lo que la app se baja el
+  // bundle del host equivocado. Ver `limpiaDatos`, que esta donde esta el `pm clear`
+  // ahora y lleva las dos mediciones.
   const args = ['test', '--format', 'NOOP'];
   // `...flujos` y no `...flowsPath`: el `spread` de una cadena reparte sus
   // CARACTERES, y un directorio de area acabaria pasado a Maestro como `/`, `U`,

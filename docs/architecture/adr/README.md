@@ -14,6 +14,8 @@
 | [0031](0031-compartir.md) | Compartir: un vinculo, y el sitio lo elige quien lo recibe | Accepted |
 | [0032](0032-personas.md) | Personas: un directorio de con quien ya has tratado | Accepted |
 | [0033](0033-regresion-e2e-android.md) | Regresion E2E en Android con Maestro, y el guardian de crasheo alrededor | Accepted |
+| [0034](0034-back-de-android.md) | La tecla de atras de Android se queda con el comportamiento antiguo | Accepted |
+| [0035](0035-dev-server-del-arnes.md) | El arnes le dice a la app de donde es su Metro, y deja de pedir el 8081 | Accepted |
 
 ## Format
 

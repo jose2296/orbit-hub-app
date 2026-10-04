@@ -85,12 +85,29 @@ Las tres candidatas eran **Maestro**, **Detox** y **seguir con scripts de `adb`*
   cuarenta hojas son fase 2, y la obligacion de `AGENTS.md` es lo que las trae de una en una.
 - **Los diecisiete `verify-*.mjs` se conservan** hasta que la suite cubra lo que cubren, y se
   borran en la ultima fase. Borrarlos antes dejaria un hueco justo donde mas duele.
-- **Un area puede estar en rojo por un defecto de la app, y eso se dice en el informe.** Hoy
-  `01-onboarding` lo esta: la tecla de atras de Android sale de la aplicacion en vez de desapilar, y
-  los flujos estan escritos como deben. No se ha tapado, porque taparlo habria sido cambiar el
-  flujo para que la suite no lo encontrara. Y esa nota se imprime **solo mientras los flujos que
-  nombra sean los que esten fallando**: apoyada en el area, atribuiria un fallo conocido a un area
-  roja por otra causa, y prometeria un arreglo que no tocaria ese fallo.
+- **Un area puede estar en rojo por un defecto de la app, y eso se dice en el informe.** Hubo uno
+  y asi se trato: la tecla de atras de Android salia de la aplicacion en vez de desapilar
+  (`01-onboarding`, `privacy` y `terms`). No se tapo, porque taparlo habria sido cambiar el flujo
+  para que la suite no lo encontrara. Se arreglo -el flag `android.predictiveBackGestureEnabled` a
+  `false`, con su motivo y su precio en el [ADR 0034](0034-back-de-android.md)- y **la nota se
+  retiro sola**, que es lo que se escribio para que hiciera: se imprimia solo mientras los flujos
+  que nombraba fueran los que Maestro decia que habian fallado. Al quedar la lista de conocidos
+  vacia se borro la maquinaria con ella, no solo la entrada, y el area esta en verde.
+
+  **Y con esto queda escrito como se vuelve a traer, porque la regla es lo que cuesta.** Apoyada en
+  el area sola, atribuiria un fallo conocido a un area roja por otra causa -`welcome` regresando
+  mientras `privacy` y `terms` siguen en verde diria que fallan los dos, que estan en verde- y
+  prometeria un arreglo que no tocaria ese fallo. La nota se imprime **si y solo si** los flujos que
+  nombra estan entre los que fallaron, el guardian no tiene nada que decir y el area no ha salido
+  en verde; si el parser de la salida de Maestro se rompe y devuelve una lista vacia, la nota **no**
+  se imprime, que es la direccion en que conviene equivocarse.
+- **El arnes tiene que decir de donde es el Metro, o no mide nada.** Sin eso la app se baja el
+  bundle de quien escuche en el 8081 del host -que puede ser otro checkout de este mismo repositorio-
+  y los flujos fallan sin que nada lo diga. El ARR y la eleccion de puerto estan en el
+  [ADR 0035](0035-dev-server-del-arnes.md), y la consecuencia de leer un area en rojo es esta: **antes
+  de mirar la app, mira el bundle.** Un `grep -c 'screen-welcome'` sobre
+  `files/BridgelessReactNativeDevBundle.js` del dispositivo separa "la app va mal" de "la app va bien
+  con el codigo equivocado", y el segundo caso no produce ningun sintoma mas que ese.
 - **Detecta pantallas rotas y rutas cerradas. No detecta logica incorrecta**, y no debe presentarse
   como si lo hiciera. Que al guardar se guarde el texto correcto es otro nivel, mas caro, y queda
   fuera a proposito.

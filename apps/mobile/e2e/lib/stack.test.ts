@@ -1,10 +1,75 @@
 import { once } from 'node:events';
-import { createServer } from 'node:http';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer } from 'node:net';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ensureService, isListening, waitForHttp, type Service } from './stack';
+import { ensureService, isListening, primerLibre, puertoLibre, waitForHttp, type Service } from './stack';
+
+describe('primerLibre', () => {
+  const ocupados = (...p: number[]) => (candidato: number) => !p.includes(candidato);
+
+  it('devuelve el puerto pedido cuando esta libre', async () => {
+    await expect(primerLibre(8095, 20, ocupados())).resolves.toBe(8095);
+  });
+
+  it('salta hacia arriba hasta el primero que no este ocupado', async () => {
+    // El caso que importa: el 8081 lo tiene el Metro de otro checkout de este
+    // repo, y si el arnes lo cogiera la app recibiria el bundle de ahi. Medido en
+    // este harness: los tres flujos de `01-onboarding` en rojo y ningun error que
+    // lo explicara.
+    await expect(primerLibre(8081, 20, ocupados(8081, 8082))).resolves.toBe(8083);
+  });
+
+  it('no se sale del rango que le dan', async () => {
+    // Con `cuantos` acotado, la busqueda termina: un bucle que sube sin tope
+    // llegaria a un puerto que ya no es de la carrera y no volveria.
+    await expect(primerLibre(8081, 3, ocupados(8081, 8082, 8083))).rejects.toThrow(/8081/);
+  });
+});
+
+describe('puertoLibre', () => {
+  /** Un servidor escuchando en `host`, y el puerto en el que quedo. */
+  async function escuchando(host: string): Promise<number> {
+    const servidor = createServer();
+    await new Promise<void>((r) => servidor.listen(0, host, r));
+    abiertos.push(servidor);
+    return (servidor.address() as { port: number }).port;
+  }
+
+  it('dice que un puerto cogido esta cogido, sin adivinar quien lo tiene', async () => {
+    // La respuesta no es "de quien es": es si se puede cogerse. No hay forma fiable
+    // de saber de quien es un puerto, y un `lsof` que acierta con la mitad de los
+    // casos hace que el arnes dependa de una heuristica para decidir si el bundle
+    // que le llega es el suyo.
+    const port = await escuchando('127.0.0.1');
+
+    expect(await puertoLibre(port)).toBe(false);
+  });
+
+  // **Estos tres juntos son el fallo que hacia verde una carrera roja.** En macOS no
+  // hay un unico bind que vea a un servidor en cualquiera de las tres direcciones:
+  // preguntar por `127.0.0.1` no ve a `expo start` -que escucha en `::`- y preguntar
+  // por `::` no ve a uno atado a `0.0.0.0`. Con cualquiera de los dos bind
+  // equivocados el arnes cree tener el 8081, no arranca su Metro, reusa el del
+  // checkout de al lado -que sirve otro codigo-, y los tres flujos de `01-onboarding`
+  // se caen en su primera asercion sin que el arnes diga por que.
+  it.each(['127.0.0.1', '::', '0.0.0.0'])('lo ve cuando el que lo tiene escucha en %s', async (host) => {
+    const port = await escuchando(host);
+
+    expect(await puertoLibre(port)).toBe(false);
+  });
+
+  it('dice libre un puerto que nadie tiene, y lo deja libre de verdad', async () => {
+    // La mitad que no se puede perder: si `puertoLibre` dijera LIBRE para un puerto
+    // que otro esta a punto de coger, el arnes arrancaria su Metro y el fallo pasaria
+    // a ser "el puerto ya lo tiene otro", que es peor de diagnosticar que este.
+    const port = await puertoReservado();
+
+    expect(await puertoLibre(port)).toBe(true);
+  });
+});
 
 /** Nombre imposible de colisionar con el entorno real, que es de lo que se trata. */
 const CLAVE = 'MARCA_ARNES_E2E';
@@ -25,7 +90,7 @@ afterEach(async () => {
  * codigo concreto; por defecto responde 200 como cualquier cosa en pie.
  */
 async function servir(estado = 200): Promise<string> {
-  const server = createServer((_peticion, respuesta) => {
+  const server = createHttpServer((_peticion, respuesta) => {
     respuesta.statusCode = estado;
     respuesta.end(estado === 503 ? 'degraded' : 'ok');
   });
@@ -46,7 +111,7 @@ async function servir(estado = 200): Promise<string> {
  * falta para conocer la url antes de que nada conteste en ella.
  */
 function puertoReservado(): number {
-  const sonda = createServer();
+  const sonda = createHttpServer();
   sonda.listen(0);
   const puerto = (sonda.address() as { port: number }).port;
   sonda.close();
@@ -142,7 +207,7 @@ describe('waitForHttp', () => {
     // El bucle de reintento es lo unico que hace que `ensureService` sirva de algo:
     // un servicio tarda segundos en contestar y se comprueba antes de que exista.
     // Con una sola pregunta, quitar el bucle no rompia ningun test.
-    const server = createServer((_peticion, respuesta) => respuesta.end('ok'));
+    const server = createHttpServer((_peticion, respuesta) => respuesta.end('ok'));
     const escuchando = once(server, 'listening');
     const puerto = puertoReservado();
     // Sin await a proposito: mientras el temporizador corre, en esa url no contesta
