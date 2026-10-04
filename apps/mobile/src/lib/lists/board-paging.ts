@@ -226,6 +226,33 @@ export function maxTrackScroll(trackWidth: number, contentWidth: number): number
  * two.
  */
 export function trackRoomAt(scrollLeft: number, maxScroll: number): TrackRoom {
+  /**
+   * A worklet, **and this one was the function that threw while the finger was
+   * down.**
+   *
+   * It is called from the `useDerivedValue` that computes the rubber band, so it
+   * runs on the interface thread, sixty times a second, for every frame of every
+   * drag. **The plugin does not workletise what a worklet calls: it workletises
+   * the callback in a workletisable position** — `useDerivedValue` takes one at
+   * argument 0, and so do `useAnimatedStyle`, `useAnimatedReaction` at 0 and 1,
+   * the `with*` animations at their callback argument and every `on*` of a
+   * gesture builder at argument 0 — **and then captures the callee by its
+   * identifier.** An imported function without the directive therefore enters the
+   * closure as the plain JavaScript function it is, and a worklet calling it is a
+   * function of the JavaScript thread being called from another one.
+   *
+   * **On the web it is one thread and nothing happens, which is why it survived a
+   * round of reading, a round of measuring and a round of mutating.** On native it
+   * is an error, every frame, with the finger down — and what it was computing is
+   * the rubber band, so the band itself was the thing that would have thrown.
+   *
+   * `nextPageFor` below says the same thing about itself; the test in
+   * `test/panel-worklets.test.ts` is what now checks every one of these at once,
+   * because a directive missing on one function is invisible here and fatal there,
+   * and the cost of that asymmetry is exactly one careless function.
+   */
+  'worklet';
+
   const max = Math.max(0, maxScroll);
   const at = Math.max(0, Math.min(max, scrollLeft));
   return { roomLeft: at, roomRight: max - at };
