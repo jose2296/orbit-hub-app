@@ -127,7 +127,9 @@ export function nextPageFor(
    * `lib/dashboard/panel.ts` carries twelve of them.**
    *
    * A worklet is still an ordinary function, so the same code answers on the
-   * interface thread and in a test.
+   * interface thread and in a test — **and on the interface thread of a native build
+   * that nobody has run, which is the same caveat `trackRoomAt` below carries and for
+   * the same reason.**
    */
   'worklet';
 
@@ -339,14 +341,23 @@ export function trackRoomAt(scrollLeft: number, maxScroll: number): TrackRoom {
    * function of the JavaScript thread being called from another one.
    *
    * **On the web it is one thread and nothing happens, which is why it survived a
-   * round of reading, a round of measuring and a round of mutating.** On native it
-   * is an error, every frame, with the finger down — and what it was computing is
-   * the rubber band, so the band itself was the thing that would have thrown.
+   * round of reading, a round of measuring and a round of mutating.** On native the
+   * two threads are not the same, so a function of the JavaScript thread called from
+   * the interface thread has no thread to run in.
    *
-   * `nextPageFor` below says the same thing about itself; the test in
-   * `test/panel-worklets.test.ts` is what now checks every one of these at once,
-   * because a directive missing on one function is invisible here and fatal there,
-   * and the cost of that asymmetry is exactly one careless function.
+   * **And nobody has run this function on native.** Nobody here has a native target:
+   * the directive was put on by reading the plugin's two sets — which functions it
+   * workletises, and which argument of each — and by matching that against every call
+   * a worklet in this repository makes into its own source. **That is a reading and
+   * not a measurement**, and it is worth saying plainly here because this file is
+   * where the next person looks and this comment is all they will find: the claim is
+   * that the directive is required, not that anyone has watched it fail without it.
+   * `test/panel-worklets.test.ts` checks the same thing for all of them at once, and
+   * that test is also only a reading — there is no way to execute a worklet on an
+   * interface thread from here, because the failure is the absence of a thread.
+   *
+   * `nextPageFor` below says the same thing about itself; the two are the same shape
+   * of mistake, and only one of them was found by reading.
    */
   'worklet';
 
