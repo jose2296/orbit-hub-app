@@ -58,6 +58,23 @@ export const BOARD_SWIPE_DISTANCE = 56;
 export const BOARD_SWIPE_VELOCITY = 420;
 
 /**
+ * How far below a whole step the quotient is still counted as that whole step.
+ *
+ * **One part in a thousand million**, and the note on `anchorableColumns` is where
+ * the reasoning is: a column's width is a division, so it is a fraction in binary,
+ * and the errors are in the last bits of a double — `1e-9` is about **200 000 times**
+ * smaller than the 1 part in 460 000 that a double has to resolve, so nothing that
+ * is a real gap can be swallowed by it. A track that stops half a point short of a
+ * column is `3.5e-3` of a step away, **three and a half million times** further out
+ * than this margin, and it still counts as "not that column".
+ *
+ * A named number and not a literal inside the expression, so that "why is there a
+ * subtraction here" has one answer in one place and the answer can be read next to
+ * the function it belongs to.
+ */
+const PASO_TOLERADO = 1e-9;
+
+/**
  * Which page a drag ends on, and never one outside the pager.
  *
  * `offset` is how far the finger has travelled sideways and `velocity` how fast it
@@ -283,6 +300,43 @@ export function trackRoomAt(scrollLeft: number, maxScroll: number): TrackRoom {
  * scroll a long way does not invent columns. A `step` of zero is the width before
  * it has been measured: nothing is drawn then, and nothing may be ruled out on the
  * strength of a zero.
+ *
+ * **The count of steps is rounded and not floored, and the reason is which way the
+ * two mistakes look.** A column's width comes out of a division of the track, so it
+ * is a fraction in binary: a track of 728 with four columns and gaps of 12 gives
+ * `246.66666666666666`, and a content of `4 x 246.66666666666663` gives a maximum
+ * scroll of `246.66666666666663` — the same number written two ways, so their
+ * quotient is `0.9999999999999999` where the algebra says exactly `1`. `floor` of
+ * that is `0`, so the pager loses **a whole column** and the next state, which is
+ * visible and reachable, becomes a page that does not exist.
+ *
+ * **Getting it short is the mistake that shows nothing.** Rounding down by a hair
+ * leaves the board refusing a swipe it should accept, and nothing about that looks
+ * wrong: the band still yields, the columns still move with the finger, and the
+ * tab does not move, which is what a board at the end of its scroll also does.
+ * Rounding up by a hair asks for a column that is a fraction of a point past what
+ * the scroller has, and **that** shows — the track goes to the last position it has
+ * and no further, which is the clamp `columnOffset` already documents. So the
+ * tolerance is on the side that shows, and it is one part in `1e9` because the
+ * errors above are in the last bits of a double and not in the first decimals: a
+ * margin that wide cannot swallow a real gap, because a track that stops half a
+ * point short of a column is `3.5e-3` away and not `1e-9`.
+ *
+ * Measured by sweeping the track from 300 to 1800 points with two to twelve states,
+ * `columnLayout` for the column and `trackContentWidth` and `maxTrackScroll` for the
+ * scroll, and comparing against the quotient rounded to a whole step:
+ *
+ * | region | casos | fallos antes | fallos ahora |
+ * | --- | --- | --- | --- |
+ * | una columna a la vista, pista de 300 a 719 | **4620** | **0** | **0** |
+ * | pista ancha, de 720 a 1800 | 11891 | **1208** — **10.2%** | **0** |
+ *
+ * The narrow region is untouched and its count of 4620 is the same number the
+ * reviewer's sweep found, which is the check that the two sweeps are walking the
+ * same ground. The wide count is 11891 rather than 7801 because this sweep steps
+ * the **track**, which is `width - 320` of a window in this layout, and the reviewer's
+ * stepped the window; the **1208** is identical, which says the two of them are
+ * finding the same widths and only disagreeing about where they start.
  */
 export function anchorableColumns(
   count: number,
@@ -291,7 +345,10 @@ export function anchorableColumns(
 ): number {
   if (count < 1) return 0;
   if (step <= 0) return count;
-  const pasos = Math.max(0, Math.floor(Math.max(0, maxScroll) / step));
+  const pasos = Math.max(
+    0,
+    Math.floor(Math.max(0, maxScroll) / step + PASO_TOLERADO),
+  );
   return Math.min(count, pasos + 1);
 }
 

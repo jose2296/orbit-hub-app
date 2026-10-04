@@ -10,6 +10,7 @@ import {
   trackContentWidth,
   trackRoomAt,
 } from '../src/lib/lists/board-paging';
+import { columnLayout } from '../src/lib/lists/board';
 
 /**
  * Which column a swipe lands on, as a pure function.
@@ -363,6 +364,81 @@ describe('cuantas columnas se pueden anclar', () => {
     expect(anchorableColumns(6, 282, 283)).toBe(1);
     expect(anchorableColumns(6, 283, 283)).toBe(2);
     expect(anchorableColumns(6, 566, 283)).toBe(3);
+  });
+
+  /**
+   * **The literal entry that was wrong, with both numbers spelled out.**
+   *
+   * A track of 728 with four columns and a gap of 12 gives a column of
+   * `246.66666666666666`, and a content of four of them plus three gaps gives a
+   * maximum scroll of `246.66666666666663` — the same number written two ways. The
+   * quotient is `0.9999999999999999` where the algebra says exactly `1`, so
+   * `floor` answered **1** and there was only one page on a board with two.
+   *
+   * The consequence was not a number that looked odd: with the pager one page
+   * short, `nextPageFor` clamped the answer to the current page, the re-base asked
+   * for `offsets[0]`, the scroller was told to go where it already was, and **the
+   * swipe did nothing with the next column, which was on screen and could be
+   * reached**. Sweeping widths from 300 to 1800 with two to twelve states, that was
+   * 1208 of 7801 on a wide track.
+   */
+  it('el mismo numero escrito de dos maneras no pierde una pagina', () => {
+    expect(246.66666666666663 / 246.66666666666666).toBeCloseTo(1, 15);
+    // Below one in the last bits, and `floor` of it is zero.
+    expect(246.66666666666663 / 246.66666666666666).toBeLessThan(1);
+    expect(Math.floor(246.66666666666663 / 246.66666666666666)).toBe(0);
+
+    expect(anchorableColumns(4, 246.66666666666663, 246.66666666666666)).toBe(2);
+
+    /**
+     * The same fraction at other widths, **each one written out and each one the
+     * number a `columnLayout` division actually produces.**
+     *
+     * 1280 with four columns and a gap of 12 is the second case the sweep named:
+     * a column of `320 - 3 = 316.99999999999994` and a maximum scroll of
+     * `3 x 316.99999999999994 = 950.9999999999998` are the same quantity, and
+     * without the margin the pager answered 2 instead of 3.
+     */
+    expect(anchorableColumns(1280, 316.99999999999994 * 3, 316.99999999999994)).toBe(4);
+
+    /**
+     * And the family the sweep is made of: a track of `4n` with four columns and a
+     * gap of 12, at every multiple of itself, because that is the shape that makes
+     * the quotient land a hair under an integer.
+     */
+    for (const [columnas, gap] of [
+      [4, 12],
+      [3, 12],
+      [2, 16],
+    ] as [number, number][]) {
+      const ancho = columnas * 200 + (columnas - 1) * gap;
+      const paso = columnLayout(ancho, gap).columnWidth;
+      for (let veces = 1; veces <= 4; veces += 1) {
+        const maxScroll = paso * veces;
+        expect(
+          anchorableColumns(8, maxScroll, paso),
+          `${columnas} columnas de ${paso} en una pista de ${ancho}, ${veces} pasos`,
+        ).toBe(veces + 1);
+      }
+    }
+  });
+
+  /**
+   * **And the tolerance may not swallow a real gap**, which is the half of it that
+   * has to be written down or the margin becomes a way of losing columns on purpose.
+   *
+   * A track that stops half a point short of a column is `3.5e-3` of a step away —
+   * three and a half million times further out than the margin — and it is still not
+   * that column. Half a point is not a number anybody chose for this test: it is
+   * what a rounding of a measured width can plausibly be.
+   */
+  it('el margen no se come un hueco de verdad', () => {
+    expect(anchorableColumns(6, 283 - 0.5, 283)).toBe(1);
+    expect(anchorableColumns(6, 283 - 0.01, 283)).toBe(1);
+    // And just above a whole step it takes it, which is the other side of the same
+    // boundary: a margin that only ever rounds down would not be a rounding.
+    expect(anchorableColumns(6, 283 + 0.01, 283)).toBe(2);
+    expect(anchorableColumns(6, 283 * 3 - 0.5, 283)).toBe(3);
   });
 
   it('sin paso medido no se descarta ninguna columna', () => {
