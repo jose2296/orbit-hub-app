@@ -1074,6 +1074,7 @@ function TaskRow({
                 icon={PRIORITY_ICON[item.priority]}
                 size="compact"
                 onPress={onEdit}
+                hintProps={pistaNombre.props}
               />
             ) : null}
 
@@ -1094,6 +1095,22 @@ function TaskRow({
                 the wrong part of. Same reason as the badge, same limit: it opens the
                 task and it does not change anything.
 
+                **The two carry `hintProps={pistaNombre.props}` — the name's own hint,
+                handed over, not a sentence of their own.** Every control of this row
+                opens the same sheet, so the sentence that says so is written **once**,
+                as the node `pistaNombre.node` already renders next to the name, y
+                todos apuntan a ese nodo. Medido en una fila con insignia y dos
+                pastillas: **cuatro** `<button>` con `role="button"`, **un** nodo
+                `pista-10` y cuatro `aria-describedby` apuntando a él. Varias copias
+                de «Toca para cambiarlo» serían las mismas palabras varias veces en un
+                lector de pantalla, y que varios referencien un id es justo para eso.
+
+                **Y como prop y no como un spread `{...pistaNombre.props}`.** Eso
+                soltaría `aria-describedby` en lo alto de `<Badge>` y de `<TagChip>`,
+                que no aceptan props sueltos: se lo comen y no llega a nada. Medido:
+                con el spread, un solo elemento de la fila quedaba apuntado a la
+                pista —el nombre— y las pastillas seguían sin decir qué hacen.
+
                 **And the text is never `theme.colors.text`, and there is no case in
                 which it is.** The fill is the label's own colour mixed into the
                 surface, and the text is derived from the label's own colour until it
@@ -1102,7 +1119,10 @@ function TaskRow({
                 recognise as the label's is the fill, not the writing on it** — the
                 text is the closest tone to that colour that still reads, and that is
                 a different tone. The arithmetic is in `@/lib/lists/tag-colors`, and
-                what it does with the twelve is written down there one hex at a time.
+                **the twelve hexes it produces are pinned in
+                `apps/mobile/test/tag-colors.test.ts`**, in
+                `los doce colores de la paleta salen exactamente en estos hex` — that
+                is the table to look at, and the one `tag-colors.ts` names itself.
 
                 Y se reparten en varias lineas en vez de cortarse, que es lo que hace
                 el `flexWrap` de `styles.meta`: una pastilla cortada por la mitad es
@@ -1123,6 +1143,7 @@ function TaskRow({
                 size="compact"
                 style={styles.metaTag}
                 onPress={onEdit}
+                hintProps={pistaNombre.props}
               />
             ))}
           </View>

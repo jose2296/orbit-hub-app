@@ -23,7 +23,7 @@ export interface BadgeProps {
    * it is describing. Same colours, same pill, same words — less padding and a
    * smaller glyph.
    *
-   * `regular` is the default on purpose: the sixteen other call sites are the ones
+   * `regular` is the default on purpose: the fifteen other call sites are the ones
    * a badge is the headline of, and a default they all have to opt out of is a
    * default that gets opted out of wrongly.
    */
@@ -32,33 +32,42 @@ export interface BadgeProps {
    * A press on the badge, **and nothing at all without it.**
    *
    * It becomes a `Pressable` and not a `View` with a `Pressable` put around it,
-   * because the box the row measures is **this** one: `flexShrink: 0` below is on
-   * the badge, and a box outside it that took the shrink instead would leave the
-   * badge at its own width and hanging off the edge of the line.
+   * because the box the row measures is **this** one. `flexShrink: 0` below is on
+   * the badge, so a wrapper around it would be the flex child instead, and a flex
+   * child with no `flexShrink` of its own **refuses to shrink** — Yoga defaults it
+   * to 0 and `react-native-web` writes it on every `View` in
+   * `exports/View/index.js` (`view$raw`). The wrapper would sit there at the badge's
+   * full width, the badge would keep that width inside it, and the pair would be
+   * wider than the line: the badge is what gets pushed off the end.
    *
-   * Optional and not required, because every other caller passes nothing and gets
-   * exactly the tree this file has always drawn — the same `View`, with the same
-   * props.
+   * Optional and not required, because the other call sites pass nothing and get
+   * exactly the tree this file has always drawn — the same `View`, carrying the same
+   * `accessibilityLabel` and the same `testID`.
    *
-   * **And it does not ask for `accessibilityRole="button"`, which is the one thing
-   * that looks missing here.** In `react-native-web@0.21.2` that prop does not add
-   * an attribute: `modules/AccessibilityUtil/propsToAccessibilityComponent.js`
-   * returns the *name of the element* for a role that has one, and
-   * `exports/createElement/index.js` uses it as the tag. A badge with the role is a
-   * `<button>` and one without is a `<div>`, and the browser checks that measure
-   * rows look for pills among the `div`s of a row — measure it with the role and six
-   * of them stop seeing any pill at all, which is how it was found.
-   *
-   * So the badge keeps announcing itself as the word written on it, and it keeps
-   * being focusable and answerable to Enter, because `Pressable` puts `tabIndex`
-   * and its `onKeyDown` on the element either way. What it cannot do meanwhile is
-   * the space bar, which `usePressEvents/PressResponder.js` only honours on an
-   * element that is a `<button>` or carries `role="button"`. **The day the checks
-   * find pills as `div, button`, this attribute comes back** — it is one line on
-   * each of the two pressables, and the only thing standing in the way is this
-   * comment and the count that holds it.
+   * **The `accessibilityRole` below is what makes this a button and not a caption,
+   * and on web it also decides the element.** `propsToAccessibilityComponent.js`
+   * returns the *tag* for a role that has one, so this branch is a `<button>` and
+   * the other is a `<div>` — measured, and the browser checks that look for pills
+   * among a row's elements ask for `div,button` because of it.
    */
   onPress?: () => void;
+  /**
+   * What activating the badge does, **spread, not a string.**
+   *
+   * The spread of `useA11yHint` from whoever calls, the same prop `TagColorButton`
+   * takes and for the same reason: **the node stays with the caller**, so a row whose
+   * pressables share one sentence renders it once in the document and has every one
+   * of their `aria-describedby` pointing at it — which is legal, and is what the
+   * name above the badge already does with its own hint.
+   *
+   * Not a plain `accessibilityHint` string, because that prop is deleted at the
+   * `View` boundary on web — `react-native-web@0.21.2` has the string nowhere in
+   * its package and filters props through an allowlist — so passing it here would
+   * work on a phone and vanish in a browser without a word. `Button` takes the
+   * string and calls the hook itself; a badge cannot, because it renders a second
+   * node per call site and fifteen call sites do not each need their own copy.
+   */
+  hintProps?: Record<string, string>;
   style?: ViewStyle;
   /**
    * What a screen reader says instead of the bare label.
@@ -78,6 +87,7 @@ export function Badge({
   icon,
   size = "regular",
   onPress,
+  hintProps,
   style,
   accessibilityLabel,
   testID,
@@ -138,6 +148,9 @@ export function Badge({
   );
 
   if (!onPress) {
+    // Los mismos dos props que siempre, y no por costumbre: quince sitios de la app
+    // viven de que el nombre accesible de una insignia llegue entero, y este es el
+    // unico sitio por el que puede pasar.
     return (
       <View
         accessibilityLabel={accessibilityLabel}
@@ -151,10 +164,11 @@ export function Badge({
 
   // El `accessibilityLabel` solo si quien lo llama dio uno: si no, lo que un lector
   // de pantalla dice es la palabra escrita dentro, que es la que se lee encima.
-  // Y sin `accessibilityRole`, y por que, en la prop de arriba.
   return (
     <Pressable
+      accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      {...hintProps}
       testID={testID}
       onPress={onPress}
       style={estilo}

@@ -46,6 +46,7 @@ export function TagChip({
   children,
   style,
   onPress,
+  hintProps,
 }: {
   tag: string;
   colors: TagColors | undefined;
@@ -87,19 +88,21 @@ export function TagChip({
    * outer never fires, and on the web the `click` bubbles and both do — see
    * `useLongPressText` for that same asymmetry, measured the other way round.
    *
-   * **And like `Badge`, it does not ask for `accessibilityRole="button"`**, which is
-   * the thing that looks missing. In `react-native-web@0.21.2` that prop decides the
-   * **name of the element**, not an attribute —
-   * `modules/AccessibilityUtil/propsToAccessibilityComponent.js` returns the tag for
-   * a role that has one and `exports/createElement/index.js` renders it — so a pill
-   * with the role is a `<button>` and one without is a `<div>`. The browser checks
-   * that measure a row find the pills among its `div`s, and with the role they stop
-   * finding any. The pill keeps its `tabIndex` and its Enter either way; the space
-   * bar needs the element to be a `<button>` or to carry `role="button"`
-   * (`usePressEvents/PressResponder.js`). When those checks learn to look at
-   * `div, button`, this attribute goes back on: one line, here and in `Badge`.
+   * **The `accessibilityRole` in the pressable is what makes this a button, and on
+   * web it also decides the element:** `propsToAccessibilityComponent.js` returns
+   * the tag for a role that has one, so this branch is a `<button>` and the other a
+   * `<div>`. Measured, and the reason the browser checks look for `div,button`.
    */
   onPress?: () => void;
+  /**
+   * What activating the pill does, **spread, not a string.** The same prop
+   * `TagColorButton` takes: the node stays with the caller, so a row whose pills
+   * share one sentence with the name renders it once and points every one of their
+   * `aria-describedby` at it. And a plain `accessibilityHint` string would work on a
+   * phone and vanish in a browser, because `react-native-web@0.21.2` deletes it at
+   * the `View` boundary; see `hintProps` in `badge.tsx` for the whole of it.
+   */
+  hintProps?: Record<string, string>;
 }) {
   const theme = useTheme();
   const compacto = size === "compact";
@@ -152,10 +155,12 @@ export function TagChip({
   }
 
   // Sin `accessibilityLabel`: el nombre accesible de la pastilla es el de la
-  // etiqueta, que es lo que está escrito dentro. Y sin `accessibilityRole`, que en
-  // web decide el nombre del elemento; está en la prop de arriba.
+  // etiqueta, que es lo que está escrito dentro. Y `accessibilityRole` decide en web
+  // que esto es un `<button>` y no un `<div>`; está en la prop de arriba.
   return (
     <Pressable
+      accessibilityRole="button"
+      {...hintProps}
       onPress={onPress}
       style={estilo}
     >

@@ -486,6 +486,17 @@ const pillOf = (tab, tag, root = null) =>
  * "cada pastilla es un color de la paleta" lee el color de la insignia de "Alta"
  * y falla culpando a las etiquetas. Los nombres los pasa quien llama, que es quien
  * sabe cuáles son.
+ *
+ * **`div,button` y no `div`, porque la pastilla de la fila es un `<button>`.** En
+ * `react-native-web@0.21.2` `accessibilityRole="button"` no añade un atributo:
+ * `modules/AccessibilityUtil/propsToAccessibilityComponent.js` devuelve **el nombre
+ * del elemento** y `exports/createElement/index.js` lo usa como el tag. Con
+ * `accessibilityRole` puesto y esta consulta en `div`, las seis comprobaciones de
+ * geometría de abajo seguían en verde **midiendo cero pastillas**: ningún
+ * `textContent` que buscar, ninguna insignia que hallar por eliminación, y un
+ * "sobran 0 pt" que era cierto porque no había nada. Un fallo que se lee como una
+ * medición buena. Por eso el `button` va en la lista, y por eso el mismo `div` está
+ * en el filtro de radio 999 y no en el de "algún elemento".
  */
 const pillsOfRow = (tab, itemId, tags) =>
   tab.evaluate(`
@@ -494,7 +505,7 @@ const pillsOfRow = (tab, itemId, tags) =>
       if (!fila) return null;
       const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
       const esperadas = ${JSON.stringify(tags)};
-      const cajas = [...fila.querySelectorAll("div")]
+      const cajas = [...fila.querySelectorAll("div,button")]
         .filter((el) => {
           const cs = getComputedStyle(el);
           return (
@@ -529,6 +540,12 @@ const pillsOfRow = (tab, itemId, tags) =>
  * una línea de más en cuanto el nombre no cabe. Lo que sí se mide sobre todas es
  * hasta dónde llega la cosa de más a la derecha, porque lo que no puede pasar es
  * que eso se salga de la fila.
+ *
+ * **`div,button` por lo mismo que `pillsOfRow`**: en web la pastilla y la insignia
+ * de una fila son `<button>` (`accessibilityRole` decide el tag, no un atributo), y
+ * con `div` solo esta función devolvía `pillCount: 0` — con lo que
+ * `Math.max(...[].map(...))` da `-Infinity` y "lo de más a la derecha llega a 0"
+ * salía como una holgura de 0 pt que no era ninguna.
  */
 const linesOfRow = (tab, itemId, tags) =>
   tab.evaluate(`
@@ -537,7 +554,7 @@ const linesOfRow = (tab, itemId, tags) =>
       if (!fila) return null;
       const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
       const esperadas = ${JSON.stringify(tags)};
-      const todas = [...fila.querySelectorAll("div")].filter((el) => {
+      const todas = [...fila.querySelectorAll("div,button")].filter((el) => {
         const cs = getComputedStyle(el);
         return cs.borderTopLeftRadius === "999px" && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
       });
@@ -665,7 +682,11 @@ const rowBoxes = (tab, itemId, title) =>
       // insignia de urgencia también lo es, y el padre de la insignia y el de la
       // pastilla son el mismo nodo, así que esto aguanta las dos. La insignia se
       // busca aparte para poder decir cuál de las dos cosas había.
-      const todas = [...fila.querySelectorAll("div")].filter((el) => {
+      //
+      // **div,button, y por lo mismo que en pillsOfRow**: la pastilla y la
+      // insignia son <button> en web, y con div solo, "primera" salia null y todo
+      // lo que depende de la segunda linea se midio como si no existiera.
+      const todas = [...fila.querySelectorAll("div,button")].filter((el) => {
         const s = getComputedStyle(el);
         return (
           s.borderTopLeftRadius === "999px" &&

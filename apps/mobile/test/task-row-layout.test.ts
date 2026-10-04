@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -81,6 +82,17 @@ const ficherosTsx = (directorio = join(RAIZ, 'src')): string[] =>
     return entrada.name.endsWith('.tsx') ? [ruta] : [];
   });
 
+/**
+ * The browser script, read from a test that already runs in `node`.
+ *
+ * `drawer-push.test.ts` reads `scripts/verify-drawer.mjs` the same way, so there is
+ * a precedent and it is not a new thing this suite does.
+ */
+const verifyTag = readFileSync(
+  fileURLToPath(new URL('../../../scripts/verify-tag-colors.mjs', import.meta.url)),
+  'utf8',
+);
+
 const checkbox = src('src/components/ui/checkbox.tsx');
 const badge = src('src/components/ui/badge.tsx');
 const listId = src('src/app/(app)/list/[listId].tsx');
@@ -150,11 +162,40 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
       ['Badge', insignia],
       ['TagChip', pastilla],
     ] as const) {
+      const pulsable = fuente.indexOf('<Pressable');
       expect({
         componente,
         declarada: (fuente.match(/onPress\?: \(\) => void/g) ?? []).length,
         usada: (fuente.match(/onPress=\{onPress\}/g) ?? []).length,
       }).toEqual({ componente, declarada: 1, usada: 1 });
+      /**
+       * Y la misma cuenta para `hintProps`, **y el sitio donde se aplica**: sólo en
+       * la rama del `Pressable`.
+       *
+       * Es la parte de la accesibilidad que se puede perder sin que se note. Sin
+       * rol, un pulsable se sigue pulsando; **sin pista no**, y no hay ni un píxel
+       * que cambie: quitar el `{...pistaNombre.props}` de la fila deja este bloque
+       * entero en verde y la única pista de la fila —«Toca para cambiarlo»— se
+       * queda en el nombre, con la insignia y las pastillas abriendose sin decir
+       * qué hacen. Medido: se puede quitar de los dos sitios y sale verde.
+       *
+       * **Y en la rama del `View` no**, y no por descuido: una pista describe lo
+       * que hace **activar**, y sin `onPress` no hay nada que activar. Por eso el
+       * corte es por posición y no por presencia —una comprobación que buscara el
+       * texto encontraría el `hintProps` del `Pressable` y daría verde con el del
+       * `View` puesto también.
+       */
+      expect({
+        componente,
+        declarada: (fuente.match(/hintProps\?: Record<string, string>/g) ?? []).length,
+        enElPulsable: fuente.slice(pulsable).includes('{...hintProps}'),
+        enElView: fuente.slice(0, pulsable).includes('{...hintProps}'),
+      }).toEqual({
+        componente,
+        declarada: 1,
+        enElPulsable: true,
+        enElView: false,
+      });
     }
   });
 
@@ -168,42 +209,85 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
    * haber cambiado de ninguna manera — y por eso el `if (!onPress)` va escrito: sin
    * el, cambiar el `View` de abajo por un `Pressable` dejaria el conteo igual.
    *
-   * **El rol de boton tiene que ser cero, y este es el sitio donde se sostiene.**
-   * En `react-native-web@0.21.2` `accessibilityRole="button"` no añade un atributo:
-   * devuelve **el nombre del elemento** (`propsToAccessibilityComponent` → el tag en
-   * `createElement`), asi que la pastilla pasa de `<div>` a `<button>`. Medido: con
-   * el rol, seis comprobaciones de `scripts/verify-tag-colors.mjs` dejan de ver
-   * cualquier pastilla, porque `pillsOfRow`, `linesOfRow` y `rowBoxes` las buscan
-   * entre los `div` de la fila. Sin el rol, las mismas seis dan lo que siempre.
+   * **Y en la rama del `View` de `Badge` están los dos props que no son de estilo,
+   * que antes no se comprobaban.** Ver el bloque de abajo, dentro del test.
    *
-   * El numero va aqui porque es la unica cosa de este bloque que **no** es una
-   * consecuencia de leer el codigo, y porque es exactamente el atributo que un
-   * alguien va a ver faltar y va a "arreglar": ponerlo es una linea y deja las seis
-   * en rojo. Los dos componentes lo dicen en la prop, y esto lo hace rojo en vez de
-   * rojo en un navegador.
+   * **El rol se cuenta narrowed al que cambia el elemento, y tiene que estar en la
+   * rama del `Pressable`.** Antes este bloque prohibía cualquier
+   * `accessibilityRole`, y eso eran dos cosas equivocadas a la vez: en
+   * `react-native-web@0.21.2` sólo `roleComponents` devuelve un tag —`"text"`,
+   * `"none"`, `"summary"`, `"adjustable"` no cambian el elemento y son legítimos— y
+   * además convertía **en rojo el arreglo correcto**, porque el arreglo es poner
+   * `accessibilityRole="button"`. Un test que hay que editar para que entre el
+   * código bueno tiene un camino de salida de un minuto: subir el número. Así que
+   * aquí no se cuenta "cuántos roles hay" sino **"cuántos cambian el elemento, y
+   * dónde"**: exactamente uno por fichero, y dentro de la rama que se pinta
+   * `<Pressable>`, porque un rol en la rama del `View` convertiría las quince
+   * insignias que no se pulsan en `<button>` — que es el daño real, y el contrario
+   * del que este test creía impedir.
    */
-  it('sin onPress sale el mismo View de siempre, y sigue siendo un div', () => {
+  it('sin onPress sale el mismo View de siempre', () => {
     for (const [componente, fuente] of [
       ['Badge', insignia],
       ['TagChip', pastilla],
     ] as const) {
       const cuenta = (patron: RegExp) => (fuente.match(patron) ?? []).length;
+      // Lo que va antes del `<Pressable>` es la rama del `View`, y lo que va
+      // detrás es la del `Pressable`: es la única forma de decir *dónde* está el rol.
+      const pulsable = fuente.indexOf('<Pressable');
+      const ramaDelPulsable = fuente.slice(pulsable);
       expect({
         componente,
         vistas: cuenta(/<View\b/g),
         pulsables: cuenta(/<Pressable\b/g),
         elToqueEnElPulsable: cuenta(/onPress=\{onPress\}/g),
-        rolesDeBoton: cuenta(/accessibilityRole/g),
+        // Sólo el que `propsToAccessibilityComponent` traduce en un tag.
+        rolesQueCambianElElemento: cuenta(/accessibilityRole=["'{]button/g),
+        elRolEstaEnElPulsable: /accessibilityRole=["'{]button/.test(ramaDelPulsable),
         saleElViewSinToque: /if \(!onPress\)/.test(fuente),
       }).toEqual({
         componente,
         vistas: 1,
         pulsables: 1,
         elToqueEnElPulsable: 1,
-        rolesDeBoton: 0,
+        rolesQueCambianElElemento: 1,
+        elRolEstaEnElPulsable: true,
         saleElViewSinToque: true,
       });
     }
+
+    /**
+     * Y en la rama del `View` de `Badge`, los dos props que no son de estilo, que
+     * antes no se comprobaban y que son los que **borran el nombre accesible de
+     * quince insignias de la app** sin que nada se entere.
+     *
+     * Quitar `accessibilityLabel` de ahí deja los seis tests de este bloque en
+     * verde —no hay ni un píxel cambiado— y **borra en silencio el nombre
+     * accesible de quince insignias**: una cuenta de completadas que se anuncia
+     * como «2», un «Este dispositivo», el tipo de una película, el «Hecho» del
+     * panel. Quince sitios dependen de esta línea y ninguno falla si desaparece:
+     * `item/[itemId].tsx:650`, `drawer.tsx:572` y `:624`, `sync.tsx:104` y `:138`.
+     *
+     * **Sólo `Badge`, y no los dos componentes**: `TagChip` nunca ha llevado
+     * `accessibilityLabel` ni `testID` —su nombre accesible es el de la etiqueta,
+     * que escribe dentro— y exigirle dos props que no ha tenido nunca sería un test
+     * que se pone rojo para siempre y se borra.
+     */
+    const ramaDelView = insignia.slice(0, insignia.indexOf('<Pressable'));
+    expect({
+      conservaElNombreAccesible: ramaDelView.includes('accessibilityLabel={accessibilityLabel}'),
+      conservaElTestId: ramaDelView.includes('testID={testID}'),
+      // Y que sea la rama del `View` y no un comentario: los dos van en el mismo
+      // `<View>` que el `style`, y sin esto el `includes` encontraría el prop en el
+      // `Pressable` de abajo y daría verde con la rama vacía.
+      elViewEsLaQueLosDeclara: /<View[\s\S]*accessibilityLabel=\{accessibilityLabel\}[\s\S]*testID=\{testID\}/.test(
+        ramaDelView,
+      ),
+    }).toEqual({
+      conservaElNombreAccesible: true,
+      conservaElTestId: true,
+      elViewEsLaQueLosDeclara: true,
+    });
   });
 
   /**
@@ -229,6 +313,34 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
     // llegara al nombre por segunda vez en lugar de a la insignia.
     expect(aperturas(soloLaFila, 'Badge')[0]).toContain('onPress={onEdit}');
     expect(aperturas(soloLaFila, 'TagChip')[0]).toContain('onPress={onEdit}');
+    /**
+     * Y las dos llevan **la pista del nombre**, no una suya.
+     *
+     * Todos los controles de una fila abren lo mismo, así que la frase va escrita
+     * una vez —como el nodo que `pistaNombre.node` ya ponía al lado del nombre— y
+     * todos sus `aria-describedby` apuntan ahí. Varias copias de «Toca para
+     * cambiarlo» en el documento serían las mismas palabras varias veces en un lector
+     * de pantalla. **Sin número de controles**, porque depende de cuántas etiquetas
+     * tenga la tarea: medido, una fila con insignia y dos pastillas son **cuatro**
+     * `<button>` apuntando a **un** nodo, y una con una etiqueta son tres.
+     *
+     * **Como prop, `hintProps={pistaNombre.props}`, y no como un spread.** Medido:
+     * `{...pistaNombre.props}` suelta `aria-describedby` en lo alto de `<Badge>` y
+     * de `<TagChip>`, que no aceptan props sueltos, se lo comen y no llega a
+     * nada — en el DOM quedaba **un** elemento de la fila apuntado a la pista, el
+     * nombre, y las pastillas seguían sin decir qué hacen. Un test que buscara
+     * `pistaNombre` habría dado verde en los dos casos, y por eso busca la prop.
+     *
+     * El nombre **sí** lleva el spread, y es lo que lleva desde antes: lo tiene
+     * como prop suelta y no dentro de nada. Por eso la negativa va sobre las dos
+     * aperturas y no sobre la fila entera — sobre la fila entera sale verde
+     * mientras las dos pastillas siguen mudas, que es el fallo entero.
+     */
+    for (const nombre of ['Badge', 'TagChip']) {
+      const apertura = aperturas(soloLaFila, nombre)[0];
+      expect(apertura).toContain('hintProps={pistaNombre.props}');
+      expect(apertura).not.toContain('{...pistaNombre.props}');
+    }
   });
 
   /**
@@ -238,6 +350,20 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
    * Preguntar solo a los que ya lo hacen es una comprobacion que no puede fallar: si
    * manana se le pasa a la insignia de una cabecera, esta seguiria verde. La lista
    * de los dos sitios esta escrita entera, no la lista menos las excusas.
+   *
+   * **Y esta se va a poner roja con trabajo legitimo, y eso es lo que tiene que
+   * hacer.** No pregunta si el trabajo es bueno, pregunta si hay mas de un sitio: en
+   * cuanto cualquier `Badge` o cualquier `TagChip` de la app se haga pulsable —una
+   * insignia de una cabecera que abra su contador, una pastilla que abra su
+   * selector— sale, aunque sea lo correcto y aunque el otro sitio siga siendo
+   * exactamente este. Quien lo encuentre tendra que **decidir**, no subir el
+   * numero: la lista se amplia por el motivo de cada uno, o no se amplía.
+   *
+   * Que hoy solo pueda ser la fila no es una regla de estilo: es que **las otras
+   * quince insignias abren otra cosa**. Las de una cabecera son contadores, las de
+   * una bandeja son estados, las de un cajón son estados de un sitio, y **una que
+   * cuenta no tiene nada que abrir**. La fila abre la tarea, y los tres controles
+   * que la abren dicen exactamente lo mismo.
    */
   it('y ningun otro sitio de la app se lo pasa', () => {
     const conToque: string[] = [];
@@ -271,6 +397,40 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
     const pastillasDeLaHoja = aperturas(sinComentarios(itemEditSheet), 'TagChip');
     expect(pastillasDeLaHoja).toHaveLength(2);
     expect(pastillasDeLaHoja.filter((p) => /\bonPress\b/.test(p))).toEqual([]);
+  });
+
+  /**
+   * Los tres detectores de pastillas del guion miran tambien `<button>`, y esta es
+   * la comprobacion que sostiene el `accessibilityRole="button"` de los dos
+   * componentes.
+   *
+   * **Va aqui, y no como un "no pongas el rol" en los componentes, por una razon
+   * concreta:** un pin sobre la prop obliga a editar el test el dia que llega el
+   * arreglo, y editar un test para que entre el codigo bueno tiene un camino de
+   * salida de un minuto — subir el numero o borrarlo. Un pin sobre **el otro
+   * lado del contrato** no: si alguien deja el guion en `div`, esto se pone rojo y
+   * el mensaje es el que importa («tus comprobaciones ya no ven la pastilla»), no
+   * «falta un atributo». Y **caduca solo**: el dia que los tres detectores se
+   * reescriban bien, quien lo haga ve este test y ve lo que decia.
+   *
+   * Lo que se midio cuando el rol estaba puesto y el guion pedia `div`: las seis
+   * comprobaciones de geometria **seguian en verde midiendo cero pastillas**, y
+   * `Math.max(...[].map(...))` daba `-Infinity`, de modo que «lo de mas a la
+   * derecha llega a 0» salia como una holgura de 0 pt. Un fallo que se lee como una
+   * medicion buena, y por eso el filtro de radio 999 importa tanto como el `button`.
+   */
+  it('y el guion busca la pastilla tambien entre los botones', () => {
+    // Solo las tres de una fila. El guion tiene otras `querySelectorAll("div,…")`
+    // que buscan la hoja de texto de dentro de un nombre —`div,span,p`— y a esas no
+    // les tiene que pasar nada: por eso el `fila.` delante y no un `querySelectorAll`
+    // a pelo.
+    const colas = [...verifyTag.matchAll(/fila\.querySelectorAll\("div([^")]*)"\)/g)].map(
+      (m) => m[1] ?? '',
+    );
+    expect(colas).toHaveLength(3);
+    for (const cola of colas) {
+      expect(cola.split(',').map((t) => t.trim())).toContain('button');
+    }
   });
 });
 
