@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   ITEM_ICON_COLORS,
   derivedTagColor,
@@ -325,16 +328,17 @@ describe("el mapa que sale saneado lo acepta el contrato", () => {
 });
 
 /**
- * Los seis tests de abajo son la regla de la pastilla, y el primero de todos es
- * el que explica por que este archivo no tiene una puerta de contraste.
+ * La regla de la pastilla. El primero de los tests de aqui es el que explica por
+ * que este archivo no tiene una puerta de contraste.
  *
  * **El 4.5 va escrito a mano en todos ellos y no se lee de
  * `MIN_LABEL_CONTRAST`, y es a proposito**: el comentario de la constante —en
  * `tag-colors.ts`— dice que el test la escribe para que bajarla produzca un test
  * rojo, y leerla haria que las dos cosas bajaran a la vez y el suite entero
- * siguiera en verde. Ese es el unico sitio del repositorio donde la cifra sobrevive
- * a que `tag-color-plan.test.ts` lo borre la Tarea 3, asi que si alguna vez se
- * afloja el umbral, que sea este archivo el que se ponga rojo y no una pantalla.
+ * siguiera en verde. Aqui es donde vive ese 4.5 a mano —los tests que lo tenian en
+ * `tag-color-plan.test.ts` se fueron con la puerta que mediaban—, asi que si
+ * alguna vez se afloja el umbral, que sea este bloque el que se ponga rojo y no una
+ * pantalla.
  */
 describe("la pastilla deriva relleno y texto", () => {
   it("el relleno es el color mezclado con la superficie", () => {
@@ -406,6 +410,19 @@ describe("la pastilla deriva relleno y texto", () => {
       .toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(labelPillColors("#000000", "#111827", "dark").text, labelPillColors("#000000", "#111827", "dark").fill))
       .toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("el texto de la pastilla no sale nunca en el color del tema", () => {
+    // El texto del tema no es un color que haya elegido nadie, y es lo que devolvia
+    // la puerta cuando el color de la etiqueta no se leia encima: una etiqueta con
+    // color se pintaba como una etiqueta sin el. La pastilla deriva el suyo hasta que
+    // se lee, y esa salida ya no existe —asi que ningun color de la paleta la
+    // vuelve a abrir.
+    const tema = { surface: "#F0F2F8", text: "#0E1220", scheme: "light" as const };
+    for (const color of ITEM_ICON_COLORS) {
+      const { text } = labelPillColors(iconColor(color), tema.surface, tema.scheme);
+      expect(text).not.toBe(tema.text);
+    }
   });
 
   it("un hex libre sale tal cual y un nombre viejo sale en su hex", () => {
@@ -548,5 +565,58 @@ describe("la pastilla deriva relleno y texto", () => {
         }
       }
     }
+  });
+});
+
+/**
+ * La otra mitad de la regla: **la pastilla que se pinta de verdad.**
+ *
+ * Este archivo comprueba `labelPillColors` hasta la ultima celda y no comprueba
+ * nada de lo que la dibuja, y esa fue la distancia por la que la funcion vivia
+ * **probada, con sus doce hex clavados**, al lado de un componente que seguia
+ * pintando el relleno del tema y el texto en `theme.colors.text`. Una funcion
+ * correcta que nadie llama no arregla nada, asi que esto lee el **fuente** de
+ * `TagChip` —como hace `task-row-layout.test.ts`— y afirma lo que tiene que
+ * aparecer ahi: la llamada, y la ausencia de las dos salidas por las que se
+ * llegaba a la pastilla gris.
+ *
+ * **Sin comentarios, y por que:** el componente tiene que poder nombrar por que
+ * pinte lo que pinta, y una afirmacion negativa sobre el texto entero —
+*"no dice `labelTextColor`"*— la haria caer en verde un comentario que lo explica.
+ * Se afirma sobre el codigo sin comentarios.
+ */
+const RAIZ = join(import.meta.dirname, "..");
+const tagChip = readFileSync(join(RAIZ, "src/components/lists/tag-chip.tsx"), "utf8");
+const codigoDelChip = tagChip.replace(/\/\*[\s\S]*?\*\//g, "");
+
+describe("la pastilla que se pinta", () => {
+  it("deriva relleno y texto de una sola llamada, contra la superficie del tema", () => {
+    // La superficie es la del tema y no un hex escrito aqui: la pastilla esta
+    // **encima** de algo, y el contraste se mide contra esa cosa. Y el esquema va
+    // con ella, porque la cuenta empieza en una direccion o en la otra segun el
+    // tema —y "la que toque" no es una regla que se pueda leer de un parametro
+    // adivinado.
+    expect(codigoDelChip).toContain("labelPillColors(");
+    expect(codigoDelChip).toContain("theme.colors.surfaceMuted");
+    expect(codigoDelChip).toContain("theme.scheme");
+    // Y **no queda la puerta**: los dos colores salen de ahi y no de dos sitios, y
+    // una pastilla con el relleno del tema y el texto de otro lado no es una
+    // pastilla, es dos mitades que no se hablan — ademas de que el texto del tema
+    // es un color que no eligio nadie.
+    expect(codigoDelChip).not.toContain("labelTextColor");
+  });
+
+  it("no busca el color de una etiqueta en la paleta de iconos", () => {
+    // **Este es el fallo que motivo la tarea, y el que no se ve en ningun test de
+    // este archivo.** `iconColor` es la paleta de doce de los iconos: su reserva
+    // es el neutro, asi que un hex —`#16A34A`, el que el servidor contesta para un
+    // color elegido— no lo conoce y sale `#8A93A8`.
+    //
+    // Y de ahi no se veia el color de nadie: en claro ese gris da 2.75:1 sobre
+    // `surfaceMuted`, la puerta lo rechazaba y el texto se caia al del tema; en
+    // oscuro da 5.17:1, pasaba, y la pastilla se quedaba con el gris. **Ninguna
+    // regla de este archivo se enteraba de nada**, porque el hex elegido no llegaba
+    // aqui: llegaba su equivalente en gris.
+    expect(codigoDelChip).not.toMatch(/\biconColor\(/);
   });
 });

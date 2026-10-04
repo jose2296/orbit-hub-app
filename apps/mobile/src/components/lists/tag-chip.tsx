@@ -5,11 +5,12 @@ import { StyleSheet, View } from "react-native";
 import type { ViewStyle } from "react-native";
 import type { ReactNode } from "react";
 
-import { labelTextColor } from "@/lib/lists/tag-colors";
+import { labelPillColors, tagColorHex } from "@/lib/lists/tag-colors";
 import { AppText } from "../ui/text";
 
 /**
- * One label, in the colour this list gives it — where that colour can be read.
+ * One label, in the colour this list gives it — the tint of that colour as the
+ * fill, and a text read off that fill.
  *
  * The colour arrives in the `colors` prop and is **not** looked up from anywhere
  * else — not a module-level map, not the item, not a hook. That is the whole
@@ -21,17 +22,22 @@ import { AppText } from "../ui/text";
  * is `derivedTagColor(tag)`, the same colour every other device computes for it.
  * That one *can* come out grey — `neutral` is one of the twelve, so the hash lands
  * on it for roughly one name in twelve, which `@orbit-hub/contracts` admits on
- * purpose — and `iconColor` also answers `neutral` for a key a newer build wrote.
- * Grey is a colour somebody can end up with; what does not exist is a label with
- * no colour at all, which is why this component has no "empty" branch.
+ * purpose — and a colour a newer build wrote that this one does not know comes out
+ * `neutral` too. Grey is a colour somebody can end up with; what does not exist is
+ * a label with no colour at all, which is why this component has no "empty" branch.
  *
- * **The colour is not always the text colour, and that is a measured decision.**
- * `labelTextColor` keeps the label's own colour only when it clears 4.5:1 against
- * this pill's fill, and hands back `theme.colors.text` when it does not. The
- * arithmetic is not close and it does not agree with itself between themes: three
- * of the twelve clear the bar on the light fill and three *different* ones clear it
- * on the dark one, so most pills are in the theme's text and none is coloured in
- * both. The rule and the measurement live in `@/lib/lists/tag-colors`.
+ * **Both colours come out of one call, and the fill is the label's own colour
+ * rather than the theme's.** `labelPillColors` mixes the colour with the surface
+ * and darkens it or lightens it until it can be read on that mix. The two are a
+ * pair — the text means nothing measured against any other fill — which is why
+ * they arrive together and not one at a time.
+ *
+ * The pair replaces a split decision: a `surfaceMuted` fill with the label's colour
+ * as the text, falling back to `theme.colors.text` whenever that colour did not
+ * read on that fill. A colour is a decision somebody took about one label, and the
+ * theme's text is nobody's; the fill was the theme's while the text was the
+ * label's, so the two halves were about different labels. The rule and the
+ * arithmetic live in `@/lib/lists/tag-colors`.
  */
 export function TagChip({
   tag,
@@ -57,11 +63,18 @@ export function TagChip({
 }) {
   const theme = useTheme();
   const compacto = size === "compact";
-  const fill = theme.colors.surfaceMuted;
-  const text = labelTextColor(
-    colors?.[tag] ?? derivedTagColor(tag),
-    fill,
-    theme.colors.text,
+  /*
+   * **Las dos formas del color se juntan aqui**, y por eso pasan por
+   * `tagColorHex` antes de entrar: el mapa guarda el hex que contesta el servidor y
+   * `derivedTagColor` devuelve un nombre de los doce, y los dos dicen lo mismo en
+   * sitios distintos. Es tambien lo que deja pintar el color que eligio alguien en
+   * un build que guardaba nombres —`iconColor` no lo reconoceria y lo devolveria
+   * en el neutro, que es gris.
+   */
+  const { fill, text } = labelPillColors(
+    tagColorHex(colors?.[tag] ?? derivedTagColor(tag)),
+    theme.colors.surfaceMuted,
+    theme.scheme === "dark" ? "dark" : "light",
   );
 
   return (
