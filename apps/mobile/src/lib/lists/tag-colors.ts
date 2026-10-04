@@ -182,17 +182,19 @@ export function labelTextColor(
  * lo mismo, y conviene no contarlo como si lo fuera.
  *
  * **Y el precio de llegar a 4.5:1 son esos puntos de recorrido, no el paso de la
- * cuenta** —un paso mas fino mueve el hex 5 de 255 en un canal, medido— sino el 14%
- * de mezcla. Quien quiera que el texto se parezca mas al color elegido tiene **una
- * sola palanca y es `MEZCLA_DE_LA_PASTILLA`**: subirla acerca el relleno al color y
- * acorta el viaje, y bajarla hace lo contrario. Cuanto se puede subir sin perder
- * legibilidad es la pregunta abierta de esta funcion, y la razon por la que el 14%
- * no esta canonizado en ningun sitio mas que en la constante de arriba. El numero
- * que dice por que no se puede subir sin mas es el color de la marca: **`success`
- * `#0E9F6E` mide 3.025:1 sobre `surfaceMuted` claro** —la puerta lo rechazaba por
- * eso—, y este archivo lo saca de ahi **moviéndolo**, no bajando el relleno: pastilla
- * `#2EAB81` con texto `#053827`, a 4.53:1. El mismo `success` en oscuro son
- * `#108E65` y `#02120D`, a 4.64:1.
+ * cuenta**, sino el 14% de mezcla. Afinar el paso **no acorta el viaje**: la cuenta
+ * para en cuanto pasa, de modo que un paso mas fino solo puede caer en otro
+ * candidato, y ese otro queda **a 4.5:1 o por debajo**, dentro de un redondeo de la
+ * linea —mismo contraste, distinto hex—. Quien quiera que el texto se parezca mas
+ * al color elegido tiene **una sola palanca y es `MEZCLA_DE_LA_PASTILLA`**: subirla
+ * acerca el relleno al color y acorta el viaje, y bajarla hace lo contrario. Cuanto
+ * se puede subir sin perder legibilidad es la pregunta abierta de esta funcion, y la
+ * razon por la que el 14% no esta canonizado en ningun sitio mas que en la constante
+ * de arriba. El numero que dice por que no se puede subir sin mas es el color de la
+ * marca: **`success` `#0E9F6E` mide 3.025:1 sobre `surfaceMuted` claro** —la puerta
+ * lo rechazaba por eso—, y este archivo lo saca de ahi **moviéndolo**, no bajando el
+ * relleno: pastilla `#2EAB81` con texto `#053827`, a 4.53:1. El mismo `success` en
+ * oscuro son `#108E65` y `#02120D`, a 4.64:1.
  */
 export function labelPillColors(
   colour: string,
@@ -231,10 +233,16 @@ export function labelPillColors(
   // comprobar uno por uno que color salio de cada vuelta.
   //
   // El lado oscuro del tema es el mismo caso del reves: `amber` `#D97706` da un
-  // relleno `#BD6A0B` al que el blanco **no llega a 4.02:1** porque su luminancia
-  // ya es 0.21, y el ambar oscureciendolo llega a 4.65:1. La garantia no depende
-  // de cual de los dos extremos toque: los dos son el mismo argumento, y estan los
-  // dos probados en el bloque de abajo.
+  // relleno `#BE6B0C` al que el blanco **no llega a 3.96:1**, y el ambar
+  // oscureciendolo sale en `#1C1001` a 4.71:1. **Estos numeros son sobre `#1B2231`,
+  // la superficie oscura del tema, y no sobre `#111827`**, que es la que usa el test
+  // de "lee con un blanco puro y con un negro puro" mas abajo: sobre esa el relleno
+  // sale `#BD6A0B` y el blanco llega a 4.02:1. Las dos dicen lo mismo —el blanco no
+  // pasa—, y por eso el argumento no depende de cual se cite; lo que **no** se
+  // puede es dar las cifras de una sin decir que superficie es, que es justo como
+  // se confunde una con otra. La garantia tampoco depende de cual de los dos
+  // extremos toque: los dos son el mismo argumento, y estan los dos probados en el
+  // bloque de abajo.
   //
   // Y el caso que mas se nota no es un color raro sino el primero que elige
   // cualquiera: **un negro o un blanco puestos a mano.** Con la superficie de su
@@ -287,15 +295,18 @@ export function labelPillColors(
    *
    * Y **de esos dos, uno siempre se lee**. Aqui `L` es la **luminancia relativa de
    * WCAG** —la de `luminanceDe`, de 0 a 1— y **no** la `l` de HSL que se mueve
-   * arriba: para el mismo relleno `#BD6A0B`, la de WCAG es 0.21 y la de HSL es 0.39,
-   * asi que leer una como la otra cambia la cuenta por un factor de dos. El negro
-   * pasa de 4.5:1 sobre cualquier relleno con `L >= 0.175` y el blanco sobre
-   * cualquiera con `L <= 0.183` —las dos bandas salen de `(L + 0.05) / 0.05`, y se
-   * pisan entre 0.175 y 0.183—, asi que no hay ningun relleno contra el que los dos
-   * extremos fallen a la vez. Ese es el argumento entero, y por eso la funcion no
-   * tiene un `return` de emergencia: si se llegara aqui, seria porque el paso o el
-   * numero de pasos ya no alcanzan los dos extremos, que es un typecheck y no una
-   * pastilla gris. El `throw` de abajo es ese typecheck, escrito como codigo.
+   * arriba. Las dos van de 0 a 1 y **no son la misma magnitud**, asi que leer una
+   * como la otra cambia la cuenta por un factor de dos: el relleno `#BE6B0C` del
+   * `amber` en oscuro tiene una luminosidad HSL de **0.40** y una luminancia de WCAG
+   * bastante menor, porque WCAG pesa el verde mucho mas que HSL, que reparte el mismo
+   * peso entre los tres canales. El negro pasa de 4.5:1 sobre cualquier relleno con
+   * `L >= 0.175` y el blanco sobre cualquiera con `L <= 0.183` —las dos bandas salen
+   * de `(L + 0.05) / 0.05`, y se pisan entre 0.175 y 0.183—, asi que no hay ningun
+   * relleno contra el que los dos extremos fallen a la vez. Ese es el argumento
+   * entero, y por eso la funcion no tiene un `return` de emergencia: si se llegara
+   * aqui, seria porque el paso o el numero de pasos ya no alcanzan los dos extremos,
+   * que es un typecheck y no una pastilla gris. El `throw` de abajo es ese
+   * typecheck, escrito como codigo.
    *
    * Ese es el motivo por el que **la puerta de contraste se borra y no se mueve**:
    * antes la unica salida a un color ilegible era el color del tema, que es un color
