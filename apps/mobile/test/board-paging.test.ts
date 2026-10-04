@@ -11,7 +11,6 @@ import {
   trackContentWidth,
   trackRoomAt,
 } from '../src/lib/lists/board-paging';
-import { columnLayout } from '../src/lib/lists/board';
 
 /**
  * Which column a swipe lands on, as a pure function.
@@ -392,35 +391,36 @@ describe('cuantas columnas se pueden anclar', () => {
     expect(anchorableColumns(4, 246.66666666666663, 246.66666666666666)).toBe(2);
 
     /**
-     * The same fraction at other widths, **each one written out and each one the
-     * number a `columnLayout` division actually produces.**
+     * **And three more of the same shape, with both numbers written out.**
      *
-     * 1280 with four columns and a gap of 12 is the second case the sweep named:
-     * a column of `320 - 3 = 316.99999999999994` and a maximum scroll of
-     * `3 x 316.99999999999994 = 950.9999999999998` are the same quantity, and
-     * without the margin the pager answered 2 instead of 3.
+     * All of them come out of `columnLayout` — the column is a division of a track —
+     * and all of them are the case where three columns' worth of step and three
+     * steps' worth of scroll are the same quantity written two ways. Sweeping the
+     * track from 300 to 1800 with a gap of 12, **43** of them land a hair under an
+     * integer and these are four of the 43, with the quotient printed:
+     *
+     * | `columnLayout` de | paso | tres pasos | cociente |
+     * | --- | --- | --- | --- |
+     * | 752 | `230.2` | `690.5999999999999` | `2.99999999999999956` |
+     * | 762 | `231.2` | `693.5999999999999` | `2.99999999999999956` |
+     * | 1028 | `245.71428571428572` | `737.1428571428571` | `2.99999999999999956` |
+     *
+     * `floor` of any of them is 2, so without the margin the pager answers **3**
+     * where it should answer **4**. Each of these four assertions dies on its own
+     * with the margin taken away.
      */
-    expect(anchorableColumns(1280, 316.99999999999994 * 3, 316.99999999999994)).toBe(4);
-
-    /**
-     * And the family the sweep is made of: a track of `4n` with four columns and a
-     * gap of 12, at every multiple of itself, because that is the shape that makes
-     * the quotient land a hair under an integer.
-     */
-    for (const [columnas, gap] of [
-      [4, 12],
-      [3, 12],
-      [2, 16],
+    for (const [paso, tresPasos] of [
+      [230.2, 690.5999999999999],
+      [231.2, 693.5999999999999],
+      [232.2, 696.5999999999999],
+      [245.71428571428572, 737.1428571428571],
     ] as [number, number][]) {
-      const ancho = columnas * 200 + (columnas - 1) * gap;
-      const paso = columnLayout(ancho, gap).columnWidth;
-      for (let veces = 1; veces <= 4; veces += 1) {
-        const maxScroll = paso * veces;
-        expect(
-          anchorableColumns(8, maxScroll, paso),
-          `${columnas} columnas de ${paso} en una pista de ${ancho}, ${veces} pasos`,
-        ).toBe(veces + 1);
-      }
+      expect(tresPasos / paso, `el cociente de ${paso}`).toBeLessThan(3);
+      expect(Math.floor(tresPasos / paso), `el suelo de ${paso}`).toBe(2);
+      expect(
+        anchorableColumns(8, tresPasos, paso),
+        `un paso de ${paso} y un recorrido de ${tresPasos}`,
+      ).toBe(4);
     }
   });
 
