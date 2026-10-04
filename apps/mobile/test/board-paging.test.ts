@@ -67,13 +67,19 @@ describe('la direccion del arrastre', () => {
   });
 
   /**
-   * When the travel and the speed disagree, the travel wins, and this is the
-   * panel's rule and not a new one: the velocity only breaks the tie of a finger
-   * that had already come back, so it is asked only when there is no travel to
-   * ask. The case is a drag to the left whose last two fingers flick back to the
-   * right — the finger is coming home, but it went 140 points that way, and paging
-   * backwards from that would move the column away from where the finger has been
-   * for the whole gesture.
+   * When the travel and the speed disagree, the travel wins here — and **that is
+   * not the panel's rule**, so it is written out rather than attributed.
+   *
+   * `panel-grid.tsx:1434` reads `forward = abs(velocity) > 40 ? velocity < 0 :
+   * travel < 0`: there **the velocity decides** whenever the finger is moving
+   * faster than 40, and the travel only speaks once it has slowed down. This rule
+   * is the other way round, and it is this one that is right for a board: the case
+   * is a drag to the left whose last two fingers flick back to the right, the
+   * finger has been to the left for the whole gesture, and paging backwards from
+   * that would move the column away from where the finger has been.
+   *
+   * Both answers are defensible and only one of them is right here, which is
+   * exactly why the difference is a test and not a footnote.
    */
   it('el travel manda sobre una velocidad que dice lo contrario', () => {
     expect(nextPageFor(-140, 600, 4, 1)).toBe(2);

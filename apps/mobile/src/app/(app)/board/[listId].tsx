@@ -525,12 +525,19 @@ export default function BoardScreen() {
    * whole length, which is a different complaint from the one this fixes.
    *
    * And it is here, and not inside the animated style, because the tabs read the
-   * same thing: measured in the browser at the last column of a 400-point board with
+   * same thing: measured in the browser at the last state of a 400-point board with
    * a 300-point drag, the columns moved **83** and the pills moved **95**, because
    * the pills were reading the travel the finger had made and the columns the travel
    * there was room for. **The strip was running away from the board at the one moment
    * both were supposed to be saying there is nowhere to go**, and the only way that
    * does not come back is one number read by the two.
+   *
+   * Both numbers are measured and both are the *banded* ones, which is the whole of
+   * what this note is for: the finger travelled 300 and the gesture does not start
+   * counting for 14 of them, and the band then divides what is left by 3.4 —
+   * `(300 - 14) / 3.4 =` 84, read as **83**. Writing 84 here would have been the
+   * calculated number passed off as the measured one, which is the mistake this
+   * comment exists to prevent.
    */
   const movido = useDerivedValue(() => {
     let m = trackX.value;

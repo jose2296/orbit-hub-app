@@ -1,7 +1,7 @@
 /**
- * Which column a swipe lets go of the board on.
+ * Which page a swipe lets go of the board on.
  *
- * **The gesture is the panel's and so are its numbers.** `settle` in
+ * **The gesture is the panel's, and so are its two numbers.** `settle` in
  * `components/dashboard/panel-grid.tsx` turns a page with 56 points of travel or
  * 420 points of speed, those were measured on three targets, and this is the same
  * finger doing the same thing — crossing a screen sideways to show what is next —
@@ -10,12 +10,29 @@
  * default**, so a caller that has to measure something else can pass something
  * else and the tests have a name to read.
  *
+ * **What is *not* copied is the rule for the direction, and the difference is
+ * deliberate.** The panel reads `forward = abs(velocity) > 40 ? velocity < 0 :
+ * travel < 0`: **the velocity decides whenever the finger is moving faster than
+ * 40**, and the travel only speaks when the finger had already slowed down. This
+ * one reads the travel first and asks the velocity only when there is no travel at
+ * all. Both are defensible and they answer differently for a finger that dragged
+ * 140 points to the left and then flicked back to the right at the end: the panel
+ * calls that backwards, this calls it forwards, and **this is the one that is right
+ * here**, because the finger has been to the left for the whole gesture and the
+ * last two frames are the finger changing its mind. The rule is written out below
+ * and tested rather than borrowed, which is the whole difference.
+ *
+ * The comparison is also one notch more generous than the panel's; see the note on
+ * the two constants.
+ *
  * It is a pure function and it is here rather than in the screen because the
- * screen is where the arithmetic that broke went wrong twice: the division that
- * left the board scrolling with every column on screen, and the jump that landed
- * a column 36 points short of its edge. A gesture that decides in a component is a
- * gesture whose thresholds no test can reach, and a threshold nobody can reach is
- * a threshold that gets "improved" by whoever touches the file next.
+ * screen is where the arithmetic that broke went wrong three times: the division
+ * that left the board scrolling with every column on screen, the jump that landed
+ * a column 36 points short of its edge, and the floor of the rubber band that was
+ * measured in columns against a scroller measured in points. A gesture that decides
+ * in a component is a gesture whose thresholds no test can reach, and a threshold
+ * nobody can reach is a threshold that gets "improved" by whoever touches the file
+ * next.
  */
 
 /**
@@ -29,8 +46,13 @@
  * board when a finger rested on it would be a card that opens a different column
  * depending on where in the card it was pressed.
  *
- * The two are `SWIPE_DISTANCE` and `SWIPE_VELOCITY` of `panel-grid.tsx`, with the
- * same values and for the same reasons; see the note at the top of this file.
+ * The two are `SWIPE_DISTANCE` and `SWIPE_VELOCITY` of `panel-grid.tsx`, **with
+ * the same values and one notch apart in the comparison**: the panel tests
+ * `> 56` and `> 420` and this tests `>= 56` and `>= 420`, so a drag of exactly 56
+ * points or a flick of exactly 420 turns the page here and not there. `>=` is what
+ * the brief asked for and the extra notch is one drag in a thousand, so it stays —
+ * **but the two are not the same line of code, and the note at the top of this file
+ * may not say they are.** What is shared is the decision and the two numbers.
  */
 export const BOARD_SWIPE_DISTANCE = 56;
 export const BOARD_SWIPE_VELOCITY = 420;
