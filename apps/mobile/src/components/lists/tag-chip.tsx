@@ -1,7 +1,7 @@
 import { useTheme } from "@/theme";
 import type { TagColors } from "@orbit-hub/contracts";
 import { derivedTagColor } from "@orbit-hub/contracts";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { ViewStyle } from "react-native";
 import type { ReactNode } from "react";
 
@@ -45,6 +45,7 @@ export function TagChip({
   size = "regular",
   children,
   style,
+  onPress,
 }: {
   tag: string;
   colors: TagColors | undefined;
@@ -72,6 +73,33 @@ export function TagChip({
    * a caller that passes nothing gets exactly the pill this file describes.
    */
   style?: ViewStyle;
+  /**
+   * A press on the pill, **and nothing at all without it.**
+   *
+   * A `Pressable` here and not a box with a `Pressable` in it, for the reason the
+   * `style` above describes: the row measures this element, and a box outside it
+   * would take the `flexShrink` and leave the pill hanging off the line.
+   *
+   * **It and `children` are not the same thing, and `onPress` is not for the two
+   * rows of pills in the sheet.** Those carry inside them the buttons that take a
+   * label off and give it a colour, so a pill that is also a button is a button
+   * around two buttons: on a phone the innermost one keeps the gesture and the
+   * outer never fires, and on the web the `click` bubbles and both do — see
+   * `useLongPressText` for that same asymmetry, measured the other way round.
+   *
+   * **And like `Badge`, it does not ask for `accessibilityRole="button"`**, which is
+   * the thing that looks missing. In `react-native-web@0.21.2` that prop decides the
+   * **name of the element**, not an attribute —
+   * `modules/AccessibilityUtil/propsToAccessibilityComponent.js` returns the tag for
+   * a role that has one and `exports/createElement/index.js` renders it — so a pill
+   * with the role is a `<button>` and one without is a `<div>`. The browser checks
+   * that measure a row find the pills among its `div`s, and with the role they stop
+   * finding any. The pill keeps its `tabIndex` and its Enter either way; the space
+   * bar needs the element to be a `<button>` or to carry `role="button"`
+   * (`usePressEvents/PressResponder.js`). When those checks learn to look at
+   * `div, button`, this attribute goes back on: one line, here and in `Badge`.
+   */
+  onPress?: () => void;
 }) {
   const theme = useTheme();
   const compacto = size === "compact";
@@ -89,32 +117,50 @@ export function TagChip({
     theme.scheme === "dark" ? "dark" : "light",
   );
 
-  return (
-    <View
-      style={[
-        styles.chip,
-        {
-          borderRadius: theme.radius.pill,
-          backgroundColor: fill,
-          paddingHorizontal: compacto ? theme.spacing.xs : theme.spacing.sm,
-          /*
-           * The one number in this file that is not a token, and it is meant:
-           * `SPACING` has no 1, so the compact pill is 1 and the regular one is
-           * `xxs`. `badge.tsx` uses tokens on both sides of its own compact switch,
-           * which makes this look like an oversight — it is not, and "tidying" it to
-           * `xxs` silently doubles the compact pill.
-           */
-          paddingVertical: compacto ? 1 : theme.spacing.xxs,
-          gap: theme.spacing.xxs,
-        },
-        style,
-      ]}
-    >
+  // Un solo array de estilo para las dos ramas, para que la caja sea la misma caja
+  // y no haya un segundo sitio donde un padding o un radio se separen.
+  const estilo = [
+    styles.chip,
+    {
+      borderRadius: theme.radius.pill,
+      backgroundColor: fill,
+      paddingHorizontal: compacto ? theme.spacing.xs : theme.spacing.sm,
+      /*
+       * The one number in this file that is not a token, and it is meant:
+       * `SPACING` has no 1, so the compact pill is 1 and the regular one is
+       * `xxs`. `badge.tsx` uses tokens on both sides of its own compact switch,
+       * which makes this look like an oversight — it is not, and "tidying" it to
+       * `xxs` silently doubles the compact pill.
+       */
+      paddingVertical: compacto ? 1 : theme.spacing.xxs,
+      gap: theme.spacing.xxs,
+    },
+    style,
+  ];
+
+  const dentro = (
+    <>
       <AppText variant="caption" style={{ color: text }}>
         {tag}
       </AppText>
       {typeof children === "function" ? children(text) : children}
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={estilo}>{dentro}</View>;
+  }
+
+  // Sin `accessibilityLabel`: el nombre accesible de la pastilla es el de la
+  // etiqueta, que es lo que está escrito dentro. Y sin `accessibilityRole`, que en
+  // web decide el nombre del elemento; está en la prop de arriba.
+  return (
+    <Pressable
+      onPress={onPress}
+      style={estilo}
+    >
+      {dentro}
+    </Pressable>
   );
 }
 

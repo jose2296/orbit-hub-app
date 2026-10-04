@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -18,12 +18,77 @@ import { describe, expect, it } from 'vitest';
 const RAIZ = join(import.meta.dirname, '..');
 const src = (ruta: string) => readFileSync(join(RAIZ, ruta), 'utf8');
 
+/**
+ * A source file **without its comments**, because these components explain in prose
+ * exactly what the assertions below ask about — `badge.tsx` says what `compact` is
+ * for, and the new `onPress` says in as many words that it is optional and that
+ * nothing changes without it.
+ *
+ * Without stripping them, `expect(badge).toContain('onPress?: () => void')` passes
+ * the moment somebody writes the prop in a doc comment and has not implemented
+ * anything, and `not.toContain('onPress')` fails against a paragraph explaining why
+ * the prop is there. Both would report the opposite of what they measure.
+ *
+ * The `[^:]` before `//` is so an `http://` in an import is not cut in half.
+ */
+const sinComentarios = (texto: string): string =>
+  texto.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+/**
+ * The opening tag of every `<Name …>` in a source, as its own text.
+ *
+ * **The opening tag and not the element**, and that distinction is the whole
+ * difference between "this pill is given a press" and "something inside this pill
+ * has one". The sheet's `TagChip`s put two `Pressable`s inside —take the label off,
+ * give it a colour— and a regexp that ran to the first `/>` would stop on the
+ * `<Ionicons … />` of the first of them and read its `onPress={() => toggleTag(tag)}`
+ * as a prop of the pill.
+ *
+ * So it walks to the `>` that closes the tag, counting braces: an arrow function in
+ * a prop value is `=>` inside `{…}`, and a `>` there is not the end of anything.
+ */
+const aperturas = (fuente: string, nombre: string): string[] => {
+  const salida: string[] = [];
+  const marca = `<${nombre}`;
+  let desde = 0;
+  for (;;) {
+    const inicio = fuente.indexOf(marca, desde);
+    if (inicio < 0) return salida;
+    // `<BadgeProps` is not a `<Badge`, and a regexp with a `\b` would also not be
+    // enough for a name that ends in a letter and is followed by one.
+    const siguiente = fuente[inicio + marca.length];
+    if (siguiente && /[A-Za-z0-9_$]/.test(siguiente)) {
+      desde = inicio + marca.length;
+      continue;
+    }
+    let i = inicio + marca.length;
+    let llaves = 0;
+    while (i < fuente.length && !(fuente[i] === '>' && llaves === 0)) {
+      if (fuente[i] === '{') llaves += 1;
+      if (fuente[i] === '}') llaves -= 1;
+      i += 1;
+    }
+    salida.push(fuente.slice(inicio, i + 1));
+    desde = i + 1;
+  }
+};
+
+/** Every `.tsx` under `src`, so "nobody else got a press" can be asked of the whole app. */
+const ficherosTsx = (directorio = join(RAIZ, 'src')): string[] =>
+  readdirSync(directorio, { withFileTypes: true }).flatMap((entrada) => {
+    const ruta = join(directorio, entrada.name);
+    if (entrada.isDirectory()) return ficherosTsx(ruta);
+    return entrada.name.endsWith('.tsx') ? [ruta] : [];
+  });
+
 const checkbox = src('src/components/ui/checkbox.tsx');
 const badge = src('src/components/ui/badge.tsx');
 const listId = src('src/app/(app)/list/[listId].tsx');
 const appHeader = src('src/components/ui/app-header.tsx');
 const screen = src('src/components/ui/screen.tsx');
 const spaceBand = src('src/components/workspace/space-band.tsx');
+const tagChip = src('src/components/lists/tag-chip.tsx');
+const itemEditSheet = src('src/components/lists/item-edit-sheet.tsx');
 
 describe('la casilla no se come la fila', () => {
   /**
@@ -64,6 +129,148 @@ describe('la insignia no se aplasta', () => {
    */
   it('no se encoge', () => {
     expect(badge).toContain('flexShrink: 0');
+  });
+});
+
+describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () => {
+  const insignia = sinComentarios(badge);
+  const pastilla = sinComentarios(tagChip);
+
+  /**
+   * Las dos mitades del mismo contrato, y se comprueban **las dos**.
+   *
+   * Una prop declarada y no usada pasa una comprobación que busca la prop, y una
+   * fila que se la pasa a un componente que la ignora pasa una que busca el
+   * `onPress` en la fila. Por eso el `onPress` se cuenta en el que lo declara y el
+   * `onPress={onEdit}` se cuenta en la fila, y por eso el numero de cada uno esta
+   * escrito en vez de "esta ahi".
+   */
+  it('las dos lo aceptan, y las dos lo cuentan una vez', () => {
+    for (const [componente, fuente] of [
+      ['Badge', insignia],
+      ['TagChip', pastilla],
+    ] as const) {
+      expect({
+        componente,
+        declarada: (fuente.match(/onPress\?: \(\) => void/g) ?? []).length,
+        usada: (fuente.match(/onPress=\{onPress\}/g) ?? []).length,
+      }).toEqual({ componente, declarada: 1, usada: 1 });
+    }
+  });
+
+  /**
+   * Sin `onPress` el árbol sale **identico**, y esta es la comprobacion que lo dice.
+   *
+   * Un `Pressable` por componente y no un `View` con un `Pressable` alrededor, y
+   * solo uno de los dos raices: la caja de la que la fila mide es la caja que lleva
+   * `flexShrink`, y un envoltorio se la quedaria. `Badge` se usa en toda la app y
+   * `TagChip` en las dos filas de la hoja, asi que la rama sin `onPress` no puede
+   * haber cambiado de ninguna manera — y por eso el `if (!onPress)` va escrito: sin
+   * el, cambiar el `View` de abajo por un `Pressable` dejaria el conteo igual.
+   *
+   * **El rol de boton tiene que ser cero, y este es el sitio donde se sostiene.**
+   * En `react-native-web@0.21.2` `accessibilityRole="button"` no añade un atributo:
+   * devuelve **el nombre del elemento** (`propsToAccessibilityComponent` → el tag en
+   * `createElement`), asi que la pastilla pasa de `<div>` a `<button>`. Medido: con
+   * el rol, seis comprobaciones de `scripts/verify-tag-colors.mjs` dejan de ver
+   * cualquier pastilla, porque `pillsOfRow`, `linesOfRow` y `rowBoxes` las buscan
+   * entre los `div` de la fila. Sin el rol, las mismas seis dan lo que siempre.
+   *
+   * El numero va aqui porque es la unica cosa de este bloque que **no** es una
+   * consecuencia de leer el codigo, y porque es exactamente el atributo que un
+   * alguien va a ver faltar y va a "arreglar": ponerlo es una linea y deja las seis
+   * en rojo. Los dos componentes lo dicen en la prop, y esto lo hace rojo en vez de
+   * rojo en un navegador.
+   */
+  it('sin onPress sale el mismo View de siempre, y sigue siendo un div', () => {
+    for (const [componente, fuente] of [
+      ['Badge', insignia],
+      ['TagChip', pastilla],
+    ] as const) {
+      const cuenta = (patron: RegExp) => (fuente.match(patron) ?? []).length;
+      expect({
+        componente,
+        vistas: cuenta(/<View\b/g),
+        pulsables: cuenta(/<Pressable\b/g),
+        elToqueEnElPulsable: cuenta(/onPress=\{onPress\}/g),
+        rolesDeBoton: cuenta(/accessibilityRole/g),
+        saleElViewSinToque: /if \(!onPress\)/.test(fuente),
+      }).toEqual({
+        componente,
+        vistas: 1,
+        pulsables: 1,
+        elToqueEnElPulsable: 1,
+        rolesDeBoton: 0,
+        saleElViewSinToque: true,
+      });
+    }
+  });
+
+  /**
+   * La fila se abre desde el nombre, y ahora tambien desde las dos cosas de su
+   * segunda linea — **las dos, y no una**: una insignia que abre y una pastilla que
+   * no es el mismo boton a medio hacer.
+   *
+   * Y los tres con el mismo `onEdit`, porque los tres abren lo mismo. El conteo
+   * importa: `onPress={onEdit}` en la fila lo lleva el nombre desde hace tiempo, asi
+   * que buscar el texto daria verde con dos de los tres cambiados y sin ningun
+   * boton nuevo.
+   */
+  it('la fila lo pasa a la insignia y a la pastilla, igual que al nombre', () => {
+    const soloLaFila = sinComentarios(listId).slice(
+      sinComentarios(listId).indexOf('function TaskRow('),
+    );
+    expect({
+      insignias: aperturas(soloLaFila, 'Badge').length,
+      pastillas: aperturas(soloLaFila, 'TagChip').length,
+      aperturasQueAbren: (soloLaFila.match(/onPress=\{onEdit\}/g) ?? []).length,
+    }).toEqual({ insignias: 1, pastillas: 1, aperturasQueAbren: 3 });
+    // Y en las dos, por su nombre: el conteo de arriba pasa igual si el `onEdit` se
+    // llegara al nombre por segunda vez en lugar de a la insignia.
+    expect(aperturas(soloLaFila, 'Badge')[0]).toContain('onPress={onEdit}');
+    expect(aperturas(soloLaFila, 'TagChip')[0]).toContain('onPress={onEdit}');
+  });
+
+  /**
+   * La fila es **el unico sitio de la app** que le pasa un toque a una insignia o a
+   * una pastilla, y se pregunta a todos los `.tsx` en vez de a los que hoy lo hacen.
+   *
+   * Preguntar solo a los que ya lo hacen es una comprobacion que no puede fallar: si
+   * manana se le pasa a la insignia de una cabecera, esta seguiria verde. La lista
+   * de los dos sitios esta escrita entera, no la lista menos las excusas.
+   */
+  it('y ningun otro sitio de la app se lo pasa', () => {
+    const conToque: string[] = [];
+    for (const ruta of ficherosTsx().sort()) {
+      const fuente = sinComentarios(readFileSync(ruta, 'utf8'));
+      for (const nombre of ['Badge', 'TagChip']) {
+        for (const apertura of aperturas(fuente, nombre)) {
+          if (/\bonPress\b/.test(apertura)) {
+            conToque.push(`${relative(RAIZ, ruta)} <${nombre}>`);
+          }
+        }
+      }
+    }
+    expect(conToque).toEqual([
+      'src/app/(app)/list/[listId].tsx <Badge>',
+      'src/app/(app)/list/[listId].tsx <TagChip>',
+    ]);
+  });
+
+  /**
+   * Las dos filas de pastillas de la hoja **no** lo reciben, y es lo que impide que
+   * un boton quede dentro de otro boton.
+   *
+   * Esas pastillas llevan dentro los dos botones de quitar y de color, asi que
+   * darlas un toque lasaria pulsarables con dos pulsables dentro — en un telefono
+   * el de dentro se queda con el gesto y el de fuera no se entera, y en la web un
+   * `click` sube y disparan los dos. Ningun caller los envuelve hoy porque la prop
+   * no existia; en cuanto existe, esto es lo que la mantiene sin usar ahi.
+   */
+  it('las dos filas de pastillas de la hoja no lo reciben', () => {
+    const pastillasDeLaHoja = aperturas(sinComentarios(itemEditSheet), 'TagChip');
+    expect(pastillasDeLaHoja).toHaveLength(2);
+    expect(pastillasDeLaHoja.filter((p) => /\bonPress\b/.test(p))).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { ViewStyle } from "react-native";
 
 import { useTheme } from "@/theme";
@@ -28,6 +28,37 @@ export interface BadgeProps {
    * default that gets opted out of wrongly.
    */
   size?: "regular" | "compact";
+  /**
+   * A press on the badge, **and nothing at all without it.**
+   *
+   * It becomes a `Pressable` and not a `View` with a `Pressable` put around it,
+   * because the box the row measures is **this** one: `flexShrink: 0` below is on
+   * the badge, and a box outside it that took the shrink instead would leave the
+   * badge at its own width and hanging off the edge of the line.
+   *
+   * Optional and not required, because every other caller passes nothing and gets
+   * exactly the tree this file has always drawn — the same `View`, with the same
+   * props.
+   *
+   * **And it does not ask for `accessibilityRole="button"`, which is the one thing
+   * that looks missing here.** In `react-native-web@0.21.2` that prop does not add
+   * an attribute: `modules/AccessibilityUtil/propsToAccessibilityComponent.js`
+   * returns the *name of the element* for a role that has one, and
+   * `exports/createElement/index.js` uses it as the tag. A badge with the role is a
+   * `<button>` and one without is a `<div>`, and the browser checks that measure
+   * rows look for pills among the `div`s of a row — measure it with the role and six
+   * of them stop seeing any pill at all, which is how it was found.
+   *
+   * So the badge keeps announcing itself as the word written on it, and it keeps
+   * being focusable and answerable to Enter, because `Pressable` puts `tabIndex`
+   * and its `onKeyDown` on the element either way. What it cannot do meanwhile is
+   * the space bar, which `usePressEvents/PressResponder.js` only honours on an
+   * element that is a `<button>` or carries `role="button"`. **The day the checks
+   * find pills as `div, button`, this attribute comes back** — it is one line on
+   * each of the two pressables, and the only thing standing in the way is this
+   * comment and the count that holds it.
+   */
+  onPress?: () => void;
   style?: ViewStyle;
   /**
    * What a screen reader says instead of the bare label.
@@ -46,6 +77,7 @@ export function Badge({
   tone = "neutral",
   icon,
   size = "regular",
+  onPress,
   style,
   accessibilityLabel,
   testID,
@@ -76,22 +108,22 @@ export function Badge({
   const palette = tones[tone];
   const compacto = size === "compact";
 
-  return (
-    <View
-      accessibilityLabel={accessibilityLabel}
-      testID={testID}
-      style={[
-        styles.container,
-        {
-          backgroundColor: palette.background,
-          borderRadius: theme.radius.pill,
-          paddingHorizontal: compacto ? theme.spacing.sm : theme.spacing.md,
-          paddingVertical: compacto ? theme.spacing.xxs : theme.spacing.xs,
-          gap: theme.spacing.xs,
-        },
-        style,
-      ]}
-    >
+  // One style array for both branches, so the box is the same box either way and
+  // there is no second place where a padding or a radius can drift apart.
+  const estilo = [
+    styles.container,
+    {
+      backgroundColor: palette.background,
+      borderRadius: theme.radius.pill,
+      paddingHorizontal: compacto ? theme.spacing.sm : theme.spacing.md,
+      paddingVertical: compacto ? theme.spacing.xxs : theme.spacing.xs,
+      gap: theme.spacing.xs,
+    },
+    style,
+  ];
+
+  const dentro = (
+    <>
       {icon ? (
         <Ionicons
           name={icon}
@@ -102,7 +134,33 @@ export function Badge({
       <AppText variant="caption" style={{ color: palette.text }}>
         {label}
       </AppText>
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    return (
+      <View
+        accessibilityLabel={accessibilityLabel}
+        testID={testID}
+        style={estilo}
+      >
+        {dentro}
+      </View>
+    );
+  }
+
+  // El `accessibilityLabel` solo si quien lo llama dio uno: si no, lo que un lector
+  // de pantalla dice es la palabra escrita dentro, que es la que se lee encima.
+  // Y sin `accessibilityRole`, y por que, en la prop de arriba.
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      testID={testID}
+      onPress={onPress}
+      style={estilo}
+    >
+      {dentro}
+    </Pressable>
   );
 }
 

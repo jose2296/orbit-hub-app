@@ -807,9 +807,9 @@ export default function ListScreen() {
            * both plan from the same map and the second one would quietly eat the
            * first. The sheet keeps a second tap from arriving while a write is in
            * flight, so a tap is one write of one label; the promise comes **back**
-           * rather than being dropped with a `void`, because the sheet waits for
-           * it to close the strip —a strip that closed on the tap had nothing on
-           * screen to show for that tap.
+           * rather than being dropped with a `void`, because the sheet waits for it
+           * before taking the picker down — a picker unmounted on the tap has
+           * nothing left on screen to show the colour that was just chosen.
            */
           list ? setTagColor(list, tag, color) : undefined
         }
@@ -1030,9 +1030,15 @@ function TaskRow({
             is the coarser of the two, and the labels are what you are looking for
             when you are looking for a shop.
 
-            The badge is not pressable here. The name above opens the sheet, and the
-            sheet has the urgency as four things you can see, so a second way in
-            from the row is two ways to end up disagreeing about the value.
+            The badge opens the sheet, like the name above, **and it does not change
+            the urgency from here.** Those are two different things and the row is on
+            the second one: changing the urgency writes a value, and a value written
+            in two places is a value the two places can disagree about — so it
+            belongs to the sheet alone, which is the only place it can be set and
+            shows it as four things you can see. Opening the task writes nothing at
+            all, so there is nothing to disagree about: it is the same `onEdit` the
+            name has, and a row whose two halves open two different things is a row
+            you have to read before touching.
 
             And it is compact, with a glyph: at this size the colour alone is not
             enough to sort a list by. */}
@@ -1067,6 +1073,7 @@ function TaskRow({
                 tone={PRIORITY_TONE[item.priority]}
                 icon={PRIORITY_ICON[item.priority]}
                 size="compact"
+                onPress={onEdit}
               />
             ) : null}
 
@@ -1081,20 +1088,33 @@ function TaskRow({
                 per-list colour, so it has to be a box: the pill is the same one
                 the task sheet draws, in the same colour, for the same reason.
 
-                **A pill that reads in `theme.colors.text` is not a bug.** The pill
-                keeps the label's own colour only where that colour reaches 4.5:1
-                on the pill's fill — nine of the twelve palette colours fail that
-                in each theme — and hands back the theme's text colour where it
-                does not. The arithmetic lives in `@/lib/lists/tag-colors` and it
-                is measured, so there is nothing to route around here.
+                And the pill opens the sheet too, with the same `onEdit`: the label
+                is the other half of what this row is about, and a row where the
+                name opens the task and the labels are decoration is a row you tap
+                the wrong part of. Same reason as the badge, same limit: it opens the
+                task and it does not change anything.
 
-                And they wrap rather than being cut: a pill cut in half is worse
-                than a label cut in half, because the colour is on the pill and a
-                half-pill reads as a different colour. `docs/roadmap.md` says it
-                about a label beside a name and it is more true of a pill.
+                **And the text is never `theme.colors.text`, and there is no case in
+                which it is.** The fill is the label's own colour mixed into the
+                surface, and the text is derived from the label's own colour until it
+                can be read on that fill: it darkens, or it lightens, and it does not
+                fall back to a colour of the theme's. Which means **the colour you
+                recognise as the label's is the fill, not the writing on it** — the
+                text is the closest tone to that colour that still reads, and that is
+                a different tone. The arithmetic is in `@/lib/lists/tag-colors`, and
+                what it does with the twelve is written down there one hex at a time.
 
-                `styles.metaTag` is the only thing about a pill this row decides
-                for itself, and its comment says what it is for. */}
+                Y se reparten en varias lineas en vez de cortarse, que es lo que hace
+                el `flexWrap` de `styles.meta`: una pastilla cortada por la mitad es
+                peor que una linea mas, porque el color va en la pastilla y una
+                pastilla a medio camino tiene el color a medio camino y se lee como
+                otro color. La geometria de como se reparten esta medida y escrita en
+                `docs/roadmap.md`.
+
+                Y lo unico que esta fila decide **de como se mide** una pastilla es
+                `styles.metaTag`: el color, el relleno y el texto los pone el
+                componente, y el toque lo pone la fila igual que en el nombre. Su
+                comentario dice para que es. */}
             {item.tags.map((tag) => (
               <TagChip
                 key={tag}
@@ -1102,6 +1122,7 @@ function TaskRow({
                 colors={tagColors}
                 size="compact"
                 style={styles.metaTag}
+                onPress={onEdit}
               />
             ))}
           </View>
@@ -1170,8 +1191,9 @@ const styles = StyleSheet.create({
    * Y no lleva `flexGrow`, y la razon es mas corta de lo que parece: **una caja
    * hermana no puede comerse el `gap` de su columna.** El `gap` va entre hijos, y
    * los dos hijos de aqui —esta linea y la del nombre— tienen su alto por su cuenta,
-   * de modo que un nombre de dos lineas no se come nada: la separacion se queda en
-   * los 2 pt de `styles.flex` y las pastillas van dos puntos mas abajo.
+   * de modo que un nombre de dos lineas no se come nada: la separacion es la que
+   * lleva la columna —`spacing.md`, puesto en la linea de arriba y no en un estilo—
+   * y las pastillas van eso mismo mas abajo, ni un punto mas ni uno menos.
    *
    * Lo que si haria un `flexGrow` es repartir el alto sobrante entre las dos lineas
    * en vez de dejar el hueco al final de la columna, y repartir en una columna con
