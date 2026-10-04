@@ -2,7 +2,13 @@ import { normalizaColor } from "@orbit-hub/contracts";
 import type { TagColors } from "@orbit-hub/contracts";
 
 import { luminanceDe } from "../workspace/wash";
-import { COLOR_QUE_NO_ES, clamp01, hslToHex, rgbToHsl } from "../workspace/hsl";
+import {
+  COLOR_QUE_NO_ES,
+  clamp01,
+  hslToHex,
+  hsvToHex,
+  rgbToHsl,
+} from "../workspace/hsl";
 import { ICON_COLOR_KEYS, iconColor } from "./item-icons";
 
 /**
@@ -466,4 +472,49 @@ function canales(hex: unknown): [number, number, number] | null {
     parseInt(valor.slice(2, 4), 16),
     parseInt(valor.slice(4, 6), 16),
   ];
+}
+
+/* -------------------------------------- lo que el selector de color pregunta -- */
+
+/**
+ * Lo que dice el campo de un color, en la forma en que el repositorio habla.
+ *
+ * **Envuelve a `normalizaColor` y no repite su regla.** El contrato es el dueño
+ * del formato, el movil tiene su validador propio —`esHex`, en
+ * `lib/workspace/hsl.ts`— y hay un test que compara los dos y obliga a que digan
+ * lo mismo. Un `RegExp` mas aqui seria un tercero, y el tercero es el que se
+ * queda sin actualizar.
+ */
+export function normalizaHex(texto: string): string | null {
+  return normalizaColor(texto);
+}
+
+/**
+ * El color de un tono, una saturacion y un valor.
+ *
+ * El cuadrado de un selector tiene tres numeros sueltos y `hsvToHex` quiere un
+ * `Hsv`; esta es la unica parte del selector que lo sabe. Las mayusculas las pone
+ * `hsvToHex`, y estan aqui porque el boton de "usar este color" compara el color
+ * del cuadrado con el que ya esta elegido, y dos formas del mismo color
+ * comparadas como distintas son un boton que se queda apagado con el color delante.
+ */
+export function hexDeHsv(h: number, s: number, v: number): string {
+  return hsvToHex({ h, s, v });
+}
+
+/**
+ * La tinta que se lee **encima** de un color: negro o blanco, el que mas contraste
+ * tenga con el.
+ *
+ * El selector dibuja sobre el color elegido —el anillo del marcador y la tilde de
+ * la pastilla que esta elegida—, y una tinta fija desaparece: el blanco en el
+ * blanco de la esquina del cuadrado y el negro en la de abajo. **No busca un tono
+ * intermedio** porque un gris se leeria en ninguno de los dos casos, que es
+ * justo cuando hace falta que se lea.
+ */
+export function tintaDe(color: string): "#000000" | "#FFFFFF" {
+  const hex = tagColorHex(color);
+  return contrastRatio("#000000", hex) >= contrastRatio("#FFFFFF", hex)
+    ? "#000000"
+    : "#FFFFFF";
 }
