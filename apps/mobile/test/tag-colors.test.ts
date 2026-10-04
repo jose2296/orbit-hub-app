@@ -16,9 +16,108 @@ import {
   contrastRatio,
   labelPillColors,
   mixHex,
+  planTagColorChange,
   tagColorHex,
 } from "@/lib/lists/tag-colors";
 import { esHex, hslToHex } from "@/lib/workspace/hsl";
+
+describe("cambiar el color de una etiqueta", () => {
+  it("guarda el color que se ha elegido", () => {
+    expect(planTagColorChange({}, "Mercadona", "green")).toEqual({
+      Mercadona: "green",
+    });
+  });
+
+  it("no toca los colores de las demas etiquetas", () => {
+    // El mapa entero viaja en una sola operacion del sync, asi que una
+    // escritura que pierde un color ajeno pierde el de otra persona sin que
+    // ninguna de las dos se entere.
+    expect(
+      planTagColorChange({ Alcampo: "red", casa: "blue" }, "Mercadona", "green"),
+    ).toEqual({ Alcampo: "red", casa: "blue", Mercadona: "green" });
+  });
+
+  it("cambia el color de una etiqueta que ya tenia uno", () => {
+    expect(planTagColorChange({ Mercadona: "red" }, "Mercadona", "green")).toEqual({
+      Mercadona: "green",
+    });
+  });
+
+  it("quitar el color devuelve la etiqueta al que se deduce de su nombre", () => {
+    // No es "sin color": es el estado de "no hay color guardado", que es el que
+    // hace que la etiqueta vuelva al deducido. Por eso la opcion se llama
+    // "volver al deducido" y no "quitar".
+    expect(planTagColorChange({ Mercadona: "green", Alcampo: "red" }, "Mercadona", null)).toEqual({
+      Alcampo: "red",
+    });
+  });
+
+  it("quitar el color de una etiqueta que no tenia ninguno no cambia nada", () => {
+    expect(planTagColorChange({ Alcampo: "red" }, "Mercadona", null)).toEqual({
+      Alcampo: "red",
+    });
+  });
+
+  it("no muta el mapa que le pasan", () => {
+    const original = { Mercadona: "red" as const };
+    planTagColorChange(original, "Mercadona", "green");
+    expect(original).toEqual({ Mercadona: "red" });
+  });
+
+  it("tampoco lo muta al quitar el color", () => {
+    // El caso espejo del de arriba, y el que un `delete` ingenuo rompe sin que
+    // se note: quitar el color es media funcion, asi que una copia solo en el
+    // camino de elegir un color deja el otro sin cubrir.
+    //
+    // Y aqui el mapa que le pasan no es una copia de nada: es el mismo objeto
+    // que la lista tiene guardado. Un `delete current[tag]` lo vacia en sitio, y
+    // como el estado ya apunta a el, nadie repinta y nadie se entera: la lista se
+    // queda mostrando un color que ya no esta en el mapa que se acaba de enviar.
+    const original = { Mercadona: "green" as const, Alcampo: "red" as const };
+    expect(planTagColorChange(original, "Mercadona", null)).toEqual({
+      Alcampo: "red",
+    });
+    expect(original).toEqual({ Mercadona: "green", Alcampo: "red" });
+  });
+});
+
+/**
+ * La cuenta, y no la regla.
+ *
+ * `contrastRatio` es el metodo de los asserts de contraste de mas abajo —cada uno
+ * compara un texto contra su relleno con ella—, asi que sus tres propiedades van
+ * aqui: **que sea 1 consigo mismo, que sea 21 en los dos sentidos y que no dependa
+ * del orden de quien mire primero**. Sin esto, siete asserts que usan la cuenta
+ * estarian en verde con una cuenta equivocada.
+ *
+ * El componente no se puede pintar en un test de este repo —`vitest.config.ts` solo
+ * recoge los de la carpeta `test`, con `environment: 'node'` y React Native
+ * sustituido—, asi que lo que se comprueba aqui es la regla, que es pura y por eso
+ * si se puede.
+ */
+describe("el contraste", () => {
+  it("de un color consigo mismo es 1", () => {
+    // Un color de laboratorio y no uno de los tokens: aqui se comprueba la
+    // cuenta, y un token en el argumento haria dudar de que color se esta midiendo.
+    expect(contrastRatio("#3A7BD5", "#3A7BD5")).toBeCloseTo(1, 6);
+  });
+
+  it("es 21 en los dos sentidos entre blanco y negro", () => {
+    // Los dos 21, y no 21 y 1/21: el contraste se define como la parte clara
+    // partida por la oscura, para que el numero signifique algo sin depender del
+    // orden de los argumentos. "Blanco sobre negro" son 21:1 — el 1/21 es la misma
+    // medicion leida al reves, no un segundo resultado.
+    expect(contrastRatio("#000000", "#FFFFFF")).toBeCloseTo(21, 6);
+    expect(contrastRatio("#FFFFFF", "#000000")).toBeCloseTo(21, 6);
+  });
+
+  it("no depende del orden de los argumentos", () => {
+    expect(contrastRatio("#3A7BD5", "#E8EAF2")).toBeCloseTo(
+      contrastRatio("#E8EAF2", "#3A7BD5"),
+      10,
+    );
+  });
+});
 
 describe("el color que deduce el nombre de una etiqueta", () => {
   it("es el mismo siempre para el mismo nombre", () => {
@@ -604,19 +703,22 @@ describe("la pastilla que se pinta", () => {
     // pastilla, es dos mitades que no se hablan — ademas de que el texto del tema
     // es un color que no eligio nadie.
     expect(codigoDelChip).not.toContain("labelTextColor");
+    // **Y el texto del tema no puede volver a aparecer en este fichero**, que es el
+    // agujero que los tres `toContain` de arriba dejan abierto: una pastilla que se
+    // guarde la llamada muerta y pinte el texto del tema los pasa todos. El prefijo
+    // tapa tambien `textMuted` y `textSubtle`, y es lo que se quiere — cualquier
+    // token de texto del tema dentro de la pastilla es el mismo error.
+    expect(codigoDelChip).not.toContain("theme.colors.text");
   });
 
   it("no busca el color de una etiqueta en la paleta de iconos", () => {
-    // **Este es el fallo que motivo la tarea, y el que no se ve en ningun test de
-    // este archivo.** `iconColor` es la paleta de doce de los iconos: su reserva
-    // es el neutro, asi que un hex —`#16A34A`, el que el servidor contesta para un
-    // color elegido— no lo conoce y sale `#8A93A8`.
-    //
-    // Y de ahi no se veia el color de nadie: en claro ese gris da 2.75:1 sobre
-    // `surfaceMuted`, la puerta lo rechazaba y el texto se caia al del tema; en
-    // oscuro da 5.17:1, pasaba, y la pastilla se quedaba con el gris. **Ninguna
-    // regla de este archivo se enteraba de nada**, porque el hex elegido no llegaba
-    // aqui: llegaba su equivalente en gris.
+    // **Un guard hacia delante, y no una reproduccion del fallo.** El hex elegido
+    // llegaba a la pastilla como su equivalente en gris —`iconColor("#16A34A")` no
+    // conoce ese hex y contesta `#8A93A8`—, pero ese `iconColor` vivia **dentro de
+    // `labelTextColor`**, a un modulo de aqui: el componente no lo llamaba y este
+    // test, contra el componente de antes, pasa en verde. Lo que ata es que el
+    // camino del color no vuelva a ser el de la paleta de iconos, que es la
+    // reserva que se lo comia.
     expect(codigoDelChip).not.toMatch(/\biconColor\(/);
   });
 });

@@ -49,7 +49,19 @@ export function TagChip({
   tag: string;
   colors: TagColors | undefined;
   size?: "regular" | "compact";
-  children?: ReactNode;
+  /**
+   * What the pill carries inside it, and **the colour to draw it in.**
+   *
+   * A function receives the pill's own text colour; an element is left as it is.
+   * The fill used to be the theme's `surfaceMuted`, and on that a child could be
+   * drawn in any theme token. It is now the label's own tint, and **no theme text
+   * token has been measured against it** — on a tint, `textMuted` is a colour
+   * nobody chose and usually a colour nobody can read. The pill has just derived
+   * the one colour that clears 4.5:1 on that fill, so that is what a child gets:
+   * not a second derivation, and not a token that belongs to a background this
+   * pill no longer has.
+   */
+  children?: ReactNode | ((ink: string) => ReactNode);
   /**
    * What the pill takes of the line it is dropped on, the same prop `Badge` has.
    *
@@ -101,7 +113,7 @@ export function TagChip({
       <AppText variant="caption" style={{ color: text }}>
         {tag}
       </AppText>
-      {children}
+      {typeof children === "function" ? children(text) : children}
     </View>
   );
 }

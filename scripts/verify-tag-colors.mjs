@@ -268,19 +268,49 @@ const SCHEME = {
 };
 
 /**
- * De qué color se escribe una pastilla, según la regla de
- * `apps/mobile/src/lib/lists/tag-colors.ts`: el suyo si llega a 4.5:1 sobre el
- * relleno de la pastilla, y el del tema si no.
+ * Dos colores mezclados, canal a canal, en `#RRGGBB`.
  *
- * Se reimplementa aquí porque es lo que hace falta para **predecir** el color
- * exacto que se va a leer en el DOM: nueve de los doce no se pintan de su color
- * ni en claro ni en oscuro, así que "la pastilla está en rojo" no es una frase que
- * se pueda comprobar leyendo el estilo de la pastilla en un tema donde el rojo no
- * pasa la puerta.
+ * Copia de `mixHex` en `apps/mobile/src/lib/lists/tag-colors.ts`, y es la unica
+ * parte de la regla de la pastilla que este archivo reimplementa: hace falta para
+ * decir **cual** es el relleno de una etiqueta concreta, porque el texto ya no es
+ * el hex del color. La composicion si esta probada en el movil —`el relleno es el
+ * color mezclado con la superficie`—, asi que lo que se reimplementa aqui no es la
+ * regla sino el metodo.
  */
-function expectedTextColor(colorKey, scheme) {
-  const { fill, text } = SCHEME[scheme];
-  return contrastRatio(ICON_HEX[colorKey], fill) >= 4.5 ? ICON_HEX[colorKey] : text;
+function mezclar(a, b, t) {
+  const canales = (hex) =>
+    [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const desde = canales(a);
+  const hasta = canales(b);
+  return `#${desde
+    .map((c, i) =>
+      Math.round(c + (hasta[i] - c) * t)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+/**
+ * Lo que una pastilla tiene que cumplir, y en dos partes.
+ *
+ * **El relleno de la pastilla ya no es `SCHEME[scheme].fill`**, así que esta
+ * función ya no puede decir de qué color se espera el texto: el texto se deriva
+ * hasta que se lee sobre *el relleno que se lee*, y ese relleno es distinto en
+ * cada pastilla. Predecirlo exigiría reimplementar `labelPillColors` entera aquí,
+ * y una segunda copia de esa cuenta es exactamente lo que este archivo no quiere.
+ *
+ * Lo que sí se puede afirmar, y es la regla entera, es sobre lo que sale del DOM:
+ * `pillOf` ya lee **el texto y el relleno de la misma pastilla**, así que la
+ * cuenta se hace con esos dos números y no con un supuesto.
+ */
+function pastillaSeLee(pastilla, esquema) {
+  if (!pastilla?.textColor || !pastilla?.fill) return false;
+  if (!SCHEME[esquema]) return false;
+  return (
+    contrastRatio(comoHex(pastilla.textColor), comoHex(pastilla.fill)) >= 4.5 &&
+    pastilla.textColor !== toRgb(SCHEME[esquema].text)
+  );
 }
 
 /** `#RRGGBB` a `rgb(r, g, b)`, que es lo que devuelve `getComputedStyle`. */
@@ -311,9 +341,10 @@ function toRgb(hex) {
  * pide medir un color translúcido tiene que decir con qué se compone.
  *
  * Y por qué la cuenta se queda como está: los otros dos sitios donde se usa
- * `contrastRatio` pasan constantes hex, y en la app `labelTextColor` sólo recibe
- * hex de la paleta y un relleno de tema. Arreglar `luminanceDe` para tolerar
- * `rgb()` sería hacer el doble de trabajo para un caso que no existe.
+ * `contrastRatio` pasan constantes hex, y en la app `labelPillColors` sólo recibe
+ * hex y un relleno de tema. Arreglar `luminanceDe` para tolerar `rgb()` sería
+ * hacer el doble de trabajo para un caso que no existe —y aquí está resuelto
+ * antes de llegar, que es lo que este archivo tenía que aprender.
  */
 function comoHex(color) {
   const texto = String(color).trim();
@@ -342,9 +373,24 @@ function comoHex(color) {
   return `#${canal(partes[1])}${canal(partes[2])}${canal(partes[3])}`;
 }
 
-/** El nombre del esquema en el que está la pastilla, deducido de su relleno. */
-const schemeOfFill = (rgb) =>
-  Object.entries(SCHEME).find(([, s]) => toRgb(s.fill) === rgb)?.[0] ?? "light";
+/**
+ * El nombre del esquema **de la página**, y no el del relleno de una pastilla.
+ *
+ * Se deducía del relleno porque el relleno *era* `surfaceMuted`, y eso era verdad
+ * hasta que la pastilla dejo de pintarse con el fondo del tema: ahora cada relleno
+ * es el tinte de su etiqueta, o sea que **ninguno** es `SCHEME[...].fill` y esa
+ * deduccion devolvia "light" en las dos, en silencio y con un `??` que lo
+ * escondia. El de donde sale bien es `document.documentElement.style.colorScheme`,
+ * que es lo que escribe `theme-provider.tsx` en cuanto resuelve el tema.
+ */
+const schemeOfPage = (tab) =>
+  tab
+    .send("Runtime.evaluate", {
+      expression:
+        'document.documentElement.style.colorScheme === "dark" ? "dark" : "light"',
+      returnByValue: true,
+    })
+    .then((r) => r?.result?.value === "dark" ? "dark" : "light");
 
 /* ----------------------------------------------------- lo que hay en DOM -- */
 
@@ -1350,7 +1396,7 @@ try {
   );
 
   /* ----------------------------------------------------------------- 2 ------ */
-  section("2. Cada pastilla es un color de la paleta, o el texto del tema");
+  section("2. Cada pastilla se lee contra su relleno, y su texto no es el del tema");
 
   // El color que la pastilla lleva **decidido** se lee de la hoja, del `aria-label`
   // del botón de color, que es donde la app dice en palabras de qué color cree
@@ -1376,22 +1422,18 @@ try {
   await pressLabel(tab, "Cerrar", { exact: true });
   await sleep(700);
 
-  // Y lo que se ve en la fila: el texto de la pastilla o el color de la paleta o el
-  // texto del tema. Nunca un color que no sea de este grupo, que es lo que
-  // significaría una etiqueta sin color.
+  // Y lo que se ve en la fila: cada pastilla se lee contra **su propio relleno**, y
+  // su texto no es el del tema. Las dos mitades de la regla, y las dos se
+  // comprueban con los dos numeros que `pillsOfRow` acaba de leer del DOM.
   const pastillasA = await pillsOfRow(tab, itemA.huevos, ETIQUETAS_HUEVOS);
   const pastillasPan = await pillsOfRow(tab, itemA.pan, ETIQUETAS_PAN);
   const todasA = [...(pastillasPan ?? []), ...(pastillasA ?? [])];
-  const temaDeA = schemeOfFill(todasA[0]?.fill ?? toRgb(SCHEME.light.fill));
-  const permitidos = new Set([
-    ...Object.values(ICON_HEX).map(toRgb),
-    toRgb(SCHEME[temaDeA].text),
-  ]);
-  const fueraDePaleta = todasA.filter((p) => !permitidos.has(p.textColor));
+  const temaDeA = await schemeOfPage(tab);
+  const ilegibles = todasA.filter((p) => !pastillaSeLee(p, temaDeA));
   check(
-    "el texto de cada pastilla es un color de la paleta o el del tema",
-    todasA.length >= 4 && fueraDePaleta.length === 0,
-    `${todasA.length} pastillas en ${temaDeA}, fuera de la paleta: ${fueraDePaleta.map((p) => `${p.tag} ${p.textColor}`).join(", ") || "ninguna"}`,
+    "el texto de cada pastilla se lee contra su propio relleno, y no es el del tema",
+    todasA.length >= 4 && ilegibles.length === 0,
+    `${todasA.length} pastillas en ${temaDeA}, ilegibles: ${ilegibles.map((p) => `${p.tag} ${p.textColor} sobre ${p.fill} a ${contrastRatio(comoHex(p.textColor), comoHex(p.fill)).toFixed(2)}:1`).join(", ") || "ninguna"}`,
   );
 
   // La grey de la paleta (neutral) solo puede salir si neutral es el color
@@ -1440,20 +1482,25 @@ try {
   // se ve la lista que alguien se encuentra al abrirla por primera vez. Las dos
   // series se guardan: la de aquí es el diseño y la del final es la consecuencia.
   //
-  // Y por cada fila cuenta cuántas pastillas llevan su propio color, que es el
-  // número que hace falta para mirar la captura y saber qué se está mirando.
-  const repartoDeColores = (pastillas, esquema) => {
-    const enSuColor = pastillas.filter((p) =>
-      Object.values(ICON_HEX)
-        .map(toRgb)
-        .includes(p.textColor),
-    );
-    const enElTema = pastillas.length - enSuColor.length;
+  // Y por cada fila cuenta cuántas pastillas se leen sobre su propio relleno,
+  // cuántas caen en el texto del tema —que ya no debería ser ninguna— y cuántas
+  // pintan un color distinto, que es el número que hace falta para mirar la
+  // captura y saber qué se está mirando.
+  //
+  // **El esquema va aparte del rótulo**, y no por gusto: `esquema` es el que dice
+  // cuál es el texto del tema contra el que comparar, y un rótulo con el nombre
+  // metido dentro no lo dice. La primera versión de esto pasaba el rótulo como
+  // esquema y reventó en `SCHEME["fila de ocho, light"].text`.
+  const repartoDeColores = (pastillas, esquema, rotulo) => {
+    const legibles = pastillas.filter((p) => pastillaSeLee(p, esquema));
+    const enElTema = pastillas.filter(
+      (p) => p.textColor === toRgb(SCHEME[esquema].text),
+    ).length;
     const pintados = [...new Set(pastillas.map((p) => p.textColor))];
     note(
-      `${esquema}: ${pastillas.length} pastillas, ${enSuColor.length} en su propio color (${enSuColor.map((p) => p.tag).join(", ") || "ninguna"}), ${enElTema} en el texto del tema, y ${pintados.length} colores distintos pintados: ${pintados.join(" / ")}`,
+      `${rotulo}: ${pastillas.length} pastillas, ${legibles.length} se leen sobre su relleno (${legibles.map((p) => p.tag).join(", ") || "ninguna"}), ${enElTema} en el texto del tema, y ${pintados.length} colores distintos pintados: ${pintados.join(" / ")}`,
     );
-    return { enSuColor: enSuColor.length, enElTema, distintos: pintados.length };
+    return { legibles: legibles.length, enElTema, distintos: pintados.length };
   };
 
   const capturas = async (listId, expectRows, nombre) => {
@@ -1473,13 +1520,13 @@ try {
         continue;
       }
       note(
-        `${nombre}-${esquema}: relleno ${leido.fill} (${schemeOfFill(leido.fill)}), texto ${leido.textColor}`,
+        `${nombre}-${esquema}: relleno ${leido.fill}, texto ${leido.textColor}, ${pastillaSeLee(leido, esquema) ? "se lee" : "NO se lee"}`,
       );
       await shot(tab, `${SHOTS}/${nombre}-${esquema === "light" ? "claro" : "oscuro"}.png`);
       if (listId === listaA) {
-        repartoDeColores(await pillsOfRow(tab, itemA.huevos, ETIQUETAS_HUEVOS), `${nombre} Huevos ${esquema}`);
+        repartoDeColores(await pillsOfRow(tab, itemA.huevos, ETIQUETAS_HUEVOS), esquema, `${nombre} Huevos ${esquema}`);
       } else {
-        repartoDeColores(await pillsOfRow(tab, itemB.nevera, SEED_LABELS.cobertura), `${nombre} Nevera ${esquema}`);
+        repartoDeColores(await pillsOfRow(tab, itemB.nevera, SEED_LABELS.cobertura), esquema, `${nombre} Nevera ${esquema}`);
       }
     }
   };
@@ -1516,6 +1563,7 @@ try {
     await goToList(listaB, 4);
     filaOcho[esquema] = repartoDeColores(
       await pillsOfRow(tab, itemB.nevera, SEED_LABELS.cobertura),
+      esquema,
       `fila de ocho, ${esquema}`,
     );
   }
@@ -1525,7 +1573,7 @@ try {
   check(
     "una fila de ocho etiquetas muestra al menos dos colores de verdad, y no ocho pastillas iguales",
     filaOcho.light.distintos >= 2 && filaOcho.dark.distintos >= 2,
-    `claro: ${filaOcho.light.enSuColor}/8 en su color, ${filaOcho.light.distintos} colores pintados; oscuro: ${filaOcho.dark.enSuColor}/8, ${filaOcho.dark.distintos} pintados`,
+    `claro: ${filaOcho.light.legibles}/8 se leen sobre su relleno, ${filaOcho.light.distintos} colores pintados; oscuro: ${filaOcho.dark.legibles}/8, ${filaOcho.dark.distintos} pintados`,
   );
 
   /* ----------------------------------------------------------------- 3 ------ */
@@ -1536,15 +1584,18 @@ try {
   // **Y aquí está la primera cosa que la comprobación tenía mal.** Se iba a
   // comprobar que la misma pastilla se ve distinta en la lista A y en la B
   // leyendo el color del texto, pero el color del texto **no es el color de la
-  // etiqueta**: `labelTextColor` lo cambia por el del tema cuando el suyo no llega
-  // a 4.5:1 sobre el relleno de la pastilla, y el verde y el rosa no llegan
-  // ninguno de los dos en claro. Las dos pastillas de "Mercadona" se ven
-  // idénticas píxel a píxel en el tema claro, y no porque compartan color.
+  // etiqueta**: era el del tema cuando el suyo no llegaba a 4.5:1 sobre el relleno
+  // de la pastilla, y el verde y el rosa no llegaban ninguno de los dos en claro.
+  // Las dos pastillas de "Mercadona" se veían idénticas píxel a píxel en el tema
+  // claro, y no porque compartieran color.
   //
-  // Así que la comprobación va por donde la app dice el color de verdad —el
-  // `aria-label` del botón de su hoja, que nombra los doce en cualquier esquema—,
-  // y **además** se mide y se dice qué pasa en pantalla, que es el dato que hace
-  // falta para juzgar la fila de pastillas, no sólo para que el archivo pase.
+  // Esa razón ya no es la que obliga a mirar el `aria-label`, porque las dos
+  // pastillas ya **no** se ven iguales: cada una lleva su propio tinte y su propio
+  // texto derivado. La comprobación sigue yendo por el `aria-label` —que es donde
+  // la app **nombra** el color, en cualquier esquema, y sin depender de que dos
+  // colores deriven en dos hex distintos—, y **además** se mide y se dice qué pasa
+  // en pantalla, que es el dato que hace falta para juzgar la fila de pastillas, no
+  // sólo para que el archivo pase.
   const colorResueltoDe = async (listId, itemId, title, etiqueta) => {
     await openLabels(listId, itemId, title);
     const r = await resolvedColor(tab, etiqueta);
@@ -1579,9 +1630,9 @@ try {
     const a = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.pan}"]`);
     await goToList(listaB, 4);
     const b = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemB.pan}"]`);
-    enPantalla[esquema] = { a: a?.textColor, b: b?.textColor, distinto: a?.textColor !== b?.textColor };
+    enPantalla[esquema] = { a: a, b: b, distinto: a?.textColor !== b?.textColor };
     note(
-      `en ${esquema}: A pinta ${a?.textColor} y B pinta ${b?.textColor} — ${a?.textColor === b?.textColor ? "la misma pastilla" : "distintas"}`,
+      `en ${esquema}: A pinta ${a?.textColor} sobre ${a?.fill} y B pinta ${b?.textColor} sobre ${b?.fill} — ${a?.textColor === b?.textColor ? "la misma pastilla" : "distintas"}`,
     );
   }
   await tab.send("Emulation.setEmulatedMedia", {
@@ -1592,9 +1643,11 @@ try {
     Object.values(enPantalla).some((v) => v.distinto),
     `claro: ${enPantalla.light.distinto ? "distintas" : "idénticas píxel a píxel"}; oscuro: ${enPantalla.dark.distinto ? "distintas" : "idénticas píxel a píxel"}`,
   );
-  note(
-    `es la regla de contraste la que lo decide: verde sobre la pastilla da ${contrastRatio(ICON_HEX.green, SCHEME.light.fill).toFixed(2)}:1 en claro y ${contrastRatio(ICON_HEX.green, SCHEME.dark.fill).toFixed(2)}:1 en oscuro; rosa da ${contrastRatio(ICON_HEX.rose, SCHEME.light.fill).toFixed(2)} y ${contrastRatio(ICON_HEX.rose, SCHEME.dark.fill).toFixed(2)}`,
-  );
+  for (const esquema of ["light", "dark"]) {
+    note(
+      `en ${esquema} cada una se lee contra su propio relleno: A a ${contrastRatio(comoHex(enPantalla[esquema].a?.textColor ?? ""), comoHex(enPantalla[esquema].a?.fill ?? "")).toFixed(2)}:1 y B a ${contrastRatio(comoHex(enPantalla[esquema].b?.textColor ?? ""), comoHex(enPantalla[esquema].b?.fill ?? "")).toFixed(2)}:1`,
+    );
+  }
 
   // Lo que hay que quedarse para el final: la pastilla de B tal y como estaba,
   // para poder decir que no se movió.
@@ -1665,11 +1718,10 @@ try {
 
   const enAAhora = await resolvedColor(tab, "Mercadona");
   const pastillaAAtras = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.pan}"]`);
-  const esperadoEnA = toRgb(expectedTextColor("red", "light"));
   check(
-    "la etiqueta de A pasa a rojo, y se ve el color que la regla de contraste manda",
-    claveDeColor(enAAhora?.nombre) === "red" && pastillaAAtras?.textColor === esperadoEnA,
-    `la hoja dice ${enAAhora?.nombre}, la pastilla pinta ${pastillaAAtras?.textColor}, y para rojo en claro la regla da ${esperadoEnA} (rojo puro ${toRgb(ICON_HEX.red)} da ${contrastRatio(ICON_HEX.red, SCHEME.light.fill).toFixed(2)}:1, o sea no llega a 4.5)`,
+    "la etiqueta de A pasa a rojo, y lo que se ve se lee contra su propio relleno",
+    claveDeColor(enAAhora?.nombre) === "red" && pastillaSeLee(pastillaAAtras, "light"),
+    `la hoja dice ${enAAhora?.nombre}, la pastilla pinta ${pastillaAAtras?.textColor} sobre ${pastillaAAtras?.fill} a ${contrastRatio(comoHex(pastillaAAtras?.textColor ?? ""), comoHex(pastillaAAtras?.fill ?? "")).toFixed(2)}:1, y no es ${toRgb(SCHEME.light.text)}`,
   );
 
   await pressLabel(tab, "Volver", { exact: true });
@@ -1696,11 +1748,12 @@ try {
 
   await goToList(listaA, 6);
   const enHuevos = await pillOf(tab, "Mercadona", `[data-testid="item-row-${itemA.huevos}"]`);
-  const esperadoHuevos = toRgb(expectedTextColor("red", "light"));
   check(
     "una fila que la escritura ni menciona se repinta igual",
-    enHuevos?.textColor === esperadoHuevos,
-    `la pastilla de Mercadona en Huevos es ${enHuevos?.textColor}, y la de Pan ${pastillaAAtras?.textColor}`,
+    enHuevos?.textColor === pastillaAAtras?.textColor &&
+      enHuevos?.fill === pastillaAAtras?.fill &&
+      pastillaSeLee(enHuevos, "light"),
+    `la pastilla de Mercadona en Huevos es ${enHuevos?.textColor} sobre ${enHuevos?.fill}, y la de Pan ${pastillaAAtras?.textColor} sobre ${pastillaAAtras?.fill}`,
   );
 
   /*
@@ -1709,9 +1762,9 @@ try {
    * Esto viene de una pregunta que **la vista no puede contestar**: mirando la
    * captura, la pastilla de "Mercadona" parecía más gris en "Pan" que en "Huevos", y
    * a ojo no hay manera de saber si es un fallo o si son el mismo color en dos
-   * vecindarios distintos. La respuesta es que las dos pintan lo mismo —las dos caen
-   * al texto del tema— y lo que cambia es el contraste local de cada una con lo que
-   * tiene alrededor.
+   * vecindarios distintos. La respuesta es que las dos pintan lo mismo —el mismo
+   * texto sobre el mismo relleno— y lo que cambia es el contraste local de cada
+   * una con lo que tiene alrededor.
    *
    * Y la respuesta estaba **contestada por leer el código**: que las dos filas
    * reciben el mismo objeto de `list?.tagColors ?? {}`, que `TagChip` es una función
@@ -1746,9 +1799,9 @@ try {
       mercadonaEnLasTres.every(
         ([, p]) => p !== null && p?.textColor === primera.textColor && p?.fill === primera.fill,
       ),
-    `Pan, Tomates y Huevos llevan "Mercadona" y las tres la pintan con el texto ${primera?.textColor} sobre ${primera?.fill}: ${
-      primera?.textColor === esperadoHuevos ? "el del tema, que es lo que la regla de contraste manda para el rojo en claro" : "lo que sea, y está en las tres"
-    }`,
+    `Pan, Tomates y Huevos llevan "Mercadona" y las tres la pintan con el texto ${primera?.textColor} sobre ${primera?.fill}, a ${
+      primera ? contrastRatio(comoHex(primera.textColor), comoHex(primera.fill)).toFixed(2) : "?"
+    }:1 y ${primera?.textColor === toRgb(SCHEME.light.text) ? "ese texto es el del tema, que ya no debería salir" : "con un texto que no es el del tema"}`,
   );
 
   /* ----------------------------------------------------------------- 5 ------ */
@@ -1756,11 +1809,18 @@ try {
 
   const urgenteAntes = await pillOf(tab, "urgente", `[data-testid="item-row-${itemA.huevos}"]`);
   const urgenteDeducedido = derivedTagColor("urgente");
-  const esperadoUrgente = toRgb(expectedTextColor(urgenteDeducedido, "light"));
+  // Que el relleno sea **el tinte de ese hex** es lo que dice que la pastilla se
+  // pinta con el color deducido y no con el de al lado. Y no se puede decir "el
+  // texto es `ICON_HEX[clave]`" —el texto se deriva— asi que lo que se compara es
+  // el relleno, que es la mezcla lineal de la app a 14% sobre la superficie. Son
+  // seis lineas y una copia de `mixHex`, que es lo unico de la regla que este
+  // archivo reimplementa: la busqueda del texto, que es la parte con la cuenta
+  // larga, no se reimplementa en ningun sitio.
+  const tinteEsperado = mezclar(ICON_HEX[urgenteDeducedido], SCHEME.light.fill, 0.14);
   check(
     "una etiqueta sin color elegido se pinta con el color que deduce su nombre",
-    urgenteAntes?.textColor === esperadoUrgente,
-    `urgente deduce ${urgenteDeducedido} y en claro la pastilla pinta ${urgenteAntes?.textColor}`,
+    urgenteAntes?.fill === toRgb(tinteEsperado) && pastillaSeLee(urgenteAntes, "light"),
+    `urgente deduce ${urgenteDeducedido} (${ICON_HEX[urgenteDeducedido]}), la pastilla pinta ${urgenteAntes?.textColor} sobre ${urgenteAntes?.fill}, y su tinte al 14% sobre ${SCHEME.light.fill} es ${toRgb(tinteEsperado)}`,
   );
 
   await goToList(listaA, 6);
@@ -1822,9 +1882,9 @@ try {
     { timeout: 20000 },
   );
   check(
-    "el color se repinta sin recargar, y el que se pinta es el de la regla de contraste",
-    repintada.ok && repintada.value?.pastilla?.textColor === toRgb(expectedTextColor("blue", "light")),
-    `la hoja dice ${repintada.value?.color?.nombre} y la pastilla ${repintada.value?.pastilla?.textColor} (azul puro en claro da ${contrastRatio(ICON_HEX.blue, SCHEME.light.fill).toFixed(2)}:1)`,
+    "el color se repinta sin recargar, y el que se pinta se lee sobre su propio relleno",
+    repintada.ok && pastillaSeLee(repintada.value?.pastilla, "light"),
+    `la hoja dice ${repintada.value?.color?.nombre} y la pastilla ${repintada.value?.pastilla?.textColor} sobre ${repintada.value?.pastilla?.fill} a ${contrastRatio(comoHex(repintada.value?.pastilla?.textColor ?? ""), comoHex(repintada.value?.pastilla?.fill ?? "")).toFixed(2)}:1`,
   );
   check(
     "sin conexión tampoco se pierde la página de etiquetas",
@@ -1979,10 +2039,13 @@ try {
     // DOM **en una variable al lado**, y eso no es una medición del botón: es una
     // afirmación sobre dos literales que pasaría igual con el borde en 1:1.
     //
-    // El mínimo de WCAG para un borde que dibuja una interfaz es 3:1, y lo que sale
-    // de leer el botón de verdad son 3.02:1 — pasa por dos centésimas. Los números
-    // de los otros acentos salen del cálculo sobre el token, no del DOM, y por eso
-    // van como `note` y no como `check`: son una comparación, no una medición.
+    // El mínimo de WCAG para un borde que dibuja una interfaz es 3:1. El borde ya
+    // no es el acento sino el color de la pastilla, asi que **este 3:1 no depende
+    // del acento** y por eso la comprobacion vale para los cinco: lo que se
+    // comprueba es que el borde se lea sobre el tinte de la pastilla, y el tinte
+    // no depende de nada de aqui. Los numeros de los otros acentos salen del
+    // calculo sobre el token, no del DOM, y por eso van como `note` y no como
+    // `check`: son una comparacion, no una medicion.
     const rBorde = contrastRatio(
       comoHex(esmeralda.color.borderColor),
       comoHex(esmeralda.pillFill),
@@ -1998,7 +2061,7 @@ try {
       `${esmeralda.color.borderWidth} ${esmeralda.color.borderColor} sobre ${esmeralda.pillFill} = ${rBorde.toFixed(2)}:1, leído del DOM`,
     );
     check(
-      "el boton de color abierto se pinta con el borde del acento, no con su fondo",
+      "el boton de color abierto se pinta con un borde que no es su propio fondo",
       esmeralda.color.borderColor !== esmeralda.color.backgroundColor,
       `borde ${esmeralda.color.borderColor} y fondo ${esmeralda.color.backgroundColor}, los dos medidos: el fondo da ${rFondo.toFixed(3)}:1 sobre el relleno ${esmeralda.pillFill}${rFondo < 1.05 ? ", por debajo de lo que se distingue de un color plano" : ""}, y el borde ${rBorde.toFixed(2)}:1`,
     );
@@ -2030,9 +2093,10 @@ try {
     );
   }
   await shot(tab, `${SHOTS}/etiquetas-04-acento-esmeralda-claro.png`);
-  // El mismo boton abierto con el acento por defecto al lado, que es la
-  // comparacion que hace falta: 3.02:1 del esmeralda contra 4.64:1 del orbit se
-  // ven en dos ficheros, no en dos numeros.
+  // El mismo boton abierto con el acento por defecto al lado, para comparar los
+  // dos ficheros. Lo que se compara ya no es el borde —ese es el color de la
+  // pastilla y es el mismo con cualquiera de los cinco acentos— sino el fondo
+  // `accentSoft` y el icono, que si dependen del acento.
   await tab.evaluate(
     `(() => { localStorage.setItem("orbithub:appearance", JSON.stringify({ appearance: "light", accent: "orbit" })); return true; })()`,
   );

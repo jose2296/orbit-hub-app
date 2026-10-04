@@ -682,32 +682,33 @@ export function ItemEditSheet({
               {shown.tags.map((tag) => (
                 <Fragment key={tag}>
                   <TagChip tag={tag} colors={tagColors}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t("tags.remove", { name: tag })}
-                      hitSlop={8}
-                      onPress={() => toggleTag(tag)}
-                      style={({ pressed }) => [
-                        styles.chipAction,
-                        {
-                          borderRadius: theme.radius.pill,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name="close"
-                        size={11}
-                        color={theme.colors.textMuted}
-                      />
-                    </Pressable>
-                    <TagColorButton
-                      tag={tag}
-                      color={colorOf(tag)}
-                      open={colorDe === tag}
-                      hintProps={pistaColor.props}
-                      onPress={() => setColorDe(colorDe === tag ? null : tag)}
-                    />
+                    {(ink) => (
+                      <>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={t("tags.remove", { name: tag })}
+                          hitSlop={8}
+                          onPress={() => toggleTag(tag)}
+                          style={({ pressed }) => [
+                            styles.chipAction,
+                            {
+                              borderRadius: theme.radius.pill,
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <Ionicons name="close" size={11} color={ink} />
+                        </Pressable>
+                        <TagColorButton
+                          tag={tag}
+                          color={colorOf(tag)}
+                          open={colorDe === tag}
+                          ink={ink}
+                          hintProps={pistaColor.props}
+                          onPress={() => setColorDe(colorDe === tag ? null : tag)}
+                        />
+                      </>
+                    )}
                   </TagChip>
                   {colorDe === tag ? (
                     <TagColorStrip
@@ -743,40 +744,44 @@ export function ItemEditSheet({
                   {labels.map(({ tag, count }) => (
                     <Fragment key={tag}>
                       <TagChip tag={tag} colors={tagColors}>
-                        {/* `TagChip` writes the name, so the count is what is
-                            left, and it goes first so the two buttons stay at
-                            the end of the pill. */}
-                        <AppText variant="caption" tone="muted">
-                          {`· ${count}`}
-                        </AppText>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={t("tags.put", { name: tag })}
-                          hitSlop={8}
-                          onPress={() => toggleTag(tag)}
-                          style={({ pressed }) => [
-                            styles.chipAction,
-                            {
-                              borderRadius: theme.radius.pill,
-                              opacity: pressed ? 0.7 : 1,
-                            },
-                          ]}
-                        >
-                          <Ionicons
-                            name="add"
-                            size={12}
-                            color={theme.colors.textMuted}
-                          />
-                        </Pressable>
-                        <TagColorButton
-                          tag={tag}
-                          color={colorOf(tag)}
-                          open={colorDe === tag}
-                          hintProps={pistaColor.props}
-                          onPress={() =>
-                            setColorDe(colorDe === tag ? null : tag)
-                          }
-                        />
+                        {(ink) => (
+                          <>
+                            {/* `TagChip` writes the name, so the count is what is
+                                left, and it goes first so the two buttons stay at
+                                the end of the pill. And it goes in the pill's own
+                                colour instead of in a `tone`: a `tone` would pick a
+                                token del tema, y sobre el tinte de la etiqueta
+                                ese token no es de este fondo. */}
+                            <AppText variant="caption" style={{ color: ink }}>
+                              {`· ${count}`}
+                            </AppText>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={t("tags.put", { name: tag })}
+                              hitSlop={8}
+                              onPress={() => toggleTag(tag)}
+                              style={({ pressed }) => [
+                                styles.chipAction,
+                                {
+                                  borderRadius: theme.radius.pill,
+                                  opacity: pressed ? 0.7 : 1,
+                                },
+                              ]}
+                            >
+                              <Ionicons name="add" size={12} color={ink} />
+                            </Pressable>
+                            <TagColorButton
+                              tag={tag}
+                              color={colorOf(tag)}
+                              open={colorDe === tag}
+                              ink={ink}
+                              hintProps={pistaColor.props}
+                              onPress={() =>
+                                setColorDe(colorDe === tag ? null : tag)
+                              }
+                            />
+                          </>
+                        )}
                       </TagChip>
                       {colorDe === tag ? (
                         <TagColorStrip
@@ -850,6 +855,7 @@ function TagColorButton({
   tag,
   color,
   open,
+  ink,
   hintProps,
   onPress,
 }: {
@@ -858,6 +864,17 @@ function TagColorButton({
   color: string;
   /** Whether this label's strip is the open one. */
   open: boolean;
+  /**
+   * The pill's own text colour, from `TagChip`, for when this button is closed.
+   *
+   * **Open, the ground is not the pill.** With the strip showing, this button's
+   * background is `accentSoft`, and the colour that reads on *that* is
+   * `accentSoftText` — the token pair that exists for it. Closed, the ground is
+   * the label's own tint and the colour is the one the pill just derived for it.
+   * One colour could not serve both: they are different backgrounds, not one
+   * background with two moods.
+   */
+  ink: string;
   /** The spread of `useA11yHint`, from the sheet: one hint node for all of them. */
   hintProps: Record<string, string>;
   onPress: () => void;
@@ -894,13 +911,20 @@ function TagColorButton({
           borderRadius: theme.radius.pill,
           backgroundColor: open ? theme.colors.accentSoft : "transparent",
           /*
-           * El borde, y no solo el fondo: dos puntos de acento sobre la propia
-           * pastilla no se ven —1.0:1 medido, en los cinco acentos y los dos
-           * esquemas— y un estado que no se ve no es un estado. Ocupa su sitio
-           * **siempre**, para que el boton no crezca ni se mueva al alternar.
+           * El borde, y no solo el fondo: un boton que cambia de estado sin que se
+           * note no es un boton con estado, y el fondo `accentSoft` es demasiado
+           * parecido a la pastilla para distinguirlo. Ocupa su sitio **siempre**,
+           * para que el boton no crezca ni se mueva al alternar.
+           *
+           * Y es **el color de la pastilla, no el del acento**: el borde se mide
+           * contra el relleno de la pastilla, y ese relleno es el tinte de la
+           * etiqueta —el acento se midio contra el fondo del tema, que esta
+           * pastilla ya no tiene—. Con `ink` el borde llega por construccion, y
+           * con cualquier acento daria el mismo numero porque el tinte no depende
+           * del acento.
            */
           borderWidth: 2,
-          borderColor: open ? theme.colors.accent : "transparent",
+          borderColor: open ? ink : "transparent",
           opacity: pressed ? 0.7 : 1,
         },
       ]}
@@ -908,7 +932,7 @@ function TagColorButton({
       <Ionicons
         name="color-palette-outline"
         size={10}
-        color={theme.colors.textMuted}
+        color={open ? theme.colors.accentSoftText : ink}
       />
     </Pressable>
   );
