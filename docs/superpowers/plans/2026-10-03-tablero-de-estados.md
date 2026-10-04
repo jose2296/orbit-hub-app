@@ -939,11 +939,16 @@ export function nextPageFor(
   const passed =
     Math.abs(offset) >= distance || Math.abs(velocity) >= minVelocity;
   // Un desplazamiento **negativo** avanza: el contenido se va hacia la izquierda y
-  // enseña la columna siguiente. Por eso se resta el signo y no se suma.
+  // enseña la columna siguiente. Por eso el signo va restado del resultado.
   const step = passed ? Math.sign(offset || velocity) : 0;
   return Math.max(0, Math.min(count - 1, current - step));
 }
 ```
+
+Dos formas de escribir lo mismo valen —restar el signo, o negarlo y sumar—, asi que si el
+fichero usa una y el plan la otra no hay ningun problema, **siempre que el comentario este pegado
+a la linea que lo hace**. Lo que si es un problema es un comentario que explica "se resta el
+signo" encima de una linea donde no se resta ninguno.
 
 **El signo va restado.** El `+` del borrador original no pasaba su propio paso 1:
 `nextPageFor(-140, 0, 4, 1)` daba 0 en vez de 2. Lo vio el implementador al escribir la
@@ -970,7 +975,10 @@ React re-renderiza las 24 pastillas del tablero **sesenta veces por segundo, en 
 que es el dedo**. El paralaje no es estado: es la posicion del gesto, y va por la misma via que
 la pista. Un `SharedValue` se lee con `useAnimatedStyle` y no toca el render.
 
-El progreso sale del mismo gesto, del `trackX` dividido por el ancho de la pagina.
+El progreso sale de **`movido`**, el mismo valor que lee la pista. **No de `trackX`**: el
+paralaje leia el viaje del dedo y la pista lo leia con banda elastica, y en el extremo las
+pestanas corrian mas que la pista. Esa frase estaba aqui antes, fue la que produjo el fallo, y
+esta es la que lo evita.
 
 **Y las pestañas y la pista tienen que leer lo mismo.** El paralaje leia el viaje del dedo y la
 pista lo leia **con banda elástica**, asi que **en el extremo las pestanas corrian mas que la
