@@ -615,8 +615,12 @@ export default function BoardScreen() {
    * `movido`.
    *
    * Which column it goes to is `nextPageFor`, the pure function: far enough or fast
-   * enough, in the direction of the travel, one column at a time, and never past
-   * either end of the **pager** — `paginas`, which is what the scroller can reach.
+   * enough, in the direction of the travel, one column at a time, and **for a drag
+   * that paged, never past either end of the pager** — `paginas`, which is what the
+   * scroller can reach. **For a drag that did not page it is the column the board
+   * was already on**, which can be outside the pager, because the fifth state's tab
+   * is the fifth state whatever the scroller can do with it; that is what
+   * `scrollTargetFor` below is for.
    *
    * **`movido` and not `trackX` for the re-base**, because `movido` is what is on
    * screen: at the end of the board the finger's travel and the board's movement

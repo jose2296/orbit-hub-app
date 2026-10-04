@@ -75,13 +75,31 @@ export const BOARD_SWIPE_VELOCITY = 420;
 const PASO_TOLERADO = 1e-9;
 
 /**
- * Which page a drag ends on, and never one outside the pager.
+ * Which page a drag ends on, **and when the drag was not a swipe, the page the board
+ * was already on.**
  *
  * `offset` is how far the finger has travelled sideways and `velocity` how fast it
  * was going when it let go; **`pages` is how many pages the pager has and `current`
- * which one the board is showing.** The answer is a page to show next, which is why
- * it is clamped rather than merely moved: the two ends of the pager have nothing to
- * show, and a value past them is a `scrollTo` to an offset that has no column at it.
+ * which one the board is showing.**
+ *
+ * **It is clamped rather than merely moved, and the clamp is why the two ends of the
+ * pager have nothing to show** — a value past them is a `scrollTo` to an offset that
+ * has no column at it. **That is for the drags that paged, and not for the ones that
+ * did not**, and the two used to fall through the same line: a drag that stopped short
+ * of the threshold comes back with `current` untouched, even when `current` is a
+ * column the pager cannot anchor. Measured in the browser at 1440 with five states,
+ * a 20-point drag from the fifth state — far below the 56 that counts — used to answer
+ * page 1, because `Math.min(pages - 1, current)` is 1 whatever the step was when
+ * `current` is 4 and there are two pages.
+ *
+ * **So this can answer a value outside the pager, and that is not an oversight: it is
+ * the column the tab is on and the column the board is showing.** A tab tap can
+ * select a state the scroller cannot put at the left edge — `columnOffset` says the
+ * browser clips it and calls that correct — and the state a person chose stays the
+ * state they chose whatever the scroller can do with it. `scrollTargetFor` is the
+ * other half of that: it takes the offset of this answer and clips it to what the
+ * scroller can reach, so **the page and the destination are two different numbers and
+ * they are meant to be.**
  *
  * **`pages` is `anchorableColumns` and not the number of states**, and that is the
  * whole of what "a pager" means: a wide board's scroller runs out of scroll before
@@ -105,9 +123,9 @@ const PASO_TOLERADO = 1e-9;
  *
  * **A pager with no pages answers zero.** It cannot be reached in the app — the
  * screen draws its empty state instead of the track, and `MAX_BOARD_STATES` is a
- * ceiling and not a floor — but the value is what gets used as an index, and an
- * index of `-1` is a `scrollTo` to a negative offset with a column drawn beside a
- * column that is not there.
+ * ceiling and not a floor — and the one answer that is an index below zero cannot be
+ * produced here either: a drag that paged is clipped to `[0, pages - 1]` and a drag
+ * that did not returns `current` as it came.
  */
 export function nextPageFor(
   offset: number,
