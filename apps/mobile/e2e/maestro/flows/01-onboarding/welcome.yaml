@@ -1,0 +1,45 @@
+appId: com.jrzlabs.orbithub
+tags: [smoke]
+---
+# El arranque sin sesion, con los datos limpiados.
+#
+# **El `clearState` se ha ido de aqui, y por que estaba aqui antes.** Estaba porque
+# esta suite empieza por la falta de sesion: un emulador que alguien dejo con la sesion
+# abierta devuelve el panel, y el flujo se pasaria probando el panel. `clearState: true`
+# es lo que garantizaba el arranque sin sesion.
+#
+# Se ha ido porque es un `pm clear`, y borra TODO el directorio de datos de la app
+# incluida la SharedPreferences `debug_http_host` de la que depende `apuntaMetro`:
+# medido, `pm clear` responde `Success` y a continuacion `shared_prefs/` no existe, o
+# sea que la app vuelve a su host por defecto -`10.0.2.2:8081`-, que es el del Metro de
+# quien este en ese puerto y no el del arnes. Con la preferencia escrita antes del
+# `clearState`, la app se baja el bundle de otro checkout y este flujo falla en su
+# primera asercion sin un solo `testID` de la rama en el arbol de vistas.
+#
+# El orden que si funciona es el inverso -`pm clear` y luego la preferencia-, y lo
+# puede hacer el runner porque es quien escribe la una y borra la otra. Asique el
+# `launchApp` de aqui va pelado y el `pm clear` lo pone el runner, justo antes de
+# `apuntaMetro`, una vez por area. Ver `limpiaDatos`, que lleva las dos mediciones.
+- launchApp
+# Y `extendedWaitUntil` y no `assertVisible` para lo que viene justo despues: tras un
+# arranque en frio la ventana de reintento de `assertVisible` se agota antes, y la
+# pantalla en negro que dura lo que dura el arranque no es un fallo que un reintento
+# corto vaya a arreglar.
+#
+# El tope de 180 s y no mas corto, por una medida y no por prudencia. El runner acaba
+# de hacer `pm clear`, y eso borra tambien `files/BridgelessReactNativeDevBundle.js`,
+# o sea que este arranque descarga los 13 MB del bundle de Metro otra vez. Medido en
+# este emulador con el runner haciendo lo que hace: **`screen-welcome` aparece a los
+# 51 s**, y con el bundle ya en la cache a los 3.7 s. Con el tope que habia antes, 60 s,
+# esto fallaba por nueve segundos -`Assertion is false: id: screen-welcome is visible`
+# tras `duration: 60416`-, o sea que no era la app ni el flujo: era el tope.
+# Con 180 s hay margen para el peor caso medido y sigue siendo un tope.
+#
+# Esto y el `{ id: ... }` de abajo son las dos formas de que este flujo no sea uno
+# que depende del dia: un selector que no es un selector, y una espera que no
+# llega.
+- extendedWaitUntil:
+    visible:
+      id: screen-welcome
+    timeout: 180000
+- takeScreenshot: capturas/android/01-welcome

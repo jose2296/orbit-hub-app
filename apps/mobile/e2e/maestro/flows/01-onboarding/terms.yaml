@@ -1,0 +1,27 @@
+appId: com.jrzlabs.orbithub
+tags: [smoke]
+---
+# Los terminos, y la vuelta. La misma forma que la privacidad y por el mismo
+# motivo: enlace del aviso, afirmacion al volver, y nada de coordenadas.
+- launchApp
+# El motivo de `extendedWaitUntil` y de la espera antes del toque esta en
+# `privacy.yaml` y en `welcome.yaml`, con las medidas. Y el tope es el mismo que alli
+# por la misma razon: con `continueOnFailure: true` este flujo corre aunque los otros
+# dos fallen, y entonces espera el arranque en frio con la descarga del bundle, no la
+# pantalla caliente que dejaria el flujo anterior.
+- extendedWaitUntil:
+    visible:
+      id: screen-welcome
+    timeout: 180000
+- waitForAnimationToEnd
+- tapOn:
+    id: welcome-terms
+- assertVisible:
+    id: screen-terms
+# Y con la **tecla de atras de hardware**, no con el boton de la cabecera: es lo que
+# fallaba y es lo que se comprueba. El motivo del fallo y el precio del arreglo
+# estan en el ADR 0034.
+- back
+- assertVisible:
+    id: screen-welcome
+- takeScreenshot: capturas/android/03-terms

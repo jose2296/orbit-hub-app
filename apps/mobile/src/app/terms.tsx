@@ -11,5 +11,5 @@ import { LEGAL_TERMS } from '@/content/legal';
 export default function TermsScreen() {
   const t = useTranslation();
 
-  return <LegalDocument title={t('legal.terms.title')} document={LEGAL_TERMS} />;
+  return <LegalDocument testID="screen-terms" title={t('legal.terms.title')} document={LEGAL_TERMS} />;
 }
