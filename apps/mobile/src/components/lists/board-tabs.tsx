@@ -182,10 +182,12 @@ export function BoardTabs({
    * Put the chosen pill in the middle of the strip, **if it is not already in
    * sight.**
    *
-   * On a wide board the whole strip is narrower than the window and every pill is
-   * already visible, and centring one that is on screen would slide the strip under
-   * a tap for no reason — which is what the `onContentSizeChange` comparison below
-   * is for.
+   * **Only when there is something off screen.** With a wide board the strip is
+   * wider than its own content — measured at 1120 points for five pills — every
+   * pill is already visible, and scrolling one to the middle would move the strip
+   * out from under a tap for nothing. That is what the comparison below decides,
+   * and it also decides the other half: when everything fits, any offset the strip
+   * had from a narrower window has to be undone rather than kept.
    */
   const centrar = useCallback(() => {
     // Nothing to centre: the strip has not been measured, or there is nothing off
