@@ -260,7 +260,21 @@ export function scrollTargetFor(
   // the scroller already is**, which makes every destination "stay here" instead of
   // turning a `NaN` into a `scrollTo` to zero that nobody asked for.
   const end = Number.isFinite(maxScroll) && maxScroll >= 0 ? maxScroll : at;
-  if (offset === undefined || !Number.isFinite(offset)) return at;
+  /**
+   * **The scroller's own position is clipped with the destination, and for the same
+   * reason.** It is the other half of the same repair, and it is the half that was
+   * missing: react-native-web does `node.scroll({left})`, which clips to the
+   * maximum, **and a scroll that changes nothing fires no event** — so with the
+   * track already at its end, nothing downstream ever hears that the position the
+   * caller was holding is a position the scroller is not at. Measured at 1440 with
+   * five states, `maxScroll` 283: a `scrollLeft` of 323 came back here as 323.
+   *
+   * Clipped with `end` and not with `maxScroll` on purpose, because when `end` *is*
+   * `at` — the track has not been measured — clipping to a number that is not a
+   * range at all is worse than not clipping.
+   */
+  const donde = Math.max(0, Math.min(end, at));
+  if (offset === undefined || !Number.isFinite(offset)) return donde;
   return Math.max(0, Math.min(end, offset));
 }
 
@@ -344,8 +358,7 @@ export function maxTrackScroll(trackWidth: number, contentWidth: number): number
  */
 export function trackRoomAt(scrollLeft: number, maxScroll: number): TrackRoom {
   /**
-   * A worklet, **and this one was the function that threw while the finger was
-   * down.**
+   * A worklet.
    *
    * It is called from the `useDerivedValue` that computes the rubber band, so it
    * runs on the interface thread, sixty times a second, for every frame of every

@@ -391,19 +391,21 @@ describe('cuantas columnas se pueden anclar', () => {
     expect(anchorableColumns(4, 246.66666666666663, 246.66666666666666)).toBe(2);
 
     /**
-     * **And three more of the same shape, with both numbers written out.**
+     * **And four more of the same shape, with both numbers written out.**
      *
      * All of them come out of `columnLayout` — the column is a division of a track —
      * and all of them are the case where three columns' worth of step and three
      * steps' worth of scroll are the same quantity written two ways. Sweeping the
      * track from 300 to 1800 with a gap of 12, **43** of them land a hair under an
-     * integer and these are four of the 43, with the quotient printed:
+     * integer and these are four of the 43, with the width each step comes from and
+     * the quotient printed:
      *
-     * | `columnLayout` de | paso | tres pasos | cociente |
+     * | pista | paso | tres pasos | cociente |
      * | --- | --- | --- | --- |
-     * | 752 | `230.2` | `690.5999999999999` | `2.99999999999999956` |
-     * | 762 | `231.2` | `693.5999999999999` | `2.99999999999999956` |
-     * | 1028 | `245.71428571428572` | `737.1428571428571` | `2.99999999999999956` |
+     * | 1199 | `230.2` | `690.5999999999999` | `2.99999999999999956` |
+     * | 1204 | `231.2` | `693.5999999999999` | `2.99999999999999956` |
+     * | 1209 | `232.2` | `696.5999999999999` | `2.99999999999999956` |
+     * | 1792 | `245.71428571428572` | `737.1428571428571` | `2.99999999999999956` |
      *
      * `floor` of any of them is 2, so without the margin the pager answers **3**
      * where it should answer **4**. Each of these four assertions dies on its own
@@ -632,5 +634,43 @@ describe('donde acaba el scroller, que no es donde pedia la columna', () => {
     expect(scrollTargetFor(-100, 0, 1520)).toBe(0);
     expect(scrollTargetFor(99999, 0, 1520)).toBe(1520);
     expect(scrollTargetFor(760, 0, 1520)).toBe(760);
+  });
+
+  /**
+   * **And the scroller's own position is clipped, which is the half that was
+   * missing.**
+   *
+   * `scrollPrevio` is what the re-base subtracts, and `irA` wrote the offset a tab
+   * asked for into it before asking for the scroll. **react-native-web does
+   * `node.scroll({left})`, which clips to the maximum, and a scroll that changes
+   * nothing fires no event** — so with the track already at its end, `onScroll` never
+   * came to correct it and `scrollPrevio` stayed ahead of the scroller for as long as
+   * that tab was selected.
+   *
+   * Measured in the browser at 1440 with five states, `maxScroll` 283 and `offsets`
+   * `[0, 283, 566, 849, 1132]`: the fifth state's tab wrote **1132**, the scroll it
+   * asked for was clipped to 283, and `scrollPrevio` was still **1132** a whole
+   * gesture later.
+   */
+  it('la posicion del scroller tambien se recorta, que es la otra mitad del rebase', () => {
+    // **40 puntos mas alla de su maximo**, que es lo que se quedaba escrito.
+    expect(scrollTargetFor(undefined, 323, 283)).toBe(283);
+    // Y un offset que no es un numero tambien: un destino no medido se lee como
+    // "no se va a ninguna parte", y "no se va a ninguna parte" tiene que ser una
+    // posicion en la que el scroller pueda estar.
+    expect(scrollTargetFor(Number.NaN, 323, 283)).toBe(283);
+    expect(scrollTargetFor(Number.NaN, 1132, 283)).toBe(283);
+    // Y por debajo de cero: un scroller movido con el dedo puede informar de una
+    // posicion negativa al volver, y un scroll negativo no es una posicion.
+    expect(scrollTargetFor(undefined, -12, 283)).toBe(0);
+    expect(scrollTargetFor(Number.NaN, -12, 283)).toBe(0);
+    // Con la pista sin medir el final del rango es el scroller, asi que recortarse a
+    // si mismo solo le quita el negativo.
+    expect(scrollTargetFor(undefined, -12, Number.NaN)).toBe(0);
+    expect(scrollTargetFor(undefined, 283, Number.NaN)).toBe(283);
+    // Y con las dos mitades recortadas, el re-base a un destino alcanzable vale cero:
+    // 283 - 283 = 0, que es lo que el scroller se va a mover de verdad.
+    const adelantado = scrollTargetFor(1132, 1132, 283);
+    expect(scrollTargetFor(283, adelantado, 283) - adelantado).toBe(0);
   });
 });

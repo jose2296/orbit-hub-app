@@ -415,7 +415,27 @@ export default function BoardScreen() {
     const index = states.findIndex((state) => state.id === id);
     // An id that is not a column of this board is not something to scroll to.
     if (index < 0) return;
-    const x = offsets[index] ?? 0;
+    /**
+     * The offset is clipped, and **both halves of the re-base are clipped with the
+     * same function for the same reason.**
+     *
+     * `scrollTargetFor` does it to the destination: react-native-web does
+     * `node.scroll({left})`, which clips to the maximum, and nothing compensated a
+     * transform charged with the difference. This is the other half. **`irA` writes
+     * `scrollPrevio` before asking for the scroll**, because the first event of an
+     * animated jump arrives a frame or more later, and a swipe that interrupts a tab
+     * tap would re-base against a position the board has already left. And a value
+     * past the end of the scroller **is** a position the board never reaches: with
+     * the track already at its maximum, `scrollTo` of a further offset changes
+     * nothing, **no event fires, and `onScroll` never corrects it** — so
+     * `scrollPrevio` stays ahead of the scroller for as long as that tab is the
+     * selected one.
+     *
+     * `trackRoomAt` clips its own `scrollLeft` for the same reason and says so; this
+     * is the third reader of the scroller's position, and it was the only one that
+     * believed it.
+     */
+    const x = scrollTargetFor(offsets[index], scrollPrevio.value, maxScroll);
     setActual(index);
     // Written here and not only from `onScroll`, because the first scroll event of
     // an animated jump arrives a frame or more after the jump is asked for — and a
