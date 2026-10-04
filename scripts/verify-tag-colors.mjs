@@ -32,7 +32,11 @@ import { launchChrome, openTab, seedSession, collectProblems } from "./cdp.mjs";
  *     una vez mide la pantalla que había antes del toque.
  *  3. **Los `testID` interpolan texto crudo del usuario.** Una etiqueta con un
  *     espacio da `tag-color-Mercadona urgente-red`, así que se localizan con
- *     selectores de atributo y nunca de clase.
+ *     selectores de atributo y nunca de clase. Y desde que `TagColorStrip` fuera
+ *     sustituido por `TagColorPicker` **los `testID` de las muestras ya no existen**:
+ *     el selector llega por sus nombres accesibles, que además llevan la etiqueta
+ *     detrás porque en esa página hay dos selectores montados a la vez. Ver
+ *     `muestraDe`.
  */
 
 const APP = process.env.APP_URL ?? "http://localhost:8081";
@@ -197,6 +201,38 @@ const COLOR_BY_NAME = Object.fromEntries(
 const HEX_POR_CLAVE = Object.fromEntries(
   Object.entries(ICON_HEX).map(([key, hex]) => [hex, key]),
 );
+
+/**
+ * Los tres trozos de texto con los que este guion llega al selector de color de una
+ * etiqueta, y **por qué son los tres y no un `testID` por muestra**.
+ *
+ * `TagColorStrip` llevaba trece —`tag-color-<etiqueta>-derived` y
+ * `tag-color-<etiqueta>-<clave>`— y `TagColorPicker` **no lleva ninguno**: sus muestras
+ * son `role="radio"` con `aria-label` y nada más. Y no se le ha puesto uno, porque
+ * inventar un `testID` para que un guion viejo siga en verde es hacer que el selector
+ * tenga una API para el guion y no para la gente.
+ *
+ * Entonces se llega por lo que ya está: **el nombre accesible de cada control**, que
+ * además es la misma cosa que hay que mirar por otra razón. En la página de etiquetas
+ * hay **dos selectores montados a la vez** —el de la pastilla y el de la etiqueta
+ * nueva—, así que un nombre que no diga de quién es no llega a nada; por eso todos
+ * llevan la etiqueta detrás, y por eso `"Rojo para Mercadona"` y `"Azul para
+ * urgente"` no se confunden con `"Rojo para la etiqueta nueva"`.
+ *
+ * Y **no se usa `FIND` de `cdp.mjs`**: sólo busca `button, [role=button], a` y las
+ * muestras son `[role=radio]`, así que no las encuentra. Se usa `pressLabel` de este
+ * archivo, que pregunta por `[role="button"],[aria-label]` —con lo que cualquier
+ * elemento que lleve nombre sirve— y dentro del panel de la hoja.
+ */
+const ELIGIENDO = "Eligiendo el color de ";
+/** `tags.colorSwatchOf`: "{color} para {name}". */
+const muestraDe = (color, etiqueta) => `${COLOR_NAME[color]} para ${etiqueta}`;
+/** `tags.backToDerivedOf`. */
+const deducidoDe = (etiqueta) => `Volver al color deducido de ${etiqueta}`;
+const pulsarMuestra = (tab, color, etiqueta) =>
+  pressLabel(tab, muestraDe(color, etiqueta), { exact: true, root: SHEET });
+const pulsarDeducido = (tab, etiqueta) =>
+  pressLabel(tab, deducidoDe(etiqueta), { exact: true, root: SHEET });
 
 /**
  * La clave de la paleta de **lo que el botón de color de una etiqueta anuncia**, o
@@ -693,27 +729,46 @@ const rowBoxes = (tab, itemId, title) =>
   `);
 
 /**
- * En qué página está la hoja y qué tiras de color hay abiertas.
+ * En qué página está la hoja y cuántos selectores de color hay abiertos.
  *
  * "La hoja sigue en la página de etiquetas" se lee de si existe algún botón de
- * color —`tag-color-button-<etiqueta>` sólo se pinta en esa página— y "la tira
- * está abierta" de si existe su primer punto, `tag-color-<etiqueta>-derived`,
- * que tampoco se pinta en ningún otro sitio.
+ * color —`tag-color-button-<etiqueta>` sólo se pinta en esa página— y "el selector
+ * de esa etiqueta está abierto" se lee de lo que **ese botón dice**: abierto, dice
+ * `tags.choosingColor` ("Eligiendo el color de X, ahora …") y cerrado dice
+ * `tags.changeColor` ("Cambiar el color de X, ahora …"). El propio componente lo
+ * explica: en `react-native-web@0.21.2` `accessibilityState` no llega al DOM, así que
+ * el borde y **las palabras** son lo que lleva el estado.
+ *
+ * ---
+ *
+ * **Antes contaba los `testID` que acaban en `-derived`**, que eran de `TagColorStrip`, y
+ * con la tira fuera ese recuento da **0 siempre**. Eso no era una comprobación roja: era
+ * una comprobación **verde por la razón equivocada**, y dos de las de este archivo la
+ * usan como uno de sus términos —"con el selector cerrado" y "sin conexión tampoco se
+ * pierde la página de etiquetas"—, así que las dos estaban en verde sin comprobar nada.
+ * Un rojo se ve; esto no se veía. Por eso se cuenta por las palabras del botón y no por
+ * un nombre que ya no existe.
+ *
+ * Y **no se cuenta el selector de la etiqueta nueva**, que está siempre montado en esa
+ * página: se cuenta sólo el que cuelga de una pastilla, que es el único que se abre y
+ * se cierra. Por eso la cuenta es de botones "Eligiendo el color de", y no de
+ * selectores.
  */
 const sheetState = (tab) =>
   tab.evaluate(`
     (() => {
       const testids = [...document.querySelectorAll("[data-testid]")].map((d) => d.getAttribute("data-testid"));
       const botones = testids.filter((t) => t.startsWith("tag-color-button-"));
-      // Una tira abierta es un solo punto —el que devuelve la etiqueta al color
-      // deducido— más sus doce colores, así que se cuentan los "-derived": los
-      // trece testID de una tira son trece, y "tiras abiertas: 13" no dice nada.
-      const tiras = testids.filter((t) => /-derived$/.test(t));
+      // Un selector de pastilla abierto es **un botón que dice "Eligiendo el color de"**,
+      // y uno por etiqueta abierta: el propio nombre lleva la etiqueta, así que dos
+      // selectores abiertos son dos botones con dos nombres distintos y se cuentan bien.
+      const selectores = [...document.querySelectorAll("[data-testid^=\\"tag-color-button-\\"]")]
+        .filter((d) => (d.getAttribute("aria-label") || "").startsWith(${JSON.stringify(ELIGIENDO)})).length;
       const campoNombre = testids.includes("item-name");
       return {
         pagina: campoNombre ? "edit" : botones.length > 0 ? "tags" : "otra",
         botones: botones.length,
-        tiras: tiras.length,
+        selectores,
         hayHoja: !!document.querySelector('[data-testid="sheet-panel"]'),
       };
     })()
@@ -860,6 +915,10 @@ const resolvedColor = (tab, tag) =>
  * lugar de no encontrar nada. Esto recorre los `[data-testid]` y compara el
  * atributo como lo que es: una cadena. El nombre tiene comillas, espacios y
  * acentos, y aquí no importa.
+ *
+ * **Lo que queda de `TagColorStrip` es sólo el botón**, `tag-color-button-<etiqueta>`,
+ * que es el único `testID` de color que sobrevive. Las muestras no lo tienen y no se le
+ * ha puesto uno: se llega a ellas con `pulsarMuestra`.
  */
 const pressTestIdRaw = (tab, id) =>
   tab.evaluate(`
@@ -1694,10 +1753,10 @@ try {
   const tiraAbierta = await sheetState(tab);
   check(
     "abrir la tira no saca la hoja de la página de etiquetas",
-    tiraAbierta.pagina === "tags" && tiraAbierta.tiras > 0,
-    `página "${tiraAbierta.pagina}", tiras abiertas ${tiraAbierta.tiras}`,
+    tiraAbierta.pagina === "tags" && tiraAbierta.selectores > 0,
+    `página "${tiraAbierta.pagina}", selectores de pastilla abiertos ${tiraAbierta.selectores}`,
   );
-  const pressedRed = await pressTestIdRaw(tab, `tag-color-Mercadona-red`);
+  const pressedRed = await pulsarMuestra(tab, "red", "Mercadona");
   check("el color se elige desde la tira de la etiqueta", pressedRed, "rojo");
   const puestoEnRojo = await until(
     "el color de la etiqueta",
@@ -1711,8 +1770,8 @@ try {
   // "edit"— con cada cambio. Elegir dos colores era pulsar dos veces "Etiquetas".
   check(
     "elegir un color deja la hoja en la página de etiquetas, con la tira cerrada",
-    puestoEnRojo.ok && puestoEnRojo.value?.hoja?.pagina === "tags" && puestoEnRojo.value?.hoja?.tiras === 0,
-    `la hoja quedó en "${puestoEnRojo.value?.hoja?.pagina}" con ${puestoEnRojo.value?.hoja?.tiras} tiras abiertas`,
+    puestoEnRojo.ok && puestoEnRojo.value?.hoja?.pagina === "tags" && puestoEnRojo.value?.hoja?.selectores === 0,
+    `la hoja quedó en "${puestoEnRojo.value?.hoja?.pagina}" con ${puestoEnRojo.value?.hoja?.selectores} selectores de pastilla abiertos`,
   );
   await sleep(900);
 
@@ -1869,7 +1928,7 @@ try {
 
   await pressTestIdRaw(tab, `tag-color-button-urgente`);
   await sleep(600);
-  const offlineTira = await pressTestIdRaw(tab, `tag-color-urgente-blue`);
+  const offlineTira = await pulsarMuestra(tab, "blue", "urgente");
   check("sin conexión se puede elegir un color", offlineTira, "azul");
   const repintada = await until(
     "el color sin conexión",
@@ -1888,8 +1947,8 @@ try {
   );
   check(
     "sin conexión tampoco se pierde la página de etiquetas",
-    repintada.value?.hoja?.pagina === "tags" && repintada.value?.hoja?.tiras === 0,
-    `la hoja quedó en "${repintada.value?.hoja?.pagina}" con ${repintada.value?.hoja?.tiras} tiras abiertas`,
+    repintada.value?.hoja?.pagina === "tags" && repintada.value?.hoja?.selectores === 0,
+    `la hoja quedó en "${repintada.value?.hoja?.pagina}" con ${repintada.value?.hoja?.selectores} selectores de pastilla abiertos`,
   );
 
   // Y que estaba de verdad sin conexión, no "todavía no había llegado": el servidor
@@ -2013,7 +2072,11 @@ try {
       `borde del boton de color abierto: ${medidas.color.borderWidth} ${medidas.color.borderColor} sobre ${medidas.pillFill}`,
     );
   }
-  await pressTestIdRaw(tab, `tag-color-Mercadona-derived`).catch(() => false);
+  // Y de vuelta al deducido, para que la sección 9 mida el botón con la pastilla en su
+  // color de la semilla y no en el rojo de la sección 3. Con `catch` porque aquí el
+  // selector se abre arriba del todo y puede que ni esté: el `pressTestIdRaw` viejo
+  // encontraba el punto por `testID` sin mirar si se ve.
+  await pulsarDeducido(tab, "Mercadona").catch(() => false);
   await sleep(600);
 
   section("9. El acento esmeralda en claro");

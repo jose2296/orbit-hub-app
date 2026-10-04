@@ -267,6 +267,28 @@ const es = {
   "tags.colorSquareValue": "Saturación {saturation}%, claridad {brightness}%",
   "tags.colorHue": "Tono del color",
   "tags.colorUse": "Usar este color",
+  /*
+   * Los nombres accesibles del selector, **todos con `{name}` al final**, y el motivo
+   * es que en la pagina de etiquetas de la hoja hay dos selectores montados a la vez:
+   * el de una pastilla, que escribe enseguida, y el del campo de "nueva etiqueta",
+   * que escribe en un estado pendiente. Dos "Usar este color" y dos "Guardar" y dos
+   * "Tono del color", cada uno compromising un color distinto, es un panel donde el
+   * nombre no dice de quien es nada.
+   *
+   * Y `tags.pendingLabel` es lo que hace que el del campo nuevo **tambien** se pueda
+   * distinguir: sin el, uno se llamaria "Mercadona" y el otro no diria nada, que es
+   * justo lo que hay que evitar. Es un sustantivo y no un nombre de etiqueta porque
+   * es el sujeto de todas estas frases.
+   */
+  "tags.pendingLabel": "la etiqueta nueva",
+  "tags.colorOf": "Color de {name}",
+  "tags.colorSwatchOf": "{color} para {name}",
+  "tags.colorHueOf": "Tono del color de {name}",
+  "tags.colorSquareOf": "Saturación y claridad del color de {name}",
+  "tags.colorCustomOf": "Un color tuyo, escrito como #RRGGBB, para {name}",
+  "tags.colorSaveOf": "Guardar el color de {name}",
+  "tags.colorUseOf": "Usar este color para {name}",
+  "tags.colorCloseOf": "Cerrar el selector de color de {name}",
   "tags.recentColors": "Los que has usado en etiquetas",
   "tags.recentColorOf": "Usar el color {color}",
   "icons.title": "Icono",
@@ -1280,6 +1302,15 @@ const en: Record<TranslationKey, string> = {
   "tags.colorSquareValue": "Saturation {saturation}%, brightness {brightness}%",
   "tags.colorHue": "Colour tone",
   "tags.colorUse": "Use this colour",
+  "tags.pendingLabel": "the new label",
+  "tags.colorOf": "Colour of {name}",
+  "tags.colorSwatchOf": "{color} for {name}",
+  "tags.colorHueOf": "Colour tone of {name}",
+  "tags.colorSquareOf": "Colour saturation and brightness of {name}",
+  "tags.colorCustomOf": "One of yours, written as #RRGGBB, for {name}",
+  "tags.colorSaveOf": "Save the colour of {name}",
+  "tags.colorUseOf": "Use this colour for {name}",
+  "tags.colorCloseOf": "Close the colour picker of {name}",
   "tags.recentColors": "The ones you have used on labels",
   "tags.recentColorOf": "Use the colour {color}",
   "icons.title": "Icon",

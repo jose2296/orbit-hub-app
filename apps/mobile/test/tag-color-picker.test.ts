@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ICON_COLORS } from "@/lib/lists/item-icons";
+import { dictionaries, formatTranslation } from "@/lib/i18n/dictionaries";
+import type { TranslationKey } from "@/lib/i18n/dictionaries";
 import {
   contrastRatio,
   hexDeHsv,
@@ -278,11 +280,46 @@ describe("los dos montajes del selector en la hoja", () => {
     const addTag = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/);
     expect(addTag).not.toBeNull();
     const cuerpo = addTag?.[1] ?? "";
-    expect(cuerpo).toContain("if (!color || guardando) return;");
     expect(cuerpo).toContain("await onTagColor(trimmed, color);");
     // Y por la prop y no por el hook: la hoja recibe `listId` y `tagColors`, no la
     // lista, y la lista es justo de donde se planifica el cambio.
     expect(hoja).not.toContain("setTagColor");
+  });
+
+  /**
+   * **El guard va antes de los dos `set`, y eso es lo que cuesta el perder color.**
+   *
+   * Con el guard despues de limpiar, un toque que llega mientras `pickColor` escribe
+   * deja la etiqueta puesta sin color, tira el color pendiente con el nombre, y no
+   * queda nada de donde recuperarlo: `pendiente` nunca estuvo en `tagColors`. La
+   * perdida de datos era **una consecuencia del orden y no del guard**, asi que el
+   * arreglo no es un flag nuevo sino una linea movida.
+   *
+   * Se comprueba **por la posicion y no por la presencia**: `if (guardando) return;`
+   * seguido de `if (shown.tags.includes(trimmed)) return;` seguido de `setNewTag("")`
+   * seguido de `setPendiente(null)`, en ese orden. Un test que solo buscara el texto
+   * seguiria en verde con el guard donde estaba, que es justo el arrangement que
+   * perderia el color.
+   */
+  it("el guard y la comprobacion de duplicado van antes de limpiar nada", () => {
+    const cuerpo = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "";
+    const guard = cuerpo.indexOf("if (guardando) return;");
+    const duplicado = cuerpo.indexOf("if (shown.tags.includes(trimmed)) return;");
+    const limpiaNombre = cuerpo.indexOf('setNewTag("")');
+    const limpiaColor = cuerpo.indexOf("setPendiente(null)");
+    const guarda = cuerpo.indexOf("save({ tags: [...shown.tags, trimmed] });");
+    expect([guard, duplicado, limpiaNombre, limpiaColor, guarda].every((i) => i >= 0)).toBe(true);
+    expect({
+      guardAntesDeLimpiar: guard < limpiaNombre && guard < limpiaColor,
+      duplicadoAntesDeLimpiar: duplicado < limpiaNombre && duplicado < limpiaColor,
+      guardAntesDeEscribir: guard < guarda,
+      limpiaDespuesDeLeerElColor: cuerpo.indexOf("const color = pendiente;") < limpiaColor,
+    }).toEqual({
+      guardAntesDeLimpiar: true,
+      duplicadoAntesDeLimpiar: true,
+      guardAntesDeEscribir: true,
+      limpiaDespuesDeLeerElColor: true,
+    });
   });
 
   it("el color pendiente se vacia con el nombre, y en los dos caminos que lo vacian", () => {
@@ -319,6 +356,121 @@ function sinComentarios(texto: string): string {
   return texto
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/**
+ * Los dos selectores de la hoja **no se pueden confundir de nombre**, y esto es
+ * nuevo con el segundo montaje.
+ *
+ * En la pagina de etiquetas hay dos instancias de este panel a la vez —la de una
+ * pastilla, que escribe enseguida, y la del campo de "nueva etiqueta", que escribe en
+ * un estado pendiente— asi que hay dos de cada control, y un lector de pantalla anuncia
+ * uno cada vez sin acordarse de donde estaba. Dos botones "Usar este color" y dos
+ * "Guardar" y dos "Tono del color", **cada uno compromising un color distinto**, es un
+ * panel donde el nombre no dice de quien es nada.
+ *
+ * Se comprueba en las dos mitades, porque las dos se pueden romper por separado:
+ * que el componente **pase** el nombre, y que el diccionario **haga que las dos
+ * instancias digan cosas distintas**. Con el diccionario roto —las dos plantillas
+ * iguales— el componente sigue pasando `nombreDe` y el panel sigue siendo ilegible;
+ * con el componente roto el diccionario esta bien y no se nota.
+ */
+describe("los dos selectores de la hoja no se confunden de nombre", () => {
+  const fuente = sinComentarios(
+    readFileSync(
+      join(import.meta.dirname, "..", "src", "components", "lists", "tag-color-picker.tsx"),
+      "utf8",
+    ),
+  );
+
+  /**
+   * Las ocho claves del panel, y la razon de que sean **ocho y no una**: cada control
+   * necesita la suya porque cada control se nombra por separado y "de quien" se
+   * primero. Una clave con un parametro y un nombre generico no sirve: el nombre
+   * generico es justo lo que hay que quitar.
+   *
+   * **`tags.recentColorOf` no esta y no es un olvido**: la fila de recientes solo se
+   * pinta cuando tiene algo, y en una instancia que se cierra al escribir no tiene
+   * nunca nada —la cabecera del componente lo dice—, asi que solo hay una que la
+   * nombra. Si alguna vez dejara de cerrarse, esta lista tiene que crecer.
+   */
+  const CALIFICADAS = [
+    "tags.colorOf",
+    "tags.colorSwatchOf",
+    "tags.colorHueOf",
+    "tags.colorSquareOf",
+    "tags.colorCustomOf",
+    "tags.colorSaveOf",
+    "tags.colorUseOf",
+    "tags.colorCloseOf",
+  ] as const satisfies readonly TranslationKey[];
+
+  it("cada nombre accesible del selector lleva el nombre de quien es", () => {
+    // **La excepcion esta escrita aqui y no metida en el filtro**, para que dejar de
+    // exceptuar una cosa sea tocar una linea de esta lista y relajar la regla lo sea
+    // para todos los nombres a la vez.
+    const SIN_NOMBRE_POR_RAZON = [
+      // La fila de recientes solo se pinta cuando tiene algo, y en una instancia que
+      // se cierra al escribir no tiene nunca nada —la cabecera del componente lo
+      // dice—, asi que solo hay una que nombra esa fila. Si dejara de cerrarse, sale.
+      "tags.recentColorOf",
+    ];
+    const sinNomear = etiquetasAccesibles(fuente)
+      .filter((expr) => expr.includes('t("tags.'))
+      .filter((expr) => !expr.includes("nombreDe"))
+      .map((expr) => /t\("([^"]+)"/.exec(expr)?.[1] ?? expr);
+    // Y **la lista entera, no la lista menos las excusas**: asi una excepcion que
+    // desaparece del componente tambien sale, en vez de volverse un hueco silencioso.
+    expect(sinNomear).toEqual(SIN_NOMBRE_POR_RAZON);
+    // Y las ocho estan de verdad en el componente: una lista de ocho aqui y seis en
+    // el fichero pasaria este test sin decir nada.
+    for (const clave of CALIFICADAS) {
+      expect(fuente).toContain(`t("${clave}"`);
+    }
+  });
+
+  it("y las dos instancias del mismo control dicen dos cosas distintas", () => {
+    // El caso que de verdad duele: las dos plantillas existen, ambas llevan `{name}`, y
+    // alguien las deja iguales. Aqui sale, porque se comparan las dos cadenas.
+    for (const clave of CALIFICADAS) {
+      const plantilla = dictionaries.es[clave];
+      const conEtiqueta = formatTranslation(plantilla, { name: "Mercadona" });
+      const conPendiente = formatTranslation(plantilla, {
+        name: dictionaries.es["tags.pendingLabel"],
+      });
+      expect({ clave, distintos: conEtiqueta !== conPendiente && !conEtiqueta.includes("{name}") }).toEqual({
+        clave,
+        distintos: true,
+      });
+    }
+  });
+});
+
+/**
+ * Todas las expresiones `accessibilityLabel={…}` de un fuente, con las llaves
+ * emparejadas.
+ *
+ * Con una regexp que acaba en `[^}]*}` no vale: el valor de una de ellas es
+ * `t("tags.colorSwatchOf", { color: …, name: … })`, que tiene llaves dentro, y el
+ * patron cortaría por la primera y leería media etiqueta.
+ */
+function etiquetasAccesibles(fuente: string): string[] {
+  const salida: string[] = [];
+  const marca = "accessibilityLabel={";
+  let desde = 0;
+  for (;;) {
+    const inicio = fuente.indexOf(marca, desde);
+    if (inicio < 0) return salida;
+    let i = inicio + marca.length;
+    let profundidad = 1;
+    while (i < fuente.length && profundidad > 0) {
+      if (fuente[i] === "{") profundidad += 1;
+      if (fuente[i] === "}") profundidad -= 1;
+      i += 1;
+    }
+    salida.push(fuente.slice(inicio + marca.length, i - 1));
+    desde = i;
+  }
 }
 
 /**

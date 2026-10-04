@@ -56,25 +56,30 @@ export { hexDeHsv, normalizaHex, tintaDe };
  *
  * ---
  *
- * **The recents do not survive this panel being closed, and that is a decision, not
- * an oversight.** Task 5 mounts this panel in two places and the two shapes are not
- * the same: under the new-label field it is always visible, and beside a label the
- * task already carries it is mounted only while that label's picker is open —which
- * is the shape the strip it replaced had, so closing it does what closing it did.
- * A panel that unmounts takes its `useState` with it, so **the row of recent free
- * colours starts empty on the second opening and after every opening before it**,
- * not only on the second mount of the sheet.
+ * **The recents are dead in every instance that closes itself, and only alive in the
+ * one that does not.** Task 5 mounts this panel in two places and only one of them
+ * keeps it: under the new-label field it is always visible, and beside a label the
+ * task already carries it is mounted only while that label's picker is open —which is
+ * the shape the strip it replaced had, so closing it does what closing it did.
  *
- * The alternative was to keep it mounted and hide it, or to lift the recents into
- * the sheet and pass them in, and both were left out on purpose: hiding it keeps a
- * full picker —square, strip, field and thirteen swatches— in the tree and in the
- * accessibility order of a panel that is not showing it, and lifting the recents
- * would give `TagColorPicker` a second source for the same state, which is the
- * shape that ends with two lists of recents and one of them stale. A panel that
- * forgets on purpose is at least a panel whose answer is knowable: **the twelve are
- * always there**, they are one press away and they are the colours most labels
- * actually get, so what a closed panel costs is the free colour you already picked
- * once and would have picked again.
+ * **`escribir` pushes into `recientes` and `pickColor` unmounts this panel in the same
+ * `finally` that writes.** So in a pill-mounted instance a free colour is added to the
+ * row and the row is destroyed in the same commit: it is never rendered, not even for
+ * a frame, and the row is not "reset between openings" — it is **unreachable**, and
+ * reopening finds nothing because nothing was ever there to keep. **Only the
+ * always-visible instance accumulates anything**, which is where the row earns its
+ * place: you type a name, you try a free colour on it, you change your mind about the
+ * hue and it is one press away.
+ *
+ * The alternative was to keep the panel mounted and hide it, or to lift the recents
+ * into the sheet and pass them in, and both were left out on purpose: hiding it keeps
+ * a full picker —square, strip, field and thirteen swatches— in the tree and in the
+ * accessibility order of a panel that is not showing it, and lifting the recents would
+ * give `TagColorPicker` a second source for the same state, which is the shape that
+ * ends with two lists of recents and one of them stale. A row that is only reachable
+ * from one of two instances is odd, and it is a cost with a price on it: **a free
+ * colour chosen for an existing label is not one press away next time — the twelve
+ * are, and those are the colours most labels actually get.**
  */
 export interface TagColorPickerProps {
   /** The colour currently chosen, or `null` for "derived from the name". */
@@ -205,6 +210,35 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
 
   const colorDelCuadrado = hexDeHsv(hsv.h, hsv.s, hsv.v);
   const sucio = colorDelCuadrado !== hexGuardado;
+
+  /**
+   * **Whose colour this panel is choosing**, and every accessible name below ends
+   * with it.
+   *
+   * The tags page of the task sheet mounts this panel **twice at the same time**: the
+   * one hanging off a pill, which writes straight away, and the one under the
+   * new-label field, which writes into pending state. Two instances of the same
+   * component on one panel means two of every control, and a screen reader announces
+   * one control at a time with no memory of where it was — so two buttons called "Use
+   * this colour" and two called "Save" and two adjustables called "Colour tone", each
+   * committing **a different colour**, is a panel where the labels do not say which
+   * one anything belongs to. That is new with the second mount, and no amount of
+   * correct behaviour elsewhere makes it better.
+   *
+   * So every name is qualified, the way `tags.backToDerivedOf` already was —that one
+   * was right before there were two panels and is the pattern, not a special case— and
+   * the pending panel qualifies itself as **the new label** rather than with nothing:
+   * "Colour tone of the new label" and "Colour tone of Mercadona" are two different
+   * things being said, and "Colour tone" said twice is nothing at all.
+   *
+   * `recentColors` and `recentColorOf` are the two names that are **not** qualified,
+   * and the reason is measured rather than hoped: the recents row only renders when
+   * there is something in it, and in a pill-mounted panel there never is, because
+   * `pickColor` unmounts the panel in the same `finally` that writes. One instance
+   * renders that row, so its names are unambiguous. **If the panel ever stopped
+   * closing on a write, those two keys would need a tag like the rest.**
+   */
+  const nombreDe = tag ?? t("tags.pendingLabel");
 
   /**
    * The one door every colour goes through, and the only place `onChange` is
@@ -373,7 +407,7 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
   return (
     <View style={{ gap: theme.spacing.md }}>
       <AppText variant="caption" tone="subtle">
-        {t("tags.color")}
+        {t("tags.colorOf", { name: nombreDe })}
       </AppText>
 
       {/*
@@ -383,14 +417,12 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
       */}
       <View
         accessibilityRole="radiogroup"
-        accessibilityLabel={t("tags.color")}
+        accessibilityLabel={t("tags.colorOf", { name: nombreDe })}
         style={{ gap: theme.spacing.sm }}
       >
         <Pressable
           accessibilityRole="radio"
-          accessibilityLabel={
-            tag ? t("tags.backToDerivedOf", { name: tag }) : t("tags.backToDerived")
-          }
+          accessibilityLabel={t("tags.backToDerivedOf", { name: nombreDe })}
           {...selectedProps(value === null)}
           onPress={volverAlDeducido}
           style={({ pressed }) => [
@@ -416,7 +448,7 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
             numberOfLines={1}
             style={{ flex: 1, color: value === null ? theme.colors.accent : undefined }}
           >
-            {tag ? t("tags.backToDerivedOf", { name: tag }) : t("tags.backToDerived")}
+            {t("tags.backToDerivedOf", { name: nombreDe })}
           </AppText>
           {value === null ? (
             <Ionicons name="checkmark" size={16} color={theme.colors.accent} />
@@ -438,7 +470,10 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
               <Pressable
                 key={option}
                 accessibilityRole="radio"
-                accessibilityLabel={t(ICON_COLOR_LABEL[option])}
+                accessibilityLabel={t("tags.colorSwatchOf", {
+                  color: t(ICON_COLOR_LABEL[option]),
+                  name: nombreDe,
+                })}
                 {...selectedProps(elegido)}
                 onPress={() => {
                   setHsv(hexToHsv(hex));
@@ -469,7 +504,7 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
         <View
           onLayout={(e) => setAnchoTira(e.nativeEvent.layout.width)}
           accessibilityRole="adjustable"
-          accessibilityLabel={t("tags.colorHue")}
+          accessibilityLabel={t("tags.colorHueOf", { name: nombreDe })}
           /*
            * What the role promised and what it did not. `adjustable` on its own is a
            * label with nothing behind it: a screen reader says "adjustable" and then
@@ -482,15 +517,24 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
            * words and the one thing a listener needs — where in the circle this is —
            * is the number.
            *
-           * **None of this reaches the browser.** Measured in
-           * `node_modules/react-native-web@0.21.2`: neither `accessibilityActions` nor
-           * `onAccessibilityAction` appears anywhere under `dist/` — there is nothing
-           * to grep for and nothing that consumes them— and
+           * **None of this reaches the browser, and none of it is verified anywhere.**
+           * Measured in `node_modules/react-native-web@0.21.2`: neither
+           * `accessibilityActions` nor `onAccessibilityAction` appears anywhere under
+           * `dist/` — there is nothing to grep for and nothing that consumes them— and
            * `modules/AccessibilityUtil/propsToAccessibilityComponent.js` maps no role
-           * called `adjustable`, so not even the role lands. It is the same hole
-           * `a11y-state.ts` documents for `accessibilityState`, one level down: the
-           * keys work on the two platforms where a screen reader and arrow keys are a
-           * device feature, and there is no web way to assert that they do.
+           * called `adjustable`, so not even the role lands. That is the same hole
+           * `a11y-state.ts` documents for `accessibilityState`, one level down.
+           *
+           * **So whether the arrow keys move the hue on a real device is unknown.**
+           * Not "expected to work on the two platforms where a screen reader is a
+           * device feature": unknown. There is no test here, no simulator and no
+           * hardware behind these lines, and a comment that says the keys work is
+           * claiming something nothing here protects — which is worse than saying
+           * nothing, because the next reader takes it as measured. What is true is
+           * only that the role is no longer empty: the value, the two actions and the
+           * handlers are the ones React Native documents for it, and **whoever runs
+           * this on a device with a screen reader is the first to find out whether that
+           * was enough.**
            */
           accessibilityValue={{
             min: 0,
@@ -554,7 +598,7 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
               setCaja({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })
             }
             accessibilityRole="adjustable"
-            accessibilityLabel={t("tags.colorSquare")}
+            accessibilityLabel={t("tags.colorSquareOf", { name: nombreDe })}
             /*
              * The same promise as the strip's, kept: a value, the two actions and
              * what they do. `now`/`min`/`max` are **saturation in per cent** — the
@@ -639,7 +683,7 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="done"
-                accessibilityLabel={t("tags.colorCustom")}
+                accessibilityLabel={t("tags.colorCustomOf", { name: nombreDe })}
                 selectionColor={theme.colors.accent}
                 placeholder="#1F6FEB"
                 placeholderTextColor={theme.colors.textSubtle}
@@ -657,10 +701,20 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
                 It commits the field and not the square, so it does not wear the
                 same glyph as the square's button —two checks side by side with
                 different meanings is a control nobody can tell apart.
+
+                **Su propio nombre y no el de `common.save`**, que es lo que ponia
+                antes de que la pagina de etiquetas tuviera una segunda instancia de
+                este panel: "Guardar" es la cadena mas generica de este diccionario, y
+                dos en un panel que confirman dos hex distintos son lo peor del par.
+                Cuesta una cadena mas larga y dice que hace el boton con el color **de
+                quien** — y aqui va escrita **sin la llamada**, porque
+                `test/translations.test.ts` recorre el fuente con una regexp y no tiene
+                en cuenta los comentarios: una llamada a secas en medio de la prosa sale
+                como "una clave con `{name}` llamada sin el nombre".
               */}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={t("common.save")}
+                accessibilityLabel={t("tags.colorSaveOf", { name: nombreDe })}
                 hitSlop={6}
                 onPress={aplicarCampo}
               >
@@ -679,10 +733,18 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
             **dimmed rather than hidden** when there is nothing to change: hiding
             it would move the layout under the finger of somebody about to drag the
             square.
+
+            **The accessible name carries the label and the visible one does not.**
+            A screen-reader user has no idea where they are on the panel, so
+            "Usar este colour" twice with nothing to tell them apart is the defect;
+            somebody looking at the screen has the caption two centimetres above it
+            saying whose colour it is, and a button that reads "Usar este color para
+            Mercadona" is a 44-point-high button with a sentence on it. The two
+            audiences get the two things each of them needs.
           */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("tags.colorUse")}
+            accessibilityLabel={t("tags.colorUseOf", { name: nombreDe })}
             accessibilityState={{ disabled: !sucio }}
             disabled={!sucio}
             onPress={() => escribir(colorDelCuadrado)}
@@ -706,7 +768,8 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
         The free colours of this session, and nothing else: the twelve are above,
         and a list that repeated them would push out the ones that are not there
         anywhere else. Empty until something has been chosen, and never a row of
-        nothing.
+        nothing — **and in a panel that closes on a write it is never anything**; see
+        the header.
       */}
       {recientes.length > 0 ? (
         <View style={{ gap: theme.spacing.xs }}>
@@ -739,10 +802,19 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
         </View>
       ) : null}
 
+      {/*
+        `onClose` is what makes this the only mount that can be closed, and it is why
+        the picker brings a close button the strip never had. **Its accessible name is
+        not `t("common.close")`**, which is what it said at first: the sheet's own X is
+        also "Cerrar", two controls on one panel with the same name and the same
+        meaning, and — measured against this file — a script that dismisses the sheet by
+        pressing "Cerrar" would find whichever comes first in the document. Naming this
+        one for what it closes makes the two separable by the thing that separates them.
+      */}
       {onClose ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t("common.close")}
+          accessibilityLabel={t("tags.colorCloseOf", { name: nombreDe })}
           onPress={onClose}
           style={({ pressed }) => [
             styles.cerrar,

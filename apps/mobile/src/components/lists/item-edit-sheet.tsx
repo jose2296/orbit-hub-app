@@ -153,10 +153,11 @@ export function ItemEditSheet({
    * what stopped that before; the guard replaces the closing as the thing that
    * stops it.
    *
-   * **And it is checked by the other door too.** Adding a label *with* a colour is
-   * also two colour-bearing writes in a row, so `addTag` asks the same question; see
-   * there for why those two writes are of different entities and only the colours
-   * need guarding.
+   * **And it is checked by the other door too, as its first statement.** Adding a
+   * label *with* a colour is also two colour-bearing writes in a row, so `addTag` asks
+   * the same question before it has touched anything; see there for why those two
+   * writes are of different entities and only the colours need guarding, and for why
+   * the check has to come first rather than after the two clears.
    */
   const [guardando, setGuardando] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -337,33 +338,49 @@ export function ItemEditSheet({
    * `setTagColor` plans from the `list` its caller captured, so two colour writes
    * inside one would both plan from the same map and the second would eat the first
    * without either of them finding out. A label with a colour is exactly that: two
-   * writes in a row. So `guardando` is one flag for both doors, and a tap that
-   * arrives while a colour is being written adds the label **without** its colour
-   * rather than racing the write that is in flight.
+   * writes in a row. So `guardando` is one flag for both doors.
    *
-   * **The colour is read into a local before the name is cleared**, because clearing
-   * the name is what invalidates it — the effect above drops `pendiente` on the next
-   * render — and the `await` below would otherwise be reading state that has already
-   * stopped meaning "the colour of the label I am about to create".
+   * **And it is the first thing checked, which is what makes it the same door as
+   * `pickColor`.** There it was `if (guardando) return;` as the very first statement
+   * —a total no-op that costs the tap and nothing else— and here it sat *after* the two
+   * clears and after the `save`, so a tap that arrived while `pickColor` was writing
+   * put the label on the task with no colour, dropped the pending colour with the name,
+   * and had nothing left to restore it from: `pendiente` had never been in
+   * `tagColors`. **The data loss was a consequence of the order, not of the guard**,
+   * and moving the check above the clears makes the two doors the same shape. What is
+   * left is an ignored tap —the name stays, the colour stays, and the person can press
+   * again a moment later— instead of a label written without its colour and no trace of
+   * the colour anywhere.
+   *
+   * **The duplicate check sits here for the same reason, and it is not new.** A name
+   * already on this task is not a new label, so nothing is written; what used to happen
+   * is that the field was cleared first and the colour chosen for it went with the
+   * field. The always-visible picker is what makes that sequence likely —type a name,
+   * pick a colour, press add, and only then see that the name was already there— and
+   * **the label they meant is the pill directly above with its own picker open-able**.
+   * So the tap is still a no-op, but it leaves the name and the colour where they were
+   * instead of throwing both away.
    */
   const addTag = async () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
+    if (guardando) return;
+    if (shown.tags.includes(trimmed)) return;
 
+    // Read into a local before the name is cleared, because clearing the name is what
+    // invalidates it — the effect above drops `pendiente` on the next render — and the
+    // `await` below would otherwise be reading state that has already stopped meaning
+    // "the colour of the label I am about to create".
     const color = pendiente;
     setNewTag("");
     setPendiente(null);
-
-    // Already on this task: the label goes on nothing new, and **it keeps whatever
-    // colour it has**, so the colour chosen for it is dropped rather than written.
-    if (shown.tags.includes(trimmed)) return;
 
     save({ tags: [...shown.tags, trimmed] });
 
     // Optional on purpose: with no colour chosen the label comes out **derived**,
     // which is a colour like any other and not a missing one, and nothing is written
     // to `tagColors` for it.
-    if (!color || guardando) return;
+    if (!color) return;
     setGuardando(true);
     try {
       await onTagColor(trimmed, color);
