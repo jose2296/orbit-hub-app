@@ -1,4 +1,6 @@
 import { normalizaColor } from "@orbit-hub/contracts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ICON_COLORS } from "@/lib/lists/item-icons";
@@ -8,7 +10,7 @@ import {
   normalizaHex,
   tintaDe,
 } from "@/lib/lists/tag-colors";
-import { hexToHsv } from "@/lib/workspace/picker";
+import { hexToHsv, HUE_STRIP } from "@/lib/workspace/picker";
 import { esHex } from "@/lib/workspace/hsl";
 
 /**
@@ -126,7 +128,198 @@ describe("la tinta que se lee encima de un color", () => {
     expect(tintaDe("#FFFFFF")).toBe("#000000");
     expect(["#000000", "#FFFFFF"]).toContain(tintaDe("#8A93A8"));
   });
+
+  /**
+   * El tercer bucle, y es el que cierra el defecto que Task 5 arrastraba.
+   *
+   * El anillo del marcador de la tira se pintaba con un `borderColor: "#FFFFFF"`
+   * fijo, y la tira es el unico control que produce un color arbitrario. Medido
+   * contra los seis tonos de `HUE_STRIP`: **1.07:1 sobre `#FFFF00`, 1.25 sobre
+   * `#00FFFF` y 1.37 sobre `#00FF00`** — tres de seis por debajo de lo que se ve
+   * como un pelo, en un anillo de tres puntos de ancho, invisible en justo la
+   * mitad del circulo. En los otros tres si se veia, y eso es lo que lo escondia:
+   * un marcador que esta la mitad del tiempo parece uno que falla.
+   *
+   * **El bucle va sobre `HUE_STRIP` y no sobre una lista escrita aqui**, porque la
+   * tira es la que se dibuja con el y una copia de sus seis tonos en un test es una
+   * segunda fuente que se queda vieja: se anade un tono al circulo y este test
+   * sigue creyendo que son seis. `new Set` porque `HUE_STRIP` cierra el circulo
+   * repitiendo el primero, y el primero ya esta una vez.
+   */
+  it("se lee sobre los seis tonos por los que pasa la tira", () => {
+    for (const hex of new Set(HUE_STRIP)) {
+      expect({ hex, ratio: contrastRatio(tintaDe(hex), hex) >= MINIMO_DE_UN_ICONO }).toEqual({
+        hex,
+        ratio: true,
+      });
+    }
+  });
+
+  /**
+   * Y que el anillo de la tira **pida** esa tinta, y no la lleve puesta.
+   *
+   * El bucle de arriba verifica que `tintaDe` funciona sobre los seis tonos, y eso
+   * no dice nada de si el componente la llama: `tintaDe` podia acertar durante meses
+   * con un `#FFFFFF` fijo en `styles.marcadorTira` al lado, y todo este bloque
+   * seguiria en verde. El defecto era del componente y el test tiene que poder
+   * falsificar **al componente**, asi que lee el fuente —el mismo metodo que usa
+   * `task-row-layout.test.ts`, y por el mismo motivo: aqui no se monta nada.
+   *
+   * Se comprueban las dos mitades y no una: que el estilo no traiga un color fijo
+   * —el sintoma— y que el marcado lo pida con `tintaDe` sobre el color que hay
+   * **debajo**, que es el otro error posible y el mas sutil: `marcador` ya lo hace
+   * asi para el cuadrado, y este marcador esta en la tira, cuya superficie es
+   * `HUE_STRIP` entera y no el color que el cuadrado este mostrando.
+   */
+  it("el anillo de la tira no lleva un color fijo y lo pide a la tinta", () => {
+    const fuente = sinComentarios(
+      readFileSync(
+        join(import.meta.dirname, "..", "src", "components", "lists", "tag-color-picker.tsx"),
+        "utf8",
+      ),
+    );
+    const marcador = fuente.match(/marcadorTira:\s*\{([\s\S]*?)\n {2}\},/);
+    expect(marcador).not.toBeNull();
+    // El sintoma: un color escrito en el estilo, que es lo que no depende del tono.
+    expect(marcador?.[1]).not.toMatch(/borderColor/);
+    // Y el remedio: la tinta del color de la tira en ese punto, saturacion y
+    // claridad a uno porque `HUE_STRIP` es exactamente eso.
+    expect(fuente).toContain("borderColor: tintaDe(hexDeHsv(hsv.h, 1, 1))");
+  });
 });
+
+/**
+ * Los dos montajes del selector en la hoja, y el_guard_ que comparten.
+ *
+ * **Un componente, dos montajes, y lo unico que cambia es cuando escribe.** El que
+ * cuelga de una pastilla escribe por `onTagColor` en el momento —la etiqueta ya
+ * existe y hay un mapa al que escribirle— y el que esta bajo el campo de "nueva
+ * etiqueta" escribe en `pendiente`, que es estado local del panel, porque todavia no
+ * hay etiqueta a la que ese color pertenezca. Elegir el color de "Mercadona" y
+ * elegir el de "Alcampo" se hacen delante de lo mismo, que es el motivo de que este
+ * bloque exista: si un dia divergen, son dos selectores otra vez.
+ *
+ * Aqui no se monta nada —el mismo limite que el bloque de arriba— asi que se lee el
+ * fuente de la hoja. Lo que se comprueba es lo que **no se ve en una captura** y es
+ * justo lo que se puede equivocar sin que nadie lo note: quantas veces se monta, con
+ * que valor, por donde escribe cada uno, y si los dos caminos de escritura pasan por
+ * el mismo guard. Un boton que aprieta y no escribe se ve en el navegador; una
+ * segunda escritura que se salta el guard no se ve en ninguna parte hasta que se
+ * pierde el color de otra etiqueta.
+ */
+describe("los dos montajes del selector en la hoja", () => {
+  const fuenteDeLaHoja = readFileSync(
+    join(import.meta.dirname, "..", "src", "components", "lists", "item-edit-sheet.tsx"),
+    "utf8",
+  );
+  const hoja = sinComentarios(fuenteDeLaHoja);
+
+  /**
+   * Los `<TagColorPicker …/>` de la hoja, con lo que llevan dentro.
+   *
+   * **El `/>` del final es el del elemento y no el primero que aparezca**, y esa
+   * distincion es la diferencia entre contar montajes y contar comillas: un
+   * `<TagColorPicker` seguido de `[\s\S]*?` se come todo lo que haya hasta el
+   * primer cierre de otra cosa de mas abajo —un `Button`, un `Ionicons`— y cuenta
+   * tres con dos montajes en la hoja. De ahi el `[^/]` con la excepcion del `/>`:
+   * una `/` dentro de las props es un cierre de elemento, no otra cosa.
+   */
+  const montajes = [...hoja.matchAll(/<TagColorPicker(?:[^/]|\/(?!>))*\/>/g)].map((m) => m[0]);
+
+  it("la hoja monta el selector tres veces, y la tira se ha ido", () => {
+    // **Tres, y el numero va escrito porque no es el evidente.** Dos son las dos
+    // filas de etiquetas —las que lleva esta tarea y las que la lista ya tiene— y
+    // cada una monta el suyo detras de `colorDe === tag`, que es una condicion por
+    // fila, no una condicion global: por eso son dos y no uno. La tercera es el de
+    // "nueva etiqueta", que no depende de nada. Un cuarto seria un `TagColorStrip`
+    // vivo, que es otro camino para elegir un color con trece opciones en lugar de
+    // con el selector.
+    expect(montajes).toHaveLength(3);
+    expect(hoja).not.toContain("TagColorStrip");
+    // Y las dos de pastilla detras de la misma condicion, que es lo que hacia que las
+    // dos filas compartieran un solo selector abierto. Con la llave de apertura en el
+    // patron y no solo el `colorDe === tag`: los botones de la pastilla llevan la
+    // misma comparacion en su `open` y en su `onPress`, asi que sin ella el numero
+    // que sale es cuatro y no dos.
+    expect([...hoja.matchAll(/\{colorDe === tag \? \(/g)]).toHaveLength(2);
+  });
+
+  it("el de una etiqueta que ya existe lee del mapa y escribe al momento", () => {
+    // `?? null` y no el valor a secas: `tagColors[tag]` es `string | undefined`, y
+    // `undefined` para `value: string | null` seria "sin color" por la puerta de
+    // atras en lugar de por la de adelante.
+    const deLaPastilla = montajes.filter((m) => m.includes("value={tagColors[tag] ?? null}"));
+    expect(deLaPastilla).toHaveLength(2);
+    for (const montaje of deLaPastilla) {
+      expect(montaje).toContain("onChange={(hex) => void pickColor(tag, hex)}");
+      expect(montaje).toContain("onClose={() => setColorDe(null)}");
+    }
+  });
+
+  it("el de la etiqueta nueva escribe en estado local y no escribe nada todavia", () => {
+    const deLaEtiquetaNueva = montajes.filter((m) => m.includes("value={pendiente}"));
+    expect(deLaEtiquetaNueva).toHaveLength(1);
+    expect(deLaEtiquetaNueva[0]).toContain("onChange={setPendiente}");
+    // `nombreNuevo || undefined` y no `newTag`: el picker deriva sus trece colores
+    // del nombre, y un nombre con espacios rodeando es el mismo nombre. Con un
+    // `tag` de `""` el panel dibujaria el color deducido de una etiqueta vacia.
+    expect(deLaEtiquetaNueva[0]).toContain("tag={nombreNuevo || undefined}");
+    // Y sin `onClose`: este no se cierra nunca solo, porque no hay nada que
+    // escribir todavia. Un boton de cerrar aqui seria la unica manera de vaciar el
+    // color pendiente, y esa regla es del nombre.
+    expect(deLaEtiquetaNueva[0]).not.toContain("onClose");
+  });
+
+  it("el alta de una etiqueta con color pasa por el mismo guard que elegir uno", () => {
+    // `setTagColor` planifica desde la `list` que su llamante capturo, asi que dos
+    // escrituras de color dentro de una se planifican desde el mismo mapa y la
+    // segunda se come la primera. El alta con color son dos escrituras seguidas, asi
+    // que es el caso para el que existe el guard, no un detalle.
+    const addTag = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/);
+    expect(addTag).not.toBeNull();
+    const cuerpo = addTag?.[1] ?? "";
+    expect(cuerpo).toContain("if (!color || guardando) return;");
+    expect(cuerpo).toContain("await onTagColor(trimmed, color);");
+    // Y por la prop y no por el hook: la hoja recibe `listId` y `tagColors`, no la
+    // lista, y la lista es justo de donde se planifica el cambio.
+    expect(hoja).not.toContain("setTagColor");
+  });
+
+  it("el color pendiente se vacia con el nombre, y en los dos caminos que lo vacian", () => {
+    // Sin nombre no hay etiqueta a la que un color pertenezca, y un color colgando
+    // de un nombre que ya no existe es un color que nadie puede volver a leer.
+    expect(hoja).toContain('if (nombreNuevo === "") setPendiente(null);');
+    // Y tambien al reabrir: `setNewTag("")` sobre un campo ya vacio no cambia nada,
+    // React lo descarta y el efecto de arriba no llega a dispararse nunca. Por eso
+    // los dos reinicios del panel lo dicen por su cuenta — **cuatro** en total, y el
+    // numero va aqui porque subirlo es cambiar la regla y bajarlo es dejar un hueco
+    // por donde un color pendiente sobrevive a un nombre que ya no existe.
+    expect([...hoja.matchAll(/setPendiente\(null\);/g)]).toHaveLength(4);
+  });
+});
+
+/**
+ * El fuente de un componente **sin sus comentarios**, y por que hace falta quitarlo.
+ *
+ * Este archivo lee el fuente porque aqui no se monta nada, y un componente de este
+ * repositorio explica en prosa justo lo que sus comprobaciones preguntan: el
+ * `marcadorTira` de `tag-color-picker.tsx` dice "**No `borderColor` here**" para
+ * explicar que se ha ido, y la hoja dice "`onTagColor` y no `setTagColor`" al
+ * hablar de la prop. Sin quitarlos, una comprobacion que busca `borderColor` da
+ * verde porque lo nombra un comentario y una que busca `setTagColor` da verde
+ * porque el codigo no lo usa: **las dos darian el resultado contrario del que
+ * miden, sin fallar nunca**.
+ *
+ * El `[^:]` del final es para no comerse el `//` de un `http://`: sin el, un
+ * import de una URL se partiria por la mitad. Los comentarios de bloque de estos
+ * archivos no se anidan, que es lo unico que haria falta para que esto no fuera
+ * una regexp honesta.
+ */
+function sinComentarios(texto: string): string {
+  return texto
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
 
 /**
  * Todo lo que un validador de hex podria aceptar o dejar de aceptar.

@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import type { AccessibilityActionEvent } from "react-native";
 
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -18,6 +19,12 @@ import {
   tagColorHex,
   tintaDe,
 } from "@/lib/lists/tag-colors";
+// `clamp01` comes from here and not from `./picker`, which re-exports the
+// conversions and the two pointer functions and not the clamp: `puntoAHsv` and
+// `puntoAHue` are the pointer's way of reaching it, and the arrow keys below are
+// not a pointer. `test/color-picker-math.test.ts` reads it from this file too, so
+// this is not a new way into it.
+import { clamp01 } from "@/lib/workspace/hsl";
 import { HUE_STRIP, hexToHsv, puntoAHsv, puntoAHue } from "@/lib/workspace/picker";
 import { useTheme } from "@/theme";
 
@@ -46,6 +53,28 @@ export { hexDeHsv, normalizaHex, tintaDe };
  * neither `@expo/vector-icons` nor `react-native-gesture-handler` loads outside a
  * device, measured with a test that imports `workspace-color-picker.tsx` and nothing
  * else. **Everything below the imports is checked in a browser, in Task 7.**
+ *
+ * ---
+ *
+ * **The recents do not survive this panel being closed, and that is a decision, not
+ * an oversight.** Task 5 mounts this panel in two places and the two shapes are not
+ * the same: under the new-label field it is always visible, and beside a label the
+ * task already carries it is mounted only while that label's picker is open —which
+ * is the shape the strip it replaced had, so closing it does what closing it did.
+ * A panel that unmounts takes its `useState` with it, so **the row of recent free
+ * colours starts empty on the second opening and after every opening before it**,
+ * not only on the second mount of the sheet.
+ *
+ * The alternative was to keep it mounted and hide it, or to lift the recents into
+ * the sheet and pass them in, and both were left out on purpose: hiding it keeps a
+ * full picker —square, strip, field and thirteen swatches— in the tree and in the
+ * accessibility order of a panel that is not showing it, and lifting the recents
+ * would give `TagColorPicker` a second source for the same state, which is the
+ * shape that ends with two lists of recents and one of them stale. A panel that
+ * forgets on purpose is at least a panel whose answer is knowable: **the twelve are
+ * always there**, they are one press away and they are the colours most labels
+ * actually get, so what a closed panel costs is the free colour you already picked
+ * once and would have picked again.
  */
 export interface TagColorPickerProps {
   /** The colour currently chosen, or `null` for "derived from the name". */
@@ -80,6 +109,36 @@ const MAX_RECIENTES = 8;
  * thing that answers "is this the colour I meant?" off the screen.
  */
 const TAMANO = 132;
+
+/**
+ * How far one press of an arrow key moves each of the two adjustable controls.
+ *
+ * Ten degrees and a tenth of saturation, and both are a compromise between two
+ * things that want opposite numbers: one press has to be **one step you can hear**,
+ * and the whole control has to be crossable in a number of presses somebody will
+ * actually sit through. Thirty-six of these walk the length of the hue strip and
+ * ten of them walk the width of the square, which is where both numbers come from.
+ *
+ * **A percentage point on brightness is the same step and it is not wired up**; see
+ * `moverLaSaturacion` for why one axis gets the keys and the other does not.
+ */
+const PASO_DEL_TONO = 10;
+const PASO_DE_LA_SATURACION = 0.1;
+
+/**
+ * The only two actions either control answers, and the same two on both.
+ *
+ * `accessibilityRole="adjustable"` promises a control that the arrow keys move; on
+ * its own that promise is empty, because the role says what kind of control this is
+ * and not what pressing up does to it. These are the two names React Native defines
+ * for it —anything else lands in a platform's custom-action menu instead of on the
+ * arrow keys— and they are declared once here because both controls answer exactly
+ * these two and a third would be answered by neither.
+ */
+const ACCIONES_DE_UN_EJE = [
+  { name: "increment" },
+  { name: "decrement" },
+] as const;
 
 /**
  * The colour a panel opens on: the chosen one, or the one the name derives.
@@ -221,6 +280,63 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
     [anchoTira],
   );
 
+  /**
+   * The hue from the arrow keys, and it **goes round the loop** instead of stopping.
+   *
+   * `HUE_STRIP` is seven colours and the seventh is the first, so the strip is a
+   * circle: 350° followed by 10° is the short way round and not fifty degrees back
+   * through green. `puntoAHue` clamps rather than wrapping, and that is right for it
+   * —a drag that leaves the strip has run out of gradient to follow— but the arrow
+   * keys are not leaving the strip, they are on it, so they wrap. The double modulo
+   * is what makes it so from a negative angle too: `-5 % 360` is `-5`.
+   */
+  const moverElTono = useCallback(
+    (delta: number) =>
+      setHsv((actual) => ({ ...actual, h: (((actual.h + delta) % 360) + 360) % 360 })),
+    [],
+  );
+
+  /**
+   * The square from the arrow keys: **one axis of the two, and on purpose.**
+   *
+   * An adjustable control gets one pair of arrow keys and one `accessibilityValue`
+   * number, so a two-axis square can only answer one of its axes with them.
+   * Saturation is the one that gets them, because it is what separates a colour from
+   * a washed-out version of itself, and both extremes of it are the same colour.
+   * Brightness is **said out loud** in the same `accessibilityValue.text` and moved
+   * with the hex field beside it, which takes any colour: so it is reachable without
+   * a drag, just not with the arrow keys. That is a real limit of the platform
+   * control and not a choice that could be coded around, and the field is the way
+   * out of it.
+   */
+  const moverLaSaturacion = useCallback(
+    (delta: number) => setHsv((actual) => ({ ...actual, s: clamp01(actual.s + delta) })),
+    [],
+  );
+
+  /**
+   * The two handlers, one per axis, and they are written out instead of coming from
+   * a factory because `useCallback` needs a stable identity to keep one: a handler
+   * built by a `makeHandler(mover)` inside the render body is a new function on
+   * every pixel of a drag, and this is a control that re-renders sixty times a
+   * second while somebody moves the square.
+   */
+  const enElTono = useCallback(
+    (event: AccessibilityActionEvent): void => {
+      if (event.nativeEvent.actionName === "increment") moverElTono(PASO_DEL_TONO);
+      else if (event.nativeEvent.actionName === "decrement") moverElTono(-PASO_DEL_TONO);
+    },
+    [moverElTono],
+  );
+
+  const enLaSaturacion = useCallback(
+    (event: AccessibilityActionEvent): void => {
+      if (event.nativeEvent.actionName === "increment") moverLaSaturacion(PASO_DE_LA_SATURACION);
+      else if (event.nativeEvent.actionName === "decrement") moverLaSaturacion(-PASO_DE_LA_SATURACION);
+    },
+    [moverLaSaturacion],
+  );
+
   /*
    * Two drags, as gestures and not as `PanResponder`, for the reason
    * `workspace-color-picker.tsx` gives in full: on the web the browser keeps the
@@ -354,6 +470,36 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
           onLayout={(e) => setAnchoTira(e.nativeEvent.layout.width)}
           accessibilityRole="adjustable"
           accessibilityLabel={t("tags.colorHue")}
+          /*
+           * What the role promised and what it did not. `adjustable` on its own is a
+           * label with nothing behind it: a screen reader says "adjustable" and then
+           * the arrow keys do nothing at all, which is the worst shape a control can
+           * have — it advertises an interaction it refuses. So the value it moves is
+           * the hue in degrees and the two arrow-key actions move it.
+           *
+           * **The text is degrees and not a colour name on purpose**: the whole strip
+           * is one hue at a time, so the name would be the same number of different
+           * words and the one thing a listener needs — where in the circle this is —
+           * is the number.
+           *
+           * **None of this reaches the browser.** Measured in
+           * `node_modules/react-native-web@0.21.2`: neither `accessibilityActions` nor
+           * `onAccessibilityAction` appears anywhere under `dist/` — there is nothing
+           * to grep for and nothing that consumes them— and
+           * `modules/AccessibilityUtil/propsToAccessibilityComponent.js` maps no role
+           * called `adjustable`, so not even the role lands. It is the same hole
+           * `a11y-state.ts` documents for `accessibilityState`, one level down: the
+           * keys work on the two platforms where a screen reader and arrow keys are a
+           * device feature, and there is no web way to assert that they do.
+           */
+          accessibilityValue={{
+            min: 0,
+            max: 360,
+            now: Math.round(hsv.h),
+            text: `${Math.round(hsv.h)}°`,
+          }}
+          accessibilityActions={ACCIONES_DE_UN_EJE}
+          onAccessibilityAction={enElTono}
           style={[styles.tira, { borderRadius: theme.radius.sm }]}
         >
           <LinearGradient
@@ -364,7 +510,32 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
           />
           <View
             pointerEvents="none"
-            style={[styles.marcadorTira, { left: (hsv.h / 360) * anchoTira - 9 }]}
+            style={[
+              styles.marcadorTira,
+              {
+                left: (hsv.h / 360) * anchoTira - 9,
+                /*
+                 * **The ink of the colour under the ring, not a fixed white**, and
+                 * this is the control that makes that matter: the strip is the only
+                 * way to reach a hue the twelve do not have, so a ring that vanishes
+                 * hides the one marker that is picking the arbitrary colour.
+                 *
+                 * Measured white against the six hues of `HUE_STRIP`: **1.07:1 on
+                 * `#FFFF00`, 1.25 on `#00FFFF` and 1.37 on `#00FF00`** — three of the
+                 * six below the 1.5 that is a hairline, against a ring that is three
+                 * points wide. It was visible on the other three and that is what hid
+                 * it: a marker that is there half the time reads as being flaky.
+                 *
+                 * The colour under it is **saturation and brightness at one**, not
+                 * `colorDelCuadrado`: the ring is painted on the strip, the strip is
+                 * `HUE_STRIP` whatever the square happens to be showing, and taking
+                 * the square's brightness here would pick the ink off a surface that
+                 * is not there — the same mistake `marcador` avoids by asking for the
+                 * colour of its own square.
+                 */
+                borderColor: tintaDe(hexDeHsv(hsv.h, 1, 1)),
+              },
+            ]}
           />
         </View>
       </GestureDetector>
@@ -384,6 +555,29 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
             }
             accessibilityRole="adjustable"
             accessibilityLabel={t("tags.colorSquare")}
+            /*
+             * The same promise as the strip's, kept: a value, the two actions and
+             * what they do. `now`/`min`/`max` are **saturation in per cent** — the
+             * axis the arrow keys move, chosen and argued in `moverLaSaturacion`—
+             * and the text carries **both** axes, because a square is two numbers
+             * and reading out only the one that moves leaves the brightness of the
+             * colour the listener is choosing entirely unsaid.
+             *
+             * That text is a translated string and not a template with two names in
+             * it: a sentence with a number in the middle is prose, and prose is what
+             * `dictionaries.ts` is for.
+             */
+            accessibilityValue={{
+              min: 0,
+              max: 100,
+              now: Math.round(hsv.s * 100),
+              text: t("tags.colorSquareValue", {
+                saturation: Math.round(hsv.s * 100),
+                brightness: Math.round(hsv.v * 100),
+              }),
+            }}
+            accessibilityActions={ACCIONES_DE_UN_EJE}
+            onAccessibilityAction={enLaSaturacion}
             style={[styles.cuadrado, { borderRadius: theme.radius.md }]}
           >
             <LinearGradient
@@ -632,7 +826,10 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     borderWidth: 3,
-    borderColor: "#FFFFFF",
+    // **No `borderColor` here.** It was `#FFFFFF`, and the ring is transparent
+    // inside, so this one value decided whether the marker existed on three of the
+    // six hues of the strip; it is `tintaDe(hexDeHsv(h, 1, 1))` at the call site,
+    // which is the only place that knows the hue the ring is sitting on.
     shadowColor: "#000000",
     shadowOpacity: 0.4,
     shadowRadius: 2,

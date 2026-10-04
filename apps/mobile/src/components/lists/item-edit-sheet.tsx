@@ -19,11 +19,11 @@ import { useTheme } from "@/theme";
 
 import { ItemIcon, IconPickerPanel } from "./icon-picker";
 import { TagChip } from "./tag-chip";
+import { TagColorPicker } from "./tag-color-picker";
 import { completedMatch } from "@/lib/lists/done-match";
 import {
   ICON_COLOR_KEYS,
   ICON_COLOR_LABEL,
-  iconColor,
   iconLabel,
 } from "@/lib/lists/item-icons";
 import type { IconColorKey } from "@/lib/lists/item-icons";
@@ -57,11 +57,15 @@ export interface ItemEditSheetProps {
    * **It may hand back the write, and this panel waits for it** — hence
    * `void | Promise<void>`, so a caller with nothing to wait for can ignore it.
    * The chosen colour arrives at `tagColors` only after the store has been
-   * written and read back, so a strip that closed on the tap had nothing on
+   * written and read back, so a picker that closed on the tap had nothing on
    * screen to show for it: the tap read as one that did nothing, and the button's
-   * own words ("now Red") were a round trip out of date. The strip therefore
+   * own words ("now Red") were a round trip out of date. The picker therefore
    * waits for the write and closes with it, in the same render that repaints the
    * pill.
+   *
+   * **Two doors in this panel call it and one guard covers both**: a colour chosen
+   * for a label the task carries (`pickColor`) and a colour chosen for a label that
+   * is about to exist (`addTag`). See `guardando` for why that matters.
    */
   onTagColor: (tag: string, color: string | null) => void | Promise<void>;
   onClose: () => void;
@@ -129,9 +133,9 @@ export function ItemEditSheet({
   const [annotation, setAnnotation] = useState(item?.annotation ?? "");
   const [newTag, setNewTag] = useState("");
   /*
-   * Which label has its colour strip open, and one at a time: two strips open
-   * would be two sets of twelve dots on one panel, and the second one is not
-   * where anybody was looking.
+   * Which label has its picker open, and one at a time: two open would be two
+   * squares, two hue strips and two hex fields on one panel, and the second one is
+   * not where anybody was looking.
    *
    * It is the *label* and not a boolean, so the two rows of labels —the ones
    * this task carries and the ones the list already has— can share it and a
@@ -142,15 +146,45 @@ export function ItemEditSheet({
   /*
    * Whether a colour is being written right now, and **one write at a time**.
    *
-   * It exists because the strip waits for the write it started (see
-   * `onTagColor`), and a strip that is waiting is a strip that can be tapped
+   * It exists because the picker waits for the write it started (see
+   * `onTagColor`), and a picker that is waiting is a picker that can be tapped
    * again: two taps inside one write would plan both from the same captured
-   * `list` and the second would eat the first. Closing the strip on the tap was
+   * `list` and the second would eat the first. Closing the picker on the tap was
    * what stopped that before; the guard replaces the closing as the thing that
    * stops it.
+   *
+   * **And it is checked by the other door too.** Adding a label *with* a colour is
+   * also two colour-bearing writes in a row, so `addTag` asks the same question; see
+   * there for why those two writes are of different entities and only the colours
+   * need guarding.
    */
   const [guardando, setGuardando] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+
+  /*
+   * The colour chosen for a label that **does not exist yet**, and the whole of why
+   * it is here instead of in `tagColors`: there is no label to write it on. It is
+   * not written until the name is pressed add, because until then there is nothing
+   * in the map it could be a value of — `tagColors` is keyed by label name, and a
+   * key for a name nobody has typed is a colour that no row can ever show.
+   */
+  const [pendiente, setPendiente] = useState<string | null>(null);
+
+  /*
+   * The pending colour goes when the name goes, and **this is the only place that
+   * says so**: without a name there is no label for a colour to belong to, and a
+   * colour left hanging off a name that no longer exists cannot be read back by
+   * anybody — not by the picker, whose `tag` is now `undefined`, and not by the
+   * map, because the map never had the key.
+   *
+   * **On the trimmed name and not on the raw field**: a trailing space is still
+   * "Alcampo", the label `addTag` will create is `newTag.trim()`, and a colour that
+   * survives a space it is going to keep is the useful behaviour.
+   */
+  const nombreNuevo = newTag.trim();
+  useEffect(() => {
+    if (nombreNuevo === "") setPendiente(null);
+  }, [nombreNuevo]);
 
   // Reopening always starts where the tap asked to start, on a fresh copy of
   // what the row has now and not on what it had when the panel was created.
@@ -177,11 +211,13 @@ export function ItemEditSheet({
     setTitle(item.title);
     setAnnotation(item.annotation ?? "");
     setNewTag("");
-    // And the strip with it: `colorDe` is state of this component and the panel
+    // And the picker with it: `colorDe` is state of this component and the panel
     // stays mounted while it is closed (it returns `null` rather than being
-    // unmounted), so a panel closed with a strip open came back with that same
-    // strip open, pointing at a label the person had not asked about this time.
+    // unmounted), so a panel closed with a picker open came back with that same
+    // picker open, pointing at a label the person had not asked about this time.
     setColorDe(null);
+    // And the pending colour, which belongs to the name that was just cleared.
+    setPendiente(null);
   }, [idDelItem, startOn]);
 
   // Creating always starts empty, every time it is opened.
@@ -191,6 +227,10 @@ export function ItemEditSheet({
       setTitle("");
       setAnnotation("");
       setNewTag("");
+      // `setNewTag("")` on a field that is already empty changes nothing, so React
+      // drops it and the effect on `nombreNuevo` never fires. That is why the
+      // pending colour is cleared here as well and not only there.
+      setPendiente(null);
       setDraft(EMPTY_DRAFT);
     }
   }, [isNew]);
@@ -230,9 +270,9 @@ export function ItemEditSheet({
   const pistaMarkDone = useA11yHint(t("itemEdit.markDoneHint"));
   /*
    * One hint for every colour button on this panel, and not one per label: it
-   * says what the strip is *for*, and what it is for does not change with the
-   * label. The label is already in the button's own `accessibilityLabel`, which
-   * is where the name belongs.
+   * says what the button opens, and what it opens does not change with the label.
+   * The label is already in the button's own `accessibilityLabel`, which is where
+   * the name belongs.
    */
   const pistaColor = useA11yHint(t("tags.backToDerived"));
 
@@ -242,7 +282,7 @@ export function ItemEditSheet({
    * The chosen one if there is one and the deduced one if there is not, and
    * **never nothing**: there is no state in which a label has no colour, which is
    * why this has no `?? undefined` branch and why the same expression is in
-   * `TagChip`. It is here because the button that opens the strip has to *say*
+   * `TagChip`. It is here because the button that opens the picker has to *say*
    * the colour out loud, in the words the dictionary has for it.
    */
   const colorOf = (tag: string): string => tagColors[tag] ?? derivedTagColor(tag);
@@ -277,15 +317,59 @@ export function ItemEditSheet({
     if (trimmed !== (item!.annotation ?? "")) save({ annotation: trimmed || null });
   };
 
-  const addTag = () => {
+  /**
+   * A new label, and its colour if one was chosen for it.
+   *
+   * **Two writes, and they are of two different things.** `save` writes the **task**
+   * and `onTagColor` writes the **list**, and there is no overlap between them: one
+   * is a column of `items`, the other a column of `lists`, and neither reads what
+   * the other is writing. That is why they do not need to be ordered against each
+   * other beyond putting the task first — the label has to be **on the task** before
+   * the map has a key for it, or a sync payload can carry a colour for a label that
+   * no row carries and the server would have to decide whether to keep it.
+   *
+   * **`onTagColor` and not `setTagColor`,** and not because it is tidier: this sheet
+   * receives `listId` and `tagColors`, not the list, and the list is the thing the
+   * colour is planned from. The parent holds it and hands the write down, and the
+   * `pickColor` below already writes through the same prop for the same reason.
+   *
+   * **The guard is checked here too, and this is the reason the guard exists.**
+   * `setTagColor` plans from the `list` its caller captured, so two colour writes
+   * inside one would both plan from the same map and the second would eat the first
+   * without either of them finding out. A label with a colour is exactly that: two
+   * writes in a row. So `guardando` is one flag for both doors, and a tap that
+   * arrives while a colour is being written adds the label **without** its colour
+   * rather than racing the write that is in flight.
+   *
+   * **The colour is read into a local before the name is cleared**, because clearing
+   * the name is what invalidates it — the effect above drops `pendiente` on the next
+   * render — and the `await` below would otherwise be reading state that has already
+   * stopped meaning "the colour of the label I am about to create".
+   */
+  const addTag = async () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
-    if (shown.tags.includes(trimmed)) {
-      setNewTag("");
-      return;
-    }
-    save({ tags: [...shown.tags, trimmed] });
+
+    const color = pendiente;
     setNewTag("");
+    setPendiente(null);
+
+    // Already on this task: the label goes on nothing new, and **it keeps whatever
+    // colour it has**, so the colour chosen for it is dropped rather than written.
+    if (shown.tags.includes(trimmed)) return;
+
+    save({ tags: [...shown.tags, trimmed] });
+
+    // Optional on purpose: with no colour chosen the label comes out **derived**,
+    // which is a colour like any other and not a missing one, and nothing is written
+    // to `tagColors` for it.
+    if (!color || guardando) return;
+    setGuardando(true);
+    try {
+      await onTagColor(trimmed, color);
+    } finally {
+      setGuardando(false);
+    }
   };
 
   const toggleTag = (tag: string) =>
@@ -296,15 +380,21 @@ export function ItemEditSheet({
     });
 
   /**
-   * A tap on one swatch: one write, and the strip closes **after** it.
+   * A tap on one swatch of a label the task already carries: one write, and the
+   * picker closes **after** it.
+   *
+   * `option` is **a hex and not a name from the twelve any more**, because
+   * `TagColorPicker` hands back whatever was chosen and a free colour is not in
+   * `ICON_COLOR_KEYS`. `onTagColor` takes a string and the server is what decides
+   * what a colour is, so nothing here has to know which of the two it is.
    *
    * Two things are happening here and both were measured, not chosen:
    *
    * - **The await.** `tagColors` is what the pills are painted from, and it only
-   *   moves once the store has been written and read back, so a strip that closed
-   *   on the tap left that tap with nothing on screen: the strip disappearing was
+   *   moves once the store has been written and read back, so a picker that closed
+   *   on the tap left that tap with nothing on screen: the picker disappearing was
    *   the whole of it, and the colour landed some milliseconds later with nothing
-   *   to connect the two. Awaiting means the strip unmounts in the **same commit**
+   *   to connect the two. Awaiting means the picker unmounts in the **same commit**
    *   that repaints the pill —the hook's `setLists` and the two state changes
    *   below are queued in one batch and React 18 flushes them in one pass— so the
    *   tap has its consequence in the frame that answered it, and the button's
@@ -317,12 +407,12 @@ export function ItemEditSheet({
    *   local state first, which is what `icon-picker.tsx` does with its own swatches
    *   and is deliberately not done here: this ring is read back from the store, and
    *   a ring that is not what the store says is a lie while it is on screen.
-   * - **The guard.** That open strip is a second tap away, and `setTagColor`
+   * - **The guard.** That open picker is a second tap away, and `setTagColor`
    *   plans from the `list` its caller captured: two taps inside one write would
    *   both plan from the same map and the second would silently eat the first.
    *   `guardando` is what keeps it to one write. The write is a local one, so
    *   this is milliseconds; nothing in this app reports a failed write, and the
-   *   `finally` closes the strip either way, so a write that throws cannot leave
+   *   `finally` closes the picker either way, so a write that throws cannot leave
    *   the panel stuck open.
    */
   const pickColor = async (tag: string, option: string | null) => {
@@ -332,9 +422,9 @@ export function ItemEditSheet({
       await onTagColor(tag, option);
     } finally {
       setGuardando(false);
-      // Only closes its own strip: the write takes long enough for somebody to
+      // Only closes its own picker: the write takes long enough for somebody to
       // open another label's colours, and closing that one instead would be a
-      // strip that opened and vanished on its own.
+      // picker that opened and vanished on its own.
       setColorDe((current) => (current === tag ? null : current));
     }
   };
@@ -711,11 +801,14 @@ export function ItemEditSheet({
                     )}
                   </TagChip>
                   {colorDe === tag ? (
-                    <TagColorStrip
-                      tag={tag}
-                      chosen={tagColors[tag]}
-                      onPick={(option) => void pickColor(tag, option)}
-                    />
+                    <View style={styles.anchoCompleto}>
+                      <TagColorPicker
+                        tag={tag}
+                        value={tagColors[tag] ?? null}
+                        onChange={(hex) => void pickColor(tag, hex)}
+                        onClose={() => setColorDe(null)}
+                      />
+                    </View>
                   ) : null}
                 </Fragment>
               ))}
@@ -784,11 +877,14 @@ export function ItemEditSheet({
                         )}
                       </TagChip>
                       {colorDe === tag ? (
-                        <TagColorStrip
-                          tag={tag}
-                          chosen={tagColors[tag]}
-                          onPick={(option) => void pickColor(tag, option)}
-                        />
+                        <View style={styles.anchoCompleto}>
+                          <TagColorPicker
+                            tag={tag}
+                            value={tagColors[tag] ?? null}
+                            onChange={(hex) => void pickColor(tag, hex)}
+                            onClose={() => setColorDe(null)}
+                          />
+                        </View>
                       ) : null}
                     </Fragment>
                   ))}
@@ -803,14 +899,45 @@ export function ItemEditSheet({
               placeholder={t("tags.newPlaceholder")}
               autoCapitalize="words"
               returnKeyType="done"
-              onSubmitEditing={addTag}
+              onSubmitEditing={() => void addTag()}
             />
+
+            {/*
+              **The same picker, always open, for a label that does not exist yet.**
+              Not behind a button, and that is the whole difference between the two
+              mounts: a label that is already on the task has a button to press and
+              something to show the colour in, and this one has neither — there is
+              nothing on the task to paint and no pill to open a picker from, so a
+              colour for it would be unreachable if it waited for a button that only
+              exists once the label is there.
+
+              So this one writes **nothing**: `value` is `pendiente`, local state of
+              this panel, and the colour only reaches the map through `addTag`, on
+              the same press that creates the name. Editing the colour of
+              "Mercadona" and choosing the colour of "Alcampo" are then done in
+              front of the same control, and what differs between the two is only
+              *when* it writes.
+
+              **`tag` is the typed name, trimmed, and it can be `undefined`.** It is
+              what the twelve swatches and the "back to derived" option derive their
+              colours from, and with no name typed there is nothing to derive from:
+              the picker falls back to the neutral of its own function, which is
+              where "nobody has decided yet" is drawn. Type a name and the panel
+              follows it, so the colour being picked is judged against the colour
+              that label would get.
+            */}
+            <TagColorPicker
+              tag={nombreNuevo || undefined}
+              value={pendiente}
+              onChange={setPendiente}
+            />
+
             <Button
               label={t("tags.addNew")}
               icon="add"
               variant="secondary"
               disabled={newTag.trim().length === 0}
-              onPress={addTag}
+              onPress={() => void addTag()}
             />
 
             {/* The hidden node every colour button on this page points at. One,
@@ -938,102 +1065,43 @@ function TagColorButton({
   );
 }
 
-/**
- * The colours of one label: the twelve the app draws with, and the way back to
- * the one its name gives it.
+/*
+ * Lo que se fue con `TagColorStrip`, y por qué no queda ni una línea de él.
  *
- * **The first option is not a colour.** It is what the label goes back to when
- * nobody has chosen for it, and it is drawn in the colour it would return to, so
- * the option shows its own result instead of describing it. Pressing it sends
- * `null`, which is "no colour **chosen**" — an absent key — and not a colour
- * called `neutral`: there is no colour that means "nobody decided", because that
- * is what the deduced one already is.
+ * Ofrecía trece opciones y ninguna manera de **nombrar** un color; `TagColorPicker`
+ * ofrece esas trece más un tono, un cuadrado y un campo. Lo que la tira hacía no
+ * cambió —y por eso el botón que la abre tampoco—, así que editar el color de una
+ * etiqueta que ya existe se hace delante de lo mismo que elegir el de una que no.
  *
- * The swatches are the icon picker's, numbers and all, and `styles.swatch` is
- * defined again at the bottom of this file rather than imported: a style object
- * exported out of a sibling component to save six lines is a coupling that two
- * files then have to agree about, and a reviewer of one of them cannot see the
- * other.
+ * **Lo que no sobrevive son los trece `testID`** —
+ * `tag-color-<etiqueta>-derived` y `tag-color-<etiqueta>-<clave>`—, porque estaban
+ * en los puntos de la tira y `TagColorPicker` trae los suyos sin nombre de etiqueta
+ * dentro. `scripts/verify-tag-colors.mjs` localiza varias de sus comprobaciones con
+ * esos nombres y es de la Tarea 7; está escrito en el informe de la Tarea 5.
+ *
+ * Y dos cosas que la tira hacía y el selector no, a propósito: su primera opción
+ * era un `button` con una varita y ahora es un `radio` del mismo grupo que los
+ * doce —son trece respuestas a una pregunta, no un botón que casualmente está al
+ * lado—, y `styles.swatch` era una copia local que ya no tiene a nadie que copiar.
  */
-function TagColorStrip({
-  tag,
-  chosen,
-  onPick,
-}: {
-  tag: string;
-  /** The colour chosen for this label, or `undefined` if none is. */
-  chosen: string | undefined;
-  onPick: (color: string | null) => void;
-}) {
-  const theme = useTheme();
-  const t = useTranslation();
-
-  return (
-    <View style={{ width: "100%", gap: theme.spacing.xs }}>
-      <AppText variant="caption" tone="subtle">
-        {t("tags.color")}
-      </AppText>
-      <View style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}>
-        <Pressable
-          testID={`tag-color-${tag}-derived`}
-          accessibilityRole="button"
-          accessibilityState={{ selected: chosen === undefined }}
-          accessibilityLabel={t("tags.backToDerivedOf", { name: tag })}
-          onPress={() => onPick(null)}
-          style={({ pressed }) => [
-            styles.swatch,
-            {
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: theme.colors.surfaceMuted,
-              borderColor: chosen === undefined ? theme.colors.text : "transparent",
-              borderWidth: chosen === undefined ? 3 : 0,
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          {/* In the colour the label goes back to, and not in a generic one:
-              the whole point of the option is which colour that is. */}
-          <Ionicons
-            name="color-wand-outline"
-            size={18}
-            color={iconColor(derivedTagColor(tag))}
-          />
-        </Pressable>
-        {ICON_COLOR_KEYS.map((option) => {
-          const selected = chosen === option;
-          return (
-            <Pressable
-              key={option}
-              testID={`tag-color-${tag}-${option}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              accessibilityLabel={t(ICON_COLOR_LABEL[option])}
-              onPress={() => onPick(option)}
-              style={({ pressed }) => [
-                styles.swatch,
-                {
-                  backgroundColor: iconColor(option),
-                  // El borde ocupa su sitio siempre —tres puntos o ninguno—
-                  // para que la fila no dé un salto al elegir y el punto no se mueva
-                  // bajo el dedo. Mismo criterio que `icon-picker.tsx`.
-                  borderColor: selected ? theme.colors.text : "transparent",
-                  borderWidth: selected ? 3 : 0,
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}
-            />
-          );
-        })}
-      </View>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  /*
+   * The picker takes a whole line of the row of pills it is mounted in.
+   *
+   * Both rows of labels are `styles.row` —a `flexDirection: "row"` that wraps— and
+   * a picker mounted as their child would be a flex item in a row: it would be
+   * measured against the space left beside the pills instead of the width of the
+   * panel, and its hue strip and its square would be squeezed into whatever was
+   * left. `width: "100%"` is what forces it onto a line of its own, and it is the
+   * same thing the strip this replaces did with its own root, for the same reason.
+   */
+  anchoCompleto: {
+    width: "100%",
   },
   flex: {
     flex: 1,
@@ -1084,10 +1152,5 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: "center",
     justifyContent: "center",
-  },
-  swatch: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
   },
 });
