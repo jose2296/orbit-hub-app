@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { LayoutChangeEvent } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-} from "react-native-reanimated";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 
 import type { BoardStates } from "@orbit-hub/contracts";
@@ -118,27 +115,6 @@ export function BoardTabs({
   const tira = useRef<ScrollView>(null);
 
   /**
-   * How wide the strip is, **as a shared value and not as a state.**
-   *
-   * The animated style below reads it sixty times a second while a finger travels,
-   * and a state would be a render of every pill for every one of those reads. It is
-   * written from the same `onLayout` that fills `anchoTira`, because the state is
-   * still needed: the effect that centres the pill compares against it, and that
-   * comparison is a decision and not an animation.
-   */
-  const ancho = useSharedValue(0);
-
-  /**
-   * The displacement of the pills, **and it is read from a shared value and not
-   * from a number**, so a drag moves the strip without rendering any of it.
-   */
-  const estilo = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: progress.value * (ancho.value || 1) * PARALAJE_TIRA },
-    ],
-  }));
-
-  /**
    * Where each pill is and how wide it is, measured rather than assumed: pill
    * widths come from the length of the state name, which the app does not
    * control, so "the third one is at 180" is a guess that is wrong for every
@@ -147,6 +123,24 @@ export function BoardTabs({
   const [cajas, setCajas] = useState<Record<string, { x: number; width: number }>>({});
   const [anchoTira, setAnchoTira] = useState(0);
   const [anchoContenido, setAnchoContenido] = useState(0);
+
+  /**
+   * The displacement of the pills, **and it is read from a shared value and not
+   * from a number**, so a drag moves the strip without rendering any of it.
+   *
+   * The width it multiplies is `anchoTira`, the state above and not a second
+   * measurement: it is already there for the centring effect, it changes once, and
+   * a value shared for the same number would be a number with two owners. And it is
+   * declared **above** this style rather than beside it because `useAnimatedStyle`
+   * runs its worklet during the render and a `const` read before its declaration is
+   * a `ReferenceError` on the first paint — which is the same class of bug as the
+   * one the typecheck cannot see for the same reason.
+   */
+  const estilo = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: progress.value * anchoTira * PARALAJE_TIRA },
+    ],
+  }));
   /**
    * How far the strip is scrolled, **in a ref and not in a state**: this changes
    * on every frame of a drag, and putting it in a state would re-render twenty-four
@@ -200,11 +194,9 @@ export function BoardTabs({
       style={styles.tira}
       horizontal
       showsHorizontalScrollIndicator={false}
-      onLayout={(event: LayoutChangeEvent) => {
-        const width = event.nativeEvent.layout.width;
-        ancho.value = width;
-        setAnchoTira(width);
-      }}
+      onLayout={(event: LayoutChangeEvent) =>
+        setAnchoTira(event.nativeEvent.layout.width)
+      }
       // Two numbers and not an event: `onContentSizeChange` has always been called
       // with the width and the height of the content, on native and on
       // react-native-web alike (`ScrollView/index.js` in the latter), and the

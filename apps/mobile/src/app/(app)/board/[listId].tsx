@@ -28,7 +28,14 @@ import {
   countInState,
   tasksInState,
 } from "@/lib/lists/board";
-import { nextPageFor } from "@/lib/lists/board-paging";
+import {
+  anchorableColumns,
+  maxTrackScroll,
+  nextPageFor,
+  parallaxPage,
+  trackContentWidth,
+  trackRoomAt,
+} from "@/lib/lists/board-paging";
 import { routeForList } from "@/lib/lists/route";
 import { useTheme } from "@/theme";
 
@@ -194,6 +201,32 @@ export default function BoardScreen() {
    * never scrolled, so the board ran off the bottom of the window instead of
    * scrolling inside its column.
    *
+  /**
+   * The track's own width, measured, **and not the width of the box that measures
+   * the board.**
+   *
+   * The floor of the rubber band is points, and points are measured against the
+   * scroller itself: `maxScroll` is how much wider the row of columns is than the
+   * thing that shows it, and that thing is this scroll view. The two widths are the
+   * same in every measurement so far — 368 and 368 at a 400-point window, 1120 and
+   * 1120 at 1440 with the drawer open — and using the outer one anyway would be a
+   * number that happens to be right, which is the kind this file has been bitten by
+   * twice.
+   */
+  const [anchoPista, setAnchoPista] = useState(0);
+  /**
+   * The height of the track, measured, and zero until it has been.
+   *
+   * **It is a second measurement and not a flex rule, and the reason is a bug that
+   * only a column with more cards than fit shows.** The chain from the track down to
+   * the box of cards is a column of boxes on the web, and every one of them was
+   * sized by its content: `flexGrow: 1` fills what is left but **does not shrink**,
+   * and a box that is `flexShrink: 0` —which is what react-native-web gives every
+   * `View`, and what React Native does too— stays as tall as its content. Measured
+   * with seven cards in a track of 392: the column measured 610 and the box of cards
+   * never scrolled, so the board ran off the bottom of the window instead of
+   * scrolling inside its column.
+   *
    * `flexShrink: 1` on the wrapper would fix the web and is exactly what must not
    * be done there: on native that wrapper is a child of the **row** inside the
    * scroll view, and shrinking in a row is shrinking the width, so four columns of
@@ -240,6 +273,51 @@ export default function BoardScreen() {
 
   /** How many columns the board has, as a plain number for the worklets. */
   const cuantasColumnas = states.length;
+
+  /**
+   * How far the track can be scrolled at all, **in points.**
+   *
+   * `trackContentWidth` is the row of columns the same way `columnOffset` says where
+   * a column starts, so the two agree by construction, and `maxTrackScroll` takes
+   * off what the scroller shows. Measured with five states and four of them visible:
+   * **1403 of content in a track of 1120 gives 283**, which is what the browser
+   * reports as `scrollWidth - clientWidth`.
+   *
+   * It is `anchoPista` and not `ancho` because the scroller is the thing being
+   * measured; see the note on that state.
+   */
+  const maxScroll = maxTrackScroll(
+    anchoPista,
+    trackContentWidth(cuantasColumnas, anchoColumna, gapColumnas),
+  );
+
+  /**
+   * How many columns the board can be **anchored on**, which is fewer than its
+   * states as soon as more than one column is on screen.
+   *
+   * With five states and four visible the scroller has 283 points, which is one
+   * column step, so only two of the five can sit flush against the left edge — and
+   * a swipe has to be counted in those, not in the states, or it lands on a column
+   * with no scroll behind it and moves the tab instead of the board.
+   */
+  const paginas = anchorableColumns(
+    cuantasColumnas,
+    maxScroll,
+    pasoColumna,
+  );
+
+  /**
+   * The travel that is a whole page of parallax, **and `anchoPista` is the strip's
+   * width because the strip is this box.**
+   *
+   * `board-tabs` measures its own width for the same multiplication, and the two
+   * measurements are of one box: the strip and the track are siblings inside the
+   * padded area, both `flex: 1` across it, and both read 368 at a 400-point window
+   * and 1120 at 1440. Taking the track's is not a shortcut — it is what makes the
+   * parallax a fraction of the **board's** travel on every width; see
+   * `parallaxPage`.
+   */
+  const paginaParalaje = parallaxPage(pasoColumna, anchoPista);
 
   /**
    * Whether there is anywhere to page to at all.
@@ -324,11 +402,14 @@ export default function BoardScreen() {
     const index = states.findIndex((state) => state.id === id);
     // An id that is not a column of this board is not something to scroll to.
     if (index < 0) return;
+    const x = columnOffset(index, anchoColumna, gapColumnas);
     setActual(index);
-    pista.current?.scrollTo({
-      x: columnOffset(index, anchoColumna, gapColumnas),
-      animated: true,
-    });
+    // Written here and not only from `onScroll`, because the first scroll event of
+    // an animated jump arrives a frame or more after the jump is asked for — and a
+    // swipe that interrupts a tab tap would re-base against a position the board
+    // has already left. See `scrollPrevio`.
+    scrollPrevio.value = x;
+    pista.current?.scrollTo({ x, animated: true });
   }
 
   /**
@@ -364,6 +445,26 @@ export default function BoardScreen() {
    * third of a column away from where the tabs said they were.
    */
   const fingerDown = useSharedValue(false);
+
+  /**
+   * Where the scroller is, in points, **as a value the interface thread can read.**
+   *
+   * **This is what the floor of the rubber band is measured against, and it is the
+   * second half of the fix.** The floor used to be read off `actual` — the index of
+   * the column the board is anchored on — and the column is not the scroller's
+   * position: from the second column of a board with four visible the scroller is
+   * already at its maximum, so there is nothing to give forward while the index says
+   * there are three columns left. Read here, the floor follows the scroller and
+   * that case answers itself.
+   *
+   * It is written from two places and both are needed. `onScroll` is the truth
+   * during a platform-driven scroll — the wheel, or the animated `scrollTo` of a tab
+   * tap — and `irA` is the truth the instant a jump is asked for, because the first
+   * `onScroll` of a smooth scroll arrives a frame or more later and a swipe that
+   * interrupts a tab tap would otherwise re-base against a position the board has
+   * already left.
+   */
+  const scrollPrevio = useSharedValue(0);
   /**
    * Whether the gesture that is finishing has already decided where the track goes.
    *
@@ -376,31 +477,27 @@ export default function BoardScreen() {
   /**
    * Where the columns are, **and it is one number for the track and for the tabs.**
    *
-   * The room is in columns and not in pages, because a page here is a column: at
-   * the first column there is nothing to the left and at the last there is nothing
-   * to the right, so a drag past either end meets a third of its own travel and
-   * stops. Without it, dragging right on the last column would slide the whole
-   * board sideways and leave a column's worth of empty track on the left, which is
-   * the one thing a board of four columns must never look like.
+   * The floor is `trackRoomAt` — **points of the scroller, read from where it
+   * actually is** — and everything above this note is why. It used to be a count of
+   * columns times the scroller's maximum scroll, which is the same number only when
+   * one column is visible, and the only width measured was that one.
    *
    * **Past the end, only the part past the end is resisted, and by a third.** Not
    * the whole travel: resisting all of it makes a legal swipe feel heavy for its
    * whole length, which is a different complaint from the one this fixes.
    *
    * And it is here, and not inside the animated style, because the tabs read the
-   * same thing: measured in the browser at the last column with a 300-point drag,
-   * the columns moved **84** — `(300 − 14) / 3.4`, the 14 being the slop the
-   * gesture waits before it starts counting — while the pills moved **97**, because
-   * they were reading the travel the finger had made and not the travel there was
-   * room for. **The strip was running away from the board at the one moment both
-   * were supposed to be saying there is nowhere to go**, and the only way that does
-   * not come back is one number read by the two.
+   * same thing: measured in the browser at the last column of a 400-point board with
+   * a 300-point drag, the columns moved **83** and the pills moved **95**, because
+   * the pills were reading the travel the finger had made and the columns the travel
+   * there was room for. **The strip was running away from the board at the one moment
+   * both were supposed to be saying there is nowhere to go**, and the only way that
+   * does not come back is one number read by the two.
    */
   const movido = useDerivedValue(() => {
-    const roomLeft = actual * pasoColumna;
-    const roomRight = (cuantasColumnas - 1 - actual) * pasoColumna;
     let m = trackX.value;
     if (fingerDown.value) {
+      const { roomLeft, roomRight } = trackRoomAt(scrollPrevio.value, maxScroll);
       if (m > roomLeft) m = roomLeft + (m - roomLeft) / EDGE_RESISTANCE;
       if (m < -roomRight) m = -roomRight + (m + roomRight) / EDGE_RESISTANCE;
     }
@@ -412,22 +509,28 @@ export default function BoardScreen() {
   }));
 
   /**
-   * How far along the board the finger is, **as a fraction of one column and with a
+   * How far along the board the finger is, **as a fraction of a page and with a
    * sign**, and it is what the tabs move by.
    *
    * **Out of `movido` and not out of `trackX`**, so the fraction is of the travel
    * there was room for and not of the travel the finger asked for — the note on
    * `movido` says what the other one measured.
    *
+   * The page is `parallaxPage` and not a column, and the reason is that the two
+   * layers have to keep their order: with a column as the unit the strip moves
+   * `0.35 * stripWidth / step` for every point the board moves, which is 0.34 on a
+   * phone and **1.39 on a wide track**, where the strip is four times wider than a
+   * column. Measured at 1440 with five states: a 275-point drag moved the columns
+   * 275 and the pills 381. With the strip's width as the page it is 96.25, which is
+   * a third of 275.
+   *
    * Cut at one, and for the same reason the media carousel cuts its gathering at
-   * one: a drag of 900 points in a column of 380 is a distance of two and a half
-   * columns, and two and a half times the strip's width would fling the pills out
-   * of the strip while the finger is still down. Past a whole column of travel the
-   * strip is simply as far along as it is going to say.
+   * one: past a whole page of travel the strip is simply as far along as it is going
+   * to say, and there is nothing more of it to say it with.
    */
   const progreso = useDerivedValue(() => {
-    if (pasoColumna <= 0) return 0;
-    return Math.max(-1, Math.min(1, movido.value / pasoColumna));
+    if (paginaParalaje <= 0) return 0;
+    return Math.max(-1, Math.min(1, movido.value / paginaParalaje));
   });
 
   /**
@@ -441,9 +544,10 @@ export default function BoardScreen() {
    * change speed, and there is no frame where the track is in two places.
    *
    * Which column it goes to is `nextPageFor`, the pure function: far enough or
-   * fast enough, in the direction of the travel, one column at a time, never past
-   * either end. It is not decided here because a threshold decided in a component
-   * is a threshold no test can reach.
+   * fast enough, in the direction of the travel, one column at a time, and never
+   * past either end of the **pager** — `paginas`, which is what the scroller can
+   * reach and not how many states the board has. It is not decided here because a
+   * threshold decided in a component is a threshold no test can reach.
    *
    * The duration is what is left of the displacement and not a fixed number — see
    * `PAGE_SPEED`. It is compared with nothing: **the scroll of the scroller is
@@ -453,7 +557,7 @@ export default function BoardScreen() {
    */
   const settle = (velocity: number) => {
     'worklet';
-    const next = nextPageFor(trackX.value, velocity, cuantasColumnas, actual);
+    const next = nextPageFor(trackX.value, velocity, paginas, actual);
     const left = Math.abs(trackX.value);
     trackX.value = withTiming(0, {
       duration: Math.min(Math.max(left / PAGE_SPEED, PAGE_MIN), PAGE_MAX),
@@ -683,9 +787,14 @@ export default function BoardScreen() {
                 ref={pista}
                 testID="board-track"
                 style={[styles.pista, estiloPista]}
-                onLayout={(event) =>
-                  setAltoPista(event.nativeEvent.layout.height)
-                }
+                onLayout={(event) => {
+                  setAnchoPista(event.nativeEvent.layout.width);
+                  setAltoPista(event.nativeEvent.layout.height);
+                }}
+                onScroll={(event) => {
+                  scrollPrevio.value = event.nativeEvent.contentOffset.x;
+                }}
+                scrollEventThrottle={16}
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
