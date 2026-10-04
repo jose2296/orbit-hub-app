@@ -532,57 +532,102 @@ function callsIn(node: ts.Node): string[] {
  * rather than a crash on a phone nobody here has.
  */
 describe("a worklet only calls functions that are worklets themselves", () => {
-  const checked: string[] = [];
+  /**
+   * The calls it examined, **in two lists and not one.**
+   *
+   * Two because the guard below has to hold both halves apart, and one list is what
+   * let the auto-detected half go loose: with `AUTO_WORKLETIZED` and
+   * `GESTURE_CALLBACKS` emptied, the worklets that carry the directive still produce
+   * their calls, so the list is not empty and a guard of "the list is not empty"
+   * stays green **with the half that finds the original bug switched off.** Both
+   * halves were in that state and neither noticed.
+   */
+  const conDirectiva: string[] = [];
+  const automaticos: string[] = [];
   const offenders: string[] = [];
 
-  /** Both kinds of worklet: the ones with the directive and the ones the plugin does. */
-  const everyWorklet = (path: string) => [
-    ...workletsInOrder(path, readFileSync(path, "utf8")).map((w) => ({
+  /** The worklets that carry the directive: named functions and arrow consts. */
+  const conLaDirectiva = (path: string) =>
+    workletsInOrder(path, readFileSync(path, "utf8")).map((w) => ({
       where: w.name,
       node: w.node,
-    })),
-    ...autoWorklets(path),
-  ];
+    }));
 
   for (const path of allSourceFiles) {
     const imports = ownImports(path);
     const locals = localFunctions(path);
     const name = path.slice(src.length + 1);
     if (imports.size === 0 && locals.size === 0) continue;
-    for (const worklet of everyWorklet(path)) {
-      for (const callee of callsIn(worklet.node)) {
-        // An imported name wins: if it is ours from another file, that file has to
-        // answer for it, and looking at a same-named local declaration would be
-        // checking the wrong one.
-        const target = imports.get(callee);
-        if (target) {
-          const where = `${name}: ${worklet.where} calls ${callee} from ${target.slice(src.length + 1)}`;
-          checked.push(where);
-          if (!exportedAsWorklet(target, callee)) {
-            offenders.push(`${where}, which is not a worklet`);
+    /**
+     * Both kinds of worklet, **and the kind is kept so the guard can count them
+     * apart.** The ones the plugin workletises on its own are the ones that fixed the
+     * original bug, and they have no directive to be found by.
+     */
+    const mitades: {
+      donde: string[];
+      worklets: { where: string; node: ts.Node }[];
+    }[] = [
+      { donde: conDirectiva, worklets: conLaDirectiva(path) },
+      { donde: automaticos, worklets: autoWorklets(path) },
+    ];
+    for (const { donde, worklets } of mitades) {
+      for (const worklet of worklets) {
+        for (const callee of callsIn(worklet.node)) {
+          // An imported name wins: if it is ours from another file, that file has to
+          // answer for it, and looking at a same-named local declaration would be
+          // checking the wrong one. **`imports.get` returning nothing is also the whole
+          // of "not one of ours from another file",** so there is nothing for a `has`
+          // to add here: if the name were in the map, `get` would have found it.
+          const target = imports.get(callee);
+          if (target) {
+            const where = `${name}: ${worklet.where} calls ${callee} from ${target.slice(src.length + 1)}`;
+            donde.push(where);
+            if (!exportedAsWorklet(target, callee)) {
+              offenders.push(`${where}, which is not a worklet`);
+            }
+            continue;
           }
-          continue;
-        }
-        if (imports.has(callee)) continue;
-        if (!locals.has(callee)) continue;
-        checked.push(`${name}: ${worklet.where} calls ${callee} declared here`);
-        if (!locals.get(callee)) {
-          offenders.push(
-            `${name}: ${worklet.where} calls ${callee}, declared in this ` +
-              "file, which is not a worklet",
-          );
+          if (!locals.has(callee)) continue;
+          donde.push(`${name}: ${worklet.where} calls ${callee} declared here`);
+          if (!locals.get(callee)) {
+            offenders.push(
+              `${name}: ${worklet.where} calls ${callee}, declared in this ` +
+                "file, which is not a worklet",
+            );
+          }
         }
       }
     }
   }
 
-  it("looks at the calls that cross into our own source", () => {
-    // **Every call it examines is one where the answer depends on a directive in
-    // another file**, so an empty list means the scan is not looking rather than
-    // that there is nothing wrong — which is the failure this file exists to
-    // prevent. Today it is three: `snapSize`, `takeRect` and friends in the
-    // panel, `nextPageFor` and `trackRoomAt` in the board.
-    expect(checked.length).toBeGreaterThan(0);
+  it("finds the calls made from a worklet that carries the directive", () => {
+    // Every call on this list is one where the answer depends on a directive, and
+    // **a list that comes out empty means the scan is not looking** rather than that
+    // there is nothing to look at. Today it is `nextPageFor` from `settle`,
+    // `sizeFromDrag` and `oneStepTowards` from the panel's drag, and `dropIndex` and
+    // `rowShift` from the draggable row.
+    expect(conDirectiva.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * **And the half that finds the original bug, which is the one with no directive
+   * to be found by.**
+   *
+   * This is the guard that was missing. With `AUTO_WORKLETIZED` and
+   * `GESTURE_CALLBACKS` emptied, the list above is not empty — the worklets with a
+   * directive still produce their calls — so a single "the list is not empty" guard
+   * stayed green with this half switched off, and the `useDerivedValue` that called
+   * `trackRoomAt` without the directive was never in the examination at all.
+   *
+   * **So this one is pinned by name and not only by count.** A count on its own would
+   * be enough to catch the emptied list, and the name catches the other way round: a
+   * callback that stopped being a worklet position, or a `trackRoomAt` that stopped
+   * being called from one. A guard that fails for a reason that is not a bug is a
+   * guard that gets deleted.
+   */
+  it("finds the calls made from a worklet the plugin workletises on its own", () => {
+    expect(automaticos.length).toBeGreaterThan(0);
+    expect(automaticos.join("\n")).toContain("trackRoomAt");
   });
 
   it("every one of them says it is a worklet on the other side", () => {
