@@ -967,7 +967,7 @@ const es = {
     "Este tablero no tiene estados, así que no puede enseñar tareas.",
 
   /*
-    La hoja de estado, y sus seis frases.
+    La hoja de estado, y sus siete frases.
 
     **`board.move` es un subtítulo y no un título**: el título de la hoja es el
     nombre de la tarea, que es lo que dice de qué hoja es, y la línea de debajo dice
@@ -983,11 +983,19 @@ const es = {
     para un botón —un botón no es una opción—, así que la marca de la columna
     actual le llega a un lector de pantalla como un dibujo. La frase es lo único que
     se puede leer, y por eso está en el `accessibilityLabel` de la fila.
+
+    **`board.editTask` es la puerta al panel de la tarea y no un adorno**: tocar
+    una tarjeta de un tablero abre la hoja de estado —la frase del spec—, así que
+    el único otro blanco de esa tarjeta es el icono, y `TaskRow` lo dibuja
+    **solo si la tarea tiene icono**. Sin esta fila, la descripción, la urgencia y
+    las etiquetas de una tarea sin icono no tienen camino, y el spec dice que la
+    descripción vive en la hoja de edición.
   */
   "board.move": "Mover a otro estado",
   "board.newState": "+ Nuevo estado…",
   "board.newStateName": "Nombre del estado",
   "board.stateLimit": "El máximo son {max} estados. Borra alguno para añadir otro.",
+  "board.editTask": "Editar la tarea",
   "board.editStates": "Editar los estados del tablero",
   "board.stateHere": "está aquí",
 
@@ -1974,16 +1982,23 @@ const en: Record<TranslationKey, string> = {
   "board.noStates": "This board has no states, so it cannot show any tasks.",
 
   /*
-    The sheet of a state, and its five phrases. The title of the sheet is the task's
+    The sheet of a state, and its seven phrases. The title of the sheet is the task's
     name and the line under it is what this one does; the limit carries the
     contract's number instead of a twenty-four written beside it, and the words for
     the current column are in the row's label because the tick is a drawing a screen
     reader is never told about.
+
+    `board.editTask` is the door to the task's own panel rather than decoration:
+    a tap on a board card opens this sheet, and the card's only other target — the
+    icon — is drawn only when the task has one, so without this row the
+    description of an icon-less task has no way in at all. The Spanish note above
+    says the same and longer.
   */
   "board.move": "Move to another state",
   "board.newState": "+ New state…",
   "board.newStateName": "State name",
   "board.stateLimit": "The maximum is {max} states. Delete one to add another.",
+  "board.editTask": "Edit the task",
   "board.editStates": "Edit the board's states",
   "board.stateHere": "is here",
 

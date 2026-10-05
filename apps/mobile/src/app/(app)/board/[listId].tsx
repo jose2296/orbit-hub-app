@@ -405,12 +405,31 @@ export default function BoardScreen() {
   /**
    * The task whose column is being changed, and **nothing else.**
    *
-   * An id and not the row, because the row is read out of `items` here and not
-   * stored: the two writes below carry `version` and `baseVersion`, and a copy
-   * taken when the sheet opened would hand the server a version from before
-   * whatever happened to that task in the seconds the panel was on screen. That is
-   * the whole of what `editing` above already does, and this state is the same
-   * shape for the same reason.
+   * An id and not the row, **and the reason is that an id cannot go stale.**
+   *
+   * The row is re-read out of `items` on every render below, so what this state
+   * holds is only ever the *name* of a task, and every field that a write could
+   * take —the row's `version`, its `stateId`, its title — is read at the moment of
+   * the write and not at the moment the sheet opened. A copy of the row stored
+   * here would be a snapshot, and a snapshot is exactly what a concurrent write on
+   * another device makes wrong.
+   *
+   * **What does NOT justify it, because it was measured and it is false:** the
+   * first version of this comment said that `updateItem` and `localUpdate` carry
+   * `version` and `baseVersion` from the row handed to them, so a stale copy would
+   * hand the server an old version. Neither does. `updateItem` keys the write on
+   * `item.id` alone (`use-lists.ts`) and `localUpdate` reads the cached version
+   * itself when it runs (`lib/offline/sync-service.ts`). So the two writes below
+   * would have been fine with a stored row, and the sentence was a mechanism the
+   * code does not use.
+   *
+   * The shape is already the hook's: `moveItemTo` takes an **id** and re-reads the
+   * rows — and their `version` — out of the local store itself (`use-lists.ts`).
+   *
+   * It becomes load-bearing the day a write has to send the row's `version`, and
+   * that is forward-looking rather than measured: **no such read exists in this
+   * checkout.** The choice stands because an id is the one shape that cannot be
+   * out of date.
    */
   const [cambiandoEstado, setCambiandoEstado] = useState<string | null>(null);
   const tareaEstado = useMemo(
@@ -1113,12 +1132,19 @@ export default function BoardScreen() {
                         "Mover de estado". Moving a task between columns is the thing a
                         board is for and it had no way in from a card at all.
 
-                        **The task panel is still here and is still reachable**: the
-                        icon on the card opens it on the icons page, and that page has
-                        a "back" to the rest of the panel, so the title, the
-                        description and the labels of a task on a board are all still
-                        editable. What is gone is the shortest road to them, and that
-                        is the trade the spec makes.
+                        **The task panel is still mounted and it is still reachable**,
+                        but not from the card's own press and **not through the icon
+                        either**, which is what the first version of this comment
+                        claimed and it was false: `task-row.tsx` draws the icon
+                        pressable only as `{item.icon ? … : null}` and `icon` is
+                        `null` on every task created in the app
+                        (`item-record.ts`), so on an icon-less card — the default,
+                        and every card this walkthrough seeded — the title, the
+                        description, the urgency and the labels had **no route at
+                        all**. The road now is the state sheet's own row
+                        `board.editTask`, which opens this panel on the task that
+                        was tapped. The spec puts it exactly there: *"Desde ahí se
+                        entra al editor completo"*.
 
                         With `readOnly` there is no state sheet mounted below, so this
                         press has nowhere to go, and it is stopped here rather than
@@ -1198,6 +1224,29 @@ export default function BoardScreen() {
           readOnly={readOnly}
           onPick={moverA}
           onCreate={(titulo) => void crearEstadoYMover(titulo)}
+          /*
+            The task's own panel, **and the id is read from `tareaEstado` and not
+            carried as a second argument.** `onEditTask` is called **before**
+            `onClose`, in the same handler and therefore in the same commit, so
+            `cambiandoEstado` is still the id of the card that se toco cuando esto
+            corre; las dos actualizaciones aterrizan juntas y `editingItem` de abajo
+            resuelve la fila fuera de `items` por ese id, que es la misma busqueda
+            que hace cualquier otra pulsacion.
+
+            **Lo que esto NO es** es una lectura del `tarea` congelado de la hoja.
+            Daria la misma respuesta hoy, y la seguiria dando para una pulsacion que
+            llega 300 ms despues de que la hoja empezara a irse —`useLastValue`
+            sigue dibujando la tarea que le dieron. El estado de arriba es el que
+            sabe si hay una tarea, asi que es el que contesta.
+
+            `page: "edit"` y no los iconos: el icono es su propio blanco en la
+            tarjeta y esta fila es sobre la tarea entera.
+          */
+          onEditTask={() => {
+            const fila = tareaEstado;
+            if (!fila) return;
+            setEditing({ itemId: fila.id, page: "edit" });
+          }}
           onEditStates={() => {
             // Task 11. Deliberately empty, and written as a body with a name
             // rather than as `() => {}` so that it reads as unfinished here and

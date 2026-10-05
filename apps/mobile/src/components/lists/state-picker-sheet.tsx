@@ -32,6 +32,22 @@ export interface StatePickerSheetProps {
   onPick: (stateId: string) => void;
   /** Create a column **and** move the task into it. One tap, two writes. */
   onCreate: (title: string) => void;
+  /**
+   * Opens the panel of **this** task, and it is a separate prop from
+   * `onEditStates` because they are two different editors: one is about the task
+   * (name, description, urgency, labels, icon) and the other is about the board's
+   * columns.
+   *
+   * **And it is here at all because the card's own press is this sheet.** The spec's
+   * sentence is *"Tocar la tarjeta abre la hoja de estado"* ("Mover de estado"), so a
+   * tap on a board card opens this panel and not the task panel — and the only other
+   * target on a card is the icon, which `TaskRow` draws **only when the task has
+   * one** (`item.icon ? … : null`), and `icon` is `null` for every task created in
+   * the app. So without this link the description, the urgency and the labels of an
+   * icon-less board task have no route at all, and the spec says the description
+   * *"vive en la hoja de edición"*: it would live nowhere.
+   */
+  onEditTask: () => void;
   /** Opens the editor that renames, colours, reorders and deletes columns. */
   onEditStates: () => void;
   onClose: () => void;
@@ -62,6 +78,7 @@ export function StatePickerSheet({
   readOnly,
   onPick,
   onCreate,
+  onEditTask,
   onEditStates,
   onClose,
 }: StatePickerSheetProps) {
@@ -272,21 +289,61 @@ export function StatePickerSheet({
       </View>
 
       {/*
-        The full editor, **underneath and not instead of**: this panel answers "which
-        column" and the editor answers "what columns are there". A board at the cap
-        has no way to add one from here, so the door to rearranging them has to be
-        on the sheet somebody opens when they want to move a card.
+        **Two doors, and both of them underneath and not instead**: this panel
+        answers "which column", the task's own panel answers "what this task is" and
+        the states editor answers "what columns are there". A board at the cap has no
+        way to add one from here, so the door to rearranging them has to be on the
+        sheet somebody opens when they want to move a card — and the door to the
+        description has to be there too, because **this sheet is what a tap on a card
+        opens** and a card has no other target unless it has an icon.
 
-        `onEditStates` and not a second sheet: two panels on one screen are two
-        backdrops, and a press that reaches the wrong one closes what is under it
-        instead of doing what was asked. That is the argument in `list-menu-sheet.tsx`
-        for making share, rename and delete pages of one panel.
+        **Neither is a second sheet**: two panels on one screen are two backdrops,
+        and a press that reaches the wrong one closes what is under it instead of
+        doing what was asked. That is the argument in `list-menu-sheet.tsx` for making
+        share, rename and delete pages of one panel.
 
-        **It closes this one on the way out**, in the order `exportar` there uses:
+        **Both close this one on the way out**, in the order `exportar` there uses:
         the panel leaves and the next thing arrives behind it, so the two are never
         both up for longer than the exit.
+
+        The task panel is **above** the states editor and not below it: it is about
+        the thing the sheet is open for, and the other one is about the board. That
+        is the only ordering decision here and it is a preference, not a
+        measurement.
       */}
-      <View style={{ marginTop: theme.spacing.md }}>
+      <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
+        {/*
+          The task's own panel, **and this is the door that did not exist.** A tap on
+          a board card opens this sheet — that is the spec's sentence — so the card's
+          only other target, the icon, is the only road to the description, the
+          urgency and the labels, and `TaskRow` draws that icon **only when the task
+          has one** (`item.icon ? … : null`, and `icon` is `null` on every task
+          created in the app). For an icon-less task the road ended here.
+
+          **It is a row of this sheet and not a second target on the card** for the
+          same reason `onEditStates` is not: two panels on one screen are two
+          backdrops, and the second sheet is the list screen's own `ItemEditSheet`,
+          which knows about tags, icon colours and the description field. A card
+          with one more glyph on it would be a control that says "edit" on something
+          whose name and picture live three centimetres away from it.
+
+          **`onEditTask` before `onClose`,** the order the editor below already uses
+          and for the same reason: this panel leaves and the task panel arrives
+          behind it, so the two are never both up for longer than the exit. The
+          screen reads the task out of its own state —not out of the `item` this
+          sheet was handed— and it does it in the same commit, so it still has it.
+        */}
+        <Button
+          testID="state-picker-edit-task"
+          label={t("board.editTask")}
+          variant="ghost"
+          icon="create-outline"
+          fullWidth
+          onPress={() => {
+            onEditTask();
+            onClose();
+          }}
+        />
         <Button
           testID="state-picker-edit"
           label={t("board.editStates")}

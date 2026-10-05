@@ -241,14 +241,43 @@ const listId = randomUUID();
 const at = new Date().toISOString();
 const CLIENT = "verify-state-picker";
 
-/** Los ids de las tareas, para buscar su tarjeta por `testID` y no por su texto. */
+/**
+ * Los ids de las tareas, para buscar su tarjeta por `testID` y no por su texto.
+ *
+ * **Una de las ocho lleva icono, y es a propósito.** Las ocho sin icono —que es
+ * lo que sale por defecto, porque `item-record.ts` pone `icon: null` cuando no
+ * viene— no dibujan el icono pulsable de la tarjeta (`task-row.tsx`:
+ * `{item.icon ? … : null}`), así que la otra ruta al panel de la tarea no existe y
+ * un recorrido sembrado solo así no puede comprobar la que importa: que el panel
+ * se alcanza **desde una tarjeta sin icono**. Con una tarjeta con icono, el
+ * recorrido mira las dos puertas y puede decir la verdad sobre la segunda.
+ */
+const CON_ICONO = "Ready-2";
+/**
+ * Una descripcion sembrada, y en `Ready-1` a proposito.
+ *
+ * El spec dice que la tarjeta **no** lleva la descripcion y que "vive en la hoja de
+ * edicion", asi que el unico sitio donde se la puede ver es el panel de la tarea. Con
+ * el campo vacio, una comprobacion que lo encuentra prueba que hay un `textarea`;
+ * con texto en el, prueba **que es la descripcion de esa tarea y no un hueco**.
+ */
+const CON_DESCRIPCION = "Ready-1";
+const DESCRIPCION = "Traer dos bolsas";
 const TAREAS = ESTADOS.slice(0, 4).flatMap((estado, indice) =>
-  [0, 1].map((n) => ({
-    id: randomUUID(),
-    title: `${estado.title}-${n + 1}`,
-    position: indice * 2 + n,
-    stateId: indice === 0 ? null : estado.id,
-  })),
+  [0, 1].map((n) => {
+    const title = `${estado.title}-${n + 1}`;
+    return {
+      id: randomUUID(),
+      title,
+      position: indice * 2 + n,
+      stateId: indice === 0 ? null : estado.id,
+      // `pan` esta en `ITEM_ICONS` (`packages/contracts/src/item-icons.ts`) y el
+      // contrato lo acepta como `z.enum(ITEM_ICONS)`, asi que no hay que inventarse
+      // un icono que el servidor vaya a rechazar.
+      ...(title === CON_ICONO ? { icon: "pan" } : {}),
+      ...(title === CON_DESCRIPCION ? { annotation: DESCRIPCION } : {}),
+    };
+  }),
 );
 const porTitulo = new Map(TAREAS.map((t) => [t.title, t]));
 /** Id -> título, para el código que corre dentro de la página. */
@@ -307,6 +336,8 @@ const sembrado = await api("/sync/push", {
           title: tarea.title,
           position: tarea.position,
           ...(tarea.stateId ? { stateId: tarea.stateId } : {}),
+          ...(tarea.icon ? { icon: tarea.icon } : {}),
+          ...(tarea.annotation ? { annotation: tarea.annotation } : {}),
         },
       })),
     ],
@@ -335,7 +366,15 @@ if (failures > 0) {
 
 /** Las filas de la hoja, con su nombre y su número, tal como están pintadas. */
 const LEER_HOJA = `(() => {
-  const panel = document.querySelector('[data-testid="sheet-panel"]');
+  // **El panel se busca por lo que tiene dentro y no por el primero del
+  // documento.** \`ItemEditSheet\` usa el mismo \`Sheet\` y por tanto el mismo
+  // \`sheet-panel\`, asi que con los dos montados —la hoja de estado saliendo y el
+  // panel de la tarea entrando— \`querySelector\` devuelve el que se va y esta
+  // funcion leeria filas de un panel que ya no esta en pantalla. Se elige el que
+  // tiene una fila de estado, y \`null\` cuando no hay ninguno: que no haya filas es
+  // lo que "la hoja esta cerrada" quiere decir aqui.
+  const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+  const panel = paneles.find((p) => p.querySelector('[data-testid^="state-picker-row-"]')) ?? null;
   if (!panel) return null;
   const filas = [...panel.querySelectorAll('[data-testid^="state-picker-row-"]')].map((el) => {
     const id = el.getAttribute('data-testid').replace('state-picker-row-', '');
@@ -357,6 +396,10 @@ const LEER_HOJA = `(() => {
     filas,
     nuevo: nuevo ? { texto: nuevo.innerText, disabled: nuevo.getAttribute('aria-disabled') === 'true' || nuevo.disabled === true } : null,
     hayBotonEditar: !!panel.querySelector('[data-testid="state-picker-edit"]'),
+    // El panel de la tarea, y es un testID aparte del de los estados porque son
+    // dos editores distintos —el de la tarea y el del tablero— y porque esta es la
+    // unica puerta que queda al panel cuando la tarjeta no tiene icono.
+    hayBotonEditarTarea: !!panel.querySelector('[data-testid="state-picker-edit-task"]'),
     texto: panel.innerText,
   };
 })()`;
@@ -389,6 +432,42 @@ const TABLERO = `(() => {
 })()`;
 
 const readBoard = (tab) => tab.evaluate(TABLERO);
+
+/**
+ * El panel de la tarea, y **que `item-name` sea la prueba y no el titulo**.
+ *
+ * `item-name` es el `testID` del campo del nombre en la pagina de edicion de
+ * `item-edit-sheet.tsx`, y **solo existe en esa pagina**: los iconos, las
+ * etiquetas y la de marcar tienen las suyas. El titulo del panel lo pone
+ * cualquiera de las paginas, asi que un `ok` sobre el titulo no distingue "ha
+ * abierto el panel de la tarea" de "ha abierto el panel de otra cosa".
+ *
+ * La descripcion se busca como un `textarea`, y no por un `testID` suyo, porque
+ * **no lo tiene**: `TextField` no lo pone y `multiline` es lo unico que la
+ * distingue. En la pagina de edicion hay exactamente un `textarea` —la
+ * descripcion—, y esta comprobacion cuenta eso en vez de suponerlo.
+ */
+const LEER_PANEL_TASK = `(() => {
+  // **Se mira en todos los paneles y no en el primero**, y el motivo es la
+  // transicion: la hoja de estado no se desmonta hasta \`SALIDA + 90\` = 330 ms
+  // (\`sheet.tsx\`) y el panel de la tarea se monta en el mismo commit, asi que
+  // durante la salida hay **dos** \`sheet-panel\` en el documento y
+  // \`querySelector\` devuelve el que se va. El que tiene \`item-name\` es el que
+  // importa, y se busca por ese.
+  const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+  const panel = paneles.find((p) => p.querySelector('[data-testid="item-name"]')) ?? null;
+  if (!panel) return { nombre: null, descripcion: null, areas: 0, paneles: paneles.length };
+  const nombre = panel.querySelector('[data-testid="item-name"]');
+  const areas = [...panel.querySelectorAll('textarea')];
+  return {
+    nombre: nombre ? nombre.value : null,
+    // El valor, y no un booleano: un \`textarea\` vacio prueba que hay un campo, y lo
+    // que se quiere es que **sea el de la descripcion de esta tarea**.
+    descripcion: areas.length === 1 ? areas[0].value : null,
+    areas: areas.length,
+    paneles: paneles.length,
+  };
+})()`;
 
 /** Donde esta el centro de un elemento por su `testID`, o `null` si no esta. */
 /**
@@ -459,6 +538,51 @@ async function tap(tab, testId, dentro) {
   await sleep(400);
   return p;
 }
+
+/**
+ * Esperar a que la hoja no este, en vez de mirarla una vez.
+ *
+ * **El montage la tarda, y eso no es un detalle del guion.** `Sheet` monta el panel
+ * mientras `visible` es falso, se va con `SALIDA + 90` = 330 ms (`sheet.tsx`: 240 de
+ * viaje y 90 de red de seguridad) y `tap` duerme 400. Preguntar al final de esos
+ * 400 gana por 70 ms, y 70 ms es el margen que tiene cualquier vez que el navegador
+ * va cargado —el fallo sale como "la hoja no se cierra" y no como "la maquina
+ * tardo".
+ *
+ * Se pregunta cada 60 ms hasta un segundo, y se dice cuanto se tardo, para que un
+ * "no se cierra" de verdad y un "tardo" se lean distinto en la linea del `ok`.
+ *
+ * **La sonda es un parametro y no `LEER_HOJA` a pelo**, porque esta misma espera
+ * la usan las dos hojas del recorrido y "cerrada" significa una cosa distinta en
+ * cada una: para la hoja de estado es que no queden filas suyas, y para el panel de
+ * la tarea es que no quede **ningun** `sheet-panel` en el documento —la de estado ya
+ * se habia ido, asi que preguntar por sus filas daria "cerrado" con el otro
+ * abierto—.
+ */
+async function esperarPanelFuera(tab, abierto, limiteMs = 1000) {
+  const esperando = Date.now();
+  let sigue = true;
+  while (Date.now() - esperando < limiteMs) {
+    sigue = Boolean(await tab.evaluate(abierto));
+    if (!sigue) break;
+    await sleep(60);
+  }
+  const ms = Date.now() - esperando;
+  return {
+    sigue,
+    detalle: sigue
+      ? `sigue en pantalla ${ms} ms despues del toque (limite: ${limiteMs})`
+      : `fuera de la pantalla en ${ms} ms`,
+  };
+}
+
+/** La sonda de la hoja de estado: hay un `sheet-panel` con filas suyas. */
+const HAY_HOJA = `!!document.querySelector('[data-testid="sheet-panel"]:has([data-testid^="state-picker-row-"])')`;
+/** La sonda del panel de la tarea: hay cualquier `sheet-panel` en el documento. */
+const HAY_PANEL_TASK = `!!document.querySelector('[data-testid="sheet-panel"]')`;
+
+const esperarHojaCerrada = (tab) => esperarPanelFuera(tab, HAY_HOJA);
+const esperarTareaCerrada = (tab) => esperarPanelFuera(tab, HAY_PANEL_TASK);
 
 /**
  * **Tocar una tarjeta por su boton de titulo**, y no por el centro de la tarjeta.
@@ -624,7 +748,33 @@ try {
       `Ready dice ${contadores.find((c) => c.id === ESTADOS[1].id)?.numero}, y sus tareas son 2`,
     );
 
+    /*
+      **El relleno de la fila marcada, comparado con el de una que no lo esta.**
+
+      `LEER_HOJA` lee el `backgroundColor` de cada fila desde el principio del
+      recorrido, y hasta ahora **nada comprobaba sobre el**: en la pasada en claro
+      no se miraba y en la oscura solo se anotaba. Asi que una regresion que
+      dejara la fila actual sin `surfaceMuted` —que `sheet.tsx` y
+      `board-column.tsx` justifican los dos como algo de lo que la pantalla
+      depende— pasaria el recorrido entero y en verde.
+
+      La comprobacion es una **diferencia entre las dos filas y no un color
+      escrito aqui**: el token lo resuelve el tema, y lo que tiene que ser cierto
+      es que la marcada se distingue de la que tiene al lado. Se compara con la
+      primera fila sin marcar y se imprimen los dos valores, para que un fallo diga
+      que colores se dibujaron.
+    */
+    const sinMarcar = hoja.filas.find((f) => !f.marcada);
+    check(
+      "**la fila marcada sale con un fondo distinto al de las demas**",
+      Boolean(marcada) && Boolean(sinMarcar) && Boolean(marcada.fondo) &&
+        marcada.fondo !== sinMarcar.fondo,
+      `marcada ${marcada?.titulo ?? "-"}: ${marcada?.fondo ?? "-"} | ` +
+        `sin marcar ${sinMarcar?.titulo ?? "-"}: ${sinMarcar?.fondo ?? "-"}`,
+    );
+
     check("hay enlace al editor completo", hoja.hayBotonEditar);
+    check("y hay un enlace al panel de la tarea", hoja.hayBotonEditarTarea);
     await tab.screenshot(`${SHOTS}/02-hoja-abierta-claro.png`);
   }
 
@@ -683,9 +833,138 @@ try {
   /** Los cinco segundos de gracia del agrupador, redondeados a seis. */
   const ESPERA = 6000;
 
+  /* --- 1b. Las dos puertas al panel de la tarea --- */
+
+  /*
+    **Este bloque es el que comprueba el hallazgo de la primera revision: sin el,
+    el recorrido entero pasa en verde con la descripcion sin camino a ninguna parte.**
+
+    La hoja sigue abierta sobre `Ready-1`, que **no tiene icono** —la siembra lo
+    pone solo en `CON_ICONO`—, y por lo tanto su tarjeta no dibuja el icono
+    pulsable de `TaskRow` (`{item.icon ? … : null}`). Lo que se comprueba aqui es:
+
+    1. que la tarjeta **con** icono sembrado si lo dibuja, y que la **sin** icono no
+       —el hecho que hace necesaria la segunda puerta, medido y no supuesto;
+    2. que la hoja tiene la fila `state-picker-edit-task`;
+    3. que esa fila abre **el panel de la tarea** con el nombre y **la descripcion
+       que se sembraron**, que es donde el spec dice que vive.
+
+    Se mira `item-name` y no el titulo del panel porque `item-name` es un
+    `testID` que **solo existe en la pagina de edicion** de `item-edit-sheet.tsx`:
+    el titulo lo pone cualquiera de las paginas, el campo del nombre no.
+  */
+  const tarjetas = await tab.evaluate(`(() => {
+    const ids = ${JSON.stringify(TAREAS.map((t) => t.id))};
+    return ids.map((id) => {
+      const el = document.querySelector('[data-testid=' + JSON.stringify('item-row-' + id) + ']');
+      return {
+        id,
+        enElTablero: !!el,
+        conIcono: !!el?.querySelector('[data-testid^="item-icon-"]'),
+      };
+    });
+  })()`);
+  const conIcono = tarjetas.find((t) => t.id === porTitulo.get(CON_ICONO).id);
+  const sinIcono = tarjetas.find((t) => t.id === porTitulo.get(CON_DESCRIPCION).id);
+  check(
+    `la tarjeta de "${CON_ICONO}" (sembrada con icono) dibuja su icono pulsable`,
+    Boolean(conIcono?.conIcono),
+    `${CON_ICONO} en el tablero: ${conIcono?.enElTablero}, con icono: ${conIcono?.conIcono}`,
+  );
+  check(
+    `**y la de "${CON_DESCRIPCION}", sembrada sin icono, NO dibuja ninguno** — por eso hace falta la fila del panel`,
+    sinIcono?.enElTablero === true && sinIcono?.conIcono === false,
+    `${CON_DESCRIPCION} en el tablero: ${sinIcono?.enElTablero}, con icono: ${sinIcono?.conIcono}`,
+  );
+
+  await tap(tab, "state-picker-edit-task");
+  const panelDeLaTarea = await tab.evaluate(LEER_PANEL_TASK);
+  check(
+    "**desde una tarjeta SIN icono se llega al panel de la tarea, con su nombre y su descripcion**",
+    panelDeLaTarea?.nombre === "Ready-1" && panelDeLaTarea?.descripcion === DESCRIPCION,
+    `nombre: ${panelDeLaTarea?.nombre ?? "(no hay panel con item-name)"} | ` +
+      `descripcion: ${panelDeLaTarea?.descripcion ?? "-"} (sembrada: "${DESCRIPCION}") | ` +
+      `textareas: ${panelDeLaTarea?.areas ?? "-"} | paneles a la vez: ${panelDeLaTarea?.paneles ?? "-"}`,
+  );
+  await tab.screenshot(`${SHOTS}/12-panel-desde-una-tarjeta-sin-icono.png`);
+
+  /*
+    **El panel se cierra por el boton de la `X`, con el mismo toque que el resto del
+    recorrido** y no con un `click` sintetico. `sheet.tsx` pone ese boton como un
+    `Pressable` con `accessibilityRole="button"`, y react-native-web lo pinta como
+    un `<div role="button">` con manejadores de puntero: un `MouseEvent('click')`
+    a pelo depende de que el navegador sintetice los de compatibilidad y es
+    exactamente el atajo que el comentario de `tap` dice que no funciona. Se toca
+    por coordenadas con `Input.dispatchTouchEvent`.
+
+    **Se busca por su etiqueta y no por "el primer boton del panel".** La `X` de
+    `sheet.tsx` es un `Pressable` con `accessibilityLabel={t("common.close")}`, y esa
+    etiqueta es lo unico que la distingue: la pagina de edicion tiene cuatro
+    prioridades pulsables y un boton por etiqueta, todos con `role="button"`, asi que
+    "el primero" seria el que saliera por orden del DOM.
+
+    **La frase se lee del pulsable de fuera y no esta escrita aqui.** Ese pulsable y el
+    boton de la `X` llevan la misma etiqueta, y el pulsable esta **fuera** del panel
+    —es su hermano en el `root` de `Sheet`—, asi que tomarla de ahi la deja en el
+    idioma que tenga la sesion y no en el que el fichero asumia. Es el hermano
+    **siguiente** al `sheet-dim` porque ese es el orden del fuente; un "primer
+    `aria-label` que diga cerrar" en la pagina es "Cerrar el menú" de la cabecera, y
+    eso es exactamente lo que fallo en la primera corrida.
+  */
+  const botonDeCerrar = await tab.evaluate(`(() => {
+    const panel = [...document.querySelectorAll('[data-testid="sheet-panel"]')]
+      .find((p) => p.querySelector('[data-testid="item-name"]'));
+    if (!panel) return { error: 'no hay panel con item-name' };
+    // **La frase se lee del fondo pulsable, que es el hermano siguiente al
+    // \`sheet-dim\`**, y no de cualquier \`aria-label\` que diga "cerrar": en una
+    // pantalla de listas hay media docena ("Cerrar el menú" entre ellas) y el
+    // primero que aparece no es el de la hoja. La posicion es la de \`sheet.tsx\`:
+    // dim, pulsable de fuera, panel.
+    const dim = document.querySelector('[data-testid="sheet-dim"]');
+    const frase = dim?.nextElementSibling?.getAttribute('aria-label');
+    if (!frase) return { error: 'el pulsable de fuera no tiene aria-label' };
+    const botones = [...panel.querySelectorAll('[aria-label="' + frase + '"]')];
+    if (botones.length !== 1) return { error: 'botones con "' + frase + '" dentro del panel: ' + botones.length };
+    const r = botones[0].getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`);
+  if (botonDeCerrar.error) {
+    check("el panel de la tarea se cierra con su boton", false, botonDeCerrar.error);
+  } else {
+    await tab.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: botonDeCerrar.x, y: botonDeCerrar.y, radiusX: 8, radiusY: 8, force: 1 }],
+    });
+    await sleep(80);
+    await tab.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  }
+  const panelFuera = await esperarTareaCerrada(tab);
+  check(
+    "**y el panel de la tarea se cierra con su boton, y la hoja de estado se fue con el**",
+    panelFuera.sigue === false && (await tab.evaluate(LEER_HOJA)) === null,
+    `${panelFuera.detalle} — hoja de estado: ${
+      (await tab.evaluate(LEER_HOJA)) === null ? "cerrada tambien" : "SIGUE ABIERTA"
+    }`,
+  );
+
+  /* --- 2. Elegir la columna en la que ya esta: no encola nada --- */
+
   const desde1 = Date.now();
+  await tapTarjeta(tab, porTitulo.get("Ready-1").id);
+  await sleep(300);
   await tap(tab, `state-picker-row-${ESTADOS[1].id}`);
-  check("la hoja se cierra al elegir", (await tab.evaluate(LEER_HOJA)) === null);
+  /*
+    **Esperar a que se cierre, y no suponer que ya se ha cerrado.**
+
+    `tap` duerme 400 ms al final y el panel se desmonta en `SALIDA + 90` = **330 ms**
+    (`sheet.tsx`), asi que los 400 ms ganaban por 70: una comprobacion que funciona
+    por 70 ms de margen es una comprobacion que falla cuando el navegador va
+    cargado, y un recorrido que falla por eso se lee como "la hoja no se cierra"
+    cuando lo que se rompio fue la maquina. Se pregunta cada 60 ms hasta un segundo
+    y se dice cuanto se tardo.
+  */
+  const cerrada = await esperarHojaCerrada(tab);
+  check("la hoja se cierra al elegir", cerrada.sigue === false, cerrada.detalle);
   await sleep(ESPERA);
   const c1 = cuenta(desde1);
   check(
@@ -1019,14 +1298,43 @@ try {
     Boolean(marcadaEnOscuro) && marcadaEnOscuro.id === columnaEsperada,
     `marcada: ${marcadaEnOscuro?.titulo ?? "ninguna"} (se esperaba ${ESTADOS.find((e) => e.id === columnaEsperada)?.title})`,
   );
-  const fondoDeLaMarcada = marcadaEnOscuro
-    ? oscuro.filas.find((f) => f.id === marcadaEnOscuro.id)?.fondo
-    : null;
-  note(`fondo de la fila marcada en oscuro: ${fondoDeLaMarcada}`);
+  /*
+    El relleno en oscuro, **comparado con el de una fila sin marcar y no anotado**.
+
+    Antes esto era un `note`, que es lo mismo que no comprobar: el `ok` de arriba
+    ("el estado actual sale marcado tambien") va del `aria-label` y pasaria igual
+    con la fila sin un solo pixel de diferencia con las de al lado. Ahora es la
+    misma comprobacion que la de la pasada en claro —una diferencia entre las dos
+    filas, no un color escrito aqui— y en las dos pasadas.
+  */
+  const sinMarcarEnOscuro = oscuro?.filas?.find((f) => !f.marcada);
+  check(
+    "**y en oscuro la fila marcada sale con un fondo distinto al de las demas**",
+    Boolean(marcadaEnOscuro) && Boolean(sinMarcarEnOscuro) &&
+      Boolean(marcadaEnOscuro.fondo) && marcadaEnOscuro.fondo !== sinMarcarEnOscuro.fondo,
+    `marcada ${marcadaEnOscuro?.titulo ?? "-"}: ${marcadaEnOscuro?.fondo ?? "-"} | ` +
+      `sin marcar ${sinMarcarEnOscuro?.titulo ?? "-"}: ${sinMarcarEnOscuro?.fondo ?? "-"}`,
+  );
   await tab.screenshot(`${SHOTS}/11-hoja-oscuro.png`);
 
+  /*
+    **El filtro es estrecho a proposito, y lo que estaba ahi antes tapaba justo lo
+    que este recorrido necesita.**
+
+    Se filtraba **todo** `Failed to load resource`, y un `POST /sync/push` que
+    saliera con un 4xx o un 5xx sale por la consola con ese texto —que es el mismo
+    que el de un `favicon` que no existe. O sea: el endpoint del que dependen la
+    mitad de las comprobaciones de este fichero podia estar fallando y el "sin
+    errores de consola" salia en verde. El precedente del repo
+    (`scripts/verify-social.mjs:391`) estrecha a `.*favicon`, y se sigue ahi:
+    `Failed to load resource` sin el `.*favicon` **no** se filtra, porque es un
+    fallo de una peticion y no el ruido de un icono que nadie pidio.
+
+    `10.0.2.2` y `4000` siguen fuera porque son los otros dos hosts de este
+    entorno —el emulador y el puerto de otro checkout— y no son de esta app.
+  */
   const errores = problems.filter(
-    (p) => !/10\.0\.2\.2|4000|Failed to load resource/.test(p.text),
+    (p) => !/10\.0\.2\.2|:4000|Failed to load resource.*favicon/i.test(p.text),
   );
   check("sin errores de consola ni promesas rotas", errores.length === 0,
     errores.slice(0, 4).map((e) => e.text.slice(0, 160)).join(" | "));

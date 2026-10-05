@@ -26,6 +26,8 @@ const taskRow = src('src/components/lists/task-row.tsx');
 const appHeader = src('src/components/ui/app-header.tsx');
 const screen = src('src/components/ui/screen.tsx');
 const spaceBand = src('src/components/workspace/space-band.tsx');
+const statePickerSheet = src('src/components/lists/state-picker-sheet.tsx');
+const boardScreen = src('src/app/(app)/board/[listId].tsx');
 
 describe('la casilla no se come la fila', () => {
   /**
@@ -134,6 +136,44 @@ describe('la fila sabe dibujarse sin casilla y con filo de estado', () => {
     // put an edge on every row of every list.
     expect(taskRow).toContain('...(edgeColor');
     expect(taskRow).toContain('borderLeftColor: edgeColor');
+  });
+
+  /**
+   * The card of a board has **two** doors to the task panel, and only one of them
+   * is drawn per card.
+   *
+   * A tap on a board card opens the **state** sheet — the spec's own sentence,
+   * *"Tocar la tarjeta abre la hoja de estado"* — and the card's other target is the
+   * icon, which is drawn **only when the task has one**: `{item.icon ? … : null}`,
+   * and `icon` is `null` on every task created in the app (`item-record.ts`). So on
+   * an icon-less card the icon is not a second door, it is no door at all.
+   *
+   * That is not hypothetical: it is what the first review of Task 10 found. A card
+   * tap opened the state sheet, the sheet had no link to the task panel, and the
+   * **description — which the spec says lives in the edit sheet — had no route at
+   * all**. The comment in the screen claimed the panel was reachable through the
+   * icon, and it was reachable on no card the walkthrough had ever seeded.
+   *
+   * So the second door is a row of the state sheet (`state-picker-edit-task`), and
+   * these assertions are here because a route that exists only in someone's head
+   * is exactly what went missing. The browser walkthrough proves the door opens;
+   * these prove it is still in the source, without a browser.
+   */
+  it('la tarjeta de un tablero tiene dos puertas al panel, y una solo se dibuja con icono', () => {
+    // The icon is conditional — this is the fact the whole second door rests on.
+    expect(taskRow).toContain('{item.icon ? (');
+    // And the state sheet has the door for the card that has no icon.
+    expect(statePickerSheet).toContain('testID="state-picker-edit-task"');
+    expect(statePickerSheet).toContain('onEditTask');
+    // It is wired, not declared: a prop nobody passes is a row that does nothing,
+    // and that is a no-op dressed as a feature.
+    expect(boardScreen).toContain('onEditTask={');
+    // And the row asks the screen for the task that was tapped rather than
+    // guessing: the screen reads it out of `cambiandoEstado`, which is the state
+    // that knows whether there is a task, and the press and the close are one
+    // commit so it is still the right id when this runs.
+    expect(boardScreen).toContain('const fila = tareaEstado;');
+    expect(statePickerSheet).toContain('onEditTask();');
   });
 
   it('la pantalla de listas usa la fila del componente, y no una suya', () => {
