@@ -233,10 +233,20 @@ dia del ultimo domingo de octubre.
 `AGENTS.md` (regla 7) dice que toda ruta de escritura tiene que funcionar sin
 conexion. Marcar un habito en un avion no funciona si no entra al outbox.
 
-`'habit'` y `'habit_entry'` se anaden a `syncEntitySchema`, con merge dedicado en
-`lib/offline/merge/`, proyeccion en `/sync/pull` y **tablas de cache en las dos
-implementaciones de `LocalStore`** — `expo-sqlite` y Web Storage JSON. Anadir el
-outbox y olvidar el cache deja la pantalla vacia en web sin ningun error visible.
+`'habit'` y `'habit_entry'` se anaden a `syncEntitySchema`, con su bloque en el
+`push`, en el `pull` y en el repositorio, y el `merge` dedicado en el movil.
+
+Un detalle que sale al implementarlo y que conviene no asumir: `cached_entities`
+(`apps/mobile/src/lib/offline/local-store.ts:137`) es **una tabla generica con
+`PRIMARY KEY (entity, entity_id)`**, no una tabla por entidad, y las dos
+implementaciones (SQLite y Web Storage) guardan lo mismo con esa clave. Asi que un
+hábito nuevo **no necesita tabla de cache en ninguna de las dos**: necesita el
+indice por padre si se consulta por `habit_id`, que es el patron de `listCachedItems`.
+
+Y un hueco de forma que hay que cerrar a proposito: **hoy todo lo que se sincroniza
+es de un workspace** y pasa por `assertCanWrite` / `assertCanDelete`. Un hábito
+personal es una forma nueva en este esquema, asi que la rama personal de esas
+comprobaciones se escribe explicita, no siguiendo el molde de `list`.
 
 El merge merece regla propia y no la generica de "gana el servidor": marcar un
 habito el martes desde el telefono y desde la tablet **no es un conflicto**, es que
@@ -250,6 +260,11 @@ Determinista, sin tormentas de conflicto, y aplica a la operacion mas concurrent
 que va a existir en la aplicacion: tocar un checkbox en dos dispositivos. La regla
 generica de `docs/architecture/offline-sync.md` habria abierto un conflicto en cada
 doble toque.
+
+En el movil el merge no va en `lib/offline/merge/` porque **ese directorio no
+existe**: la logica por entidad son archivos sueltos en `apps/mobile/src/lib/offline/`
+(`dashboard-row.ts`, `apply-panel.ts`, `coalesce.ts`). El de habitos va junto a ellos,
+`habit-row.ts`.
 
 ---
 
