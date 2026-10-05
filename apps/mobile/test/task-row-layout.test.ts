@@ -43,6 +43,22 @@ describe('la casilla no se come la fila', () => {
     expect(checkbox).toContain('{label ? (');
   });
 
+  it('la casilla se alinea con la linea del titulo, no con la fila entera', () => {
+    // El icono se movió dentro de `styles.titulo` para centrarse contra la línea
+    // del título y no contra el título más lo que haya debajo. La casilla se
+    // quedó fuera: `styles.item` sigue siendo `alignItems: "center"`, así que se
+    // centra contra **las dos**, y en una fila con insignia queda visiblemente más
+    // baja que el icono. Con dos líneas de título la diferencia crece.
+    //
+    // La fila alinea arriba y la casilla lleva la altura de una línea, que es lo
+    // que hace que las dos cosas coincidan sin calcular ningún offset a mano.
+    const item = listId.match(/  item:\s*\{[\s\S]*?\n  \}/)?.[0] ?? '';
+    expect(item, 'styles.item debe seguir existiendo').toContain('flexDirection: "row"');
+    expect(item, 'alinear arriba, o la casilla se va abajo con las insignias').not.toContain(
+      'alignItems: "center"',
+    );
+  });
+
   it('el nodo de la etiqueta esta dentro de esa condicion', () => {
     // Not "there is no label prop" — there is a prop, and `sign-up` and the item
     // panel pass text to it. The claim is that an empty one is not rendered.
