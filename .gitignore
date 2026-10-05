@@ -16,6 +16,14 @@ expo-env.d.ts
 .metro-health-check*
 .metro-*
 
+# The skill registry cache and the index it writes. It is regenerated on demand
+# and it is not part of the app, and it was stopping `release.sh` at its clean
+# tree guard: `git status --porcelain` returns anything at all, and the guard does
+# not ask what it found. Ignoring it is better than passing `--allow-dirty`,
+# which exists to *test* the upload and skips the check that the AAB corresponds
+# to a commit someone could rebuild.
+.atl/
+
 # Environment files (never commit real secrets)
 .env
 .env.*
