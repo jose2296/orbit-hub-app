@@ -429,8 +429,8 @@ export function tagColorHex(colour: string): string {
  * declaracion se descarta sin un error y el elemento se queda con lo que ya habia
  * pintado. Medido antes del arreglo, no supuesto.
  *
- * **Lo que este guard tiene en comun con el de `hslToHex` es el ternario, no el
- * default, y los dos vigilan la suma hoy.** `hslToHex` ponia
+ * **Lo que este guard tiene en comun con el de `hslToHex` es el ternario y el
+ * recorte, y los dos vigilan la suma hoy.** `hslToHex` ponia
  * `Number.isFinite(v) ? v : 0` **en el canal**, y `m = l - c / 2` se sumaba
  * despues: con una luminosidad `NaN` salia `#NANNANNAN` tambien —medido antes de
  * arreglarlo, `hslToHex(0, 1, NaN)`—, porque el guard estaba en el operando que no
@@ -439,6 +439,13 @@ export function tagColorHex(colour: string): string {
  * camino de la app nunca llegaba; lo que si era cierto es que el guard estaba en el
  * sitio equivocado. Arreglado en `hsl.ts`: el guard esta en la suma y los tres
  * parametros que no son numeros caen en `0`.
+ *
+ * **Y ahora `hslToHex` recorta tambien, con este mismo `clamp01`.** Antes de eso
+ * solo lo hacia `mixHex`, y el motivo de que este lo hiciera era que el otro no:
+ * una `s` de 5 o una `l` de 2 —finitas, sin nada roto— salian de `hslToHex` como
+ * `#2FD-1FE-1FE` y `#FF2FD2FD`, o sea cadenas que ningun parser de CSS lee. Los
+ * dos hacen ahora la misma cosa por el mismo motivo, que es la unica forma de que
+ * un ternario de estos se pueda copiar sin preguntar antes por que.
  *
  * **Un color que no se puede leer sale como `COLOR_QUE_NO_ES` y no como
  * `#NANNAN`**, por el mismo motivo y con el mismo cuidado que `hslToHex`: una

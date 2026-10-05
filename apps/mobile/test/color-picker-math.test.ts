@@ -95,21 +95,33 @@ describe('un color que no es un color', () => {
 
   it('con cualquier numero que no es un numero sale un hex de seis digitos', () => {
     // **La forma es lo que se afirma, no el color.** Esto no es una tabla de tres
-    // casos: son las 64 combinaciones de un valor normal, `NaN`, `Infinity` y
-    // `-Infinity` en cada uno de los tres parametros a la vez, y lo unico que se mira
-    // de las 64 es que la salida tenga la forma de un `#RRGGBB`, que son seis
-    // digitos hexadecimales y nada mas. Que color sale en cada una da igual, y por
-    // eso no se afirma: `#NANNANNAN` son diez caracteres —nueve cifras, ninguna
-    // hexadecimal— y `#INFINITYINFINITYINFINITY` veinticinco, asi que ningun parser
-    // de CSS los puede leer y el elemento se queda con lo que ya habia pintado.
+    // casos: son las 125 combinaciones de cinco valores en cada uno de los tres
+    // parametros a la vez, y lo unico que se mira de las 125 es que la salida tenga
+    // la forma de un `#RRGGBB`, que son seis digitos hexadecimales y nada mas. Que
+    // color sale en cada una da igual, y por eso no se afirma: `#NANNANNAN` son diez
+    // caracteres —nueve cifras, ninguna hexadecimal— y `#INFINITYINFINITYINFINITY`
+    // veinticinco, asi que ningun parser de CSS los puede leer y el elemento se queda
+    // con lo que ya habia pintado.
+    //
+    // **Cinco por eje y no cuatro, y por que una sola tabla y no dos.** Los cinco son
+    // las cinco maneras de que un numero no sea un numero usable: uno dentro de
+    // rango, uno **fuera** —`s` de 5, `l` de 2, que son finitos y no tienen nada
+    // roto— y los tres que no son finitos. Fuera de rango estaba **excluido a
+    // proposito** con un comentario que decia que era otra pregunta, y era la misma:
+    // con el recorte puesto, `hslToHex(0, 5, 0.5)` daba `#2FD-1FE-1FE` y
+    // `hslToHex(0, 1, 2)` daba `#FF2FD2FD`, dos cadenas que ningun parser de CSS lee.
+    // **Dos tablas —"lo que no es un numero" y "lo que se sale de rango"— ainaban
+    // dos veces la misma pregunta** y dejaban sitio para que la segunda se
+    // quedara sin comprobar cuando la regla cambie; una sola propiedad que dice
+    // "**para cualquier entrada** sale un `#RRGGBB`" no tiene ese borde, porque no
+    // hay entradas que queden fuera. `h` tambien lleva su valor fuera de rango y
+    // **no lo necesita** —el modulo de 360 ya lo hace entrar—, y esta ahi para que
+    // el cubo sea de cinco por eje y el 125 se lea de un vistazo.
     const valores = {
-      h: [210, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY],
-      s: [0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY],
-      l: [0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY],
+      h: [210, 570, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY],
+      s: [0.5, 5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY],
+      l: [0.5, 2, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY],
     };
-    // Los tres valores normales estan dentro de su rango a proposito: lo que se
-    // prueba es lo que no es un numero. Un `s` de 5 tampoco da un `#RRGGBB`, y es
-    // otra pregunta —esta funcion no recorta y `mixHex` si— que este test no hace.
     let combinaciones = 0;
     for (const h of valores.h) {
       for (const s of valores.s) {
@@ -119,9 +131,48 @@ describe('un color que no es un color', () => {
         }
       }
     }
-    // El 64 va afirmado para que nadie pueda dejar la lista con dos entradas y este
+    // El 125 va afirmado para que nadie pueda dejar la lista con dos entradas y este
     // test siga en verde sin comprobar nada.
-    expect(combinaciones).toBe(64);
+    expect(combinaciones).toBe(125);
+  });
+
+  it('y un numero fuera de rango sale recortado, no desplazado', () => {
+    // **La forma anterior no alcanza para esto, y por eso es un `it` aparte.** Que
+    // la salida tenga seis caracteres dice que el recorte esta puesto; lo que de
+    // verdad importa para nadie es que **el color de quien esta dentro de rango no se
+    // mueva**, y eso es una identidad: un `s` de 5 tiene que dar **exactamente** lo
+    // mismo que un `s` de 1. Recortar al reves —quedarse con el ultimo color
+    // valido en vez de con el extremo— tambien daria seis digitos, asi que la
+    // identidad se afirma y la forma no.
+    //
+    // **Cada recorte va escrito al lado y no hay un `clamp01` en el test**: un
+    // recorte en la prueba seria la misma regla por segunda vez, que es
+    // precisamente lo que este cambio quita del codigo.
+    for (const [s, recortado] of [
+      [5, 1],
+      [-1, 0],
+      [1e9, 1],
+      [1.0000001, 1],
+      [-0.0000001, 0],
+    ] as const) {
+      expect(hslToHex(210, s, 0.5), `s ${s}`).toBe(hslToHex(210, recortado, 0.5));
+    }
+    for (const [l, recortado] of [
+      [2, 1],
+      [-1, 0],
+      [1e9, 1],
+      [1.0000001, 1],
+      [-0.0000001, 0],
+    ] as const) {
+      expect(hslToHex(210, 0.5, l), `l ${l}`).toBe(hslToHex(210, 0.5, recortado));
+    }
+    // Los tres del principio, con el hex exacto que sale, para que la cadena rota se
+    // quede escrita en un sitio que se lee. **Dos de los tres son los extremos de
+    // antes** —`l` por encima de 1 es el blanco y por debajo es el negro—, asi que
+    // el recorte se ve sin tener que mirar nada mas.
+    expect(hslToHex(0, 5, 0.5)).toBe('#FF0000');
+    expect(hslToHex(0, 1, 2)).toBe('#FFFFFF');
+    expect(hslToHex(0, 1, -1)).toBe('#000000');
   });
 
   it('una luminosidad que no es un numero sale en negro, no en "#NANNANNAN"', () => {

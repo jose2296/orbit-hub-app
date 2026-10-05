@@ -133,9 +133,32 @@ export function hslToHex(h: number, s: number, l: number): string {
   // is a tested extreme. `h` is the hue `rgbToHsl` hands a grey, whose own comment
   // says 0 is as good as any. `s` is the grey of that lightness, and it is the
   // shape `mixHex` already uses on its `t`: `Number.isFinite(t) ? clamp01(t) : 0`.
+  //
+  // **And a number that IS finite but is out of range gets clipped, which is the
+  // other half of the same door and the reason the two are one line.** The
+  // `isFinite` guard above is invisible from the outside: `NaN` and `Infinity` only
+  // ever arrive from a division by zero or from an overflow, and nothing in this
+  // app does either. What *does* arrive is a lightness that walked off the end, and
+  // that needs no bug at all — `l = 2` is a perfectly finite number. With only the
+  // old guard, `s = 5` came out as `#2FD-1FE-1FE` — the first channel rounds past
+  // `FF` and needs three hexadecimal digits, and the other two go negative, where
+  // `toString(16)` writes the minus sign into the hex — and `l = 2` came out as
+  // `#FF2FD2FD`, because a `m` that far past 1 lands the last two channels on `3`,
+  // which is 765 of 255, and the only real digit left is the `FF` at the front.
+  //
+  // **The same failure the guard on the sum was written for, reached by the other
+  // road.** Neither string is a colour any CSS parser reads, so a gradient with one
+  // of them in it is rejected whole and the element keeps the colours it painted
+  // the first time they were valid — no error, anywhere, ever.
+  //
+  // **"Nobody calls it out of range" is a claim about today's callers, not a
+  // promise the function makes.** `hslToHex` is exported from `picker.ts` and again
+  // from `color.ts`, so the next caller that computes a lightness is the one that
+  // would have paid. `mixHex` reached the same conclusion about its `t` and pays
+  // the same price: one call.
   const h0 = Number.isFinite(h) ? h : 0;
-  const s0 = Number.isFinite(s) ? s : 0;
-  const l0 = Number.isFinite(l) ? l : 0;
+  const s0 = Number.isFinite(s) ? clamp01(s) : 0;
+  const l0 = Number.isFinite(l) ? clamp01(l) : 0;
 
   const c = (1 - Math.abs(2 * l0 - 1)) * s0;
   const hp = (((h0 % 360) + 360) % 360) / 60;
