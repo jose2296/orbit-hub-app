@@ -193,7 +193,28 @@ const extract = (text, source) => {
   } catch (error) {
     fail(`the SPIKE_ENV line in ${source} is not json (${error.message}): ${raw}`);
   }
-  return { fingerprint, engine: env.engine, source, env };
+
+  /**
+   * Las versiones que dice traer la medicion. Sin esto, `--record` sellaria lo que
+   * dice `package-lock.json`, que es una afirmacion: el bundle puede llevar otra
+   * (`rrule` vive en el `node_modules` de la raiz, fuera de los `watchFolders` de
+   * `apps/mobile`) y entonces el registro declararia haber medido con una libreria
+   * que no estaba. Si la linea no las trae, no se sella nada: es preferible no
+   * escribir a escribir una mentira.
+   */
+  const libraryVersions = env?.libraryVersions ?? null;
+  for (const name of ['rrule', 'luxon']) {
+    if (typeof libraryVersions?.[name] !== 'string' || libraryVersions[name].length === 0) {
+      fail(
+        `the SPIKE_ENV line in ${source} carries no ${name} version ` +
+          `(${JSON.stringify(libraryVersions)}). It comes from \`spikeEnv()\`, so this ` +
+          'measurement predates the stamp and cannot be sealed. Re-measure with the ' +
+          'spike rebuilt: npm run build --workspace @orbit-hub/habit-core',
+      );
+    }
+  }
+
+  return { fingerprint, engine: env.engine, source, env, libraryVersions };
 };
 
 const check = (measured, expected, label, hint) => {
@@ -360,8 +381,12 @@ const refresh = async ({ text, record }) => {
   const spike = await live();
   const versions = installedVersions();
   const fingerprint = spike.spikeFingerprint();
+  // Igual que `--record` en los otros dos: Node tambien se sella con lo que trae la
+  // medicion. Aqui coinciden, porque el bundle es este checkout, pero la regla es
+  // una sola y no depende de que hoy sea verdad.
+  const measuredWith = spike.spikeLibraryVersions();
   const environments = { ...(record.environments ?? {}) };
-  environments.node = { ...environments.node, fingerprint, verifiedWith: versions, recheck: null };
+  environments.node = { ...environments.node, fingerprint, verifiedWith: measuredWith, recheck: null };
   for (const name of HAND_MEASURED) {
     const entry = environments[name];
     if (entry === undefined) {
@@ -433,22 +458,38 @@ const settle = ({ text, record, name, measured, recorded, wantsRecord, patch }) 
     return;
   }
 
+  /**
+   * Lo que se sella es **lo que dice la medicion**, no lo que dice el lock. Con el
+   * lock, un bundle cacheado con la version anterior sellaria la nueva sobre una
+   * medicion de la vieja y el registro no tendria forma de notarlo. Con la
+   * medicion, si el bundle iba viejo el sello queda viejo a proposito y el `recheck`
+   * de mas abajo lo nombra contra lo instalado.
+   */
+  const measuredWith = measured.libraryVersions;
   const environments = { ...record.environments };
   environments[name] = {
     ...recorded,
     engine: measured.engine,
     fingerprint: measured.fingerprint,
-    verifiedWith: versions,
+    verifiedWith: measuredWith,
     recheck: null,
     ...patch,
   };
   const updated = { ...record, measuredOn: new Date().toISOString().slice(0, 10), environments };
   writeRecord(text, updated);
   console.log(
-    `recorded ${name} in ${fileURLToPath(ADR)}: ${measured.fingerprint} with ` +
-      `${stampText(versions)} (was ${recorded?.fingerprint ?? 'nothing'} with ` +
-      `${stampText(recorded?.verifiedWith)}).`,
+    `recorded ${name} in ${fileURLToPath(ADR)}: ${measured.fingerprint} sealed with ` +
+      `${stampText(measuredWith)}, as the measurement reported it (was ` +
+      `${recorded?.fingerprint ?? 'nothing'} with ${stampText(recorded?.verifiedWith)}).`,
   );
+
+  if (measuredWith.rrule !== versions.rrule || measuredWith.luxon !== versions.luxon) {
+    console.log(
+      `note    the measurement carried ${stampText(measuredWith)} and this checkout has ` +
+        `${stampText(versions)}. The seal is the measurement's, so the entry is marked ` +
+        'pending below. That is the cached-bundle case: rebuild the bundle and measure again.',
+    );
+  }
 
   const pending = unheldEntries(environments, versions, nodeFingerprint);
   if (pending.length > 0) {

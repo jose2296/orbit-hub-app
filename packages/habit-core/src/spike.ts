@@ -9,6 +9,38 @@ import { DateTime } from 'luxon';
 import * as rruleNamespace from 'rrule';
 
 /**
+ * The versions of the two libraries this spike is a measurement **of**, read from
+ * the `package.json` that ships inside them, so they are an observation of the code
+ * that is loaded and not a claim about the lockfile.
+ *
+ * That difference is the whole reason this import is here. `rrule` lives in the
+ * root `node_modules`, which is outside the `watchFolders` of `apps/mobile`, so
+ * after an `npm i` a reload can serve a bundle that still carries the previous
+ * `rrule` while `package-lock.json` already says the new one. Sealing the record
+ * with the lockfile stamps a version over a measurement that was taken with a
+ * different one, and nothing in the repository could ever tell.
+ *
+ * Getting this to resolve in all three environments took the two constraints the
+ * ADR already records about `rrule`:
+ *
+ * - **Node ESM** needs the `with { type: 'json' }` attribute, or the import is
+ *   refused with `ERR_IMPORT_ATTRIBUTE_MISSING`. Both subpaths are legal: `rrule`
+ *   publishes no `exports` map, so Node falls back to the filesystem, and `luxon`
+ *   publishes `"./package.json"` explicitly.
+ * - **Metro, web and native**, transform the same line to
+ *   `require("rrule/package.json")` — the React Native Babel preset strips the
+ *   attribute — and inline the JSON at bundle time. So in the browser and in Hermes
+ *   this reports the version that is inside *that* bundle, which is exactly the
+ *   value a `--record` has to seal.
+ *
+ * Neither line is a literal. A version written by hand here would be the very defect
+ * this is fixing: an assertion that can drift from the code without anything
+ * noticing.
+ */
+import luxonPackage from 'luxon/package.json' with { type: 'json' };
+import rrulePackage from 'rrule/package.json' with { type: 'json' };
+
+/**
  * `rrule` 2.8.1 arrives in three different shapes depending on who is loading
  * it, and this spike exists because of it:
  *
@@ -189,6 +221,10 @@ export function spikeResult(): Record<string, unknown> {
  * machine is set to, so two machines would compute two fingerprints. The test
  * pins `TZ` and asserts the difference there instead.
  */
+export function spikeLibraryVersions(): { rrule: string; luxon: string } {
+  return { rrule: rrulePackage.version, luxon: luxonPackage.version };
+}
+
 export function spikeEnv(): Record<string, unknown> {
   const scope = globalThis as {
     HermesInternal?: unknown;
@@ -205,6 +241,11 @@ export function spikeEnv(): Record<string, unknown> {
 
   return {
     engine,
+    /**
+     * The versions of the libraries this run actually holds, read from inside them.
+     * This is what lets `--record` seal the measurement instead of the lockfile.
+     */
+    libraryVersions: spikeLibraryVersions(),
     hasIntl: typeof Intl !== 'undefined',
     hasFormatToParts:
       typeof Intl !== 'undefined' &&

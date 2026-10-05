@@ -52,6 +52,34 @@ const { RRule } = rrule;
 
 luxon no tiene el problema: publica `exports` con un build ESM de verdad.
 
+### Como se sabe que version se midio
+
+`spikeEnv()` lleva `libraryVersions`: las versiones de `rrule` y `luxon` que trae
+cargadas **en ese momento**, no las que dice `package-lock.json`.
+
+```ts
+import luxonPackage from 'luxon/package.json' with { type: 'json' };
+import rrulePackage from 'rrule/package.json' with { type: 'json' };
+```
+
+El atributo `with { type: 'json' }` no es decorativo: Node ESM rechaza el import sin
+el con `ERR_IMPORT_ATTRIBUTE_MISSING`. Los dos subpaths son legales porque `rrule`
+no publica `exports` map —Node cae al sistema de ficheros— y `luxon` publica
+`"./package.json"` a proposito. En Metro, web y nativo, el preset de Babel de React
+Native quita el atributo y deja `require("rrule/package.json")`, que se inlinea en
+el bundle, asi que lo que se mide es la version que va **dentro de ese bundle**.
+
+Que la sonda lea las versiones y no las declare escrito es el punto. `rrule` vive en
+el `node_modules` de la raiz, fuera de los `watchFolders` de `apps/mobile`, asi que
+tras un `npm i` una recarga puede servir un bundle cacheado con la version anterior
+mientras el lock ya dice la nueva. Sellando con el lock, `--record` escribiria la
+nueva sobre una medicion de la vieja y no habria forma de notarlo; sellando con la
+medicion, el sello sale viejo a proposito y el `recheck` lo nombra.
+
+Medido, no supuesto: el bundle nativo que produce Metro para `android` e `ios` lleva
+`rrule` 2.8.1 y `luxon` 3.7.2 inlineados, `hermesc` lo compila, y el `SPIKE_ENV`
+que sale de ese bundle trae `libraryVersions` con esos dos numeros.
+
 ### Otras dos trampas, medidas
 
 - **`rule.all()` sin `count` ni `until` no falla: cuelga.** En `rrule@2.8.1`,
@@ -80,7 +108,9 @@ arrancar un emulador desde vitest. Lo que si hace el test es afirmar que esta
 corrida en Node coincide con el registro de los tres, y que los tres valores
 registrados coinciden entre si. Si Node divergiera, el test falla; si el
 navegador o Hermes divergieran, falla quien vuelva a medirlos y tenga que
-actualizar el registro.
+actualizar el registro. Las tres tablas de arriba se midieron con `rrule@2.8.1` y
+`luxon@3.7.2`, y `SPIKE_ENV` lo dice en cada medicion, no este documento: los tres
+`verifiedWith` del registro de abajo son lo que traia la medicion.
 
 ### Como reproducirlo
 
@@ -168,10 +198,15 @@ una desde donde puede ver algo distinto:
   ninguno tiene la huella en `null`, que **los tres coinciden entre si**, que el
   resultado canonico y las mediciones del hueco de aqui son los que produce este
   checkout, y que cada entrada dice **con que versiones de `rrule` y `luxon` se
-  midio** y no esta pendiente de remedirse. Es la red que corre sola: si alguien
-  sube `rrule` o `luxon` de version, o toca el spike, y el resultado cambia, el
-  test falla en vez de que la suite siga verde. Si el bloque falta o no parsea, el
-  fallo lo dice con el mensaje, en vez de compararse contra `undefined`.
+  midio** y no esta pendiente de remedirse. Un test mas ata el sello a la
+  observacion: que lo que `spikeEnv()` reporte como versiones sea lo que hay
+  instalado, y que el `verifiedWith` de las tres entradas sea ese mismo par. Sin el,
+  editar el `verifiedWith` a mano en este ADR —sin medir nada— seria indistinguible
+  de haberlo medido, y eso es justo lo que el campo no puede ser. Es la red que
+  corre sola: si alguien sube `rrule` o `luxon` de version, o toca el spike, y el
+  resultado cambia, el test falla en vez de que la suite siga verde. Si el bloque
+  falta o no parsea, el fallo lo dice con el mensaje, en vez de compararse contra
+  `undefined`.
 - **`packages/habit-core/scripts/verify-spike.mjs`**, a mano. Es lo unico del
   repositorio que puede mirar el navegador y el emulador, porque desde vitest no
   se arrancan. Compara una medicion contra el registro y sale con codigo 1 si no
@@ -215,7 +250,10 @@ cuando lo unico comprobado era uno. Es el fallo que esta Task 1 existe para caza
 entrando por la puerta de la escritura.
 
 Por eso cada entrada lleva `verifiedWith` —las versiones con las que se midio— y
-`recheck` —por que no vale para este checkout, o `null`—. El estado es
+`recheck` —por que no vale para este checkout, o `null`—. `verifiedWith` lo escribe
+**la medicion**, nunca el lock: si una linea `SPIKE_ENV` no trae
+`libraryVersions`, el script no sella nada y dice por que, porque un bundle viejo es
+mejor que un sello viejo. El estado es
 **derivado**, no acumulado: se recalcula cada vez que se mira el registro, para
 que la marca no se pueda poner ni quitar a mano. Las dos formas de que una medicion
 de ayer deje de ser evidencia hoy son que se midiera con otras librerias, o que la

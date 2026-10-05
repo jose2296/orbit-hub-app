@@ -10,7 +10,14 @@ import {
   unheldEntries,
   unheldReport,
 } from '../scripts/record-holds.mjs';
-import { RRule, SPIKE_TZ, spikeEnv, spikeFingerprint, spikeResult } from './spike';
+import {
+  RRule,
+  SPIKE_TZ,
+  spikeEnv,
+  spikeFingerprint,
+  spikeLibraryVersions,
+  spikeResult,
+} from './spike';
 
 const TZID = SPIKE_TZ;
 
@@ -325,6 +332,70 @@ it('el registro dice con que librerias se midio cada entorno, y no deja ninguno 
   // que tampoco se puede poner a mano para dejarse de ver.
   const pending = unheldEntries(record.environments, versions, record.environments.node?.fingerprint);
   expect(pending.map(({ name }) => name), unheldReport(pending)).toEqual([]);
+});
+
+/**
+ * El sello tiene que ser una observacion, no una afirmacion.
+ *
+ * Antes, `--record` escribia `verifiedWith` con lo que decia `package-lock.json`, y
+ * por eso el campo no decia nada: editandolo a mano, sin medir nada, la suite
+ * seguia en verde. Ahora lo que se sella es lo que la medicion trae dentro, asi que
+ * hace falta que estas dos cosas esten atadas por un test: lo que el registro dice
+ * que se midio tiene que ser la version que hay cargada ahora, y la que trae la
+ * sonda tiene que salir de las librerias y no de un literal.
+ *
+ * Son dos afirmaciones y por eso son dos tests: el ultimo falla si alguien teclea
+ * `2.8.1` en el ADR, y este falla si alguien pone la version a mano en `spike.ts`.
+ *
+ * Con una salvedad que conviene no adornar: un literal escrito a mano **que por
+ * casualidad dice la verdad** no lo detecta nada. Un test en tiempo de ejecucion no
+ * puede distinguir "lei el package.json" de "escribi el mismo numero". Lo que si
+ * pasa es que el literal se pudre en cuanto la libreria se mueve, y entonces este
+ * test falla —que es justo cuando un sello mintiendo pasaria mas desapercibido—. La
+ * garantia fuerte la da el import de `spike.ts`, que no es un literal; el test
+ * vigila que ese import y lo instalado no se separen.
+ */
+it('el registro dice lo que se midio, y lo que se midio es lo que hay cargado', () => {
+  const record = recordedEvidence();
+  const versions = installedVersions();
+
+  // La sonda lee las versiones de dentro de las librerias que tiene cargadas. Que
+  // coincidan con el lock de este checkout es lo que ata la observacion al
+  // repositorio: si alguien sube la libreria, las tres cosas —el registro, la sonda
+  // y lo instalado— se ven a la vez, y el sello solo puede seguir siendo cierto si
+  // los tres coinciden.
+  expect(
+    spikeLibraryVersions(),
+    'the spike reports library versions that are not the ones loaded. If these were written ' +
+      'by hand in spike.ts instead of read from the packages, the record seal would be an ' +
+      'assertion again, which is what this test exists to prevent.',
+  ).toEqual(versions);
+
+  // Y el mismo par de versiones viaja en `spikeEnv()`, que es lo que el navegador y
+  // Hermes imprimen y lo que `--record` sella. Sin esto, la medicion no llevaria
+  // version y `--record` no tendria nada que sellar.
+  expect(
+    spikeEnv().libraryVersions,
+    'spikeEnv() must carry libraryVersions: that line is the only thing the browser and ' +
+      'Hermes produce, so without it --record has to fall back to the lockfile.',
+  ).toEqual(versions);
+
+  // El sello de cada entrada es el de la medicion, y por tanto tiene que ser el de
+  // ahora. Una entrada editada a mano rompe aqui.
+  const stamped = Object.fromEntries(
+    Object.entries(record.environments ?? {}).map(([name, entry]) => [name, entry.verifiedWith]),
+  );
+  expect(
+    stamped,
+    `ADR 0033 claims each environment was measured with these versions, and this checkout ` +
+      `has ${stampText(versions)}: ${JSON.stringify(stamped)}. An entry that was typed by ` +
+      'hand instead of measured reads the same as one that was measured, which is the ' +
+      'defect this closes.',
+  ).toEqual({
+    node: versions,
+    browser: versions,
+    hermes: versions,
+  });
 });
 
 /**
