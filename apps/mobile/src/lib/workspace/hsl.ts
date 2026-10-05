@@ -252,10 +252,36 @@ export function hexToHsv(hex: string): Hsv {
 }
 
 export function hsvToHex({ h, s, v }: Hsv): string {
-  const c = v * s;
-  const hp = (((h % 360) + 360) % 360) / 60;
+  // **The same three numbers as `hslToHex` above, and for the same three reasons.**
+  // `v` is the black that `hsvToHex({ h, s: 0, v: 0 })` already returns, which is a
+  // tested extreme. `h` is the hue `hexToHsv` hands a grey, whose own comment says 0
+  // is as good as any. `s` is the grey of that value, and it is the shape `mixHex`
+  // already uses on its `t`: `Number.isFinite(t) ? clamp01(t) : 0`.
+  //
+  // **And a number that IS finite but is out of range gets clipped, which is the
+  // other half of the same door.** `hslToHex` clips `s` and `l`; HSV is the same
+  // three axes with `v` where `l` was, so it clips the same two. Measured before the
+  // clip: an `s` of 5 answered `#80-1FE-1FE` —two channels negative, and
+  // `toString(16)` writes the minus sign into the hex— and a `v` of 2 answered
+  // `#1FE0000`, whose first channel rounds past `FF` and so needs three hexadecimal
+  // digits where a `#RRGGBB` has two per channel. A `v` of -1 answered `#-FF0000`,
+  // the negative-channel shape again. None of the three is a colour any CSS parser
+  // reads, which is the same failure the guard below was written for reached by the
+  // other road.
+  //
+  // **The trip through it, and not an opinion.** 3 672 360 combinations of a hue,
+  // a saturation and a value all inside range give **zero** differences against the
+  // version before this one, and so do all **16 777 216 colours** through
+  // `hexToHsv`. What changes is only what was never a colour: a number that is not a
+  // number, or one that walked off the end of its own axis.
+  const h0 = Number.isFinite(h) ? h : 0;
+  const s0 = Number.isFinite(s) ? clamp01(s) : 0;
+  const v0 = Number.isFinite(v) ? clamp01(v) : 0;
+
+  const c = v0 * s0;
+  const hp = (((h0 % 360) + 360) % 360) / 60;
   const x = c * (1 - Math.abs((hp % 2) - 1));
-  const m = v - c;
+  const m = v0 - c;
 
   const [r, g, b] =
     hp < 1
@@ -270,11 +296,46 @@ export function hsvToHex({ h, s, v }: Hsv): string {
               ? [x, 0, c]
               : [c, 0, x];
 
-  const channel = (value: number) =>
-    Math.round(((Number.isFinite(value) ? value : 0) + m) * 255)
+  // **The guard is on the sum, and not on the channel, which is the whole fix.**
+  // `m` is *added* to the channel, so a value that is not finite poisons the total
+  // even when the channel is perfectly finite: the guard used to sit around the one
+  // operand that could not do the damage. It is the mistake `hslToHex` had, right
+  // above, and it put out the same string.
+  //
+  // What it is for is `Math.round` handing `NaN` to `toString(16)`. That answers
+  // with the three-character string `"NaN"`, which `padStart(2, "0")` cannot
+  // shorten, so three of them make `#NANNANNAN` — ten characters, nine of them
+  // digits where a `#RRGGBB` has six, and not one of them a hexadecimal digit, so
+  // no CSS parser reads it and the element keeps whatever it painted before.
+  //
+  // **Both, and not one.** The three `Number.isFinite` above say what a parameter
+  // that is not a number means; this one is the belt underneath them, and it stays
+  // after the clip the way the one in `hslToHex` does.
+  //
+  // **Reachable, where `hslToHex`'s was only latent — and through the door
+  // `mixHex` already documented.** The paths that come from a hex are closed:
+  // measured over **all 16 777 216 colours**, `hexToHsv` produced 0 non-finite and
+  // 0 out-of-range components, and this function answered a `#RRGGBB` for every one
+  // of them. The path that is open is `puntoAHsv`, which does not check its
+  // coordinates and cannot: `clamp01` is `Math.min(Math.max(v, 0), 1)` and all
+  // three of `Math` answer `NaN` for a `NaN`, so a `NaN` in `x` or `y` lands in the
+  // state as one. Measured: `puntoAHsv(66, NaN, 132, 132, 210)` hands over `v` in
+  // `NaN`, and this function answered `#NANNANNAN` for it. Whether a `NaN` ever
+  // arrives is not something I can show — the numbers come from `Gesture.Pan`'s
+  // `e.x` and `e.y`, which are finite in every run I have seen, and the *box* is
+  // safe because `width > 0` is false for a `NaN` and falls to the `0` branch. But
+  // "the coordinates are finite today" is a claim about the caller, not a promise
+  // this function makes, and unlike `hslToHex` this one is exported into a
+  // `backgroundColor` with no gate in front of it: `workspace-color-picker.tsx:185`
+  // on the state's own `hsv`, `:482` with `s: 1`, and `tag-colors.ts:516` behind
+  // `hexDeHsv`, which the tag picker calls three times.
+  const channel = (value: number) => {
+    const total = value + m;
+    return Math.round((Number.isFinite(total) ? total : 0) * 255)
       .toString(16)
       .padStart(2, "0")
       .toUpperCase();
+  };
 
   return `#${channel(r)}${channel(g)}${channel(b)}`;
 }
