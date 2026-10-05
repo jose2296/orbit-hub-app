@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { DateTime } from 'luxon';
 
-import { RRule, SPIKE_TZ } from './spike';
+import { RRule, SPIKE_TZ, spikeEnv, spikeFingerprint, spikeResult } from './spike';
 
 const TZID = SPIKE_TZ;
 
@@ -158,4 +161,99 @@ it('los componentes locales se leen con getUTC, no con get', () => {
   );
   expect(real.toUTC().toISO()).toBe('2026-03-30T06:00:00.000Z');
   expect(real.offset).toBe(120);
+});
+
+/**
+ * The three-environment record committed in
+ * `docs/architecture/adr/0033-recurrencia-con-rrule-y-luxon.md`.
+ *
+ * What this can and cannot do, so the title is not a lie: it runs in Node, so it
+ * can only ever *check Node*. What it does check is that the code and the record
+ * have not drifted apart — which is the failure that actually happens, because
+ * the code changes on every commit and the browser and Hermes measurements do
+ * not. The other two environments are declared by the record and are verified by
+ * `npm run spike:verify --workspace @orbit-hub/habit-core -- hermes`, which is
+ * the only thing in the repository able to observe them.
+ */
+const ADR = new URL(
+  '../../../docs/architecture/adr/0033-recurrencia-con-rrule-y-luxon.md',
+  import.meta.url,
+);
+
+type Recorded = {
+  environments: Record<string, { engine: string; fingerprint: string | null }>;
+  result: Record<string, unknown>;
+  gap: Record<string, unknown>;
+};
+
+/**
+ * The record is the single fenced ```json block of the ADR. Every way this can
+ * go wrong gets its own message: a record that does not load is not a record, and
+ * a test that compares against `undefined` looks like a passing test.
+ */
+const recordedEvidence = (): Recorded => {
+  const path = fileURLToPath(ADR);
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `cannot read the three-environment record at ${path} (${(error as Error).message}). ` +
+        'Without it the library choice in ADR 0033 is a claim with nothing behind it.',
+    );
+  }
+
+  const blocks = [...text.matchAll(/```json\n([\s\S]*?)\n```/g)];
+  if (blocks.length !== 1) {
+    throw new Error(
+      `${path} has ${blocks.length} fenced json blocks, expected exactly 1. ` +
+        'The record has to be unambiguous to be checkable.',
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(blocks[0]?.[1] ?? '');
+  } catch (error) {
+    throw new Error(
+      `${path}: the json block does not parse (${(error as Error).message}). ` +
+        'Fix the record; nothing can be compared against a record that will not load.',
+    );
+  }
+  return parsed as Recorded;
+};
+
+it('el registro de los tres entornos sigue cuadrando con lo que calcula Node', () => {
+  const record = recordedEvidence();
+
+  // A fingerprint of null is a hole in the record, and a hole is not a passing
+  // check: it is the state this ADR was committed in once already.
+  const missing = Object.entries(record.environments ?? {})
+    .filter(([, e]) => e.fingerprint === null || e.fingerprint === undefined)
+    .map(([name]) => name);
+  expect(
+    missing,
+    `these environments have no fingerprint in ADR 0033: ${missing.join(', ')}. ` +
+      'Measure them and write the number down.',
+  ).toEqual([]);
+
+  expect(Object.keys(record.environments ?? {}).sort()).toEqual([
+    'browser',
+    'hermes',
+    'node',
+  ]);
+  expect(record.environments.node?.engine).toBe(spikeEnv().engine);
+
+  // This run, against the Node observation in the record.
+  expect(spikeFingerprint()).toBe(record.environments.node?.fingerprint);
+
+  // The claim the ADR makes — that all three agree — asserted over the committed
+  // data instead of over somebody's memory of three consoles.
+  const recorded = Object.values(record.environments ?? {}).map((e) => e.fingerprint);
+  expect([...new Set(recorded)], `the record holds these fingerprints: ${recorded.join(', ')}`).toHaveLength(1);
+
+  // The record also carries the full canonical result and the gap measurements,
+  // so a change in the maths that nobody re-recorded fails here.
+  expect(JSON.stringify(spikeResult())).toBe(JSON.stringify(record.result));
+  expect(JSON.stringify(spikeResult().probe2_sundaysInTheGap)).toBe(JSON.stringify(record.gap));
 });

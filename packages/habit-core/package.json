@@ -21,7 +21,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "spike:verify": "node scripts/verify-spike.mjs"
   },
   "dependencies": {
     "luxon": "^3.7.2",

@@ -157,8 +157,47 @@ Cuatro cosas que cambian como se implementa el motor:
 
 ## Registro legible por maquina
 
-Lo lee `packages/habit-core/src/spike.test.ts`. Si el bloque falta o no parsea, el
-test lo dice en el mensaje en vez de compararse con `undefined`.
+Es el unico bloque JSON cercado de este ADR, y lo leen **dos** cosas, cada
+una desde donde puede ver algo distinto:
+
+- **`packages/habit-core/src/spike.test.ts`**, en cada `npm run check`. Afirma que
+  la huella que calcula Node es la que este registro dice que dio Node, que los
+  tres entornos registrados son exactamente `node`, `browser` y `hermes`, que
+  ninguno tiene la huella en `null`, que **los tres coinciden entre si**, y que el
+  resultado canonico y las mediciones del hueco de aqui son los que produce este
+  checkout. Es la red que corre sola: si alguien sube `rrule` o `luxon` de version,
+  o toca el spike, y el resultado cambia, el test falla en vez de que la suite siga
+  verde. Si el bloque falta o no parsea, el fallo lo dice con el mensaje, en vez de
+  compararse contra `undefined`.
+- **`packages/habit-core/scripts/verify-spike.mjs`**, a mano. Es lo unico del
+  repositorio que puede mirar el navegador y el emulador, porque desde vitest no
+  se arrancan. Compara una medicion contra el registro y sale con codigo 1 si no
+  cuadra, asi que la medicion deja de ser "alguien leyo ocho caracteres".
+
+```bash
+# Node: sin argumentos y sin persona. Tambien lo corre el test de arriba.
+npm run spike:verify --workspace @orbit-hub/habit-core -- node
+
+# Hermes: lee el logcat del emulador el mismo, y comprueba que la linea dice
+# engine "hermes" antes de fiarse. Atras de un bundle nativo servido por Metro.
+npm run spike:verify --workspace @orbit-hub/habit-core -- hermes
+npm run spike:verify --workspace @orbit-hub/habit-core -- hermes --serial <otro-emulador>
+
+# Navegador: la consola no se puede canalizar, asi que se pegan las dos lineas
+# SPIKE_* por stdin.
+npm run spike:verify --workspace @orbit-hub/habit-core -- browser < consola.txt
+
+# Refresca desde este checkout la huella de Node, `result` y `gap`. Los dos
+# entornos medidos a mano no se tocan: son mediciones, no calculos.
+npm run spike:verify --workspace @orbit-hub/habit-core -- --refresh
+```
+
+Lo que **no** puede hacer ningun test de este paquete es arrancar un navegador o
+un emulador, asi que la afirmacion de que los tres coinciden descansa en dos
+piezas: el registro, que es la afirmacion, y el script, que es la unica forma de
+volver a comprobar los dos entornos que el test no alcanza. Si cambia la version
+de Expo o de Hermes, `--refresh` no sirve: hay que volver a medir y volver a
+correr `hermes` y `browser`.
 
 ```json
 {
@@ -172,19 +211,19 @@ test lo dice en el mensaje en vez de compararse con `undefined`.
     "node": {
       "engine": "node",
       "runtime": "node 26.8.2, vitest 5.0.2, native ESM loader",
-      "fingerprint": null,
+      "fingerprint": "2f6ae9c6",
       "command": "npm run test --workspace @orbit-hub/habit-core"
     },
     "browser": {
       "engine": "browser",
-      "runtime": null,
-      "fingerprint": null,
+      "runtime": "Chromium 154.0.0.0 (Playwright), expo start --web, metro web bundle",
+      "fingerprint": "2f6ae9c6",
       "command": "cd apps/mobile && npx expo start --web --port <puerto>"
     },
     "hermes": {
       "engine": "hermes",
-      "runtime": null,
-      "fingerprint": null,
+      "runtime": "Hermes on Android 15 (API 35), emulator-5554, com.jrzlabs.orbithub 0.1.8, metro native bundle",
+      "fingerprint": "2f6ae9c6",
       "command": "adb -s emulator-5554 logcat -d | grep SPIKE_   (bundle nativo servido por Metro)"
     }
   },
