@@ -116,8 +116,24 @@ export type IconColorKey = (typeof ITEM_ICON_COLORS)[number];
  * The colour is a key and not a value, for the reason the space colour is a key:
  * the app draws the ones it offers, so there is no colour nobody can read on a
  * small shape and no picker of fifty shades on a phone.
+ *
+ * **Exported because a label draws out of it too.** `tagColorHex`, en
+ * `./tag-colors`, saca de aqui los doce a traves de `iconColor`, y el plan que
+ * pidio esa funcion decia que esta tabla ya se exportaba —no se exportaba—. Lo que
+ * **no** hace falta para eso es el `export`: `iconColor` ya resuelve tanto el
+ * nombre conocido como la reserva, asi que hoy no lo consume nadie. Se deja porque
+ * es **la unica tabla de los doce del movil**, y porque el motivo por el que existe
+ * —que no haya una segunda copia escrita a mano— hace valiosa tambien que se pueda
+ * leer. Si un dia nadie la importa, quitarla es borrar una palabra.
+ *
+ * **Y el que lo importa tiene que preguntar antes, porque esto es un objeto
+ * literal.** `ICON_COLORS["toString"]` y `ICON_COLORS["__proto__"]` no son colores:
+ * son una funcion y el prototipo. Por eso hay una puerta —`ICON_COLOR_KEYS.includes`
+ * — y por eso la hay **en quien llama**: `iconColor` de abajo no la tiene y por eso
+ * sigue teniendo ese agujero. `tagColorHex` lo cierra antes de mirar aqui, y el
+ * que escriba el siguiente reader deberia hacer lo mismo.
  */
-const ICON_COLORS: Record<IconColorKey, string> = {
+export const ICON_COLORS: Record<IconColorKey, string> = {
   neutral: "#8A93A8",
   accent: "#6366F1",
   green: "#16A34A",

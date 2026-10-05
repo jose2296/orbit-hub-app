@@ -4,9 +4,10 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Pressable, StyleSheet, View } from "react-native";
 
+import { normalizaColor } from "@orbit-hub/contracts";
+
 import { useTranslation } from "@/lib/i18n";
 import {
-  DEFAULT_WORKSPACE_COLOR,
   WORKSPACE_COLORS,
   colorOf,
   isWorkspaceColor,
@@ -39,13 +40,6 @@ export interface WorkspaceColorPickerProps {
   onPickWash: (wash: WashVariant) => void;
 }
 
-const ES_HEX = /^#?[0-9A-Fa-f]{6}$/;
-
-const comoHex = (value: string): string => {
-  const limpio = value.trim();
-  return (limpio.startsWith("#") ? limpio : `#${limpio}`).toUpperCase();
-};
-
 /**
  * The colour an end of a wash has right now, as a hex the square can open on.
  *
@@ -53,11 +47,17 @@ const comoHex = (value: string): string => {
  * end nobody chose falls back to the first one — which is what the space is
  * actually painted, derived and all, so the square opens on the colour the person
  * is looking at and not on a blank.
+ *
+ * **Through `normalizaColor` and not through an `ES_HEX` of its own.** This file
+ * had its own regex —six digits, `#` optional— which was one of the seven colour
+ * rules in this repository and which **did not match any of the other six**. It
+ * asks the contract now, which owns the shape, and what comes back is the
+ * **normalised** shape: six digits, uppercase, with `#abc` widened to `#AABBCC`. A
+ * `#abc` used to fall through to the default — the field accepted it and the picker
+ * rejected it — and now the picker opens on the `#AABBCC` the field meant.
  */
 function hexDe(valor: string | null | undefined): string {
-  if (typeof valor === "string" && ES_HEX.test(valor.trim())) return comoHex(valor);
-  if (isWorkspaceColor(valor)) return colorOf(valor);
-  return colorOf(DEFAULT_WORKSPACE_COLOR);
+  return normalizaColor(valor) ?? colorOf(valor);
 }
 
 /**
@@ -95,8 +95,20 @@ export function WorkspaceColorPicker({
   const theme = useTheme();
   const t = useTranslation();
 
-  const esPropioDesde = typeof value === "string" && ES_HEX.test(value.trim());
-  const esPropioHasta = typeof valueTo === "string" && ES_HEX.test(valueTo.trim());
+  /**
+   * The two ends as **the hex they are already in**, or `null` for a name.
+   *
+   * One call each and no regex: these two replaced an `ES_HEX` of this file's own,
+   * and asking `normalizaColor` for the answer also gives the **canonical** form,
+   * which is what `guardadoDesde`/`guardadoHasta` draw with. The old `ES_HEX` only
+   * said yes or no, so those two had a second helper —`comoHex`— to turn the raw
+   * value into something paintable; with `#abc` accepted, a "yes" is no longer
+   * already six digits, and that helper would have handed `#FFF` to a style.
+   */
+  const propioDesde = normalizaColor(value);
+  const propioHasta = normalizaColor(valueTo);
+  const esPropioDesde = propioDesde !== null;
+  const esPropioHasta = propioHasta !== null;
 
   /**
    * Which of the two ends is being edited.
@@ -167,12 +179,8 @@ export function WorkspaceColorPicker({
    * is not a preview. And the button only lights up when what the square says is
    * not what is saved.
    */
-  const guardadoDesde = esPropioDesde ? comoHex(value as string) : colorOf(value);
-  const guardadoHasta = valueTo
-    ? esPropioHasta
-      ? comoHex(valueTo)
-      : colorOf(valueTo)
-    : null;
+  const guardadoDesde = propioDesde ?? colorOf(value);
+  const guardadoHasta = valueTo ? (propioHasta ?? colorOf(valueTo)) : null;
 
   const colorActual = hsvToHex(hsv);
   const colorGuardada = lado === "desde" ? guardadoDesde : (guardadoHasta ?? guardadoDesde);

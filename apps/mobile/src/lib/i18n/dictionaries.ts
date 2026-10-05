@@ -243,7 +243,6 @@ const es = {
   "filters.titleOn": "Filtrar ({count})",
   "order.hint":
     "El orden manual se conserva aunque mires la lista de otra manera.",
-  "tags.title": "Etiquetas",
   "tags.add": "+ Etiqueta",
   "tags.addNew": "Añadir etiqueta",
   "providers.action": "Dónde verla",
@@ -256,11 +255,38 @@ const es = {
   "icons.ofItem": "Icono de {name}",
   "tags.newLabel": "Nueva etiqueta",
   "tags.newPlaceholder": "Mercadona, Carrefour, urgente…",
-  "tags.color": "Color",
   "tags.changeColor": "Cambiar el color de {name}, ahora {color}",
   "tags.choosingColor": "Eligiendo el color de {name}, ahora {color}",
   "tags.backToDerived": "Volver al color deducido",
   "tags.backToDerivedOf": "Volver al color deducido de {name}",
+  "tags.colorCustom": "Un color tuyo, escrito como #RRGGBB",
+  "tags.colorBad": "Un color se escribe con tres o seis cifras: #1F6FEB.",
+  "tags.colorSquareValue": "Saturación {saturation}%, claridad {brightness}%",
+  "tags.colorUse": "Usar este color",
+  /*
+   * Los nombres accesibles del selector, **todos con `{name}` al final**, y el motivo
+   * es que en la pagina de etiquetas de la hoja hay dos selectores montados a la vez:
+   * el de una pastilla, que escribe enseguida, y el del campo de "nueva etiqueta",
+   * que escribe en un estado pendiente. Dos "Usar este color" y dos "Guardar" y dos
+   * "Tono del color", cada uno compromising un color distinto, es un panel donde el
+   * nombre no dice de quien es nada.
+   *
+   * Y `tags.pendingLabel` es lo que hace que el del campo nuevo **tambien** se pueda
+   * distinguir: sin el, uno se llamaria "Mercadona" y el otro no diria nada, que es
+   * justo lo que hay que evitar. Es un sustantivo y no un nombre de etiqueta porque
+   * es el sujeto de todas estas frases.
+   */
+  "tags.pendingLabel": "la etiqueta nueva",
+  "tags.colorOf": "Color de {name}",
+  "tags.colorSwatchOf": "{color} para {name}",
+  "tags.colorHueOf": "Tono del color de {name}",
+  "tags.colorSquareOf": "Saturación y claridad del color de {name}",
+  "tags.colorCustomOf": "Un color tuyo, escrito como #RRGGBB, para {name}",
+  "tags.colorSaveOf": "Guardar el color de {name}",
+  "tags.colorUseOf": "Usar este color para {name}",
+  "tags.colorCloseOf": "Cerrar el selector de color de {name}",
+  "tags.recentColors": "Los que has usado en etiquetas",
+  "tags.recentColorOf": "Usar el color {color}",
   "icons.title": "Icono",
   "icons.none": "Sin icono",
   "icons.search": "Buscar un icono",
@@ -1248,7 +1274,6 @@ const en: Record<TranslationKey, string> = {
   "filters.titleOn": "Filter ({count})",
   "order.hint":
     "The manual order is kept even while you read the list another way.",
-  "tags.title": "Labels",
   "tags.add": "+ Label",
   "tags.addNew": "Add label",
   "providers.action": "Where to watch it",
@@ -1261,11 +1286,25 @@ const en: Record<TranslationKey, string> = {
   "icons.ofItem": "Icon for {name}",
   "tags.newLabel": "New label",
   "tags.newPlaceholder": "Mercadona, Carrefour, urgent…",
-  "tags.color": "Colour",
   "tags.changeColor": "Change the colour of {name}, now {color}",
   "tags.choosingColor": "Choosing the colour of {name}, now {color}",
   "tags.backToDerived": "Back to the derived colour",
   "tags.backToDerivedOf": "Back to the derived colour of {name}",
+  "tags.colorCustom": "One of yours, written as #RRGGBB",
+  "tags.colorBad": "A colour is three or six digits: #1F6FEB.",
+  "tags.colorSquareValue": "Saturation {saturation}%, brightness {brightness}%",
+  "tags.colorUse": "Use this colour",
+  "tags.pendingLabel": "the new label",
+  "tags.colorOf": "Colour of {name}",
+  "tags.colorSwatchOf": "{color} for {name}",
+  "tags.colorHueOf": "Colour tone of {name}",
+  "tags.colorSquareOf": "Colour saturation and brightness of {name}",
+  "tags.colorCustomOf": "One of yours, written as #RRGGBB, for {name}",
+  "tags.colorSaveOf": "Save the colour of {name}",
+  "tags.colorUseOf": "Use this colour for {name}",
+  "tags.colorCloseOf": "Close the colour picker of {name}",
+  "tags.recentColors": "The ones you have used on labels",
+  "tags.recentColorOf": "Use the colour {color}",
   "icons.title": "Icon",
   "icons.none": "No icon",
   "icons.search": "Find an icon",

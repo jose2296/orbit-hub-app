@@ -218,22 +218,34 @@ describe('un color propio', () => {
     expect(colorOf('#a1b2c3')).toBe('#A1B2C3');
   });
 
-  it('sin almohadilla no es un color, a proposito', () => {
-    // El servidor solo acepta `#RRGGBB` y el contrato tambien. Si la app lo
-    // aceptara aqui, dejaria escribir un color que llega al push y vuelve
-    // convertido en gris, en silencio: el selector pareceria funcionar y el
-    // espacio saldria de otro color en cada sincronizacion. La almohadilla la
-    // pone el propio campo, antes de chamar.
-    expect(colorOf('a1b2c3')).toBe(colorOf(DEFAULT_WORKSPACE_COLOR));
+  it('sin almohadilla tampoco es un color distinto, a proposito', () => {
+    // **El motivo de antes era el que este commit quita.** Decia: "el servidor solo
+    // acepta `#RRGGBB` y el contrato tambien", y por eso `a1b2c3` caia en gris.
+    // Eso era verdad y ya no lo es: el servidor **normaliza** en vez de rechazar, y
+    // lo normaliza con `normalizaColor`, la misma funcion que contesta aqui. O sea
+    // que el argumento ya no es "el servidor no lo acepta" sino **"hay una sola
+    // regla y el servidor la aplica igual que la app"** — que es lo que hace
+    // seguro aceptar: no que las dos copias coincidan hoy, sino que no haya dos.
+    expect(colorOf('a1b2c3')).toBe('#A1B2C3');
   });
 
   it('un texto que no es un color cae en el color por defecto', () => {
-    // `#abc`, `#ABCDEF`, `red` and `javascript:alert(1)` all reach here from a
-    // text field. None of them is a colour this app can draw, and a style built
-    // out of one of them is a card nobody can read.
-    for (const basura of ['#abc', 'rojo', 'rgb(1,2,3)', 'javascript:alert(1)', '#12345']) {
+    // Lo que llega aqui desde un campo de texto y no es un color: un nombre de color
+    // en vez de un hex, una funcion de CSS y algo con dos puntos dentro, que es lo
+    // que un campo de texto acepta y no es una declaracion de color. Un estilo hecho
+    // con uno de ellos es una tarjeta que nadie lee.
+    //
+    // **`#abc` salio de la lista, y el comentario de al lado tambien.** Decia que
+    // `#abc` no era "un color que esta app pueda pintar", y es falso: es un color
+    // perfectamente bueno, el validador del movil lo ha aceptado siempre —tres
+    // digitos, a proposito— y `colorOf('#abc')` da `#AABBCC`. Lo que cambio no es
+    // que ahora se admita: es que **ya se admitia** en el campo, en el mapa de
+    // etiquetas y en el contrato, y aqui se rechazaba. Siete reglas para una
+    // pregunta, y la que estaba en el camino de dibujo era la equivocada.
+    for (const basura of ['rojo', 'rgb(1,2,3)', 'javascript:alert(1)', '#12345']) {
       expect(colorOf(basura)).toBe(colorOf(DEFAULT_WORKSPACE_COLOR));
     }
+    expect(colorOf('#abc')).toBe('#AABBCC');
   });
 
   it('no dice que un color propio es uno de los que ofrece', () => {

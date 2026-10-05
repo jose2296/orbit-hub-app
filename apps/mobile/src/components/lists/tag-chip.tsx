@@ -1,15 +1,16 @@
 import { useTheme } from "@/theme";
 import type { TagColors } from "@orbit-hub/contracts";
 import { derivedTagColor } from "@orbit-hub/contracts";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { ViewStyle } from "react-native";
 import type { ReactNode } from "react";
 
-import { labelTextColor } from "@/lib/lists/tag-colors";
+import { labelPillColors, tagColorHex } from "@/lib/lists/tag-colors";
 import { AppText } from "../ui/text";
 
 /**
- * One label, in the colour this list gives it — where that colour can be read.
+ * One label, in the colour this list gives it — the tint of that colour as the
+ * fill, and a text read off that fill.
  *
  * The colour arrives in the `colors` prop and is **not** looked up from anywhere
  * else — not a module-level map, not the item, not a hook. That is the whole
@@ -21,17 +22,22 @@ import { AppText } from "../ui/text";
  * is `derivedTagColor(tag)`, the same colour every other device computes for it.
  * That one *can* come out grey — `neutral` is one of the twelve, so the hash lands
  * on it for roughly one name in twelve, which `@orbit-hub/contracts` admits on
- * purpose — and `iconColor` also answers `neutral` for a key a newer build wrote.
- * Grey is a colour somebody can end up with; what does not exist is a label with
- * no colour at all, which is why this component has no "empty" branch.
+ * purpose — and a colour a newer build wrote that this one does not know comes out
+ * `neutral` too. Grey is a colour somebody can end up with; what does not exist is
+ * a label with no colour at all, which is why this component has no "empty" branch.
  *
- * **The colour is not always the text colour, and that is a measured decision.**
- * `labelTextColor` keeps the label's own colour only when it clears 4.5:1 against
- * this pill's fill, and hands back `theme.colors.text` when it does not. The
- * arithmetic is not close and it does not agree with itself between themes: three
- * of the twelve clear the bar on the light fill and three *different* ones clear it
- * on the dark one, so most pills are in the theme's text and none is coloured in
- * both. The rule and the measurement live in `@/lib/lists/tag-colors`.
+ * **Both colours come out of one call, and the fill is the label's own colour
+ * rather than the theme's.** `labelPillColors` mixes the colour with the surface
+ * and darkens it or lightens it until it can be read on that mix. The two are a
+ * pair — the text means nothing measured against any other fill — which is why
+ * they arrive together and not one at a time.
+ *
+ * The pair replaces a split decision: a `surfaceMuted` fill with the label's colour
+ * as the text, falling back to `theme.colors.text` whenever that colour did not
+ * read on that fill. A colour is a decision somebody took about one label, and the
+ * theme's text is nobody's; the fill was the theme's while the text was the
+ * label's, so the two halves were about different labels. The rule and the
+ * arithmetic live in `@/lib/lists/tag-colors`.
  */
 export function TagChip({
   tag,
@@ -39,11 +45,25 @@ export function TagChip({
   size = "regular",
   children,
   style,
+  onPress,
+  hintProps,
 }: {
   tag: string;
   colors: TagColors | undefined;
   size?: "regular" | "compact";
-  children?: ReactNode;
+  /**
+   * What the pill carries inside it, and **the colour to draw it in.**
+   *
+   * A function receives the pill's own text colour; an element is left as it is.
+   * The fill used to be the theme's `surfaceMuted`, and on that a child could be
+   * drawn in any theme token. It is now the label's own tint, and **no theme text
+   * token has been measured against it** — on a tint, `textMuted` is a colour
+   * nobody chose and usually a colour nobody can read. The pill has just derived
+   * the one colour that clears 4.5:1 on that fill, so that is what a child gets:
+   * not a second derivation, and not a token that belongs to a background this
+   * pill no longer has.
+   */
+  children?: ReactNode | ((ink: string) => ReactNode);
   /**
    * What the pill takes of the line it is dropped on, the same prop `Badge` has.
    *
@@ -54,42 +74,98 @@ export function TagChip({
    * a caller that passes nothing gets exactly the pill this file describes.
    */
   style?: ViewStyle;
+  /**
+   * A press on the pill, **and nothing at all without it.**
+   *
+   * A `Pressable` here and not a box with a `Pressable` in it, for the reason the
+   * `style` above describes: the row measures this element, and a box outside it
+   * would take the `flexShrink` and leave the pill hanging off the line.
+   *
+   * **It and `children` are not the same thing, and `onPress` is not for the two
+   * rows of pills in the sheet.** Those carry inside them the buttons that take a
+   * label off and give it a colour, so a pill that is also a button is a button
+   * around two buttons: on a phone the innermost one keeps the gesture and the
+   * outer never fires, and on the web the `click` bubbles and both do — see
+   * `useLongPressText` for that same asymmetry, measured the other way round.
+   *
+   * **The `accessibilityRole` in the pressable is what makes this a button, and on
+   * web it also decides the element:** `propsToAccessibilityComponent.js` returns
+   * the tag for a role that has one, so this branch is a `<button>` and the other a
+   * `<div>`. Measured, and the reason the browser checks look for `div,button`.
+   */
+  onPress?: () => void;
+  /**
+   * What activating the pill does, **spread, not a string.** The same prop
+   * `TagColorButton` takes: the node stays with the caller, so a row whose pills
+   * share one sentence with the name renders it once and points every one of their
+   * `aria-describedby` at it. And a plain `accessibilityHint` string would work on a
+   * phone and vanish in a browser, because `react-native-web@0.21.2` deletes it at
+   * the `View` boundary; see `hintProps` in `badge.tsx` for the whole of it.
+   */
+  hintProps?: Record<string, string>;
 }) {
   const theme = useTheme();
   const compacto = size === "compact";
-  const fill = theme.colors.surfaceMuted;
-  const text = labelTextColor(
-    colors?.[tag] ?? derivedTagColor(tag),
-    fill,
-    theme.colors.text,
+  /*
+   * **Las dos formas del color se juntan aqui**, y por eso pasan por
+   * `tagColorHex` antes de entrar: el mapa guarda el hex que contesta el servidor y
+   * `derivedTagColor` devuelve un nombre de los doce, y los dos dicen lo mismo en
+   * sitios distintos. Es tambien lo que deja pintar el color que eligio alguien en
+   * un build que guardaba nombres —`iconColor` no lo reconoceria y lo devolveria
+   * en el neutro, que es gris.
+   */
+  const { fill, text } = labelPillColors(
+    tagColorHex(colors?.[tag] ?? derivedTagColor(tag)),
+    theme.colors.surfaceMuted,
+    theme.scheme === "dark" ? "dark" : "light",
   );
 
-  return (
-    <View
-      style={[
-        styles.chip,
-        {
-          borderRadius: theme.radius.pill,
-          backgroundColor: fill,
-          paddingHorizontal: compacto ? theme.spacing.xs : theme.spacing.sm,
-          /*
-           * The one number in this file that is not a token, and it is meant:
-           * `SPACING` has no 1, so the compact pill is 1 and the regular one is
-           * `xxs`. `badge.tsx` uses tokens on both sides of its own compact switch,
-           * which makes this look like an oversight — it is not, and "tidying" it to
-           * `xxs` silently doubles the compact pill.
-           */
-          paddingVertical: compacto ? 1 : theme.spacing.xxs,
-          gap: theme.spacing.xxs,
-        },
-        style,
-      ]}
-    >
+  // Un solo array de estilo para las dos ramas, para que la caja sea la misma caja
+  // y no haya un segundo sitio donde un padding o un radio se separen.
+  const estilo = [
+    styles.chip,
+    {
+      borderRadius: theme.radius.pill,
+      backgroundColor: fill,
+      paddingHorizontal: compacto ? theme.spacing.xs : theme.spacing.sm,
+      /*
+       * The one number in this file that is not a token, and it is meant:
+       * `SPACING` has no 1, so the compact pill is 1 and the regular one is
+       * `xxs`. `badge.tsx` uses tokens on both sides of its own compact switch,
+       * which makes this look like an oversight — it is not, and "tidying" it to
+       * `xxs` silently doubles the compact pill.
+       */
+      paddingVertical: compacto ? 1 : theme.spacing.xxs,
+      gap: theme.spacing.xxs,
+    },
+    style,
+  ];
+
+  const dentro = (
+    <>
       <AppText variant="caption" style={{ color: text }}>
         {tag}
       </AppText>
-      {children}
-    </View>
+      {typeof children === "function" ? children(text) : children}
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={estilo}>{dentro}</View>;
+  }
+
+  // Sin `accessibilityLabel`: el nombre accesible de la pastilla es el de la
+  // etiqueta, que es lo que está escrito dentro. Y `accessibilityRole` decide en web
+  // que esto es un `<button>` y no un `<div>`; está en la prop de arriba.
+  return (
+    <Pressable
+      accessibilityRole="button"
+      {...hintProps}
+      onPress={onPress}
+      style={estilo}
+    >
+      {dentro}
+    </Pressable>
   );
 }
 
