@@ -42,6 +42,7 @@ import {
   canReorder,
   filterItems,
   orderItems,
+  PRIORITY_TONE,
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
@@ -58,13 +59,6 @@ const ORDER_MODES: ListOrderMode[] = [
   "updated_desc",
   "priority",
 ];
-
-const PRIORITY_TONE = {
-  none: "neutral",
-  low: "info",
-  medium: "warning",
-  high: "danger",
-} as const;
 
 /**
  * The glyph each urgency carries in a row, next to the colour.
