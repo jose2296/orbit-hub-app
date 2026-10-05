@@ -46,7 +46,15 @@ async function createHandle(): Promise<DatabaseHandle> {
       mkdirSync(dirname(resolve(dataDir)), { recursive: true });
     }
 
-    const client = new PGlite(dataDir, { extensions: { pg_trgm } });
+    // The options object goes FIRST, on purpose. PGlite picks the single-argument
+    // form apart from the two-argument form by argument count, not by type, so
+    // `new PGlite(undefined, { extensions })` silently drops `extensions`: the
+    // object arrives as a data directory instead of as options. With no data
+    // directory, pg_trgm never loads and migration 0012 fails its
+    // `CREATE EXTENSION` with `extension "pg_trgm" is not available`, which took
+    // the whole api suite red. It only ever showed up in the tests, because dev
+    // has EMBEDDED_DATA_DIR set and production goes through DATABASE_URL.
+    const client = new PGlite({ dataDir, extensions: { pg_trgm } });
     // PgliteDatabase and NodePgDatabase expose the same query surface; the cast
     // keeps one type for the whole application.
     const db = drizzlePglite(client, { schema }) as unknown as Database;
