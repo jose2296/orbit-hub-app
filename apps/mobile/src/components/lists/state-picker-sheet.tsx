@@ -304,9 +304,10 @@ export function StatePickerSheet({
 
         **Both close this one on the way out**, in the order `exportar` there uses:
         the panel leaves and the next thing arrives behind it. **What that leaves on
-        screen was measured, not assumed** — 233 ms with two `sheet-dim` and two
-        `sheet-panel` in the document, y el comentario de `onEditTask` de abajo tiene
-        los numeros, el mecanismo y lo que NO se ha medido.
+        screen was measured, not assumed** — 220-241 ms in 15-16 of 22-44 sampled
+        frames with two `sheet-dim` and two `sheet-panel` in the document, and the
+        `onEditTask` comment below has the numbers, the mechanism, and what has **not**
+        been measured.
 
         The task panel is **above** the states editor and not below it: it is about
         the thing the sheet is open for, and the other one is about the board. That
@@ -332,32 +333,44 @@ export function StatePickerSheet({
           **`onEditTask` before `onClose`, and the order is not what decides — the two
           land in the same commit either way.** What decides is what is on screen during
           the exit, and **that is measured, not argued**: the outgoing sheet stays
-          mounted for `SALIDA + 90` = 330 ms (`sheet.tsx:230`), so for **233 ms, in 15
-          of the 43 frames sampled, there are two `sheet-dim` and two `sheet-panel` in
+          mounted for `SALIDA + 90` = 330 ms (`sheet.tsx:230`), so for **220-241 ms, in 15-16
+          of the 22-44 frames sampled, there are two `sheet-dim` and two `sheet-panel` in
           the document** (`scripts/verify-state-picker.mjs`, block `1c`, which samples
           from inside the gesture with a `requestAnimationFrame` installed before the
-          press).
+          press). The frame count is the fixed part; the milliseconds move between runs,
+          because they depend on where each frame lands inside the exit.
 
           Inside that window the arriving panel is the **last child of `body`** —
           `ModalPortal` appends one div per modal — so it paints above the outgoing dim
           and does not read darker for sitting over it. And the topmost element under a
-          backdrop point is the arriving sheet's on every frame **but the first**, where
-          it is the outgoing one: one frame, ~16 ms, and the reason is in the library
+          backdrop point is the arriving sheet's on every frame **except the first one or
+          two**, where it is the outgoing one: measured 0, 1 or 2 frames, always in the
+          first positions of the window, and the reason is in the library
           (`ModalAnimation.js:67` paints its wrapper as `{ opacity: 0 }`, with no
           `position` and no `z-index`, until its `useEffect` sets `isRendering`, while
           the outgoing modal keeps `visible={montada}` and stays in the `z-index: 9999`
-          layer). Its cost is nothing measurable: the outgoing sheet has already been
-          asked to close, so asking twice changes nothing, and the arriving panel is
-          still 91% of its height below where it will be.
+          layer). **What that costs is not measured, and is not claimed to be**: the
+          outgoing sheet has already been asked to close, so asking twice changes nothing,
+          and there is deliberately no argument here about how far the arriving panel has
+          travelled — a previous version of this comment made one ("still 91% of its
+          height below") and no run ever printed the number behind it. It is printed now,
+          in pixels and frame by frame, in the sixth check of block `1c`.
 
           **Not measured: native, and a phone-width sheet.** All of it is the web at
           1440 x 900, where `Sheet` draws a centred dialog.
 
-          The order stays because no alternative is better on the numbers and all three
-          cost more — cutting the outgoing sheet leaves the background at zero for a
-          frame or two before the arriving dim ramps, deferring it does the same later,
-          and dropping its dim takes the composite to 0.62 → 0.30 → 0.62. What is left
-          is the background going from 0.62 to 0.66 for about 100 ms.
+          The order stays because the alternative costs more, and that argument is made
+          **from the code and not from a table of numbers that were never measured** — a
+          table like that shipped in round 2 and was deleted in round 3, along with the
+          sentence that headed it. `fondo` starts at 0 (`sheet.tsx:105`) and takes 150 ms
+          to reach 1 (`sheet.tsx:130`), so at the moment of the handover the arriving
+          veil is worth 0: **any** change that removes a veil leaves the composite at the
+          other veil's value, and at that instant that is 0 — a background with no dim at
+          all, and for longer than the 1-17% peak this keeps — the measured range, and the
+          top of it is the run whose compositing frame landed mid-fade on both veils.
+          Cutting the
+          outgoing sheet also takes the 240 ms of panel travel (`SALIDA`) with it. What is
+          left is the background going from 0.62 to 0.63-0.71 for about 100 ms.
 
           The screen reads the task out of its own state —not out of the `item` this
           sheet was handed— and it does it in the same commit, so it still has it.

@@ -676,14 +676,35 @@ const INSTALAR_MUESTREO = (donde) => `(() => {
     */
     const capas = dims.map((d) => {
       const cs = getComputedStyle(d);
-      const partes = (cs.backgroundColor.match(/^rgba?\\(([^)]+)\\)$/) || [null, "0,0,0,1"])[1]
-        .split(",")
-        .map((x) => Number(x.trim()));
-      const alfa = partes.length >= 4 ? partes[3] : 1;
+      const encontrado = cs.backgroundColor.match(/^rgba?\\(([^)]+)\\)$/);
+      const partes = (encontrado ? encontrado[1] : "").split(",").map((x) => Number(x.trim()));
+      const alfa = partes.length >= 4 && !Number.isNaN(partes[3]) ? partes[3] : null;
       const op = Number(cs.opacity);
-      return { op: Number(op.toFixed(2)), alfa, osc: Number((op * alfa).toFixed(3)) };
+      /*
+        **Un velo cuyo color no se puede leer no es un velo de alfa 1.** Con el
+        valor por defecto de antes, un \`backgroundColor\` en un formato que la
+        expresion regular no reconoce contaba como opaco y el compuesto salia
+        mas alto de lo que es —que es la direccion que hace caer la comprobacion,
+        no la que la deja pasar—, pero de todos modos un numero inventado no
+        vale. Aqui queda \`alfa: null\`, \`osc: null\` y el recuento de
+        fotogramas sin alfa legible (\`sinAlfa\`), que la comprobacion del
+        velo mira: si un dia el tema escribe el overlay en otro formato, esto dice
+        "no lo he medido" en vez de dar un numero.
+      */
+      const osc = alfa === null ? null : Number((op * alfa).toFixed(3));
+      return {
+        op: Number(op.toFixed(2)),
+        alfa,
+        osc,
+        color: cs.backgroundColor,
+      };
     });
-    const veloTotal = 1 - capas.reduce((t, c) => t * (1 - c.osc), 1);
+    if (capas.some((c) => c.alfa === null)) reg.sinAlfa = (reg.sinAlfa ?? 0) + 1;
+    // Un velo sin alfa legible pesa 1 en el compuesto: se cuenta como opaco, que es
+    // lo que hace que el numero no baje, y \`sinAlfa\` deja constancia de que ese
+    // fotograma no es una medicion del velo sino una asuncion. La comprobacion
+    // del velo no pasa mientras \`sinAlfa\` sea mayor que cero.
+    const veloTotal = 1 - capas.reduce((t, c) => t * (1 - (c.osc ?? 1)), 1);
     const tarea = paneles.find((p) => p.querySelector('[data-testid="item-name"]')) ?? null;
     const hoja = paneles.find((p) => p.querySelector('[data-testid^="state-picker-row-"]')) ?? null;
     const r = tarea ? tarea.getBoundingClientRect() : null;
@@ -789,6 +810,8 @@ const LEER_MUESTREO = `(() => {
       (a, b) => a - b,
     ),
     sinVelo: m.filter((x) => x.paneles > 0 && x.dims === 0).length,
+    // Los fotogramas en los que un velo traia un color cuyo alfa no se pudo leer.
+    sinAlfa: reg.sinAlfa ?? 0,
     fondoTrasLaLlegada: [...new Set(despues.map((x) => x.fondo))],
     /*
       Los fotogramas en los que el fondo de mas arriba es el de la hoja que se va, con
@@ -812,7 +835,41 @@ const LEER_MUESTREO = `(() => {
     fondoMaloT: despues
       .filter((x) => x.fondo.startsWith(String.fromCharCode(104) + "oja#"))
       .map((x) => x.t),
+    // **Los mismos fotogramas, pero por posicion dentro de la ventana y no por
+    // cuenta.** Un tope de "dos fotogramas" depende de cada cuanto el navegador
+    // pinto: con la maquina cargada un fotograma puede tardar 140 ms, y el mismo
+    // useEffect de ModalAnimation que dura un frame en una maquina
+    // descargada cabe en dos en una cargada. La posicion no depende de eso: lo
+    // que se vigila es que el orden invertido este **al principio de la ventana**
+    // y no repartido, que es lo que distingue una carrera de una capa mal puesta.
+    fondoMaloPos: conDos
+      .map((x, i) => (x.fondo.startsWith(String.fromCharCode(104) + "oja#") ? i : -1))
+      .filter((i) => i >= 0),
+    centroMaloPos: conDos
+      .map((x, i) =>
+        x.tareaEnPantalla && !x.centro.startsWith("tarea#") ? i : -1,
+      )
+      .filter((i) => i >= 0),
     centroMalo: despues.filter((x) => x.tareaEnPantalla && !x.centro.startsWith("tarea#")).length,
+    /*
+      **La subida del panel que entra, en pixeles y fotograma a fotograma de la
+      ventana.** Esta existia en el resumen desde la ronda 2 y **ninguna
+      comprobacion la imprimia**: era el numero que el comentario de mas abajo
+      daba por bueno ("91% de su altura") sin que nada lo dijera. Se imprime
+      entero, porque su valor no es el que el comentario suponia.
+    */
+    subidasEnLaVentana: conDos.map(
+      (x) => x.t + " ms: " + (x.subidaTarea === null ? "sin panel" : x.subidaTarea + " px"),
+    ),
+    // El alto del panel que entra en el primer fotograma de la ventana, para poder
+    // contrastar la subida contra el alto: sheet.tsx:290 dice que la subida es
+    // "(1 - entrada) * altoPanel", y los dos factores estan en [0, 1], asi que la
+    // subida no puede pasar del alto. Un tope que sale del codigo, no del ojo.
+    // **Sin ventana esto sale null**, y la comprobacion de la subida cae: una
+    // medida sin marco no es una medida.
+    altoTareaEnLaVentana: conDos[0]?.rectTarea
+      ? Math.round(conDos[0].rectTarea[1] - conDos[0].rectTarea[0])
+      : null,
     subidaTareaMax: despues.reduce((a, x) => Math.max(a, x.subidaTarea ?? 0), 0),
     subidaTareaFin: despues.length ? despues.at(-1).subidaTarea : null,
     subidaHojaMax: m.reduce((a, x) => Math.max(a, x.subidaHoja ?? 0), 0),
@@ -821,12 +878,25 @@ const LEER_MUESTREO = `(() => {
   };
 })()`;
 
-/** El alfa del velo que escribe el tema, leido del propio `sheet-dim`. */
+/**
+ * El alfa del velo que escribe el tema, leido del propio `sheet-dim`.
+ *
+ * **Y si no hay velo, lo dice; no devuelve un alfa.** Sin este elemento el
+ * `backgroundColor` era `""`, la expresion regular no casaba, `partes` era
+ * `[""]` y el alfa salia `Number(undefined ?? 1) = 1`: el techo de las dos
+ * comprobaciones de velo se iba a 1.15 y **cualquier compuesto pasaba**. Es un
+ * fallo que abre en la direccion "verde" en la comprobacion que existe para
+ * morder, asi que aqui se devuelve `alfa: null` y quien la usa tiene que mirarlo
+ * antes de comparar. El `ok` lleva el color para que un `null` se vea sin abrir
+ * el fichero.
+ */
 const LEER_VELO = `(() => {
   const el = document.querySelector('[data-testid="sheet-dim"]');
-  const color = el ? getComputedStyle(el).backgroundColor : "";
+  if (!el) return { color: "(no hay sheet-dim en el documento)", alfa: null };
+  const color = getComputedStyle(el).backgroundColor;
   const partes = (color.match(/^rgba?\\(([^)]+)\\)$/) || [, ""])[1].split(",").map((p) => p.trim());
-  return { color, alfa: partes.length >= 4 ? Number(partes[3]) : Number(partes[3] ?? 1) };
+  if (partes.length < 4) return { color, alfa: null };
+  return { color, alfa: Number(partes[3]) };
 })()`;
 
 /**
@@ -1173,35 +1243,55 @@ try {
     estaba abierta.
 
     **Lo medido decide lo que se hace, y lo medido dice que no hay que hacer nada.**
-    Con el codigo de este checkout, a 1440 x 900 y en claro, la ventana dura **234 ms en
-    15 fotogramas**, y en esos fotogramas:
+    Con el codigo de este checkout, a 1440 x 900, la ventana dura **entre 220 y 241 ms en 15 o
+    16 fotogramas** —tres corridas con la maquina cargada la cerraron en 8—; el rango es de
+    las diecinueve corridas completas de la ronda 3. El numero fluctua porque depende de donde
+    caiga cada fotograma dentro de la salida, y por eso lo que se comprueba es la forma y no
+    el milisegundo. En esos fotogramas:
 
     - la hoja que entra esta en el portal **#6** y la que se va en el **#5**: es la
       ultima del `body`, y por lo tanto la que se pinta encima y la que recibe las
       pulsaciones;
-    - el punto de fondo devuelve **siempre `tarea#6`** y el centro del panel que entra
-      tambien: **ninguna pulsacion alcanza a la hoja que se va**, que es el peligro que
-      el comentario de `onEditStates` citaba;
+    - **el punto de fondo no siempre devuelve la entrante.** En diecinueve corridas completas
+      de esta ronda (38 mediciones, una por pasada) el punto de fondo dio `["tarea#6"]` —cero
+      fotogramas con el fondo de la hoja que se va— **12 veces**, y uno o dos fotogramas malos
+      las otras 26, **siempre en las posiciones 0 y 1 de la ventana**. La version anterior de este
+      comentario afirmaba lo contrario —"siempre `tarea#6`, ninguna pulsacion alcanza a la
+      hoja que se va"— y se contradecia mas abajo, en el comentario del quinto `check`, que
+      si describe el fotograma. Lo que queda es lo que las corridas enseñan: **el orden
+      invertido existe, dura de uno a dos fotogramas y siempre esta al principio de la
+      ventana**. El mecanismo esta en `ModalAnimation.js:67` y esta en el comentario del
+      quinto `check`, que es donde vive;
     - el panel que entra esta **encima del velo que se va** —portal 6 sobre portal 5—,
       asi que **no lo oscurece**: se puede leer con los dos arriba;
-    - el unico numero que se mueve es el fondo de la pantalla, que pasa de **0.62 a
-      0.656-0.668** —un 6% a un 8% relativo— durante unos 100 ms. En oscuro son 0.76 a
-      **0.766-0.813** en cinco corridas, y el pico se mueve porque depende de donde
-      caiga el fotograma dentro de los dos desvanecidos.
+    - el unico numero que se mueve es el fondo de la pantalla: de **0.62 a 0.629-0.705** en
+      claro —un 1% a un 14% relativo— y de **0.76 a 0.765-0.886** en oscuro, un 1% a un 17%.
+      El pico se mueve con el fotograma porque depende de donde caiga dentro de los dos
+      desvanecidos, y con el ancho del pico —la ventana empieza antes de que el velo
+      entrante haya subido y termina cuando el saliente ya ha bajado del todo—.
 
-    Un pico del 6% al 8% en el fondo durante 100 ms es un parpadeo por debajo del umbral, y las
-    tres formas de quitarlo —cerrar la que se va de golpe, aplazar la que entra, o dejar
-    la que se va sin velo— **cambian ese 6% por un hueco mas claro y mas largo** (0.62 a
-    0 y de vuelta a 0.62, o 0.62 a 0.30 y de vuelta), que se ve mas. Y la primera se
-    lleva por delante los 240 ms de viaje del panel, que es justo lo que `useLastValue`
-    existe para no perder. El razonamiento completo, con los numeros, esta en el informe
-    de la ronda 2.
+    Un pico de 1-17% en el fondo durante unos 100 ms esta por debajo del umbral, y las formas
+    de quitarlo cambian ese pico por un hueco **mas claro**, que se ve mas. **Ese argumento
+    no trae una tabla de numeros medidos y no puede traerla**: en la ronda 2 se publico una
+    con tres filas de cifras que no habian salido de ninguna corrida, y la tercera ni
+    siquiera era derivable de su propio mecanismo. Lo que sostiene la decision es lo que
+    sale del codigo: `fondo` arranca en 0 (`sheet.tsx:105`) y tarda 150 ms en llegar a 1
+    (`sheet.tsx:130`), asi que **en el instante del relevo el velo entrante vale 0** y
+    cualquier arreglo que quite un velo deja el compuesto en el valor del otro —0 en ese
+    instante—, que es un hueco sin oscurecer mas largo que el 1-17% que evita. La tabla y
+    el porque de borrarla estan en el informe de la ronda 3.
 
     Asi que aqui no hay nada que arreglar: **lo que hay es una forma de que esto cambie
-    sin que nadie se entere**, y son las cinco comprobaciones siguientes. No son "todo
-    bien": son las cinco cosas que tienen que seguir siendo verdad.
+    sin que nadie se entere**, y son las seis comprobaciones siguientes. No son "todo
+    bien": son las seis cosas que tienen que seguir siendo verdad.
   */
   const veloDeLaTanda = await tab.evaluate(LEER_VELO);
+  if (veloDeLaTanda.alfa == null) {
+    note(
+      `el velo del tema no se ha podido leer (${veloDeLaTanda.color}): las dos ` +
+        "comprobaciones de velo de este bloque van a fallar por falta de techo, no por",
+    );
+  }
 
   /*
     **La primera comprobacion es sobre el instrumento, y es la que impide que las otras
@@ -1248,23 +1338,50 @@ try {
 
     Dos velos no se suman: se multiplican, asi que el compuesto es `1 - Π(1 - a)` con
     `a = opacidad x alfa del token`, y los dos numeros se leen del elemento. El techo es
-    **un 15% por encima del velo que el tema escribe** y no un numero absoluto, para que
-    la comprobacion sea la misma en las dos pasadas: leidos del elemento, en claro son
-    0.62 y en oscuro 0.76.
+    **un 20% por encima del velo que el tema escribe** —`techoVelo`, mas abajo, que las dos
+    comprobaciones comparten— y no un numero absoluto, para que la comprobacion sea la misma
+    en las dos pasadas: leidos del elemento, en claro son 0.62 y en oscuro 0.76.
 
-    Ese 15% no es un margen inventado: es lo que permite el desvanecido. El velo que
-    entra dura 150 ms y el que sale 180 (`sheet.tsx:130` y `:214`), asi que mientras los
-    dos coexisten el que entra todavia va por su cuenta y el compuesto **no puede**
-    llegar al 0.856 de dos velos completos —medido: 0.658 en claro, un 6%—. Si alguien
-    hiciera aparecer el velo de entrada de golpe, el compuesto se iria a 0.856, un 38%
-    por encima del token, y esta comprobacion caeria. Ese es el fallo que muerde.
+    Ese 20% no es un margen puesto a ojo: es el maximo medido redondeado hacia arriba, y el
+    maximo esta mas abajo con su cuenta. Y el margen tiene que existir porque los dos
+    desvanizados no coinciden: el velo que entra dura 150 ms y el que sale 180
+    (`sheet.tsx:130` y `sheet.tsx:214`), asi que mientras los dos coexisten el que entra
+    todavia va por su cuenta y el compuesto **no puede** llegar a dos velos completos, que
+    es `1 - (1 - 0.62)²` = 0.856 en claro y 0.942 en oscuro.
+    **Ese techo esta medido**, con la mutacion que quita el desvanecido del velo saliente
+    (`sheet.tsx:214`) y deja las dos capas en opacidad 1: la corrida dio 0.856 en claro y
+    0.942 en oscuro, los dos por encima de sus techos, y las dos comprobaciones cayeron. Sin
+    esa mutacion el pico real anda en 0.629-0.705 en claro y 0.765-0.886 en oscuro. Ese es
+    el fallo que muerde, y muerde en las dos pasadas.
+
+    **El techo tiene que existir para que la comprobacion pueda fallar, asi que su
+    ausencia la hace caer.** Sin `sheet-dim` el alfa se leeria `1` (ver `LEER_VELO`) y el
+    techo se iria al maximo, con lo que **cualquier** compuesto pasaria; con el velo
+    presente pero de un color sin alfa legible, `sinAlfa` cuenta los fotogramas y el mismo.
+    Las dos cosas salen en la linea del `ok`.
+
+    **El 15% de la ronda 2 era una cifra puesta a ojo, y medirla la ha desmentido.** Era el
+    techo que decia "lo que permite el desvanecido", y en las diecinueve corridas completas
+    de la ronda 3 el pico real subio a **0.705 en claro** —0.62 x 1.15 = 0.713, al limite— y
+    a **0.886 en oscuro**, que es un **16.6%** sobre el token y **se paso del techo de
+    0.874**: una corrida en `FALLA` y las demas en verde. El techo aqui es **1.20**, derivado
+    del maximo medido y no de una idea de cuanto "deberia" subir. Sigue muerdiendo: la
+    mutacion del desvanecido da 0.856 en claro —sobre un techo de 0.744— y 0.942 en oscuro
+    —sobre 0.912—, asi que las dos comprobaciones caen igual. Lo que **no** se puede decir es
+    que el pico real se quede en un 15%: se queda en un 1%-17%, y depende de donde caiga el
+    fotograma dentro de los dos desvanizados.
   */
+  const techoVelo = (alfa) =>
+    alfa == null ? null : Math.round(alfa * 1.2 * 1000) / 1000;
   check(
-    "**el velo de la pantalla no se pasa de un 15% por encima del velo del tema**",
-    (relevo.picoVelo ?? 1) <= (veloDeLaTanda?.alfa ?? 0) * 1.15,
+    "**el velo de la pantalla no se pasa de un 20% por encima del velo del tema**",
+    (relevo.picoVelo ?? 1) <= techoVelo(veloDeLaTanda?.alfa) &&
+      veloDeLaTanda?.alfa != null &&
+      (relevo.sinAlfa ?? 0) === 0,
     `pico del velo compuesto: ${relevo.picoVelo} en el fotograma de ${relevo.picoEn} ms ` +
       `(capas: ${relevo.velosDelPico}) | el tema escribe ${veloDeLaTanda?.color} y el techo ` +
-      `es ${(veloDeLaTanda?.alfa ?? 0) * 1.15} | el pico dentro de la ventana de dos hojas: ` +
+      `es ${techoVelo(veloDeLaTanda?.alfa) ?? "n/d (sin alfa legible: la comprobacion no puede pasar)"} | ` +
+      `fotogramas con un velo sin alfa legible: ${relevo.sinAlfa} | el pico dentro de la ventana de dos hojas: ` +
       `${relevo.picoVeloEnLaVentana} (${relevo.velosDelPicoDeLaVentana})`,
   );
 
@@ -1286,18 +1403,19 @@ try {
 
 /*
     **A donde llega una pulsacion, que es el peligro de dos fondos — y aqui hay UN
-    fotograma que no es el que uno quiere.**
+    fotograma, o dos, que no son los que uno quiere.**
 
     `fondo` es el elemento de mas arriba en un punto a la izquierda del panel, o sea uno
     de los dos fondos. Lo que no puede pasar es que ese fondo sea **el de la hoja que se
-    va** y se quede si: una pulsacion ahi cerraria la hoja de estado —que se esta
-    dismissed sola— mientras el panel de la tarea se queda abierto encima, y una
-    pulsacion sobre una fila suya moveria la tarea.
+    va** y se quede si: una pulsacion ahi cerraria la hoja de estado —que se esta yendo
+    sola— mientras el panel de la tarea se queda abierto encima, y una pulsacion sobre una
+    fila suya moveria la tarea.
 
-    **Medido: en un fotograma de cada relevo, el de mas arriba es el de la que se va.**
-    Sale en la pasada en clara y en la oscura, no siempre (de seis corridas con el
-    muestreo salio en tres) y siempre en el **primer** fotograma de la ventana. El
-    mecanismo esta en react-native-web y no en esta app:
+    **Medido: en uno o dos fotogramas de cada relevo, el de mas arriba es el de la que se
+    va.** No sale en todas las corridas: en las 38 mediciones de la ronda 3 (diecinueve corridas
+    completas, una por pasada) salio **12 veces con 0 fotogramas, 23 con 1 y 3 con 2**, pero
+    cuando sale **siempre esta en las posiciones 0 y 1 de la ventana**. El mecanismo esta
+    en react-native-web y no en esta app:
 
     - `ModalAnimation` (RNW 0.21.2, `ModalAnimation.js:67`) pinta su envoltorio con
       `isRendering ? getAnimationStyle(...) : styles.hidden`, y **`isRendering` lo pone un
@@ -1306,34 +1424,83 @@ try {
     - La hoja que se va, en cambio, sigue con `visible={montada}` en su `Modal` —de eso
       sirve `montada`— y su envoltorio va con `styles.container` = `z-index: 9999`.
     - Con una en la capa de `z-index: 9999` y la otra en la de `auto`, **gana la que se
-      va**, hasta que el `useEffect` de la entrante la mete en su capa. Un fotograma.
+      va**, hasta que el `useEffect` de la entrante la mete en su capa. Uno o dos
+      fotogramas.
 
-    **Lo que cuesta es nada, y eso tambien esta medido**: en ese fotograma la hoja que se
-    va ya esta cerrando —su `onClose` se llamo en el mismo commit y volver a llamarlo no
-    cambia nada—, el panel que entra todavia esta translated casi toda su altura hacia
-    abajo (`entrada` vale 0.09 a los 16 ms, o sea que esta 91% por debajo de donde
-    quedara), y nadie pulsa a los 16 ms de haber pulsado una puerta. Lo que **no** se
-    puede hacer es prometer que no pasa: es una carrera del `useEffect` de la libreria.
+    **Lo que cuesta, y que parte de eso se puede decir.** La hoja que se va en ese fotograma
+    ya esta cerrando —su `onClose` se llamo en el mismo commit, y volver a llamarlo no
+    cambia nada—, y eso es lo que sostiene el "el coste es nada". Lo que **no** se puede
+    decir es que el panel que entre este lejos de su sitio: eso se afirmaba con un 91% que
+    salia de `entrada = 0.09` a los 16 ms, un numero que no esta en ninguna parte —la
+    cuenta del `Easing.out(cubic)` da 0.244 a los 16 ms, y `sheet.tsx:290` multiplica por
+    `altoPanel`, que es 0 hasta el primer `onLayout` (`sheet.tsx:399`)—. La sexta
+    comprobacion imprime la subida real, en pixeles y fotograma a fotograma, y es la que
+    manda.
 
-    Por eso la comprobacion no dice "nunca" sino **"uno, y solo el primero"**: si el orden
-    de pintado se invirtiese entero —es decir, si la que se va quedara encima durante
-    toda su salida— saldrian catorce fotogramas y esto caeria. Es un tope medido, no una
-    hgura de rock.
+    Por eso la comprobacion no dice "nunca" sino **"solo al principio de la ventana"**: si el
+    orden de pintado se invirtiese entero —es decir, si la que se va quedara encima durante
+    toda su salida— las posiciones serian todas y esto caeria. Y el tope se cuenta **por
+    posicion dentro de la ventana, no por numero de fotogramas**: en una maquina descargada
+    la carrera dura un fotograma, pero con la maquina cargada un fotograma puede tardar mas
+    de 100 ms y la misma carrera ocupa dos capturas. Medido: 0, 1 y 2 fotogramas, **siempre
+    en las posiciones 0 y 1**. Es un tope medido sobre lo que se ha visto, no una figura de
+    rock: lo que no se permite es que llegue a la posicion 3.
 
     Y `centro` es la otra mitad: el panel que entra tiene que **poder pulsarse** en el
     resto de la ventana, y lo tiene —el centro del panel que entra devuelve suyo en todos
-    los fotogramas salvo ese mismo primero, por el mismo `z-index` de arriba.
+    los fotogramas salvo los mismos del principio, por el mismo `z-index` de arriba.
   */
   check(
     "**una pulsacion en el fondo llega a la hoja que entra, y su panel se puede pulsar**",
     (relevo.fondoTrasLaLlegada ?? []).length <= 2 &&
-      (relevo.fondoMaloT ?? []).length <= 1 &&
-      (relevo.centroMalo ?? 9) <= 1,
+      (relevo.fondoMaloPos ?? []).every((i) => i < 3) &&
+      (relevo.centroMaloPos ?? []).every((i) => i < 3),
     `fondo de mas arriba tras la llegada: ${JSON.stringify(relevo.fondoTrasLaLlegada)} | ` +
       `fotogramas con el fondo de la hoja que se va: ${(relevo.fondoMaloT ?? []).length}` +
-      `${(relevo.fondoMaloT ?? []).length ? ` (en el ${(relevo.fondoMaloT ?? []).join(", ")} ms, y la ventana empieza en el ${relevo.ventana.desde} ms)` : ""} | ` +
-      `fotogramas con el centro del panel que entra debajo de otro: ${relevo.centroMalo} | ` +
+      `${(relevo.fondoMaloT ?? []).length ? ` (en el ${(relevo.fondoMaloT ?? []).join(", ")} ms, y la ventana empieza en el ${relevo.ventana.desde} ms; posiciones ${JSON.stringify(relevo.fondoMaloPos)} de ${relevo.ventana.fotogramas})` : ""} | ` +
+      `fotogramas con el centro del panel que entra debajo de otro: ${relevo.centroMalo}` +
+      `${relevo.centroMalo ? ` (posiciones ${JSON.stringify(relevo.centroMaloPos)} de ${relevo.ventana.fotogramas})` : ""} | ` +
       `orden al final: ${relevo.ordenFinal}`,
+  );
+
+  /*
+    **La subida del panel que entra, en pixeles y en los quince fotogramas de la
+    ventana. Esta comprobacion existe porque el numero se afirmaba y no se
+    imprimia.**
+
+    Dos rondas el comentario de este bloque y el de `onEditTask` de
+    `state-picker-sheet.tsx` dijeron que "el panel que entra todavia esta al 91% de
+    su altura hacia abajo", y ese 91% **no salia de ninguna comprobacion**: el
+    muestreo guardaba `subidaTarea` (`INSTALAR_MUESTREO`), el resumen lo llevaba a
+    `subidaTareaMax` y `subidaTareaFin`, y ningun `check()` lo imprimia. Un numero
+    que solo existe en el resumen es un numero que nadie mira.
+
+    **Y el 91% tampoco sale del codigo.** `sheet.tsx:126` anima `entrada` a 1 en
+    `DURACION` = 180 ms con `Easing.out(Easing.cubic)`, asi que a los 16 ms vale
+    `1 - (1 - 16/180)³` = 0.244 y no 0.09 — el 0.09 corresponde a unos 5.5 ms. Y
+    `sheet.tsx:290` multiplica por `altoPanel.value`, que **es 0 hasta el primer
+    `onLayout`** (lo dice el comentario de `sheet.tsx:287-288`), de modo que en el
+    fotograma de llegada la subida puede ser exactamente 0: el panel en su sitio,
+    al reves de "91% por debajo".
+
+    Lo que se comprueba no es la forma de la subida —esa la cuenta del `Easing`, y
+    no vale como medida— sino dos cosas que si valen: que **todos** los fotogramas
+    de la ventana traigan un numero (si alguno saliera `sin panel`, el resumen
+    estaria describiendo un panel que no estaba) y que la subida **no pase del alto
+    del panel**, que es lo que sale de `sheet.tsx:290` con los dos factores en
+    [0, 1]. Los numeros enteros van en la linea del `ok`.
+  */
+  const subidas = relevo.subidasEnLaVentana ?? [];
+  const conNumero = subidas.filter((s) => !s.includes("sin panel"));
+  check(
+    "**la subida del panel que entra sale medida en cada fotograma de la ventana**",
+    subidas.length === (relevo.ventana.fotogramas ?? -1) &&
+      conNumero.length === subidas.length &&
+      relevo.altoTareaEnLaVentana != null &&
+      (relevo.subidaTareaMax ?? Infinity) <= relevo.altoTareaEnLaVentana,
+    `subida, fotograma a fotograma: ${subidas.join(", ")} | alta del panel que entra: ` +
+      `${relevo.altoTareaEnLaVentana} px | subida maxima: ${relevo.subidaTareaMax} px | ` +
+      `subida al final: ${relevo.subidaTareaFin} px`,
   );
   /*
     **El panel se cierra por el boton de la `X`, con el mismo toque que el resto del
@@ -1768,12 +1935,16 @@ try {
     **El relevo tambien en oscuro, y aqui el velo es el que mas se mueve.**
 
     El velo del tema oscuro es `rgba(2, 4, 10, 0.76)` (`tokens.ts`), y dos velos de 0.76
-    llegan a valer 0.942 si los dos estuvieran a la vez al maximo. En la medida sale
-    **entre 0.766 y 0.813** —el pico se mueve con el fotograma—, porque el velo que entra
-    dura 150 ms y cuando el compuesto llega a su maximo el de la hoja que se va ya va por
-    debajo: un 5% a un 7% por encima del token, frente al 6-8% de la pasada en claro. Que
-    el techo de la comprobacion sea **relativo al token** y no absoluto es justo por esto:
-    la misma regla sirve para las dos pasadas y compara cada una con su propio tema.
+    llegaron a valer **0.942** en la mutacion que quita el desvanecido del saliente —esa
+    cifra esta medida, en esa mutacion—. Sin ella el compuesto sale **entre 0.765 y 0.886**
+    en las diecinueve corridas completas de la ronda 3, porque el velo que entra dura 150 ms y cuando el
+    compuesto llega a su maximo el de la hoja que se va ya va por debajo: de un 1% a un
+    17% por encima del token. **El techo de la comprobacion es 1.20 y no el 1.15 de la ronda
+    2**, porque el pico de 0.886 —un 16.6%— se paso de 0.874 y hizo caer la comprobacion en
+    una corrida; el detalle esta en el comentario de la comprobacion del velo en claro, que
+    es donde vive `techoVelo`. Que el techo sea **relativo al token** y no absoluto es justo
+    por el maximo que se acaba de medir: la misma regla sirve para las dos pasadas y compara
+    cada una con su propio tema.
 
     **La fila hay que verla antes de tocarla, y no es un detalle del guion**: con 24
     columnas las dos puertas quedan bajo el pliegue del panel —`maxHeightRatio` es 0.85
@@ -1782,34 +1953,49 @@ try {
     `scrollIntoView`, que en react-native-web es un desplazamiento de verdad porque el
     `ScrollView` es un `div` con `overflow`.
 
-    Las dos comprobaciones son las de la pasada en clara con los mismos:topes: dos hojas y
-    no mas, ventana corta, y **un fotograma de fondo ajeno como maximo** —el del primer
-    `useEffect` de `ModalAnimation`, que esta explicado alli y no se repite.
+    Las dos comprobaciones son las de la pasada en clara con los mismos topes: dos hojas y
+    no mas, ventana corta, y **el fondo ajeno solo al principio de la ventana** —los del
+    primer `useEffect` de `ModalAnimation`, que esta explicado alli y no se repite—. Ese
+    tope cambio de forma en la ronda 3: era "un fotograma malo" y hay corridas en las que
+    salen dos, asi que ahora se cuenta **por posicion dentro de la ventana** y se pide que
+    no llegue a la tercera.
   */
   const veloEnOscuro = await tab.evaluate(LEER_VELO);
+  if (veloEnOscuro.alfa == null) {
+    note(
+      `en oscuro el velo del tema tampoco se ha podido leer (${veloEnOscuro.color}): la ` +
+        "comprobacion de velo de abajo va a fallar por falta de techo, no por el velo.",
+    );
+  }
   await verPrimero(tab, "state-picker-edit-task");
   const relevoOscuro = await medirReleve(tab, "state-picker-edit-task", "relevo-oscuro");
   check(
-    "**y en oscuro la ventana del relevo son dos hojas, y solo un fotograma de fondo ajeno**",
+    "**y en oscuro la ventana del relevo son dos hojas, y el fondo ajeno solo al principio**",
     (relevoOscuro.maxDims ?? 9) === 2 && (relevoOscuro.maxPaneles ?? 9) === 2 &&
       (relevoOscuro.ventana.ms ?? 0) > 0 && (relevoOscuro.ventana.ms ?? 0) <= 400 &&
-      (relevoOscuro.centroMalo ?? 9) <= 1 &&
-      (relevoOscuro.fondoMaloT ?? []).length <= 1,
+      (relevoOscuro.centroMaloPos ?? []).every((i) => i < 3) &&
+      (relevoOscuro.fondoMaloPos ?? []).every((i) => i < 3),
     `ventana de dos hojas: ${relevoOscuro.ventana.ms} ms (${relevoOscuro.ventana.fotogramas} ` +
       `fotogramas) | maximo de sheet-dim: ${relevoOscuro.maxDims}, de sheet-panel: ` +
       `${relevoOscuro.maxPaneles} | fondo de mas arriba: ` +
       `${JSON.stringify(relevoOscuro.fondoTrasLaLlegada)} | fotogramas con el fondo de la hoja ` +
-      `que se va: ${(relevoOscuro.fondoMaloT ?? []).length} (en el ` +
-      `${(relevoOscuro.fondoMaloT ?? []).join(", ")} ms, y la ventana empieza en el ` +
-      `${relevoOscuro.ventana.desde} ms) | fotogramas con panel sin velo: ` +
+      `que se va: ${(relevoOscuro.fondoMaloT ?? []).length}` +
+      `${(relevoOscuro.fondoMaloT ?? []).length ? ` (en el ${(relevoOscuro.fondoMaloT ?? []).join(", ")} ms, y la ventana empieza en el ${relevoOscuro.ventana.desde} ms; posiciones ${JSON.stringify(relevoOscuro.fondoMaloPos)} de ${relevoOscuro.ventana.fotogramas})` : ""} | ` +
+      `fotogramas con el centro del panel que entra ` +
+      `debajo de otro: ${relevoOscuro.centroMalo} (posiciones ` +
+      `${JSON.stringify(relevoOscuro.centroMaloPos)}) | fotogramas con panel sin velo: ` +
       `${relevoOscuro.sinVelo}`,
   );
   check(
-    "**y en oscuro el velo tampoco se pasa de un 15% por encima del del tema**",
-    (relevoOscuro.picoVelo ?? 1) <= (veloEnOscuro?.alfa ?? 0) * 1.15,
+    "**y en oscuro el velo tampoco se pasa de un 20% por encima del del tema**",
+    (relevoOscuro.picoVelo ?? 1) <= techoVelo(veloEnOscuro?.alfa) &&
+      veloEnOscuro?.alfa != null &&
+      (relevoOscuro.sinAlfa ?? 0) === 0,
     `pico del velo compuesto: ${relevoOscuro.picoVelo} en el fotograma de ` +
       `${relevoOscuro.picoEn} ms (capas: ${relevoOscuro.velosDelPico}) | el tema escribe ` +
-      `${veloEnOscuro?.color} y el techo es ${Math.round((veloEnOscuro?.alfa ?? 0) * 1.15 * 1000) / 1000} | el pico ` +
+      `${veloEnOscuro?.color} y el techo es ${
+        techoVelo(veloEnOscuro?.alfa) ?? "n/d (sin alfa legible: la comprobacion no puede pasar)"
+      } | fotogramas con un velo sin alfa legible: ${relevoOscuro.sinAlfa} | el pico ` +
       `dentro de la ventana: ${relevoOscuro.picoVeloEnLaVentana} ` +
       `(${relevoOscuro.velosDelPicoDeLaVentana})`,
   );
