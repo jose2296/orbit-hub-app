@@ -48,35 +48,21 @@ describe("matchesMediaFilter", () => {
     expect(matchesMediaFilter(pelicula(), EMPTY_MEDIA_FILTER, HOY)).toBe(true);
   });
 
-  describe("text", () => {
-    it("finds a title whatever its case", () => {
-      const filtro: MediaFilter = { ...EMPTY_MEDIA_FILTER, text: "MATRIX" };
-      expect(matchesMediaFilter(pelicula({ title: "Matrix" }), filtro, HOY)).toBe(true);
-    });
-
-    it("finds a title without its accents", () => {
-      // "pelicula" has to find "Película". Lowercasing does not do this — it
-      // keeps the tilde — and the phone keyboard does not insist on it either, so
-      // without stripping the mark the one axis that can narrow a long list
-      // answers only to accented typing.
-      const filtro: MediaFilter = { ...EMPTY_MEDIA_FILTER, text: "pelicula" };
-      expect(matchesMediaFilter(pelicula({ title: "Pelea película a muerte" }), filtro, HOY)).toBe(
-        true,
-      );
-    });
-
-    it("finds an ñ written without the tilde", () => {
-      const filtro: MediaFilter = { ...EMPTY_MEDIA_FILTER, text: "ano" };
-      expect(matchesMediaFilter(pelicula({ title: "El año del Diluvio" }), filtro, HOY)).toBe(true);
-    });
-
-    it("finds a title in the middle of it and not only at the start", () => {
-      const filtro: MediaFilter = { ...EMPTY_MEDIA_FILTER, text: "reloaded" };
-      expect(
-        matchesMediaFilter(pelicula({ title: "The Matrix Reloaded" }), filtro, HOY),
-      ).toBe(true);
-    });
-  });
+  /*
+   * No hay un bloque `text` aquí, y antes lo había.
+   *
+   * El filtro de películas tenía un eje de texto sobre el título, con sus reglas de
+   * normalización —mayúsculas, acentos, ñ, y buscar en medio y no solo al
+   * principio— y sus cuatro tests. El eje desaparece con el buscador, que era
+   * un duplicado del global y solo podía estrechar la lista que ya tenías
+   * delante.
+   *
+   * Las reglas de normalización **no se pierden**: viven en `normaliseToCompare`
+   * (`lib/lists/done-match.ts`), que las sigue usando el buscador de carpetas,
+   * listas y notas, y sus tests están en `content-order.test.ts` — mayúsculas en la
+   * línea 241, acentos en la 250. Si alguna vez hacen falta aquí otra vez, ese es
+   * el sitio del que sacar el código y no de reescribirlo.
+   */
 
   describe("decade", () => {
     it("puts a film in the decade of its release", () => {
@@ -178,7 +164,6 @@ describe("matchesMediaFilter", () => {
       type: "movie",
       decade: 1990,
       tags: ["noche"],
-      text: "matrix",
       artwork: true,
       added: "older",
     };
@@ -191,7 +176,14 @@ describe("matchesMediaFilter", () => {
 
     // One axis wrong is enough to be out, and the axis that is wrong is the one
     // the caller changed last.
-    expect(matchesMediaFilter({ ...buena, title: " Solaris" }, filtro, HOY)).toBe(false);
+    //
+    // It used to change the title, because the text axis was checking it. That axis
+    // is gone, so a different title no longer disqualifies anything: it is not one
+    // of the axes any more. This breaks the labels instead, which is.
+    expect(matchesMediaFilter({ ...buena, tags: ["cortos"] }, filtro, HOY)).toBe(false);
+    expect(matchesMediaFilter({ ...buena, createdAt: "2026-09-01T00:00:00.000Z" }, filtro, HOY)).toBe(
+      false,
+    );
   });
 });
 
@@ -204,10 +196,9 @@ describe("mediaFilterCount", () => {
         type: "movie",
         decade: 1990,
         tags: ["a", "b"],
-        text: "x",
         artwork: false,
         added: "month",
       }),
-    ).toBe(7);
+    ).toBe(6);
   });
 });
