@@ -10,6 +10,7 @@ import { SheetOptions } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { pluralKey, useTranslation } from "@/lib/i18n";
+import { buildPickerTree } from "@/lib/dashboard/picker-tree";
 import { notePreview } from "@/lib/notes/note-record";
 import { useTheme } from "@/theme";
 
@@ -41,18 +42,26 @@ import { useTheme } from "@/theme";
 /**
  * The section headings line up with the rows under them.
  *
- * `Sheet` insets its rows by eighteen points because that is where a row's label
- * starts, and a heading has no inset of its own, so without this the headings sit
- * hard against the edge of the sheet and everything below them is indented: the
- * one thing on screen that says "this group of rows belongs together" is the thing
- * not lined up with them.
+ * Only the top padding. `Sheet` already insets its body by eighteen points —
+ * `MARGEN` in `sheet.tsx` — and this added eighteen more, so every heading and the
+ * crumb row started at thirty-six while the rows they label started at eighteen.
+ * The comment this replaced said the inset made them line up; the code did the
+ * opposite, and it was left over from a `Sheet` that did not pad its body.
  */
-const SHEET_SECTION = { paddingHorizontal: 18, paddingTop: 10 } as const;
+const SHEET_SECTION = { paddingTop: 10 } as const;
 
-/** Where you are. The last entry is the level being shown. */type Stop =
+/**
+ * Where you are. The last entry is the level being shown.
+ *
+ * `parentId` on a folder, because a folder is not only knowable by its own id:
+ * without the parent, the tree cannot answer "which folders hang from *this* one",
+ * which is the whole question when you are standing inside a space. With it, a
+ * sub-folder is a child of its parent instead of a sibling of it.
+ */
+type Stop =
   | { kind: "root" }
   | { kind: "workspace"; workspaceId: string }
-  | { kind: "folder"; workspaceId: string; folderId: string };
+  | { kind: "folder"; workspaceId: string; folderId: string; parentId: string | null };
 
 export interface PanelPickerProps {
   workspaces: Workspace[];
@@ -137,15 +146,15 @@ export function PanelPicker({
     [byId, folders, t, trail],
   );
 
-  /** The lists of a space, and the ones of a folder inside it. */
-  const listsOfWorkspace = useCallback(
-    (workspaceId: string) => lists.filter((list) => list.workspaceId === workspaceId),
-    [lists],
-  );
-  const foldersOfWorkspace = useCallback(
-    (workspaceId: string) => folders.filter((folder) => folder.workspaceId === workspaceId),
-    [folders],
-  );
+  /**
+   * The tree, indexed once.
+   *
+   * This used to filter `folders` by `workspaceId` and stop there, which listed a
+   * sub-folder beside its own parent and told a folder that only held sub-folders
+   * that it was empty. `buildPickerTree` answers by parent, so a folder shows what
+   * is actually inside it.
+   */
+  const tree = useMemo(() => buildPickerTree(folders, lists), [folders, lists]);
 
   /** A list row: the name, how much is in it, and whether it is on the panel. */
   const listOption = useCallback(
@@ -173,15 +182,14 @@ export function PanelPicker({
       return (
         <SheetOptions
           options={workspaces.map((space) => {
-            const mine = listsOfWorkspace(space.id);
-            const count = mine.length;
+            const count = tree.listsOf(space.id, null).length;
+            const carpetas = tree.childCountOf(space.id, null);
             return {
               key: space.id,
               label: space.name,
-              description: `${t(
-                pluralKey("folders.count", foldersOfWorkspace(space.id).length),
-                { count: foldersOfWorkspace(space.id).length },
-              )} · ${t(pluralKey("dashboard.listsCount", count), { count })}`,
+              description: `${t(pluralKey("folders.count", carpetas), {
+                count: carpetas,
+              })} · ${t(pluralKey("dashboard.listsCount", count), { count })}`,
               chevron: true,
               onPress: () => descend({ kind: "workspace", workspaceId: space.id }),
             };
@@ -192,24 +200,67 @@ export function PanelPicker({
 
     // ----------------------------------------------------------------- a folder
     if (here.kind === "folder") {
-      const inside = lists.filter((list) => list.folderId === here.folderId);
-      if (inside.length === 0) {
+      const dentro = tree.foldersOf(here.workspaceId, here.folderId);
+      const listas = tree.listsOf(here.workspaceId, here.folderId);
+
+      // Only empty when there is nothing to go into: a folder whose contents are
+      // all one level down has somewhere to go, and saying "nothing here" is what
+      // hid a whole branch of a space.
+      if (dentro.length === 0 && listas.length === 0) {
         return <EmptyState title={t("dashboard.pickerEmpty")} />;
       }
+
       return (
-        <SheetOptions
-          options={inside.map((list) => ({
-            ...listOption(list),
-            key: `${here.folderId}:${list.id}`,
-          }))}
-        />
+        <>
+          {dentro.length > 0 ? (
+            <>
+              <View style={SHEET_SECTION}>
+                <SectionHeader title={t("folders.title")} />
+              </View>
+              <SheetOptions
+                options={dentro.map((folder) => ({
+                  key: folder.id,
+                  label: folder.name,
+                  description: t(pluralKey("folders.count", tree.childCountOf(here.workspaceId, folder.id)), {
+                    count: tree.childCountOf(here.workspaceId, folder.id),
+                  }),
+                  chevron: true,
+                  onPress: () =>
+                    descend({
+                      kind: "folder",
+                      workspaceId: here.workspaceId,
+                      folderId: folder.id,
+                      parentId: here.folderId,
+                    }),
+                }))}
+              />
+            </>
+          ) : null}
+
+          {listas.length > 0 ? (
+            <>
+              {dentro.length > 0 ? (
+                <View style={SHEET_SECTION}>
+                  <SectionHeader title={t("dashboard.noFolder")} />
+                </View>
+              ) : null}
+              <SheetOptions
+                options={listas.map((list) => ({
+                  ...listOption(list),
+                  key: `${here.folderId}:${list.id}`,
+                }))}
+              />
+            </>
+          ) : null}
+        </>
       );
     }
 
     // ------------------------------------------------------------- a whole space
-    const spaceFolders = foldersOfWorkspace(here.workspaceId);
-    const spaceLists = listsOfWorkspace(here.workspaceId);
-    const loose = spaceLists.filter((list) => !list.folderId);
+    // The folders of this level, and the lists that are not in any folder. A list
+    // inside a folder is reached through that folder, not from here.
+    const spaceFolders = tree.foldersOf(here.workspaceId, null);
+    const loose = tree.listsOf(here.workspaceId, null);
 
     if (spaceFolders.length === 0 && loose.length === 0) {
       return <EmptyState title={t("dashboard.pickerEmpty")} />;
@@ -225,7 +276,7 @@ export function PanelPicker({
             />
             <SheetOptions
               options={spaceFolders.map((folder) => {
-                const count = lists.filter((list) => list.folderId === folder.id).length;
+                const count = tree.listsOf(here.workspaceId, folder.id).length;
                 const on = pinnedFolders.has(folder.id);
                 return {
                   key: `folder:${folder.id}`,
@@ -251,6 +302,9 @@ export function PanelPicker({
                       kind: "folder",
                       workspaceId: here.workspaceId,
                       folderId: folder.id,
+                      // `null`, because these hang from the space itself. Without it
+                      // the tree cannot answer what is inside this folder.
+                      parentId: null,
                     }),
                 };
               })}
@@ -272,16 +326,13 @@ export function PanelPicker({
     );
   }, [
     descend,
-    folders,
-    foldersOfWorkspace,
     here,
     listOption,
-    lists,
-    listsOfWorkspace,
     onToggleFolder,
     pinnedFolders,
     t,
     theme.spacing.xs,
+    tree,
     workspaces,
   ]);
 
@@ -375,7 +426,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingHorizontal: 18,
+    // No horizontal inset: the sheet's body already has it. See `SHEET_SECTION`.
     paddingBottom: 2,
   },
   back: {

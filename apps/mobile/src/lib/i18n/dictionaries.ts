@@ -59,6 +59,10 @@ const es = {
   "auth.signUp.title": "Crear cuenta",
   "auth.signUp.subtitle": "Empieza a organizar tu vida en OrbitHub.",
   "auth.email": "Correo electrónico",
+  // La única cadena de la interfaz que estaba escrita en castellano dentro de un
+  // componente, y por eso se quedaba en castellano con la app en inglés. La clave
+  // existía desde antes y no la usaba nadie.
+  "auth.emailPlaceholder": "nombre@ejemplo.com",
   "auth.password": "Contraseña",
   "auth.passwordConfirm": "Repite la contraseña",
   "auth.displayName": "Nombre",
@@ -336,6 +340,11 @@ const es = {
   "orderShort.created_desc": "Añadido ⇅",
   "orderShort.released_asc": "Estreno",
   "orderShort.released_desc": "Estreno ⇅",
+  // Estas dos faltaban y el botón las imprimía en crudo, como
+  // `orderShort.priority`. La lista sale del enum del contrato en el test de
+  // traducciones, así que no pueden volver a faltar.
+  "orderShort.updated_desc": "Tocado",
+  "orderShort.priority": "Urgente",
   "mediaTabs.pending": "Pendientes de ver",
   "mediaTabs.seen": "Vistas",
   "mediaTabs.pendingBooks": "Pendientes de leer",
@@ -965,6 +974,11 @@ const es = {
   "lists.kind.books": "Libros",
   "lists.kind.series": "Series",
   "lists.kind.moviesAndSeries": "Películas y series",
+  "lists.kind.tasksHint": "Lo que hay que hacer, con casilla para marcarlo.",
+  "lists.kind.moviesHint": "Un cine: carátulas, año y si la has visto.",
+  "lists.kind.seriesHint": "Capítulos, temporadas y temporadas vistas.",
+  "lists.kind.moviesAndSeriesHint": "Cine y series en la misma lista, cada cosa con su carátula.",
+  "lists.kind.booksHint": "Libros, con autor y año.",
   "lists.itemCount.one": "{count} elemento",
   "lists.itemCount.other": "{count} elementos",
   "lists.pendingCount.one": "{count} pendiente",
@@ -1099,6 +1113,7 @@ const en: Record<TranslationKey, string> = {
   "auth.signUp.title": "Create account",
   "auth.signUp.subtitle": "Start organising your life in OrbitHub.",
   "auth.email": "Email",
+  "auth.emailPlaceholder": "name@example.com",
   "auth.password": "Password",
   "auth.passwordConfirm": "Repeat the password",
   "auth.displayName": "Name",
@@ -1354,6 +1369,8 @@ const en: Record<TranslationKey, string> = {
   "orderShort.created_desc": "Added v",
   "orderShort.released_asc": "Release",
   "orderShort.released_desc": "Release v",
+  "orderShort.updated_desc": "Touched",
+  "orderShort.priority": "Urgent",
   "mediaTabs.pending": "To watch",
   "mediaTabs.seen": "Watched",
   "mediaTabs.pendingBooks": "To read",
@@ -1951,6 +1968,11 @@ const en: Record<TranslationKey, string> = {
   "lists.kind.books": "Books",
   "lists.kind.series": "Series",
   "lists.kind.moviesAndSeries": "Films and series",
+  "lists.kind.tasksHint": "Things to do, with a box to tick them off.",
+  "lists.kind.moviesHint": "A cinema: posters, year and whether you have seen it.",
+  "lists.kind.seriesHint": "Episodes, seasons and the seasons you have watched.",
+  "lists.kind.moviesAndSeriesHint": "Films and series in one list, each with its own poster.",
+  "lists.kind.booksHint": "Books, with author and year.",
   "lists.itemCount.one": "{count} item",
   "lists.itemCount.other": "{count} items",
   "lists.pendingCount.one": "{count} pending",

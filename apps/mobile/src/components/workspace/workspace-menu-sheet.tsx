@@ -174,6 +174,7 @@ export function WorkspaceMenuSheet({
       onClose={onClose}
       title={workspace.name}
       subtitle={subtitle}
+      onBack={page === "options" ? undefined : () => setPage("options")}
       /*
        * Scrollable, and it used not to be. The edit page grew — a colour picker
        * with twelve swatches, a square, a strip, a field and a preview is about
@@ -253,12 +254,10 @@ export function WorkspaceMenuSheet({
                   void updateWorkspace(workspace, { name: trimmed });
                 }}
               />
-              <Button
-                label={t("common.back")}
-                variant="ghost"
-                fullWidth
-                onPress={() => setPage("options")}
-              />
+              {/*
+                The "Volver" that was here is gone; the header arrow does it. See
+                `Sheet`'s `onBack`.
+              */}
             </View>
           </View>
         ) : null}
@@ -271,12 +270,12 @@ export function WorkspaceMenuSheet({
               isOwner={workspace.role === "owner"}
               onBack={() => setPage("options")}
             />
-            <Button
-              label={t("common.back")}
-              variant="ghost"
-              fullWidth
-              onPress={() => setPage("options")}
-            />
+            {/*
+              This one was a **second** "Volver" doing exactly what the arrow does,
+              one screen lower: two controls for one job, on the one page that has a
+              list of people in it and most needs the room. The arrow goes up; the
+              `SharePanel`'s own `onBack` is for the pages *inside* it.
+            */}
           </>
         ) : null}
 

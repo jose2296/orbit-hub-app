@@ -155,10 +155,42 @@ export function isWorkspaceColorHex(value: unknown): value is string {
   return typeof value === "string" && workspaceColorHexSchema.safeParse(value).success;
 }
 
+/**
+ * Los anchos de los campos de texto, como datos.
+ *
+ * Estos números estaban en tres sitios que no se hablaban: el `.max()` de cada
+ * esquema de abajo, el `varchar` de `apps/api/src/db/content-schema.ts` y un
+ * `.slice()` en el sanitizador de sync. No coincidían, y no era cosmético: un
+ * nombre de espacio de 81 caracteres pasaba el 120 del sanitizador y llegaba a la
+ * columna de 80 — un **500** con entrada corriente, y `The operation failed` como
+ * único mensaje para el móvil. El título de una nota de 121 perdía 80
+ * caracteres calladamente y el push respondía `applied`.
+ *
+ * Exportarlos desde aquí los convierte en la fuente única: el esquema valida con
+ * ellos, la API corta con ellos, y la app pinta el contador con ellos. Un test en
+ * `apps/api/test/sync-limits.test.ts` lee los `varchar` reales y los compara, así
+ * que una migración que cambie un ancho rompe el test en vez de romper producción.
+ */
+export const WORKSPACE_NAME_MAX = 80;
+export const WORKSPACE_DESCRIPTION_MAX = 500;
+export const WORKSPACE_EMOJI_MAX = 16;
+export const FOLDER_NAME_MAX = 120;
+export const FOLDER_EMOJI_MAX = 16;
+export const LIST_TITLE_MAX = 120;
+export const LIST_DESCRIPTION_MAX = 1000;
+export const LIST_EMOJI_MAX = 16;
+export const LIST_ITEM_TITLE_MAX = 300;
+export const LIST_ITEM_ANNOTATION_MAX = 2000;
+export const LIST_ITEM_ICON_MAX = 32;
+export const LIST_ITEM_EXTERNAL_ID_MAX = 120;
+/** Una etiqueta, no un título: corta a propósito y se ve corta. */
+export const TAG_MAX = 40;
+export const NOTE_TITLE_MAX = 200;
+
 export const workspaceSchema = syncableEntitySchema.extend({
-  name: z.string().trim().min(1).max(80),
-  description: z.string().max(500).nullable().default(null),
-  emoji: z.string().max(16).nullable().default(null),
+  name: z.string().trim().min(1).max(WORKSPACE_NAME_MAX),
+  description: z.string().max(WORKSPACE_DESCRIPTION_MAX).nullable().default(null),
+  emoji: z.string().max(WORKSPACE_EMOJI_MAX).nullable().default(null),
   /**
    * The colour this space is painted with, out of the eight the app offers.
    *
@@ -242,8 +274,8 @@ export const folderSchema = syncableEntitySchema
   .extend({
     workspaceId: uuidSchema,
     parentId: uuidSchema.nullable().default(null),
-    name: z.string().trim().min(1).max(120),
-    emoji: z.string().max(16).nullable().default(null),
+    name: z.string().trim().min(1).max(FOLDER_NAME_MAX),
+    emoji: z.string().max(FOLDER_EMOJI_MAX).nullable().default(null),
     position: z.number().int().min(0),
   })
   .extend(nodeAccessSchema.shape);
@@ -349,10 +381,10 @@ export const listSchema = syncableEntitySchema
     workspaceId: uuidSchema,
     folderId: uuidSchema.nullable().default(null),
     kind: listKindSchema,
-    title: z.string().trim().min(1).max(120),
-    description: z.string().max(1000).nullable().default(null),
-    emoji: z.string().max(16).nullable().default(null),
-    tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    title: z.string().trim().min(1).max(LIST_TITLE_MAX),
+    description: z.string().max(LIST_DESCRIPTION_MAX).nullable().default(null),
+    emoji: z.string().max(LIST_EMOJI_MAX).nullable().default(null),
+    tags: z.array(z.string().trim().min(1).max(TAG_MAX)).max(20).default([]),
     /**
      * The colours of the labels of this list, and only the ones somebody chose.
      *
@@ -396,7 +428,7 @@ export type List = z.infer<typeof listSchema>;
 export const listItemSchema = syncableEntitySchema
   .extend({
   listId: uuidSchema,
-  title: z.string().trim().min(1).max(300),
+  title: z.string().trim().min(1).max(LIST_ITEM_TITLE_MAX),
   position: z.number().int().min(0),
   completed: z.boolean().default(false),
   /**
@@ -436,7 +468,7 @@ export const listItemSchema = syncableEntitySchema
    * the same thing to buy in two shops is one item to buy.
    */
   tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
-  externalId: z.string().max(120).nullable().default(null),
+  externalId: z.string().max(LIST_ITEM_EXTERNAL_ID_MAX).nullable().default(null),
   metadata: z.record(z.string(), z.unknown()).nullable().default(null),
   /**
    * A short remark on the row itself, in words. "Buy milk, *bring your own*".
@@ -447,7 +479,7 @@ export const listItemSchema = syncableEntitySchema
    * way to be shared. This is a remark on a row; a note is a document and lives
    * in `noteSchema`. See [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
    */
-  annotation: z.string().max(2000).nullable().default(null),
+  annotation: z.string().max(LIST_ITEM_ANNOTATION_MAX).nullable().default(null),
 })
   .extend(nodeAccessSchema.shape);
 export type ListItem = z.infer<typeof listItemSchema>;
@@ -463,7 +495,7 @@ export const noteSchema = syncableEntitySchema
   .extend({
     workspaceId: uuidSchema,
     folderId: uuidSchema.nullable().default(null),
-    title: z.string().trim().min(1).max(200),
+    title: z.string().trim().min(1).max(NOTE_TITLE_MAX),
     document: noteDocumentSchema,
     plainText: z.string().default(""),
     tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
@@ -1187,7 +1219,7 @@ export type DeleteNoteTemplateResponse = z.infer<typeof deleteNoteTemplateRespon
 export const createNoteRequestSchema = z.object({
   workspaceId: uuidSchema,
   folderId: uuidSchema.nullable().default(null),
-  title: z.string().trim().min(1).max(200),
+  title: z.string().trim().min(1).max(NOTE_TITLE_MAX),
   /** Validated against the editor's tag set. A document that fails is never stored. */
   document: noteDocumentSchema,
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),

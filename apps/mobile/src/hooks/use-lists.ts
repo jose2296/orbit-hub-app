@@ -12,6 +12,8 @@ import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { planDuplication } from "@/lib/lists/duplicate";
+import { createListPlan } from "@/lib/lists/create-plan";
+import { applyItemCounts } from "@/lib/lists/item-count";
 import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
 import { planTagColorChange } from "@/lib/lists/tag-colors";
 import {
@@ -80,7 +82,12 @@ export function useLists(filters: ListFilters = {}) {
       .filter((list) => (kind ? list.kind === kind : true));
 
     visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    setLists(visible);
+    // The number of items comes from the cache, not from `itemCount` on the row.
+    // That field was a photo from the server that nothing refreshed: the
+    // projection recalculates when the *list* changes, and adding or ticking an
+    // item changes the item. So a list filled in on one device read `0` forever,
+    // and that zero is what a delete confirmation said before deleting the lot.
+    setLists(applyItemCounts(visible, await store.countCachedItemsByList()));
     setIsLoading(false);
   }, [folderId, kind, workspaceId]);
 
@@ -103,6 +110,9 @@ export function useLists(filters: ListFilters = {}) {
       const store = await getLocalStoreReady();
       const id = Crypto.randomUUID();
       const now = new Date().toISOString();
+      // One plan, two writes: the cache row and the queued operation read the
+      // folder from the same answer, so they cannot end up disagreeing.
+      const plan = createListPlan({ id, ...input });
 
       await store.upsertCached([
         {
@@ -116,7 +126,7 @@ export function useLists(filters: ListFilters = {}) {
             workspaceId: input.workspaceId,
             // A list is never floating: `null` is the space itself, which is the
             // root folder of the tree.
-            folderId: input.folderId ?? null,
+            folderId: plan.folderId,
             kind: input.kind,
             title: input.title,
             description: null,
@@ -138,12 +148,7 @@ export function useLists(filters: ListFilters = {}) {
         entity: "list",
         entityId: id,
         baseVersion: 0,
-        payload: {
-          workspaceId: input.workspaceId,
-          title: input.title,
-          kind: input.kind,
-          ...(input.emoji ? { emoji: input.emoji } : {}),
-        },
+        payload: plan.payload,
       });
 
       await load();

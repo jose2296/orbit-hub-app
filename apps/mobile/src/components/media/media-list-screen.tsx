@@ -13,7 +13,11 @@ import {
 import { ListControls } from "@/components/lists/list-controls";
 import { MediaReorderSheet } from "@/components/media/media-reorder-sheet";
 import { MediaTabs, type MediaTab } from "@/components/media/media-tabs";
-import { VerticalMediaCarousel } from "@/components/media/vertical-media-carousel";
+import { MediaPosterGrid } from "@/components/media/media-poster-grid";
+import {
+  VerticalMediaCarousel,
+  type VerticalMediaItem,
+} from "@/components/media/vertical-media-carousel";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { Screen } from "@/components/ui/screen";
@@ -21,6 +25,7 @@ import { useLists } from "@/hooks/use-lists";
 import { useTranslation } from "@/lib/i18n";
 import { canReorder, orderItems } from "@/lib/lists/item-presentation";
 import { mediaCardOf } from "@/lib/lists/media-card";
+import { useIsWide } from "@/lib/layout/width";
 import { useTheme } from "@/theme";
 
 /**
@@ -163,6 +168,50 @@ export function MediaListScreen({
   const enPestana = pestana === "pending" ? pendientes : vistos;
 
   /**
+   * Whether this screen is being looked at on a desktop, **and not a number read at
+   * random**.
+   *
+   * `useIsWide` y no `innerWidth`: un hook con listener en vez de una medida que se
+   * queda vieja. Arrastrar la ventana de un portátil y cruzar los 900 puntos cambia la
+   * forma de golpe, que es justo lo que un grid de pôsters quiere —y lo que un
+   * carrusel de una pantalla no aguanta, y por eso el corte está en 900 y no más
+   * abajo. El número vive en `lib/layout/measure.ts`.
+   */
+  const ancho = useIsWide();
+
+  /**
+   * The rows, **once**, for whichever of the two is being drawn.
+   *
+   * Se construye una sola vez y se pasa a los dos. Duplicar el `.map` en las dos
+   * ramas es la forma de que el grid pierda el badge de "serie" un dia, porque nadie
+   * mira la mitad que no está dibujándose.
+   */
+  const losItems: VerticalMediaItem[] = useMemo(
+    () =>
+      enPestana.map((item) => {
+        const card = mediaCardOf(item);
+
+        return {
+          key: item.id,
+          title: item.title,
+          imageUrl: card?.imageUrl ?? null,
+          released: card?.released ?? null,
+          badge:
+            listKind === "books"
+              ? t("itemDetails.book")
+              : card?.mediaKind === "tv"
+                ? t("itemDetails.series")
+                : t("itemDetails.movie"),
+          completed: item.completed,
+          onPress: () => onOpenDetails(item),
+          onMenu: () => onMenu(item),
+          menuLabel: t("mediaActions.menuOf", { name: item.title }),
+        };
+      }),
+    [enPestana, listKind, onMenu, onOpenDetails, t],
+  );
+
+  /**
    * The orders, **and the one that is on carries the tick**.
    *
    * A function and not a memo: the list it maps over closes over the order, and a
@@ -277,29 +326,25 @@ export function MediaListScreen({
       </View>
 
       {isLoading ? null : (
-        <VerticalMediaCarousel
-          items={enPestana.map((item) => {
-            const card = mediaCardOf(item);
-            return {
-              key: item.id,
-              title: item.title,
-              imageUrl: card?.imageUrl ?? null,
-              released: card?.released ?? null,
-              badge:
-                listKind === "books"
-                  ? t("itemDetails.book")
-                  : card?.mediaKind === "tv"
-                    ? t("itemDetails.series")
-                    : t("itemDetails.movie"),
-              completed: item.completed,
-              onPress: () => onOpenDetails(item),
-              onMenu: () => onMenu(item),
-              menuLabel: t("mediaActions.menuOf", { name: item.title }),
-            };
-          })}
-          emptyTitle={t("items.empty.title")}
-          emptyBody={pestana === "pending" ? t("mediaActions.allSeen") : t("mediaActions.noneSeen")}
-        />
+        /*
+          Los dos se llevan **los mismos elementos**, construidos una vez aquí arriba.
+          Tenerlos duplicados en las dos ramas era tentador y es exactamente lo que
+          hace que un dia el grid pierda el badge de "serie" porque alguien lo(took
+         Edición de la lista y se le olvidó el otro sitio.
+        */
+        ancho ? (
+          <MediaPosterGrid
+            items={losItems}
+            emptyTitle={t("items.empty.title")}
+            emptyBody={pestana === "pending" ? t("mediaActions.allSeen") : t("mediaActions.noneSeen")}
+          />
+        ) : (
+          <VerticalMediaCarousel
+            items={losItems}
+            emptyTitle={t("items.empty.title")}
+            emptyBody={pestana === "pending" ? t("mediaActions.allSeen") : t("mediaActions.noneSeen")}
+          />
+        )
       )}
 
       <MediaActionsSheet

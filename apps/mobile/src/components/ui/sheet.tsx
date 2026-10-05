@@ -17,10 +17,12 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
+import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -45,6 +47,22 @@ export interface SheetProps {
    */
   artwork?: ReactNode;
   children: ReactNode;
+  /**
+   * Go back one step, **and not close**.
+   *
+   * Seven sheets here hold more than one page, and each one had its own button at
+   * the *bottom* of the form labelled either "Back" or "Cancelar" — two labels for
+   * the same shape of button, one of which was lying, because it went up a step
+   * rather than out of the sheet. And the export page had no way back at all: the
+   * ✕ was the only exit and it closed everything.
+   *
+   * On the left of the header, which is where a back arrow goes and where the hand
+   * already is. Left out entirely when absent, so the eighteen sheets that are one
+   * step deep do not grow a control that does nothing.
+   */
+  onBack?: () => void;
+  /** What the back control is called, for a screen reader. */
+  backLabel?: string;
   /** Renders the content in a scroll view, for a long list of options. */
   scrollable?: boolean;
   /** Caps the height on a tall screen so a long list does not run off it. */
@@ -69,6 +87,8 @@ export function Sheet({
   subtitle,
   artwork,
   children,
+  onBack,
+  backLabel,
   scrollable = true,
   maxHeightRatio = 0.85,
 }: SheetProps) {
@@ -76,6 +96,8 @@ export function Sheet({
   const t = useTranslation();
   const insets = useSafeAreaInsets();
   const wide = isWide();
+  const teclado = useKeyboardHeight();
+  const { height: altoVentana } = useWindowDimensions();
 
   const Body = scrollable ? ScrollView : View;
 
@@ -403,10 +425,38 @@ export function Sheet({
             {
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.border,
-              maxHeight: `${Math.round(maxHeightRatio * 100)}%`,
-              paddingBottom: wide
-                ? theme.spacing.lg
-                : insets.bottom + theme.spacing.lg,
+              /*
+                `paddingBottom`, not `marginBottom` and not a resize.
+
+                The keyboard takes the bottom `teclado` points of the window, and
+                the panel's last `paddingBottom` of points is what would be under
+                it — so that is what has to grow, not the panel moving up. A
+                `margin` would push the whole panel up and take the header with
+                it, which is not what happens when a sheet meets a keyboard: the
+                sheet stays where it is and the **bottom of its content** comes
+                into view.
+
+                And the two are added, not swapped: with the keyboard up the
+                gesture bar is behind it, so keeping `insets.bottom` as well only
+                adds padding nobody needs. Small, and not worth a conditional for
+                a bar that is not even visible while you are typing.
+              */
+              paddingBottom: teclado + (wide ? theme.spacing.lg : insets.bottom + theme.spacing.lg),
+              /*
+                Y el alto, que aqui es donde se rompe de verdad: `maxHeight` en
+                porcentaje se mide contra la **ventana**, y el teclado no encoge la
+                ventana —la encoge la vista—. Un panel al 85% con el teclado abierto
+                llega 85% de una ventana que tiene el teclado delante, o sea que su
+                mitad de abajo queda debajo del teclado.
+
+                Asi que cuando hay teclado el alto pasa a ser absoluto y sale de lo
+                que queda: el alto de la ventana menos el teclado, y del panel solo
+                un `maxHeightRatio` de eso. Es la unica forma de que el limite y el
+                relleno hablen del mismo sitio.
+              */
+              ...(teclado > 0
+                ? { maxHeight: Math.round(altoVentana * (1 - teclado / altoVentana) * maxHeightRatio) }
+                : { maxHeight: `${Math.round(maxHeightRatio * 100)}%` }),
             },
             estiloPanel,
           ]}
@@ -454,6 +504,38 @@ export function Sheet({
                 *move with it. One row, one height, the same whether there is a
                 picture or not.
               */}
+              {/*
+                The back control, **to the left of everything and not inside the
+                text block**.
+
+                `styles.close` carries `marginLeft: "auto"`, which is what throws
+                the ✕ to the right end. Putting the arrow there would make the two
+                fight over one row. So the arrow goes first in the row, the text
+                takes what is left, and the ✕ keeps pushing itself right.
+
+                It is the same thirty-point circle as the close, which is the point:
+                one sheet, one header, and the two controls that end something —
+                one step or all of it — are the same weight to the eye.
+              */}
+              {onBack ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={backLabel ?? t("common.back")}
+                  hitSlop={10}
+                  testID="sheet-back"
+                  onPress={onBack}
+                  style={({ pressed }) => [
+                    styles.back,
+                    {
+                      backgroundColor: theme.colors.surfaceMuted,
+                      borderRadius: theme.radius.pill,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
+                </Pressable>
+              ) : null}
               {artwork || title ? (
                 <View style={[styles.cabecera, { gap: theme.spacing.md }]}>
                   {artwork}
@@ -918,6 +1000,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: "auto",
+  },
+  /**
+   * The back control, and **the same circle as `close` without the `auto` margin**.
+   *
+   * The margin is the whole difference. `close` needs it to reach the right end;
+   * the arrow has to be the first thing on the row, and taking it away is what
+   * leaves room for the title instead of letting the two push each other around.
+   */
+  back: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
   },
   option: {
     flexDirection: "row",

@@ -1,14 +1,21 @@
 import type { ListKind } from "@orbit-hub/contracts";
+import { Ionicons } from "@expo/vector-icons";
 import { useMemo } from "react";
-import { View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { Button } from "@/components/ui/button";
-import { Segmented } from "@/components/ui/segmented";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
+import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
-import { LIST_KIND_LABEL, LIST_KIND_ORDER } from "@/lib/lists/kind";
+import { FIELD_LIMITS } from "@/lib/lists/field-limit";
+import {
+  LIST_KIND_HINT,
+  LIST_KIND_ICON,
+  LIST_KIND_LABEL,
+  LIST_KIND_ORDER,
+} from "@/lib/lists/kind";
 import { useTheme } from "@/theme";
 
 /** What a person can make inside a folder. */
@@ -19,9 +26,16 @@ export interface CreateSheetProps {
   onClose: () => void;
   /** Name of the space or folder the thing will be created in. */
   subtitle?: string;
-  /** First step: what to create. Second step: the details of a list. */
-  step: "what" | "details";
-  onStep: (step: "what" | "details") => void;
+  /**
+   * Tres pasos: qué vas a crear, de qué tipo, y los detalles.
+   *
+   * El segundo es nuevo y es el tipo. Estaba dentro de los detalles como un `Segmented`,
+   * y salió a su propia página porque cinco nombres en pastillas no se leen y cinco
+   * nombres con una frase debajo sí. El orden es el de siempre: primero la pregunta
+   * grande y después las pequeñas.
+   */
+  step: "what" | "kind" | "details";
+  onStep: (step: "what" | "kind" | "details") => void;
   /** `null` until something is picked. */
   kind: CreateKind | null;
   onKind: (kind: CreateKind) => void;
@@ -123,6 +137,38 @@ export function CreateSheet({
     [onFromTemplate, onKind, onStep, t],
   );
 
+  /**
+   * Los cinco tipos, **en una página y no en cinco pastillas**.
+   *
+   * Era un `Segmented` con el nombre y nada más, y dos de los cinco se llamaban casi
+   * igual —"Películas" y "Películas y series"— con el mismo icono. En una pastilla de
+   * ancho variable eso son dos controles que hay que leer para separarlos, y no se
+   * parecen por accidente: es la misma lista con tres palabras más.
+   *
+   * Y el detalle que sí quepa aquí y en una pastilla no: **para qué sirve cada uno**. Una
+   * pastilla es un sitio para un nombre; una línea entera es un sitio para un nombre y
+   * una frase.
+   *
+   * La página es **la misma forma que la de "qué vas a crear"**, un paso más de esta
+   * misma hoja. No es un desplegable nuevo ni un `select`: es el control que esta hoja
+   * ya tenía, con lo que cabía en una etiqueta movido a donde sí cabe. El `Segmented` no
+   * se borra del sitio de donde está, que esta hoja no es su dueña.
+   */
+  const kindOptions: SheetOption[] = useMemo(
+    () =>
+      LIST_KIND_ORDER.map((option) => ({
+        key: option,
+        label: t(LIST_KIND_LABEL[option]),
+        icon: LIST_KIND_ICON[option],
+        description: t(LIST_KIND_HINT[option]),
+        onPress: () => {
+          onKind(option);
+          onStep("details");
+        },
+      })),
+    [onKind, onStep, t],
+  );
+
   return (
     <Sheet
       visible={open}
@@ -138,23 +184,68 @@ export function CreateSheet({
       }
       subtitle={subtitle}
       scrollable={false}
+      /*
+       * Back goes to the "what" page, and **not to closing the sheet**.
+       *
+       * This one had no way back at all past the first question: the name, the
+       * template and the description are three steps deep, and each of them
+       * offered only the ✕, which threw away the two answers already given
+       * instead of letting you change one of them.
+       */
+      onBack={
+        step === "what"
+          ? undefined
+          : () =>
+              onStep(
+                // Desde los detalles de una lista, al tipo —que es lo que acabas de
+                // mirar—. Desde los detalles de una carpeta o una nota, a la primera
+                // pregunta, porque no hay página de tipo a la que ir. Y desde la página
+                // del tipo, a la primera. Convolverlo todo a "what" desde "details"
+                // costaba un toque de más para cambiar el tipo.
+                step === "details" ? (isList ? "kind" : "what") : "what",
+              )
+      }
     >
       {step === "what" ? (
         <SheetOptions options={whatOptions} />
+      ) : step === "kind" ? (
+        <SheetOptions options={kindOptions} />
       ) : (
         <View
           style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
         >
           {isList ? (
-            <Segmented
-              label={t("lists.kindLabel")}
-              value={(kind ?? "tasks") as ListKind}
-              onChange={onKind}
-              options={LIST_KIND_ORDER.map((option) => ({
-                value: option,
-                label: t(LIST_KIND_LABEL[option]),
-              }))}
-            />
+            <Pressable
+              onPress={() => onStep("kind")}
+              accessibilityRole="button"
+              accessibilityLabel={t("lists.kindLabel")}
+              testID="elegir-tipo"
+              style={({ pressed }) => [
+                styles.elegirTipo,
+                {
+                  borderColor: theme.colors.border,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
+                },
+              ]}
+            >
+              <AppText variant="caption" tone="subtle">
+                {t("lists.kindLabel")}
+              </AppText>
+              <View style={[styles.filaTipo, { gap: theme.spacing.sm }]}>
+                <Ionicons
+                  name={LIST_KIND_ICON[(kind ?? "tasks") as ListKind]}
+                  size={18}
+                  color={theme.colors.textMuted}
+                />
+                <AppText variant="body">{t(LIST_KIND_LABEL[(kind ?? "tasks") as ListKind])}</AppText>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={theme.colors.textSubtle}
+                />
+              </View>
+            </Pressable>
           ) : null}
 
           <TextField
@@ -177,6 +268,15 @@ export function CreateSheet({
             autoCapitalize="sentences"
             autoFocus
             returnKeyType="done"
+            // One sheet creates a folder, a note or a list, and the three have
+            // different widths. The one that creates is the only one that can say.
+            limit={
+              isFolder
+                ? FIELD_LIMITS["folder.name"]
+                : isNote
+                  ? FIELD_LIMITS["note.title"]
+                  : FIELD_LIMITS["list.title"]
+            }
             onSubmitEditing={onCreate}
           />
 
@@ -188,15 +288,38 @@ export function CreateSheet({
               disabled={title.trim().length === 0}
               onPress={onCreate}
             />
-            <Button
-              label={t("common.back")}
-              icon="chevron-back"
-              variant="ghost"
-              onPress={() => onStep("what")}
-            />
+            {/*
+              This one **was** labelled "Volver" and did go back, so unlike the
+              others it was not lying — it was just in the wrong place: a full-width
+              ghost row under the create button, forty points of a phone spent on
+              something the header arrow now does from thirty. It goes, and the arrow
+              is the way back.
+            */}
           </View>
         </View>
       )}
     </Sheet>
   );
 }
+
+const styles = StyleSheet.create({
+  /*
+    La fila del tipo chosen, **y no un `Segmented`**.
+
+    Antes eran cinco pastillas con el nombre. Ahora es una fila con el icono del tipo
+    elegido y su nombre, y al tocarla se abre la página con los cinco y lo que sirve
+    cada uno. Una fila es un sitio para una etiqueta y un icono; una pastilla de ancho
+    variable con "Películas y series" al lado de "Películas" es un sitio donde dos
+    controles se parecen y hay que leerlos para separarlos.
+  */
+  elegirTipo: {
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  filaTipo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+});

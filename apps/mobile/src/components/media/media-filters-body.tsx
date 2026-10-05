@@ -6,7 +6,6 @@ import type { ListItem, ListKind } from "@orbit-hub/contracts";
 
 import { Chip } from "@/components/ui/chip";
 import { SheetOptions } from "@/components/ui/sheet";
-import { TextField } from "@/components/ui/text-field";
 import { AppText } from "@/components/ui/text";
 import {
   EMPTY_MEDIA_FILTER,
@@ -43,6 +42,12 @@ import { useTheme } from "@/theme";
  * **A decade and not a year.** A year filter on a list with things from 1974 to
  * now is thirty-eight chips to wrap over four lines to say "the nineties", which
  * is the question anybody actually asks of a list of films.
+ */
+/*
+ * Sin buscador, por lo mismo que en la lista de tareas: el buscador global trae
+ * el resultado con casilla para marcarlo, y este solo podía estrechar la lista que
+ * ya tenías delante. En una lista de películas, donde hay cientos, era además la
+ * única forma rápida de llegar a una.
  */
 export function MediaFiltersBody({
   items,
@@ -82,7 +87,7 @@ export function MediaFiltersBody({
 
   const permiteTipo = listKind === "movies_and_series";
 
-  const alternar = <K extends "text" | "artwork" | "added" | "decade" | "type">(
+  const alternar = <K extends "artwork" | "added" | "decade" | "type">(
     clave: K,
     valor: MediaFilter[K],
   ) => onFilterChange({ ...filter, [clave]: filter[clave] === valor ? null : valor });
@@ -99,20 +104,6 @@ export function MediaFiltersBody({
 
   return (
     <View>
-      <TextField
-        value={filter.text}
-        onChangeText={(text) => onFilterChange({ ...filter, text })}
-        placeholder={
-          listKind ? t("filters.searchPlaceholderMedia") : t("filters.searchPlaceholder")
-        }
-        accessibilityLabel={t("filters.searchLabel")}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-        clearButtonMode="while-editing"
-        testID="media-filter-text"
-      />
-
       {permiteTipo
         ? grupo(
             t("filters.what"),

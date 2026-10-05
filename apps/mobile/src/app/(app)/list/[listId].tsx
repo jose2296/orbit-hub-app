@@ -11,6 +11,7 @@ import type {
 } from "@orbit-hub/contracts";
 
 import { releaseSharedCover } from "@/lib/media/shared-cover";
+import { bottomCluster } from "@/lib/layout/bottom-cluster";
 import { Badge } from "@/components/ui/badge";
 import type { IconName } from "@/components/ui/button";
 import { Button } from "@/components/ui/button";
@@ -197,7 +198,6 @@ export default function ListScreen() {
   const [filterState, setFilterState] = useState<"all" | "pending" | "done">(
     "all",
   );
-  const [filterText, setFilterText] = useState("");
   // Which row is being edited and where the panel opens, and *not* a copy of the
   // row: the panel needs the row as it is now, because it is the one that
   // changes it. A snapshot taken when the panel opened goes stale on the first
@@ -245,9 +245,8 @@ export default function ListScreen() {
       filterItems(sorted, {
         tags: selectedTags,
         completed: filterState,
-        text: filterText,
       }),
-    [sorted, selectedTags, filterState, filterText],
+    [sorted, selectedTags, filterState],
   );
   const labels = useMemo(() => tagsByFrequency(items), [items]);
 
@@ -260,9 +259,16 @@ export default function ListScreen() {
     [visible],
   );
   const activeFilterCount =
-    selectedTags.length +
-    (filterState === "all" ? 0 : 1) +
-    (filterText.trim() ? 1 : 0);
+    selectedTags.length + (filterState === "all" ? 0 : 1);
+  /**
+   * The bottom-right corner, counted once.
+   *
+   * It used to be `spacing.lg * 2 + 56 + spacing.md` written here, which left a
+   * gap of twenty-eight points between the `+` and the tray for a button that is
+   * thirty-six: the filter button could not go above the `+` without landing on the
+   * tray. See `bottomCluster` and `test/bottom-cluster.test.ts`.
+   */
+  const pila = bottomCluster(theme);
   const canDrag = canReorder(orderMode);
 
   /**
@@ -522,52 +528,6 @@ export default function ListScreen() {
         </Card>
       ) : null}
 
-      {/* The two knobs over a list: what it shows and how it is read. They are
-          buttons and not a row of chips because a shopping list has a dozen
-          labels and a row of them would take more space than the items. */}
-      {/*
-        The controls, **and they are one control here too**.
-
-        It was three buttons in a row here and three in a row over the folders and
-        three in a row over the films, all answering one question, and opening a
-        sheet each. One button whose label says what is on, and one sheet with the
-        three things in it, is the same control in the three places — see
-        `ListControls`.
-      */}
-      {!media && !isLoading && items.length > 0 ? (
-        <View style={[styles.toolbar, { gap: theme.spacing.sm }]}>
-          <ListControls
-            filterCount={activeFilterCount}
-            orderLabel={t(`orderShort.${orderMode}` as never)}
-            orders={opcionesDeOrden()}
-            canReorder={canReorder(orderMode)}
-            onReorder={() => setReorderOpen(true)}
-            testID="task-controls"
-          >
-            <FiltersBody
-              tags={labels}
-              selectedTags={selectedTags}
-              onToggleTag={(tag) =>
-                setSelectedTags((previas) =>
-                  previas.includes(tag)
-                    ? previas.filter((x) => x !== tag)
-                    : [...previas, tag],
-                )
-              }
-              completed={filterState}
-              onCompleted={setFilterState}
-              text={filterText}
-              onText={setFilterText}
-              onReset={() => {
-                setSelectedTags([]);
-                setFilterState("all");
-                setFilterText("");
-              }}
-            />
-          </ListControls>
-        </View>
-      ) : null}
-
       {!canDrag && !media ? (
         <AppText variant="caption" tone="subtle">
           {t("order.readOnlyHint")}
@@ -629,8 +589,8 @@ export default function ListScreen() {
         style={({ pressed }) => [
           styles.createButton,
           {
-            bottom: theme.spacing.lg,
-            right: theme.spacing.lg,
+            bottom: pila.fabBottom,
+            right: pila.fabBottom,
             borderRadius: theme.radius.pill,
             backgroundColor: theme.colors.accent,
             opacity: pressed ? 0.8 : 1,
@@ -674,6 +634,58 @@ export default function ListScreen() {
         pantalla y no la cabecera, y por eso el alto de la barra no cambia.
       */
       wash={{ color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }}
+      /*
+        The controls, through `overlay` and not from the header — and this was the
+        second attempt, because the first one was wrong in a way only the browser
+        showed.
+
+        With `placement="floating"` the button was **still at the top** (`top: 5`),
+        because `position: absolute` anchors to the nearest positioned ancestor, and
+        inside a `ListHeaderComponent` that ancestor is the header: a short box near
+        the top. So `bottom: 80` meant eighty points above the bottom of the header,
+        not of the screen. Out of the flow and not anchored to the screen are two
+        different things.
+
+        `overlay` is a sibling of the scroller inside the same
+        `KeyboardAvoidingView`, and `Screen`'s own comment explains why that is the
+        only spot that holds: on the web `react-native-web` puts an identity
+        `transform` on every `ScrollView`, and a transformed ancestor turns
+        `position: fixed` into `absolute` without saying so.
+      */
+      overlay={
+        !media && !isLoading && items.length > 0 ? (
+          <ListControls
+            filterCount={activeFilterCount}
+            orderLabel={t(`orderShort.${orderMode}` as never)}
+            orders={opcionesDeOrden()}
+            canReorder={canReorder(orderMode)}
+            onReorder={() => setReorderOpen(true)}
+            testID="task-controls"
+            placement="floating"
+            floatingBottom={pila.controlsBottom}
+            floatingRight={pila.fabBottom}
+          >
+            <FiltersBody
+              tags={labels}
+              selectedTags={selectedTags}
+              onToggleTag={(tag) =>
+                setSelectedTags((previas) =>
+                  previas.includes(tag)
+                    ? previas.filter((x) => x !== tag)
+                    : [...previas, tag],
+                )
+              }
+              completed={filterState}
+              onCompleted={setFilterState}
+              activeCount={activeFilterCount}
+              onReset={() => {
+                setSelectedTags([]);
+                setFilterState("all");
+              }}
+            />
+          </ListControls>
+        ) : null
+      }
     >
       {/*
         The list itself, **with nothing around it that expects a drag**.
@@ -786,7 +798,7 @@ export default function ListScreen() {
           answer. */}
       <DoneTray
         items={completed}
-        bottomInset={theme.spacing.lg * 2 + 56 + theme.spacing.md}
+        bottomInset={pila.trayBottom}
         onToggle={(item) => void toggleCompleted(item)}
         onOpen={(item) => setEditing({ itemId: item.id, page: "edit" })}
       />
@@ -1178,9 +1190,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
   },
+  /*
+   * **Un solo hijo flex: la columna.** Por eso aqui no hay `alignItems`, y antes de
+   * que `main` moviera la casilla dentro de la linea del titulo (`81beddc`) habia
+   * dos — la casilla y la columna — y `alignItems: "center"` centraba la casilla
+   * contra la fila entera en vez de contra la linea del titulo.
+   *
+   * Por lo tanto: #20 lo arreglo `main`, no esta rama. Aqui solo queda el `flexDirection`.
+   */
   item: {
     flexDirection: "row",
-    alignItems: "center",
   },
   /**
    * La linea del icono y del nombre, y **`alignItems: "center"` aqui es el arreglo**.
@@ -1288,11 +1307,6 @@ const styles = StyleSheet.create({
   reorder: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  toolbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
   },
   hidden: {
     opacity: 0,

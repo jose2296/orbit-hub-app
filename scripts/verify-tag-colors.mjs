@@ -1,7 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
-import { launchChrome, openTab, seedSession, collectProblems } from "./cdp.mjs";
+import {
+  launchChrome,
+  openTab,
+  seedSession,
+  collectProblems,
+  waitForIconFont,
+} from "./cdp.mjs";
 
 /**
  * Los colores de las etiquetas, mirados en un navegador.
@@ -1280,13 +1286,10 @@ async function waitForRows(tab, { expect = 1, timeout = 45000 } = {}) {
  * le falta el glifo— pero se cuenta, y se comprueba al final junto al resto.
  */
 let capturasSinFuente = 0;
+// La espera vive en `cdp.mjs` porque no es solo de este script: doce hacen
+// capturas y solo este esperaba. Ver la nota de `waitForIconFont`.
 async function esperarIconos(tab) {
-  return until(
-    "la fuente de los iconos",
-    () => tab.evaluate(`document.fonts.check("18px ionicons")`),
-    (v) => v === true,
-    { timeout: 20000, every: 400 },
-  );
+  return waitForIconFont(tab);
 }
 async function shot(tab, path) {
   const fuente = await esperarIconos(tab);

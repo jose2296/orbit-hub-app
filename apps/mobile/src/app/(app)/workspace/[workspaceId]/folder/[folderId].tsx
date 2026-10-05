@@ -46,7 +46,7 @@ export default function FolderScreen() {
     | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createStep, setCreateStep] = useState<"what" | "details">("what");
+  const [createStep, setCreateStep] = useState<"what" | "kind" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
 

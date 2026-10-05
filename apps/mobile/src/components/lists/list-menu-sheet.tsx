@@ -462,6 +462,19 @@ export function ListMenuSheet({
         title={list.title}
         subtitle={subtitle}
         scrollable={false}
+        onBack={
+          /*
+           * The arrow, on every page that is not the first, and **the ✕ stays as it
+           * was**: it closes the sheet, which is what it did before and what the
+           * ✕ of a sheet means everywhere else in the app. Two exits, two jobs, and
+           * the header says which is which.
+           *
+           * This is what the export page was missing. It had nothing but `options`
+           * in it — no form, no cancel — so the only way out was the ✕, which threw
+           * away the panel instead of going back to it.
+           */
+          page === "options" ? undefined : () => setPage("options")
+        }
       >
         <View
           style={{
@@ -516,12 +529,13 @@ export function ListMenuSheet({
                     void updateList(list, { title: trimmed });
                   }}
                 />
-                <Button
-                  label={t("common.cancel")}
-                  variant="ghost"
-                  fullWidth
-                  onPress={() => setPage("options")}
-                />
+                {/*
+                  No "Cancelar" under it any more. It went back one page, and the
+                  arrow in the header does the same thing and says so — two controls
+                  for one job, one of them called "Cancel" while it was actually
+                  "Back". What stays under the button is nothing: the arrow is the
+                  way out of this page, and it is in the same place on every page.
+                */}
               </View>
             </View>
           ) : null}
@@ -599,12 +613,8 @@ export function ListMenuSheet({
                     onDeleted?.();
                   }}
                 />
-                <Button
-                label={t("common.cancel")}
-                variant="ghost"
-                fullWidth
-                onPress={() => setPage("options")}
-              />
+                {/* As on the rename page: the arrow in the header is the way back, and it says
+                  "Volver" instead of "Cancelar" while doing the same thing. */}
             </View>
           </View>
         ) : null}

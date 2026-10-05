@@ -24,7 +24,8 @@
     "api:test": "npm run test --workspace @orbit-hub/api",
     "build:packages": "npm run build --workspace @orbit-hub/contracts && npm run build --workspace @orbit-hub/config",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
-    "test": "npm run build:packages && npm run test --workspaces --if-present",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "test": "npm run build:packages && npm run test --workspaces --if-present && npm run test:scripts",
     "doctor": "npm run doctor --workspace @orbit-hub/mobile",
     "config:check": "npm run config:check --workspace @orbit-hub/mobile",
     "assets:brand": "node scripts/generate-brand-assets.mjs",
@@ -35,5 +36,8 @@
     "expo": "~57.0.25",
     "react": "19.2.3",
     "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "pg": "^8.23.0"
   }
 }

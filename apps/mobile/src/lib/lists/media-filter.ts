@@ -1,7 +1,5 @@
 import type { ListItem } from "@orbit-hub/contracts";
 
-import { normaliseToCompare } from "@/lib/lists/done-match";
-
 /**
  * The filter of a list of films, **and the rules that answer it**.
  *
@@ -25,8 +23,6 @@ export interface MediaFilter {
   decade: number | null;
   /** Free labels, the same ones the other lists filter by. */
   tags: string[];
-  /** Text over the title. */
-  text: string;
   /**
    * Whether it has a picture, or `null` for both.
    *
@@ -54,7 +50,6 @@ export const EMPTY_MEDIA_FILTER: MediaFilter = {
   type: null,
   decade: null,
   tags: [],
-  text: "",
   artwork: null,
   added: null,
 };
@@ -65,7 +60,6 @@ export function mediaFilterCount(filter: MediaFilter): number {
     (filter.type ? 1 : 0) +
     (filter.decade !== null ? 1 : 0) +
     filter.tags.length +
-    (filter.text.length > 0 ? 1 : 0) +
     (filter.artwork !== null ? 1 : 0) +
     (filter.added !== null ? 1 : 0)
   );
@@ -150,10 +144,6 @@ export function matchesMediaFilter(
   filter: MediaFilter,
   now: Date = new Date(),
 ): boolean {
-  if (filter.text.length > 0) {
-    const aguja = normaliseToCompare(filter.text);
-    if (!normaliseToCompare(item.title).includes(aguja)) return false;
-  }
   if (filter.decade !== null) {
     const anio = yearOf(item);
     if (anio === null || Math.floor(anio / DECADE) * DECADE !== filter.decade) return false;
