@@ -26,12 +26,27 @@ ENV npm_config_update_notifier=false
 # them in, and the build never saw them because nobody declared them. An `ENV`
 # would not have worked either — it would have shadowed the passed value with an
 # empty one, which is the same bug wearing a different hat.
+#
+# El nombre del client de Google es `..._ANDROID` y no el corto. Este `ARG` se
+# llamaba `EXPO_PUBLIC_GOOGLE_CLIENT_ID` y por eso el build de Railway empezo a
+# fallar con "GOOGLE_CLIENT_ID_ANDROID is empty": el assert pedia el nombre nuevo
+# y el `ARG` seguia pasando el viejo.
+#
+# Y el nombre lleva `_ANDROID` por lo que dice el propio assert: un build de Play
+# necesita el client de Android, porque Google rechaza el de web dentro de una app
+# instalada. Para la web hay otro (`_WEB`) y no se pide aqui: este `Dockerfile`
+# construye el bundle que se sirve como web, y el build de Android no pasa por
+# aqui — lo hace `release.sh`, con su `.env.release`.
+#
+# Y el motivo de que un `ARG` en vez de un `ENV` importase, escrito en el bloque
+# de arriba, sigue siendo el que hizo falta: Docker no entrega a un `RUN` una
+# variable de build si el stage no la nombra.
 ARG EXPO_PUBLIC_API_URL
 ARG EXPO_PUBLIC_WEB_ORIGIN
-ARG EXPO_PUBLIC_GOOGLE_CLIENT_ID
+ARG EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 ENV EXPO_PUBLIC_WEB_ORIGIN=$EXPO_PUBLIC_WEB_ORIGIN
-ENV EXPO_PUBLIC_GOOGLE_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_CLIENT_ID
+ENV EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID=$EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID
 
 # Fails the build instead of shipping an app that cannot reach its own API, or one
 # with a disabled sign-in button and no hint why.

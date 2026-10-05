@@ -103,6 +103,52 @@ describe('checkPublicEnvironment', () => {
     ).not.toMatch(/REQUIRED\s*=\s*\[[^\]]*EXPO_PUBLIC_GOOGLE_CLIENT_ID'/);
   });
 
+  it('el Dockerfile de la web declara las MISMAS variables que el script exige', () => {
+    /*
+     * El fallo que hizo esto necesario.
+     *
+     * El `ARG` de `Dockerfile.web` se llamaba `EXPO_PUBLIC_GOOGLE_CLIENT_ID` y el
+     * `RUN` que invoca el assert se quedaba sin la variable: el build de Railway
+     * fallo con "GOOGLE_CLIENT_ID_ANDROID is empty" en un repo donde el assert
+     * estaba **bien**.
+     *
+     * El assert es correcto y aun asi el build se rompio, porque hay un segundo
+     * sitio donde el nombre aparece y nadie lo Miro: el `ARG`. Dos lugares con el
+     * mismo nombre en dos ficheros, y el unico que habia verificado algo era el que
+     * no hacia falta cambiar.
+     *
+     * Docker no entrega a un `RUN` una variable de build que el stage no nombre, de
+     * ahi el `ARG`: es el unico mecanismo. Por eso el chequeo tiene que leer el
+     * `Dockerfile` y no basta con que el assert este bien.
+     */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const raiz = join(import.meta.dirname, '../../..');
+    const dockerfile = readFileSync(join(raiz, 'Dockerfile.web'), 'utf8');
+
+    for (const name of [
+      'EXPO_PUBLIC_API_URL',
+      'EXPO_PUBLIC_WEB_ORIGIN',
+      'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID',
+    ]) {
+      // El `ARG` es lo que hace el trabajo: sin el, el `RUN` no ve la variable.
+      expect(
+        new RegExp(`^ARG ${name}$`, 'm').test(dockerfile),
+        `${name} necesita un ARG en Dockerfile.web, o el RUN del assert no lo ve`,
+      ).toBe(true);
+      expect(
+        new RegExp(`^ENV ${name}=`, 'm').test(dockerfile),
+        `${name} necesita un ENV en Dockerfile.web, o no llega al RUN`,
+      ).toBe(true);
+    }
+
+    // Y el nombre viejo no puede volver a colarse, que es el que rompio el build.
+    expect(
+      dockerfile,
+      'el client id sin plataforma no puede volver al Dockerfile',
+    ).not.toMatch(/^(ARG|ENV) EXPO_PUBLIC_GOOGLE_CLIENT_ID=/m);
+  });
+
   it('lo que el script exige existe en el fichero de release de ejemplo', () => {
     // El otro sentido del drift: que las variables que el guard exige esten
     // **de verdad** en el `.env.release.example` que el script de release copia.
