@@ -423,17 +423,22 @@ export function tagColorHex(colour: string): string {
  * `clamp01` no limpia un `NaN`.** `clamp01` es `Math.min(Math.max(valor, 0), 1)`, y
  * las tres de `Math` devuelven `NaN` cuando una entrada es `NaN`: un `t` de `NaN`
  * llegaba a `Math.round`, `"NaN".toString(16)` es la cadena `"NaN"`, y el retorno
- * era literalmente **`#NANNANNAN`** —la mitad del hex, en mayusculas y con el
- * formato perfecto, que es justo lo que el parser de CSS acepta sin quejarse y
- * que React Native se traga sin error—. Medido antes del arreglo, no supuesto.
+ * era literalmente **`#NANNANNAN`** —diez caracteres: nueve cifras, donde un
+ * `#RRGGBB` tiene seis, y ninguna hexadecimal—. Ese retorno no lo dibuja nadie:
+ * **ningun** parser de CSS puede leer una declaracion de color asi, la
+ * declaracion se descarta sin un error y el elemento se queda con lo que ya habia
+ * pintado. Medido antes del arreglo, no supuesto.
  *
  * **Lo que este guard tiene en comun con el de `hslToHex` es el ternario, no el
- * default.** `hslToHex` si usa `Number.isFinite(v) ? v : 0` en sus canales —de ahi
- * sale la forma— pero **no cubre su `m = l - c / 2`**, asi que con una luminosidad
- * `NaN` devuelve `#NANNANNAN` tambien: medido, `hslToHex(0, 1, NaN)`. No lo arreglo
- * aqui porque `hsl.ts` no es de este archivo y nadie me ha pedido que lo toque;
- * lo dejo escrito para que el siguiente que encuentre el mismo `#NANNANNAN` en una
- * insignia sepa que hay dos sitios y por que este ya esta cerrado.
+ * default, y los dos vigilan la suma hoy.** `hslToHex` ponia
+ * `Number.isFinite(v) ? v : 0` **en el canal**, y `m = l - c / 2` se sumaba
+ * despues: con una luminosidad `NaN` salia `#NANNANNAN` tambien —medido antes de
+ * arreglarlo, `hslToHex(0, 1, NaN)`—, porque el guard estaba en el operando que no
+ * podia hacer el dano. Era **latente y no vivo**: `aHex` rechaza todo lo que no sea
+ * un hex, de modo que `rgbToHsl` no puede devolver una `l` que no sea finita y el
+ * camino de la app nunca llegaba; lo que si era cierto es que el guard estaba en el
+ * sitio equivocado. Arreglado en `hsl.ts`: el guard esta en la suma y los tres
+ * parametros que no son numeros caen en `0`.
  *
  * **Un color que no se puede leer sale como `COLOR_QUE_NO_ES` y no como
  * `#NANNAN`**, por el mismo motivo y con el mismo cuidado que `hslToHex`: una

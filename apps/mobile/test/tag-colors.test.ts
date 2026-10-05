@@ -481,10 +481,11 @@ describe("la pastilla deriva relleno y texto", () => {
     // real, y **`clamp01` no cumplia eso con un `NaN`**: `clamp01` es
     // `Math.min(Math.max(valor, 0), 1)` y las tres devuelven `NaN` cuando una
     // entrada es `NaN`, asi que `Math.round(NaN).toString(16)` es la cadena `"NaN"`
-    // y el retorno era `#NANNANNAN`. Eso no es un color invalido cualquiera: tiene
-    // la forma de un `#RRGGBB`, en mayusculas, y el parser de CSS se lo traga sin
-    // decir nada, de modo que el fallo es **una pastilla invisible** y no una
-    // pantalla roja. Medido antes del arreglo.
+    // y el retorno era `#NANNANNAN`. Eso no es un color invalido cualquiera: son
+    // diez caracteres —nueve cifras donde un `#RRGGBB` tiene seis, y ninguna
+    // hexadecimal—, asi que el parser de CSS **rechaza** la declaracion entera y el
+    // fallo es **una pastilla que se queda con el color de antes**, no una pantalla
+    // roja. Medido antes del arreglo.
     const malos: [string, string, number][] = [
       ["#000000", "#FFFFFF", Number.NaN],
       ["#000000", "#FFFFFF", Number.POSITIVE_INFINITY],
