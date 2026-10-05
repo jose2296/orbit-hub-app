@@ -14,9 +14,11 @@ import * as rruleNamespace from 'rrule';
  * that is loaded and not a claim about the lockfile.
  *
  * That difference is the whole reason this import is here. `rrule` lives in the
- * root `node_modules`, which is outside the `watchFolders` of `apps/mobile`, so
- * after an `npm i` a reload can serve a bundle that still carries the previous
- * `rrule` while `package-lock.json` already says the new one. Sealing the record
+ * root `node_modules`, which *is* inside the `watchFolders` of `apps/mobile`
+ * (metro.config.js sets them to the monorepo root) — but being watched does not
+ * invalidate the transform cache, so after an `npm i` a reload can still serve a
+ * bundle carrying the previous `rrule` while `package-lock.json` already says the
+ * new one. Sealing the record
  * with the lockfile stamps a version over a measurement that was taken with a
  * different one, and nothing in the repository could ever tell.
  *

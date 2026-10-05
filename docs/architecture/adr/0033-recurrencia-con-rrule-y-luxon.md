@@ -70,7 +70,9 @@ Native quita el atributo y deja `require("rrule/package.json")`, que se inlinea 
 el bundle, asi que lo que se mide es la version que va **dentro de ese bundle**.
 
 Que la sonda lea las versiones y no las declare escrito es el punto. `rrule` vive en
-el `node_modules` de la raiz, fuera de los `watchFolders` de `apps/mobile`, asi que
+el `node_modules` de la raiz, que si esta dentro de los `watchFolders` de
+`apps/mobile` (`metro.config.js` pone la raiz del monorepo), pero estar observado
+no invalida la cache de transformados, asi que
 tras un `npm i` una recarga puede servir un bundle cacheado con la version anterior
 mientras el lock ya dice la nueva. Sellando con el lock, `--record` escribiria la
 nueva sobre una medicion de la vieja y no habria forma de notarlo; sellando con la
@@ -110,7 +112,13 @@ registrados coinciden entre si. Si Node divergiera, el test falla; si el
 navegador o Hermes divergieran, falla quien vuelva a medirlos y tenga que
 actualizar el registro. Las tres tablas de arriba se midieron con `rrule@2.8.1` y
 `luxon@3.7.2`, y `SPIKE_ENV` lo dice en cada medicion, no este documento: los tres
-`verifiedWith` del registro de abajo son lo que traia la medicion.
+`verifiedWith` del registro de abajo los sello el codigo viejo **leyendo el
+`package-lock.json`**, no una medicion: cuando se escribieron, ninguna medicion
+traia version todavia. Son correctos porque el checkout no habia cambiado, y a
+partir de la sonda que emite la version el sello sale de la medicion — pero hasta
+que se midan los tres entornos con esa sonda, **lo que hay ahi es lo que decia el
+lockfile el 2026-10-05, no lo que traia un bundle**. Quien lo lea no tiene que
+inventarlo: esta es la procedencia, con su limite.
 
 ### Como reproducirlo
 

@@ -196,11 +196,13 @@ const extract = (text, source) => {
 
   /**
    * Las versiones que dice traer la medicion. Sin esto, `--record` sellaria lo que
-   * dice `package-lock.json`, que es una afirmacion: el bundle puede llevar otra
-   * (`rrule` vive en el `node_modules` de la raiz, fuera de los `watchFolders` de
-   * `apps/mobile`) y entonces el registro declararia haber medido con una libreria
-   * que no estaba. Si la linea no las trae, no se sella nada: es preferible no
-   * escribir a escribir una mentira.
+   * dice `package-lock.json`, que es una afirmacion: el bundle puede llevar otra.
+   * `rrule` vive en el `node_modules` de la raiz, que si esta dentro de los
+   * `watchFolders` de `apps/mobile` (metro.config.js pone la raiz del monorepo),
+   * pero estar observado no invalida la cache de transformados, asi que un
+   * `npm install` puede dejar el bundle sirviendo la version anterior mientras el
+   * lockfile ya dice la nueva. Si la linea no las trae, no se sella nada: es
+   * preferible no escribir a escribir una mentira.
    */
   const libraryVersions = env?.libraryVersions ?? null;
   for (const name of ['rrule', 'luxon']) {
@@ -385,8 +387,21 @@ const refresh = async ({ text, record }) => {
   // medicion. Aqui coinciden, porque el bundle es este checkout, pero la regla es
   // una sola y no depende de que hoy sea verdad.
   const measuredWith = spike.spikeLibraryVersions();
+  // Una sola verdad por pasada. Este checkout corre lo que trae la medicion; el
+  // lockfile es lo que decia antes del `npm install`, y si difieren la
+  // instalacion esta rancia o el `package-lock.json` miente. Cualquiera de las dos
+  // cosas es un fallo que hay que decir, no algo que se promedie en silencio.
+  if (measuredWith.rrule !== versions.rrule || measuredWith.luxon !== versions.luxon) {
+    fail(
+      `this checkout runs rrule@${measuredWith.rrule}, luxon@${measuredWith.luxon} ` +
+        `but package-lock.json says rrule@${versions.rrule}, luxon@${versions.luxon}. ` +
+        'One of the two is stale, so nothing measured here can be sealed: an `npm ci` ' +
+        'against the lockfile makes the versions agree again.',
+    );
+  }
+  const current = measuredWith;
   const environments = { ...(record.environments ?? {}) };
-  environments.node = { ...environments.node, fingerprint, verifiedWith: measuredWith, recheck: null };
+  environments.node = { ...environments.node, fingerprint, verifiedWith: current, recheck: null };
   for (const name of HAND_MEASURED) {
     const entry = environments[name];
     if (entry === undefined) {
@@ -395,26 +410,26 @@ const refresh = async ({ text, record }) => {
           'The three agreeing is the whole claim; two of the three are not optional.',
       );
     }
-    const reasons = recheckReasons(entry, versions, fingerprint);
+    const reasons = recheckReasons(entry, current, fingerprint);
     environments[name] = { ...entry, recheck: reasons.length === 0 ? null : reasons.join('; ') };
   }
 
   const updated = {
     ...record,
     measuredOn: new Date().toISOString().slice(0, 10),
-    rrule: versions.rrule,
-    luxon: versions.luxon,
+    rrule: current.rrule,
+    luxon: current.luxon,
     environments,
     result: spike.spikeResult(),
     gap: spike.spikeResult().probe2_sundaysInTheGap,
   };
   writeRecord(text, updated);
   console.log(
-    `refreshed ${fileURLToPath(ADR)}: node is ${fingerprint} with ${stampText(versions)}. ` +
+    `refreshed ${fileURLToPath(ADR)}: node is ${fingerprint} with ${stampText(current)}. ` +
       `browser ${environments.browser.fingerprint}, hermes ${environments.hermes.fingerprint}.`,
   );
 
-  const pending = unheldEntries(environments, versions, fingerprint);
+  const pending = unheldEntries(environments, current, fingerprint);
   if (pending.length > 0) {
     reportUnheld(pending);
   }
