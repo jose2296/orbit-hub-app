@@ -3,6 +3,13 @@ import { fileURLToPath } from 'node:url';
 
 import { DateTime } from 'luxon';
 
+import {
+  installedVersions as readInstalledVersions,
+  sameVersions,
+  stampText,
+  unheldEntries,
+  unheldReport,
+} from '../scripts/record-holds.mjs';
 import { RRule, SPIKE_TZ, spikeEnv, spikeFingerprint, spikeResult } from './spike';
 
 const TZID = SPIKE_TZ;
@@ -179,11 +186,22 @@ const ADR = new URL(
   '../../../docs/architecture/adr/0033-recurrencia-con-rrule-y-luxon.md',
   import.meta.url,
 );
+const LOCK = new URL('../../../package-lock.json', import.meta.url);
 
 type Recorded = {
-  environments: Record<string, { engine: string; fingerprint: string | null }>;
+  environments: Record<
+    string,
+    {
+      engine: string;
+      fingerprint: string | null;
+      verifiedWith?: { rrule?: string; luxon?: string } | null;
+      recheck?: string | null;
+    }
+  >;
   result: Record<string, unknown>;
   gap: Record<string, unknown>;
+  rrule?: string;
+  luxon?: string;
 };
 
 /**
@@ -223,6 +241,18 @@ const recordedEvidence = (): Recorded => {
   return parsed as Recorded;
 };
 
+/**
+ * Las versiones instaladas, con el mismo error con el que las lee el verificador:
+ * la regla vive en `scripts/record-holds.mjs` y aqui no hay una segunda copia.
+ */
+const installedVersions = (): { rrule: string; luxon: string } => {
+  try {
+    return readInstalledVersions(LOCK);
+  } catch (error) {
+    throw new Error((error as Error).message);
+  }
+};
+
 it('el registro de los tres entornos sigue cuadrando con lo que calcula Node', () => {
   const record = recordedEvidence();
 
@@ -256,4 +286,104 @@ it('el registro de los tres entornos sigue cuadrando con lo que calcula Node', (
   // so a change in the maths that nobody re-recorded fails here.
   expect(JSON.stringify(spikeResult())).toBe(JSON.stringify(record.result));
   expect(JSON.stringify(spikeResult().probe2_sundaysInTheGap)).toBe(JSON.stringify(record.gap));
+});
+
+/**
+ * Lo que hacia el registro antes de que existiera `verifiedWith` y `recheck`:
+ * `--refresh` escribia la huella de Node y dejaba los otros dos "as recorded".
+ * Subir `rrule`, correr `--refresh` y tener la suite en verde era posible, y el
+ * registro pasaba a decir que los tres coincidian cuando lo unico comprobado era
+ * uno. Estos dos tests son la diferencia: el primero mira el registro de verdad, el
+ * segundo comprueba que la regla que decide dice lo que dice.
+ */
+it('el registro dice con que librerias se midio cada entorno, y no deja ninguno sin remedir', () => {
+  const record = recordedEvidence();
+  const versions = installedVersions();
+
+  // La libreria que se nombra arriba es la que hay instalada. Una subida sin
+  // remedir rompe aqui, antes incluso de comparar huellas.
+  expect(
+    { rrule: record.rrule, luxon: record.luxon },
+    `ADR 0033 says rrule@${record.rrule}, luxon@${record.luxon} and this checkout has ` +
+      `rrule@${versions.rrule}, luxon@${versions.luxon}. Re-measure all three environments ` +
+      'and record them: `npm run spike:verify --workspace @orbit-hub/habit-core -- --refresh`, ' +
+      'then `hermes --record` and `browser --record`.',
+  ).toEqual(versions);
+
+  // Y cada entrada dice con que versiones se midio ella, no solo el registro entero.
+  const stale = Object.entries(record.environments ?? {})
+    .filter(([, entry]) => !sameVersions(entry.verifiedWith, versions))
+    .map(([name, entry]) => `${name}: ${stampText(entry.verifiedWith)}`);
+  expect(
+    stale,
+    `these environments were not measured with rrule@${versions.rrule}, luxon@${versions.luxon}: ` +
+      `${stale.join(' | ')}.`,
+  ).toEqual([]);
+
+  // Una entrada marcada pendiente es una entrada que alguien tiene que remedir, y
+  // por lo tanto el registro no aguanta. La marca es derivada: no se acumula, asi
+  // que tampoco se puede poner a mano para dejarse de ver.
+  const pending = unheldEntries(record.environments, versions, record.environments.node?.fingerprint);
+  expect(pending.map(({ name }) => name), unheldReport(pending)).toEqual([]);
+});
+
+/**
+ * La regla de arriba, con registros inventados, para que este test no dependa de
+ * que el estado bueno del repositorio se parezca al de un fallo: si la regla no
+ * detectase nada, este test seguiria en verde con el registro bueno.
+ */
+it('una entrada medida con otra libreria, o cuya huella no es la de Node, no aguanta', () => {
+  const versions = { rrule: '2.8.1', luxon: '3.7.2' };
+  const entry = (extra: Record<string, unknown>) => ({
+    fingerprint: '2f6ae9c6',
+    verifiedWith: versions,
+    recheck: null,
+    ...extra,
+  });
+  const environments = {
+    node: entry({}),
+    browser: entry({}),
+    hermes: entry({}),
+  };
+  const names = (pending: { name: string }[]) => pending.map(({ name }) => name);
+
+  // Lo bueno: los tres medidos con lo mismo y de acuerdo.
+  expect(names(unheldEntries(environments, versions, '2f6ae9c6'))).toEqual([]);
+
+  // Una subida de rrule que solo se ha propagado a Node, que es exactamente lo que
+  // hacia `--refresh`.
+  expect(
+    names(
+      unheldEntries(
+        {
+          ...environments,
+          node: entry({ verifiedWith: { rrule: '2.8.2', luxon: '3.7.2' } }),
+        },
+        { rrule: '2.8.2', luxon: '3.7.2' },
+        '2f6ae9c6',
+      ),
+    ),
+  ).toEqual(['browser', 'hermes']);
+
+  // Y la forma que no es una subida de libreria: la huella de Node se movio y los
+  // otros dos siguen con la anterior, que es lo que hace `--refresh` cuando cambia
+  // el resultado sin que cambie la version.
+  expect(
+    names(
+      unheldEntries(
+        { ...environments, node: entry({ fingerprint: '11111111' }) },
+        versions,
+        '11111111',
+      ),
+    ),
+  ).toEqual(['browser', 'hermes']);
+
+  // El motivo nombra la version, que es lo que hay que ir a medir.
+  expect(
+    unheldEntries(
+      { ...environments, browser: entry({ verifiedWith: { rrule: '2.7.0', luxon: '3.7.2' } }) },
+      versions,
+      '2f6ae9c6',
+    )[0]?.reasons.join(' '),
+  ).toContain('rrule@2.7.0');
 });

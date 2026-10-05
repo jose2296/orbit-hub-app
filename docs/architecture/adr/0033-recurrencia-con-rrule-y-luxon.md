@@ -165,12 +165,13 @@ una desde donde puede ver algo distinto:
 - **`packages/habit-core/src/spike.test.ts`**, en cada `npm run check`. Afirma que
   la huella que calcula Node es la que este registro dice que dio Node, que los
   tres entornos registrados son exactamente `node`, `browser` y `hermes`, que
-  ninguno tiene la huella en `null`, que **los tres coinciden entre si**, y que el
+  ninguno tiene la huella en `null`, que **los tres coinciden entre si**, que el
   resultado canonico y las mediciones del hueco de aqui son los que produce este
-  checkout. Es la red que corre sola: si alguien sube `rrule` o `luxon` de version,
-  o toca el spike, y el resultado cambia, el test falla en vez de que la suite siga
-  verde. Si el bloque falta o no parsea, el fallo lo dice con el mensaje, en vez de
-  compararse contra `undefined`.
+  checkout, y que cada entrada dice **con que versiones de `rrule` y `luxon` se
+  midio** y no esta pendiente de remedirse. Es la red que corre sola: si alguien
+  sube `rrule` o `luxon` de version, o toca el spike, y el resultado cambia, el
+  test falla en vez de que la suite siga verde. Si el bloque falta o no parsea, el
+  fallo lo dice con el mensaje, en vez de compararse contra `undefined`.
 - **`packages/habit-core/scripts/verify-spike.mjs`**, a mano. Es lo unico del
   repositorio que puede mirar el navegador y el emulador, porque desde vitest no
   se arrancan. Compara una medicion contra el registro y sale con codigo 1 si no
@@ -180,26 +181,59 @@ una desde donde puede ver algo distinto:
 # Node: sin argumentos y sin persona. Tambien lo corre el test de arriba.
 npm run spike:verify --workspace @orbit-hub/habit-core -- node
 
-# Hermes: lee el logcat del emulador el mismo, y comprueba que la linea dice
+# Hermes: lee el logcat del emulador el mismo, y comprueba que la linea diga
 # engine "hermes" antes de fiarse. Atras de un bundle nativo servido por Metro.
+# El serial sale de --serial, luego de ANDROID_SERIAL y luego del valor por
+# defecto, en ese orden, y se comprueba contra `adb devices` antes de leer nada:
+# un serial que no existe sale con codigo 1 diciendo cual es, en vez de medirse en
+# el otro emulador y comparar el registro del que no se pidio.
 npm run spike:verify --workspace @orbit-hub/habit-core -- hermes
-npm run spike:verify --workspace @orbit-hub/habit-core -- hermes --serial <otro-emulador>
+npm run spike:verify --workspace @orbit-hub/habit-core -- hermes --serial emulator-5556
 
 # Navegador: la consola no se puede canalizar, asi que se pegan las dos lineas
 # SPIKE_* por stdin.
 npm run spike:verify --workspace @orbit-hub/habit-core -- browser < consola.txt
 
-# Refresca desde este checkout la huella de Node, `result` y `gap`. Los dos
-# entornos medidos a mano no se tocan: son mediciones, no calculos.
+# Refresca desde este checkout la huella de Node, `result`, `gap` y las versiones
+# instaladas. Los dos entornos medidos a mano no se tocan, pero si su medicion deja
+# de valer para esas versiones, o su huella ya no es la que da Node, quedan con
+# `recheck` puesto y el script sale con codigo 1 nombrando lo que falta.
 npm run spike:verify --workspace @orbit-hub/habit-core -- --refresh
+
+# Y despues, medir de verdad los que quedaron pendientes y escribir la medicion:
+# `--record` es lo unico que escribe el numero de un entorno medido a mano.
+npm run spike:verify --workspace @orbit-hub/habit-core -- hermes --record
+npm run spike:verify --workspace @orbit-hub/habit-core -- browser --record < consola.txt
 ```
+
+### Por que `--refresh` no puede reescribir solo lo de Node
+
+La version anterior de `--refresh` escribia la huella de Node y dejaba `browser` y
+`hermes` "as recorded". Con eso era posible subir `rrule`, correr `--refresh` y
+tener la suite en verde: el registro pasaba a decir que los tres coincidian
+cuando lo unico comprobado era uno. Es el fallo que esta Task 1 existe para cazar,
+entrando por la puerta de la escritura.
+
+Por eso cada entrada lleva `verifiedWith` —las versiones con las que se midio— y
+`recheck` —por que no vale para este checkout, o `null`—. El estado es
+**derivado**, no acumulado: se recalcula cada vez que se mira el registro, para
+que la marca no se pueda poner ni quitar a mano. Las dos formas de que una medicion
+de ayer deje de ser evidencia hoy son que se midiera con otras librerias, o que la
+huella que declara ya no sea la que da Node; las dos marcan la entrada. Asi
+`--refresh` sigue midiendo lo unico que se puede medir desde ahi —este checkout— sin
+poder dejar el registro mintiendo: sale con codigo 1, nombra lo que falta, y el
+test queda rojo hasta que `--record` escriba las dos mediciones. Comparar **sin**
+`--record` no desmarca nada, porque un numero que coincide con una medicion hecha
+con otra version de la libreria no dice nada sobre esta.
 
 Lo que **no** puede hacer ningun test de este paquete es arrancar un navegador o
 un emulador, asi que la afirmacion de que los tres coinciden descansa en dos
 piezas: el registro, que es la afirmacion, y el script, que es la unica forma de
 volver a comprobar los dos entornos que el test no alcanza. Si cambia la version
 de Expo o de Hermes, `--refresh` no sirve: hay que volver a medir y volver a
-correr `hermes` y `browser`.
+correr `hermes --record` y `browser --record`. Lo mismo pasa con una subida de
+`rrule` o de `luxon`, y en ese caso no hay ni que acordarse: el `recheck` que
+deja `--refresh` y el test que corre en cada `npm run check` lo dicen solos.
 
 ```json
 {
@@ -214,18 +248,33 @@ correr `hermes` y `browser`.
       "engine": "node",
       "runtime": "node 26.8.2, vitest 5.0.2, native ESM loader",
       "fingerprint": "2f6ae9c6",
+      "verifiedWith": {
+        "rrule": "2.8.1",
+        "luxon": "3.7.2"
+      },
+      "recheck": null,
       "command": "npm run test --workspace @orbit-hub/habit-core"
     },
     "browser": {
       "engine": "browser",
       "runtime": "Chromium 154.0.0.0 (Playwright), expo start --web, metro web bundle",
       "fingerprint": "2f6ae9c6",
+      "verifiedWith": {
+        "rrule": "2.8.1",
+        "luxon": "3.7.2"
+      },
+      "recheck": null,
       "command": "cd apps/mobile && npx expo start --web --port <puerto>"
     },
     "hermes": {
       "engine": "hermes",
       "runtime": "Hermes on Android 15 (API 35), emulator-5554, com.jrzlabs.orbithub 0.1.8, metro native bundle",
       "fingerprint": "2f6ae9c6",
+      "verifiedWith": {
+        "rrule": "2.8.1",
+        "luxon": "3.7.2"
+      },
+      "recheck": null,
       "command": "adb -s emulator-5554 logcat -d | grep SPIKE_   (bundle nativo servido por Metro)"
     }
   },

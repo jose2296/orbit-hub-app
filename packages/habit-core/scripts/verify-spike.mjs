@@ -1,41 +1,59 @@
 #!/usr/bin/env node
 /**
- * Checks the three-environment record committed in
+ * Comprueba el registro de los tres entornos que esta commiteado en
  * `docs/architecture/adr/0033-recurrencia-con-rrule-y-luxon.md`.
  *
- * The test suite runs in `environment: 'node'` and cannot start a browser or an
- * emulator, so the two measurements that decide the library of the whole project
- * live outside it. What this script owns is the comparison: a measurement is
- * only ever a number somebody read off a console, and "somebody read eight
- * characters and said they matched" is not a check. Here it is a command with an
- * exit code.
+ * La suite corre en `environment: 'node'` y no puede arrancar un navegador ni un
+ * emulador, asi que las dos mediciones que deciden la libreria de todo el
+ * proyecto viven fuera de ella. Lo que le toca a este script es la comparacion:
+ * una medicion es un numero que alguien leyo en una consola, y "alguien leyo ocho
+ * caracteres y dijo que cuadraban" no es una comprobacion. Aqui es un comando con
+ * codigo de salida.
+ *
+ * Comparar no escribe nunca. Los dos caminos que escriben son `--refresh`, que
+ * mide este checkout, y `--record`, que escribe la medicion que acaba de llegar
+ * de un entorno medido a mano.
  *
  *   node scripts/verify-spike.mjs node
- *       Computes it here and compares. No arguments, no human.
+ *       La calcula aqui y la compara. Sin argumentos y sin persona.
  *
- *   node scripts/verify-spike.mjs hermes [--serial <id>]
- *       Reads `adb logcat` itself, extracts the fingerprint, and checks that the
- *       log really came from Hermes (`SPIKE_ENV.engine`) before trusting it. The
- *       serial comes from `--serial`, then `ANDROID_SERIAL`, then the default, in
- *       that order, and it is looked up in `adb devices` before anything is read:
- *       a serial that is not there is said out loud instead of falling back to
- *       whatever emulator happens to be up.
+ *   node scripts/verify-spike.mjs hermes [--serial <id>] [--record]
+ *       Lee `adb logcat` el mismo, extrae la huella y comprueba que el log venga
+ *       de verdad de Hermes (`SPIKE_ENV.engine`) antes de fiarse. El emulador se
+ *       busca con `adb devices` antes de leer: un serial que no existe se dice,
+ *       no se lee el otro.
  *
- *   node scripts/verify-spike.mjs browser < console.txt
- *       The browser console cannot be piped, so the two `SPIKE_*` lines are
- *       pasted in on stdin. Same checks: the line has to say it came from a
- *       browser.
+ *   node scripts/verify-spike.mjs browser [--record] < consola.txt
+ *       La consola del navegador no se puede canalizar, asi que se pegan las dos
+ *       lineas `SPIKE_*` por stdin. Las mismas comprobaciones.
  *
  *   node scripts/verify-spike.mjs --refresh
- *       Rewrites the machine-derived parts of the record from this checkout:
- *       node's fingerprint, `result` and `gap`. The browser and Hermes entries
- *       are measurements, so they are never touched.
+ *       Reescribe del checkout lo que si se puede calcular: la huella de Node,
+ *       `result`, `gap` y las versiones de libreria instaladas. Los dos entornos
+ *       que hay que medir a mano no se tocan, pero quedan **marcados** para esta
+ *       version de las librerias (`recheck`) cuando su medicion deja de valer, de
+ *       modo que el test de `spike.test.ts` se pone rojo hasta que se vuelvan a
+ *       medir y a escribir con `--record`.
  *
- * Exit codes: 0 the record holds, 1 it does not, 2 the command was wrong.
+ * Codigos de salida: 0 el registro aguanta, 1 no aguanta, 2 el comando estaba
+ * mal. Un `--refresh` que deja entradas sin remedir sale con 1 aunque la
+ * escritura haya ido bien: el registro ya no aguanta y un 0 aqui seria una
+ * mentira que un script se traga sin mirar.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
+import {
+  RECORD_BLOCK,
+  installedVersions as readInstalledVersions,
+  readRecord as readRecordFile,
+  recheckReasons,
+  sameVersions,
+  stampText,
+  unheldEntries,
+  unheldReport,
+} from './record-holds.mjs';
 
 const PACKAGE_ROOT = new URL('..', import.meta.url);
 const SPIKE = new URL('dist/spike.js', PACKAGE_ROOT);
@@ -43,7 +61,10 @@ const ADR = new URL(
   '../../../docs/architecture/adr/0033-recurrencia-con-rrule-y-luxon.md',
   import.meta.url,
 );
+const LOCK = new URL('../../../package-lock.json', import.meta.url);
 const DEFAULT_SERIAL = 'emulator-5554';
+/** Los tres son la afirmacion entera: sin uno de estos, el registro no dice nada. */
+const HAND_MEASURED = ['browser', 'hermes'];
 
 const fail = (message) => {
   console.error(`FAIL  ${message}`);
@@ -54,22 +75,22 @@ const usage = (message) => {
   console.error(`ERROR ${message}`);
   console.error(
     'usage: verify-spike.mjs node\n' +
-      '       verify-spike.mjs hermes [--serial <id>]\n' +
-      '       verify-spike.mjs browser < console.txt\n' +
+      '       verify-spike.mjs hermes [--serial <id>] [--record]\n' +
+      '       verify-spike.mjs browser [--record] < console.txt\n' +
       '       verify-spike.mjs --refresh',
   );
   process.exit(2);
 };
 
 /**
- * Que flags existen y cuales llevan valor. `--serial` estaba documentado en la
- * cabecera y en el ADR, se aceptaba en silencio, y el script comparaba el registro
- * del emulador que no te habian pedido: un flag que hace otra cosa de la que dice
- * es peor que no tenerlo. Por eso un flag desconocido es un error de comando y no
- * una opcion ignorada.
+ * Que flags existen y cuales llevan valor. Un flag que nadie lee es peor que no
+ * tenerlo: `--serial` estaba documentado en la cabecera y en el ADR, se aceptaba
+ * en silencio y el script comparaba el registro del emulador que no te habian
+ * pedido. Por eso un flag desconocido es un error de comando y no una opcion
+ * ignorada.
  */
 const FLAGS_WITH_VALUE = new Set(['--serial']);
-const BOOLEAN_FLAGS = new Set(['--refresh']);
+const BOOLEAN_FLAGS = new Set(['--refresh', '--record']);
 
 const parseArgs = (argv) => {
   const flags = new Map();
@@ -108,29 +129,27 @@ const parseArgs = (argv) => {
 };
 
 /**
- * The record is the single fenced ```json block of the ADR. There is exactly
- * one, and a second one would make this ambiguous, so the count is checked.
+ * El registro y las versiones instaladas se leen desde `record-holds.mjs`, que es
+ * donde vive la regla y no su copia. Aqui solo se traduce un error a `FAIL`, que es
+ * lo que el script sabe hacer.
  */
 const readRecord = () => {
-  const text = readFileSync(ADR, 'utf8');
-  const blocks = [...text.matchAll(/```json\n([\s\S]*?)\n```/g)];
-  if (blocks.length !== 1) {
-    fail(
-      `${fileURLToPath(ADR)} has ${blocks.length} fenced json blocks, expected exactly 1. ` +
-        'The record has to be unambiguous to be checkable.',
-    );
-  }
   try {
-    return { text, record: JSON.parse(blocks[0][1]) };
+    return readRecordFile(ADR);
   } catch (error) {
-    fail(
-      `${fileURLToPath(ADR)}: the json block does not parse (${error.message}). ` +
-        'Fix the record; nothing can be compared against a record that will not load.',
-    );
+    fail(error.message);
   }
 };
 
-/** Live values, from the built spike. Its absence is a build, not a mystery. */
+const installedVersions = () => {
+  try {
+    return readInstalledVersions(LOCK);
+  } catch (error) {
+    fail(error.message);
+  }
+};
+
+/** Valores vivos, del spike ya construido. Su ausencia es un build, no un misterio. */
 const live = async () => {
   try {
     return await import(SPIKE.href);
@@ -143,9 +162,9 @@ const live = async () => {
 };
 
 /**
- * Both numbers come out of the same console line pair, so they are read together:
- * a fingerprint without the environment that produced it is not evidence of
- * anything, and pasting the Node line three times would satisfy a weaker check.
+ * Los dos numeros salen de la misma pareja de lineas de consola, asi que se leen
+ * juntos: una huella sin el entorno que la produjo no prueba nada, y pegar tres
+ * veces la linea de Node dejaria pasar una comprobacion mas debil.
  */
 const extract = (text, source) => {
   const lines = text.split('\n');
@@ -177,11 +196,12 @@ const extract = (text, source) => {
   return { fingerprint, engine: env.engine, source, env };
 };
 
-const check = (measured, expected, label) => {
+const check = (measured, expected, label, hint) => {
   if (expected === null || expected === undefined) {
     fail(
       `${label} has no fingerprint recorded. The record is a claim until it has a ` +
-        'number in it; measure it and write it down.',
+        'number in it; measure it and write it down.' +
+        (hint ? ` ${hint}` : ''),
     );
   }
   if (measured.fingerprint !== expected) {
@@ -190,10 +210,36 @@ const check = (measured, expected, label) => {
         `  recorded in the ADR: ${expected}\n` +
         `  measured now:      ${measured.fingerprint}\n` +
         `  source:             ${measured.source}\n` +
-        'The library choice in this ADR rests on the three agreeing.',
+        'The library choice in this ADR rests on the three agreeing.' +
+        (hint ? `\n${hint}` : ''),
     );
   }
   console.log(`ok    ${label}: ${measured.fingerprint} (${measured.engine})`);
+};
+
+/**
+ * Escribir el registro. Solo hay dos caminos que llegan aqui, `--refresh` y
+ * `--record`, y los dos son deliberados: comparar no escribe.
+ */
+const writeRecord = (text, updated) => {
+  if (!RECORD_BLOCK.test(text)) {
+    fail(`the record block in ${fileURLToPath(ADR)} could not be located, so nothing was written.`);
+  }
+  writeFileSync(
+    ADR,
+    text.replace(RECORD_BLOCK, () => '```json\n' + JSON.stringify(updated, null, 2) + '\n```'),
+  );
+};
+
+/**
+ * Lo que le falta al registro para volver a aguantar. Se imprime antes de salir con
+ * 1 y el 1 es a proposito: la escritura que se acaba de hacer puede haber ido
+ * bien, pero el registro ya no aguanta, y un 0 aqui seria una mentira que se traga
+ * un script sin mirar.
+ */
+const reportUnheld = (pending) => {
+  console.error(unheldReport(pending));
+  process.exit(1);
 };
 
 /**
@@ -227,9 +273,9 @@ const parseDevices = (listing) =>
       return { id, state: rest.join(' ') || 'unknown' };
     });
 
-const resolveSerial = (requested) => {
-  const serial = requested ?? process.env.ANDROID_SERIAL ?? DEFAULT_SERIAL;
-  const from = requested
+const resolveSerial = () => {
+  const serial = serialFlag ?? process.env.ANDROID_SERIAL ?? DEFAULT_SERIAL;
+  const from = serialFlag
     ? '--serial'
     : process.env.ANDROID_SERIAL
       ? 'ANDROID_SERIAL'
@@ -267,6 +313,33 @@ const fromAdb = (serial) =>
     `Is ${serial} up, and has the app loaded a bundle from Metro?`,
   );
 
+/**
+ * Que Android es el aparato, para que el registro diga de donde salio el numero y
+ * no solo de que motor. Es decorativo, asi que un `getprop` que falla no puede
+ * tumbar una medicion buena: se dice que no se sabe.
+ */
+const adbProperty = (serial, property) => {
+  try {
+    return (
+      execFileSync('adb', ['-s', serial, 'shell', 'getprop', property], {
+        encoding: 'utf8',
+        timeout: 20_000,
+      }).trim() || null
+    );
+  } catch {
+    return null;
+  }
+};
+
+const hermesRuntime = (serial) => {
+  const release = adbProperty(serial, 'ro.build.version.release');
+  const sdk = adbProperty(serial, 'ro.build.version.sdk');
+  const android = release
+    ? `Android ${release}${sdk ? ` (API ${sdk})` : ''}`
+    : 'an Android version adb would not say';
+  return `Hermes on ${serial}, ${android}`;
+};
+
 const readStdin = () => {
   try {
     return readFileSync(0, 'utf8');
@@ -275,33 +348,118 @@ const readStdin = () => {
   }
 };
 
+/**
+ * `--refresh` mide lo unico que se puede medir desde aqui: este checkout. Los
+ * otros dos son mediciones de alguien, asi que no se tocan. Pero tampoco pueden
+ * quedarse callados: si su medicion ya no vale para las librerias de ahora, o su
+ * huella ya no es la que da Node, quedan marcadas y el registro sale con 1. Es la
+ * unica forma de que subir `rrule` no deje el registro diciendo que los tres
+ * coinciden cuando lo unico que se ha comprobado es uno.
+ */
 const refresh = async ({ text, record }) => {
   const spike = await live();
+  const versions = installedVersions();
+  const fingerprint = spike.spikeFingerprint();
+  const environments = { ...(record.environments ?? {}) };
+  environments.node = { ...environments.node, fingerprint, verifiedWith: versions, recheck: null };
+  for (const name of HAND_MEASURED) {
+    const entry = environments[name];
+    if (entry === undefined) {
+      fail(
+        `the record has no "${name}" entry, so there is nothing to mark as pending. ` +
+          'The three agreeing is the whole claim; two of the three are not optional.',
+      );
+    }
+    const reasons = recheckReasons(entry, versions, fingerprint);
+    environments[name] = { ...entry, recheck: reasons.length === 0 ? null : reasons.join('; ') };
+  }
+
   const updated = {
     ...record,
     measuredOn: new Date().toISOString().slice(0, 10),
-    environments: {
-      ...record.environments,
-      node: { ...record.environments.node, fingerprint: spike.spikeFingerprint() },
-    },
+    rrule: versions.rrule,
+    luxon: versions.luxon,
+    environments,
     result: spike.spikeResult(),
     gap: spike.spikeResult().probe2_sundaysInTheGap,
   };
-  const next = text.replace(
-    /```json\n[\s\S]*?\n```/,
-    () => '```json\n' + JSON.stringify(updated, null, 2) + '\n```',
-  );
-  writeFileSync(ADR, next);
+  writeRecord(text, updated);
   console.log(
-    `refreshed ${fileURLToPath(ADR)}: node is ${updated.environments.node.fingerprint}. ` +
-      `browser and hermes kept as recorded (${updated.environments.browser?.fingerprint}, ` +
-      `${updated.environments.hermes?.fingerprint}).`,
+    `refreshed ${fileURLToPath(ADR)}: node is ${fingerprint} with ${stampText(versions)}. ` +
+      `browser ${environments.browser.fingerprint}, hermes ${environments.hermes.fingerprint}.`,
   );
+
+  const pending = unheldEntries(environments, versions, fingerprint);
+  if (pending.length > 0) {
+    reportUnheld(pending);
+  }
+};
+
+/**
+ * `hermes` y `browser` reciben la medicion de fuera, asi que hacen lo mismo con
+ * ella: o el numero cuadra con lo registrado, o no. `--record` es lo unico que
+ * escribe, y escribe la medicion que acaba de llegar.
+ *
+ * Lo que no se puede es dar el visto bueno a una entrada que dice medido con una
+ * libreria que ya no es la instalada: por eso `recheck` pesa mas que el match, y
+ * por eso comparar no basta para dejar el registro en verde.
+ */
+const settle = ({ text, record, name, measured, recorded, wantsRecord, patch }) => {
+  const versions = installedVersions();
+  const nodeFingerprint = record.environments?.node?.fingerprint;
+  const same = recorded?.fingerprint != null && recorded.fingerprint === measured.fingerprint;
+  const reasons = recheckReasons(recorded, versions, nodeFingerprint);
+
+  if (!wantsRecord) {
+    if (!same) {
+      // `check` sale con 1 si el numero no es el registrado, y con 1 tambien si no
+      // hay ninguno registrado.
+      check(
+        measured,
+        recorded?.fingerprint,
+        name,
+        'If the new number is the expected one, re-run with --record to write it down.',
+      );
+    }
+    if (reasons.length > 0) {
+      fail(
+        `the number matches, but the ${name} entry does not hold for this checkout: ` +
+          `${reasons.join('; ')}. Re-run with --record so the record carries the version it ` +
+          'was just measured with: ' +
+          `npm run spike:verify --workspace @orbit-hub/habit-core -- ${name} --record.`,
+      );
+    }
+    check(measured, recorded.fingerprint, name);
+    return;
+  }
+
+  const environments = { ...record.environments };
+  environments[name] = {
+    ...recorded,
+    engine: measured.engine,
+    fingerprint: measured.fingerprint,
+    verifiedWith: versions,
+    recheck: null,
+    ...patch,
+  };
+  const updated = { ...record, measuredOn: new Date().toISOString().slice(0, 10), environments };
+  writeRecord(text, updated);
+  console.log(
+    `recorded ${name} in ${fileURLToPath(ADR)}: ${measured.fingerprint} with ` +
+      `${stampText(versions)} (was ${recorded?.fingerprint ?? 'nothing'} with ` +
+      `${stampText(recorded?.verifiedWith)}).`,
+  );
+
+  const pending = unheldEntries(environments, versions, nodeFingerprint);
+  if (pending.length > 0) {
+    reportUnheld(pending);
+  }
 };
 
 const { words, flags } = parseArgs(process.argv.slice(2));
 const [environment, ...extraWords] = words;
 const wantsRefresh = flags.get('--refresh') === true;
+const wantsRecord = flags.get('--record') === true;
 const serialFlag = flags.get('--serial');
 
 if (extraWords.length > 0) {
@@ -309,6 +467,15 @@ if (extraWords.length > 0) {
 }
 if (wantsRefresh && environment !== undefined) {
   usage('--refresh measures this checkout, so it takes no environment');
+}
+if (wantsRefresh && wantsRecord) {
+  usage('--refresh already writes what this checkout computes; --record is for the other two');
+}
+if (wantsRecord && environment === undefined) {
+  usage('--record applies to hermes or browser; node is measured from this checkout by --refresh');
+}
+if (wantsRecord && environment === 'node') {
+  usage('--record does not apply to node: use --refresh, which is what computes it');
 }
 if (serialFlag !== undefined && environment !== 'hermes') {
   usage(`--serial only applies to hermes, not to ${environment ?? 'a missing environment'}`);
@@ -318,14 +485,21 @@ if (wantsRefresh) {
   await refresh(readRecord());
 } else if (environment === 'node') {
   const { record } = readRecord();
+  const versions = installedVersions();
+  const declared = { rrule: record.rrule ?? null, luxon: record.luxon ?? null };
+  if (!sameVersions(declared, versions)) {
+    fail(
+      `the record is stamped for ${stampText(declared)} and this checkout has ` +
+        `${stampText(versions)}. A library moved and the three environments were not ` +
+        'measured again: `--refresh` rewrites what this checkout computes and marks the ' +
+        'other two as pending, then they have to be measured and recorded.',
+    );
+  }
   const spike = await live();
   const env = spike.spikeEnv();
   const recorded = record.environments?.node;
-  check(
-    { fingerprint: spike.spikeFingerprint(), engine: env.engine, source: 'this run' },
-    recorded?.fingerprint,
-    'node',
-  );
+  const fingerprint = spike.spikeFingerprint();
+  check({ fingerprint, engine: env.engine, source: 'this run' }, recorded?.fingerprint, 'node');
   if (recorded.engine !== env.engine) {
     fail(`the record calls node "${recorded.engine}" and this run is "${env.engine}".`);
   }
@@ -358,9 +532,13 @@ if (wantsRefresh) {
         )}`,
     );
   }
+  const pending = unheldEntries(record.environments, versions, fingerprint);
+  if (pending.length > 0) {
+    reportUnheld(pending);
+  }
 } else if (environment === 'hermes') {
-  const { record } = readRecord();
-  const serial = resolveSerial(serialFlag);
+  const { text, record } = readRecord();
+  const serial = resolveSerial();
   const measured = extract(fromAdb(serial), `adb logcat on ${serial}`);
   if (measured.engine !== 'hermes') {
     fail(
@@ -368,14 +546,34 @@ if (wantsRefresh) {
         'A stale line from another environment in the log buffer is not a measurement.',
     );
   }
-  check(measured, record.environments?.hermes?.fingerprint, 'hermes');
+  settle({
+    text,
+    record,
+    name: 'hermes',
+    measured,
+    recorded: record.environments?.hermes,
+    wantsRecord,
+    patch: {
+      runtime: hermesRuntime(serial),
+      command: `adb -s ${serial} logcat -d | grep SPIKE_   (bundle nativo servido por Metro)`,
+    },
+  });
 } else if (environment === 'browser') {
-  const { record } = readRecord();
+  const { text, record } = readRecord();
   const measured = extract(readStdin(), 'the pasted browser console');
   if (measured.engine !== 'browser') {
     fail(`that console line says engine "${measured.engine}", not browser.`);
   }
-  check(measured, record.environments?.browser?.fingerprint, 'browser');
+  const recorded = record.environments?.browser;
+  settle({
+    text,
+    record,
+    name: 'browser',
+    measured,
+    recorded,
+    wantsRecord,
+    patch: { command: recorded?.command ?? 'npx expo start --web --port <puerto>, consola del navegador' },
+  });
 } else {
   usage(environment ? `unknown environment "${environment}"` : 'no environment given');
 }
