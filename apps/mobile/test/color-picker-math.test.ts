@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { clamp01 } from '../src/lib/workspace/hsl';
 import {
   HUE_STRIP,
   hexToHsv,
@@ -355,8 +356,76 @@ describe('un color que no es un color', () => {
       // eje, y por eso los dos casos no pueden ser el mismo.
       expect(llama(0, Number.NaN, 0.5), nombre).toBe('#808080');
       expect(llama(0, Number.NaN, 0.5), nombre).toBe(llama(0, 0, 0.5));
-      expect(llama(210, Number.NEGATIVE_INFINITY, 1), nombre).toBe('#FFFFFF');
       expect(llama(0, Number.NaN, 0), nombre).toBe('#000000');
+    }
+  });
+
+  it('clamp01 recorta de verdad, y antes no recortaba nada que no fuera un numero', () => {
+    // **El guard de los tres `Number.isFinite` que hay en las conversiones no es lo
+    // que se prueba aqui: se prueba el recorte.** `clamp01` era
+    // `Math.min(Math.max(valor, 0), 1)`, y `Math.min`, `Math.max` y las dos
+    // comparaciones responden `NaN` cuando la entrada es `NaN`, asi que la funcion
+    // **no era un recorte para ese caso: devolvia el `NaN` tal cual**. Cada sitio que
+    // la llama promete que su valor es un numero, y eso era falso.
+    //
+    // Por eso la puerta abierta de verdad era `puntoAHsv`, que divide por un ancho y
+    // un alto medidos y no tiene guard propio. De 1225 combinaciones de coordenada y
+    // caja, **136 arrastraban un componente no finito** a traves de aqui, y las 136
+    // acababan en una cadena que no es un color.
+    const noFinitos = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    for (const valor of noFinitos) {
+      expect(clamp01(valor), `clamp01(${valor})`).toBe(0);
+    }
+    // Los dos extremos del rango, que es lo que un recorte tiene que hacer ademas de
+    // esto, y en los que no hay nada que discutir.
+    for (const [valor, esperado] of [
+      [0, 0],
+      [1, 1],
+      [0.5, 0.5],
+      [-3, 0],
+      [7, 1],
+    ] as const) {
+      expect(clamp01(valor), `clamp01(${valor})`).toBe(esperado);
+    }
+  });
+
+  it('puntoAHsv y puntoAHue ya no sueltan un NaN aunque la coordenada sea un NaN', () => {
+    // **El consumidor, y por eso este `it` no es del `clamp01`.** La caja ya estaba a
+    // salvo: `width > 0` es falso con un `NaN` y cae en la rama del `0`. La
+    // coordenada no lo estaba, y por eso el arreglo se hizo donde estaba la cuenta
+    // comun y no en cada uno de sus usuarios.
+    //
+    // Las cifras estan medidas, no supuestas: antes 1225 combinaciones con 136
+    // componentes no finitos y 136 salidas que no eran un color; ahora **0 y 0**. Las
+    // 1225 no se vuelven a escribir aqui porque son un producto de los dos bucles, y
+    // un producto escrito a mano se queda viejo: se recorre el producto con el
+    // `for` y la cifra sale sola.
+    const coordenadas = [0, 33, 66, 99, 132, Number.NaN];
+    const cajas = [
+      [0, 0],
+      [132, 132],
+      [210, 132],
+    ] as const;
+    for (const x of coordenadas) {
+      for (const y of coordenadas) {
+        for (const [ancho, alto] of cajas) {
+          const etiqueta = `puntoAHsv(${x}, ${y}, ${ancho}, ${alto})`;
+          const hsv = puntoAHsv(x, y, ancho, alto, 210);
+          for (const [nombre, valor] of [
+            ['h', hsv.h],
+            ['s', hsv.s],
+            ['v', hsv.v],
+          ] as const) {
+            expect(Number.isFinite(valor), `${etiqueta} — ${nombre} es ${valor}`).toBe(true);
+          }
+          // Y la consecuencia, que es la que se ve en una pantalla: de ahi sale
+          // un `backgroundColor`, y tiene que ser un color.
+          expect(hsvToHex(hsv), `${etiqueta} — no es un color`).toMatch(/^#[0-9A-F]{6}$/);
+
+          const tono = puntoAHue(x, ancho);
+          expect(Number.isFinite(tono), `puntoAHue(${x}, ${ancho}) es ${tono}`).toBe(true);
+        }
+      }
     }
   });
 

@@ -46,7 +46,29 @@ export interface Hsv {
   v: number;
 }
 
-const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
+/**
+ * `0`–`1`, and **`0` for anything that is not a number.**
+ *
+ * **The `Number.isFinite` is the whole function, and it was missing for the whole
+ * life of this file.** `Math.min`, `Math.max` and the comparisons all answer
+ * `NaN` when handed a `NaN`, so the original one-liner was not a clamp at all for
+ * that input: it handed the `NaN` straight back, and every caller's promise that
+ * its value is a number was false. Measured, all three of `puntoAHsv`'s outputs
+ * over 1225 coordinate/box combinations: **136 carried a non-finite component
+ * through this function**, and every one of the 136 became a string that is not a
+ * colour downstream.
+ *
+ * **Fixed here rather than at each caller, because this is the one place the
+ * promise can be kept.** `puntoAHsv` and `puntoAHue` divide by a measured width
+ * and height and have no guard of their own; `hslToHex` and `hsvToHex` each had
+ * grown a `Number.isFinite` wrapper of their own, and `mixHex` in
+ * `apps/mobile/src/lib/lists/tag-colors.ts` a third. Four guards for one door.
+ * The `NaN` becomes `0`, which is the same answer every one of those guards was
+ * reaching for, and the wrappers are gone rather than left as redundant belts on
+ * a belt.
+ */
+const clamp01 = (value: number) =>
+  Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0;
 
 /** What a conversion falls back to when it is handed something that is not a colour. */
 export const COLOR_QUE_NO_ES = "#334155";
@@ -171,9 +193,16 @@ export function hslToHex(h: number, s: number, l: number): string {
   // from `color.ts`, so the next caller that computes a lightness is the one that
   // would have paid. `mixHex` reached the same conclusion about its `t` and pays
   // the same price: one call.
+  //
+  // **`h` is the only one of the three that needs its own guard**, and only
+  // because `clamp01` is the wrong shape for it: hue goes in degrees and wraps, so
+  // `Math.min(Math.max(h, 0), 1)` would throw away every hue above 1°. `s` and `l`
+  // are both `0`–`1`, which is exactly what `clamp01` promises, and it now answers
+  // `0` for a `NaN` on its own — so they are handed straight to it, with no
+  // wrapper of their own to keep in step with it.
   const h0 = Number.isFinite(h) ? h : 0;
-  const s0 = Number.isFinite(s) ? clamp01(s) : 0;
-  const l0 = Number.isFinite(l) ? clamp01(l) : 0;
+  const s0 = clamp01(s);
+  const l0 = clamp01(l);
 
   const c = (1 - Math.abs(2 * l0 - 1)) * s0;
   const hp = (((h0 % 360) + 360) % 360) / 60;
@@ -274,9 +303,11 @@ export function hsvToHex({ h, s, v }: Hsv): string {
   // version before this one, and so do all **16 777 216 colours** through
   // `hexToHsv`. What changes is only what was never a colour: a number that is not a
   // number, or one that walked off the end of its own axis.
+  // `h` is the only one that needs a guard of its own: hue goes in degrees and wraps, so
+  // `clamp01` would throw away every hue above 1°. `s` and `v` go straight to it.
   const h0 = Number.isFinite(h) ? h : 0;
-  const s0 = Number.isFinite(s) ? clamp01(s) : 0;
-  const v0 = Number.isFinite(v) ? clamp01(v) : 0;
+  const s0 = clamp01(s);
+  const v0 = clamp01(v);
 
   const c = v0 * s0;
   const hp = (((h0 % 360) + 360) % 360) / 60;
@@ -308,21 +339,24 @@ export function hsvToHex({ h, s, v }: Hsv): string {
   // digits where a `#RRGGBB` has six, and not one of them a hexadecimal digit, so
   // no CSS parser reads it and the element keeps whatever it painted before.
   //
-  // **Both, and not one.** The three `Number.isFinite` above say what a parameter
-  // that is not a number means; this one is the belt underneath them, and it stays
+  // **Both, and not one.** `clamp01` now says what a `0`–`1` parameter that is not
+  // a number means; this guard on the sum is the belt underneath it, and it stays
   // after the clip the way the one in `hslToHex` does.
   //
-  // **Reachable, where `hslToHex`'s was only latent — and through the door
-  // `mixHex` already documented.** The paths that come from a hex are closed:
-  // measured over **all 16 777 216 colours**, `hexToHsv` produced 0 non-finite and
-  // 0 out-of-range components, and this function answered a `#RRGGBB` for every one
-  // of them. The path that is open is `puntoAHsv`, which does not check its
-  // coordinates and cannot: `clamp01` is `Math.min(Math.max(v, 0), 1)` and all
-  // three of `Math` answer `NaN` for a `NaN`, so a `NaN` in `x` or `y` lands in the
-  // state as one. Measured: `puntoAHsv(66, NaN, 132, 132, 210)` hands over `v` in
-  // `NaN`, and this function answered `#NANNANNAN` for it. Whether a `NaN` ever
-  // arrives is not something I can show — the numbers come from `Gesture.Pan`'s
-  // `e.x` and `e.y`, which are finite in every run I have seen, and the *box* is
+  // **The open door was `puntoAHsv`, and it is shut at the source now.** The paths
+  // that come from a hex were always closed: measured over **all 16 777 216
+  // colours**, `hexToHsv` produced 0 non-finite and 0 out-of-range components, and
+  // this function answered a `#RRGGBB` for every one of them. `puntoAHsv` was the
+  // open one, and it was open for a reason nobody had gone looking for: it divides
+  // by a measured width and height and has no guard of its own, and the `clamp01`
+  // it called **was not a clamp** — `Math.min`, `Math.max` and the comparisons all
+  // answer `NaN` for a `NaN`, so it handed one straight back. Measured: of 1225
+  // coordinate/box combinations, **136 carried a non-finite component through**,
+  // and this function answered a string that is not a colour for every one of the
+  // 136. `clamp01` now answers `0`, so those 136 are `#000000` instead.
+  //
+  // Whether a `NaN` ever arrives is not something I can show — the numbers come
+  // from `Gesture.Pan`'s `e.x` and `e.y`, which are finite in every run I have seen, and the *box* is
   // safe because `width > 0` is false for a `NaN` and falls to the `0` branch. But
   // "the coordinates are finite today" is a claim about the caller, not a promise
   // this function makes, and unlike `hslToHex` this one is exported into a

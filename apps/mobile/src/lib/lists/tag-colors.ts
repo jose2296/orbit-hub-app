@@ -419,15 +419,24 @@ export function tagColorHex(colour: string): string {
  * de CSS rechaza **en silencio**. Un `t` fuera de rango es un error de quien
  * llama, y aqui sale como un tinte entero sin que se note.
  *
- * **Y el `Number.isFinite` va antes del recorte y no por debajo, porque
- * `clamp01` no limpia un `NaN`.** `clamp01` es `Math.min(Math.max(valor, 0), 1)`, y
- * las tres de `Math` devuelven `NaN` cuando una entrada es `NaN`: un `t` de `NaN`
- * llegaba a `Math.round`, `"NaN".toString(16)` es la cadena `"NaN"`, y el retorno
- * era literalmente **`#NANNANNAN`** —diez caracteres: nueve cifras, donde un
- * `#RRGGBB` tiene seis, y ninguna hexadecimal—. Ese retorno no lo dibuja nadie:
- * **ningun** parser de CSS puede leer una declaracion de color asi, la
- * declaracion se descarta sin un error y el elemento se queda con lo que ya habia
- * pintado. Medido antes del arreglo, no supuesto.
+ * **El `Number.isFinite` de este `t` era necesario porque `clamp01` no limpiaba un
+ * `NaN`, y ahora es redundante porque `clamp01` si lo limpia.** Antes `clamp01`
+ * era `Math.min(Math.max(valor, 0), 1)`, y las tres de `Math` devuelven `NaN`
+ * cuando una entrada es `NaN`, asi que un `t` de `NaN` llegaba a `Math.round`,
+ * `"NaN".toString(16)` es la cadena `"NaN"`, y el retorno era literalmente
+ * **`#NANNANNAN`** —diez caracteres: nueve cifras, donde un `#RRGGBB` tiene seis,
+ * y ninguna hexadecimal—. Ese retorno no lo dibuja nadie: **ningun** parser de
+ * CSS puede leer una declaracion de color asi, la declaracion se descarta sin un
+ * error y el elemento se queda con lo que ya habia pintado. Medido antes del
+ * arreglo, no supuesto.
+ *
+ * **El guard se queda puesto de todos modos, y esa es la decision que se quiere
+ * ver.** `clamp01` ahora responde `0` ante un `NaN`, asi que `clamp01(t)` da
+ * exactamente lo mismo que este `Number.isFinite`: quitarlo no cambia ni un hex.
+ * Se deja porque aqui la garantia se lee en la linea que la hace, y el dia que
+ * `clamp01` vuelva a ser una cuenta de una linea sin `Number.isFinite` este `t`
+ * sigue a salvo sin que nadie tenga que acordarse. Un guard que hoy no hace nada
+ * y cuyo un trabajo es que no haga falta mañana.
  *
  * **Lo que este guard tiene en comun con el de `hslToHex` es el ternario y el
  * recorte, y los dos vigilan la suma hoy.** `hslToHex` ponia
