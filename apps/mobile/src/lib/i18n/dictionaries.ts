@@ -238,6 +238,8 @@ const es = {
   "filters.show.all": "Todo",
   "filters.show.pending": "Solo lo que queda",
   "filters.show.done": "Solo lo hecho",
+  "filters.completedOff":
+    "Aquí lo hecho es una columna, no una casilla.",
   "filters.labels": "Etiquetas",
   "filters.reset": "Quitar los filtros",
   "filters.titleOn": "Filtrar ({count})",
@@ -1350,6 +1352,8 @@ const en: Record<TranslationKey, string> = {
   "filters.show.all": "Everything",
   "filters.show.pending": "Only what is left",
   "filters.show.done": "Only what is done",
+  "filters.completedOff":
+    "Here, done is a column and not a checkbox.",
   "filters.labels": "Labels",
   "filters.reset": "Clear the filters",
   "filters.titleOn": "Filter ({count})",

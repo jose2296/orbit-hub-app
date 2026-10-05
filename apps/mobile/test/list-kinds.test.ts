@@ -10,6 +10,7 @@ import {
   LIST_KIND_ICON,
   LIST_KIND_LABEL,
   LIST_KIND_ORDER,
+  isManualOrderOnly,
 } from '@/lib/lists/kind';
 
 /**
@@ -120,5 +121,94 @@ describe('los tres selectores de tipo leen la misma fuente', () => {
     const texto = readFileSync(join(SRC, 'app/(app)/lists.tsx'), 'utf8');
     expect(texto).not.toContain('Object.keys(LIST_KIND_ICON)');
     expect(texto).not.toContain('Object.keys(KIND_META)');
+  });
+});
+
+/**
+ * Los tipos en los que el orden manual es el unico que significa algo, **y la
+ * diferencia con `kind === 'board'` es el motivo de que el predicado exista.**
+ *
+ * La version ingenua —comparar con `'board'`— responde bien para el tablero y mal
+ * para las tareas, y por eso el predicado trae los dos: un tablero reparte sus
+ * filas en columnas y una lista de tareas las trae en el orden que la persona puso
+ * a mano. En cualquier otro tipo —peliculas, series, libros— el manual es uno mas
+ * entre siete y no significa nada por si solo.
+ *
+ * **La lista de tipos sale del contrato y no de esta prueba**, porque un
+ * `expect([...])` escrito a mano pasa igual con un tipo nuevo que nadie ha
+ * pensado: `listKindSchema.options` obliga a que el tipo nuevo tenga una respuesta.
+ */
+describe('el orden manual y el unico que significa algo', () => {
+  it('es el tablero y las tareas, y ningun otro tipo del contrato', () => {
+    const deVerdad = listKindSchema.options.filter((kind) =>
+      isManualOrderOnly(kind),
+    );
+    expect([...deVerdad].sort()).toEqual(['board', 'tasks']);
+  });
+
+  it('el tablero no basta: es mas que `kind === "board"`', () => {
+    // La asercion que el predicado ingenuo no puede pasar. Con
+    // `return kind === 'board'` esta linea sale `false` y la prueba se muere.
+    expect(isManualOrderOnly('tasks')).toBe(true);
+    expect(isManualOrderOnly('board')).toBe(true);
+  });
+
+  it('una lista que todavia no ha llegado no es de orden manual', () => {
+    // `null` y `undefined` son las tres pantallas antes de que la lista llegue del
+    // cache, y un predicado que devolviera `true` con `null` apagaria los seis
+    // modos de una pantalla que no sabe todavia que tipo de lista esta mirando.
+    expect(isManualOrderOnly(null)).toBe(false);
+    expect(isManualOrderOnly(undefined)).toBe(false);
+  });
+});
+
+/**
+ * Quien **ofrece** los seis modos que el tablero no ofrece, leido del codigo.
+ *
+ * Esta suite no pinta nada —no hay `renderHook`, ni `react-test-renderer`, ni
+ * jsdom—, asi que la unica forma de afirmar que `ListControls` recibe `orders`
+ * vacio en un tablero es leer de donde se lo pasan. Y la segunda mitad es la
+ * regresion: `isManualOrderOnly` tambien dice `tasks`, y una version de este
+ * trabajo que lo aplicara a la pantalla de listas le habria quitado a una lista
+ * de tareas los seis modos que siempre tuvo.
+ */
+describe('quien ofrece los seis modos que un tablero no ofrece', () => {
+  const SRC = join(import.meta.dirname, '..', 'src');
+
+  it('el tablero lee el predicado de lib/lists/kind', () => {
+    const texto = readFileSync(join(SRC, 'app/(app)/board/[listId].tsx'), 'utf8');
+    expect(texto, 'el tablero no lee la lista de tipos').toContain(
+      'from "@/lib/lists/kind"',
+    );
+    expect(texto, 'el tablero no usa el predicado del orden manual').toContain(
+      'isManualOrderOnly(',
+    );
+  });
+
+  it('`orders` del tablero esta en la predicado, y no en una lista escrita a mano', () => {
+    const texto = readFileSync(join(SRC, 'app/(app)/board/[listId].tsx'), 'utf8');
+    // La forma de la puerta: el prop `orders` no puede recibir otra cosa que el
+    // predicado y la lista de ordenes. Un tablero que escribiese `orders={[]}` pasaria
+    // la comprobacion de arriba —usa el predicado en otra parte— y dejaria el
+    // predicado sin Guardar nada, que es un predicado que no protege de nada.
+    expect(
+      texto,
+      'orders={ no esta en la predicado del tablero',
+    ).toMatch(/orders=\{\s*isManualOrderOnly\([\s\S]{0,200}?\?\s*\[\]\s*:/);
+  });
+
+  it('una lista de tareas sigue ofreciendo lo que siempre ofrecio', () => {
+    const texto = readFileSync(
+      join(SRC, 'app/(app)/list/[listId].tsx'),
+      'utf8',
+    );
+    expect(
+      texto,
+      'la pantalla de listas esta aplicando el predicado y le quita los seis modos',
+    ).not.toContain('isManualOrderOnly');
+    // Y los sigue ofreciendo: las siete filas de `ORDER_MODES` llegan a `orders`.
+    expect(texto, 'la pantalla de listas dejo de ofrecer ordenes').toContain(
+      'orders={opcionesDeOrden()}',
+    );
   });
 });

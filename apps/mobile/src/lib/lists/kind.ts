@@ -53,3 +53,8 @@ export const LIST_KIND_ORDER: ListKind[] = [
   'movies_and_series',
   'books',
 ];
+
+/** Las listas en las que el orden manual es el unico que significa algo. */
+export function isManualOrderOnly(kind: ListKind | null | undefined): boolean {
+  return kind === 'board' || kind === 'tasks';
+}

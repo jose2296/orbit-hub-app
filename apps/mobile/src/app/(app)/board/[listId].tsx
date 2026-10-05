@@ -13,6 +13,8 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { BoardColumn } from "@/components/lists/board-column";
 import { BoardTabs } from "@/components/lists/board-tabs";
+import { FiltersBody } from "@/components/lists/item-picker";
+import { ListControls } from "@/components/lists/list-controls";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
@@ -20,6 +22,7 @@ import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { StateEditorSheet } from "@/components/lists/state-editor-sheet";
 import { StatePickerSheet } from "@/components/lists/state-picker-sheet";
 import { Screen } from "@/components/ui/screen";
+import { AppText } from "@/components/ui/text";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenSpace } from "@/hooks/use-screen-space";
@@ -38,6 +41,8 @@ import {
   tasksInState,
 } from "@/lib/lists/board";
 import { nextOrderFromDrop } from "@/lib/lists/drag";
+import { filterItems, tagsByFrequency } from "@/lib/lists/item-presentation";
+import { isManualOrderOnly } from "@/lib/lists/kind";
 import {
   anchorableColumns,
   maxTrackScroll,
@@ -170,6 +175,13 @@ export default function BoardScreen() {
    * — count in the first column. Counting `tasksInState(items, states, id).length`
    * would give the same number here, and `items.filter((i) => i.stateId === id)`
    * would give a column that says zero while three cards are drawn in it.
+   *
+   * **And it is `items` and not the filtered list below, and that is the whole of
+   * what the tabs are for.** A tab says how much work a column holds; a filter says
+   * how much of it you are looking at right now. The two are different questions and
+   * the strip answers the first one — so a board of four columns and thirty tasks
+   * filtered by a label still shows the real size of every column in the tabs, which
+   * is what tells you that filtering hid nine and not that nine were ever there.
    */
   const counts = useMemo(() => {
     const porEstado = new Map<string, number>();
@@ -179,8 +191,69 @@ export default function BoardScreen() {
     return porEstado;
   }, [items, states]);
 
+  /* ------------------------------------------- los filtros y el orden que no se elige -- */
+
   /**
-   * The tasks of each column, **computed once per change and not once per render.**
+   * The labels of the board, **and they come from every task and not from the
+   * filtered ones.**
+   *
+   * A filter that offers only the labels that are still visible is a filter with a
+   * moving target: choosing one takes the others off the list you are choosing from,
+   * and picking a second label becomes impossible the moment the first one is on.
+   * `tagsByFrequency` already ranks them by how many rows carry each.
+   */
+  const labels = useMemo(() => tagsByFrequency(items), [items]);
+
+  /** The chosen labels, as an array because `filterItems` asks for one. */
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  /** The text of the field at the top of the sheet, which is the search. */
+  const [filterText, setFilterText] = useState("");
+
+  /**
+   * The tasks the board draws, **and `completed: undefined` written out is the
+   * decision.**
+   *
+   * On a board "done" is a column and not a tick: the spec's own sentence is
+   * *"Tener las dos cosas invita a tener una tarea completada en Backlog, que es
+   * justo lo que se decidió evitar"*, and a task with `completed` set on a board
+   * would be drawn as pending in whatever column it sits in — so the tick is off in
+   * the board's own card, in the task panel (`showCompleted={false}`) and here.
+   *
+   * **The dangerous half is the third checkbox, not the fact that it is off.** With
+   * `completed` alive on a board, filtering by "only what is done" leaves every
+   * column empty —because `completed` is `false` on every row of a board, by the same
+   * decision— and a board whose columns have all vanished is a failure nobody can
+   * explain and nobody can undo from inside the filter that caused it. On a list the
+   * same filter narrows; on a board it deletes the screen. So the value is passed as
+   * `undefined` and the rows above are drawn disabled with the reason under them:
+   * `completedDisabled`, in `FiltersBody`.
+   *
+   * **`tags` and `text` and nothing else**, which are the two the brief keeps: what
+   * is here and how it is read.
+   */
+  const visible = useMemo(
+    () =>
+      filterItems(items, {
+        tags: selectedTags,
+        completed: undefined,
+        text: filterText,
+      }),
+    [items, selectedTags, filterText],
+  );
+
+  /**
+   * How many filters are on, **and it is the number in the button's own label.**
+   *
+   * There is no third term for `completed`: it cannot be on, so a count that could
+   * grow by one on a board would be counting something the board does not have. Same
+   * arithmetic as `ListScreen`'s, minus the term that is impossible here.
+   */
+  const activeFilterCount =
+    selectedTags.length + (filterText.trim() ? 1 : 0);
+
+  /**
+   * The tasks of each column, **computed once per change and not once per render,
+   * over what the filter leaves.**
    *
    * `tasksInState` filters and sorts the whole list, so calling it inside the
    * `states.map` of the render meant a full pass over the list of tasks per column on
@@ -190,6 +263,10 @@ export default function BoardScreen() {
    * changed, which is what lets a column tell that it does not have to draw itself
    * again.
    *
+   * The input is `visible` and not `items`, **which is the only difference this task
+   * makes to the board's data** —and its consequence is said where the two numbers
+   * are drawn, in the note on the column's header below.
+   *
    * The counts above are a separate memo and stay separate on purpose: those use
    * `countInState`, which counts in one pass and **does not sort**, and `board.ts`
    * says why asking it for the number is not the same as counting a filtered list.
@@ -198,9 +275,9 @@ export default function BoardScreen() {
     () =>
       states.map((state) => ({
         state,
-        tasks: tasksInState(items, states, state.id),
+        tasks: tasksInState(visible, states, state.id),
       })),
-    [items, states],
+    [visible, states],
   );
 
   /** The width the board is given, measured, and zero until it has been. */
@@ -1301,6 +1378,122 @@ export default function BoardScreen() {
         onLayout={(event) => setAncho(event.nativeEvent.layout.width)}
       >
         {/*
+          **Los controles y el aviso de solo lectura, en una caja encima de las
+          pestanas.** El mismo `ListControls` que montan la pantalla de listas, la de
+          peliculas y la de carpetas: una boton con el nombre de lo que hay puesto, y
+          una hoja con los filtros dentro. Es el mismo control en cuatro sitios, y un
+          control que es el mismo en cuatro sitios es una cosa que aprender y no cuatro.
+
+          Y esta caja **es una columna y no una fila** porque lo que lleva debajo no
+          es un boton: es una frase. En una fila, con el boton a la izquierda y el
+          aviso a la derecha de una ventana de 1440, la frase queda a cuatrocientos
+          puntos del boton que la ha hecho aparecer; apilada, la una explica a la otra.
+        */}
+        <View style={[styles.controles, { gap: theme.spacing.sm }]}>
+          {/*
+            **El boton sale con tareas y no sin ellas**, igual que en la pantalla de
+            listas (`!media && !isLoading && items.length > 0`). Un filtro sobre un
+            tablero vacio no tiene nada que esconder, y el boton seria un numero —el
+            de los filtros que no hay— sobre una hoja vacia.
+
+            **`canReorder` y `onReorder` no se pasan**, y no es que el tablero no se
+            pueda reordenar: se reordena arrastrando, que es lo que hacen las
+            tarjetas de una columna. Lo que no existe es **la hoja con un asa por
+            fila** que `canReorder` abre —una tercera pantalla para lo que aqui es un
+            gesto dentro de la columna— y un boton que abriera una hoja de reordenado
+            en un tablero es un boton que no tiene a donde ir.
+          */}
+          {items.length > 0 ? (
+            <ListControls
+              filterCount={activeFilterCount}
+              orderLabel={t("orderShort.manual")}
+              /*
+                **`orders={[]}` cuando el tipo es de orden manual y la lista de
+                modos cuando no**, y la lista de modos no existe en este archivo: un
+                tablero esta aqui porque es un tablero, y `orders` solo puede ser `[]`
+                o una lista de siete modos que nadie deberia poder elegir en un
+                tablero. Asi que lo que se decide es con el predicado de
+                `lib/lists/kind` y no con un `if` escrito aqui. Y el predicado dice
+                tambien `tasks`, y **su rama de `tasks` no la consulta nadie todavia**,
+                y el por que esta aqui: la pantalla de listas sigue ofreciendo los
+                siete modos —`orders={opcionesDeOrden()}` sin tocar y su
+                `canReorder={canReorder(orderMode)}` igual—, que es lo que ha siempre
+                hecho, y gatear sus `orders` con este predicado habria sido quitarle a
+                una lista de tareas seis modos que el brief no pedia quitar. El
+                predicado esta escrito como lo que es —los tipos donde el orden
+                manual es el unico que significa algo— y su rama de `tasks` se queda
+                sin consumidor hasta que haya una pantalla que la necesite, en vez de
+                reducir el predicado a `kind === 'board'` para darle uno.
+
+                **La etiqueta del boton es `orderShort.manual` y no
+                `list.orderMode`**: el tablero dibuja `tasksInState`, que ordena por
+                `position`, y eso es el orden manual sea cual sea el campo que
+                traiga la fila. Poner el valor de la fila en el boton seria una
+                etiqueta que puede no describir lo que hay en pantalla.
+              */
+              orders={isManualOrderOnly(list.kind) ? [] : undefined}
+              testID="board-controls"
+            >
+              <FiltersBody
+                tags={labels}
+                selectedTags={selectedTags}
+                onToggleTag={(tag) =>
+                  setSelectedTags((previas) =>
+                    previas.includes(tag)
+                      ? previas.filter((x) => x !== tag)
+                      : [...previas, tag],
+                  )
+                }
+                text={filterText}
+                onText={setFilterText}
+                onReset={() => {
+                  setSelectedTags([]);
+                  setFilterText("");
+                }}
+                /*
+                  **`completedDisabled` y nada de `completed` ni `onCompleted`**: en
+                  un tablero no hay esa distincion, asi que no hay estado que guardar
+                  ni funcion a la que llamar. Las tres filas se dibujan apagadas y
+                  el motivo esta debajo; ver el razonamiento en `visible`.
+                */
+                completedDisabled
+              />
+            </ListControls>
+          ) : null}
+
+          {/*
+            **El aviso de solo lectura, y es el mismo texto que la pantalla de
+            listas ya tiene** —`order.readOnlyHint`—, no una frase nueva para el
+            tablero. Dos textos para la misma situacion son dos cosas que aprender y
+            uno que contradecir.
+
+            Lo que el texto **no** es, y conviene no pretender lo contrario: habla de
+            `orderMode` —"estás mirando otro orden, vuelve a como yo lo pongo"— y en
+            un tablero el orden es siempre el manual, asi que no hay otro orden al que
+            volver y la segunda mitad de la frase no aplica aqui. Es la unica frase de
+            solo lectura que tiene la app y **es mejor una frase medio exacte que
+            dos frases**: esta tarea no escribe la suya, y dice en su informe que la
+            diferencia queda sin resolver. Lo que si es exacto es lo que el aviso
+            anuncia —que aqui no se puede escribir— y eso es lo que el servidor
+            permite tampoco.
+
+            **Sale siempre que el rol es `viewer`, y no solo cuando hay filtros que
+            enseñar**: el boton de arriba desaparece sin tareas, y un visor sin
+            tareas tiene mas motivo todavia que un editor para saber que no puede
+            cambiar nada.
+          */}
+          {readOnly ? (
+            <AppText
+              variant="caption"
+              tone="subtle"
+              testID="board-readonly-notice"
+            >
+              {t("order.readOnlyHint")}
+            </AppText>
+          ) : null}
+        </View>
+
+        {/*
           The tabs are above the track and not inside it: they are the jump to a
           column that is not on screen, and a strip inside the track would scroll
           away with the columns the moment you moved one.
@@ -1400,6 +1593,34 @@ export default function BoardScreen() {
                       tasks={tasks}
                       tagColors={list.tagColors ?? {}}
                       readOnly={readOnly}
+                      /*
+                        **El numero de la cabecera cuenta lo que se dibuja, y el de
+                        la pestana de arriba cuenta todo**, y los dos estan en
+                        pantalla a la vez. Es la unica parte de esta tarea que se ve
+                        sin tocar nada, asi que conviene decir que se ha mirado: con
+                        un filtro puesto, la columna enseña `tasks.length` —las
+                        tarjetas que hay debajo— y su pestana enseña `counts`, que
+                        viene de `items`. Una columna con seis tareas de las que solo
+                        una tiene la etiqueta teaches **1** en la cabecera y **6** en
+                        la pestana.
+
+                        Se ha mirado en el navegador y **no se lee como un error**,
+                        por una razon que es la de las dos preguntas: la cabecera
+                        es el rotulo de la lista de tarjetas que hay debajo y el
+                        filtro no ha dejado de ser cierto que son seis; la pestana
+                        es el mapa del tablero entero y por eso no baja. La confusion
+                        vendria al reves —pestanas que bajan con el filtro y una
+                        columna que desaparece de la tira—, que es justo lo que el
+                        filtro de completadas habria hecho y lo que no se ofrece.
+
+                        **Lo que si queda sin resolver** es que el numero de la
+                        cabecera y el de la pestana son dos preguntas y esta tarea no
+                        unifica el texto que las explica. Cambiar la cabecera para que
+                        cuente `counts` es un cambio en `board-column.tsx` —un archivo
+                        mas— y su `tasks.length` esta en el `accessibilityLabel` que
+                        un lector de pantalla anuncia, o sea que moverlo cambia tambien
+                        lo que se oye. Se deja como esta y queda dicho.
+                      */
                       /*
                         **A card opens the state sheet and not the task panel**, and
                         this is the spec's sentence and not a preference: *"Tocar la
@@ -1609,6 +1830,17 @@ export default function BoardScreen() {
 const styles = StyleSheet.create({
   medido: {
     flex: 1,
+  },
+  /**
+   * La caja de los controles y del aviso, **y `alignItems: 'flex-start'` porque es
+   * lo unico que impide que el boton de filtros se estire a todo el ancho de una
+   * ventana de 1440.** En una columna, el valor por defecto de React Native es
+   * `stretch`, y el `Button` de `ListControls` lleva `fullWidth={false}` para no
+   * ocupar la pantalla —una caja que se estira por debajo lo deshace en cuanto su
+   * padre es una columna—.
+   */
+  controles: {
+    alignItems: "flex-start",
   },
   /**
    * The track of columns.

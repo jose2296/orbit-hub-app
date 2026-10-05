@@ -14,8 +14,26 @@ export interface FiltersSheetProps {
   tags: { tag: string; count: number }[];
   selectedTags: string[];
   onToggleTag: (tag: string) => void;
-  completed: "all" | "pending" | "done";
-  onCompleted: (value: "all" | "pending" | "done") => void;
+  /**
+   * Which of the three is on, **and absent means "everything"**.
+   *
+   * Absent and not `"all"` because a list with no completed/not-completed
+   * distinction —a board, where "done" is a column— has no third state to keep: it
+   * passes `completedDisabled` and nothing else, and a filter of its own is state
+   * that can never change.
+   */
+  completed?: "all" | "pending" | "done";
+  onCompleted?: (value: "all" | "pending" | "done") => void;
+  /**
+   * Whether the three rows are drawn but cannot be changed, **and they are drawn.
+   *
+   * A board has no completed column: "done" is one of its states, and the spec says
+   * why having both is what leads to a completed task sitting in Backlog. So the
+   * section is not removed — a control that vanishes leaves a sheet that was there
+   * yesterday shorter today with nothing said — it is greyed, with the reason under
+   * it.
+   */
+  completedDisabled?: boolean;
   text: string;
   onText: (value: string) => void;
   onReset: () => void;
@@ -45,12 +63,24 @@ export function FiltersBody({
   onToggleTag,
   completed,
   onCompleted,
+  completedDisabled = false,
   text,
   onText,
   onReset,
 }: Omit<FiltersSheetProps, "open" | "onClose" | "activeCount">) {
   const theme = useTheme();
   const t = useTranslation();
+
+  /**
+   * Which of the three rows carries the tick, **and "everything" when there is no
+   * answer to give.**
+   *
+   * `completed` is absent on a board, and `undefined === "all"` is `false`, so
+   * without this a greyed-out section would come up with **no row ticked at all** —
+   * which reads as a filter panel in a state it cannot be in rather than as one
+   * that is showing everything and cannot be changed.
+   */
+  const elegida = completed ?? "all";
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
@@ -80,13 +110,27 @@ export function FiltersBody({
                 ]}
               >
                 <Checkbox
-                  checked={completed === value}
-                  onToggle={() => onCompleted(value)}
+                  checked={elegida === value}
+                  disabled={completedDisabled}
+                  onToggle={() => onCompleted?.(value)}
                   label={t(`filters.show.${value}`)}
+                  testID={`filters-completed-${value}`}
                 />
               </View>
             ))}
           </View>
+          {/*
+            **El motivo, debajo de las tres filas y solo cuando estan apagadas.** Un
+            boton que no hace nada sin decir por que se lee como una pantalla rota,
+            y esta hoja es la misma en un tablero y en una lista de tareas: alguien
+            que abre los filtros de un tablero y ve «Solo lo que queda» apagado tiene
+            que poder leer que en un tablero lo hecho es una columna.
+          */}
+          {completedDisabled ? (
+            <AppText variant="caption" tone="subtle" testID="filters-completed-off">
+              {t("filters.completedOff")}
+            </AppText>
+          ) : null}
         </View>
 
         {tags.length > 0 ? (
@@ -103,6 +147,7 @@ export function FiltersBody({
                   variant={selectedTags.includes(tag) ? "primary" : "secondary"}
                   fullWidth={false}
                   onPress={() => onToggleTag(tag)}
+                  testID={`filters-tag-${tag}`}
                 />
               ))}
             </View>
