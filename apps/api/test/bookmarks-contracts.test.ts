@@ -78,7 +78,7 @@ describe('los contratos de bookmarks', () => {
     expect(parsed.bookmarkCount).toBe(0);
   });
 
-  it('una URL de 5000 caracteres o un data: URI no pasan', () => {
+  it('una URL de 5000 caracteres o un data: URI no pasan, y pasan solo por la URL', () => {
     const base = {
       id: crypto.randomUUID(),
       version: 1,
@@ -92,7 +92,44 @@ describe('los contratos de bookmarks', () => {
       role: 'owner',
       shared: false,
     };
-    expect(() => bookmarkSchema.parse({ ...base, url: `https://e.com/${'a'.repeat(5000)}` })).toThrow();
-    expect(() => bookmarkSchema.parse({ ...base, url: 'data:text/plain,hola' })).toThrow();
+
+    /**
+     * La contraprueba, y es la parte que le da dientes al test.
+     *
+     * Este `base` tiene que ser un bookmark valido de punta a punta: si la URL es
+     * buena, el `parse` devuelve el objeto. Sin esta linea, `toThrow()` no
+     * distingue "el filtro de la URL tiro" de "tiro cualquier otra
+     * validacion" --una de `role`, un `base` mal escrito--, y el test pasa
+     * igual. Con ella, `base` roto hace fallar el test en vez de hacerlo pasar.
+     */
+    const buena = bookmarkSchema.safeParse({ ...base, url: 'https://example.com/articulo' });
+    expect(buena.success).toBe(true);
+    expect(buena.data?.url).toBe('https://example.com/articulo');
+
+    /**
+     * Y el filtro se comprueba por donde falla, no por el hecho de que falle:
+     * un solo `issue`, y su `path` es `url`.
+     *
+     * `toHaveLength(1)` es lo que dice "solo por la URL" --si `role` o cualquier
+     * otro campo estuvieran mal, serian dos `issue` y este test lo canta--, y el
+     * `path` es lo que dice que el fallo es del campo de la URL y no de otro.
+     * El `code` distingue cual de las dos mitades del filtro esta mordiendo.
+     */
+    const larga = bookmarkSchema.safeParse({ ...base, url: `https://e.com/${'a'.repeat(5000)}` });
+    expect(larga.success).toBe(false);
+    expect(larga.error?.issues).toHaveLength(1);
+    expect(larga.error?.issues[0]?.path).toEqual(['url']);
+    expect(larga.error?.issues[0]?.code).toBe('too_big');
+
+    // El `data:` es media defensa del SSRF de la fase 2, asi que no basta con que
+    // algo tire: el fallo tiene que ser el `refine` de la URL y su mensaje tiene
+    // que hablar de la URL. Un `code: 'custom'` en `path: ['url']` es el `refine`,
+    // y si manana el filtro de la URL se mueve este test hay que volver a mirarlo.
+    const dataUri = bookmarkSchema.safeParse({ ...base, url: 'data:text/plain,hola' });
+    expect(dataUri.success).toBe(false);
+    expect(dataUri.error?.issues).toHaveLength(1);
+    expect(dataUri.error?.issues[0]?.path).toEqual(['url']);
+    expect(dataUri.error?.issues[0]?.code).toBe('custom');
+    expect(dataUri.error?.issues[0]?.message).toMatch(/url/i);
   });
 });
