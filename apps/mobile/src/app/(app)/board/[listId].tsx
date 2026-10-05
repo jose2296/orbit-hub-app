@@ -31,6 +31,7 @@ import {
   columnLayout,
   columnOffset,
   countInState,
+  deleteStatePlan,
   newState,
   stateIdToWrite,
   tasksInState,
@@ -486,6 +487,64 @@ export default function BoardScreen() {
     const escrito = borradorRef.current;
     if (!fila || escrito === null || escrito === alAbrirRef.current) return;
     void updateList(fila, { states: escrito });
+  }
+
+  /* ------------------------------------------ borrar una columna con tareas -- */
+
+  /**
+   * Deleting a column that has tasks in it: **the tasks move first, with the
+   * destination written out, and the column comes out of the array after.**
+   *
+   * **The order is the whole of this function and it is not a style.** A task left
+   * pointing at a deleted column is drawn in whichever column is first afterwards —
+   * `stateOf` resolves the unknown id to the first one and nothing anywhere fails,
+   * so the task appears in a column nobody chose and there is no error to look for.
+   * The other way round is the one the server refuses: an item update whose
+   * `stateId` is not in its list's `states` comes back **rejected inside a push that
+   * answers 200**, which from here is invisible.
+   *
+   * **Both halves are in one `await` chain for the same reason
+   * `crearEstadoYMover` gives:** `localUpdate` does `getLocalStoreReady()`, then
+   * `upsertCached`, then `enqueueOperation`, each one awaited, so two calls fired
+   * without waiting interleave and the order is left to whatever each `await` took.
+   * Chained, the item operations are enqueued before the array leaves the panel.
+   * And **the array is not written here at all**: it is the draft, and the draft is
+   * written once by `cerrarEditorDeEstados`, which is strictly after all of this.
+   *
+   * **That is why closing the panel in the middle of this cannot lose a task.** The
+   * draft does not have the column out of it until the last line runs, so a close in
+   * between writes the array **with the column still in it** and the tasks are moved
+   * a moment later. The worst outcome of that race is a column that survived and a
+   * column full of tasks that went somewhere — visible, recoverable, and the
+   * opposite of the failure this ordering exists to prevent. Moving the tasks first
+   * and taking the column out afterwards is what makes that the worst case instead
+   * of the likely one.
+   *
+   * **The rows with a null `stateId` are the reason the plan calls this the part
+   * that cannot lose data.** They are drawn in the first column, so deleting that
+   * column is what catches them, and `deleteStatePlan` puts the destination on
+   * every one of them by hand. Left alone they would become "the first column of
+   * the new array" — a different column, chosen by an ordering. **The plan is what
+   * does that and not this function**, and its `null` answers for the three ways
+   * this cannot be done at all.
+   *
+   * **The array it is given is `borradorRef.current`, not `states`**, for the reason
+   * the close above gives: this is reached from a `Promise.then` inside the panel,
+   * so the draft on screen is whatever the screen was handed and the ref is the one
+   * place that is never a render old. A ref that were a render old would write an
+   * array with a column that was renamed two presses ago.
+   */
+  async function borrarColumna(stateId: string, destinoId: string) {
+    const plan = deleteStatePlan(borradorRef.current ?? states, items, stateId, destinoId);
+    if (!plan) return;
+    for (const move of plan.moves) {
+      // `stateId` is a `string` and not `string | null` in that plan, which is the
+      // type doing what this comment says it is doing: `updateItem` takes
+      // `string | null`, so a `null` here would compile and would mean "leave it
+      // where it is" — the silent failure, and the one the plan calls review focus 3.
+      await updateItem(move.item, { stateId: move.stateId });
+    }
+    cambiarEstados(plan.states);
   }
 
   /*
@@ -1419,6 +1478,15 @@ export default function BoardScreen() {
         **`readOnly` does not mount it**, like the sheet above, and the sheet refuses
         to draw itself when handed `readOnly` anyway: a viewer is not somebody to
         hand a panel of controls that will not work.
+
+        `onDelete` **es `borrarColumna`, la unica puerta por la que se borra una
+        columna con tareas**, y la de las vacias no pasa por aqui: esa la decide el
+        panel con `counts` y llama a `removeState` en el sitio. El bin de la ultima
+        columna sale apagado porque el panel pregunta a `canDeleteState`, y con una
+        sola columna esa papelera no es una puerta: no hay ni funcion a la que
+        llamar. **El panel es el unico que decide las dos cosas y el que las dice**,
+        que es lo que hace que "no se puede borrar el ultimo estado" sea una frase y
+        no un `if` repartido por tres ficheros.
       */}
       {!readOnly ? (
         <StateEditorSheet
@@ -1427,6 +1495,7 @@ export default function BoardScreen() {
           counts={counts}
           readOnly={readOnly}
           onChange={cambiarEstados}
+          onDelete={(columnaId, destinoId) => borrarColumna(columnaId, destinoId)}
           onClose={cerrarEditorDeEstados}
         />
       ) : null}

@@ -20,6 +20,7 @@ import {
   columnOffset,
   countInState,
   defaultStates,
+  deleteStatePlan,
   editState,
   moveState,
   newState,
@@ -511,19 +512,42 @@ describe('borrar un estado', () => {
     expect(left.map((s) => s.id)).toEqual(states.slice(1).map((s) => s.id));
   });
 
+  /**
+   * The brief's case, in its own words: **deleting a state does not change the
+   * state of the tasks.** Moving the tasks is the caller's job, because a function
+   * handed nothing but an array of states cannot write rows of another table, and
+   * faking it would be a lie.
+   *
+   * **And the assertion is on what comes back, not on the tasks**, which is the
+   * whole point of rewriting it. The version that was here held a local `tasks`
+   * array, called `removeState(states, …)` discarding the result, and then
+   * asserted the tasks had not moved: a local array the function never receives,
+   * checked after a call whose value was thrown away. **No implementation at all
+   * could fail it** — not one that moves every task, not one that empties the
+   * board, not one that does not exist. What can fail is the length of what comes
+   * back and the array it was given, and both are checked here.
+   *
+   * The order that the discarded version pointed at lives on `deleteStatePlan` and
+   * in the two tests under it: the tasks move first, with the destination written
+   * by hand, and the column goes after them.
+   */
   it('borrar un estado no cambia el estado de las tareas', () => {
-    // Moving the tasks is the caller's job: a function handed nothing but an array
-    // of states cannot write rows of another table, and faking it would be a lie.
-    // The order that matters is in the delete sheet: the tasks move first, with
-    // the destination written by hand, and the column goes after them.
     const states = defaultStates();
-    const wip = columna(states, 2).id;
-    const tasks = [
-      itemDe({ id: 'nula', stateId: null }),
-      itemDe({ id: 'wip', stateId: wip }),
-    ];
-    removeState(states, primero(states).id);
-    expect(tasks.map((t) => t.stateId)).toEqual([null, wip]);
+    expect(removeState(states, primero(states).id)).toHaveLength(3);
+  });
+
+  it('y lo que de esa regla se puede comprobar de verdad: el array que le dan queda intacto', () => {
+    // The half that can die. `removeState` hands back a **new** array and leaves
+    // the one it was given alone, and both halves matter: the screen compares the
+    // draft against the array the panel was opened on by identity to decide
+    // "did anything change", and a function that emptied the caller's array in
+    // place would make that comparison an array against itself.
+    const states = estadosDe('a', 'b', 'c');
+    const left = removeState(states, 'a');
+    expect(left).toHaveLength(2);
+    expect(states).toHaveLength(3);
+    expect(states.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+    expect(left).not.toBe(states);
   });
 
   it('un id que no esta devuelve el mismo array', () => {
@@ -545,6 +569,120 @@ describe('se puede borrar un estado', () => {
     expect(canDeleteState(states, 2)).toBe(true);
     expect(canDeleteState(states, -1)).toBe(false);
     expect(canDeleteState(states, 3)).toBe(false);
+  });
+});
+
+describe('el plan de borrar un estado ocupado', () => {
+  it('lleva a cabo una columna todas sus tareas, con el id del destino escrito', () => {
+    const states = estadosDe('a', 'b', 'c');
+    const items = [
+      itemDe({ id: 'a1', stateId: 'a', position: 0 }),
+      itemDe({ id: 'a2', stateId: 'a', position: 1 }),
+      itemDe({ id: 'c1', stateId: 'c', position: 2 }),
+    ];
+    const plan = deleteStatePlan(states, items, 'a', 'b');
+    expect(plan).not.toBeNull();
+    expect(plan?.moves.map((m) => [m.item.id, m.stateId])).toEqual([
+      ['a1', 'b'],
+      ['a2', 'b'],
+    ]);
+    expect(plan?.states.map((s) => s.id)).toEqual(['b', 'c']);
+    expect(plan?.moves.every((m) => m.stateId !== null)).toBe(true);
+  });
+
+  /**
+   * **Review focus 3, and the case that fails silently.** A task with a null
+   * `stateId` is drawn in the first column, so it is one of the rows the column
+   * "has"; leave it as it was and, with that column gone, it becomes the first
+   * column of the new array — a different column, picked by an ordering instead of
+   * by a person, with nothing failing anywhere.
+   */
+  it('las de stateId nulo van tambien, y al destino elegido y no al nuevo primero', () => {
+    const states = estadosDe('a', 'b', 'c');
+    const items = [
+      itemDe({ id: 'nula', stateId: null }),
+      itemDe({ id: 'tambienNula', stateId: null }),
+      itemDe({ id: 'deA', stateId: 'a' }),
+    ];
+    const plan = deleteStatePlan(states, items, 'a', 'c');
+    expect(plan?.moves.map((m) => [m.item.id, m.stateId])).toEqual([
+      ['nula', 'c'],
+      ['tambienNula', 'c'],
+      ['deA', 'c'],
+    ]);
+    // The first column after the removal is `b`. Nothing here went there.
+    expect(plan?.states[0]?.id).toBe('b');
+    expect(plan?.moves.some((m) => m.stateId === 'b')).toBe(false);
+  });
+
+  it('tantas filas como cuenta la columna, sin saltarse ninguna', () => {
+    // The invariant in one assertion: every row drawn in the column is in the plan,
+    // and the plan is what the screen writes. A row left out is a row that lands
+    // wherever the array puts it afterwards.
+    const states = estadosDe('a', 'b');
+    const items = [
+      itemDe({ id: 'n1', stateId: null }),
+      itemDe({ id: 'n2', stateId: null }),
+      itemDe({ id: 'a1', stateId: 'a' }),
+      itemDe({ id: 'ajena', stateId: 'b' }),
+      // An id no column has: another device deleted it and the pull brought the
+      // row back. It is drawn in the first column, so deleting the first column
+      // takes it with it.
+      itemDe({ id: 'huerfana', stateId: 'borrada-en-otro-dispositivo' }),
+    ];
+    const plan = deleteStatePlan(states, items, 'a', 'b');
+    expect(plan?.moves).toHaveLength(countInState(items, states, 'a'));
+    expect(plan?.moves.map((m) => m.item.id).sort()).toEqual([
+      'a1',
+      'huerfana',
+      'n1',
+      'n2',
+    ]);
+  });
+
+  it('no se puede borrar una columna en la que no queda ninguna', () => {
+    // The empty case does not come through here at all: it is asked with
+    // `count === 0` before this is called, and a plan with no moves in it is a
+    // sheet asking where nothing is going.
+    const states = estadosDe('a', 'b');
+    const plan = deleteStatePlan(states, [itemDe({ id: 'enB', stateId: 'b' })], 'a', 'b');
+    expect(plan).not.toBeNull();
+    expect(plan?.moves).toHaveLength(0);
+    expect(plan?.states.map((s) => s.id)).toEqual(['b']);
+  });
+
+  it('un destino que no es de este tablero no sale', () => {
+    // The server refuses that write with `isKnownStateId`, and a rejection inside
+    // a push that answers 200 is invisible from here.
+    const states = estadosDe('a', 'b');
+    expect(deleteStatePlan(states, [itemDe({ id: 'x', stateId: 'a' })], 'a', 'c')).toBeNull();
+  });
+
+  it('mandar las tareas a la columna que se borra no sale', () => {
+    // And this is what a null destination looks like from inside: `stateOf` sends
+    // null and an unknown id to the first column, so resolving first and deleting
+    // the first column with either of them would leave its tasks pointing at a
+    // column that is gone — the exact failure the plan exists to make impossible.
+    // **Both ids are checked by membership**, which is why an id that is not in the
+    // array is a refusal and not "the first column".
+    const states = estadosDe('a', 'b');
+    const items = [itemDe({ id: 'nula', stateId: null })];
+    expect(deleteStatePlan(states, items, 'a', 'a')).toBeNull();
+    expect(deleteStatePlan(states, items, 'a', 'no-existe')).toBeNull();
+    expect(deleteStatePlan(states, items, 'b', 'b')).toBeNull();
+    expect(
+      deleteStatePlan(
+        estadosDe('a', 'b'),
+        [itemDe({ id: 'enA', stateId: 'a' })],
+        'b',
+        'a',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('una columna que no esta en el array no sale', () => {
+    const states = estadosDe('a', 'b');
+    expect(deleteStatePlan(states, [itemDe({ id: 'x', stateId: 'a' })], 'z', 'b')).toBeNull();
   });
 });
 

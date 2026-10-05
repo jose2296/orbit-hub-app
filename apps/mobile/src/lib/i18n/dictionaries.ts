@@ -1022,6 +1022,43 @@ const es = {
   "board.addState": "Añadir estado",
   "board.stateColor": "Color del estado",
 
+  /*
+    El borrado de un estado, y sus seis frases.
+
+    **`board.deleteState` lleva el nombre de la columna porque es lo unico que
+    distingue una papelera de otra**: en la fila del editor esta al lado del nombre
+    que ya esta a la vista, y en el titulo de la hoja de borrado es lo unico que
+    dice *que* se va a borrar. Sin el nombre, un tablero de cuatro columnas tiene
+    cuatro "Eliminar" y ninguno dice cual.
+
+    **`board.cannotDeleteLastState` es un boton apagado dicho en palabras, y no un
+    boton escondido**: una papelera que no esta es una papelera que nadie puede
+    explicar, y la regla que se adivinaria —"este tablero no se puede editar"— es la
+    equivocada. La frase es la del spec: *"el ultimo estado no se puede borrar"*.
+
+    **`board.deleteStateTasks` tiene las dos formas porque el numero decide el
+    verbo**: "1 tarea" y "3 tareas" son frases distintas y la que sale mal se lee
+    como una traduccion.
+
+    **`board.deleteStateWarning` dice lo que pasa y no lo que se pierde**: "se
+    mueven, no se borran" es la frase que separa "Eliminar" de "a donde van estas
+    siete tareas", y es la unica que puede decirse sin contar otra vez.
+
+    **`board.deleteStateConfirm` y `board.deleteState` son la misma accion con dos
+    niveles de detalle**: el boton va con el numero porque es el que se pulsa, y la
+    etiqueta accesible de la papelera va con el nombre porque es la que se oye sin
+    ver la fila.
+  */
+  "board.deleteState": "Eliminar la columna «{name}»",
+  "board.deleteStateSubtitle": "Elige dónde van sus tareas",
+  "board.deleteStateTasks.one": "Esta columna tiene {count} tarea.",
+  "board.deleteStateTasks.other": "Esta columna tiene {count} tareas.",
+  "board.deleteStateConfirm": "Borrar «{name}» y mover {count} tareas",
+  "board.deleteStateWarning":
+    "Las tareas se mueven a la columna que elijas. No se borra ninguna.",
+  "board.cannotDeleteLastState":
+    "No se puede borrar el último estado: es la única columna del tablero.",
+
   "items.empty.title": "Nada por aquí",
   "items.empty.body": "Añade el primer elemento a esta lista.",
   "items.titleLabel": "Nuevo elemento",
@@ -2037,6 +2074,28 @@ const en: Record<TranslationKey, string> = {
   "board.editStatesHint": "Opens the board's states editor",
   "board.addState": "Add state",
   "board.stateColor": "State colour",
+
+  /*
+    Deleting a state, and its six phrases. `board.deleteState` carries the column's
+    name because that is the only thing that tells one bin from another: in the
+    editor's row it sits beside a name already on screen, and in the delete sheet's
+    title it is the only thing that says *what* is going. `board.cannotDeleteLastState`
+    is a disabled control said in words rather than a hidden one — a bin that is not
+    there is a bin nobody can explain, and the rule somebody would guess is the wrong
+    one. `board.deleteStateTasks` has both forms because the number picks the noun.
+    `board.deleteStateWarning` says what happens and not what is lost: "they move,
+    they are not deleted" is the phrase that separates "Delete" from "where do these
+    seven tasks go". The Spanish note above says the same at more length.
+  */
+  "board.deleteState": "Delete the «{name}» column",
+  "board.deleteStateSubtitle": "Choose where its tasks go",
+  "board.deleteStateTasks.one": "This column has {count} task.",
+  "board.deleteStateTasks.other": "This column has {count} tasks.",
+  "board.deleteStateConfirm": "Delete «{name}» and move {count} tasks",
+  "board.deleteStateWarning":
+    "The tasks are moved to the column you choose. None is deleted.",
+  "board.cannotDeleteLastState":
+    "The last state cannot be deleted: it is the board's only column.",
 
   "items.empty.title": "Nothing here yet",
   "items.empty.body": "Add the first item to this list.",

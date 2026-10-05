@@ -366,6 +366,104 @@ export function canDeleteState(states: BoardStates, index: number): boolean {
   return states.length > 1 && index >= 0 && index < states.length;
 }
 
+/** What deleting a column that has tasks in it means, worked out before any of it. */
+export interface DeleteStatePlan {
+  /**
+   * The rows to write, **and the `stateId` to write on each one already spelled
+   * out.**
+   *
+   * There is no `null` in this type and that is the point of the whole function: a
+   * move written as `null` is a move that will be re-resolved against the array
+   * that exists at the time somebody reads the board, and the array is about to
+   * lose the column these tasks are in.
+   */
+  moves: { item: ListItem; stateId: string }[];
+  /** The array without the column, **and nothing has been written yet.** */
+  states: BoardStates;
+}
+
+/**
+ * What deleting `stateId` means while `destinationId` is where its tasks go, and
+ * `null` when that is not a thing that can be done.
+ *
+ * **It is a plan and not a write, and the order of the two halves is the answer
+ * to the question this feature exists to get right.** `moves` comes first and
+ * `states` second, and the caller awaits the first before it hands the second
+ * anywhere: a task left pointing at a deleted column is drawn in whichever column
+ * is first afterwards, `stateOf` resolves the unknown id to the first one and
+ * nothing anywhere fails — the task appears in a column nobody chose. The order is
+ * written in
+ * `docs/superpowers/specs/2026-10-03-tablero-de-estados-design.md` and it is the
+ * reason the two halves are two fields of one value and not two functions.
+ *
+ * **Every row drawn in the column is in `moves`, including the ones whose
+ * `stateId` is null, and every one of them carries the destination written out.**
+ * That is the case the plan calls review focus 3 and it is the one that fails
+ * silently: a task with a null `stateId` is drawn in the first column, so
+ * deleting that column and leaving the task as it was would make it "the first
+ * one" of the new array — a different column, chosen by an ordering rather than
+ * by a person.
+ *
+ * **No row here is ever skipped for already being somewhere.** `stateIdToWrite`
+ * is not what decides, and **it is worth being exact about why, because the
+ * obvious version of the claim is false.** Given the guards below,
+ * `stateIdToWrite` provably cannot answer null for any of these rows — the ones in
+ * `moves` all resolve to the column being deleted, and the destination is a
+ * different one — so routing the destination through it changes nothing a test
+ * could see: mutating the function that way leaves all 56 of the tests in
+ * `test/board.test.ts` green. **What stops it is the type.** `moves` is
+ * `{ stateId: string }[]` and `stateIdToWrite` answers `string | null`, so the
+ * mutation does not compile (`TS2322`, `Type 'null' is not assignable to type
+ * 'string'`), which is the same argument `stateIdToWrite` makes about itself.
+ * The rule is therefore enforced by a signature and not by a test, and the test
+ * that does bite is the other one: replacing `tasksInState` with a raw
+ * `item.stateId === stateId` filter — the ordinary mistake — drops the nulls and
+ * fails two of them.
+ *
+ * `null` for the three ways this cannot be done, and each of them is a silent
+ * failure if it were allowed through:
+ *
+ * - the column is not in this board's array, so there is nothing to delete;
+ * - the destination is not one of this board's columns, and the server refuses
+ *   that write (`isKnownStateId`) inside a push that answers 200;
+ * - **the destination is the column being deleted**, which is what a null or
+ *   unknown `destinationId` looks like once `stateOf` has had it: null and an
+ *   unknown id both resolve to the **first** column, so removing the first column
+ *   with either of them would leave its tasks pointing at a column that is gone —
+ *   exactly the failure this function exists to make impossible.
+ *
+ * **Both ids are checked by membership and not resolved through `stateOf`**, and
+ * that is the difference between this and every other function in this file. Every
+ * other one asks "where is this row drawn", and the answer to that is never null
+ * and never unknown. This one asks "may this be written", which is
+ * `isKnownStateId`'s question and not its inverse — and resolving first would
+ * turn an id nobody can name into "the first column", so a delete asked for with
+ * a stale id would quietly take out the board's first column instead of refusing.
+ *
+ * **A column with nothing in it does come through here**, with an empty `moves`.
+ * That is not an accident: the editor asks `count === 0` first and deletes without
+ * asking anything, so this is not the path an empty column takes — and a plan that
+ * only ever had rows in it could not be tested against the row it forgot.
+ */
+export function deleteStatePlan(
+  states: BoardStates,
+  items: ListItem[],
+  stateId: string,
+  destinationId: string,
+): DeleteStatePlan | null {
+  // Membership and not `stateOf`: see the note above.
+  if (!states.some((state) => state.id === stateId)) return null;
+  if (!states.some((state) => state.id === destinationId)) return null;
+  if (destinationId === stateId) return null;
+
+  const moves = tasksInState(items, states, stateId).map((item) => ({
+    item,
+    // Written out, never resolved: see the note above on the null `stateId`.
+    stateId: destinationId,
+  }));
+  return { moves, states: removeState(states, stateId) };
+}
+
 /* --------------------------------------------- como se reparte y se salta -- */
 
 /**
