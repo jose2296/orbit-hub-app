@@ -17,6 +17,7 @@ import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Sheet } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
+import { useFieldChain } from "@/lib/forms/field-chain";
 import { useListItems } from "@/hooks/use-lists";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { FIELD_LIMITS } from "@/lib/lists/field-limit";
@@ -131,6 +132,17 @@ export function ItemEditSheet({
   const isNew = mode === "create";
   const [page, setPage] = useState<Page>(startOn);
   const [title, setTitle] = useState(item?.title ?? "");
+
+  /*
+   * Solo dos, y no tres: el tercer `TextField` de la hoja es el de anadir una
+   * etiqueta, y vive en otra pagina con su propio boton y su propio `done`. Encadenar
+   * un campo que no esta a la vista con otro que si esta es un salto que atraviesa
+   * una pagina.
+   *
+   * Y el segundo es `multiline`: su ENTER es un salto de linea y no se encadena
+   * con nadie, que es lo correcto para un cuerpo de nota.
+   */
+  const cadena = useFieldChain(2);
   const [annotation, setAnnotation] = useState(item?.annotation ?? "");
   const [newTag, setNewTag] = useState("");
   /*
@@ -407,6 +419,11 @@ export function ItemEditSheet({
               onBlur={saveTitle}
               returnKeyType="next"
               selectTextOnFocus={false}
+              ref={cadena.register(0)}
+              onSubmitEditing={() => cadena.advance(0, () => {
+                // El nombre ya esta guardado en `onBlur`; saltar es lo que se
+                // pidio, y al campo de la nota, que es a donde se sigue.
+              })}
               // The width the contracts will store it at, so the counter and the
               // server agree. The title of a task is 300 on purpose, and a list of
               // 300 of them is not a thing anyone writes.
@@ -421,6 +438,7 @@ export function ItemEditSheet({
               limit={FIELD_LIMITS['list_item.annotation']}
               placeholder={t("itemEdit.descriptionPlaceholder")}
               multiline
+              ref={cadena.register(1)}
             />
 
             {/* The priority, as four things you can see rather than a dropdown of

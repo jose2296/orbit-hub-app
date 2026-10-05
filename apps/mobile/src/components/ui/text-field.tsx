@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import type { TextInputProps } from 'react-native';
 
@@ -26,15 +26,28 @@ export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
   limit?: number;
 }
 
-export function TextField({
-  label,
-  error,
-  hint,
-  containerStyle,
-  secureTextEntry,
-  limit,
-  ...rest
-}: TextFieldProps) {
+/**
+ * `forwardRef` al `TextInput` de dentro, y no un prop mas.
+ *
+ * Sin esto un `returnKeyType="next"` no tiene destino: seis formularios de la app
+ * lo tienen puesto y el foco no se mueve, porque el `ref` se lo comia el
+ * componente y no llegaba nunca al input. `useImperativeHandle` con una interfaz
+ * propia sería lo mismo con más código, y aquí lo que se quiere poder hacer es
+ * justo `campo.focus()`.
+ */
+export const TextField = forwardRef<TextInput, TextFieldProps>(function TextField(
+  {
+    label,
+    error,
+    hint,
+    containerStyle,
+    secureTextEntry,
+    limit,
+    returnKeyType,
+    ...rest
+  },
+  ref,
+) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -69,7 +82,32 @@ export function TextField({
         ]}
       >
         <TextInput
+          ref={ref}
           {...rest}
+          /*
+            `submitBehavior`, y no `blurOnSubmit`.
+            
+            Con `blurOnSubmit` —o sin decir nada, que es lo mismo— un campo de una
+            linea hace `blurAndSubmit`: al enviar se **quita el foco**. Y con una
+            cadena de campos eso la deja sin efecto, porque el campo siguiente recibe
+            el foco en el mismo acto y lo pierde en el mismo frame. El salto ocurre,
+            la funcion se ejecuta, y en la pantalla no se ve **nada**: el campo
+            siguiente se dibuja sin el borde de foco y el teclado ni se mueve.
+
+            Es un fallo que no da ningun error y que un test de codigo no ve, porque
+            las dos ramas ejecutan `onSubmitEditing` igual. La unica manera de
+            verlo es mirando donde quedo el foco.
+
+            Y `"submit"` en vez de `"blurAndSubmit"` en el ultimo campo: ahi si se
+            quiere que el teclado se recoja al enviar, porque el formulario se
+            acabo. Por eso se decide por el `returnKeyType` y no siempre igual —
+            quien sabe si despues hay mas que escribir.
+          */
+          submitBehavior={
+            returnKeyType === 'done' || returnKeyType === 'go' || returnKeyType === 'search'
+              ? 'blurAndSubmit'
+              : 'submit'
+          }
           /*
             La etiqueta, como nombre del campo.
 
@@ -161,7 +199,7 @@ export function TextField({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

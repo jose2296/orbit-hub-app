@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import {
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -179,10 +178,28 @@ export function Screen({
       style={[styles.flex, { backgroundColor: theme.colors.background }, style]}
       testID={testID}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flex}
-      >
+      {/*
+        `padding` on **both**, y la razon de que antes no lo estuviera es el
+        objeto entero de este cambio.
+
+        Decia `Platform.OS === "ios" ? "padding" : undefined`, y `undefined` no es
+        un valor por defecto — es **no hacer nada**. Asi que en Android cada
+        pantalla de esta app tenia un `KeyboardAvoidingView` que no esquivaba nada,
+        y parecian deliberadas: el componente esta ahi, en el arbol, envolviendo el
+        scroller, haciendo su trabajo.
+
+        Medido en API 35 con el teclado abierto, en la pantalla de registro: el
+        campo con el foco quedaba libre del teclado y **el campo siguiente estaba
+        cortado por el borde del teclado** —dibujado, medio debajo, ni fuera de
+        pantalla ni ausente del arbol.
+
+        Por que la ventana no lo resuelve: la app no declara
+        `android.windowSoftInputMode`, y lo que Android hace aqui por defecto es
+        `adjustPan` — **mueve** la ventana para que el campo con el foco se vea y
+        no toca el alto. Eso basta para enseyar el campo en el que escribes y no
+        basta para ensenar el siguiente, que es el unico que se nota que falta.
+      */}
+      <KeyboardAvoidingView behavior="padding" style={styles.flex}>
         {fondo}
         {content}
         {/*

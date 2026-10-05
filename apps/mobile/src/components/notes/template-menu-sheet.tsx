@@ -5,6 +5,7 @@ import { Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
+import { useFieldChain } from "@/lib/forms/field-chain";
 import { Sheet, SheetOptions, type SheetOption, useLastValue } from "@/components/ui/sheet";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import {
@@ -94,6 +95,7 @@ export function TemplateMenuSheet({
 
   const [step, setStep] = useState<Step>("menu");
   const [name, setName] = useState("");
+  const cadena = useFieldChain(2);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -181,6 +183,9 @@ export function TemplateMenuSheet({
             placeholder={t("note.templateName")}
             autoCapitalize="sentences"
             autoFocus
+            ref={cadena.register(0)}
+            returnKeyType="next"
+            onSubmitEditing={() => cadena.advance(0, () => void save())}
           />
           <TextField
             value={description}
@@ -188,6 +193,9 @@ export function TemplateMenuSheet({
             label={t("note.template.description")}
             placeholder={t("note.template.description")}
             autoCapitalize="sentences"
+            ref={cadena.register(1)}
+            returnKeyType="go"
+            onSubmitEditing={() => void save()}
           />
           <SheetOptions
             options={[
