@@ -208,3 +208,44 @@ describe('la pila se usa, y no unos números escritos a mano', () => {
     expect(TRAY).toMatch(/right: theme\.spacing\.lg/);
   });
 });
+
+describe('el boton de filtro flotando es solo el icono', () => {
+  const controles = readFileSync(
+    join(import.meta.dirname, '../src/components/lists/list-controls.tsx'),
+    'utf8',
+  );
+
+  it('flotando se dibuja sin texto, y el texto se queda para el lector', () => {
+    // Decía "Filtros · Como yo lo pongo" encima del `+`: 160 puntos en una pantalla
+    // de 390 para el estado de un control. Con `iconOnly` el `Button` sigue
+    // poniendo el `accessibilityLabel` entero, asi que un lector de pantalla no
+    // pierde nada — solo se deja de pintar texto que ya esta en la hoja.
+    const flotante = controles.match(/placement === "floating"[\s\S]*?<\/View>/)?.[0] ?? '';
+    expect(flotante, 'el boton flotante tiene que pedir solo icono').toContain('iconOnly');
+
+    // Y el texto se sigue calculando: `iconOnly` **no** es "sin etiqueta". Eso vive
+    // en `Button`, asi que el guard mira alli y no aqui.
+    const button = readFileSync(
+      join(import.meta.dirname, '../src/components/ui/button.tsx'),
+      'utf8',
+    );
+    expect(
+      button,
+      'un boton que solo dibuja y no dice nada es un boton con dos nombres segun como preguntes',
+    ).toContain('accessibilityLabel={label}');
+  });
+
+  it('el inline no se toca: ahi el ancho no es el problema', () => {
+    // El inline esta en una barra o un encabezado con sitio de sobra, y ahi la
+    // frase es lo que dice que el boton abre filtros **y** orden. Quitarlo seria
+    // quitar informacion que en esa posicion si cabe.
+    //
+    // Se mira **el segundo sitio de llamada**, no se cuentan las apariciones de
+    // `iconOnly`: contar es fragil —la cuenta se equivoca en cuanto alguien anade
+    // una mencion en un comentario— y ademas no dice *donde* esta el problema.
+    const llamadas = controles.match(/<ListControlsButton[\s\S]*?\/>/g) ?? [];
+    expect(llamadas.length, 'un sitio flotante y uno en linea').toBe(2);
+    expect(llamadas[0], 'el flotante es solo icono').toContain('iconOnly');
+    expect(llamadas[1], 'el en linea conserva la frase').not.toContain('iconOnly');
+  });
+});
