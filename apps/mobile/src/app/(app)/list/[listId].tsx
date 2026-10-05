@@ -1149,23 +1149,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
   },
+  /*
+   * **Un solo hijo flex: la columna.** Por eso aqui no hay `alignItems`, y antes de
+   * que `main` moviera la casilla dentro de la linea del titulo (`81beddc`) habia
+   * dos — la casilla y la columna — y `alignItems: "center"` centraba la casilla
+   * contra la fila entera en vez de contra la linea del titulo.
+   *
+   * Por lo tanto: #20 lo arreglo `main`, no esta rama. Aqui solo queda el `flexDirection`.
+   */
   item: {
     flexDirection: "row",
-    /*
-     * Alineada arriba, y no centrada.
-     *
-     * El icono cae sobre la **linea del titulo** porque vive dentro de
-     * `styles.titulo`, y antes la casilla caia sobre la columna entera: al centrar
-     * aqui se centraba contra el titulo mas lo que hubiera debajo, y en una fila con
-     * insignia quedaba mas baja que el icono.
-     *
-     * **Y la casilla ya no necesita nada.** `main` la movio **dentro** de la linea del
-     * titulo y exporto `CHECKBOX_BOX_SIZE` desde `checkbox.tsx`, que es el mismo
-     * caja con su cuenta: la alineacion es estructura en vez de un alto de 23 puntos
-     * escrito a mano. Este `alignItems` se queda porque es lo que hace que la columna
-     * empiece en la casilla y no a un lado.
-     */
-    alignItems: "flex-start",
   },
   /**
    * La linea del icono y del nombre, y **`alignItems: "center"` aqui es el arreglo**.

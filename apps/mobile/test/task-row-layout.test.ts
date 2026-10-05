@@ -44,19 +44,49 @@ describe('la casilla no se come la fila', () => {
   });
 
   it('la casilla se alinea con la linea del titulo, no con la fila entera', () => {
-    // El icono se movió dentro de `styles.titulo` para centrarse contra la línea
-    // del título y no contra el título más lo que haya debajo. La casilla se
-    // quedó fuera: `styles.item` sigue siendo `alignItems: "center"`, así que se
-    // centra contra **las dos**, y en una fila con insignia queda visiblemente más
-    // baja que el icono. Con dos líneas de título la diferencia crece.
+    // El arreglo **lo hizo `main` en 81beddc**, no esta rama: movio la casilla
+    // *dentro* de `styles.titulo` y exporto `CHECKBOX_BOX_SIZE`. Aqui lo que se
+    // guarda es que no vuelva a salir como hermana de la columna.
     //
-    // La fila alinea arriba y la casilla lleva la altura de una línea, que es lo
-    // que hace que las dos cosas coincidan sin calcular ningún offset a mano.
+    // Antes la fila tenia dos hijos flex — la casilla y la columna — y
+    // `alignItems: "center"` centraba la casilla contra las dos, de modo que en una
+    // fila con insignia quedaba visiblemente mas baja que el icono, y con dos
+    // lineas de titulo la diferencia crecia.
+    //
+    // Y el assertion va contra **la posicion**, no contra una cadena: el fallo de
+    // esta suite una vez fue un `not.toContain('alignItems: "center"')` que se
+    // satisfacia igual con `flex-start`, que no alinea nada porque la fila tiene
+    // un solo hijo. Comprobar que una cosa no es una cosa concreta vale solo si la
+    // alternativa se puede distinguir.
+    // El intervalo, no un `indexOf` suelto: hay **dos** `<Checkbox` en el fichero
+    // —el otro es el de la bandeja de lo hecho— asi que buscar el primero从上
+    // daria el de otro componente y la comprobacion pasaria siempre.
+    const linea = listId.indexOf('item-title-line-');
+    const meta = listId.indexOf('styles.meta,');
+    expect(
+      linea,
+      'la linea del titulo necesita su propio testID, que es lo que permite medirla'
+    ).toBeGreaterThan(-1);
+    expect(meta, 'la segunda linea de la columna es el ancla de cierre').toBeGreaterThan(linea);
+    const casilla = listId.indexOf('<Checkbox', linea);
+    expect(
+      casilla,
+      'la casilla tiene que dibujarse dentro de la linea del titulo, no al lado de la columna'
+    ).toBeGreaterThan(linea);
+    expect(casilla, 'o ha vuelto a salir antes de abrir la linea del titulo').toBeLessThan(meta);
+  });
+
+  it('styles.item no alinea nada, porque la fila tiene un solo hijo flex', () => {
+    // Y esto no es `not.toContain('alignItems: "center")`: es que **ningun**
+    // `alignItems` tiene sentido aqui. Con un hijo, alinear no tiene a que, y un
+    // `flex-start` ahi es un numero que no hace nada y que el siguiente que lea
+    // el fichero va a usar creyendo que alinea algo.
     const item = listId.match(/  item:\s*\{[\s\S]*?\n  \}/)?.[0] ?? '';
     expect(item, 'styles.item debe seguir existiendo').toContain('flexDirection: "row"');
-    expect(item, 'alinear arriba, o la casilla se va abajo con las insignias').not.toContain(
-      'alignItems: "center"',
-    );
+    expect(
+      item,
+      'la fila tiene un solo hijo flex: cualquier alignItems aqui es codigo muerto'
+    ).not.toMatch(/alignItems/);
   });
 
   it('el nodo de la etiqueta esta dentro de esa condicion', () => {
