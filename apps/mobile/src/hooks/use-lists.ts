@@ -1,4 +1,5 @@
 import type {
+  BoardStates,
   ItemIconColor,
   List,
   ListItem,
@@ -370,10 +371,19 @@ export function useLists(filters: ListFilters = {}) {
   );
 
   /**
-   * Changes what a list is called and what it says about itself.
+   * Changes what a list is called and what it says about itself, **and what
+   * columns it has when it is a board.**
    *
    * The same write as everything else, local first and into the outbox, so a
    * rename made on a train is a rename when the train stops.
+   *
+   * `states` is here because the columns are **one field of the list row and not a
+   * table of their own**: an editor that renamed four colours and then an order
+   * writes that array once, and the server's `SYNC_WRITABLE_FIELDS.list` already
+   * carries `'states'`. The type was the only thing not yet saying so, and a type
+   * that does not say it is a cast somebody eventually writes — the same field
+   * arriving through a `Record<string, unknown>` and out of the check on the
+   * server's side.
    */
   const updateList = useCallback(
     async (
@@ -382,6 +392,11 @@ export function useLists(filters: ListFilters = {}) {
         title?: string;
         description?: string | null;
         emoji?: string | null;
+        /**
+         * The columns of a board, **whole and in order**: the order of the array is
+         * the order of the columns, so this is one write and not one per column.
+         */
+        states?: BoardStates;
       },
     ) => {
       await localUpdate("list", list.id, changes);

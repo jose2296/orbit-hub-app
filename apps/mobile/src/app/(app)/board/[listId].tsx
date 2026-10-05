@@ -16,6 +16,7 @@ import { BoardTabs } from "@/components/lists/board-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
+import { StatePickerSheet } from "@/components/lists/state-picker-sheet";
 import { Screen } from "@/components/ui/screen";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenSpace } from "@/hooks/use-screen-space";
@@ -26,6 +27,8 @@ import {
   columnLayout,
   columnOffset,
   countInState,
+  newState,
+  stateIdToWrite,
   tasksInState,
 } from "@/lib/lists/board";
 import {
@@ -121,7 +124,12 @@ export default function BoardScreen() {
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, isLoading: isLoadingLists, setTagColor } = useLists({});
+  const {
+    lists,
+    isLoading: isLoadingLists,
+    setTagColor,
+    updateList,
+  } = useLists({});
   const list = useMemo(
     () => lists.find((item) => item.id === listId) ?? null,
     [lists, listId],
@@ -131,7 +139,8 @@ export default function BoardScreen() {
     () => workspaces.find((item) => item.id === list?.workspaceId) ?? null,
     [workspaces, list?.workspaceId],
   );
-  const { items, isLoading: isLoadingItems } = useListItems(listId);
+  const { items, isLoading: isLoadingItems, updateItem } =
+    useListItems(listId);
 
   /**
    * The columns, **and the order of this array is the order they are drawn in**.
@@ -392,6 +401,106 @@ export default function BoardScreen() {
       editing ? (items.find((row) => row.id === editing.itemId) ?? null) : null,
     [editing, items],
   );
+
+  /**
+   * The task whose column is being changed, and **nothing else.**
+   *
+   * An id and not the row, because the row is read out of `items` here and not
+   * stored: the two writes below carry `version` and `baseVersion`, and a copy
+   * taken when the sheet opened would hand the server a version from before
+   * whatever happened to that task in the seconds the panel was on screen. That is
+   * the whole of what `editing` above already does, and this state is the same
+   * shape for the same reason.
+   */
+  const [cambiandoEstado, setCambiandoEstado] = useState<string | null>(null);
+  const tareaEstado = useMemo(
+    () =>
+      cambiandoEstado
+        ? (items.find((row) => row.id === cambiandoEstado) ?? null)
+        : null,
+    [cambiandoEstado, items],
+  );
+
+  /**
+   * Move one task to one column, **and write nothing when it is already there.**
+   *
+   * `stateIdToWrite` is what decides that, and the reason it is not a line here is
+   * in `board.ts`: the comparison has to be against the **resolved** column, so a
+   * task whose `stateId` is `null` —every task created on a board— or points at a
+   * column another device deleted is recognised as already being in the first one.
+   * Compared against `item.stateId` in this file, picking the first column would
+   * enqueue an update nobody asked for.
+   *
+   * `updateItem` is local first, so the tab moves on the press and not when the
+   * push answers: the wait is the outbox's business.
+   */
+  function moverA(stateId: string) {
+    const fila = tareaEstado;
+    if (!fila) return;
+    const escribir = stateIdToWrite(states, fila.stateId, stateId);
+    if (escribir === null) return;
+    void updateItem(fila, { stateId: escribir });
+  }
+
+  /**
+   * «+ Nuevo estado…»: **the column is created and the task goes into it, in that
+   * order, and the order is the whole of this function.**
+   *
+   * The server refuses an item whose `stateId` is not one of its list's `states`
+   * (`isKnownStateId`, in `sync-service.ts`), and it reads that list **at the
+   * moment it applies the operation**. So an item update that lands before the
+   * column exists is rejected — and a rejection is invisible from here: the push
+   * answers 200 with the rejection inside `results`, the outbox drops the
+   * operation, and the tab never moves.
+   *
+   * **Awaiting the first before starting the second is what puts them in order**,
+   * and it is not politeness: `localUpdate` does `getLocalStoreReady()`, then
+   * `upsertCached`, then `enqueueOperation`, each one awaited, so two calls fired
+   * without esperarse se intercalan y el orden queda a cargo de lo que tarde cada
+   * `await`. Encadenadas, el `enqueueOperation` de `states` termina antes de que
+   * empiece el del item.
+   *
+   * Del otro lado el recorrido si es ordenado, y eso **esta leido en el codigo y no
+   * medido**: el outbox se lee con `ORDER BY created_at ASC` (`local-store.ts`) y el
+   * `push` de la API recorre `rawOperations` con un `for` y un `await` por operacion
+   * (`apps/api/src/modules/sync/sync-service.ts`, `async push`). Lo que **no** esta
+   * atado es el empate: `createdAt` es un `toISOString()` de milisegundos y la
+   * consulta no lleva desempate, de modo que dos operaciones del mismo milisegundo
+   * dependen del orden de filas. En este camino no puede llegar a pasar —entre las
+   * dos hay un `await load()` entero de la lista—, pero una llamada que no espera
+   * entre si tiene esa carrera, y por eso el `await` esta aqui y no es estilo.
+   *
+   * **`newState` is asked first and its `null` ends the function.** Both of its
+   * `null`s are writes the contract throws away — the board at `MAX_BOARD_STATES`,
+   * or a name that is blank — and the states travel as **one field**, so a `null`
+   * inside the array would fail every later save of that board rather than this
+   * one. The sheet has already greyed the row out at the cap and the field's button
+   * is off without a name; this is the same rule on the other side of the
+   * boundary, and it is the one that costs a board its columns if it is forgotten.
+   *
+   * **The array it appends to is this render's `states`**, which is the list's own
+   * array — so a column added on another device while this sheet was open is still
+   * in there. What it is not is a merge against whatever arrived a millisecond
+   * later: the sheet closes on the press, so there is one of these at a time.
+   */
+  async function crearEstadoYMover(titulo: string) {
+    const fila = tareaEstado;
+    // `list` is non-null by the time this runs — the renders below this one return
+    // early without it — but a function declared above those renders does not get
+    // that narrowing, so the check is here rather than in the type.
+    if (!fila || !list) return;
+    const nuevo = newState(states, titulo);
+    if (!nuevo) return;
+    await updateList(list, { states: [...states, nuevo] });
+    // The id is written as minted and **not through `stateIdToWrite`**, and that is
+    // not an oversight: its test says why. The id was just minted, so it is not the
+    // column the task is drawn in under any rule, and there is nothing for a
+    // "is it already there?" check to decide here. Passing the old `states` to that
+    // function would return `null` — the new column is not in it — the move would not
+    // be written, and the result would be a column that exists on the server with
+    // the task still in the old one.
+    await updateItem(fila, { stateId: nuevo.id });
+  }
 
   /**
    * Anchor the board on a column, **and move the track to it as well.**
@@ -996,9 +1105,31 @@ export default function BoardScreen() {
                       tasks={tasks}
                       tagColors={list.tagColors ?? {}}
                       readOnly={readOnly}
-                      onOpenTask={(item) =>
-                        setEditing({ itemId: item.id, page: "edit" })
-                      }
+                      /*
+                        **A card opens the state sheet and not the task panel**, and
+                        this is the spec's sentence and not a preference: *"Tocar la
+                        tarjeta abre la hoja de estado"* —
+                        `docs/superpowers/specs/2026-10-03-tablero-de-estados-design.md`,
+                        "Mover de estado". Moving a task between columns is the thing a
+                        board is for and it had no way in from a card at all.
+
+                        **The task panel is still here and is still reachable**: the
+                        icon on the card opens it on the icons page, and that page has
+                        a "back" to the rest of the panel, so the title, the
+                        description and the labels of a task on a board are all still
+                        editable. What is gone is the shortest road to them, and that
+                        is the trade the spec makes.
+
+                        With `readOnly` there is no state sheet mounted below, so this
+                        press has nowhere to go, and it is stopped here rather than
+                        left to write an id that nothing reads — which is what Task 14
+                        is for: it takes the panels down as well and puts the read-only
+                        notice where the two of them used to be.
+                      */
+                      onOpenTask={(item) => {
+                        if (readOnly) return;
+                        setCambiandoEstado(item.id);
+                      }}
                       onOpenIcon={(item) =>
                         setEditing({ itemId: item.id, page: "icon" })
                       }
@@ -1035,6 +1166,46 @@ export default function BoardScreen() {
         onTagColor={(tag, color) => setTagColor(list, tag, color)}
         onClose={() => setEditing(null)}
       />
+
+      {/*
+        The state sheet, **mounted for good and opened by its prop**, for the reason
+        `useLastValue` exists and `list-menu-sheet.tsx` tells at length: a sheet that
+        unmounts with its argument takes the exit animation with it, and the
+        dismissal was measured at forty-five milliseconds of a quarter of a second.
+
+        **`readOnly` does not mount it at all, and that is the load-bearing half of
+        the answer** — a viewer is not somebody to hand a panel of four columns that
+        cannot be pressed, and rendering it empty would be a panel shaped like a bug.
+        The sheet also refuses to draw itself when it is handed `readOnly`, so the
+        rule survives the day somebody mounts it without checking.
+
+        **`counts` and not `tasksInState` per row**: the numbers are the ones the
+        tabs and the column headers are already drawing, built in one pass with
+        `countInState`, and a sheet that counted again would be a second answer to a
+        question the screen has already answered.
+
+        `onEditStates` is the editor of Task 11, which does not exist in this
+        checkout yet. It is wired to a function that does nothing and says so,
+        because the alternative was not drawing the row at all and this sheet's
+        contract has it. **That press is dead today** and it is the one thing in this
+        task I could not finish; `board.editStates` is the label it will keep.
+      */}
+      {!readOnly ? (
+        <StatePickerSheet
+          item={tareaEstado}
+          states={states}
+          counts={counts}
+          readOnly={readOnly}
+          onPick={moverA}
+          onCreate={(titulo) => void crearEstadoYMover(titulo)}
+          onEditStates={() => {
+            // Task 11. Deliberately empty, and written as a body with a name
+            // rather than as `() => {}` so that it reads as unfinished here and
+            // does not look like a no-op that somebody chose.
+          }}
+          onClose={() => setCambiandoEstado(null)}
+        />
+      ) : null}
     </Screen>
   );
 }

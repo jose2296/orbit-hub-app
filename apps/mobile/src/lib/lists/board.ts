@@ -3,6 +3,7 @@ import * as Crypto from "expo-crypto";
 import {
   ITEM_ICON_COLORS,
   MAX_BOARD_STATES,
+  isKnownStateId,
   stateOf,
 } from "@orbit-hub/contracts";
 import type {
@@ -187,6 +188,48 @@ export function countInState(
     if (columnIdOf(states, item.stateId) === asked) count += 1;
   }
   return count;
+}
+
+/**
+ * The `stateId` a move writes, or `null` when the move is not a move.
+ *
+ * **"Is it already there?" is asked of the resolved column and not of `stateId`,
+ * and that is the whole of the function.** A row whose `stateId` is `null` — which
+ * is every task created on a board — is drawn in the first column, so choosing the
+ * first column moves it nowhere; and a row whose column another device deleted is
+ * drawn in the first column too, so choosing it must not enqueue anything either.
+ * Both come out of `columnIdOf`, which is `stateOf` under another name, and a
+ * comparison against the raw value gets both of them wrong: it writes
+ * `states[0].id` onto a task that is already drawn there.
+ *
+ * The cost of getting it wrong is small and it is not zero. The write is local
+ * first, so the tab moves either way, but the outbox carries an update nobody
+ * asked for, it survives the session, and it is an operation somebody else has to
+ * merge on a device that did not make it.
+ *
+ * `null` comes back for a `target` that is not one of this board's columns too,
+ * and that is the other half of the same care: the server refuses that write with
+ * `isKnownStateId` and **says nothing at the screen**, because a rejected
+ * operation inside a push that answers 200 is invisible. The sheet only offers ids
+ * it was handed, so this is the belt to a rule the drawing already keeps — and it
+ * is the same check the server would make for it at the price of a round trip.
+ *
+ * **`target` is `string` and the type is what keeps `null` out.** `isKnownStateId`
+ * answers `true` for a null stateId — that is the invariant, "null means the first
+ * state" — so a `string | null` parameter would sail past the guard above on a null
+ * and land in the comparison, where `columnIdOf` is never null for a board with
+ * columns and the answer is the `null` that means "write nothing". Right by
+ * accident, and it reads as if a null target were a move to the first column.
+ * **Moving a task to the first column is spelled with that column's id**, which is
+ * what the picker hands over; `stateOf` is what resolves the other spelling to it.
+ */
+export function stateIdToWrite(
+  states: BoardStates,
+  current: string | null,
+  target: string,
+): string | null {
+  if (!isKnownStateId(states, target)) return null;
+  return columnIdOf(states, current) === target ? null : target;
 }
 
 /**

@@ -25,6 +25,7 @@ import {
   newState,
   removeState,
   renumberWithinState,
+  stateIdToWrite,
   tasksInState,
 } from '../src/lib/lists/board';
 
@@ -143,6 +144,78 @@ describe('contar incluye las nulas cuando el estado es el primero', () => {
     ];
     expect(countInState(items, states, primero(states).id)).toBe(3);
     expect(countInState(items, states, columna(states, 1).id)).toBe(0);
+  });
+});
+
+describe('mover una tarea a la columna en la que ya esta', () => {
+  it('no escribe nada, y el caso que lo cuenta es el stateId nulo', () => {
+    // **El fallo que esta comprobacion muerde es comparar `stateId` en crudo.**
+    // Toda tarea creada en un tablero nace con `stateId: null` y se dibuja en la
+    // primera columna, asi que `current === target` da `null === 'a'`, que es
+    // falso: la version ingenua devuelve `'a'`, encola una operacion que nadie
+    // pidio y esta sobrevive a la sesion. Las dos respuestas son `null` y solo una
+    // esta bien.
+    const states = estadosDe('a', 'b');
+    expect(stateIdToWrite(states, null, 'a')).toBeNull();
+  });
+
+  it('tampoco cuando su columna la borro otro dispositivo', () => {
+    // La misma regla por el otro camino: la fila apunta a un id que este tablero no
+    // tiene, se dibuja en la primera, y elegir la primera no la mueve de sitio.
+    // Comparar en crudo daria `'borrado' !== 'a'` y escribiria de mas.
+    const states = estadosDe('a', 'b');
+    expect(stateIdToWrite(states, 'borrado-en-otro-dispositivo', 'a')).toBeNull();
+  });
+
+  it('a otra columna si la mueve, este o no el stateId el de esa columna', () => {
+    // La mitad de la que las anteriores son el borde. Sin esto, una funcion que
+    // devolviese `null` siempre pasaria las tres primeras: un tablero en el que
+    // no se puede mover nada parece uno en el que no hay nada que mover.
+    const states = estadosDe('a', 'b', 'c');
+    expect(stateIdToWrite(states, 'a', 'b')).toBe('b');
+    expect(stateIdToWrite(states, null, 'b')).toBe('b');
+    expect(stateIdToWrite(states, 'borrado-en-otro-dispositivo', 'c')).toBe('c');
+  });
+
+  it('una columna que este tablero no tiene no se escribe', () => {
+    // El servidor rechaza ese `stateId` con `isKnownStateId` y el push lo responde
+    // como una operacion rechazada **dentro de un 200**: nadie ve nada y la tarea
+    // no se mueve. La hoja solo ofrece ids que le han dado, asi que esto es el
+    // cinturon de una regla que el dibujo ya cumple.
+    const states = estadosDe('a', 'b');
+    expect(stateIdToWrite(states, 'a', 'c')).toBeNull();
+    expect(stateIdToWrite(estadosDe('a'), 'a', 'b')).toBeNull();
+    // Y un tablero sin columnas no tiene a donde mover nada.
+    expect(stateIdToWrite([], null, 'a')).toBeNull();
+  });
+
+  it('un estado recien creado nunca es «la columna en la que ya esta»', () => {
+    // La otra mitad de la hoja: «+ Nuevo estado...» crea la columna y mueve la tarea
+    // a ella con dos escrituras, y la segunda lleva el id nuevo **sin pasar por
+    // aqui**. Esto es lo que lo justifica.
+    //
+    // Su id se acaba de acuñar y no esta en el array de antes, asi que no puede ser
+    // la columna en la que la tarea esta dibujada bajo ninguna regla — ni con
+    // `stateId` nulo, ni con uno que otro dispositivo borro, ni con uno de verdad.
+    // Y al anadirlo al array pasa a ser una columna que el tablero tiene, que es la
+    // otra mitad de lo que `stateIdToWrite` exige antes de devolver algo.
+    //
+    // La comprobacion que **si** importa va al revés, y por eso esta aqui y no en un
+    // comentario de la pantalla: si alguien cambiara la pantalla para pasar el
+    // `states` viejo a esta funcion, `null` es la respuesta y el movimiento no se
+    // escribe — con la columna ya creada en el servidor y la tarea sin mover, que es
+    // el peor de los dos fallos posibles.
+    const states = estadosDe('a', 'b');
+    const nuevo = newState(states, 'Revision');
+    expect(nuevo).not.toBeNull();
+
+    // El array de antes no lo conoce: `null`, o sea no se escribe.
+    expect(stateIdToWrite(states, null, nuevo!.id)).toBeNull();
+    // El de despues si, y la tarea va a el desde cualquier columna en la que este.
+    const conLaColumna = [...states, nuevo!];
+    for (const actual of [null, 'a', 'b', 'borrado-en-otro-dispositivo']) {
+      expect(stateIdToWrite(conLaColumna, actual, nuevo!.id)).toBe(nuevo!.id);
+    }
   });
 });
 
