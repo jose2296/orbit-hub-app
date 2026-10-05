@@ -24,6 +24,7 @@ import type {
   WorkspaceWashName,
   MembershipRoleName,
   SyncEntityName,
+  BookmarkExtractionStateName,
 } from './constants';
 
 /**
@@ -398,6 +399,38 @@ export const listsRelations = relations(lists, ({ one, many }) => ({
   workspace: one(workspaces, { fields: [lists.workspaceId], references: [workspaces.id] }),
   items: many(listItems),
 }));
+
+export const collections = pgTable(
+  'collections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    description: varchar('description', { length: 500 }),
+    emoji: varchar('emoji', { length: 16 }),
+    position: integer('position').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    index('collections_workspace_updated_at_idx').on(table.workspaceId, table.updatedAt),
+    index('collections_folder_idx').on(table.folderId),
+    index('collections_deleted_at_idx').on(table.deletedAt),
+  ],
+);
+
+export const collectionsRelations = relations(collections, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [collections.workspaceId], references: [workspaces.id] }),
+  folder: one(folders, { fields: [collections.folderId], references: [folders.id] }),
+  bookmarks: many(bookmarks),
+}));
+
+export type CollectionRow = typeof collections.$inferSelect;
 
 export const listItemsRelations = relations(listItems, ({ one }) => ({
   list: one(lists, { fields: [listItems.listId], references: [lists.id] }),

@@ -64,6 +64,20 @@ export const LIST_KINDS = [
 export type ListKindName = (typeof LIST_KINDS)[number];
 
 /**
+ * Los estados de la extraccion de un bookmark. Escribi los cuatro valores en
+ * `packages/contracts/src/bookmarks.ts` tambien: ahi vive el `z.enum` que
+ * valida la red, y aca el tipo que usa la columna. Es el mismo duplicado que
+ * `LIST_KINDS` y `listKindSchema`.
+ */
+export const BOOKMARK_EXTRACTION_STATES = [
+  'pending',
+  'ready',
+  'metadata_only',
+  'failed',
+] as const;
+export type BookmarkExtractionStateName = (typeof BOOKMARK_EXTRACTION_STATES)[number];
+
+/**
  * The colours a space can be painted with.
  *
  * Re-exported from the contract and not a second list: the server refuses a
