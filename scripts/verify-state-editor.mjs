@@ -724,6 +724,29 @@ const TABLERO_CONTADO = `(() => {
       */
       hijos: caja ? caja.children.length : null,
       primeraLinea: caja ? ((caja.innerText || '').split('\\n').filter(Boolean)[0] ?? '') : null,
+      /*
+        **Todas las lineas de la caja, y no solo la primera.** El estado vacio de una
+        columna son dos frases —el titulo y lo que hay debajo— y el bloque 22.3
+        afirma sobre las dos: que la una **nombra el filtro** y la otra **dice que
+        hacer**. Con una sola linea la segunda no se podria ni citar en el informe,
+        y una comprobacion que solo mira la primera pasaria con una caja que dice
+        "el filtro oculta 2 tareas" y no dice nada mas, que es media solucion.
+      */
+      lineas: caja ? (caja.innerText || '').split('\\n').map((l) => l.trim()).filter(Boolean) : [],
+      /*
+        **La etiqueta de la cabecera, que es lo que oye un lector de pantalla.**
+
+        Se busca con "closest('[aria-label]')" desde el numero y no desde la cabecera
+        entera porque el numero es lo unico de esa fila que lleva testID, y el
+        accessibilityLabel lo pone el View que lo envuelve —aria-label en
+        react-native-web, que es donde esta corriendo esto—. Devolver null cuando no
+        lo encuentra es a proposito: una comprobacion que compara null con una frase
+        falla, que es lo que tiene que pasar si la etiqueta desaparece.
+      */
+      etiqueta: document
+        .querySelector('[data-testid="board-count-' + id + '"]')
+        ?.closest('[aria-label]')
+        ?.getAttribute('aria-label') ?? null,
     };
   });
 })()`;
@@ -3924,9 +3947,100 @@ try {
       `caja, primera linea "${enCurso?.primeraLinea ?? ""}" — el estado vacio de una ` +
       `columna es lo que se dibuja cuando no hay nada que enseñar`,
   );
+
+  /*
+    **El estado vacio de una columna que un filtro ha vaciado tiene que decir que es
+    el filtro, y esta es la comprobacion de esa frase.**
+
+    El defecto que se cierra aqui no es que los dos numeros sean distintos —se ha
+    mirado y son dos preguntas—: es que la caja de una columna con dos tareas
+    escondidas decia "Sin tareas", debajo de una pestaña que decia 2. Leido de
+    golpe, eso es una columna que ha perdido dos tareas, y es lo primero que ve
+    cualquiera que filtre un tablero.
+
+    **La comprobacion es sobre las palabras y no sobre un `testID`**, porque lo que
+    hay que proteger es el texto que sale. Se exigen las tres cosas que lo hacen
+    inconfundible: que **nombra el filtro**, que **lleva el numero que esta
+    escondido** —2, el de la pestaña, para que los dos numeros de la pantalla se
+    cuenten el uno al otro sin que nadie tenga que restar— y que **dice que hacer**
+    debajo, porque un estado vacio que solo se queja no dice como se sale de el.
+  */
+  const lineasEnCurso = enCurso?.lineas ?? [];
+  const fraseEnCurso = lineasEnCurso.join(" ");
+  check(
+    "**una columna vaciada por el filtro lo dice en la caja: nombra el filtro y el numero que esconde**",
+    /^el filtro oculta 2 tareas$/i.test(lineasEnCurso[0] ?? "") &&
+      enCurso?.pestana === 2 &&
+      enCurso?.cabecera === 0,
+    `"${FILTRO_ESTADOS[2].title}" dice "${fraseEnCurso}" con la pestaña en ` +
+      `${enCurso?.pestana} y la cabecera en ${enCurso?.cabecera} — el 2 de la frase ` +
+      `tiene que ser el 2 de la pestaña: es lo que hace que los dos numeros de la ` +
+      `pantalla se cuenten el uno al otro en vez de leerse como una contradiccion`,
+  );
+  check(
+    "…y debajo dice que se salga de ahi, que un estado vacio que solo se queja no dice como se sale",
+    lineasEnCurso.length >= 2 &&
+      /quita el filtro/i.test(lineasEnCurso[1] ?? "") &&
+      typeof enCurso?.primeraLinea === "string" &&
+      !/^sin tareas$/i.test(enCurso.primeraLinea),
+    `lineas de la caja: ${JSON.stringify(lineasEnCurso)} — la primera tiene que ser la ` +
+      `frase del filtro y la segunda la de como salir; "Sin tareas" ahi seria volver ` +
+      `a leer como perdida una columna cuya pestaña dice 2`,
+  );
+
+  /*
+    **La contraprueba del caso del filtro, y es la que hace que el caso sin filtro
+    signifique algo.**
+
+    En este mismo tablero, con el filtro **puesto**, la columna "Hecho" esta igual de
+    vacia —no tiene ni una tarea, con filtro o sin el— y su pestaña dice 0. Si la
+    frase del filtro se escribiera para "columna vacia" en vez de para "columna que
+    un filtro ha vaciado", esta columna la recibiria tambien y diria "el filtro
+    oculta 0 tareas" debajo de una pestaña que dice 0: un filtro que esconde cero
+    cosas. Se afirma aqui, en la misma lectura y en la misma pantalla que la de
+    arriba, para que las dos frases se contraten.
+  */
+  const hecho = trasFiltrar?.[3];
+  check(
+    "**con el filtro puesto, la columna que no tiene tareas dice otra cosa distinta**",
+    hecho?.tarjetas.length === 0 &&
+      hecho?.pestana === 0 &&
+      /^sin tareas$/i.test(hecho?.lineas?.[0] ?? "") &&
+      !/filtro/i.test((hecho?.lineas ?? []).join(" ")),
+    `"${FILTRO_ESTADOS[3].title}" dice ${JSON.stringify(hecho?.lineas ?? [])} con la ` +
+      `pestaña en ${hecho?.pestana} — la semilla no le pone ninguna tarea a esta ` +
+      `columna, asi que con el filtro puesto tambien esta vacia y por la misma causa ` +
+      `que antes de filtrar; si recibiera la frase del filtro diria que el filtro ` +
+      `esconde 0 tareas, que es un filtro que no esconde nada`,
+  );
+
+  /*
+    **Y lo mismo para lo que oye un lector de pantalla**, que es el otro sitio donde
+    la distincion se puede perder: el `accessibilityLabel` de la cabecera es lo
+    primero que se anuncia de la columna, y sin el motivo ahi el oyente se queda
+    con "En curso, 0 elementos" y la pestaña de al lado que dice 2 y con la que
+    no puede cruzarse porque no existe para el.
+  */
+  check(
+    "**la etiqueta que anuncia la cabecera lleva el mismo motivo, no solo el 0**",
+    typeof enCurso?.etiqueta === "string" &&
+      /el filtro oculta 2 tareas/i.test(enCurso.etiqueta) &&
+      typeof hecho?.etiqueta === "string" &&
+      !/filtro/i.test(hecho.etiqueta),
+    `"${FILTRO_ESTADOS[2].title}": "${enCurso?.etiqueta}" | ` +
+      `"${FILTRO_ESTADOS[3].title}": "${hecho?.etiqueta}" — el ` +
+      `accessibilityLabel es lo primero que se oye de la columna, asi que si el ` +
+      `motivo viviera solo en el texto dibujado el oyente se quedaria con el 0 a ` +
+      `solas`,
+  );
   note(
     `con "${ETIQUETA}" — pestañas ${pestanas.join(" ")} | cabeceras ${cabeceras.join(" ")} ` +
       `| tarjetas ${dibujadas.join(" ")}`,
+  );
+  note(
+    `las dos frases vacias del mismo tablero, con el filtro puesto — ` +
+      `"${FILTRO_ESTADOS[2].title}": "${lineasEnCurso.join(" / ")}" | ` +
+      `"${FILTRO_ESTADOS[3].title}": "${(hecho?.lineas ?? []).join(" / ")}"`,
   );
   const botonControlesFiltro = await tab.evaluate(LEER_BOTON_CONTROLES);
   check(
@@ -3953,6 +4067,107 @@ try {
         JSON.stringify([2, 2, 2, 0]),
     `tarjetas ${(restaurado ?? []).map((c) => c.tarjetas.length).join(" ")} | ` +
       `cabeceras ${(restaurado ?? []).map((c) => c.cabecera).join(" ")}`,
+  );
+
+  /*
+    **La contraprueba del caso sin filtro, y es la que deja vivo al otro.**
+
+    Sin filtro, "En curso" vuelve a tener sus dos tarjetas y no dice nada vacio, y
+    "Hecho" —que no tiene ni una tarea, la tenga o no tenga el filtro— sigue
+    vacia y tiene que seguir diciendo **"Sin tareas"**, sin la palabra filtro y sin
+    la linea de debajo. Sin esta comprobacion, "di siempre que es el filtro" —que es
+    un cambio de una linea— pasaria todo lo de arriba: con el filtro puesto todo
+    seguiria igual y aqui nadie miraria.
+
+    **Se lee despues de quitar el filtro y no antes, porque es el estado de la
+    columna vacia que no es culpa del filtro.** Y se exige la ausencia de la
+    palabra, no solo la presencia de la otra: una frase que los dos dijera a la vez
+    —"Sin tareas, quita el filtro"— tambien pasaria, y tambien mintiria en la
+    columna que no tiene nada que ver con un filtro.
+  */
+  const hechoRestaurado = restaurado?.[3];
+  const enCursoRestaurado = restaurado?.[2];
+  check(
+    "**sin filtro, la columna vacia de verdad vuelve a decir que no tiene tareas y no menciona ningun filtro**",
+    hechoRestaurado?.tarjetas.length === 0 &&
+      /^sin tareas$/i.test(hechoRestaurado?.lineas?.[0] ?? "") &&
+      !/filtro/i.test((hechoRestaurado?.lineas ?? []).join(" ")) &&
+      hechoRestaurado?.lineas?.length === 1 &&
+      typeof hechoRestaurado?.primeraLinea === "string" &&
+      /^sin tareas$/i.test(hechoRestaurado.primeraLinea),
+    `sin filtro — "${FILTRO_ESTADOS[3].title}" dice ` +
+      `${JSON.stringify(hechoRestaurado?.lineas ?? [])} (pestaña ` +
+      `${hechoRestaurado?.pestana}, cabecera ${hechoRestaurado?.cabecera}) — una ` +
+      `columna vacia con filtro puesto y vacia sin el es el mismo estado y la misma ` +
+      `frase; si aqui apareciera la del filtro, "di siempre que es el filtro" ` +
+      `habria pasado todo lo de arriba`,
+  );
+  /*
+    **Y la contraprueba del otro lado del mismo estado: la columna que el filtro
+    vacio tiene que volver a tener sus dos tarjetas y no dejar nada de la frase
+    puesta.**
+
+    **No se cuenta a los hijos de la caja para esto, y es una correccion medida:**
+    con dos tarjetas dentro, `caja.children.length` es **1** —no 2— porque en la
+    web `react-native-web` mete las tarjetas en un envoltorio de contenido y es ese
+    envoltorio el unico hijo de la caja. Una comprobacion que exigiera "dos hijos"
+    pasaria con la frase del filtro puesta y las tarjetas debajo. Se cuenta por
+    `tarjetas`, que son los `testID` de las tarjetas, y se exige ademas que ninguna
+    de las lineas de la caja hable de filtro ni de estar sin tareas.
+  */
+  check(
+    "…y la que el filtro habia vaciado **vuelve a enseñar sus dos tarjetas y no dice nada vacio**",
+    enCursoRestaurado?.tarjetas.length === 2 &&
+      !(enCursoRestaurado?.lineas ?? []).some((l) => /filtro|sin tareas/i.test(l)),
+    `"${FILTRO_ESTADOS[2].title}" sin filtro: ${enCursoRestaurado?.tarjetas.length} ` +
+      `tarjetas, lineas ${JSON.stringify(enCursoRestaurado?.lineas ?? [])} — la frase ` +
+      `del filtro describe un estado que ya no existe, asi que no puede quedarse ` +
+      `puesta`,
+  );
+  note(
+    `sin filtro — vacias: ` +
+      `"${FILTRO_ESTADOS[2].title}": ${JSON.stringify(enCursoRestaurado?.lineas ?? [])} | ` +
+      `"${FILTRO_ESTADOS[3].title}": ${JSON.stringify(hechoRestaurado?.lineas ?? [])}`,
+  );
+  /*
+    **La contraprueba del caso sin filtro tambien en oscuro**, porque un color se
+    cambia en un solo sitio y una frase en otro, y un recorrido que comprueba los
+    dos casos en claro y solo uno en oscuro deja medio contrato fuera. La columna
+    vacia de verdad esta a la vista con sus dos vecinas —una con una tarjeta y otra
+    con dos— asi que la captura enseña la fila entera y no un caso aislado.
+
+    **Y hay que volver a cargar, no basta con poner la preferencia.** `PONER_TEMA`
+    escribe en `localStorage` y nada mas, asi que el tema no cambia hasta que la
+    pagina lee esa clave: la primera version de este bloque hacia `PONER_TEMA` y un
+    `sleep`, se quedará en claro —con `colorScheme: light` comprobado, que es
+    exactamente por lo que el tema se comprueba antes de aceptar una captura— y la
+    comprobacion de abajo lo cazo. `irA` es lo que lee la preferencia al entrar.
+  */
+  await PONER_TEMA("dark");
+  await irA(tab, `${APP}/board/${listFiltros}`);
+  const listoSinFiltroOscuro = Date.now() + 30000;
+  let sinFiltroOscuro = null;
+  while (Date.now() < listoSinFiltroOscuro) {
+    sinFiltroOscuro = await tab.evaluate(TABLERO_CONTADO);
+    if (sinFiltroOscuro?.length === 4) break;
+    await sleep(600);
+  }
+  const temaSinFiltroOscuro = await temaDeLaPagina();
+  check(
+    "el tema oscuro esta puesto de verdad antes de leer el caso sin filtro en oscuro",
+    temaSinFiltroOscuro === "dark",
+    `colorScheme: ${temaSinFiltroOscuro}`,
+  );
+  await tab.screenshot(`${SHOTS}/22-05-sin-filtro-oscuro.png`);
+  check(
+    "en oscuro y sin filtro la columna vacia de verdad dice igual que en claro",
+    /^sin tareas$/i.test(sinFiltroOscuro?.[3]?.lineas?.[0] ?? "") &&
+      !/filtro/i.test((sinFiltroOscuro?.[3]?.lineas ?? []).join(" ")) &&
+      sinFiltroOscuro?.[2]?.tarjetas.length === 2,
+    `"${FILTRO_ESTADOS[3].title}": ${JSON.stringify(sinFiltroOscuro?.[3]?.lineas ?? [])} | ` +
+      `"${FILTRO_ESTADOS[2].title}": ${sinFiltroOscuro?.[2]?.tarjetas.length} tarjetas — ` +
+      `la captura de al lado es la del caso sin filtro en oscuro, y enseña una ` +
+      `columna de verdad vacia entre dos que si tienen tarjetas`,
   );
 
   /* --- 22.5 La misma pasada en oscuro --- */
@@ -3998,6 +4213,27 @@ try {
     `tarjetas ${(oscuroFiltrado ?? []).map((c) => c.tarjetas.length).join(" ")} | ` +
       `pestanas ${(oscuroFiltrado ?? []).map((c) => c.pestana).join(" ")} | ` +
       `pestanas sin filtro ${(oscuroBase ?? []).map((c) => c.pestana).join(" ")}`,
+  );
+  /*
+    **La frase del filtro tambien en oscuro, y son las dos frases en la misma
+    lectura.** El tema no cambia una palabra y por eso esta comprobacion no es una
+    formality: es la captura la que tiene que llegar a reviewer con las dos frases
+    contratas en la misma pantalla, y el recorrido de este bloque es el que produce
+    esa captura.
+  */
+  const oscuroEnCurso = oscuroFiltrado?.[2];
+  const oscuroHecho = oscuroFiltrado?.[3];
+  check(
+    "en oscuro la columna vaciada por el filtro dice lo mismo que en claro, y la vacia de verdad dice lo suyo",
+    /^el filtro oculta 2 tareas$/i.test(oscuroEnCurso?.lineas?.[0] ?? "") &&
+      /^sin tareas$/i.test(oscuroHecho?.lineas?.[0] ?? "") &&
+      !/filtro/i.test((oscuroHecho?.lineas ?? []).join(" ")),
+    `"${FILTRO_ESTADOS[2].title}": ${JSON.stringify(oscuroEnCurso?.lineas ?? [])} | ` +
+      `"${FILTRO_ESTADOS[3].title}": ${JSON.stringify(oscuroHecho?.lineas ?? [])}`,
+  );
+  note(
+    `en oscuro — "${FILTRO_ESTADOS[2].title}": ` +
+      `${JSON.stringify(oscuroEnCurso?.lineas ?? [])} | etiqueta "${oscuroEnCurso?.etiqueta}"`,
   );
   await tab.screenshot(`${SHOTS}/22-04-filtrado-oscuro.png`);
   await PONER_TEMA("light");

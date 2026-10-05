@@ -38,6 +38,25 @@ export interface BoardColumnProps {
    */
   tasks: ListItem[];
   /**
+   * How many tasks this column holds **before any filter**, which is the number the
+   * tab above it shows and not the one this header shows.
+   *
+   * **It is here only to tell an empty column from one a filter emptied**, and it is
+   * the same number and not a boolean flag because the fact is two numbers and not one:
+   * `tasks.length === 0 && totalTasks > 0` is a column that held work and is showing
+   * none, and that can only be a filter. A flag could disagree with the counts it is
+   * meant to explain —a filter on over a column that genuinely has nothing would print
+   * "the filter hides 0 tasks" under a tab that says 0— and then the sentence is the
+   * thing that is wrong. Two numbers cannot disagree with themselves.
+   *
+   * **It is not what the header counts, and this is the load-bearing half.** The header
+   * draws `tasks.length` —what is in front of you— and this is what the column holds.
+   * Both are right: the tab is the map of the whole board and the header labels the
+   * cards underneath it. The two of them differ exactly when a filter is on, which is
+   * why the empty state has to be able to say *why*.
+   */
+  totalTasks: number;
+  /**
    * This list's chosen label colours, handed down from the screen's `list`.
    *
    * The same prop `TaskRow` takes and for the same reason: a label's colour is
@@ -225,6 +244,7 @@ const SIN_SOMBRA = "0px 0px 0px rgba(0, 0, 0, 0)";
 export function BoardColumn({
   state,
   tasks,
+  totalTasks,
   tagColors,
   readOnly,
   onOpenTask,
@@ -238,6 +258,49 @@ export function BoardColumn({
   const encabezado = t(pluralKey("lists.itemCount", tasks.length), {
     count: tasks.length,
   });
+
+  /**
+   * Whether this column is empty **because of a filter**, and not because it holds
+   * nothing.
+   *
+   * **It is the difference between two numbers and not a flag from the screen**, and
+   * `totalTasks` is where the second one comes from: the tab above this column says
+   * 2, this column draws nothing, and "Sin tareas" under a tab that says 2 is a
+   * column that has lost two tasks without anybody having lost anything. That is the
+   * reading the brief sent me to look for, and it is the first thing anybody who
+   * filters a board sees.
+   *
+   * **A column that genuinely holds nothing keeps its own sentence.** With no filter
+   * on, both numbers are 0 and the column really is empty; with a filter on over a
+   * column that never had tasks —"Hecho" in the walkthrough's board— it is still
+   * empty, and "the filter hides 0 tasks" would name a hiding that is not happening.
+   * So the term that decides is `totalTasks > 0`, not "is a filter on".
+   */
+  const vaciaPorFiltro = tasks.length === 0 && totalTasks > 0;
+
+  /**
+   * What the empty state says, **and it is one of two sentences that are not the same
+   * sentence.**
+   *
+   * The filtered one **carries the number that is hidden**, which is `totalTasks` and
+   * not `tasks.length`: that number is the one the tab above is already showing, so
+   * the two figures on screen end up counting each other and nobody has to subtract
+   * anything to find out where the two cards went. The hint below it then says what
+   * to do about it, and it talks about **the column** rather than the tasks, because
+   * "quitá el filtro para verlas" has to change its pronoun with the count and this
+   * one does not.
+   *
+   * `EmptyState` is what draws the description, and it was already a prop it had: the
+   * empty state of a board with no states is the same component.
+   */
+  const vacio = vaciaPorFiltro
+    ? {
+        titulo: t(pluralKey("board.emptyColumnFiltered", totalTasks), {
+          count: totalTasks,
+        }),
+        descripcion: t("board.emptyColumnFilteredHint"),
+      }
+    : { titulo: t("board.emptyColumn"), descripcion: undefined };
 
   /**
    * Whether a card of this column can be picked up, **and it is three terms
@@ -304,7 +367,22 @@ export function BoardColumn({
         style={[styles.cabecera, { gap: theme.spacing.sm }]}
         accessible
         accessibilityRole="header"
-        accessibilityLabel={`${state.title}, ${encabezado}`}
+        /**
+         * **The label carries the same reason the empty state does, and not only the
+         * visible text does.**
+         *
+         * A screen reader reaches this header before the empty box under it, so
+         * "En curso, 0 elementos" is the first thing it says about a column whose tab
+         * says 2 — which is the whole confusion, said out loud to the people who
+         * cannot see the tab next to it and count. Appending the sentence makes the
+         * two numbers explain each other in the ear as well as on the screen.
+         *
+         * And it is the **same** `vacio.titulo` the box below draws, so there is one
+         * sentence and not two that can drift apart.
+         */
+        accessibilityLabel={`${state.title}, ${encabezado}${
+          vaciaPorFiltro ? `, ${vacio.titulo}` : ""
+        }`}
       >
         {/* The colour of the state, as the dot the tab strip also draws: two
             shapes of the same size, so the eye matches a column to its tab. */}
@@ -373,8 +451,20 @@ export function BoardColumn({
             `flex: 1` on an empty state buys: an empty column that says "no tasks"
             in its first line reads as a list that has been cut off, and the same
             sentence in the middle of the box reads as the state it is.
+
+            **And which of the two sentences it is comes from `vacio` and not from
+            here.** A column that a filter emptied and a column that holds nothing
+            look the same on the screen and are not the same fact, and writing one
+            sentence for both is what put "Sin tareas" under a tab that said 2. The
+            description below the title is only there in the filtered case, and it
+            says what to do about it.
           */
-          <EmptyState title={t("board.emptyColumn")} compact style={styles.centrado} />
+          <EmptyState
+            title={vacio.titulo}
+            description={vacio.descripcion}
+            compact
+            style={styles.centrado}
+          />
         ) : (
           tasks.map((item, index) => (
             <Tarjeta

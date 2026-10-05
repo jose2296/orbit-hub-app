@@ -956,15 +956,34 @@ const es = {
   "lists.notFound": "Esta lista ya no existe",
 
   /*
-    The board. Two phrases, and both of them are empty states: everything else a
-    board says is a name and a number that the lists already have a word for.
+    La columna vacia, y **son cuatro frases y no una** porque una columna sin
+    tareas y una columna a la que un filtro le ha vaciado son dos hechos
+    distintos, y escritos igual se leen como el mismo.
 
-    The second one **promises no button that is not there.** A board with no states
-    is legal in the contract and the client seeds four on creation, so this is
-    reached from a board imported or edited by hand — and saying what it is beats
-    offering to add a state from a screen that cannot yet.
+    **El primero es el que miente si se usa para los dos casos.** Con un filtro
+    puesto, la pestaña de arriba cuenta lo que la columna tiene —"En curso 2"— y
+    la columna enseña cero tarjetas debajo de su "En curso 0", y un "Sin tareas"
+    ahi es una columna que ha perdido dos tareas sin que nadie haya perdido nada.
+    Asi que el titulo **nombra el filtro** y ademas **lleva la cuenta que esta
+    escondida**, que es el numero de la pestaña de arriba: los dos numeros de la
+    pantalla pasan a contarse el uno al otro y nobody tiene que deducirlo.
+
+    **La pista habla de la columna y no de las tareas** a proposito: "Quita el
+    filtro para verlas" tiene que decir "verla" con una tarea y "verlas" con dos,
+    y un enunciado con un sustantivo de masa —"la columna entera"— no tiene nada
+    que concertar.
   */
   "board.emptyColumn": "Sin tareas",
+  "board.emptyColumnFiltered.one": "El filtro oculta {count} tarea",
+  "board.emptyColumnFiltered.other": "El filtro oculta {count} tareas",
+  "board.emptyColumnFilteredHint": "Quita el filtro para ver la columna entera.",
+  /*
+    Y la segunda frase del tablero, que **no promete ningun boton que no este ahi**:
+    un tablero sin estados es legal en el contrato y el cliente siembra cuatro al
+    crearlo, asi que esto se llega desde un tablero importado o editado a mano — y
+    decir lo que es vale mas que ofrecer anadir un estado desde una pantalla que
+    todavia no puede.
+  */
   "board.noStates":
     "Este tablero no tiene estados, así que no puede enseñar tareas.",
 
@@ -2038,11 +2057,33 @@ const en: Record<TranslationKey, string> = {
   "lists.notFound": "This list no longer exists",
 
   /*
-    The board. Two phrases, and both of them are empty states — everything else it
-    says is a name and a number the lists already have a word for. The second one
-    promises no button that is not there, and the note above it says why.
+    The empty column, and **it is four phrases and not one** because a column with
+    no tasks and a column a filter emptied are two different facts, and written the
+    same way they read as the same one.
+
+    **The first of them lies if it is used for both cases.** With a filter on, the
+    tab above counts what the column holds — "En curso 2" — and the column draws no
+    cards under its "En curso 0", and a "No tasks" there is a column that has lost
+    two tasks while nobody has lost anything. So the title **names the filter** and
+    also **carries the count that is being hidden**, which is the number of the tab
+    above: the two numbers on screen now count each other and nobody has to work it
+    out.
+
+    The hint talks about **the column** and not about the tasks on purpose:
+    "remove the filter to see them" has to say "it" with one task and "them" with
+    two, and a statement about the whole column has nothing to agree with. The note
+    in Spanish above says the same and longer.
   */
   "board.emptyColumn": "No tasks",
+  "board.emptyColumnFiltered.one": "The filter hides {count} task",
+  "board.emptyColumnFiltered.other": "The filter hides {count} tasks",
+  "board.emptyColumnFilteredHint": "Remove the filter to see the whole column.",
+  /*
+    The board's second phrase, which **promises no button that is not there**: a
+    board with no states is legal in the contract and the client seeds four on
+    creation, so this is reached from a board imported or edited by hand, and
+    saying what it is beats offering to add a state from a screen that cannot yet.
+  */
   "board.noStates": "This board has no states, so it cannot show any tasks.",
 
   /*

@@ -1591,35 +1591,42 @@ export default function BoardScreen() {
                     <BoardColumn
                       state={state}
                       tasks={tasks}
+                      totalTasks={counts.get(state.id) ?? 0}
                       tagColors={list.tagColors ?? {}}
                       readOnly={readOnly}
                       /*
                         **El numero de la cabecera cuenta lo que se dibuja, y el de
                         la pestana de arriba cuenta todo**, y los dos estan en
-                        pantalla a la vez. Es la unica parte de esta tarea que se ve
-                        sin tocar nada, asi que conviene decir que se ha mirado: con
-                        un filtro puesto, la columna enseña `tasks.length` —las
-                        tarjetas que hay debajo— y su pestana enseña `counts`, que
-                        viene de `items`. Una columna con seis tareas de las que solo
-                        una tiene la etiqueta teaches **1** en la cabecera y **6** en
-                        la pestana.
+                        pantalla a la vez. Con un filtro puesto, la columna enseña
+                        `tasks.length` —las tarjetas que hay debajo— y su pestana
+                        enseña `counts`, que viene de `items`: una columna con dos
+                        tareas de las que solo una tiene la etiqueta enseña **1** en
+                        la cabecera y **2** en la pestana.
 
-                        Se ha mirado en el navegador y **no se lee como un error**,
-                        por una razon que es la de las dos preguntas: la cabecera
-                        es el rotulo de la lista de tarjetas que hay debajo y el
-                        filtro no ha dejado de ser cierto que son seis; la pestana
-                        es el mapa del tablero entero y por eso no baja. La confusion
-                        vendria al reves —pestanas que bajan con el filtro y una
-                        columna que desaparece de la tira—, que es justo lo que el
-                        filtro de completadas habria hecho y lo que no se ofrece.
+                        **La primera vez que se miro, se dijo que no se leia como un
+                        error, y era falso.** Lo que se miraba era la pareja de
+                        numeros, y la pareja se sostiene: la cabecera rotula las
+                        tarjetas que hay debajo y la pestana es el mapa del tablero
+                        entero. Lo que no se miro fue **la columna que se queda sin
+                        ninguna tarjeta**, que decia "Sin tareas" debajo de una
+                        pestana que decia 2 — y eso si se lee como perdida, porque
+                        no hay ninguna frase que diga que las dos tareas siguen ahi
+                        escondidas. Los numeros no se tocan: se cambia lo que dice la
+                        caja, y `totalTasks` es lo que le permite a la columna
+                        distinguir las dos cosas sin que le digan cual es.
 
-                        **Lo que si queda sin resolver** es que el numero de la
-                        cabecera y el de la pestana son dos preguntas y esta tarea no
-                        unifica el texto que las explica. Cambiar la cabecera para que
-                        cuente `counts` es un cambio en `board-column.tsx` —un archivo
-                        mas— y su `tasks.length` esta en el `accessibilityLabel` que
-                        un lector de pantalla anuncia, o sea que moverlo cambia tambien
-                        lo que se oye. Se deja como esta y queda dicho.
+                        La confusion al reves —pestanas que bajan con el filtro y una
+                        columna que desaparece de la tira— no se ofrece, y sigue sin
+                        ofrecerse: es justo lo que haria el filtro de completadas.
+
+                        **Y `totalTasks` sale del mismo `counts` que las pestañas, que
+                        es lo que hace que no puedan contradecirse**: el numero que la
+                        caja vacia escribe es el mismo que la pestaña enseña. Sin el
+                        filtro los dos numeros son el mismo y la condicion
+                        `tasks.length === 0 && totalTasks > 0` no puede cumplirse, asi
+                        que una columna de verdad vacia no recibe nunca la frase del
+                        filtro —y una bandera si, porque una bandera puede ir en
+                        contra de los numeros que dice explicar.
                       */
                       /*
                         **A card opens the state sheet and not the task panel**, and
