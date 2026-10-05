@@ -89,6 +89,19 @@ describe("las claves de traduccion que van detras de una plantilla", () => {
     "workspaces.role": [...membershipRoleSchema.options],
     "workspaces.color": WORKSPACE_COLORS.map((color) => color.key),
     "filters.show": ["all", "pending", "done"],
+    /**
+     * `orderShort` es el nombre corto que va en el botón, y faltaban dos.
+     *
+     * El botón de una lista de tareas construye la clave con `orderShort.${orderMode}`
+     * sobre los nueve modos del contrato, así que `updated_desc` y `priority`
+     * salían **en crudo**: `orderShort.priority` escrito en el botón. El filtro de
+     * familias solo comprobaba que el prefijo existiera, que sí existía, así que
+     * nadie se enteró.
+     *
+     * Al estar aquí y venir del contrato, no puede volver a quedarse atrás: añadir
+     * un modo al enum lo añade a esta lista, y esta lista exige su clave.
+     */
+    orderShort: [...listOrderModeSchema.options],
   };
 
   it("cada valor que una plantilla puede tomar tiene su clave", () => {

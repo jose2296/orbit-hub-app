@@ -91,7 +91,7 @@ export default function SignInScreen() {
           keyboardType="email-address"
           inputMode="email"
           textContentType="emailAddress"
-          placeholder="nombre@ejemplo.com"
+          placeholder={t("auth.emailPlaceholder")}
           returnKeyType="next"
         />
         <TextField
