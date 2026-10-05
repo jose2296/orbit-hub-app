@@ -33,7 +33,18 @@ const migrationPath = resolve(here, '..', 'drizzle', '0022_bookmarks.sql');
 function statement(sql: string, needle: string): string | undefined {
   return sql
     .split('--> statement-breakpoint')
-    .map((part) => part.trim())
+    .map((part) =>
+      // El bloque de los indices escritos a mano viene con su comentario pegado
+      // a la sentencia y sin separador entre los dos, asi que sin esto
+      // `statement` devuelve la prosa junto con el `CREATE INDEX`. Una asercion
+      // sobre el operador tiene que leer la sentencia y no el comentario que
+      // explica por que existe.
+      part
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+        .trim(),
+    )
     .find((part) => part.includes(needle));
 }
 
@@ -119,15 +130,39 @@ describe('la migracion que crea bookmarks', () => {
     expect(sql).toMatch(/CREATE INDEX "bookmarks_deleted_at_idx"/);
   });
 
-  it('crea los dos indices de busqueda que drizzle-kit no sabe expresar', () => {
+  it('indexa las etiquetas con un GIN, que es lo que un array necesita', () => {
     const sql = readFileSync(migrationPath, 'utf8');
-    expect(sql).toMatch(/CREATE INDEX bookmarks_tags_gin_idx/);
-    expect(sql).toMatch(/CREATE INDEX bookmarks_plain_text_trgm_idx/);
+    const index = statement(sql, 'bookmarks_tags_gin_idx');
+    expect(index, 'la migracion no declara bookmarks_tags_gin_idx').toBeDefined();
+    // El nombre del indice no es el indice. Estos dos los escribe una persona y
+    // no el generador, y un btree sobre un jsonb no contesta "las etiquetas que
+    // tocan esta palabra": por eso se afirma el operador, no solo el nombre.
+    // Un `toMatch` global sobre el nombre pasaria con `USING btree` debajo.
+    expect(index).toMatch(/USING gin \(tags jsonb_path_ops\)/);
+  });
+
+  it('indexa el texto del articulo con trigram, y un btree no contesta eso', () => {
+    const sql = readFileSync(migrationPath, 'utf8');
+    const index = statement(sql, 'bookmarks_plain_text_trgm_idx');
+    expect(index, 'la migracion no declara bookmarks_plain_text_trgm_idx').toBeDefined();
+    // Este es el indice del que depende que buscar una palabra dentro de un
+    // articulo guardado sea un index hit. Un btree sobre una columna de prosa no
+    // la encuentra, y el fallo es silencioso: la busqueda sigue funcionando,
+    // solo que recorriendo la tabla entera, y nada en ningun test se queja.
+    expect(index).toMatch(/USING gin \(plain_text gin_trgm_ops\)/);
+    expect(index).not.toMatch(/USING btree/);
+  });
+
+  it('no repite la sentencia que activa pg_trgm, que ya la activo 0012', () => {
+    const sql = readFileSync(migrationPath, 'utf8');
     // pg_trgm ya se activo en 0012 con CREATE EXTENSION IF NOT EXISTS, asi que
-    // repetirlo aqui seria una segunda fuente de verdad sobre esa decision. El
-    // patron se ancla a principio de linea a proposito: el comentario de arriba
-    // nombra la sentencia al explicar por que no se repite, y sin ancla el
-    // `not` fallaria contra la prosa en vez de contra una sentencia.
-    expect(sql).not.toMatch(/^CREATE EXTENSION/im);
+    // repetirla aqui seria una segunda fuente de verdad sobre esa decision.
+    //
+    // El ancla va con `\s*` y no solo `^`: una sentencia indentada dos espacios
+    // sigue siendo una sentencia, y con el ancla estricta se colaba sin que
+    // nadie lo notara. El `\s*` no hace perder nada del otro lado, porque el
+    // comentario que explica por que no se repite tiene el texto en medio de
+    // linea y no en principio de linea.
+    expect(sql).not.toMatch(/^\s*CREATE EXTENSION/im);
   });
 });
