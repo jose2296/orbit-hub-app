@@ -11,7 +11,7 @@ import {
 const GOOD_ENV = {
   EXPO_PUBLIC_API_URL: 'https://orbithub-api.jrz-labs.com/api/v1',
   EXPO_PUBLIC_WEB_ORIGIN: 'https://orbithub-app.jrz-labs.com',
-  EXPO_PUBLIC_GOOGLE_CLIENT_ID: '959281134147-abc.apps.googleusercontent.com',
+  EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID: '959281134147-android.apps.googleusercontent.com',
 };
 
 /**
@@ -67,8 +67,62 @@ describe('checkPublicEnvironment', () => {
   });
 
   it('rejects a missing Google client id, which renders a dead button', () => {
-    const { EXPO_PUBLIC_GOOGLE_CLIENT_ID: _omitted, ...rest } = GOOD_ENV;
-    expect(() => checkPublicEnvironment(rest)).toThrow(/EXPO_PUBLIC_GOOGLE_CLIENT_ID/);
+    const { EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID: _omitted, ...rest } = GOOD_ENV;
+    expect(() => checkPublicEnvironment(rest)).toThrow(/EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID/);
+  });
+
+  /**
+   * The guard was asking for a variable that **nothing defines**.
+   *
+   * `google-auth.ts` reads a client id per platform — `_WEB`, `_ANDROID`, `_IOS` —
+   * because Google refuses a web client id inside an installed app. The script
+   * still asked for the bare `EXPO_PUBLIC_GOOGLE_CLIENT_ID`, so no `.env.release`
+   * could satisfy it and the release could not pass.
+   *
+   * The test that pins this reads the real script rather than a copy, because a
+   * copy is exactly the thing that drifts: it passed happily with the old name
+   * while the release was stuck, which is the failure this is about.
+   */
+  it('exige el client id que la app lee de verdad, y no uno que nadie define', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const script = readFileSync(
+      join(import.meta.dirname, '../../../scripts/assert-export-env.mjs'),
+      'utf8',
+    );
+
+    // Y que no vuelva el nombre viejo: ese es el que hacia la release
+    // imposible de satisfacer.
+    expect(
+      script,
+      'el client id de Android es el que se exige',
+    ).toContain('EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID');
+    expect(
+      script,
+      'el nombre sin plataforma no puede volver a aparecer en REQUIRED',
+    ).not.toMatch(/REQUIRED\s*=\s*\[[^\]]*EXPO_PUBLIC_GOOGLE_CLIENT_ID'/);
+  });
+
+  it('lo que el script exige existe en el fichero de release de ejemplo', () => {
+    // El otro sentido del drift: que las variables que el guard exige esten
+    // **de verdad** en el `.env.release.example` que el script de release copia.
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const ejemplo = readFileSync(
+      join(import.meta.dirname, '../../mobile/.env.release.example'),
+      'utf8',
+    );
+
+    for (const name of [
+      'EXPO_PUBLIC_API_URL',
+      'EXPO_PUBLIC_WEB_ORIGIN',
+      'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID',
+    ]) {
+      expect(
+        new RegExp(`^${name}=`, 'm').test(ejemplo),
+        `${name} tiene que existir en .env.release.example, o el guard exige algo que el release no puede dar`,
+      ).toBe(true);
+    }
   });
 
   it('rejects a missing web origin', () => {
