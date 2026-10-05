@@ -1,5 +1,4 @@
 import type {
-  ItemIconColor,
   List,
   ListItem,
   ListKind,
@@ -329,7 +328,7 @@ export function useLists(filters: ListFilters = {}) {
    * train is a colour when the train stops.
    */
   const setTagColor = useCallback(
-    async (list: List, tag: string, color: ItemIconColor | null) => {
+    async (list: List, tag: string, color: string | null) => {
       // `?? {}` because a list that did not come through `withListDefaults`
       // arrives with no `tagColors` key at all, and a list with no colours
       // chosen is a map with nothing in it.

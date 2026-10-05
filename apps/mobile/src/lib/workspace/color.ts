@@ -17,6 +17,8 @@
  * file decides *what a space is*; that one decides how it is painted.
  */
 
+import { normalizaColor } from "@orbit-hub/contracts";
+
 import type { WashVariant, WashShape } from "./wash";
 import { DEFAULT_WASH, washOf } from "./wash";
 import { hslToHex, rgbToHsl } from "./hsl";
@@ -106,20 +108,28 @@ function entryOf(key: string | null | undefined) {
 /**
  * A `#RRGGBB` the app can draw, or `null`.
  *
- * The same shape the contract accepts, on purpose: if these two ever disagree,
- * the app will happily offer a colour the server then quietly turns into slate,
- * and the picker will look broken with nothing to look at. One shape, written
- * twice, is the price of the app not importing the validator at runtime.
+ * **The regex that used to be here is gone, and its justification with it.** It was
+ * `/^#[0-9a-fA-F]{6}$/`, written out again under a comment that said the shape was
+ * the one the contract accepts "on purpose" and that "one shape, written twice, is
+ * the price of the app not importing the validator at runtime". **That premise was
+ * false**: `apps/mobile` has imported `normalizaColor` from `@orbit-hub/contracts`
+ * for a while —`lib/lists/tag-colors.ts` calls it in three places— so there was no
+ * price to pay and the copy bought nothing. It was one of the seven hex rules in
+ * this repository, and one of the five that only took six digits, so a `#abc`
+ * reached this function as a perfectly good colour and came back `slate`.
+ *
+ * So it asks `normalizaColor` and gets the canonical form with it, which is also
+ * what `washOfCustom` wants: `#abc` is now `#AABBCC`, and the three-digit colour a
+ * person typed in the picker field is the colour the space is painted with.
  */
 function normaliseCustom(value: string | null | undefined): {
   hex: string;
   from: string;
   to: string;
 } | null {
-  if (typeof value !== "string") return null;
-  const limpio = value.trim();
-  if (!/^#[0-9a-fA-F]{6}$/.test(limpio)) return null;
-  return washOfCustom(limpio.toUpperCase());
+  const hex = normalizaColor(value);
+  if (hex === null) return null;
+  return washOfCustom(hex);
 }
 
 /** The colour of a space, or the default one when it has none. */

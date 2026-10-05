@@ -9,6 +9,7 @@ import type {
 } from '@orbit-hub/contracts';
 import {
   NOTE_DOCUMENT_MAX_BYTES,
+  normalizaColor,
   noteDocumentSchema,
   noteDocumentToPlainText,
   sanitiseTagColors,
@@ -264,10 +265,19 @@ export function sanitisePayload(
       // "is it in the list", which turned every custom colour into slate — and
       // did it silently, so the picker looked like it worked and the space came
       // back grey on every pull.
+      //
+      // **The check is `normalizaColor`, and the reason is the silent one.** This
+      // used to be a second hex regex of its own — six digits, `#` required, any
+      // case— and it was the sixth rule for "what is a colour string" in this
+      // repository. The app's own validators did not agree with it about `#` or
+      // about three digits, so a value a field had just accepted came back
+      // `slate` with no error anywhere. The contract owns that question and this
+      // file is on the other side of the wire, so this asks it, and it is the
+      // normalised hex that is stored: `#abc` and `a1b2c3` now store `#AABBCC` and
+      // `#A1B2C3` instead of being thrown away.
       const color = String(value).trim();
       const esNombre = (WORKSPACE_COLORS as readonly string[]).includes(color);
-      const esPropio = /^[#][0-9A-F]{6}$/.test(color.toUpperCase());
-      clean[key] = esNombre ? color : esPropio ? color.toUpperCase() : 'slate';
+      clean[key] = esNombre ? color : (normalizaColor(color) ?? 'slate');
       continue;
     }
 
@@ -290,10 +300,13 @@ export function sanitisePayload(
         clean[key] = null;
         continue;
       }
+      // **The same rule as `color`, and the same function**, which is why there is
+      // no regex left here. The fallback is `null` and not `slate`: the two ends are
+      // not the same field, and here `null` means "not chosen yet", which is the
+      // state the app already knows how to draw.
       const segundo = String(value).trim();
       const esNombre = (WORKSPACE_COLORS as readonly string[]).includes(segundo);
-      const esPropio = /^#[0-9A-F]{6}$/.test(segundo.toUpperCase());
-      clean[key] = esNombre ? segundo : esPropio ? segundo.toUpperCase() : null;
+      clean[key] = esNombre ? segundo : normalizaColor(segundo);
       continue;
     }
 

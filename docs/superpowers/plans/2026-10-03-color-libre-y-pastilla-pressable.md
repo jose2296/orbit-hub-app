@@ -14,7 +14,10 @@
 
 - El contraste mínimo de una pastilla es **4.5:1** (`MIN_LABEL_CONTRAST`), medido contra **su propio relleno**, nunca contra un fondo supuesto.
 - El relleno de una pastilla es el color **mezclado con la superficie al 14%**.
-- El texto se deriva en pasos de **2 puntos de luminosidad HSL**, 60 pasos como máximo, hacia **negro en claro** y **blanco en oscuro**.
+- El texto se deriva en pasos de **2 puntos de luminosidad HSL**, 60 pasos como máximo, hacia **negro en claro** y **blanco en oscuro** —
+  **y, si con la dirección del esquema no alcanza, en la contraria.** Una sola dirección NO funciona: sobre el relleno oscuro
+  `#1B2231`, `neutral` se queda en 3.80:1 aclarándose y `blue` baja a 3.46:1 oscureciéndose. El contraste con blanco y con negro
+  **multiplican por 21** siempre, así que al menos uno de los dos es **√21 ≈ 4,58**: se tiene que poder llegar a los dos extremos.
 - Un hex se acepta con **tres o seis** dígitos, con `#` o sin él, y **se guarda siempre en seis**: `#fff` entra y se guarda `#FFFFFF`. `esHex` de `lib/workspace/hsl.ts` ya acepta los dos anchos **a propósito** —su comentario dice que estrecharlo convirtió un camino que funcionaba en el color de reserva, y que dos tests lo cazaron en una sola ejecución—, así que el mapa tiene una sola representación de cada color y no dos.
 - El mapa `lists.tagColors` guarda `etiqueta -> hex`. Los nombres de la paleta se **normalizan a hex** al pasar por `sanitiseTagColors`; el valor guardado nunca es un nombre.
 - `derivedTagColor(nombre)` **no cambia**: sigue siendo el FNV-1a dentro de los doce, y su valor golden no se toca.
@@ -45,7 +48,17 @@ Cinco entradas que el spec insinúa y que es fácil no cubrir. Cada una tiene su
 
 **Files:**
 - Modify: `packages/contracts/src/tag-colors.ts`
+- Modify: `apps/mobile/src/hooks/use-lists.ts:327` — `setTagColor`
+- Modify: `apps/mobile/src/lib/lists/tag-colors.ts:22` — `planTagColorChange`, y `:115` — `labelTextColor`
+- Modify: `apps/mobile/src/components/lists/item-edit-sheet.tsx` — `onTagColor`, `pickColor`, `colorOf` y las props de `TagColorStrip`
 - Test: `apps/mobile/test/tag-colors.test.ts` — **los tests de `sanitiseTagColors` ya viven aqui**, no hay que crear un fichero de pruebas en el contrato. Se anaden aqui los nuevos.
+
+> **Por que toca cuatro ficheros mas.** Cambiar `TagColors` de
+> `Record<string, ItemIconColor>` a `Record<string, string>` deja de compilar todo
+> lo que toma el color como enum, y **`use-lists.ts` no es de ninguna otra tarea**.
+> Esta tarea **ensancha las firmas, sin cambiar comportamiento**; el comportamiento
+> nuevo llega en la Tarea 5 sobre el mismo `item-edit-sheet.tsx`. La API no se toca:
+> `content-schema.ts:325` usa `TagColors` como `$type` y no asume el enum.
 
 **Interfaces:**
 - Consumes: nada de otras tareas.
@@ -68,7 +81,7 @@ it("acepta un hex libre", () => {
 it("convierte un nombre viejo de la paleta en su hex", () => {
   // Un build anterior guardaba "green". No se puede descartar: es un color que
   // alguien eligió, y perderlo en silencio es peor que perder el formato.
-  expect(sanitiseTagColors({ Mercadona: "green" })).toEqual({ Mercadona: "#0E9F6E" });
+  expect(sanitiseTagColors({ Mercadona: "green" })).toEqual({ Mercadona: "#16A34A" });
 });
 
 it("descarta lo que no es un color y conserva lo demas", () => {
@@ -122,17 +135,29 @@ En `packages/contracts/src/tag-colors.ts`:
 Run: el mismo comando.
 Expected: PASS los cinco.
 
-- [ ] **Step 5: Actualizar el test de la API que fija el formato viejo**
+- [ ] **Step 5: Ensanchar las cuatro firmas que toman el color**
 
-`apps/api/test/sync.test.ts` tiene `expect(list.body.data.tagColors).toEqual({ Mercadona: 'green' })`. Pasa a `toEqual({ Mercadona: '#0E9F6E' })` y el comentario de al lado, que dice "el que no pudo se descartó en vez de guardarse", debe actualizarse: ahora lo que no puede es `"no-es-un-color"`, y lo que **no** puede pasar es un nombre viejo siendo descartado.
+Sin cambiar comportamiento, solo el tipo:
+
+- `use-lists.ts:327` — `setTagColor(list, tag, color: string | null)`, y quita `ItemIconColor` del import si se queda sin uso.
+- `tag-colors.ts:22` — `planTagColorChange(map, tag, color: string | null)`.
+- `tag-colors.ts:115` — `labelTextColor(colour: string, ...)`. **Esta la borra la Tarea 3**; aquí solo se ensancha para que el arbol compile.
+- `item-edit-sheet.tsx` — `onTagColor` (`:70`), `pickColor` (`:333`), `colorOf` (`:252`) y las props de `TagColorStrip` (`:863`, `:938`, `:939`), todas a `string`.
+
+Run: `npm run typecheck --workspace @orbit-hub/mobile`
+Expected: **limpio**. Si algo sigue quejándose de `ItemIconColor`, es un consumidor que no estaba en la lista y hay que encontrarlo antes de seguir.
+
+- [ ] **Step 6: Actualizar el test de la API que fija el formato viejo**
+
+`apps/api/test/sync.test.ts` tiene `expect(list.body.data.tagColors).toEqual({ Mercadona: 'green' })`. Pasa a `toEqual({ Mercadona: '#16A34A' })` y el comentario de al lado, que dice "el que no pudo se descartó en vez de guardarse", debe actualizarse: ahora lo que no puede es `"no-es-un-color"`, y lo que **no** puede pasar es un nombre viejo siendo descartado.
 
 Run: `npm run test --workspace @orbit-hub/api`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add packages/contracts/src/tag-colors.ts apps/mobile/test/tag-colors.test.ts apps/api/test/sync.test.ts
+git add packages/contracts/src/tag-colors.ts apps/mobile/src/hooks/use-lists.ts apps/mobile/src/lib/lists/tag-colors.ts "apps/mobile/src/components/lists/item-edit-sheet.tsx" apps/mobile/test/tag-colors.test.ts apps/api/test/sync.test.ts
 git commit -m "El color de una etiqueta es un hex, y los nombres viejos se convierten"
 ```
 
@@ -157,12 +182,26 @@ git commit -m "El color de una etiqueta es un hex, y los nombres viejos se convi
 
 ```ts
 it("el relleno es el color mezclado con la superficie", () => {
-  // 14% de #0E9F6E sobre #FFFFFF.
-  expect(labelPillColors("#0E9F6E", "#FFFFFF", "light").fill).toBe("#E9FAF3");
+  // La composicion se afirma con `mixHex` y no con un hex escrito a mano: el
+  // redondeo del ultimo canal es lo unico que haria fallar un numero fijo, y eso
+  // no es lo que este test comprueba.
+  expect(labelPillColors("#16A34A", "#FFFFFF", "light").fill).toBe(
+    mixHex("#16A34A", "#FFFFFF", 0.14),
+  );
+});
+
+it("mixHex interpola y redondea", () => {
+  // 127.5 rounds to 128: el unico valor de la mezcla que no admite dos respuestas.
+  expect(mixHex("#000000", "#FFFFFF", 0.5)).toBe("#808080");
+  expect(mixHex("#16A34A", "#FFFFFF", 0)).toBe("#16A34A");
+  expect(mixHex("#16A34A", "#FFFFFF", 1)).toBe("#FFFFFF");
 });
 
 it("el texto llega a 4.5:1 contra su propio relleno", () => {
-  for (const color of ["#0E9F6E", "#C2740A", "#2563EB", "#9333EA", "#E11D48"]) {
+  // Los hex son de `ICON_COLORS`, la paleta de doce. **No** son los del tema:
+  // `success` es #0E9F6E y `green` de la paleta es #16A34A, y con el valor
+  // equivocado la pastilla se dibujaria de un color y se guardaria otro.
+  for (const color of ["#16A34A", "#D97706", "#2563EB", "#9333EA", "#E11D48"]) {
     for (const scheme of ["light", "dark"] as const) {
       const surface = scheme === "light" ? "#FFFFFF" : "#111827";
       const { fill, text } = labelPillColors(color, surface, scheme);
@@ -188,7 +227,7 @@ it("lee con un blanco puro y con un negro puro", () => {
 
 it("un hex libre sale tal cual y un nombre viejo sale en su hex", () => {
   expect(tagColorHex("#3B5FDE")).toBe("#3B5FDE");
-  expect(tagColorHex("green")).toBe("#0E9F6E");
+  expect(tagColorHex("green")).toBe("#16A34A");
 });
 ```
 
@@ -212,9 +251,18 @@ it("el validador del movil y el del contrato aceptan lo mismo", () => {
 ```
 
   La razon de que este test exista: si un dia `esHex` se estrecha o `normalizaColor` se ensancha, el usuario tendria un campo que acepta un color y un mapa que lo guarda y otro que no. Son dos y solo uno puede tener razon.
-- `labelPillColors`: `fill = mixHex(hex, surface, 0.14)`; y `text` buscando desde `hex`, mover la luminosidad HSL de dos en dos hacia 0 (claro) o 100 (oscuro), parando cuando `contrastRatio(candidato, fill) >= MIN_LABEL_CONTRAST` o al llegar al extremo. 60 pasos. Devuelve el primer candidato que pasa.
+- `labelPillColors`: `fill = mixHex(hex, surface, 0.14)`. Para `text`, **dos barridos**: primero la dirección del esquema —luminosidad
+  HSL hacia 0 en claro, hacia 100 en oscuro—, y si tras 60 pasos no ha llegado a
+  `MIN_LABEL_CONTRAST`, **el barrido contrario**. El segundo no es opcional: la version de
+  una sola dirección **falla con cuatro de los doce** sobre el relleno oscuro.
+  Devuelve el primer candidato que pasa.
 
-  Deja escrito en el comentario **por qué converge**: oscurecer acaba en negro y aclarar en blanco, y negro sobre un relleno claro y blanco sobre uno oscuro siempre pasan. Ese es el motivo por el que desaparece la puerta de contraste en vez de moverse.
+  Deja escrito en el comentario **por qué converge**, y con la cuenta, no con la
+  intuicion: los contrastes con blanco y con negro **multiplican por 21** para
+  cualquier luminancia de relleno, `(1,05/(L+0,05))·((L+0,05)/0,05) = 21`, asi que
+  **al menos uno de los dos es √21 ≈ 4,58**. Ese es el motivo por el que desaparece la
+  puerta de contraste en vez de moverse, y por el que hacen falta **los dos**
+  barridos: hay que poder llegar a los dos extremos.
 
 - [ ] **Step 4: Correr y ver que pasa**
 
@@ -261,12 +309,33 @@ En `TagChip`, sustituye el `fill`/`text` fijo por una llamada a `labelPillColors
 
 `colors?.[tag]` es ahora un hex; `derivedTagColor(tag)` sigue devolviendo un nombre. **Pasa los dos por `tagColorHex`**, que es lo que hace que un nombre viejo guardado en el mapa siga pintándose en su color y no en neutral.
 
-Borra `labelTextColor` si nada más la usa, y borra `MIN_LABEL_CONTRAST` de este fichero si queda solo en `tag-colors.ts`. **No borres el constante del contrato** si algo lo importa.
+Borra `labelTextColor` — que tiene **una** llamada de produccion, en `tag-chip.tsx:61`, y seis
+de test en `tag-color-plan.test.ts`, que Task 3 borra—.
+
+**`MIN_LABEL_CONTRAST` NO se borra, en ningun caso.** `labelPillColors` lo usa, y es
+permanente: es el liston que la pastilla tiene que cruzar. El plan de antes decia
+"borralo si queda solo en este fichero", y despues de esta tarea **si** queda solo en
+este fichero —porque `labelTextColor` era la otra llamada— y borrarlo rompe la funcion
+que Task 4 y Task 5 heredan. Que el revisor de esta tarea loوصلo.
+
+Y los tests **deben llevar el 4.5 escrito a mano**, no leer el constante: este fichero
+dice en su cabecera que el test lo escribe a proposito para que bajen los dos a la vez,
+y los tests nuevos de esta tarea lo leen. Si alguien baja `MIN_LABEL_CONTRAST` a 4.0, con
+el test leyendo el constante **toda la suite se pone verde** mientras cada pastilla
+baja del liston en silencio. Hoy el unico sitio con un 4.5 escrito a mano es
+`tag-color-plan.test.ts`, **y Task 3 lo borra entero**: sin esto, la puerta se puede
+bajar sin que nada lo note.
 
 - [ ] **Step 4: Correr los dos Conjuntos**
 
 Run: `npx vitest run apps/mobile/test/tag-colors.test.ts` y `npm run test --workspace @orbit-hub/mobile`
-Expected: PASS. Si algún test viejo falla por `labelTextColor`, ese test **fixa la puerta que se está quitando**: bórralo y deja en su lugar el de arriba.
+Expected: PASS.
+
+**Y borra aqui, no en la Tarea 7, los dos tests que fijan la puerta de contraste**:
+`"usa el color del tema cuando el de la etiqueta no se lee"` y `"pinta el color
+del tema antes que un color que no se puede calcular"`. Fijan exactamente lo que
+esta tarea quita, asi que entre la Tarea 3 y la Tarea 7 el arbol estaria en rojo, y
+la Tarea 7 leeria tests que ya no existen. En su lugar queda el de arriba.
 
 - [ ] **Step 5: Commit**
 
@@ -510,7 +579,13 @@ git commit -m "La insignia y la pastilla abren la tarea, sin envoltorio"
 
 - [ ] **Step 1: Las comprobaciones nuevas, en el script**
 
-Las 55 que hay **siguen siendo 55**: se añaden, no se sustituyen. Y las dos que hoy fijan la puerta de contraste ("usa el color del tema cuando el de la etiqueta no se lee" y "pinta el color del tema antes que un color que no se puede calcular") **se borran**, porque fijan justo lo que este trabajo quita; en su lugar van las suyas:
+**Lo que hay que conservar es todo lo demas**, no un numero: el script crece, y las **dos** comprobaciones
+de la puerta de contraste —"usa el color del tema cuando el de la etiqueta no se lee" y
+"pinta el color del tema antes que un color que no se puede calcular"— **quedan borradas desde la
+Tarea 3**, porque fijan justo lo que este trabajo quita. Cada comprobacion existente que siga
+siendo cierta se queda; y si al mirar el resultado una se ha quedado sin sentido, **se dice en
+el informe en vez de borrarse por su cuenta**: el script no comprueba sus propios conteos, asi
+que una borrada de mas no suena en ninguna parte. En su lugar van estas:
 
 - **`el texto de la pastilla nunca sale en el color del tema`** — leído del DOM, en claro y en oscuro, para al menos un color de cada uno de los doce deducidos y para tres hex libres. Compara el color computado del texto con `theme.colors.text` de cada esquema.
 - **`el texto llega a 4.5:1 contra su propio relleno`** — la misma cuenta, por pastilla, con la aritmética de `contrastRatio` metida en el navegador.

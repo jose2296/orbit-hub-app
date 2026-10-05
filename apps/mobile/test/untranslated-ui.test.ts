@@ -67,10 +67,16 @@ const VISIBLE =
  * `checkbox.tsx` y hay un test que lo fija). Y "OrbitHub" es el nombre de la app,
  * que no se traduce en ninguna lengua.
  *
+ * `#1F6FEB` es un **formato**, no una palabra: es el `placeholder` del campo donde
+ * se escribe el color de una etiqueta a mano, y `#RRGGBB` se escribe igual en
+ * español que en inglés o en japonés. Traducirlo pondria un ejemplo que no funciona
+ * en el pais que lo lea. Es el mismo tipo de cosa que "0 / 300" o "km/h": el
+ * formato es universal y lo que va traducido es lo que lo rodea.
+ *
  * La lista es corta a propósito y está escrita aquí: un filtro que acepta
  * cualquier cosa es un filtro que no filtra.
  */
-const NO_ES_TRADUCIBLE = new Set(['OrbitHub']);
+const NO_ES_TRADUCIBLE = new Set(['OrbitHub', '#1F6FEB']);
 
 /**
  * Ficheros que hablan de la interfaz sin pintarla.

@@ -1,3 +1,5 @@
+import { normalizaColor } from '@orbit-hub/contracts';
+
 import { keyValueStore } from '@/lib/storage/key-value';
 
 /**
@@ -21,6 +23,14 @@ import { keyValueStore } from '@/lib/storage/key-value';
  *
  * Local, like every other preference here: it is a convenience, it is worthless
  * offline, and syncing it would be a write for something nobody reads twice.
+ *
+ * **The shape of the colour is not decided here.** `ES_HEX` lived in this file —
+ * six digits, `#` and uppercase— which made it one of the seven hex rules in this
+ * repository and the narrowest of the seven. It asks `normalizaColor` now, which
+ * owns the shape, and it stores **what comes back**: six digits, uppercase. The
+ * only thing that really changes is what is accepted: an older row holding
+ * `#a1b2c3` in lower case comes out as `#A1B2C3` instead of vanishing from the row
+ * without a word, because what this file has always written was already that shape.
  */
 
 const KEY = 'orbithub:recent-workspace-colors';
@@ -28,14 +38,17 @@ const KEY = 'orbithub:recent-workspace-colors';
 /** Enough to be useful on a row and few enough to stay a row. */
 const MAX = 8;
 
-const ES_HEX = /^#[0-9A-F]{6}$/;
-
 function read(): { desde: string[]; hasta: string[] } {
   const parsed = keyValueStore.getJson<{ desde?: unknown; hasta?: unknown }>(KEY);
+  // The `map` goes **before** the filter, and why: the filter is the contract, which
+  // is what answers whether something is a colour, but what is stored has to be the
+  // **normalised** form it hands back. Filtering first and keeping the raw string
+  // would decide the shape here again, which is the thing being removed.
   const clean = (value: unknown): string[] =>
     Array.isArray(value)
       ? value
-          .filter((v): v is string => typeof v === 'string' && ES_HEX.test(v))
+          .map((v) => normalizaColor(v))
+          .filter((v): v is string => v !== null)
           .slice(0, MAX)
       : [];
   return { desde: clean(parsed?.desde), hasta: clean(parsed?.hasta) };
@@ -61,8 +74,12 @@ export function recentColors(lado: 'desde' | 'hasta'): string[] {
  * is the same reason the picker does not write on a drag.
  */
 export function rememberColor(lado: 'desde' | 'hasta', color: string): void {
-  const hex = color.trim().toUpperCase();
-  if (!ES_HEX.test(hex)) return;
+  // **The stored hex is the one the contract returns, not the one that arrived.**
+  // It used to be `color.trim().toUpperCase()` behind an `ES_HEX` — a `replace` and a
+  // `toUpperCase` deciding the shape on their own. Now the owner decides it, and
+  // what is written is what the owner answered.
+  const hex = normalizaColor(color);
+  if (hex === null) return;
   const todas = read();
   const propias = todas[lado].filter((c) => c !== hex);
   write({ ...todas, [lado]: [hex, ...propias].slice(0, MAX) });

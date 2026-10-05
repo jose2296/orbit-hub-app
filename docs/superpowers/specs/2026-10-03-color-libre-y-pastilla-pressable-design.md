@@ -97,19 +97,56 @@ devuelve `{ relleno, texto }`:
 
 - **relleno**: el color mezclado con la superficie al 12-15%. Un tinte, como
   `accentSoft`.
-- **texto**: el mismo tono **oscurecido en claro y aclarado en oscuro**, en pasos
-  pequenos, hasta que llega a 4.5:1 contra ese relleno.
+- **texto**: el mismo tono movido en la **direccion del esquema** —oscurecido en
+  claro, aclarado en oscuro— en pasos pequenos, hasta que llega a 4.5:1 contra ese
+  relleno. **Y si con esa direccion no basta, se busca en la contraria.** No es un
+  extra ni una prefs: es la mitad de la garantia.
 
-El numero de mezcla y el paso los sale de la aritmetica, no de un ojo: el relleno
-tiene que ser tal que el color oscurecido lo alcance, y el paso es lo mas fino que
-no recorre el tinte entero para nada.
+**Por que hacen falta las dos direcciones.** La version de una sola direccion no
+funciona, y se comprobo midiendo los doce de la paleta contra el relleno oscuro, que
+es `surfaceMuted` `#1B2231`:
+
+| color | relleno al 14% | con blanco | con negro |
+|---|---|---|---|
+| `neutral` | `#7A8397` | **3.80:1** | 5.52:1 |
+| `amber` | `#BE6B0C` | **3.96:1** | 5.30:1 |
+| `green` | `#179146` | **4.06:1** | 5.18:1 |
+| `orange` | `#CD5011` | **4.42:1** | 4.75:1 |
+| `blue` | `#245AD1` | 6.07:1 | **3.46:1** |
+
+Cuatro de los doce **no llegan a 4.5:1 aclarandose**, y no por poco: el relleno ya
+esta en `L = 0.21` y el blanco esta en 1.0, no queda recorrido. Y `blue` falla al
+oscurecerse. **Ninguna direccion sola basta**, y el fallo es de la aritmetica, no del
+color que haya elegido la persona.
+
+El numero de mezcla y el paso los sale la aritmetica y no de un ojo, y el paso lo
+acota la tolerancia de la medicion del navegador: el mas fino que no hace fallar una
+medida por el redondeo del ultimo canal.
 
 ### Por que esto siempre converge
 
-Oscurecer un tono acaba en negro y aclararlo acaba en blanco, y **negro sobre un
-relleno claro siempre pasa y blanco sobre un relleno oscuro tambien**. No hay color
-que se quede sin legible en ningun esquema. Ese es el motivo de que la puerta
-desaparezca en vez de moverse: no hay caso al que volver.
+El contraste de un relleno con **blanco** y con **negro** multiplican siempre por
+**21**, sea cual sea la luminancia del relleno:
+
+```
+(1,05 / (L + 0,05)) · ((L + 0,05) / 0,05) = 21
+```
+
+Asi que **al menos uno de los dos es √21 ≈ 4,58**, que pasa 4.5:1. No es una
+esperanza: es un producto constante, y se cumple para cualquier relleno, incluido uno
+que no sea un color.
+
+De ahi las dos cosas que hacen falta **juntas**: se tiene que llegar a los dos
+extremos —blanco y negro son alcanzables porque aclarar y oscurecer van hasta el
+final— y **al menos uno de los dos pasa siempre**. Ese es el motivo de que la puerta
+de contraste **desaparezca en vez de moverse**: no hay caso al que volver, y no hace
+falta un `<pre>` que no deberia existir.
+
+**Y si con la direccion del esquema no se llega, se prueba la otra.** El `scheme`
+decide por donde se empieza, y por que el texto se incline hacia el lado del fondo; no
+que ese sea el unico lado que existe. La version de una sola direccion se describio
+aqui al principio y **no funciona**: esta medida la desmonta, con numeros, en la
+seccion de arriba.
 
 ### Lo que se ve
 
