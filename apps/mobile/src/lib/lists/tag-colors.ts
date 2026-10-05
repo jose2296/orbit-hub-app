@@ -148,15 +148,14 @@ export function contrastRatio(a: string, b: string): number {
  * cuenta**, sino el 14% de mezcla. Afinar el paso **no alarga el viaje**: la cuenta
  * sale en cuanto un candidato pasa, asi que un paso mas fino cae en un candidato
  * **que pasa igual de facil, y a veces en el mismo hex** —la rejilla fina contiene a
- * la gruesa, y el mismo punto esta en las dos—, con el contraste un poco mas bajo y
- * siempre por encima de la linea —el bucle solo devuelve dentro del `if` que la
- * exige, asi que "por debajo" no puede salir—. Lo que **no** se puede decir es que el
- * paso mas fino caiga siempre en otro hex, ni que el contraste siempre baje: eso
- * depende del color, y si el viaje se da la vuelta **no lo decide el paso sino
- * `clamp01`, que es monotono y no puede dar marcha atras**. Quien quiera que el
- * texto se parezca mas al color elegido tiene **una sola palanca y es
- * `MEZCLA_DE_LA_PASTILLA`**: subirla
- * acerca el relleno al color y acorta el viaje, y bajarla hace lo contrario. Cuanto
+ * la gruesa, y el mismo punto esta en las dos—, y siempre por encima de la linea
+ * —el bucle solo devuelve dentro del `if` que la exige, asi que "por debajo" no puede
+ * salir—. Lo que **no** se puede decir es que el paso mas fino caiga siempre en otro
+ * hex, ni que el contraste baje: eso depende del color, y si el viaje se da la
+ * vuelta **no lo decide el paso sino `clamp01`, que es monotono y no puede dar
+ * marcha atras**. Quien quiera que el texto se parezca mas al color elegido tiene
+ * **una sola palanca y es `MEZCLA_DE_LA_PASTILLA`**: subirla acerca el relleno al
+ * color y acorta el viaje, y bajarla hace lo contrario. Cuanto
  * se puede subir sin perder legibilidad es la pregunta abierta de esta funcion, y la
  * razon por la que el 14% no esta canonizado en ningun sitio mas que en la constante
  * de arriba. El numero que dice por que no se puede subir sin mas es el color de la
@@ -313,9 +312,8 @@ export function labelPillColors(
  * **Es tambien la unica palanca sobre el aspecto de la pastilla.** Para llegar a
  * 4.5:1 sobre un tinte del 14%, el texto tiene que recorrer mucho camino en la
  * luminosidad, y ese camino es el que hace que el color elegido se lea en el
- * relleno y no en el texto. El paso de la cuenta no lo acorta: con un paso mas fino
- * el hex sale practicamente el mismo, asi que quien quiera que el texto se parezca
- * mas al color elegido sube o baja **aqui** y no toca el paso de abajo. El bloque de
+ * relleno y no en el texto. Quien quiera que el texto se parezca mas al color
+ * elegido sube o baja **aqui** y no toca el paso de la cuenta. El bloque de
  * `labelPillColors` explica el porque con las cifras.
  */
 const MEZCLA_DE_LA_PASTILLA = 0.14;
@@ -332,11 +330,9 @@ const MEZCLA_DE_LA_PASTILLA = 0.14;
  * empieza a estar mal sin que nadie se entere.
  *
  * **Lo que decide el aspecto de la pastilla es el porcentaje de la mezcla, no este
- * numero.** Con un paso mas fino el hex sale practicamente el mismo —la diferencia es
- * de milésimas—, asi que afinar la cuenta no acerca el texto al color elegido; eso se
- * hace con `MEZCLA_DE_LA_PASTILLA`, que esta justo encima. Aqui 2 es la resolucion con
- * la que la cuenta encuentra el sitio, y llega a un color que se puede leer en el
- * codigo sin mas decimales de los necesarios.
+ * numero.** Acercar el texto al color elegido se hace con `MEZCLA_DE_LA_PASTILLA`, que
+ * esta justo encima. Aqui 2 es la resolucion con la que la cuenta encuentra el sitio, y
+ * llega a un color que se puede leer en el codigo sin mas decimales de los necesarios.
  *
  * **Y si cambia este numero, la tabla lo dice.** `los doce colores de la paleta
  * salen exactamente en estos hex`, en `tag-colors.test.ts`, clava que color sale de

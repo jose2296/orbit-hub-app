@@ -264,24 +264,30 @@ describe("el mapa de colores que se guarda", () => {
   });
 
   it("el validador del movil y el del contrato aceptan lo mismo", () => {
-    // **Hay cinco reglas de hex en este repositorio y no pueden ser una.** Las dos
+    // **Hay siete reglas de hex en este repositorio y no pueden ser una.** Las dos
     // que este test ata son `esHex` —en el movil, porque el selector de espacios lo
     // usa desde antes de que existieran las etiquetas— y `normalizaColor` —en el
     // contrato, porque `packages/contracts` no puede importar de `apps/mobile` y es
     // el servidor —no el cliente— quien normaliza lo que se guarda. Las dos aceptan
     // tres o seis digitos.
     //
-    // **Las otras tres aceptan solo seis, y el mismo `#fff` que el selector de
+    // **Las otras cinco aceptan solo seis, y el mismo `#fff` que el selector de
     // etiquetas acepta y el contrato guarda, el selector de espacios lo rechaza**:
     // `ES_HEX` en `workspace-color-picker.tsx`, `ES_HEX` en
-    // `lib/workspace/recent-colors.ts`, y la regla de `color`/`colorTo` en
-    // `sync-service.ts`, que es la del servidor. Ni siquiera se parecen entre si: la
-    // de los recientes exige `#` y mayusculas, y la del servidor exige `#`.
+    // `lib/workspace/recent-colors.ts`, la regla de `color`/`colorTo` de
+    // `sync-service.ts` —un solo regex en dos sitios—, `workspaceColorHexSchema` en
+    // `packages/contracts/src/workspace.ts`, y `normaliseCustom` en
+    // `lib/workspace/color.ts`. Ni siquiera se parecen entre si: la de los recientes y la
+    // del esquema del espacio exigen `#` **y mayusculas**, las de `sync-service.ts` y
+    // `normaliseCustom` exigen `#` y aceptan cualquier caso, y la del selector de
+    // espacios no exige `#`. `normaliseCustom` es la contraparte de
+    // `workspaceColorHexSchema` —el comentario de la primera dice que escribe la misma
+    // forma que acepta el contrato, a proposito—.
     //
     // **Eso es preexistente y esta fuera de este plan**, asi que este comentario lo
     // nombra y no lo arregla: `workspace-color-picker.tsx` no es de esta rama, y la
     // regla que mas se le acerca es `esHex`. Lo que este test ata son **las dos
-    // primeras y nada mas** —cambiar las otras tres no lo rompe, y hacerlas iguales
+    // primeras y nada mas** —cambiar las otras cinco no lo rompe, y hacerlas iguales
     // tampoco es trabajo suyo—.
     //
     // Lo que los ata es esta lista, y solo esta lista. Si un dia uno se estrecha o
