@@ -112,9 +112,10 @@ redirigirlo por entorno. Ese cambio **no** se comitea.
 
 ## El hueco horario: lo que dice el spec y lo que pasa
 
-El ruling del spec es: *una hora local que no existe no se pierde, cae en el
+El ruling del spec era: *una hora local que no existe no se pierde, cae en el
 primer instante valido despues del hueco*. **Medido el 2026-10-05**, con
-`Europe/Madrid` y las 02:30 de los domingos:
+`Europe/Madrid` y las 02:30 de los domingos. **El spec quedo corregido** con estas
+cifras el mismo dia; lo que sigue es el hallazgo que lo motivo:
 
 | Que se pregunta | Domingo normal, 2026-03-22 | Dentro del hueco, 2026-03-29 | Semana despues, 2026-04-05 |
 | --- | --- | --- | --- |
@@ -137,11 +138,12 @@ Cuatro cosas que cambian como se implementa el motor:
    dia al ano, es un fallo en cada ocurrencia, de una hora en invierno y dos en
    verano. La lectura correcta es tomar los componentes UTC como hora local de la
    zona (`fromObject`).
-4. **La frase del spec no es literal.** El primer instante valido despues del
-   hueco son las `03:00`; luxon devuelve `03:30`, porque conserva los minutos y
-   desplaza lo que mide el salto. `03:30` es la respuesta sensata y la que hay que
-   documentar, pero no es lo que dice la frase. **El spec necesita esa correccion**
-   y la decision es de quien lo escribe.
+4. **La frase del spec no era literal, y ya se corrigio.** El primer instante
+   valido despues del hueco son las `03:00`; la resolucion devuelve `03:30`, porque
+   conserva los minutos y desplaza lo que mide el salto. `03:30` es la respuesta
+   sensata y es la que dice el spec ahora: un recordatorio de las 02:30 suena a las
+   03:30 el domingo del cambio y a las 02:30 el resto del ano. Corregir el spec en
+   vez del test es lo que tocaba: el test estababien escrito, la frase estaba mal.
 
 ## Consecuencias
 
