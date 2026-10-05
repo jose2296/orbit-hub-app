@@ -751,6 +751,26 @@ export function useListItems(listId: string | undefined) {
          * compiler lets the drag compile.
          */
         stateId?: string | null;
+        /**
+         * Where the row sits inside its own column, counted from zero.
+         *
+         * **And it is here because `moveItemTo` cannot be used for a board.** That
+         * function is the only other thing in the app that writes `position`, and it
+         * renumbers **the whole list**: `reorderItems(current, …)` runs over
+         * `store.listCachedItems(listId)`, which is every row of the list and not the
+         * rows of one column. So a drag inside "Ready" would also write a `position`
+         * onto every row of "Done" — the same rows, in an order nobody asked for,
+         * in operations that outlive the session and that another device has to
+         * merge. That is exactly what `renumberWithinState` exists to avoid, and it
+         * is why the writer on the board screen is this one and not the drag of a
+         * flat list.
+         *
+         * The caller sends **only the rows whose number changed**: a partial update
+         * would leave the other devices with an order they cannot explain, which is
+         * what the comment on `moveItemTo` says about the same field, and the same
+         * reason applies here.
+         */
+        position?: number;
       },
     ) => {
       if (!listId) return;

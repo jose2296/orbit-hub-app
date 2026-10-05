@@ -26,16 +26,18 @@ import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
-import type { BoardStates } from "@orbit-hub/contracts";
+import type { BoardStates, ListItem } from "@orbit-hub/contracts";
 import {
   columnLayout,
   columnOffset,
   countInState,
   deleteStatePlan,
   newState,
+  renumberWithinState,
   stateIdToWrite,
   tasksInState,
 } from "@/lib/lists/board";
+import { nextOrderFromDrop } from "@/lib/lists/drag";
 import {
   anchorableColumns,
   maxTrackScroll,
@@ -716,6 +718,85 @@ export default function BoardScreen() {
     await updateItem(fila, { stateId: nuevo.id });
   }
 
+  /* ------------------------------------------- reordenar dentro de un estado -- */
+
+  /**
+   * A drop inside one column, **and it writes one `position` per row that changed
+   * and nothing else.**
+   *
+   * **The order is `nextOrderFromDrop`'s and not arithmetic written here.** That is
+   * the brief's own instruction and the reason is worth keeping in the code: the
+   * arithmetic of dropping into a gap is already tested — `test/drag.ts` — and it
+   * has broken once already, which is why `moveState` borrows it rather than
+   * reimplementing it. The same function answers here, on the array of **ids**
+   * rather than of rows, and its answer is the identity comparison below.
+   *
+   * **A drop that went nowhere returns before anything is written**, because
+   * `nextOrderFromDrop` hands back the very array it was given when the row is
+   * already where it would land — `moveState` says so about the same call. It is
+   * compared by identity and not by contents: a copy would make the two arrays equal
+   * for a drag that did nothing, and the loop below would then write every row of
+   * the column with the number it already has.
+   *
+   * **Which rows get a write is `renumberWithinState`'s answer and not this loop's**,
+   * and that is the whole reason the function exists. It returns **only the rows of
+   * the column it was asked about**, so a drag inside "Ready" cannot renumber "Done":
+   * numbering every task of the list would write a `position` onto rows of other
+   * columns, in an order nobody asked for, and the outbox would carry them for a
+   * session and another device would have to merge them.
+   *
+   * It is handed **a list built from the new order**, whose `position` is the index
+   * each row lands on, so the sort inside it — `tasksInState` orders by `position`
+   * and then by `createdAt` — reproduces exactly that order and its map is the set
+   * of writes. **It is a gate and not a second reordering**: the order came from
+   * `nextOrderFromDrop` one line above.
+   *
+   * **The rows keep everything they have and only their number moves**, which is the
+   * whole of the `flatMap`: `renumberWithinState` reads `stateId` and `createdAt` off
+   * every row it sorts, so a row rebuilt out of its id would sort by nothing.
+   *
+   * **The rows whose number did not change are skipped**, and that is what keeps a
+   * drag from index 0 to index 3 at four writes instead of twelve: only the four
+   * rows between the two places have a new number. **`updateItem` is local first**,
+   * so the column is redrawn in the new order before this function ends, and the
+   * outbox carries one operation per row that moved — coalesced by the outbox if two
+   * drops happen inside one batch.
+   *
+   * **The `await` per row is the one `borrarColumna` has, and for the same reason**:
+   * `localUpdate` does `getLocalStoreReady()`, `upsertCached` and `enqueueOperation`,
+   * each one awaited, so the outbox keeps the order of this loop. Here the operations
+   * are independent and each carries its own id, so another order would still apply —
+   * the chain is kept because it is the shape this file already writes twice.
+   *
+   * **And the `readOnly` guard is inside and not only on the prop.** The gesture is
+   * not there for a viewer — `onReorder` is not passed — so this line is unreachable
+   * today, y es lo que deja el puerta cerrada para el dia en que se pase el
+   * callback sin querer: un `position` encolado por un visor llega al servidor como
+   * una operacion rechazada dentro de un push que contesta 200, que desde aqui no se
+   * ve, y la tarjeta vuelve a su sitio sin que nada diga por que.
+   */
+  async function reordenar(stateId: string, taskId: string, hasta: number) {
+    if (readOnly) return;
+    const columna = columnas.find((c) => c.state.id === stateId);
+    const tareas = columna?.tasks ?? [];
+    const ids = tareas.map((t) => t.id);
+    const idsSiguientes = nextOrderFromDrop(ids, taskId, hasta);
+    /** By identity: a drop that went nowhere writes nothing. See the note below. */
+    if (idsSiguientes === ids) return;
+
+    const porId = new Map<string, ListItem>(tareas.map((t) => [t.id, t]));
+    const conOrden = idsSiguientes.flatMap((id, index) => {
+      const fila = porId.get(id);
+      return fila ? [{ ...fila, position: index }] : [];
+    });
+    const cambios = renumberWithinState(conOrden, states, stateId);
+    for (const [id, position] of cambios) {
+      const fila = items.find((i) => i.id === id);
+      if (!fila || fila.position === position) continue;
+      await updateItem(fila, { position });
+    }
+  }
+
   /**
    * Anchor the board on a column, **and move the track to it as well.**
    *
@@ -1353,6 +1434,28 @@ export default function BoardScreen() {
                       }}
                       onOpenIcon={(item) =>
                         setEditing({ itemId: item.id, page: "icon" })
+                      }
+                      /*
+                        **El reordenado dentro de la columna, y la puerta se cierra
+                        entera para un tablero en solo lectura.** `onReorder` es lo que
+                        la columna necesita para que exista el gesto —`sePuedeReordenar`
+                        en `board-column.tsx` lo pregunta—, asi que no pasarlo aqui es
+                        lo que hace que un visor no pueda levantar una tarjeta: no un
+                        gesto que se levanta y no puede soltar, ni una tarjeta que
+                        vuelve con un rechazo del servidor dentro de un push que
+                        contesta 200 y nadie ve.
+
+                        Y la funcion que recibe el id de su columna, porque el escritor
+                        es esta pantalla y `renumberWithinState` pide **tres**
+                        argumentos: la columna sobre la que se reordena va aqui y no
+                        dentro de la columna, que no escribe nada.
+                      */
+                      onReorder={
+                        readOnly
+                          ? undefined
+                          : (taskId, toIndex) => {
+                              void reordenar(state.id, taskId, toIndex);
+                            }
                       }
                     />
                   </View>

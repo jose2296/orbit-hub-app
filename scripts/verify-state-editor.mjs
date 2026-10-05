@@ -481,6 +481,74 @@ const TABLERO = `(() => {
 
 const readBoard = (tab) => tab.evaluate(TABLERO);
 
+/**
+ * Los titulos de las tarjetas de una columna, **en el orden en que estan dibujadas**.
+ *
+ * Se leen del `testID` de la tarjeta —`board-card-<id>`— y no del `item-row-<id>` de
+ * la fila: la caja de la tarjeta es lo que el gesto mueve, y es la que lleva el
+ * transform y la sombra que el bloque 20 mira. El titulo se busca por su primer linea
+ * de texto, que es el nombre de la tarea.
+ *
+ * **Se leen del DOM y no de `RE_TAREAS`, y el motivo es la comprobacion de "el
+ * servidor tiene el mismo orden".** Si el esperado saliera del mismo array del que
+ * se saco la semilla, las dos mitades compararian el mismo dato consigo mismo y
+ * pasarian con la app rota. El orden de la semilla se usa solo para *calcular* un
+ * destino, que es una cuenta; la verdad se lee de los dos lados.
+ */
+const LEER_ORDEN = (columnaId) => `(() => {
+  const caja = document.querySelector('[data-testid="board-cards-${columnaId}"]');
+  if (!caja) return [];
+  return [...caja.querySelectorAll('[data-testid^="board-card-"]')].map(
+    (el) => (el.innerText || '').split('\\n')[0] ?? '',
+  );
+})()`;
+
+/**
+ * La caja de tarjetas de una columna con lo que hay que medir antes de arrastrar: su
+ * alto, su contenido, y cada tarjeta con su `top`, su alto, su sombra, su `z-index` y
+ * su `touch-action`.
+ *
+ * **`touchAction` viene aqui porque es una comprobacion y no una curiosidad**: el
+ * `GestureDetector` de la tarjeta escribe `touch-action` en el elemento que envuelve
+ * (`GestureHandlerWebDelegate.js`, `touchAction ?? 'none'`), y con el valor por
+ * defecto una columna con mas tarjetas de las que caben **dejaria de hacer scroll en
+ * el navegador**, que es el fallo que el alto de la pista del tablero se midio para
+ * arreglar. Aqui se lee el valor escrito.
+ */
+
+/**
+ * El orden de una lista de titulos con la tarjeta `id` movida `delta` puestos hacia
+ * abajo, **y el calculo es el mismo `nextOrderFromDrop` que usa la app: quitar y
+ * insertar.**
+ *
+ * No es una cuenta inventada para que la comprobacion salga: es el mismo algoritmo
+ * con el mismo recorte, y esta escrito en el guion **a proposito**, porque el
+ * esperado tiene que salir de una regla y no de la lista que la app acaba de pintar.
+ * Un esperado escrito a mano ("C02 C01 C03…") seria una copia del resultado de una
+ * corrida y solo valdria para esa.
+ *
+ * **El titulo se busca por la semilla y no por el `testID` de la tarjeta**: el id es
+ * un `randomUUID` distinto en cada corrida, asi que el unico manera de encontrar la
+ * fila es por el nombre de la tarea —que es el mismo texto en la semilla y en la
+ * pantalla— y por eso el argumento es un id y no un indice: la columna puede venir
+ * de mas abajo, con un hueco delante.
+ */
+function ordenCierto(titulos, tarea, delta) {
+  const desde = titulos.indexOf(tarea.title);
+  if (desde < 0) return titulos;
+  const siguiente = [...titulos];
+  const [movida] = siguiente.splice(desde, 1);
+  siguiente.splice(Math.max(0, Math.min(desde + delta, siguiente.length)), 0, movida);
+  return siguiente;
+}
+
+/** La hoja de estado de una tarea abierta, o su texto, y `null` si no hay ninguna. */
+const HOJA_DE_ESTADO = `(() => {
+  const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+  const p = paneles.find((x) => x.querySelector('[data-testid^="state-picker-row-"]')) ?? null;
+  return p ? (p.innerText || '').split('\\n').filter(Boolean).slice(0, 3).join(' / ') : null;
+})()`;
+
 /** Escribir en un campo de la app, **por el camino que React ve**. */
 const escribir = (tab, testId, valor) =>
   tab.evaluate(`(() => {
@@ -620,6 +688,36 @@ async function esperarEditorFuera(tab, limiteMs = 1500) {
 }
 
 const esperarEditorCerrado = (tab) => esperarEditorFuera(tab);
+
+/**
+ * Ir a una pantalla, **con un reintento cuando la navegacion no responde.**
+ *
+ * **El fallo es del arnes y no de la app, y la prueba esta en la captura.** Un
+ * `Page.navigate` —o el `goto` que lo envuelve— se queda sin contestar con la
+ * pantalla **pintada** y Metro sano: en la primera corrida de este bloque 7 el error
+ * fue `la pagina no llego a estar lista`, y `99-error.png` mostraba el tablero entero
+ * con sus cinco columnas y sus tarjetas, o sea la pagina que el guion decia que no
+ * estaba. Es `scripts/cdp.mjs`, compartido por veinte guiones y sin endurecer; **`cdp.mjs`
+ * no se toca en esta tarea** y el reintento va aqui.
+ *
+ * El reintento es de la navegacion entera y no del paso que viene despues, y la espera
+ * crece porque un reintento inmediato cae en el mismo instante en que el navegador
+ * sigue ocupado — el criterio y el motivo de `enviarToque`.
+ */
+async function irA(tab, url, intentos = 3) {
+  for (let intento = 1; ; intento += 1) {
+    try {
+      return await tab.goto(url);
+    } catch (e) {
+      if (intento >= intentos) throw e;
+      console.log(
+        `      (la navegacion a ${url} no ha respondido; intento ${intento + 1} de ${intentos}: ` +
+          `${e.message})`,
+      );
+      await sleep(2000 * intento);
+    }
+  }
+}
 
 /**
  * **El relevo, muestreado desde dentro del gesto.**
@@ -991,7 +1089,7 @@ try {
 
   await seedSession(tab, session, APP);
   await PONER_TEMA("light");
-  await tab.goto(`${APP}/board/${listId}`);
+  await irA(tab, `${APP}/board/${listId}`);
   const ready = Date.now() + 45000;
   let visto = null;
   while (Date.now() < ready) {
@@ -1088,6 +1186,21 @@ try {
       estados: ops
         .filter((o) => o?.entity === "list_item")
         .map((o) => (o?.payload?.stateId === undefined ? "sin campo" : o.payload.stateId)),
+      /*
+        **Que filas son, y no solo cuantas.** El bloque 20 lo necesita para afirmar que
+        un reordenado en Ready no lleva filas de Backlog, y esa afirmacion no se puede
+        hacer con una suma: cuatro operaciones de `list_item` pueden ser cuatro filas
+        de Ready o tres de Ready y una de Backlog, y el total es el mismo.
+
+        Y **la `position` de cada una**, porque una operacion que lleva `position` es
+        media prueba: hace falta ver que el numero es el nuevo.
+      */
+      ids: ops
+        .filter((o) => o?.entity === "list_item")
+        .map((o) => o?.entityId ?? null),
+      posiciones: ops
+        .filter((o) => o?.entity === "list_item")
+        .map((o) => (o?.payload?.position === undefined ? "sin campo" : o.payload.position)),
     });
   });
   const vaciarItems = () => {
@@ -1326,9 +1439,9 @@ try {
 
   /* --- 7. Cerrar y volver a abrir el tablero --- */
 
-  await tab.goto(`${APP}/lists`);
+  await irA(tab, `${APP}/lists`);
   await sleep(2500);
-  await tab.goto(`${APP}/board/${listId}`);
+  await irA(tab, `${APP}/board/${listId}`);
   const deVuelta = Date.now() + 45000;
   while (Date.now() < deVuelta) {
     const t = await readBoard(tab);
@@ -2050,7 +2163,7 @@ try {
       .join(", ")}`,
   );
 
-  await tab.goto(`${APP}/board/${listId}`);
+  await irA(tab, `${APP}/board/${listId}`);
   const conUna = Date.now() + 45000;
   while (Date.now() < conUna) {
     const t = await readBoard(tab);
@@ -2164,7 +2277,7 @@ try {
       .join(", ")}`,
   );
 
-  await tab.goto(`${APP}/board/${listId}`);
+  await irA(tab, `${APP}/board/${listId}`);
   const listo = Date.now() + 45000;
   while (Date.now() < listo) {
     const t = await readBoard(tab);
@@ -2208,7 +2321,7 @@ try {
    * capturas de "oscuro" son del tema claro con otro nombre.
    */
   await PONER_TEMA("dark");
-  await tab.goto(`${APP}/board/${listId}`);
+  await irA(tab, `${APP}/board/${listId}`);
   await sleep(5000);
   const esquema = await temaDeLaPagina();
   check("el tema oscuro esta puesto de verdad", esquema === "dark", `colorScheme: ${esquema}`);
@@ -2301,6 +2414,827 @@ try {
   */
   const unaEnOscuro = editor?.filas?.length ?? 0;
   note(`columnas en la pasada oscura: ${unaEnOscuro}`);
+
+  /* --- 20. Reordenar tareas dentro de un estado --- */
+
+  /*
+    **Todo este bloque trabaja sobre su propio tablero y no sobre el de los bloques
+    anteriores, y el motivo es el estado en que lo dejan.** El bloque 17 lo dejo con
+    **24 columnas** y el bloque 11 le borro la columna con tareas, asi que las que
+    quedan tienen una tarea cada una o ninguna. Un reordenado necesita una columna
+    con **muchas mas tarjetas de las que caben** —para que haya un destino por debajo
+    del pliegue— y con el tablero de 24 columnas la ventana de 1440x900 las ensena
+    todas: no hay nada por debajo del pliegue, y un recorrido que no puede alcanzar
+    un destino que existe esta comprobando otra cosa.
+
+    Asi que se siembra **otro tablero** con el mismo mecanismo de la siembra de este
+    guion —`/sync/push` con `baseVersion: 0` y `kind: 'create'`— y se mira **el
+    servidor** para el resultado final: la escritura es local primero, asi que una
+    tarjeta reordenada en pantalla y una tarjeta reordenada en el servidor se ven
+    igual, y la unica comprobacion que vale es la que pregunta al servidor.
+  */
+
+  /*
+    **Cinco columnas y no tres, y el motivo es el gesto horizontal del final del
+    bloque.** El paginador del tablero se desactiva solo cuando **todas las columnas
+    caben a la vez** —`sePuedePaginar` es `columnasQueCaben < states.length`, y
+    `columnLayout` a 1120 de ancho con las columnas de 230 da **cuatro**—. Con tres
+    columnas el tablero esta entero en pantalla, el gesto no esta activado porque no
+    hay nada a lo que ir, y una comprobacion de "el horizontal sigue paginando" sobre
+    ese tablero pasaria o fallaria por una razon que no es la del gesto. Con cinco
+    columnas hay una fuera de pantalla y el gesto tiene trabajo.
+
+    Las tres primeras son las que tienen tareas: las dos con las que se reordena —la
+    primera con catorce y la segunda con tres— y una tercera vacia. Las dos ultimas
+    vacias tambien, y solo estan para que la quinta quede fuera de la ventana.
+  */
+  const ESTADOS_RE = [
+    { id: randomUUID(), title: "Backlog", color: "neutral" },
+    { id: randomUUID(), title: "Ready", color: "blue" },
+    { id: randomUUID(), title: "Done", color: "green" },
+    { id: randomUUID(), title: "Revision", color: "teal" },
+    { id: randomUUID(), title: "Shipped", color: "purple" },
+  ];
+  const wsRe = randomUUID();
+  const listRe = randomUUID();
+  const atRe = new Date().toISOString();
+
+  /*
+    **Catorce tarjetas en la primera columna y tres en la segunda, y el numero sale
+    de una medicion y no de un redondo bonito.** Medido en el navegador a 1440x900 con
+    esta semilla, en el bloque 20 de este guion: la caja de tarjetas de la primera
+    columna mide **718** de alto con **984** de contenido, y cada tarjeta **57** con
+    un hueco de **8**, o sea un paso de **65**. Caben **once** y hay **tres por debajo
+    del pliegue**, que es lo que hace falta para que un destino "por debajo de lo que
+    se ve" sea real y no una palabra. La primera comprobacion del bloque mide esas dos
+    cifras antes de arrastrar nada, para que un tablero que ya quepa entero no pueda
+    hacer pasar el resto en verde.
+
+    **Y las catorce tienen el mismo alto a proposito.** `dropIndex` divide el
+    desplazamiento del dedo por el paso, y el paso lo mide el `onLayout` de una
+    tarjeta —su alto mas el hueco—. Con tarjetas de dos alturas distintas el paso es
+    el de la ultima que se dibujo y el destino queda a una tarjeta de distancia, y el
+    fallo se parece a un gesto que no funciona. Se mide por eso, y se comprueba.
+  */
+  const RE_TAREAS = [
+    ...Array.from({ length: 14 }, (_, i) => ({
+      title: `C${String(i + 1).padStart(2, "0")}`,
+      stateId: null,
+      position: i,
+    })),
+    ...Array.from({ length: 3 }, (_, i) => ({
+      title: `R${String(i + 1).padStart(2, "0")}`,
+      stateId: ESTADOS_RE[1].id,
+      position: i,
+    })),
+  ].map((t) => ({ id: randomUUID(), ...t }));
+
+  const siembraRe = await api("/sync/push", {
+    method: "POST",
+    token: session.accessToken,
+    body: {
+      deviceId: randomUUID(),
+      lastPulledAt: null,
+      clientTimestamp: atRe,
+      operations: [
+        {
+          operationId: randomUUID(),
+          clientId: CLIENT,
+          entity: "workspace",
+          kind: "create",
+          entityId: wsRe,
+          baseVersion: 0,
+          base: null,
+          clientTimestamp: atRe,
+          payload: { name: "Reordenado", color: "blue" },
+        },
+        {
+          operationId: randomUUID(),
+          clientId: CLIENT,
+          entity: "list",
+          kind: "create",
+          entityId: listRe,
+          baseVersion: 0,
+          base: null,
+          clientTimestamp: atRe,
+          payload: {
+            workspaceId: wsRe,
+            folderId: null,
+            title: "Reordenado",
+            kind: "board",
+            orderMode: "manual",
+            states: ESTADOS_RE,
+          },
+        },
+        ...RE_TAREAS.map((tarea) => ({
+          operationId: randomUUID(),
+          clientId: CLIENT,
+          entity: "list_item",
+          kind: "create",
+          entityId: tarea.id,
+          baseVersion: 0,
+          base: null,
+          clientTimestamp: atRe,
+          payload: {
+            listId: listRe,
+            title: tarea.title,
+            position: tarea.position,
+            ...(tarea.stateId ? { stateId: tarea.stateId } : {}),
+          },
+        })),
+      ],
+    },
+  });
+  const resRe = siembraRe.body?.data?.results ?? [];
+  check(
+    "el tablero del reordenado se siembra entero (results, no el codigo)",
+    siembraRe.status === 200 &&
+      resRe.every((r) => r.status === "applied" || r.status === "duplicate"),
+    `http ${siembraRe.status} | applied ${resRe.filter((r) => r.status === "applied").length}/${resRe.length}` +
+      (resRe.some((r) => r.status !== "applied" && r.status !== "duplicate")
+        ? ` — ${resRe.filter((r) => r.status !== "applied" && r.status !== "duplicate").map((r) => `${r.entity}:${r.error}`).join(" | ")}`
+        : ""),
+  );
+
+  await PONER_TEMA("light");
+  await irA(tab, `${APP}/board/${listRe}`);
+  /*
+    **Y se comprueba que el paginador tiene trabajo antes de medirlo**, porque su
+    activacion depende de una cuenta de la pantalla —`columnLayout` reparte el ancho y
+    `sePuedePaginar` pregunta si sobran columnas— y sin esto el gesto horizontal del
+    final se mediria sobre un tablero sin nada fuera de pantalla y su resultado
+    valdria para otra pregunta. La cuenta se lee del DOM: cuanto mide la pista y
+    cuanto se ha desplazado.
+  */
+  const listoRe = Date.now() + 45000;
+  let enRe = null;
+  while (Date.now() < listoRe) {
+    enRe = await readBoard(tab);
+    if (enRe?.columnas?.length === 5 && enRe?.columnas?.[0]?.tarjetas === 14) break;
+    await sleep(600);
+  }
+  check(
+    "el tablero del reordenado se abre con cinco columnas y 14 tarjetas en la primera",
+    enRe?.columnas?.length === 5 && enRe?.columnas?.[0]?.tarjetas === 14,
+    `columnas: ${JSON.stringify(enRe?.columnas?.map((c) => c.tarjetas))}`,
+  );
+  if (enRe?.columnas?.[0]?.tarjetas !== 14) {
+    await tab.screenshot(`${SHOTS}/20-no-abre.png`);
+    throw new Error("el tablero del reordenado no se abrio con sus catorce tarjetas");
+  }
+  const temaReClaro = await temaDeLaPagina();
+  check(
+    "el recorrido del reordenado empieza en CLARO de verdad",
+    temaReClaro === "light",
+    `colorScheme: ${temaReClaro}`,
+  );
+  await tab.screenshot(`${SHOTS}/20-01-tablero-reordenado-claro.png`);
+
+  /* --- 20.1 La caja de tarjetas: por debajo del pliegue, y con un paso medido --- */
+
+  /*
+    **La columna scrollea de verdad y el paso se mide antes de arrastrar nada.**
+    `dropIndex` divide el desplazamiento del puntero por el paso, y el paso lo mide el
+    `onLayout` de una tarjeta —su alto mas el hueco—, asi que un numero de puntos
+    escrito aqui seria un numero sobre otro tablero. Y hay tres comprobaciones que
+    tienen que salir antes de que el gesto signifique algo: **que la columna
+    scrollea**, **que las tarjetas miden todas lo mismo** y **que hay destino por debajo
+    del pliegue**. Sin la tercera, un destino "fuera de la pantalla" no existe y todo
+    lo demas del bloque pasaria sin haber errejado nada.
+  */
+  const caja = await tab.evaluate(`(() => {
+    const columna = document.querySelector('[data-testid="board-cards-${ESTADOS_RE[0].id}"]');
+    if (!columna) return null;
+    const tarjetas = [...columna.querySelectorAll('[data-testid^="board-card-"]')].map((el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return {
+        id: (el.getAttribute('data-testid') || '').replace('board-card-', ''),
+        titulo: (el.innerText || '').split('\\n')[0] ?? '',
+        top: Math.round(r.top),
+        alto: Math.round(r.height),
+        sombra: cs.boxShadow,
+        zIndex: cs.zIndex,
+        touchAction: cs.touchAction,
+      };
+    });
+    return {
+      alto: Math.round(columna.getBoundingClientRect().height),
+      scrollHeight: columna.scrollHeight,
+      clientHeight: columna.clientHeight,
+      tarjetas,
+    };
+  })()`);
+  note(
+    `caja de tarjetas: ${caja?.clientHeight} de alto, ${caja?.scrollHeight} de contenido, ` +
+      `${caja?.tarjetas?.length} tarjetas | touch-action: ${caja?.tarjetas?.[0]?.touchAction}`,
+  );
+  check(
+    "**la columna scrollea: hay contenido por debajo del pliegue**",
+    (caja?.scrollHeight ?? 0) > (caja?.clientHeight ?? 0) + 40,
+    `scrollHeight ${caja?.scrollHeight} > clientHeight ${caja?.clientHeight} + 40`,
+  );
+  const rectsRe = caja?.tarjetas ?? [];
+  const pasoRe = rectsRe[1] && rectsRe[0] ? rectsRe[1].top - rectsRe[0].top : 65;
+  const altoRe = rectsRe[0]?.alto ?? 57;
+  const caben = Math.floor((caja?.clientHeight ?? 0) / pasoRe);
+  check(
+    "todas las tarjetas miden lo mismo, que es lo que hace que el paso valga",
+    rectsRe.length === 14 && rectsRe.every((t) => t.alto === altoRe),
+    `altos: ${JSON.stringify([...new Set(rectsRe.map((t) => t.alto))])}`,
+  );
+  check(
+    "y el paso es el alto mas el hueco, que es lo que la tarjeta escribe en onLayout",
+    pasoRe === altoRe + 8,
+    `paso ${pasoRe} = alto ${altoRe} + hueco 8`,
+  );
+  check(
+    "**y hay al menos tres tarjetas por debajo del pliegue**, que es lo que hace real un destino fuera de la pantalla",
+    rectsRe.length - caben >= 3,
+    `${rectsRe.length} tarjetas, caben ${caben} en ${caja?.clientHeight} puntos de alto ` +
+      `(paso ${pasoRe}): ${rectsRe.length - caben} por debajo`,
+  );
+  note(`paso medido: ${pasoRe} puntos | alto de tarjeta: ${altoRe} | caben ${caben} de ${rectsRe.length}`);
+
+  /*
+    **La pista tiene contenido fuera de pantalla, que es lo que hace que el gesto
+    horizontal del final tenga algo que paginar.** Se lee `scrollWidth` frente a
+    `clientWidth` de la pista, los dos numeros que la propia pantalla usa para calcular
+    `maxScroll`, y no un "¿esta el scrollbar?" que en este navegador esta oculto con
+    `--hide-scrollbars`.
+  */
+  const pista = await tab.evaluate(
+    `(() => {
+      const p = document.querySelector('[data-testid="board-track"]');
+      return { client: p?.clientWidth ?? 0, contenido: p?.scrollWidth ?? 0, scrollLeft: Math.round(p?.scrollLeft ?? -1) };
+    })()`,
+  );
+  note(
+    `pista: ${pista?.client} de ancho con ${pista?.contenido} de contenido — ` +
+      `${pista?.contenido > pista?.client ? "hay columna fuera de pantalla" : "TODO cabe"}`,
+  );
+  check(
+    "**la pista tiene una columna fuera de pantalla**, que es lo que el gesto horizontal tiene que paginar",
+    (pista?.contenido ?? 0) > (pista?.client ?? 0),
+    `contenido ${pista?.contenido} > ancho ${pista?.client} | columnas: ${enRe?.columnas?.length}`,
+  );
+  check(
+    "la tarjeta lleva `touch-action: pan-y`, que es lo que le deja el scroll vertical a la columna",
+    rectsRe[0]?.touchAction === "pan-y",
+    `touch-action de la primera tarjeta: ${rectsRe[0]?.touchAction ?? "(no se pudo leer)"}`,
+  );
+
+  /* --- 20.2 Los tres gestos: subir, bajar y no tocar nada --- */
+
+  /*
+    **El instrumento del gesto: un raton que mantiene pulsado antes de mover.**
+
+    `Input.dispatchTouchEvent` es lo que usan `arrastrar` y `tap` en este guion, y
+    aqui **no vale**: la tarjeta lleva `touchAction="pan-y"`, que es exactamente lo
+    que impide que el navegador se quede con el desplazamiento vertical
+    (`GestureHandlerWebDelegate.js`, `touchAction ?? 'none'`), de modo que un dedo que
+    baja por la columna la desplaza y el gesto pierde el dedo. **Un raton no entra en
+    ese trato**: `touch-action` no aplica a un puntero de raton, y por eso el camino
+    del raton es el que mide si el gesto funciona en el navegador — con la nota
+    escrita de que en un telefono es el dedo el que lo hace y eso **no esta medido**
+    aqui.
+
+    **El raton se mantiene pulsado 420 ms antes de moverse, y ese numero es el que
+    separa tres gestos.** `activateAfterLongPress(260)` levanta la tarjeta a los 260 y
+    `PanGestureHandler.shouldFail` cancela el gesto en cuanto el puntero se mueve mas
+    que el *touch slop* —**15** puntos, `web/constants.js`— antes de que el reloj
+    suene. De modo que los tres gestos de esta comprobacion son tres instrumentos y
+    tres resultados distintos: bajar y mover **despues** de 420 ms levanta; mover
+    antes **no** levanta y es un scroll; bajar y soltar sin mover levanta y suelta sin
+    escribir nada.
+  */
+
+  /**
+ * Un raton que se mueve, **con una espera entre el bajar y el primer movimiento**, y
+ * el desplazamiento en pasos.
+ *
+ * **El desplazamiento es relativo y no un punto de destino**, que es lo que
+ * `arrastrar` ya dice y aqui importa mas todavia: `translationY` es lo que
+ * `dropIndex` divide, y un punto absoluto mediria una distancia que depende de donde
+ * este la tarjeta. **Y es en los dos ejes**, porque el gesto horizontal del final lo
+ * necesita: se mueve en `x` y en `y` a la vez, y un desplazamiento que fuera
+ * "derecha" con la `y` quieta no seria el gesto de una persona.
+ *
+ * **La `x` no sale de la pantalla**, y por eso el desplazamiento horizontal del
+ * bloque 20.6 es de **-240** y no de +240: el raton arranca a 440 de una ventana de
+ * 1440, asi que hacia la izquierda hay sitio y hacia la derecha lo hay de sobra — y
+ * **hacia la izquierda es adonde va un dedo que empuja el tablero para ver lo que
+ * viene**, que es el gesto que una persona hace.
+ */
+  async function raton(
+    tab,
+    testId,
+    puntos,
+    { esperarAntes = 420, pasos = 12, espera = 16, eje = "y" } = {},
+  ) {
+    const p = await centro(tab, testId);
+    if (!p) throw new Error(`no encuentro ${testId}`);
+    note(
+      `raton en ${testId}: (${p.x},${p.y}) | ${puntos} puntos en ${eje} | ` +
+        `${esperarAntes} ms antes del primer movimiento`,
+    );
+    await tab.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: p.x,
+      y: p.y,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await sleep(esperarAntes);
+    const puntoEn = (i) => {
+      const d = (puntos * i) / pasos;
+      return eje === "x" ? { x: p.x + d, y: p.y } : { x: p.x, y: p.y + d };
+    };
+    try {
+      for (let i = 1; i <= pasos; i += 1) {
+        await tab.send("Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          ...puntoEn(i),
+          button: "left",
+          buttons: 1,
+        });
+        await sleep(espera);
+      }
+    } finally {
+      await tab.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        ...puntoEn(pasos),
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+    }
+    await sleep(500);
+    return p;
+  }
+
+  /**
+   * Lo que se ve de una tarjeta mientras el raton esta pulsado, **leido desde dentro
+   * de la pagina y no despues del gesto**.
+   *
+   * Es un `evaluate` que se instala **antes** del `mousePressed` y que corre dentro
+   * un `requestAnimationFrame` —el mismo instrumento que el bloque 9 usa para el
+   * relevo, y por el mismo motivo: una lectura hecha despues del gesto describe un
+   * estado que ya no existia, y "la tarjeta no estaba levantada despues" es una
+   * frase que sale igual de un gesto que no levanta y de uno que levanta y suelta.
+   */
+  const INSTALAR_ALZADA = (testId) => `(() => {
+    const reg = { t0: performance.now(), muestras: [], vivo: true, id: ${JSON.stringify(testId)} };
+    window.__alzada = reg;
+    const leer = () => {
+      const el = document.querySelector('[data-testid=' + JSON.stringify(reg.id) + ']');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return {
+        t: Math.round(performance.now() - reg.t0),
+        top: Math.round(r.top),
+        escala: cs.transform,
+        sombra: cs.boxShadow,
+        indice: cs.zIndex,
+      };
+    };
+    const paso = () => {
+      const m = leer();
+      if (m) reg.muestras.push(m);
+      if (reg.vivo && performance.now() - reg.t0 < 1400) requestAnimationFrame(paso);
+      else reg.vivo = false;
+    };
+    requestAnimationFrame(paso);
+    return true;
+  })()`;
+
+  /**
+   * **La sombra alzada se distingue de la de una tarjeta en su sitio por el token, y
+   * no por «hay sombra».** `theme.shadow.floating` es `0px 12px 24px …` y
+   * `shadow.card` —lo que ya lleva una tarjeta tumbada— es `0px 6px 16px …`, asi que
+   * el desfase de la caja es lo que dice si la tarjeta se ha elevado o solo se ha
+   * movido. Se mira el numero y no la presencia: una comprobacion que aceptase
+   * cualquier sombra pasaria con la de `card`, que es la que ya tiene.
+   *
+   * Y **`maxIndice` porque el `zIndex` es la otra mitad del aviso**: una tarjeta
+   * elevada con sombra pero por debajo de sus vecinas no esta elevada, esta dibujada
+   * con una sombra. De ahi el `position: relative` de `styles.tarjeta`.
+   */
+  const LEER_ALZADA = `(() => {
+    const reg = window.__alzada;
+    if (!reg) return { error: 'el muestreo no estaba instalado' };
+    reg.vivo = false;
+    const m = reg.muestras;
+    if (m.length < 3) return { error: 'solo ' + m.length + ' fotogramas' };
+    const primera = m[0];
+    const conSombra = m.filter((x) => x.sombra && !/^none$/.test(x.sombra));
+    const yFloating = conSombra.filter((x) => /12px\\s+24px/.test(x.sombra));
+    const alto = Math.max(...m.map((x) => x.top));
+    return {
+      fotogramas: m.length,
+      hasta: m.at(-1).t,
+      conSombra: conSombra.length,
+      conFloating: yFloating.length,
+      primeraSombra: primera.sombra,
+      primeraIndice: primera.indice,
+      primeroArriba: Math.round(primera.top),
+      masAbajo: Math.round(alto),
+      recorrido: Math.round(alto - primera.top),
+      maxIndice: m.reduce((a, x) => Math.max(a, Number(x.indice) || 0), 0),
+      /*
+        La sombra de un fotograma en el que estaba levantada, y no la del primero.
+        El primer fotograma es de antes de que el puntero se pare —la tarjeta
+        tumbada, con su shadow.card o sin nada— y lo que se compara con el alfa del
+        tema tiene que ser la de mientras estaba en el aire. Se toma la primera que
+        casa con el desfase de floating, y si no hay ninguna, la primera con sombra
+        cualquiera: asi el que lo lee ve de que sale.
+      */
+      cualquierSombra:
+        yFloating[0]?.sombra ?? conSombra[0]?.sombra ?? m.at(-1)?.sombra ?? null,
+    };
+  })()`;
+
+  const tarjeta0 = RE_TAREAS[0].id;
+  /** El orden antes del gesto, leido de la columna y no del array de la semilla. */
+  const ordenPantallaAntes = await tab.evaluate(LEER_ORDEN(ESTADOS_RE[0].id));
+  vaciarItems();
+  const desdeSoltar = Date.now();
+  await tab.evaluate(INSTALAR_ALZADA(`board-card-${tarjeta0}`));
+  await raton(tab, `board-card-${tarjeta0}`, pasoRe * 2);
+  const alzada = await tab.evaluate(LEER_ALZADA);
+  if (alzada?.error) throw new Error(`el muestreo de la tarjeta alzada: ${alzada.error}`);
+  const hojaTrasAlzada = await tab.evaluate(HOJA_DE_ESTADO);
+  note(
+    `alzada: ${alzada.fotogramas} fotogramas en ${alzada.hasta} ms | con sombra ${alzada.conSombra} | ` +
+      `con shadow.floating ${alzada.conFloating} | recorrido ${alzada.recorrido} | zIndex maximo ${alzada.maxIndice}`,
+  );
+  check(
+    "**la tarjeta se levanta: el muestreo ve shadow.floating y sube de z-index**",
+    alzada.conFloating >= 3 && alzada.maxIndice >= 10,
+    `fotogramas con la sombra de ` +
+      `theme.shadow.floating (0px 12px 24px): ${alzada.conFloating} de ${alzada.fotogramas} | ` +
+      `z-index maximo: ${alzada.maxIndice} | sombra inicial: ${alzada.primeraSombra}`,
+  );
+  check(
+    "y la tarjeta **sigue al raton**: se ha movido hacia abajo mientras estaba pulsada",
+    alzada.recorrido >= pasoRe,
+    `recorrido ${alzada.recorrido} puntos, paso ${pasoRe} (pedidos 2 pasos)`,
+  );
+  check(
+    "**y el gesto no se ha confundido con un toque: no se ha abierto la hoja de estado**",
+    hojaTrasAlzada === null,
+    hojaTrasAlzada === null
+      ? "no hay hoja de estado en el documento"
+      : `SE ABRIO con este texto: ${hojaTrasAlzada.slice(0, 80)}`,
+  );
+
+  /* --- 20.3 El orden: en pantalla, en el cable y en el servidor --- */
+
+  const ordenPantallaTras = await tab.evaluate(LEER_ORDEN(ESTADOS_RE[0].id));
+  check(
+    "**soltar dos pasos mas abajo mueve esa tarjeta dos puestos, y solo esa**",
+    ordenPantallaTras.join(" > ") ===
+      ordenCierto(ordenPantallaAntes, RE_TAREAS[0], 2).join(" > "),
+    `antes: ${ordenPantallaAntes.join(" > ")} | despues: ${ordenPantallaTras.join(" > ")}`,
+  );
+  await tab.screenshot(`${SHOTS}/20-02-tras-soltar-claro.png`);
+
+  await sleep(ESPERA);
+  const opsSoltar = operaciones.filter((o) => o.at >= desdeSoltar);
+  /**
+   * **El total de operaciones es una suma y no un `flatMap`**, y la diferencia no es
+   * de estilo: `o.items` es el numero de operaciones **de ese push**, asi que un
+   * `flatMap` sobre numeros devuelve los numeros y su `length` es el numero de pushes
+   * —un push con tres operaciones sale como **1**—. Es exactamente el error que hizo
+   * pasar esta comprobacion con una sola operacion donde havia tres, y la cuenta
+   * buena esta al lado, en `posicionesSoltar`, que si es una lista de una entrada por
+   * operacion y por tanto se puede contar con `length`. **Las dos cifras se comparan
+   * entre si** en el mensaje del `check`, para que un `1` y un `3` en la misma linea
+   * se ven.
+   */
+  const opsItems = opsSoltar.reduce((total, o) => total + o.items, 0);
+  const posicionesSoltar = opsSoltar.flatMap((o) => o.posiciones);
+  note(
+    `en el cable tras soltar: ${opsItems} operaciones de list_item en ${opsSoltar.length} ` +
+      `push(es) | posiciones: ${JSON.stringify(posicionesSoltar)} | stateId: ` +
+      `${JSON.stringify(opsSoltar.flatMap((o) => o.estados))}`,
+  );
+  check(
+    "**lo que sale son operaciones de list_item con `position`, y ninguna con `stateId`**",
+    opsItems > 0 &&
+      opsSoltar.every((o) => o.estados.every((e) => e === "sin campo")) &&
+      posicionesSoltar.every((p) => p !== "sin campo"),
+    `operaciones de list_item: ${opsItems} | campos stateId: ` +
+      `${JSON.stringify(opsSoltar.flatMap((o) => o.estados))} | posiciones: ` +
+      `${JSON.stringify(posicionesSoltar)}`,
+  );
+  check(
+    "**y el numero de operaciones es el de filas que cambian, no el de la columna**",
+    opsItems === 3 && posicionesSoltar.length === 3,
+    `operaciones de list_item: ${opsItems} en ${opsSoltar.length} push(es), de una ` +
+      `columna con 14 tarjetas — 3 = la que se movio (C01 de 0 a 2) y las dos que ` +
+      `saltaron un puesto (C02 de 1 a 0, C03 de 2 a 1). Las posiciones en el cable: ` +
+      `${JSON.stringify(posicionesSoltar)} (${posicionesSoltar.length} entradas)`,
+  );
+
+  /*
+    **El numero de operaciones por push y el total: los dos, y no uno.** El outbox
+    **agrupa**: una fila que se mueve y las dos que saltan un puesto pueden salir en
+    **un** push con tres operaciones dentro —que es lo que se midio— o en tres pushes
+    de una, y las dos cosas estan bien. Lo que no esta bien es un numero de filas que
+    no sea tres, y lo que no se puede afirmar es "un push": depende del agrupamiento y
+    no del gesto.
+  */
+  const delServidor = await leerDelServidor(session);
+  const posicionesSrv = RE_TAREAS.slice(0, 14)
+    .map((t) => delServidor.get(`list_item:${t.id}`)?.position)
+    .sort((a, b) => a - b);
+  const ordenServidor = RE_TAREAS.slice(0, 14)
+    .map((t) => ({ titulo: t.title, id: t.id, pos: delServidor.get(`list_item:${t.id}`)?.position }))
+    .sort((a, b) => a.pos - b.pos)
+    .map((t) => t.titulo);
+  check(
+    "**el servidor tiene el orden nuevo y las posiciones 0..13**",
+    ordenServidor.join(" > ") === ordenPantallaTras.join(" > ") &&
+      posicionesSrv.join(",") === Array.from({ length: 14 }, (_, i) => i).join(","),
+    `en el servidor: ${ordenServidor.join(" > ")} | posiciones: ${posicionesSrv.join(",")}`,
+  );
+
+  /* --- 20.4 Salir de la pantalla y volver: el outbox --- */
+
+  /*
+    **La comprobacion que la gente se salta, y la unica que puede fallar con todo lo
+    demas en verde.** Una escritura local primero se ve en pantalla al instante, asi
+    que el orden puede estar bien en el `ScrollView` y no estar en ningun sitio mas:
+    se navega a otra pantalla —que es lo que hace el navegador con la ruta— y se
+    vuelve. Si el orden vuelve, esta en el outbox y en la cache; si no vuelve, estaba
+    solo en memoria.
+
+    **Se va a `/list/<id>` y no a otra ruta cualquiera**, porque esa es la pantalla
+    de la que vuelve el boton de atras del tablero y es la transicion que un persona
+    hace de verdad: si la ruta de salida aqui fuera una que no existe, la vuelta
+    seria un `goto` frio y mediria otra cosa.
+  */
+  await irA(tab, `${APP}/list/${listRe}`);
+  await sleep(2500);
+  await irA(tab, `${APP}/board/${listRe}`);
+  const listoVuelta = Date.now() + 30000;
+  let ordenVuelta = [];
+  while (Date.now() < listoVuelta) {
+    ordenVuelta = await tab.evaluate(LEER_ORDEN(ESTADOS_RE[0].id));
+    if (ordenVuelta.length === 14) break;
+    await sleep(600);
+  }
+  check(
+    "**salir de la pantalla y volver deja el orden donde estaba**",
+    ordenVuelta.join(" > ") === ordenPantallaTras.join(" > "),
+    `antes de salir: ${ordenPantallaTras.join(" > ")} | al volver: ${ordenVuelta.join(" > ")}`,
+  );
+
+  /* --- 20.5 El otro estado no se mueve: la firma de `renumberWithinState` --- */
+
+  /*
+    **El fallo que esta comprobacion existe para cazar, y por eso necesita las dos
+    mitades.** `renumberWithinState` devuelve **solo las filas de la columna que se
+    reordena**, y esa es toda su razon de ser: numerar todas las tareas de la lista
+    renumeraria tambien las de las otras columnas, con numeros escritos en ellas, en
+    un orden que nadie pidio. **El navegador no enseña ese fallo** —las otras columnas
+    se verian igual si sus filas cambiasen de numero, porque lo que se ve es el orden
+    relativo y no el `position`—, asi que la mitad de la comprobacion es **el cable**,
+    que dice de que filas son las operaciones, y la otra es **el servidor**, que dice
+    que `position` tiene cada fila de cada columna.
+
+    **El orden de las mitades no es el del guion y si el de por que se cazan**: primero
+    el servidor, para tener el "antes" de Ready y de Backlog del mismo pull que dio el
+    orden de 20.3, y despues el gesto, y despues un pull nuevo. Al reves, el "antes"
+    seria un pull hecho despues del gesto de Backlog —que ya habia movido sus
+    posiciones— y la comparacion no diria nada.
+
+    **Y hay dos gestos, en este orden, porque cada uno mira el estado del otro.** El
+    primero es **el gesto en Ready**, que es el que se comprueba: si al reordenar Ready
+    escribiera tambien filas de Backlog, el cable lo diria. El segundo es **otro gesto
+    en Ready**, y la comprobacion que se le hace es sobre **Backlog** —que para entonces
+    ha cambiado de orden por el gesto de 20.3 y cuyo estado en el servidor es el que
+    importa—. Asi el par no se mira a si mismo.
+
+    Repetir el gesto de 20.3aria inútil —el orden ya es el nuevo y un gesto de dos
+    pasos sobre el mismo sitio devuelve el mismo array, que no escribe— y por eso el
+    gesto que se repite es en **otra** columna: Ready tiene tres tarjetas y no se ha
+    tocado.
+  */
+  const readyAntes = RE_TAREAS.filter((t) => t.stateId === ESTADOS_RE[1].id)
+    .map((t) => ({ titulo: t.title, pos: delServidor.get(`list_item:${t.id}`)?.position }))
+    .sort((a, b) => a.pos - b.pos);
+  const reordenandoReady = RE_TAREAS.filter((t) => t.stateId === ESTADOS_RE[1].id)[0];
+
+  const readyPantallaAntes = await tab.evaluate(LEER_ORDEN(ESTADOS_RE[1].id));
+  note(`Ready antes del gesto: ${readyPantallaAntes.join(" ")}`);
+  vaciarItems();
+  const desdeReady = Date.now();
+  await tab.evaluate(INSTALAR_ALZADA(`board-card-${reordenandoReady.id}`));
+  await raton(tab, `board-card-${reordenandoReady.id}`, pasoRe * 2);
+  await sleep(ESPERA);
+  const opsReady = operaciones.filter((o) => o.at >= desdeReady);
+  const delServidor2 = await leerDelServidor(session);
+  const readyDespues = RE_TAREAS.filter((t) => t.stateId === ESTADOS_RE[1].id)
+    .map((t) => ({ titulo: t.title, pos: delServidor2.get(`list_item:${t.id}`)?.position }))
+    .sort((a, b) => a.pos - b.pos);
+  const opsFilas = opsReady.flatMap((o) => o.ids ?? []);
+
+  const idsBacklog = new Set(RE_TAREAS.slice(0, 14).map((t) => t.id));
+  const idsReady = new Set(RE_TAREAS.filter((t) => t.stateId === ESTADOS_RE[1].id).map((t) => t.id));
+  const deBacklogCable = opsFilas.filter((id) => idsBacklog.has(id));
+  const deReadyCable = opsFilas.filter((id) => idsReady.has(id));
+  const posicionesBacklogSrv = RE_TAREAS.slice(0, 14)
+    .map((t) => delServidor2.get(`list_item:${t.id}`)?.position)
+    .sort((a, b) => a - b);
+  const readyPantallaDespues = await tab.evaluate(LEER_ORDEN(ESTADOS_RE[1].id));
+  const backlogPantallaDespues = await tab.evaluate(LEER_ORDEN(ESTADOS_RE[0].id));
+  note(
+    `operaciones del gesto en Ready: ${opsFilas.length} | de Ready: ${deReadyCable.length} | ` +
+      `de Backlog: ${deBacklogCable.length} | Ready en pantalla: ` +
+      `${readyPantallaAntes.join(" ")} -> ${readyPantallaDespues.join(" ")}`,
+  );
+  check(
+    "**el gesto en Ready tambien se ve: la tarjeta baja dos puestos en esa columna**",
+    readyPantallaDespues.join(" ") ===
+      ordenCierto(readyPantallaAntes, reordenandoReady, 2).join(" "),
+    `antes: ${readyPantallaAntes.join(" ")} | despues: ${readyPantallaDespues.join(" ")}`,
+  );
+  check(
+    "**y Backlog se ve exactamente igual en pantalla**, que es la mitad que el ojo creeria sola",
+    backlogPantallaDespues.join(" ") === ordenPantallaTras.join(" "),
+    `Backlog: ${backlogPantallaDespues.join(" ")} | lo que habia: ${ordenPantallaTras.join(" ")}`,
+  );
+  check(
+    "**reordenar en Ready no escribe nada de Backlog: el cable solo lleva filas de Ready**",
+    opsFilas.length > 0 && deBacklogCable.length === 0 && deReadyCable.length === opsFilas.length,
+    `operaciones: ${opsFilas.length} en ${opsReady.length} push(es) | de Ready: ` +
+      `${deReadyCable.length} | de Backlog: ${deBacklogCable.length} ${JSON.stringify(deBacklogCable)}`,
+  );
+  check(
+    "**las de Backlog no se han movido con el gesto de Ready: siguen siendo 0..13**",
+    posicionesBacklogSrv.join(",") === Array.from({ length: 14 }, (_, i) => i).join(","),
+    `posiciones de Backlog en el servidor: ${posicionesBacklogSrv.join(",")}`,
+  );
+  check(
+    "**y Ready sale renumerada 0..2, que es lo que `renumberWithinState` promete de su propia columna**",
+    readyDespues.map((r) => r.pos).join(",") === "0,1,2" &&
+      readyDespues.map((r) => r.titulo).join(" ") === "R02 R03 R01",
+    `Ready en el servidor: ${readyDespues.map((r) => `${r.titulo}:${r.pos}`).join(" ")} | ` +
+      `antes del gesto en Ready: ${readyAntes.map((r) => `${r.titulo}:${r.pos}`).join(" ")}`,
+  );
+
+  /* --- 20.6 La pulsacion larga no es un toque, y el gesto horizontal sigue paginando --- */
+
+  /*
+    **Las dos mitades de "el gesto de reordenar y el de paginar no se pisan", y cada
+    una necesita la otra para valer.** Con `failOffsetY([-12, 12])` en el paginador un
+    gesto claramente vertical nunca llega a el; lo que hay que ver es el otro lado: un
+    gesto claramente **horizontal**, **con el puntero puesto encima de una tarjeta** —
+    que es donde los dos gestos se encuentran de verdad— sigue cambiando de columna.
+    Y el instrumento es el mismo con las variables cambiadas: **-240 puntos en `x` y
+    20 ms antes de mover**, o sea muy por debajo de los 260 de `LEVANTAR`, con lo que
+    `shouldFail` ya ha dado el gesto por perdido antes de que su reloj suene. Hacia la
+    izquierda y no hacia la derecha porque es el gesto que empuja el tablero para ver
+    lo que viene, y porque la tarjeta esta a 440 de una ventana de 1440.
+
+    **El blanco es el mismo bloque con la espera al reves, y por eso esta comprobacion
+    necesita la de arriba**: si un movimiento de 130 puntos en vertical levantase
+    tambien cualquier tarjeta, la de arriba seguiria en verde y el tablero habria
+    perdido su scroll. Las dos juntas son lo que dice que el gesto se queda con el
+    dedo, y solo cuando el dedo se ha parado.
+
+    **Y necesita `pista.contenido > pista.client`, que se midio mas arriba**: con un
+    tablero cuyas columnas caben todas, el paginador esta desactivado por
+    `sePuedePaginar` y esta comprobacion estaria midiendo que un gesto apagado no hace
+    nada.
+  */
+  const pestanaAntes = await tab.evaluate(
+    `[...document.querySelectorAll('[data-testid^="board-tab-"]')].findIndex((el) => el.getAttribute('aria-selected') === 'true')`,
+  );
+  const scrollAntes = await tab.evaluate(
+    `Math.round(document.querySelector('[data-testid="board-track"]')?.scrollLeft ?? -1)`,
+  );
+  const tarjetaHorizontal = RE_TAREAS[0].id;
+  await tab.evaluate(INSTALAR_ALZADA(`board-card-${tarjetaHorizontal}`));
+  await raton(tab, `board-card-${tarjetaHorizontal}`, -240, {
+    esperarAntes: 20,
+    pasos: 14,
+    espera: 16,
+    eje: "x",
+  });
+  const sinTiempo = await tab.evaluate(LEER_ALZADA);
+  const pistaTras = await tab.evaluate(
+    `(() => {
+      const pista = document.querySelector('[data-testid="board-track"]');
+      return {
+        scrollLeft: Math.round(pista?.scrollLeft ?? -1),
+        transform: getComputedStyle(pista).transform,
+      };
+    })()`,
+  );
+  const pestanaDespues = await tab.evaluate(
+    `[...document.querySelectorAll('[data-testid^="board-tab-"]')].findIndex((el) => el.getAttribute('aria-selected') === 'true')`,
+  );
+  note(
+    `-240 puntos en horizontal con 20 ms de espera: ` +
+      `fotogramas con shadow.floating ${sinTiempo?.conFloating ?? "?"} de ${sinTiempo?.fotogramas ?? 0} | ` +
+      `scrollLeft ${scrollAntes} -> ${pistaTras?.scrollLeft} | transform ${pistaTras?.transform}`,
+  );
+  check(
+    "**un movimiento pronto NO levanta la tarjeta: 0 fotogramas con la sombra alzada**",
+    (sinTiempo?.conFloating ?? -1) === 0 && (sinTiempo?.fotogramas ?? 0) >= 3,
+    `fotogramas con la sombra de shadow.floating: ${sinTiempo?.conFloating ?? "(no medido)"} de ` +
+      `${sinTiempo?.fotogramas ?? 0} (un instrumento que no midio nada no pasa por aqui)`,
+  );
+  check(
+    "**y el gesto horizontal sigue paginando el tablero**",
+    pestanaDespues === (pestanaAntes + 1) % enRe.columnas.length &&
+      pistaTras?.scrollLeft > scrollAntes,
+    `pestaña activa: ${pestanaAntes} -> ${pestanaDespues} de ${enRe.columnas.length} | ` +
+      `scrollLeft: ${scrollAntes} -> ${pistaTras?.scrollLeft} | transform: ${pistaTras?.transform}`,
+  );
+  await tab.screenshot(`${SHOTS}/20-03-tras-el-horizontal-claro.png`);
+
+  /* --- 20.7 La misma pasada en oscuro --- */
+
+  /*
+    **La pasada oscura repite el gesto entero y no solo una captura.** El bloque 18
+    oscuro del recorrido se queda en el panel de estados —que es donde se abre el
+    editor—, asi que sin esto la elevacion de una tarjeta solo estaria medida en
+    claro. Y el tema se comprueba **antes** de aceptar la captura, porque
+    `ThemeProvider` resuelve `appearance: 'system'` con `useColorScheme()` y una
+    pasada "en oscuro" que en realidad esta en claro daria dos ficheros con dos
+    nombres y una comprobacion en verde.
+  */
+  await PONER_TEMA("dark");
+  await irA(tab, `${APP}/board/${listRe}`);
+  const listoOscuro = Date.now() + 30000;
+  let enOscuroRe = null;
+  while (Date.now() < listoOscuro) {
+    enOscuroRe = await readBoard(tab);
+    if (enOscuroRe?.columnas?.[0]?.tarjetas === 14) break;
+    await sleep(600);
+  }
+  const temaReOscuro = await temaDeLaPagina();
+  check(
+    "el tema oscuro esta puesto de verdad antes de aceptar la captura como de oscuro",
+    temaReOscuro === "dark",
+    `colorScheme: ${temaReOscuro}`,
+  );
+  /*
+    **La tarjeta que se levanta en oscuro es la primera de la columna, y el criterio
+    de "levantada" es el mismo token que en claro**: `conFloating` cuenta los
+    fotogramas cuya sombra lleva el desfase de `theme.shadow.floating` —**12px 24px**—
+    y la tarjeta tumbada lleva `shadow.card`, que es **6px 16px**. Una comprobacion
+    que mirase "hay sombra" pasaria con la que ya traia la tarjeta, y por eso el numero
+    del token es el criterio.
+
+    **Y el alfa se mira aparte, porque es lo que distingue el tema oscuro del claro y
+    no el texto de la sombra.** Los dos tokens son el mismo desfase con alfas de
+    **0.16** y **0.55** (`createTheme`, `shadow.floating`), asi que una sombra alzada
+    en claro con el reloj puesto de oscuro daria el mismo `12px 24px` y solo el alfa
+    lo delata.
+  */
+  const tarjetaOscuro = RE_TAREAS[0].id;
+  await tab.evaluate(INSTALAR_ALZADA(`board-card-${tarjetaOscuro}`));
+  await raton(tab, `board-card-${tarjetaOscuro}`, pasoRe * 2);
+  const alzadaOscuro = await tab.evaluate(LEER_ALZADA);
+  if (alzadaOscuro?.error) {
+    throw new Error(`el muestreo en oscuro: ${alzadaOscuro.error}`);
+  }
+  const sombraOscuro = alzadaOscuro.cualquierSombra ?? "";
+  note(
+    `en oscuro: ${alzadaOscuro?.conFloating ?? "?"} fotogramas con shadow.floating de ` +
+      `${alzadaOscuro?.fotogramas ?? 0} | sombra durante el gesto: ${sombraOscuro}`,
+  );
+  const alfaOscuro = String(sombraOscuro).match(/rgba?\([^)]*?,\s*([\d.]+)\)/);
+  check(
+    "**la tarjeta tambien se levanta en oscuro, y con el desfase de `shadow.floating`**",
+    (alzadaOscuro?.conFloating ?? 0) >= 3,
+    `fotogramas con la sombra de theme.shadow.floating (0px 12px 24px): ` +
+      `${alzadaOscuro?.conFloating ?? 0} de ${alzadaOscuro?.fotogramas ?? 0} | ` +
+      `sombra leida: ${sombraOscuro}`,
+  );
+  check(
+    "**y la sombra es la del tema oscuro, no la de claro**",
+    (alfaOscuro ? Number(alfaOscuro[1]) : -1) > 0.4,
+    `alfa de la sombra: ${alfaOscuro?.[1] ?? "(no se pudo leer)"} — los tokens son ` +
+      "0.16 en claro y 0.55 en oscuro (`createTheme`, `shadow.floating`), y se exige el segundo",
+  );
+  await tab.screenshot(`${SHOTS}/20-04-reordenado-oscuro.png`);
+
+  const erroresRe = problems.filter(
+    (p) => !/10\.0\.2\.2|:4000|Failed to load resource.*favicon/i.test(p.text),
+  );
+  check(
+    "sin errores de consola en el recorrido del reordenado",
+    erroresRe.length === 0,
+    erroresRe.slice(0, 4).map((e) => e.text.slice(0, 160)).join(" | "),
+  );
 
   /*
     **El filtro es estrecho a proposito**, y lo que estaba ahi antes tapaba justo lo
