@@ -329,6 +329,31 @@ export {
 } from "./item-icons.js";
 export type { ItemIcon, ItemIconCategory, ItemIconColor } from "./item-icons.js";
 
+/**
+ * The icon a person chose, for any of the entities that has one.
+ *
+ * `item-icons.ts` holds the one set of keys that the items of a list draw, and
+ * this holds the icon itself: a system emoji or one of the app's line drawings,
+ * with the colour it was given. They travel through here and not through
+ * `index.ts` for the reason the block above is where it is — one list, read by
+ * both apps, that cannot be a step behind the other.
+ */
+export {
+  iconColorSchema,
+  iconRefSchema,
+  iconSchema,
+  isVectorIcon,
+  labelOf,
+  sanitiseIconRef,
+  vectorGlyph,
+  vectorIconsOf,
+  VECTOR_ICON_CATALOG,
+  VECTOR_ICON_CATEGORIES,
+  VECTOR_ICON_CATEGORY_LABEL,
+  VECTOR_ICON_GLYPHS,
+} from "./icons.js";
+export type { IconRef, IconColor, VectorIconCategory } from "./icons.js";
+
 export {
   TAG_HEX,
   tagColorSchema,

@@ -112,7 +112,7 @@ la app. Cada una tiene su prueba asignada a la tarea que es dueña del código.
 **Archivos:**
 - Crear: `packages/contracts/src/icons.ts`
 - Modificar: `packages/contracts/src/workspace.ts:322-330` (añadir el reexport al lado del de `item-icons`)
-- Test: `packages/contracts/test/icons.test.ts`
+- Test: `apps/mobile/test/icons.test.ts`
 
 **Interfaces:**
 - Consume: nada. Es la primera tarea.
@@ -122,19 +122,20 @@ la app. Cada una tiene su prueba asignada a la tarea que es dueña del código.
   - `iconSchema: z.ZodDiscriminatedUnion<["emoji","vector"], ...>`
   - `type IconRef = z.infer<typeof iconSchema>`
   - `iconRefSchema: typeof iconSchema.nullable()` — la columna
-  - `VECTOR_ICON_CATALOG: ReadonlyArray<{ key: string; category: VectorIconCategory; label: string }>`
+  - `VECTOR_ICON_CATALOG: ReadonlyArray<{ key: string; glyph: string; category: VectorIconCategory; label: string }>`
+  - `VECTOR_ICON_GLYPHS: Record<string, string>` — `key` → nombre del glifo **relleno**
   - `VECTOR_ICON_CATEGORIES: readonly VectorIconCategory[]`
   - `isVectorIcon(value: unknown): value is string`
   - `sanitiseIconRef(value: unknown): IconRef | null`
-  - `vectorGlyph(key: string, style: "outline"|"fill"): string` — el nombre del glifo Ionicons
+  - `vectorGlyph(key: string, style: "outline"|"fill"): string | null` — el nombre del glifo
 
 - [ ] **Paso 1: escribir el test que falla**
 
-`packages/contracts/test/icons.test.ts`:
+`apps/mobile/test/icons.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { iconSchema, isVectorIcon, sanitiseIconRef } from "../src/icons.js";
+import { VECTOR_ICON_CATALOG, VECTOR_ICON_CATEGORIES, ITEM_ICONS, iconSchema, isVectorIcon, sanitiseIconRef, vectorGlyph } from "@orbit-hub/contracts";
 
 describe("IconRef", () => {
   it("acepta un emoji con su color", () => {
@@ -195,8 +196,9 @@ describe("el catálogo de vectores", () => {
   it("tiene cuatro cientos de iconos y cada uno en un grupo", () => {
     expect(VECTOR_ICON_CATALOG.length).toBeGreaterThanOrEqual(400);
     for (const entry of VECTOR_ICON_CATALOG) {
-      expect(VECTOR_ICON_CATEGORIES).toContain(entry.category);
-      expect(entry.label.length).toBeGreaterThan(0);
+      expect(VECTOR_ICON_CATEGORIES, entry.key).toContain(entry.category);
+      expect(entry.label.length, entry.key).toBeGreaterThan(0);
+      expect(entry.glyph.length, entry.key).toBeGreaterThan(0);
     }
   });
 
@@ -209,14 +211,32 @@ describe("el catálogo de vectores", () => {
     // note_templates y el panel usan estos. Si uno entra en el catálogo aparece
     // como opción elegible y son dos cosas distintas en el mismo selector.
     for (const glyph of ["document-text-outline", "albums-outline", "trash-outline"]) {
-      expect(isVectorIcon(glyph)).toBe(false);
+      expect(isVectorIcon(glyph), glyph).toBe(false);
     }
   });
 
-  it("incluye los 123 que ya existían, para que nadie pierda el suyo", () => {
+  it("incluye los 131 que ya existían, para que nadie pierda el suyo", () => {
     for (const icon of ITEM_ICONS) {
       expect(isVectorIcon(icon), icon).toBe(true);
     }
+  });
+});
+
+describe("vectorGlyph", () => {
+  it("devuelve el glifo relleno y el de trazo desde una sola clave", () => {
+    // La clave es la palabra que se escribe y el glifo es el dibujo: `pan` se
+    // escribe, `cafe` se dibuja. `pan-outline` no existe.
+    expect(vectorGlyph("pan", "fill")).toBe("cafe");
+    expect(vectorGlyph("pan", "outline")).toBe("cafe-outline");
+  });
+
+  it("devuelve null para una clave sin glifo, no un nombre inventado", () => {
+    expect(vectorGlyph("no-existe", "fill")).toBeNull();
+    expect(vectorGlyph("no-existe", "outline")).toBeNull();
+  });
+
+  it("dibuja las dos formas de manera distinta", () => {
+    expect(vectorGlyph("pan", "fill")).not.toBe(vectorGlyph("pan", "outline"));
   });
 });
 ```
@@ -262,9 +282,34 @@ export type IconRef = z.infer<typeof iconSchema>;
 export const iconRefSchema = iconSchema.nullable();
 ```
 
-Luego el catálogo. `VECTOR_ICON_CATEGORIES` con siete grupos: `trabajo`, `hogar`, `salud`, `comida`, `viajes`, `naturaleza`, `social`. Las claves son **la palabra en español sin acentos**, y `label` es esa palabra en Title Case con el diccionario de excepciones que ya existe en `iconLabel` (`pasta_dientes` → "Pasta de dientes"). Los 123 de `ITEM_ICONS` entran todos; se agrupan leyendo su `ITEM_ICON_GROUP` actual, que ya está en español.
+Luego el catálogo. `VECTOR_ICON_CATEGORIES` con siete grupos: `trabajo`, `hogar`,
+`salud`, `comida`, `viajes`, `naturaleza`, `social`. Las claves son **la palabra en
+español sin acentos**, y `label` es esa palabra en Title Case con el diccionario de
+excepciones que ya existe en `iconLabel` (`pasta_dientes` → "Pasta de dientes"). Los
+**131** de `ITEM_ICONS` entran todos; se agrupan leyendo su `ITEM_ICON_GROUP` actual,
+que ya está en español y cuyos diez grupos se reparten en los siete nuevos.
 
-`VECTOR_ICON_CATALOG` se construye con un `Record<VECTOR_ICON_CATEGORIES[number], string[]>` de claves por grupo, y el catálogo se arma aplanando ese record — así un icono aparece en el sitio donde se escribió su clave y no en dos.
+**La clave NO es el nombre del glifo, y esa es la parte que un cast esconde.**
+`apps/mobile/src/lib/lists/item-glyphs.ts` tiene `pan: "cafe"`, `leche: "water"`,
+`refresco: "ice-cream"`: la clave es la palabra que alguien escribe y el glifo es el
+dibujo de Ionicons que la representa. Por eso el catálogo lleva **las dos**, y
+`vectorGlyph` devuelve `null` para una clave sin glifo en vez de inventar
+`"${key}-outline"` — que produciría `pan-outline`, y eso no existe:
+
+```ts
+export function vectorGlyph(key: string, style: "outline" | "fill"): string | null {
+  const glyph = VECTOR_ICON_GLYPHS[key];
+  if (!glyph) return null;
+  // El relleno es el nombre del glifo y el trazo el mismo con `-outline`. Es una
+  // convención que el compilador no puede comprobar, y por eso la comprueba el
+  // test de la tarea 9 contra el glyphmap de verdad.
+  return style === "fill" ? glyph : `${glyph}-outline`;
+}
+```
+
+Se conservan los 131 pares `key → glyph` que ya existen, con sus glifos de `ITEM_GLYPHS`,
+más los que se añadan. Comprobado contra el glyphmap real: los 131 tienen glifo
+**relleno y** `-outline`.
 
 `sanitiseIconRef` es la función que el servidor y el cliente usan en los bordes, y devuelve `null` en vez de tirar:
 
@@ -277,8 +322,6 @@ export function sanitiseIconRef(value: unknown): IconRef | null {
   return parsed.data;
 }
 ```
-
-`vectorGlyph(key, style)` devuelve el nombre del glifo: `style === "fill" ? key : key + "-outline"`. Es la regla de convención que `item-glyphs.ts:161` ya usa con `outlineOf`, y el mismo patrón.
 
 - [ ] **Paso 4: el reexport en `packages/contracts/src/workspace.ts`**
 
@@ -317,7 +360,7 @@ Esperado: sin errores.
 - [ ] **Paso 7: commit**
 
 ```bash
-git add packages/contracts/src/icons.ts packages/contracts/src/workspace.ts packages/contracts/test/icons.test.ts
+git add packages/contracts/src/icons.ts packages/contracts/src/workspace.ts apps/mobile/test/icons.test.ts
 git commit -m "El icono es un objeto: union discriminada de emoji o vector"
 ```
 
