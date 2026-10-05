@@ -28,7 +28,24 @@ function cuerposDeGesto(fuente: string): { nombre: string; cuerpo: string }[] {
   const salida: { nombre: string; cuerpo: string }[] = [];
   const patron = /\.(on[A-Z]\w*)\(/g;
 
-  for (const m of fuente.matchAll(patron)) {
+  /*
+   * Los comentarios se borran de la **fuente**, antes de buscar callbacks, y no
+   * del cuerpo de cada uno despues.
+   *
+   * El orden importa y es el que hacia fallar esto: el ejemplo del bug del color
+   * picker esta escrito en el propio fichero que lo arregla, y contains un
+   * `.onUpdate(` dentro. Buscando primero, ese `match` es el del ejemplo y su
+   * "cuerpo" se come el codigo de verdad que va detras. Limpiar despues ya no
+   * salva nada, porque el cuerpo ya salio mal.
+   *
+   * Un guard que se cumple —o se rompe— con un comentario no esta mirando codigo.
+   * Este repo ha pagado esa factura mas de una vez.
+   */
+  const sinComentarios = fuente
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+  for (const m of sinComentarios.matchAll(patron)) {
     // The body is whatever follows the parenthesis, balanced, without nesting
     // arrows: a nested `=>` belongs to a different function and is not this one.
     const largo = m[0]?.length ?? 0;
@@ -50,6 +67,14 @@ function cuerposDeGesto(fuente: string): { nombre: string; cuerpo: string }[] {
     salida.push({ nombre: m[1] ?? 'on?', cuerpo });
   }
 
+  /*
+   * Los comentarios se van **antes** de nada, y no en el regex de cada test.
+   *
+   * El ejemplo del bug del color picker esta escrito en el propio fichero que lo
+   * arregla —para que el que lo lea sepa por que— y el extractor lo arrastraba
+   * dentro del cuerpo del callback. Un guard que se cumple con un comentario es un
+   * guard que no mira codigo, y este repo ya ha pagado esa factura dos veces.
+   */
   return salida;
 }
 
@@ -77,6 +102,60 @@ describe('nadie llama a JavaScript desde un worklet sin decirlo', () => {
         if (!/\.current\(/.test(cuerpo)) continue;
         if (/runOnJS/.test(cuerpo)) continue;
         culpables.push(`${fichero} → .${nombre}(…) llama a un ref sin runOnJS`);
+      }
+    }
+
+    expect(culpables).toEqual([]);
+  });
+
+  /**
+   * El guard de arriba **no distingue el bug que de verdad pasaba**, y esta es la
+   * razon por la que hace falta este segundo.
+   *
+   * El picker estaba asi, y el guard lo daba por bueno:
+   *
+   *     .onUpdate((e) => runOnJS(alMoverCuadradoRef.current)(e.x, e.y))
+   *
+   * Tiene `runOnJS`, asi que el `if (/runOnJS/.test(cuerpo)) continue;` lo deja
+   * pasar. Pero `runOnJS(fn)` devuelve una funcion **nueva**, y esa llamada se
+   * evalua al construir el gesto —una vez, porque el `useMemo` va con `[]`— asi
+   * que se quedaba con el `alMoverCuadrado` del primer render, con el ancho
+   * supuesto de 132 y con `anchoTira` a 0. El ref nunca se releia.
+   *
+   * En la web coincidia por casualidad porque el cuadrado mide 132. En un movil no,
+   * y la tira entera no hacia nada: `puntoAHue` devuelve 0 cuando el ancho es 0.
+   *
+   * Asique la regla es mas fuerte que "lleva runOnJS": **no se puede pasar un
+   * `.current` dentro del `runOnJS`**, porque eso es resolverlo aqui y no cuando se
+   * llama.
+   */
+  it('el runOnJS envuelve una flecha y no un .current ya evaluado', () => {
+    const culpables: string[] = [];
+
+    for (const fichero of CON_GESTOS) {
+      for (const { nombre, cuerpo } of cuerposDeGesto(leer(fichero))) {
+        // `runOnJS(x.current(...))` y `runOnJS(x.current)` —el segundo tambien:
+        // evaluan el current al construir.
+        // Solo el patron que falla de verdad: `runOnJS(algoRef.current(...))`.
+        //
+        // `runOnJS(fn)` devuelve una funcion nueva, y esa llamada se evalua al
+        // **construir** el gesto —una vez, porque el `useMemo` va con `[]`—, asi que
+        // `runOnJS(alMoverRef.current)` se queda con el valor que tenia el ref en el
+        // primer render. Las flechas de los otros cuatro ficheros **no** tienen este
+        // problema: envuelven un identificador (`runOnJS(coger)`) y el ref se
+        // relee dentro de la funcion, no al definirla.
+        //
+        // Y el patron tiene que ser el que esta **escrito en el codigo**, no uno
+        // inventado. El codigo real es `runOnJS(alMoverRef.current)(x, y)`: el
+        // `.current` no lleva parentesis dentro —los parenthesis son de la llamada
+        // de fuera, que se ejecutan en el worklet— asi que un regex que exige
+        // `.current(` describe algo que nadie escribio y no encuentra nada.
+        const resueltoDemasiadoPronto = /runOnJS\(\s*[A-Za-z_$][\w$]*\.current\b/;
+        if (resueltoDemasiadoPronto.test(cuerpo)) {
+          culpables.push(
+            `${fichero} → .${nombre}(…) hace runOnJS(algoRef.current(…)), que se evalua al construir el gesto`,
+          );
+        }
       }
     }
 

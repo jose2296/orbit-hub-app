@@ -275,6 +275,18 @@ export function WorkspaceColorPicker({
   const alMoverTiraRef = useRef(alMoverTira);
   alMoverTiraRef.current = alMoverTira;
 
+  /*
+    Las dos flechas del hilo de JS. Se crean **una vez** y leen el ref cada vez que
+    se las llama, que es lo unico que hace falta para que el gesto no se reconstruya
+    con un dedo encima sin quedarse con el ancho del primer render.
+  */
+  const moverCuadrado = useCallback((x: number, y: number) => {
+    alMoverCuadradoRef.current(x, y);
+  }, []);
+  const moverTira = useCallback((x: number) => {
+    alMoverTiraRef.current(x);
+  }, []);
+
   const gestoCuadrado = useMemo(
     () =>
       Gesture.Pan()
@@ -300,8 +312,34 @@ export function WorkspaceColorPicker({
           `panel-grid.tsx`, `panel-card.tsx` y `draggable-row.tsx`— y aquí era el único
           que no. `test/gesture-thread.test.ts` lo vigila para los cinco.
         */
-        .onBegin((e) => runOnJS(alMoverCuadradoRef.current)(e.x, e.y))
-        .onUpdate((e) => runOnJS(alMoverCuadradoRef.current)(e.x, e.y)),
+        /*
+          **El `runOnJS` envuelve una flecha, y no el callback.**
+
+          Estaba asi:
+
+              .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y))
+
+          que parece leer el ref en cada movimiento y no lo hace: `runOnJS(fn)`
+          devuelve una funcion nueva, y esa llamada se evalua **al construir el
+          gesto**. El `useMemo` de arriba tiene `[]`, asi que corre una vez al
+          montar y se queda con el `alMoverCuadrado` de ese momento —que captura
+          `caja` con el ancho supuesto de 132, porque `onLayout` corre despues del
+          primer pintado—.
+
+          O sea que toda la indireccion por ref de este fichero no estaba
+          haciendo nada, y justo en el punto que pretendia: el gesto se construia
+          con el ancho del primer render y se quedaba con el para siempre.
+
+          Por eso en la web parecia funcionar —ahi el cuadrado mide 132 y el
+          supuesto coincide por casualidad— y en un movil no: el ancho medido es
+          otro, el color sale mal, y **la tira entera no hacia nada** porque con
+          `anchoTira` a 0 `puntoAHue` devuelve 0 siempre.
+
+          Ahora la flecha se crea una vez —para no reconstruir el gesto con un dedo
+          encima— y **lee el ref cuando se la llama**, que es cuando importa.
+        */
+        .onBegin((e) => runOnJS(moverCuadrado)(e.x, e.y))
+        .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y)),
     [],
   );
 
@@ -309,8 +347,8 @@ export function WorkspaceColorPicker({
     () =>
       Gesture.Pan()
         .minDistance(0)
-        .onBegin((e) => runOnJS(alMoverTiraRef.current)(e.x))
-        .onUpdate((e) => runOnJS(alMoverTiraRef.current)(e.x)),
+        .onBegin((e) => runOnJS(moverTira)(e.x))
+        .onUpdate((e) => runOnJS(moverTira)(e.x)),
     [],
   );
 
