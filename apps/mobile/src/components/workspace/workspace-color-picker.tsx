@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Pressable, StyleSheet, View } from "react-native";
+import { runOnJS } from "react-native-reanimated";
 
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -272,8 +273,27 @@ export function WorkspaceColorPicker({
         // From the first pixel: tapping the square is a choice, and waiting for a
         // threshold would mean a tap lands nowhere.
         .minDistance(0)
-        .onBegin((e) => alMoverCuadradoRef.current(e.x, e.y))
-        .onUpdate((e) => alMoverCuadradoRef.current(e.x, e.y)),
+        /*
+          `runOnJS`, y no porque quede más correcto si no porque **sin él no
+          funciona**.
+
+          Un callback de gesto corre en el hilo de la interfaz. `alMoverCuadradoRef.current`
+          es una función normal de JavaScript que vive en el hilo de JS, y llamarla
+          desde ahí no la ejecuta: la llamada se queda en el hilo que no puede
+          ejecutarla. En la web la arquitectura antigua lo perdona; en un teléfono,
+          donde el puente va por la arquitectura nueva, arrastrar el cuadrado y la tira
+          no actualizan nada.
+
+          Y no se rompe al compilar ni al arrancar: el gesto se registra, la app abre,
+          el dedo se mueve sobre el cuadrado y el color no cambia. Es de los fallos que
+          solo existen mientras alguien arrastra.
+
+          Los otros cuatro ficheros con gestos de esta app ya lo envuelven —`sheet.tsx`,
+          `panel-grid.tsx`, `panel-card.tsx` y `draggable-row.tsx`— y aquí era el único
+          que no. `test/gesture-thread.test.ts` lo vigila para los cinco.
+        */
+        .onBegin((e) => runOnJS(alMoverCuadradoRef.current)(e.x, e.y))
+        .onUpdate((e) => runOnJS(alMoverCuadradoRef.current)(e.x, e.y)),
     [],
   );
 
@@ -281,8 +301,8 @@ export function WorkspaceColorPicker({
     () =>
       Gesture.Pan()
         .minDistance(0)
-        .onBegin((e) => alMoverTiraRef.current(e.x))
-        .onUpdate((e) => alMoverTiraRef.current(e.x)),
+        .onBegin((e) => runOnJS(alMoverTiraRef.current)(e.x))
+        .onUpdate((e) => runOnJS(alMoverTiraRef.current)(e.x)),
     [],
   );
 
