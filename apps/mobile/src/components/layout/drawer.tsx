@@ -456,7 +456,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
             >
               <Ionicons
                 name={destination.icon as never}
-                size={18}
+                size={theme.iconSize.body}
                 color={tint}
               />
               <AppText variant="body" style={{ color: tint }}>
@@ -521,7 +521,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
         >
           <Ionicons
             name="grid-outline"
-            size={18}
+            size={theme.iconSize.body}
             color={theme.colors.textMuted}
           />
           <AppText variant="body" tone="muted">
@@ -560,7 +560,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
           >
             <Ionicons
               name="mail-unread-outline"
-              size={18}
+              size={theme.iconSize.body}
               color={theme.colors.accent}
             />
             <View style={{ flex: 1 }}>
@@ -872,11 +872,11 @@ function FolderBranch({
         >
           <Ionicons
             name={open ? "folder-open-outline" : "folder-outline"}
-            size={15}
+            size={theme.iconSize.body}
             color={theme.colors.textSubtle}
           />
 
-          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
+          <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {folder.emoji ? `${folder.emoji} ` : ""}
             {folder.name}
           </AppText>
@@ -976,11 +976,11 @@ function ListBranch({
         >
           <Ionicons
             name={LIST_ICON[list.kind] ?? "list-outline"}
-            size={15}
+            size={theme.iconSize.body}
             color={theme.colors.textSubtle}
           />
 
-          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
+          <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {list.title}
           </AppText>
           {list.itemCount > 0 ? (

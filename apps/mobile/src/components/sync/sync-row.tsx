@@ -92,13 +92,20 @@ export function SyncRow({
     >
       <Ionicons
         name={attention.needed ? "cloud-upload-outline" : "cloud-done-outline"}
-        size={18}
+        size={theme.iconSize.body}
         color={attention.needed ? theme.colors.accent : theme.colors.textMuted}
       />
 
       <View style={styles.text}>
+        {/*
+          `body` y no `callout`. Esta fila vive en el drawer, junto a "Inicio",
+          "Notas" y "Buscar", y las tres están en `body`: era la única con el
+          nombre un punto más pequeño que el menú que la contiene, con el icono
+          encima a dieciocho y la etiqueta a catorce. Un icono a dieciocho y un
+          texto a catorce no es un icono delante de un texto: es un texto pequeño.
+        */}
         <AppText
-          variant="callout"
+          variant="body"
           style={[
             styles.name,
             { color: attention.needed ? theme.colors.accent : theme.colors.text },
