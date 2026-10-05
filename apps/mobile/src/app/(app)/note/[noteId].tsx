@@ -10,6 +10,7 @@ import { SaveTemplateSheet } from "@/components/notes/save-template-sheet";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { ATTACHMENT_IMAGE_MAX_BYTES_DEFAULT } from "@orbit-hub/contracts";
+import { FIELD_LIMITS } from "@/lib/lists/field-limit";
 import { pickAnyFile, pickImage } from "@/lib/notes/file-picker";
 import {
   listAttachments,
@@ -449,6 +450,9 @@ export default function NoteScreen() {
         }}
         placeholder={t("note.titlePlaceholder")}
         autoCapitalize="sentences"
+        // 200 for a note, where the old sanitiser cut at 120 and lost eighty
+        // characters without telling anybody.
+        limit={FIELD_LIMITS["note.title"]}
         onSubmitEditing={() => void autosave.flush()}
       />
       <NoteEditor

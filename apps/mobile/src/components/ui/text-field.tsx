@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import type { TextInputProps } from 'react-native';
 
+import { counterState } from '@/lib/lists/field-limit';
 import { useTheme } from '@/theme';
 
 import { AppText } from './text';
@@ -11,6 +12,18 @@ export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
   error?: string | null;
   hint?: string | null;
   containerStyle?: TextInputProps['style'];
+  /**
+   * The width of the field, and the counter appears.
+   *
+   * Not `maxLength`: this is a **warning**, not a cap. `String.length` counts
+   * UTF-16 units and so does `maxLength`, so the two would agree — but `maxLength`
+   * stops the keystroke, and a person who cannot finish typing a name cannot see
+   * what they would have written. Being told "ten left" lets them shorten it.
+   *
+   * Off by default: the auth fields and the padded ones do not want a counter, and
+   * each field opts in with the width the contracts will actually store.
+   */
+  limit?: number;
 }
 
 export function TextField({
@@ -19,11 +32,13 @@ export function TextField({
   hint,
   containerStyle,
   secureTextEntry,
+  limit,
   ...rest
 }: TextFieldProps) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const counter = limit === undefined ? null : counterState(rest.value ?? '', limit);
 
   const borderColor = error
     ? theme.colors.danger
@@ -106,6 +121,14 @@ export function TextField({
           </Pressable>
         ) : null}
       </View>
+      {/*
+        The hint and the counter share a line, and the counter goes on the right:
+        a field that is nearly full has to say so next to where you type, not
+        below the error that may or may not be there.
+
+        The error wins the line. An error explains why something was refused, and
+        burying it under a character count is how a real message gets missed.
+      */}
       {error ? (
         <AppText variant="caption" tone="danger">
           {error}
@@ -114,6 +137,27 @@ export function TextField({
         <AppText variant="caption" tone="subtle">
           {hint}
         </AppText>
+      ) : null}
+
+      {counter ? (
+        <View style={styles.counterRow}>
+          {/*
+            `live="polite"` and not `assertive`: a screen reader is told the count
+            when it changes and not on every keystroke, which at one character a
+            time is unusable. The number is also the accessible name, so it can be
+            read on demand without waiting for it to change.
+          */}
+          <AppText
+            variant="caption"
+            tone={counter.tone}
+            accessibilityRole="text"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={`${counter.value}`}
+            style={styles.counter}
+          >
+            {counter.value}
+          </AppText>
+        </View>
       ) : null}
     </View>
   );
@@ -128,5 +172,14 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     paddingVertical: 12,
+  },
+  counterRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  counter: {
+    // `alignSelf` y no el del `View`: el contador va a su derecha y no puede
+    // empujar al texto de al lado.
+    flexShrink: 0,
   },
 });
