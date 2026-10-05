@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { ITEM_ICON_COLORS, ITEM_ICONS } from "./item-icons.js";
-import { tagColorSchema } from "./tag-colors.js";
+import { normalizaColor, tagColorSchema } from "./tag-colors.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
 import { userSchema } from "./auth";
@@ -63,15 +63,35 @@ export type WorkspaceColorKey = z.infer<typeof workspaceColorKeySchema>;
 /**
  * A colour a person made up, as `#RRGGBB`.
  *
- * Upper case and exactly seven characters, and the strictness is the point: this
- * goes straight into a style, and `#abc`, `#ABCDEF`, `red` and `javascript:` are
- * all things a text field will happily accept and none of them is a colour this
- * app can draw. Normalising here means the app and the API never have to be the
- * ones deciding whether a string is a colour.
+ * **It normalises, which is what the line above it claimed all along.** It used to
+ * be a `z.string().regex(/^#[0-9A-F]{6}$/)` under a comment saying that normalising
+ * here is what stops the app and the API from being the ones deciding whether a
+ * string is a colour. A regex does the opposite of that: it **validates** without
+ * **normalising**. So `#abc`, `a1b2c3` and `#a1b2c3` were all refused here, all
+ * three of which are colours this app draws, and the app's own validators had
+ * already accepted them. It now runs the value through `normalizaColor` — the one
+ * rule — and answers six digits, uppercase, with the `#`: `#abc` becomes
+ * `#AABBCC`, `a1b2c3` becomes `#A1B2C3`. `red` and `javascript:` are still refused,
+ * which is the half that was right.
+ *
+ * **Widening, never narrowing, and that is a decision about who gets hurt.** Stored
+ * data is already six digits and uppercase, so nothing that exists moves: the old
+ * rule was six digits with the `#` in uppercase, and a value that passes it today
+ * passes the new one unchanged. What changes is what is *accepted*, and the test in
+ * `apps/api/test/workspaces.test.ts` pins all three halves — `#abc`, `a1b2c3` and
+ * `#1F6FEB` stored as `#AABBCC`, `#A1B2C3` and `#1F6FEB`.
  */
-export const workspaceColorHexSchema = z
-  .string()
-  .regex(/^#[0-9A-F]{6}$/, "A custom space colour is written as #RRGGBB");
+export const workspaceColorHexSchema = z.string().transform((value, ctx) => {
+  const hex = normalizaColor(value);
+  if (hex === null) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'A custom space colour is a hex of three or six digits',
+    });
+    return z.NEVER;
+  }
+  return hex;
+});
 
 /**
  * A named colour from the list, or a custom one.
@@ -123,7 +143,14 @@ export function isWorkspaceColorKey(value: unknown): value is WorkspaceColorKey 
   );
 }
 
-/** Whether a value is a custom `#RRGGBB`, and not one of the names. */
+/**
+ * Whether a value is a custom `#RRGGBB`, and not one of the names.
+ *
+ * Wider than it reads, and wider for free: it asks the schema above, and that
+ * schema now **normalises** rather than validating with a regex of its own, so a
+ * three-digit `#abc` and a lowercase `#aabbcc` are both a custom colour. Before,
+ * this would have said no to both.
+ */
 export function isWorkspaceColorHex(value: unknown): value is string {
   return typeof value === "string" && workspaceColorHexSchema.safeParse(value).success;
 }

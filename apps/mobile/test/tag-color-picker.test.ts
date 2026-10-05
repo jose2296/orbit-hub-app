@@ -66,13 +66,15 @@ describe("el campo de color", () => {
   /**
    * El campo, el mapa y el otro validador del movil tienen que aceptar lo mismo.
    *
-   * Hay tres, y no pueden ser uno: `normalizaColor` esta en el contrato porque el
-   * servidor es quien normaliza lo que se guarda, `esHex` esta en el movil porque
-   * el selector de espacios lo usa, y `normalizaHex` es la puerta del campo de
-   * este selector. Lo que ata a los tres es **esta** comparacion, y solo ella: si
-   * uno se estrecha o se ensancha, hay un color que un sitio acepta y otro se
-   * come en silencio, que es el fallo invisible que `normalizaColor` existe para
-   * evitar.
+   * **Tres puertas y una regla, y antes tres reglas.** `normalizaHex` —la puerta de
+   * este campo— es literalmente `normalizaColor`; `esHex`, el validador de los
+   * espacios, testea el `TAG_HEX` de al lado. O sea que los tres ya no pueden
+   * separarse: lo que se compara aqui es que los tres digan lo mismo sobre lo que
+   * la gente escribe, y no que tres copias de una regla sigan copiandose.
+   *
+   * Lo que ata a los tres es **esta** comparacion, y sigue siendo lo unico que la
+   * ata: si `TAG_HEX` se estrecha o se ensancha un dia, los tres se mueven con ella,
+   * y sin esta comparacion nadie se enteraria de que se movieron.
    *
    * La lista esta **generada, y no escrita**, porque una lista escrita solo pilla
    * el ensanchamiento que alguien se imaginó: la primera version de este test no

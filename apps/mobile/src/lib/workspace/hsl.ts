@@ -18,7 +18,15 @@
  * - **HSV** moves value, which is what a *picker* wants: dragging up and down
  *   goes from the hue at full strength to black through every version of it, and
  *   the middle of the drag is the same hue rather than a different one.
+ *
+ * One import from the contract, and it is a regex and not a validator: this file
+ * only has to answer yes or no about a string, and `TAG_HEX` —which sits beside
+ * `normalizaColor`, the function that decides what a colour is for the whole
+ * repository— is that answer. `packages/contracts` cannot import from here, so the
+ * arrow points one way and there is no cycle.
  */
+
+import { TAG_HEX } from "@orbit-hub/contracts";
 
 export interface Hsl {
   /** Degrees, 0–360. */
@@ -50,12 +58,19 @@ export const COLOR_QUE_NO_ES = "#334155";
  * `^#?[0-9A-Fa-f]{6}$` rejects `#fff`, which is a perfectly good white that the
  * field in the colour picker accepts, so the guard turned a working path into the
  * fallback and two tests caught it in one run.
+ *
+ * **The regex is `TAG_HEX` and not a second copy of it.** This file is the second
+ * place in the repository that asked "is this a colour?", and the sixth counting
+ * backwards from the server: six others had their own answer, they did not agree
+ * with each other about `#` or about case, and the same `#fff` was valid in the
+ * label picker and invalid in the space picker. `TAG_HEX` is the owner's —it sits
+ * next to `normalizaColor`, in `packages/contracts`, and it is what the server
+ * applies to whatever it is about to store—so asking it is the whole fix and it
+ * cannot drift. The `trim` stays here because the callers of this file pass
+ * whatever came out of storage, and the owner trims too.
  */
 export function esHex(hex: unknown): hex is string {
-  return (
-    typeof hex === "string" &&
-    /^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(hex.trim())
-  );
+  return typeof hex === "string" && TAG_HEX.test(hex.trim());
 }
 
 /**

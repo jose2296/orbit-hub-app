@@ -264,43 +264,29 @@ describe("el mapa de colores que se guarda", () => {
   });
 
   it("el validador del movil y el del contrato aceptan lo mismo", () => {
-    // **Hay siete reglas de hex en este repositorio y no pueden ser una.** Las dos
-    // que este test ata son `esHex` —en el movil, porque el selector de espacios lo
-    // usa desde antes de que existieran las etiquetas— y `normalizaColor` —en el
-    // contrato, porque `packages/contracts` no puede importar de `apps/mobile` y es
-    // el servidor —no el cliente— quien normaliza lo que se guarda. Las dos aceptan
-    // tres o seis digitos.
+    // **Que digan lo mismo, y no una lista de donde se diferenciaban.** Este test
+    // antes enumeraba las divergencias —"las otras cinco aceptan solo seis, y ni
+    // siquiera se parecen entre si"— y las enumeraba **bien**: cada una de las siete
+    // reglas existia de verdad. Ese era el problema de la lista: es documentacion, y
+    // la documentacion no rompe un build. Escribirse aqui que dos ficheros no
+    // coinciden es el aviso de que se arreglen hoy; no es nada que las ate manana.
     //
-    // **Las otras cinco aceptan solo seis, y el mismo `#fff` que el selector de
-    // etiquetas acepta y el contrato guarda, el selector de espacios lo rechaza**:
-    // `ES_HEX` en `workspace-color-picker.tsx`, `ES_HEX` en
-    // `lib/workspace/recent-colors.ts`, la regla de `color`/`colorTo` de
-    // `sync-service.ts` —un solo regex en dos sitios—, `workspaceColorHexSchema` en
-    // `packages/contracts/src/workspace.ts`, y `normaliseCustom` en
-    // `lib/workspace/color.ts`. Ni siquiera se parecen entre si: la de los recientes y la
-    // del esquema del espacio exigen `#` **y mayusculas**, las de `sync-service.ts` y
-    // `normaliseCustom` exigen `#` y aceptan cualquier caso, y la del selector de
-    // espacios no exige `#`. `normaliseCustom` es la contraparte de
-    // `workspaceColorHexSchema` —el comentario de la primera dice que escribe la misma
-    // forma que acepta el contrato, a proposito—.
+    // **Lo que ata de verdad esta en el `it` de abajo**, que lee el fuente de los
+    // ficheros que delegan y falla si vuelve a aparecer un regex de hex. Una
+    // enumeracion es una lista de las siete reglas; el tripwire es el **clavo**, y
+    // el clavo es el que no se olvida reescribir cuando la lista queda vieja.
     //
-    // **Eso es preexistente y esta fuera de este plan**, asi que este comentario lo
-    // nombra y no lo arregla: `workspace-color-picker.tsx` no es de esta rama, y la
-    // regla que mas se le acerca es `esHex`. Lo que este test ata son **las dos
-    // primeras y nada mas** —cambiar las otras cinco no lo rompe, y hacerlas iguales
-    // tampoco es trabajo suyo—.
+    // Esta comparacion sigue, porque es la que **dice en voz alta que hay una regla**:
+    // si alguien estrecha `TAG_HEX` un dia, el movil tiene que estrecharse con ella
+    // y no se veria en ningun sitio si lo que se mira es solo que los dos usan la
+    // misma constante —eso lo dice el import— sino que digan lo mismo sobre lo que
+    // la gente escribe.
     //
-    // Lo que los ata es esta lista, y solo esta lista. Si un dia uno se estrecha o
-    // el otro se ensancha, el campo de un selector acepta un color que el mapa no
-    // guarda, y el color desaparece en silencio al pasar por el servidor, que es
-    // justo el fallo invisible que `normalizaColor` se carga con trim y con tres
-    // digitos para evitar. Son dos reglas y solo una puede tener razon.
-    //
-    // `"  #abc  "` esta aqui por el `trim`: los dos recortan hoy, y sin esta
-    // entrada un `trim` que se quittara de uno de los dos pasaria desapercibido.
-    // Y `"#abcd"` esta por el ensanchamiento mas probable que puede llegar: un hex
-    // con alfa. Los dos dicen que no hoy, y el que lo quiera tendra que mover los
-    // dos el mismo dia —que es lo que esta lista obliga.
+    // `"  #abc  "` esta aqui por el `trim`: los dos recortan, y sin esta entrada un
+    // `trim` que se quitara de uno de los dos pasaria desapercibido. Y `"#abcd"` esta
+    // por el ensanchamiento mas probable que puede llegar: un hex con alfa. Los dos
+    // dicen que no hoy; el dia que lo digan, tienen que decirlo los dos, que es lo
+    // que esta comparacion obliga.
     for (const candidato of [
       "#fff",
       "fff",
@@ -331,6 +317,133 @@ describe("el mapa de colores que se guarda", () => {
         Mercadona: iconColor(nombre),
       });
     }
+  });
+});
+
+/**
+ * **La raiz del monorepo, y por que este bloque la necesita.**
+ *
+ * Los cuatro ficheros del movil estan a tres `..` y el del API esta en el mismo
+ * monorepo, asi que el tripwire **no puede vivir solo en el movil**: el `ES_HEX` del
+ * servidor es uno de los que se van, y un clavo que no cubre el sitio donde el
+ * fallo mas caro ocurre no esta clavado.
+ */
+const REPO = join(import.meta.dirname, "..", "..", "..");
+
+/** Los seis sitios que decidian por su cuenta, con el nombre de la regla que havia. */
+const FICHEROS_QUE_DELEGAN = [
+  ["packages/contracts/src/workspace.ts", "workspaceColorHexSchema"],
+  ["apps/mobile/src/lib/workspace/hsl.ts", "esHex"],
+  ["apps/mobile/src/lib/workspace/color.ts", "normaliseCustom"],
+  ["apps/mobile/src/lib/workspace/recent-colors.ts", "los recientes"],
+  ["apps/mobile/src/components/workspace/workspace-color-picker.tsx", "el selector de espacios"],
+  ["apps/api/src/modules/sync/sync-service.ts", "color y colorTo del servidor"],
+] as const;
+
+/**
+ * La huella de un regex de hex escrito a mano: **una clase de caracteres con `0-9` y
+ * con una letra de `a` a `f`, y un `{3}` o un `{6}` justo detras**. Las cuatro
+ * formas que hubo en los seis sitios cumplen eso —`[0-9A-Fa-f]{3}`,
+ * `[0-9A-Fa-f]{6}`, `[0-9A-F]{6}` y `[0-9a-fA-F]{6}`— sin importar el orden de las
+ * letras ni si el `#` va antes, despues o en su propia clase.
+ *
+ * **Por que `0-9` y una letra de hex, y no solo `0-9`.** Medido: con `0-9` a secas
+ * el patron se dispara solo en `sync-service.ts`, que tiene el patron de un **uuid**,
+ * y lo dispara por un `[1-8][0-9a-fA-F]{3}` a media cadena. O sea que un tripwire que
+ * pita por un uuid **no es un tripwire**: es ruido, y en cuanto pita por algo que no
+ * es lo suyo todo el mundo aprende a passarlo por alto. Las dos mitades juntas son lo
+ * que distingue "esto es una forma de color" de "esto es un tope de longitud".
+ *
+ * **Lo que este patron no busca, y por que.** No busca la palabra `ES_HEX` —que es
+ * un nombre y se renombra—, ni `normalizaColor`, que es justo lo que si tiene que
+ * aparecer.
+ */
+const REGEX_DE_HEX =
+  /\[[^\]\n]*(?:0-9[^\]\n]*[a-f]|[a-f][^\]\n]*0-9)[^\]\n]*\]\s*\{[36]\}/i;
+
+/**
+ * El fuente sin sus comentarios, y sin el patron del uuid del servidor.
+ *
+ * **Por que se quitan los comentarios.** Una afirmacion negativa sobre el texto
+ * entero —*"no dice `normalizaColor`"*— se pondria verde con un comentario que lo
+ * explica, y **este bloque explica precisamente eso**: los docblocks de `hsl.ts`,
+ * `color.ts` y `workspace.ts` nombran los regex que se quitaron. Sin esto el tripwire
+ * se dispara el solo. Primero los comentarios de linea, que pueden cadear un bloque,
+ * y despues los de bloque.
+ *
+ * **Y el `UUID_PATTERN` se quita por su nombre, y hay que decir por que.** El patron
+ * de un uuid del servidor es
+ * `/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/`,
+ * y ese `[0-9a-fA-F]{3}` **es el mismo texto** que el `[0-9a-fA-F]{3}` que era la
+ * regla de color de este fichero: una clase hexadecimal con un `{3}` pegado. Por su
+ * forma **no se pueden distinguir**, y un tripwire que no puede distinguir "esto no es
+ * lo que busco" de "esto si" se gasta la credibilidad en la primera falsa alarma.
+ * Se quita por su nombre porque un identificador tiene nombre, y porque la lista de
+ * lo que se excluye y por que queda escrita en el sitio donde se va a notar cuando
+ * algo nuevo entre en esa categoria.
+ */
+function sinComentarios(fuente: string): string {
+  return fuente
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*const UUID_PATTERN = [^\n]*$/gm, "");
+}
+
+/**
+ * **La octava regla no puede aparecer sin que algo se ponga rojo.**
+ *
+ * El test de arriba, el de los candidatos, ya no enumera nada: **comprueba que haya
+ * acuerdo**. Eso ata dos funciones, y es justo lo que estaba mal—una comparacion
+ * entre dos cosas que alguien eligio, y solo ata lo que ya estaba atado. Este bloque
+ * hace otra cosa: **lee el fuente de los seis ficheros** y falla si vuelve a aparecer
+ * un regex de hex escrito a mano, que es la forma que toma un duplicado.
+ *
+ * **Enumerar donde se diferenciaban era documentacion; el tripwire es una regla.** Y
+ * la diferencia se paga: el comentario de la enumeracion se queda viejo en silencio y
+ * nadie lo relee al abrir un fichero a anadir un `ES_HEX`, mientras que el tripwire se
+ * queda viejo con el build en rojo. Ese es el unico motivo por el que este bloque
+ * existe al lado del otro.
+ *
+ * **El fallo que se impide es concreto y ya ha pasado en esta app.** Un valor que un
+ * campo acepta, el mapa lo guarda y el servidor lo devuelve convertido en `slate`,
+ * **sin un error en ninguna parte**: el selector parece funcionar y el espacio sale
+ * de otro color en cada sincronizacion. Ese fallo no se ve en la pantalla en la que
+ * se escribe, se ve en la de la otra persona, mas tarde, y no dice por que. Siete
+ * reglas fueron suficientes para que pasara.
+ */
+describe("la regla del color es una sola", () => {
+  it("y ningun fichero que delega vuelve a escribir un regex de hex", () => {
+    // **Todos los culpables en una lista y no en el primer fallo.** Un `expect` por
+    // fichero dentro del bucle para en el primero, y un tripwire que para en el
+    // primero obliga a correr la suite seis veces —una por fichero— para descubrir
+    // que se han roto seis. La lista dice las seis de golpe y el mensaje lleva el
+    // regex, que es lo que hay que ir a buscar.
+    const culpables = FICHEROS_QUE_DELEGAN.flatMap(([ruta, quien]) => {
+      const codigo = sinComentarios(readFileSync(join(REPO, ruta), "utf8"));
+      const encontrado = codigo.match(REGEX_DE_HEX);
+      return encontrado ? [`${ruta} (${quien}) vuelve a decidir que es un color: ${encontrado[0]}`] : [];
+    });
+    expect(culpables).toEqual([]);
+  });
+
+  it("y los seis estaban delegando de verdad, no solo sin regex", () => {
+    // **La otra mitad del clavo, y sin ella el de arriba es decorativo.** Que no haya
+    // un regex no dice que la pregunta se la haga el dueno: tambien la puede hacer
+    // nadie, o una copia de la forma con `split` y `parseInt`, o un
+    // `v.trim().length === 7`. Esto exige que cada uno de los seis **llame** al dueno.
+    //
+    // **Una llamada y no un nombre, por una razon medida.** Buscando `normalizaColor`
+    // a secas lo hacia pasar un `import` sin usar —probado: sustituir las dos
+    // llamadas por un `trim().length === 7` deja el import en su sitio y este test
+    // en verde—. Se busca `normalizaColor(` o `TAG_HEX.`, que es donde la pregunta
+    // se hace de verdad. El `import` sin usar tampoco se escapa del `typecheck`, que
+    // tiene `noUnusedLocals`, pero eso es otra red y esta no depende de ella.
+    const sinDueno = FICHEROS_QUE_DELEGAN.flatMap(([ruta, quien]) =>
+      sinComentarios(readFileSync(join(REPO, ruta), "utf8")).match(/normalizaColor\s*\(|TAG_HEX\s*\./)
+        ? []
+        : [`${ruta} (${quien}) no llama ni a normalizaColor ni a TAG_HEX`],
+    );
+    expect(sinDueno).toEqual([]);
   });
 });
 

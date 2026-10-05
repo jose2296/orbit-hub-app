@@ -140,6 +140,38 @@ describe('GET /workspaces', () => {
     expect(items.find((item) => item.id === stranger)?.color).toBe('slate');
   });
 
+  it('normalises a custom colour instead of refusing the ones the app accepts', async () => {
+    // **The other half of the colour rule, and the one that was seven rules.** This
+    // used to be a hex regex of the server's own — six digits, `#` required, any
+    // case— and it did not agree with the app about `#` or about three digits. The
+    // failure it produced is the worst shape a bug can have: a value the field in the
+    // picker had just accepted was stored as **`slate`, with no error anywhere**, so
+    // the picker looked like it worked and the space came back grey on every pull.
+    //
+    // So the server asks `normalizaColor` now, the same function the app asks, and
+    // these three are what that means: a three-digit hex and a hash-less one are
+    // **stored**, normalised; a word is still not a colour and still falls back.
+    const user = await createVerifiedUser(api);
+    const corto = await createWorkspace(user, 'Tres digitos', undefined, '#abc');
+    const sinHash = await createWorkspace(user, 'Sin almohadilla', undefined, 'a1b2c3');
+    const yaNormalizado = await createWorkspace(user, 'Como estaba', undefined, '#1F6FEB');
+    const imposible = await createWorkspace(user, 'Imposible otra vez', undefined, 'fucsia');
+
+    const response = await api.get('/workspaces', user.accessToken);
+    const items = response.body.data.items as { id: string; color: string }[];
+
+    expect(items.find((item) => item.id === corto)?.color).toBe('#AABBCC');
+    expect(items.find((item) => item.id === sinHash)?.color).toBe('#A1B2C3');
+    // **And the one thing that must not move.** Everything already stored is six
+    // digits and uppercase, so this is the half that has to come back byte for byte;
+    // without this line the test would pass even with a rule that uppercased a
+    // second time or re-spelled a colour it did not have to touch.
+    expect(items.find((item) => item.id === yaNormalizado)?.color).toBe('#1F6FEB');
+    // And the one thing that must **not** have got wider: a word is not a colour in
+    // any of the seven rules and it is not one now either.
+    expect(items.find((item) => item.id === imposible)?.color).toBe('slate');
+  });
+
   it('hides a deleted workspace from the list', async () => {
     const user = await createVerifiedUser(api);
     const id = await createWorkspace(user, 'Efímera');

@@ -26,7 +26,13 @@ export const tagColorSchema = z.record(
 );
 export type TagColors = z.infer<typeof tagColorSchema>;
 
-/** A hex of three or six digits, with or without the `#`. */
+/**
+ * A hex of three or six digits, with or without the `#`.
+ *
+ * Exported so the app can **ask** instead of **deciding**: `esHex` in
+ * `apps/mobile/src/lib/workspace/hsl.ts` tests this exact object rather than a
+ * second literal of the same shape. It is the only hex regex in the repository.
+ */
 export const TAG_HEX = /^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
 
 /**
@@ -39,16 +45,40 @@ export const TAG_HEX = /^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
  * colour, and because the app's own validator —`esHex`, in
  * `apps/mobile/src/lib/workspace/hsl.ts`— accepts both widths **on purpose**: its
  * comment says that narrowing it turned a working path into the fallback and that
- * two tests caught it in one run.
+ * two tests caught it in one run. That validator **no longer decides anything**: it
+ * reads the regex below, so the two cannot drift.
  *
  * **It lives here and not in the app** because `packages/contracts` cannot import
  * from `apps/mobile`, and the server is the one that normalises, so the validator
- * the server uses has to be here. That leaves two validators in the repo and the
- * only thing keeping them from drifting apart is the rule they both have to
- * follow: **`esHex` and this accept exactly the same strings.** It is also why the
- * leading and trailing spaces are trimmed before the test — `esHex` trims, so
- * `" #fff "` is a colour there and has to be one here too, or the field that
- * accepts it and the map that stores it would be two rules.
+ * the server uses has to be here.
+ *
+ * **And it is one rule with callers, not two validators — it used to be seven.**
+ * Six other places decided what a colour string is, and they did not even agree
+ * with each other: `esHex` in the app accepted three or six digits, `ES_HEX` in
+ * `workspace-color-picker.tsx` accepted six with the `#` optional, `ES_HEX` in
+ * `recent-colors.ts` and `workspaceColorHexSchema` below wanted six digits **and
+ * uppercase**, the two call sites of `color`/`colorTo` in the API's `sync-service`
+ * wanted six with the `#`, and `normaliseCustom` in the app wanted six in any
+ * case. Seven written shapes, one question. So the same `#fff` was a colour in the
+ * label picker and not in the space picker, and a value could be accepted by a
+ * field, stored, and come back `slate` **in silence** — which is the one failure
+ * this function exists to make impossible.
+ *
+ * **All six delegate now, and that is the whole fix.** `esHex` takes its regex from
+ * `TAG_HEX`; the two `ES_HEX` are gone and the three places in the app call
+ * `normalizaColor` directly; `workspaceColorHexSchema` normalises through it instead
+ * of validating with a regex of its own; and both call sites in `sync-service.ts`
+ * ask this function whether the value is a colour. **The tripwire that keeps it
+ * that way is `apps/mobile/test/tag-colors.test.ts`**, which reads the source of the
+ * delegating files and fails if a hex regex literal reappears in any of them — a
+ * seventh rule is now a red test rather than a comment nobody re-reads.
+ *
+ * **The widest rule that exists today, and that is on purpose.** Three or six
+ * digits, either case, with the `#` optional, trimmed. Narrowing it would break
+ * something that works today, and the cost of being wrong in this direction is a
+ * colour somebody chose. The leading and trailing spaces are trimmed before the
+ * test for the same reason: `" #fff "` is a colour anybody typed, and the field
+ * that takes it is the one that trims.
  *
  * `unknown` in, because it is called with whatever came off the wire. Nothing
  * throws, and `null` is the answer for everything that is not a colour.
