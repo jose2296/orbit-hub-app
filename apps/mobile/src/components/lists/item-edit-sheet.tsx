@@ -986,7 +986,7 @@ export function ItemEditSheet({
  * find.
  *
  * The label says three things: which label it is, what colour that label has
- * **now**, and whether its strip is open. The first two are the brief's; the
+ * **now**, and whether its picker is open. The first two are the brief's; the
  * third is here because the state was invisible twice over. `accentSoft` on
  * `surfaceMuted` measures **1.003:1 to 1.073:1** — a tint no eye will see, across
  * every accent and both schemes — and `accessibilityState.selected` does not reach
@@ -1006,12 +1006,12 @@ function TagColorButton({
   tag: string;
   /** The colour the label is painted in now, chosen or deduced. */
   color: string;
-  /** Whether this label's strip is the open one. */
+  /** Whether this label's colour picker is the open one. */
   open: boolean;
   /**
    * The pill's own text colour, from `TagChip`, for when this button is closed.
    *
-   * **Open, the ground is not the pill.** With the strip showing, this button's
+   * **Open, the ground is not the pill.** With the picker showing, this button's
    * background is `accentSoft`, and the colour that reads on *that* is
    * `accentSoftText` — the token pair that exists for it. Closed, the ground is
    * the label's own tint and the colour is the one the pill just derived for it.
@@ -1027,7 +1027,8 @@ function TagColorButton({
   const t = useTranslation();
   // The dictionary has a name for each of the twelve and nothing for a hex that
   // somebody chose, so the hex itself is what gets read out. Nothing today can
-  // write one here — the strip only offers the twelve — and saying so is cheaper
+  // write one here — the picker offers the twelve as shortcuts and a hand-written hex
+  // arrives as itself — and saying so is cheaper
   // than a colour that announces itself as `undefined`.
   const clave = color as IconColorKey;
   const nombre = ICON_COLOR_KEYS.includes(clave)
@@ -1115,7 +1116,7 @@ const styles = StyleSheet.create({
    * measured against the space left beside the pills instead of the width of the
    * panel, and its hue strip and its square would be squeezed into whatever was
    * left. `width: "100%"` is what forces it onto a line of its own, and it is the
-   * same thing the strip this replaces did with its own root, for the same reason.
+   * same thing the strip it replaces did with its own root, for the same reason.
    */
   anchoCompleto: {
     width: "100%",

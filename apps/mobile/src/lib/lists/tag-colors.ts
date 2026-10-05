@@ -201,9 +201,10 @@ export function labelPillColors(
   // relleno `#BE6B0C` al que el blanco **no llega a 3.96:1**, y el ambar
   // oscureciendolo sale en `#1C1001` a 4.71:1. **Estos numeros son sobre `#1B2231`,
   // la superficie oscura del tema, y no sobre `#111827`**, que es la que usa el test
-  // de "la pastilla se da la vuelta cuando aclarar no basta" mas abajo —el unico que
-  // pone `amber` sobre `#111827`, y lo pone justamente para anclar estas dos cifras—:
-  // sobre esa el relleno sale `#BD6A0B` y el blanco llega a 4.02:1. Las dos dicen lo
+  // de "la pastilla se da la vuelta cuando aclarar no basta" mas abajo —uno de los
+  // dos tests que ponen `amber` sobre `#111827`, y **ninguno de los dos clava estas
+  // dos cifras**: solo mira que el texto llegue a 4.5:1—: sobre esa el relleno sale
+  // `#BD6A0B` y el blanco llega a 4.02:1. Las dos dicen lo
   // mismo —el blanco no pasa—, y por eso el argumento no depende de cual se cite; lo
   // que **no** se puede es dar las cifras de una sin decir que superficie es, que es
   // justo como se confunde una con otra. La garantia tampoco depende de cual de los dos
@@ -262,11 +263,12 @@ export function labelPillColors(
    * Y **de esos dos, uno siempre se lee**. Aqui `L` es la **luminancia relativa de
    * WCAG** —la de `luminanceDe`, de 0 a 1— y **no** la `l` de HSL que se mueve
    * arriba. Las dos van de 0 a 1 y **no son la misma magnitud**, asi que leer una
-   * como la otra cambia la cuenta por un factor de dos: el relleno `#BE6B0C` del
-   * `amber` en oscuro tiene una luminosidad HSL de **0.40** y una luminancia de WCAG
-   * bastante menor. La razon no es que una pese mas que la otra, sino que **pesan
-   * canales distintos**: la `l` de HSL es un `(max + min) / 2` sobre los canales, o
-   * sea **una media sin pesos de solo los dos extremos, y el canal del medio no
+   * como la otra cambia la cuenta: el relleno `#BE6B0C` del `amber` en oscuro
+   * tiene una luminosidad HSL de **0.40** y una luminancia de WCAG de **0.208**, y con
+   * el uno la cuenta sale 5.30:1 y con el otro 3.96:1. **Ninguna de las dos
+   * magnitudes esta dos veces lejos de la otra**, asi que lo que hace el cambio no es un
+   * factor sino que **miden cosas distintas**: la `l` de HSL es un `(max + min) / 2`
+   * sobre los canales, o sea **una media sin pesos de solo los dos extremos, y el canal del medio no
    * cuenta para nada** —en `#BE6B0C` mandan el rojo y el azul—, mientras que WCAG
    * reparte 0.2126 / 0.7152 / 0.0722 entre los tres y **el que mas pesa es el
    * verde, justo el que HSL ignora**. Por eso los dos numeros no se pueden leer el

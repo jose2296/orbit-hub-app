@@ -400,7 +400,7 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
   });
 
   /**
-   * Los tres detectores de pastillas del guion miran tambien `<button>`, y esta es
+   * Los detectores de pastillas del guion miran tambien `<button>`, y esta es
    * la comprobacion que sostiene el `accessibilityRole="button"` de los dos
    * componentes.
    *
@@ -413,6 +413,15 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
    * «falta un atributo». Y **caduca solo**: el dia que los tres detectores se
    * reescriban bien, quien lo haga ve este test y ve lo que decia.
    *
+   * **Cinco y no tres desde la Tarea 7**, que ha anadido dos detectores mas que
+   * buscan la pastilla de una fila para **pulsarla** —`pulsarPastilla` y
+   * `pulsarInsignia`, los que comprueban que un toque en la pastilla y un toque en la
+   * insignia abren la hoja de esa tarea—. Los dos preguntan por `"div,button"` a
+   * proposito, por el mismo motivo que los otros tres: en web la pastilla es un
+   * `<button>` y un `div` solo mide su envoltorio, que no es pulsable. El numero
+   * sigue siendo parte del contrato: si alguien anade un detector de filas o quita
+   * uno, este test sale en rojo y dice que mire la lista.
+   *
    * Lo que se midio cuando el rol estaba puesto y el guion pedia `div`: las seis
    * comprobaciones de geometria **seguian en verde midiendo cero pastillas**, y
    * `Math.max(...[].map(...))` daba `-Infinity`, de modo que «lo de mas a la
@@ -420,14 +429,14 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
    * medicion buena, y por eso el filtro de radio 999 importa tanto como el `button`.
    */
   it('y el guion busca la pastilla tambien entre los botones', () => {
-    // Solo las tres de una fila. El guion tiene otras `querySelectorAll("div,…")`
+    // Solo las que son de una fila. El guion tiene otras `querySelectorAll("div,…")`
     // que buscan la hoja de texto de dentro de un nombre —`div,span,p`— y a esas no
     // les tiene que pasar nada: por eso el `fila.` delante y no un `querySelectorAll`
     // a pelo.
     const colas = [...verifyTag.matchAll(/fila\.querySelectorAll\("div([^")]*)"\)/g)].map(
       (m) => m[1] ?? '',
     );
-    expect(colas).toHaveLength(3);
+    expect(colas).toHaveLength(5);
     for (const cola of colas) {
       expect(cola.split(',').map((t) => t.trim())).toContain('button');
     }

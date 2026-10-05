@@ -349,6 +349,30 @@ function pastillaSeLee(pastilla, esquema) {
   );
 }
 
+/**
+ * Las dos mitades de la regla, **por separado**, y por qué están separadas.
+ *
+ * `pastillaSeLee` las junta porque las comprobaciones que ya existían las piden
+ * juntas. Las dos nuevas piden una cosa cada una y **una de las dos puede falling
+ * sin que la otra se entere**: hay un texto que se lee sobre su relleno y es
+ * exactamente el del tema —`#0E1220` en claro cumple 16.66:1 sobre cualquier tinte
+ * del 14%—, y ése es exactamente el caso que la puerta de contraste producía y que
+ * esta función tiene que seguir declarando imposible. Un solo `check` con las dos
+ * mitades en un `&&` no lo distinguiría de una pastilla correctamente derivada.
+ *
+ * `comoHex` **lanza** con lo que no entiende, así que un texto que no se pueda leer
+ * sale como un error del guion y no como un `false`: es lo que pasó con
+ * `rgba(0, 0, 0, 0)`, que convertido sin mirar daba 18.76:1.
+ */
+const textoEnElTema = (pastilla, esquema) =>
+  Boolean(pastilla?.textColor) && pastilla.textColor === toRgb(SCHEME[esquema].text);
+
+/** El 4.5:1 del texto de una pastilla contra **su propio** relleno, medido. */
+const contrasteDeLaPastilla = (pastilla) =>
+  pastilla?.textColor && pastilla?.fill
+    ? contrastRatio(comoHex(pastilla.textColor), comoHex(pastilla.fill))
+    : 0;
+
 /** `#RRGGBB` a `rgb(r, g, b)`, que es lo que devuelve `getComputedStyle`. */
 function toRgb(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -763,7 +787,8 @@ const rowBoxes = (tab, itemId, title) =>
  * ---
  *
  * **Antes contaba los `testID` que acaban en `-derived`**, que eran de `TagColorStrip`, y
- * con la tira fuera ese recuento da **0 siempre**. Eso no era una comprobación roja: era
+ * con la tira fuera —la component que fue sustituida por el selector— ese recuento
+ * da **0 siempre**. Eso no era una comprobación roja: era
  * una comprobación **verde por la razón equivocada**, y dos de las de este archivo la
  * usan como uno de sus términos —"con el selector cerrado" y "sin conexión tampoco se
  * pierde la página de etiquetas"—, así que las dos estaban en verde sin comprobar nada.
@@ -954,6 +979,229 @@ const pressTestIdRaw = (tab, id) =>
     })()
   `);
 
+/* ------------------------------------------- lo que hay que poder tocar ---- */
+
+/**
+ * Los dos trozos con los que se llega al **campo** de un color libre, y por qué el
+ * campo y no el cuadrado.
+ *
+ * El cuadrado es un `GestureDetector` y en el navegador es un `div` sin atributo
+ * que lo distinga: acertar en él es acertar en unas coordenadas, y unas coordenadas
+ * que dependen del ancho medido no son una comprobación. El campo es un
+ * `<input>` con nombre accesible, y `tags.colorSaveOf` es el botón que lo guarda.
+ *
+ * Los dos nombres **llevan la etiqueta detrás** porque en la página de etiquetas hay
+ * dos selectores montados a la vez —el de la pastilla y el de la etiqueta nueva— y
+ * los dos tienen un campo y un botón de guardar. Ver `muestraDe` para lo mismo con
+ * las muestras.
+ */
+const campoDeColor = (etiqueta) => `Un color tuyo, escrito como #RRGGBB, para ${etiqueta}`;
+const guardarColorDe = (etiqueta) => `Guardar el color de ${etiqueta}`;
+
+/**
+ * Escribe un hex en el campo del selector de una etiqueta y pulsa su botón de guardar.
+ *
+ * **El valor se pone con el `setter` nativo del `HTMLInputElement` y no con
+ * `campo.value = …`**, y no es un detalle: el campo es un `<input>` controlado por
+ * React, así que su valor real lo lleva el render y una asignación directa la
+ * sobrescribe sin que React se entere —el `onChangeText` no se dispara y el campo
+ * vuelve a su valor en el siguiente render—. Con el `setter` del prototipo y un
+ * evento `input` que sube por el árbol, es lo que hace una persona al escribir.
+ */
+const escribirHexEnElSelector = (tab, etiqueta, hex) =>
+  tab.evaluate(`
+    (() => {
+      const panel = document.querySelector('[data-testid="sheet-panel"]');
+      if (!panel) return { sinPanel: true, escrito: false, guardado: false };
+      const campo = [...panel.querySelectorAll("input,textarea")].find(
+        (el) => el.getAttribute("aria-label") === ${JSON.stringify(campoDeColor(etiqueta))},
+      );
+      if (!campo) return { sinCampo: true, escrito: false, guardado: false };
+      const proto = campo.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+      setter.call(campo, ${JSON.stringify(hex)});
+      campo.dispatchEvent(new Event("input", { bubbles: true }));
+      const leido = campo.value;
+      const boton = [...panel.querySelectorAll('[role="button"],[aria-label]')].find(
+        (el) => el.getAttribute("aria-label") === ${JSON.stringify(guardarColorDe(etiqueta))},
+      );
+      if (!boton) return { leido, sinBoton: true, escrito: true, guardado: false };
+      boton.click();
+      return { leido, escrito: true, guardado: true };
+    })()
+  `);
+
+/**
+ * Una pastilla de una fila y un toque en ella, por su nombre.
+ *
+ * Se busca en la fila y no en el documento porque la lista de detrás tiene la misma
+ * pastilla —"Mercadona" está en tres filas de la lista A— y va antes en el orden del
+ * documento. Y se busca el `<button>` y no el `<div>` que lo envuelve: en
+ * `react-native-web@0.21.2` `accessibilityRole` decide el **tag**, así que la
+ * pastilla de la fila es un `<button>` y un `div` que la contenga es el nodo de
+ * arriba, que no es pulsable.
+ */
+const pulsarPastilla = (tab, itemId, etiqueta) =>
+  tab.evaluate(`
+    (() => {
+      const fila = [...document.querySelectorAll("[data-testid]")]
+        .find((d) => d.getAttribute("data-testid") === ${JSON.stringify(`item-row-${itemId}`)});
+      if (!fila) return { sinFila: true };
+      const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
+      const cajas = [...fila.querySelectorAll("div,button")].filter((el) => {
+        const cs = getComputedStyle(el);
+        return cs.borderTopLeftRadius === "999px" && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+      });
+      const pill = cajas.find((el) => limpio(el.textContent) === ${JSON.stringify(etiqueta)});
+      if (!pill) return { sinPastilla: true, hay: cajas.map((c) => limpio(c.textContent)) };
+      const r = pill.getBoundingClientRect();
+      pill.click();
+      return {
+        pulsado: true,
+        etiqueta: pill.tagName.toLowerCase(),
+        caja: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
+      };
+    })()
+  `);
+
+/**
+ * La insignia de urgencia de una fila y un toque en ella.
+ *
+ * **Se busca por lo que NO es, y por eso el `tags` que se pasa es lo que la
+ * distingue**: la insignia y las pastillas son las dos cosas de la fila con radio
+ * de pastilla y fondo, y la única diferencia entre ellas es el texto. Sin la lista
+ * de etiquetas de la fila el buscador se quedaría con la primera caja de radio que
+ * encuentre, que es una pastilla.
+ *
+ * Y **el elemento se exige `<button>`**, porque eso es lo que el cambio de la Tarea
+ * 6lehizo y lo que el guion no comprobaba: la insignia con `onPress` es un
+ * `Pressable`, y en web eso es un `<button>` porque `accessibilityRole` decide el
+ * tag. Un `<div>` aquí significa que el rol se ha caído otra vez.
+ */
+const pulsarInsignia = (tab, itemId, etiquetas) =>
+  tab.evaluate(`
+    (() => {
+      const fila = [...document.querySelectorAll("[data-testid]")]
+        .find((d) => d.getAttribute("data-testid") === ${JSON.stringify(`item-row-${itemId}`)});
+      if (!fila) return { sinFila: true };
+      const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
+      const esperadas = ${JSON.stringify(etiquetas)};
+      const cajas = [...fila.querySelectorAll("div,button")].filter((el) => {
+        const cs = getComputedStyle(el);
+        return cs.borderTopLeftRadius === "999px" && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+      });
+      const insignia = cajas.find((el) => {
+        const texto = limpio(el.textContent);
+        return texto.length > 0 && !esperadas.includes(texto);
+      });
+      if (!insignia) return { sinInsignia: true, hay: cajas.map((c) => limpio(c.textContent)) };
+      const r = insignia.getBoundingClientRect();
+      insignia.click();
+      return {
+        pulsado: true,
+        texto: limpio(insignia.textContent),
+        etiqueta: insignia.tagName.toLowerCase(),
+        caja: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
+      };
+    })()
+  `);
+
+/**
+ * El título de la hoja: **el texto visible más alto del panel**, y no "el primero
+ * que hay".
+ *
+ * `Sheet` pinta el título en un `AppText variant="heading"` que no lleva ningún rol
+ * ni ningún `testID` —`AppText` es `Text` y `heading` es sólo una tipografía—, así
+ * que no hay nada por lo que buscarlo y el orden del documento es lo único que
+ * queda. Se toma **el de menor `y`**, que es el de la cabecera, y por encima del
+ * subtítulo que va justo debajo.
+ *
+ * **Los nodos de `useA11yHint` quedan fuera por su `left: -9999`**, que es de donde
+ * salen: si no se filtraran, el título sería la frase "Toca para cambiarlo" de una
+ * de las cuatro pistas que una fila con insignia y dos etiquetas deja en el
+ * documento. El filtro es la caja, no el texto: la caja es lo que está fuera de
+ * pantalla.
+ */
+const tituloDeLaHoja = (tab) =>
+  tab.evaluate(`
+    (() => {
+      const panel = document.querySelector('[data-testid="sheet-panel"]');
+      if (!panel) return null;
+      const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
+      const textos = [...panel.querySelectorAll("div,span,p")]
+        .filter((el) => el.children.length === 0)
+        .map((el) => ({ texto: limpio(el.textContent), r: el.getBoundingClientRect() }))
+        // La caja entera a la izquierda de la pantalla es una pista para lectores de
+        // pantalla, no un texto que alguien está leyendo.
+        .filter((x) => x.texto.length > 0 && x.r.left >= 0 && x.r.width > 0)
+        .sort((a, b) => a.r.top - b.r.top || a.r.left - b.r.left);
+      const primero = textos[0];
+      return {
+        titulo: primero ? primero.texto : null,
+        y: primero ? Math.round(primero.r.top) : null,
+        todos: textos.slice(0, 4).map((x) => x.texto),
+        conCampoDeNombre: !!panel.querySelector('[data-testid="item-name"]'),
+      };
+    })()
+  `);
+
+/**
+ * La hoja con un selector abierto: cuánto le sobra, y dónde está el botón de añadir
+ * antes y después de desplazar.
+ *
+ * **El contenedor se busca subiendo desde el botón, y no desde el panel.** La Tarea
+ * 5 lo buscó al revés —`sheet-panel` es el `Animated.View` que **envuelve** al
+ * `ScrollView`, no al revés—, así que el detector devolvía `null`, el `scrollTop`
+ * nunca se movía y las dos lecturas eran la misma: una tabla con dos números iguales
+ * y un "sí, se alcanza" en la fila de abajo que no se había comprobado. Por eso aquí
+ * se sube, y **por eso la comprobación exige que el `scrollTop` de verdad haya
+ * cambiado**: un `scrollTop` que sigue en `0` después de haber pedido desplazar es
+ * la firma de un contenedor equivocado.
+ *
+ * El desplazamiento se pide poniendo `scrollTop` al máximo, y no con una rueda: el
+ * tope es `scrollHeight - clientHeight` y es el mismo número que daría la rueda, y
+ * además no depende de dónde caiga el puntero ni de cuánto se desplace cada gesto.
+ */
+const desplazamientoDeLaHoja = (tab) =>
+  tab.evaluate(`
+    (() => {
+      const panel = document.querySelector('[data-testid="sheet-panel"]');
+      if (!panel) return { sinPanel: true };
+      const limpio = (s) => (s || "").replace(/[\\uE000-\\uF8FF]/g, "").trim();
+      const anadir = [...panel.querySelectorAll("button,div")]
+        .find((b) => limpio(b.innerText) === "Añadir etiqueta");
+      if (!anadir) return { sinAnadir: true };
+      let scroller = anadir.parentElement;
+      while (scroller && scroller !== panel && scroller !== document.body) {
+        const cs = getComputedStyle(scroller);
+        if (/(auto|scroll)/.test(cs.overflowY)) break;
+        scroller = scroller.parentElement;
+      }
+      if (!scroller || scroller === panel || scroller === document.body) return { sinDesplazable: true };
+
+      const caja = (el) => {
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height) };
+      };
+      const antes = { scrollTop: Math.round(scroller.scrollTop), boton: caja(anadir) };
+      scroller.scrollTop = scroller.scrollHeight;
+      const despues = { scrollTop: Math.round(scroller.scrollTop), boton: caja(anadir) };
+      const ventana = caja(scroller);
+      return {
+        clientHeight: Math.round(scroller.clientHeight),
+        scrollHeight: Math.round(scroller.scrollHeight),
+        desborda: Math.round(scroller.scrollHeight - scroller.clientHeight),
+        antes,
+        despues,
+        ventana,
+        /** El botón entero dentro de la ventana que se está viendo. */
+        cabe: despues.boton.top >= ventana.top - 1 && despues.boton.bottom <= ventana.bottom + 1,
+        /** Y dentro de la pantalla, que es lo que importa para un dedo. */
+        enPantalla: despues.boton.top >= 0 && despues.boton.bottom <= window.innerHeight,
+      };
+    })()
+  `);
+
 /** Un botón por su etiqueta accesible, dentro de un `root` si se dice. */
 const pressLabel = (tab, needle, { exact = false, root = null } = {}) =>
   tab.evaluate(`
@@ -1086,7 +1334,50 @@ const SEED_LABELS = {
   cobertura: ["Panadería", "obra", "casa", "farmacia", "verdura", "perejil", "limpieza", "descuento"],
   /** El máximo del contrato, una sola palabra, y por eso tiene que entrar entera. */
   larga: "suministrosdeferreteriaparaelbanodelbano",
+  /**
+   * Las cuatro que **cierran la paleta deducida**, y por eso están elegidas y no
+   * derivadas de otra cosa.
+   *
+   * La semilla de arriba, entre las dos listas, sólo deduce ocho de los doce
+   * (`farmacia` cae en `rose`, que `Mercadona` ya ocupaba). Y cuatro de los doce
+   * no salen de ninguna parte, así que "el texto de la pastilla nunca sale en el
+   * color del tema" sólo se podía comprobar sobre ocho de doce colores —que es un
+   * ocho de trece y no el conjunto que la frase dice_.
+   *
+   * Se eligen por eso, una por hueco y comprobadas con `derivedTagColor` como todo
+   * lo demás: `té` es `green`, `canela` es `olive`, `jamón` es `red` y `manzana`
+   * es `brown`. Las cuatro van en una tarea propia —`itemA.paleta`— para que la
+   * fila de ocho de la lista B, que es la que mide la geometría del envuelto, no
+   * crezca.
+   */
+  paraLosDoce: ["té", "canela", "jamón", "manzana"],
+  /**
+   * Las tres que llevan un color libre, y por eso están en **dos** tareas.
+   *
+   * "El color es de la lista y no de la tarea" se comprueba con una etiqueta que
+   * está en dos: puesto en una sola, "está en todas las tareas que la llevan" sería
+   * una comprobación con un elemento, y una comprobación con un elemento pasa
+   * siempre que ese elemento exista. `itemA.paleta` y `itemA.repetidas` las llevan
+   * las dos.
+   */
+  libres: ["cristal", "ancla", "muelle"],
 };
+
+/**
+ * Los colores libres que se eligen en el selector, y **por qué estos tres**.
+ *
+ * Tres y no uno porque el texto de la pastilla se deriva **en dos direcciones** y
+ * hace falta un caso de cada una y un tercero que no sea ninguno de los dos: en
+ * claro la cuenta va hacia negro y en oscuro hacia blanco. `#F2C200` es el que
+ * empuja la pastilla clara al extremo contrario —es un amarillo de una tinta casi
+ * blanca en claro y casi negra en oscuro— y `#7A1F5C` es el que se queda más
+ * cerca del color elegido de los tres.
+ *
+ * **Ninguno es un hex de la paleta**, y hay una comprobación que lo dice: "libre"
+ * que en realidad es uno de los doce no sería libre, y el mismo número con otra
+ * cifra no probaría nada.
+ */
+const HEX_LIBRES = ["#3B5FDE", "#F2C200", "#7A1F5C"];
 
 check(
   "el hash de este archivo es el del contrato",
@@ -1113,6 +1404,72 @@ check(
   "la semilla lleva una etiqueta del máximo del contrato, de 40 caracteres",
   SEED_LABELS.larga.length === 40 && ICON_COLORS.includes(derivedTagColor(SEED_LABELS.larga)),
   `${SEED_LABELS.larga.length} caracteres, deduce ${derivedTagColor(SEED_LABELS.larga)}`,
+);
+
+/**
+ * Las etiquetas a las que **este guion** elige un color, y que a partir de ese momento
+ * dejan de ser deducidas.
+ *
+ * Vive aquí arriba y no en la sección que mide, porque la cuenta de "cuántos colores
+ * deducidos quedan" depende de ellas y esa cuenta tiene que ser la misma en la
+ * comprobación y en la medición: si cada una escribiese su propia lista, la
+ * comprobación podría contar doce sobre un conjunto y la medición medir ocho sobre
+ * otro, y las dos en verde.
+ *
+ * `SEED_LABELS.larga` **no** está, y es a propósito: su color libre se elige al final,
+ * después de haberla medido como deducida, así que cuando la medición la cuenta
+ * todavía lo es.
+ */
+const CON_COLOR_ELEGIDO = new Set(["Mercadona", "urgente", ...SEED_LABELS.libres]);
+
+/** Las etiquetas de la semilla que siguen siendo deducidas cuando las mide el guion. */
+const DEDUCIDAS = [
+  ...SEED_LABELS.cobertura,
+  SEED_LABELS.larga,
+  ...SEED_LABELS.paraLosDoce,
+  ...SEED_LABELS.derivada,
+  "Mercadona",
+].filter((t) => !CON_COLOR_ELEGIDO.has(t));
+
+/**
+ * Los doce colores deducidos están los doce en la semilla, y **esta es la
+ * comprobación que lo sujeta**.
+ *
+ * Sin ella, "el texto de la pastilla nunca sale en el color del tema" se podría
+ * comprobar sobre ocho colores y llamarse las doce: el conjunto de la frase y el
+ * conjunto de la medición dejarían de ser el mismo sin que nada se quejara, que es
+ * la forma que tiene aquí de volverse verde por la razón equivocada —la misma que
+ * `'el hash de este archivo es el del contrato'` está aquí para evitar_.
+ *
+ * El tamaño va de los dos lados por lo mismo: que estén los doce dice que no falta
+ * ninguno, y que no haya un decimotercer color deducido dice que `DEDUCIDAS` no
+ * trae una etiqueta que deduzca algo fuera de la paleta. Con quince etiquetas para
+ * doce colores —`rose` lo sacan dos, `teal` otros dos y `blue` otros dos— el
+ * recuento es de colores distintos y no de etiquetas, y es el color distinto lo que
+ * tiene que ser uno de los doce.
+ */
+const deducidasQueQuedan = new Set(DEDUCIDAS.map(derivedTagColor));
+check(
+  "la semilla deja un color deducido para cada uno de los doce, y ninguno de más",
+  ICON_COLORS.every((c) => deducidasQueQuedan.has(c)) &&
+    deducidasQueQuedan.size === ICON_COLORS.length,
+  `${DEDUCIDAS.length} etiquetas deducidas para ${deducidasQueQuedan.size} colores; ` +
+    ICON_COLORS.map((c) => `${c}: ${DEDUCIDAS.filter((t) => derivedTagColor(t) === c).join("/") || "—"}`).join(", "),
+);
+
+/**
+ * Los tres colores libres son libres, y son tres distintos.
+ *
+ * Con el enum de doce, un hex que no está en la paleta no se podía **guardar**:
+ * `sanitiseTagColors` lo tiraba y la etiqueta volvía al color deducido de su nombre.
+ * Por eso la medición de la sección 12c los incluye al lado de los deducidos: son
+ * los dos conjuntos que la app tiene que pintar a la vez.
+ */
+check(
+  "los tres colores libres no son ninguno de los doce de la paleta",
+  new Set(HEX_LIBRES).size === HEX_LIBRES.length &&
+    HEX_LIBRES.every((hex) => !Object.hasOwn(HEX_POR_CLAVE, hex)),
+  `${HEX_LIBRES.join(", ")}; de la paleta sólo hay ${Object.keys(HEX_POR_CLAVE).length} hexes y ninguno se repite`,
 );
 
 /** La sesión viva. Vive fuera porque el token se renueva durante la ejecución. */
@@ -1179,6 +1536,22 @@ try {
     tomates: randomUUID(),
     aceite: randomUUID(),
     mermelada: randomUUID(),
+    /**
+     * Las dos filas de la Tarea 7, y por qué son dos y no una.
+     *
+     * `paleta` lleva las cuatro etiquetas que cierran los doce deducidos **y** las
+     * tres del color libre, y `repetidas` lleva **sólo** las tres del color libre.
+     * Esa asimetría es el contenido de la comprobación: una etiqueta que está en dos
+     * tareas de la misma lista tiene que verse igual en las dos, y con una sola tarea
+     * "todas las tareas que la llevan" sería una lista de uno que siempre se cumple.
+     *
+     * Van al final de la lista y no al principio porque las primeras seis filas son las
+     * que salen en las capturas de 2c y de 12, y su geometría está medida: el hueco
+     * del icono, la línea de las etiquetas, la insignia al lado de ocho. Añadir dos
+     * filas arriba las bajaría y las capturas enseñarían otra cosa.
+     */
+    paleta: randomUUID(),
+    repetidas: randomUUID(),
   };
   const itemB = {
     pan: randomUUID(),
@@ -1242,6 +1615,25 @@ try {
           position: 5,
           priority: "high",
           tags: ETIQUETAS_HUEVOS,
+        }),
+        /*
+         * Las dos filas de la Tarea 7. Sus etiquetas se siembran **sin color
+         * escolhido a propósito**: `libres` no está en el `tagColors` de la lista y
+         * el guion elige ese color desde el selector, en 12b. Sembrarlas con el hex
+         * puesto habría hecho pasar la comprobación entera sin que nadie escribiera
+         * un color a mano —y el color libre es justo lo que esta tarea añadió.
+         */
+        op("list_item", itemA.paleta, {
+          listId: listaA,
+          title: "Paleta",
+          position: 6,
+          tags: [...SEED_LABELS.paraLosDoce, ...SEED_LABELS.libres],
+        }),
+        op("list_item", itemA.repetidas, {
+          listId: listaA,
+          title: "Repetidas",
+          position: 7,
+          tags: [...SEED_LABELS.libres],
         }),
         /*
          * Las tres filas que esta comprobación no tenía, y que son la mitad de lo
@@ -1769,16 +2161,16 @@ try {
   );
 
   const abierto = await pressTestIdRaw(tab, `tag-color-button-Mercadona`);
-  check("el botón de color de la etiqueta abre su tira", abierto, "abierto");
+  check("el botón de color de la etiqueta abre su selector", abierto, "abierto");
   await sleep(600);
-  const tiraAbierta = await sheetState(tab);
+  const selectorAbierto = await sheetState(tab);
   check(
-    "abrir la tira no saca la hoja de la página de etiquetas",
-    tiraAbierta.pagina === "tags" && tiraAbierta.selectores > 0,
-    `página "${tiraAbierta.pagina}", selectores de pastilla abiertos ${tiraAbierta.selectores}`,
+    "abrir el selector no saca la hoja de la página de etiquetas",
+    selectorAbierto.pagina === "tags" && selectorAbierto.selectores > 0,
+    `página "${selectorAbierto.pagina}", selectores de pastilla abiertos ${selectorAbierto.selectores}`,
   );
   const pressedRed = await pulsarMuestra(tab, "red", "Mercadona");
-  check("el color se elige desde la tira de la etiqueta", pressedRed, "rojo");
+  check("el color se elige desde el selector de la etiqueta", pressedRed, "rojo");
   const puestoEnRojo = await until(
     "el color de la etiqueta",
     async () => ({ color: await resolvedColor(tab, "Mercadona"), hoja: await sheetState(tab) }),
@@ -1790,7 +2182,7 @@ try {
   // la página en `startOn` —que para quien llega por el nombre de la tarea es
   // "edit"— con cada cambio. Elegir dos colores era pulsar dos veces "Etiquetas".
   check(
-    "elegir un color deja la hoja en la página de etiquetas, con la tira cerrada",
+    "elegir un color deja la hoja en la página de etiquetas, con el selector cerrado",
     puestoEnRojo.ok && puestoEnRojo.value?.hoja?.pagina === "tags" && puestoEnRojo.value?.hoja?.selectores === 0,
     `la hoja quedó en "${puestoEnRojo.value?.hoja?.pagina}" con ${puestoEnRojo.value?.hoja?.selectores} selectores de pastilla abiertos`,
   );
@@ -1949,8 +2341,8 @@ try {
 
   await pressTestIdRaw(tab, `tag-color-button-urgente`);
   await sleep(600);
-  const offlineTira = await pulsarMuestra(tab, "blue", "urgente");
-  check("sin conexión se puede elegir un color", offlineTira, "azul");
+  const offlineSelector = await pulsarMuestra(tab, "blue", "urgente");
+  check("sin conexión se puede elegir un color", offlineSelector, "azul");
   const repintada = await until(
     "el color sin conexión",
     async () => ({
@@ -2195,7 +2587,43 @@ try {
   /* ------------------------------------------------------- la geometría ------ */
   section("10. Las lineas de pastillas y la etiqueta de 40 caracteres");
 
-  await goToList(listaB, 4);
+  /*
+   * **La fuente de los iconos, antes de medir el envuelto, y no por los iconos.**
+   *
+   * Medido las dos veces con la misma semilla y el mismo navegador, y con
+   * `Network.setBlockedURLs` para que la comparación no sea de oídas:
+   *
+   * | fuente de los iconos | glifo de la insignia | ancho de la insignia | líneas de ocho pastillas | alto de la fila |
+   * | --- | --- | --- | --- | --- |
+   * | **cargada** | 10 × 11 pt | 52,9 pt | **3** | **134 pt** |
+   * | **bloqueada** | 7,2 × 13 pt | 50,1 pt | **2** | **111 pt** |
+   *
+   * El glifo de la insignia es más estrecho sin la fuente, la insignia se queda 2,8 pt
+   * más corta, y con 2,8 pt más de sitio caben **dos** pastillas más en la última
+   * línea de las ocho: de 111 a 134 pt de alto. Las dos pastdas son verdes y las
+   * comprobaciones pasaban igual —`lines >= 2` y `rowHeight <= 200` lo toleran— pero
+   * la fila que sale en la captura es una y la que dice el informe es otra, que es
+   * el modo de fallo que este bloque ha tenido tres veces.
+   *
+   * La 10b ya esperaba a la fuente, y por lo que dice su propio comentario; aquí
+   * faltaba, y por eso las cifras de esta sección y las de la 12g —que mide el alto
+   * de una hoja llena de pastillas— dependían de si el Metro había tenido tiempo.
+   */
+  const fuenteParaEnvolver = await (async () => {
+    await goToList(listaB, 4);
+    return esperarIconos(tab);
+  })();
+  note(
+    `la fuente de los iconos ${fuenteParaEnvolver.ok ? "sí estaba" : `no ha llegado (${Math.round(fuenteParaEnvolver.waited / 1000)} s de espera)`} antes de medir el envuelto; con ella las ocho pastillas ocupan tres líneas y sin ella dos`,
+  );
+  check(
+    "la fuente de los iconos estaba antes de medir el envuelto, que es lo que da sentido a las cifras",
+    fuenteParaEnvolver.ok === true,
+    fuenteParaEnvolver.ok
+      ? "las ocho pastillas se reparten en tres líneas y la fila mide 134 pt"
+      : `no llegó en ${Math.round(fuenteParaEnvolver.waited / 1000)} s, y sin ella las ocho pastillas caben en dos líneas y la fila mide 111 pt: los números de esta sección y los de la 12g son de otra pantalla`,
+  );
+
   const geo = {};
   geo.una = await linesOfRow(tab, itemB.pan, ETIQUETAS_PAN);
   geo.tres = await linesOfRow(tab, itemB.colada, ["verdura", "perejil", "obra"]);
@@ -2676,6 +3104,543 @@ try {
     await sleep(600);
   }
 
+  /* --------------------------------------------------------------- 12b ------- */
+  section("12b. Un color libre se elige en el selector y sale en las dos tareas que lo llevan");
+
+  /*
+   * **Por qué esto va después de la sección 7 y no antes.**
+   *
+   * La sección 7 afirma que la lista A guardó su mapa entero y que son **dos**
+   * colores, y que la lista B no guardó ninguno. Elegir tres colores libres aquí
+   * pondría cinco en el mapa de A y uno en el de B, y esas dos comprobaciones
+   * deixarían de ser ciertas. No es que se hubieran vuelto relajadas: es que su
+   * enunciado —«lo que se eligió antes de aquí»— es una afirmación sobre un momento
+   * de la ejecución, y las tres de esta sección **escriben después de ese momento**.
+   *
+   * Por eso van al final y no por casualidad de orden: si somebody moviera una
+   * sección, tendría que mover las dos cosas juntas, y la comprobación se pondría
+   * roja diciendo qué encontró.
+   */
+
+  await tab.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+
+  /** Elige un color libre para una etiqueta y espera a que el botón lo anuncie. */
+  const elegirLibre = async (etiqueta, hex) => {
+    await pressTestIdRaw(tab, `tag-color-button-${etiqueta}`);
+    await sleep(500);
+    const escrito = await escribirHexEnElSelector(tab, etiqueta, hex);
+    const puesto = await until(
+      `el color libre de ${etiqueta}`,
+      async () => resolvedColor(tab, etiqueta),
+      (r) => r?.nombre === hex,
+      { timeout: 20000 },
+    );
+    return { ...escrito, puesto: puesto.ok, anunciado: puesto.value?.nombre ?? null };
+  };
+
+  const escritos = [];
+  for (const [i, etiqueta] of SEED_LABELS.libres.entries()) {
+    await openLabels(listaA, itemA.paleta, "Paleta");
+    escritos.push({ etiqueta, hex: HEX_LIBRES[i], ...(await elegirLibre(etiqueta, HEX_LIBRES[i])) });
+  }
+  note(
+    `escritos en el campo y guardados: ${escritos
+      .map((e) => `${e.etiqueta} → ${e.hex} (el campo leyó "${e.leido ?? "—"}", el botón anuncia ${e.anunciado ?? "nada"})`)
+      .join("; ")}`,
+  );
+  check(
+    "escribir un hex en el campo del selector lo guarda, y el botón lo anuncia tal cual",
+    escritos.length === HEX_LIBRES.length &&
+      escritos.every((e) => e.leido === e.hex && e.guardado === true && e.anunciado === e.hex),
+    escritos
+      .map((e) => `${e.etiqueta}: el campo leyó "${e.leido ?? "—"}" y el botón dice "${e.anunciado ?? "nada"}"`)
+      .join("; "),
+  );
+
+  await pressLabel(tab, "Volver", { exact: true }).catch(() => false);
+  await sleep(300);
+  await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
+  await sleep(700);
+
+  /*
+   * Y ahora la comprobación de verdad: el color que salió de la lista **está en las
+   * dos tareas** que llevan la etiqueta, y es el que se ha escrito.
+   *
+   * Se comparan las dos propiedades de las que sale lo que se ve —el texto y el
+   * relleno— y el relleno **se compara con la mezcla del 14%** del hex elegido sobre
+   * la superficie. Esa es la comprobación que no podía existir antes: con el enum de
+   * doce, un hex fuera de la paleta lo habría tirado el servidor, la etiqueta habría
+   * vuelto al color deducido de su nombre y esta cuenta habría salido con el tinte de
+   * otro color sin que nada fallara. Con `mezclar` reimplementada aquí, el número
+   * esperado sale del hex que alguien escribió y el que sale del DOM es el de la
+   * pastilla, y no pueden ser dos cosas distintas.
+   */
+  const enLasDosTareas = [];
+  for (const [i, etiqueta] of SEED_LABELS.libres.entries()) {
+    const hex = HEX_LIBRES[i];
+    const esperado = toRgb(mezclar(hex, SCHEME.light.fill, 0.14));
+    const leidas = [];
+    for (const item of [itemA.paleta, itemA.repetidas]) {
+      await goToList(listaA, 8);
+      leidas.push(await pillOf(tab, etiqueta, `[data-testid="item-row-${item}"]`));
+    }
+    const misma =
+      leidas.length === 2 &&
+      leidas.every((p) => p && p.textColor === leidas[0].textColor && p.fill === leidas[0].fill);
+    enLasDosTareas.push({ etiqueta, hex, leidas, misma, esperado });
+    note(
+      `${etiqueta} en "${hex}": Paleta pinta ${leidas[0]?.textColor} sobre ${leidas[0]?.fill} y Repetidas ${leidas[1]?.textColor} sobre ${leidas[1]?.fill}; el tinte del 14% de ${hex} sobre ${SCHEME.light.fill} es ${esperado}`,
+    );
+  }
+  check(
+    "el color libre se pinta en todas las tareas de la lista que llevan la etiqueta, y con su propio tinte",
+    enLasDosTareas.length === HEX_LIBRES.length &&
+      enLasDosTareas.every(
+        (e) =>
+          e.misma &&
+          e.leidas.every((p) => p !== null && p.fill === e.esperado),
+      ),
+    enLasDosTareas
+      .map(
+        (e) =>
+          `${e.etiqueta}: las dos iguales y con el tinte del 14% de ${e.hex} (${e.esperado}), leídas ${e.leidas.map((p) => p?.fill ?? "sin pastilla").join(" y ")}`,
+      )
+      .join("; "),
+  );
+
+  /*
+   * Y que llegue al servidor y sobreviva a una recarga, que es la mitad del enunciado
+   * que el enum de doce no podía cumplir.
+   *
+   * **La recarga es `tab.goto` del todo, no un cambio de estado**: una recarga
+   * reejecuta el arranque de la aplicación, que es lo que relee la caché local y lo
+   * que hace la pregunta de verdad. Con el color sólo en la memoria de la pantalla
+   * esto pasaría sin decir nada, que es por lo que el botón announces el hex no
+   * basta: el hex puede estar en el botón y no haberse escrito nunca.
+   */
+  const drenados = await until(
+    "los tres colores libres en el servidor",
+    async () =>
+      (await api(`/lists/${listaA}`, { token: await tokenDeLaApi() })).body?.data?.tagColors ?? null,
+    (m) => SEED_LABELS.libres.every((t, i) => m?.[t] === HEX_LIBRES[i]),
+    { timeout: 150000, every: 2000 },
+  );
+  check(
+    "los tres colores libres llegan al servidor, y no se han convertido en nada",
+    drenados.ok,
+    drenados.ok
+      ? JSON.stringify(drenados.value)
+      : `el servidor sigue con ${JSON.stringify(drenados.value)}`,
+  );
+
+  await goToList(listaA, 8);
+  const trasRecargar = [];
+  for (const [i, etiqueta] of SEED_LABELS.libres.entries()) {
+    trasRecargar.push({
+      etiqueta,
+      esperado: HEX_LIBRES[i],
+      paleta: await pillOf(tab, etiqueta, `[data-testid="item-row-${itemA.paleta}"]`),
+      repetidas: await pillOf(tab, etiqueta, `[data-testid="item-row-${itemA.repetidas}"]`),
+    });
+  }
+  check(
+    "el color libre sigue en su pastilla después de recargar, en las dos tareas",
+    trasRecargar.length === HEX_LIBRES.length &&
+      trasRecargar.every((t) => {
+        const esperado = toRgb(mezclar(t.esperado, SCHEME.light.fill, 0.14));
+        return (
+          t.paleta?.fill === esperado && t.repetidas?.fill === esperado &&
+          t.paleta?.textColor === t.repetidas?.textColor
+        );
+      }),
+    trasRecargar
+      .map(
+        (t) =>
+          `${t.etiqueta} (${t.esperado}): Paleta ${t.paleta?.textColor ?? "—"} sobre ${t.paleta?.fill ?? "—"}, Repetidas ${t.repetidas?.textColor ?? "—"} sobre ${t.repetidas?.fill ?? "—"}`,
+      )
+      .join("; "),
+  );
+  await shot(tab, `${SHOTS}/etiquetas-09-color-libre-claro.png`);
+
+  /* --------------------------------------------------------------- 12c ------- */
+  section("12c. Los doce deducidos y los tres libres, en claro y en oscuro, leídos del DOM");
+
+  /*
+   * La regla entera, medida pastilla por pastilla y **en los dos esquemas**.
+   *
+   * Antes de este trabajo la puerta de contraste escribía `theme.colors.text` cuando
+   * el color de la etiqueta no llegaba a 4.5:1 sobre el fondo del tema, así que el
+   * texto de una pastilla podía ser el del tema. La puerta está borrada y el texto se
+   * deriva hasta que se lee, y estas dos comprobaciones son lo que dice que **no hay
+   * ninguna pastilla que esté en el color del tema**, que es una afirmación distinta
+   * de la de que se lee: un texto puede llegar a 16:1 sobre su tinte y ser
+   * exactamente `#0E1220`, que es el texto del tema claro.
+   *
+   * **Las quince, no ocho.** `DEDUCIDAS` más `SEED_LABELS.libres`: las quince
+   * etiquetas con una pastilla que hay en las dos listas, y el reparto por fila está
+   * en `HOGAR` para no medirlas todas en el sitio equivocado.
+   */
+  const HOGAR = (() => {
+    const casa = {};
+    const poner = (etiquetas, lista, item) => {
+      for (const t of etiquetas) casa[t] = { lista, item };
+    };
+    // El orden importa y es el orden en que una etiqueta aparece de verdad: primero
+    // donde la tenía antes esta tarea, y las de la semilla de la Tarea 1 después.
+    poner(SEED_LABELS.cobertura, listaB, itemB.nevera);
+    poner([SEED_LABELS.larga], listaB, itemB.ferreteria);
+    poner([SEED_LABELS.derivada[1], SEED_LABELS.derivada[2]], listaB, itemB.nevera);
+    poner(SEED_LABELS.paraLosDoce, listaA, itemA.paleta);
+    poner(SEED_LABELS.libres, listaA, itemA.paleta);
+    return casa;
+  })();
+  const MEDIDAS = [...DEDUCIDAS, ...SEED_LABELS.libres];
+
+  const porFila = new Map();
+  for (const etiqueta of MEDIDAS) {
+    const donde = HOGAR[etiqueta];
+    if (!donde) throw new Error(`no sé dónde medir la etiqueta "${etiqueta}"`);
+    const clave = `${donde.lista}/${donde.item}`;
+    if (!porFila.has(clave)) porFila.set(clave, { ...donde, etiquetas: [] });
+    porFila.get(clave).etiquetas.push(etiqueta);
+  }
+
+  const porEsquema = {};
+  for (const esquema of ["light", "dark"]) {
+    await tab.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-color-scheme", value: esquema }],
+    });
+    const leidas = [];
+    for (const fila of porFila.values()) {
+      await goToList(fila.lista, fila.lista === listaA ? 8 : 4);
+      for (const etiqueta of fila.etiquetas) {
+        leidas.push({
+          etiqueta,
+          fila,
+          pastilla: await pillOf(tab, etiqueta, `[data-testid="item-row-${fila.item}"]`),
+        });
+      }
+    }
+    porEsquema[esquema] = leidas;
+    const ausentes = leidas.filter((l) => !l.pastilla);
+    note(
+      `${esquema}: ${leidas.length} pastillas leídas en ${porFila.size} filas, ${ausentes.length} no encontradas (${ausentes.map((l) => l.etiqueta).join(", ") || "ninguna"})`,
+    );
+  }
+  await tab.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+
+  const enElTema = [];
+  const cortasDe = [];
+  for (const esquema of ["light", "dark"]) {
+    for (const { etiqueta, pastilla } of porEsquema[esquema]) {
+      if (pastilla === null) {
+        // Una pastilla que no sale del DOM no se puede comparar con nada, y
+        // contarla como "ni en el tema ni corta" sería una comprobación verde por
+        // una pastilla que no existe. Va como cortasDe y sale en rojo.
+        cortasDe.push(`${esquema}/${etiqueta}: no se encontró la pastilla`);
+        continue;
+      }
+      if (textoEnElTema(pastilla, esquema)) {
+        enElTema.push(`${esquema}/${etiqueta}: ${pastilla.textColor} es el texto del tema`);
+      }
+      const r = contrasteDeLaPastilla(pastilla);
+      if (r < 4.5) {
+        cortasDe.push(
+          `${esquema}/${etiqueta}: ${r.toFixed(2)}:1 con ${pastilla.textColor} sobre ${pastilla.fill}`,
+        );
+      }
+    }
+  }
+  const enElTemaPorEsquema = ["light", "dark"].map(
+    (e) => `${e}: ${porEsquema[e].filter((l) => l.pastilla && textoEnElTema(l.pastilla, e)).length} de ${porEsquema[e].length}`,
+  );
+  /*
+   * Y el otro término, el que hace que esto no sea una comprobación sobre un número
+   * pequeño: **que se han encontrado todas**, en los dos esquemas.
+   *
+   * Sin él, una pastilla que no sale del DOM reduce el conjunto y las dos mitades
+   * siguen en verde: `enElTema` y `cortasDe` sólo crecerían con lo que sí se ha
+   * medido. Con `cortasDe`-recoger-una-pastilla-ausente como rojo, más esta cuenta,
+   * las dos rutas están cerradas —y `porEsquema` trae una entrada por etiqueta y por
+   * esquema porque es la lista la que se recorre, así que un `length` distinto
+   * significa que una etiqueta no tuvo casa y no que el filtro se comió una.
+   */
+  const leidasTodas = ["light", "dark"].every((e) => porEsquema[e].length === MEDIDAS.length);
+  const coloresDeducidosMedidos = new Set(DEDUCIDAS.map(derivedTagColor));
+  check(
+    "todas las pastillas de las dos listas se han encontrado, en los dos esquemas",
+    leidasTodas &&
+      MEDIDAS.length === DEDUCIDAS.length + SEED_LABELS.libres.length &&
+      ICON_COLORS.every((c) => coloresDeducidosMedidos.has(c)),
+    `${MEDIDAS.length} etiquetas (${DEDUCIDAS.length} deducidas que cubren ${coloresDeducidosMedidos.size} de los doce, y ${SEED_LABELS.libres.length} con color libre), leídas ${porEsquema.light.length} en claro y ${porEsquema.dark.length} en oscuro`,
+  );
+  check(
+    "el texto de la pastilla nunca sale en el color del tema, en ninguno de los dos esquemas",
+    leidasTodas && enElTema.length === 0,
+    `${MEDIDAS.length} pastillas (los doce deducidos y los tres libres), ${enElTemaPorEsquema.join(", ")}` +
+      (enElTema.length ? `; en el tema: ${enElTema.join(", ")}` : "; ninguna en el texto del tema"),
+  );
+  check(
+    "el texto de la pastilla llega a 4.5:1 contra su propio relleno, en los dos esquemas",
+    leidasTodas && cortasDe.length === 0,
+    `${MEDIDAS.length} pastillas medidas con la cuenta del guion, cada una contra el relleno que ella pintó` +
+      (cortasDe.length ? `; cortas o ausentes: ${cortasDe.join(", ")}` : "; ninguna por debajo de 4.5:1"),
+  );
+  for (const esquema of ["light", "dark"]) {
+    const ratios = porEsquema[esquema]
+      .filter((l) => l.pastilla)
+      .map((l) => contrasteDeLaPastilla(l.pastilla));
+    note(
+      `${esquema}: el mínimo de las ${ratios.length} pastillas es ${Math.min(...ratios).toFixed(2)}:1 y el máximo ${Math.max(...ratios).toFixed(2)}:1`,
+    );
+  }
+
+  /* --------------------------------------------------------------- 12d ------- */
+  section("12d. La pastilla y la insignia abren la hoja de esa tarea");
+
+  /*
+   * **La última cosa que nadie había pulsado.** Todo lo anterior de este bloque se
+   * midió con `pressLabel` sobre el **nombre** de la fila o con un `testID` dentro de
+   * la hoja, así que el `onPress` que la Tarea 6 puso en la pastilla y en la insignia
+   * no lo había ejecutado nadie: se comprobó que el `<button>` está en el DOM
+   * (`pillsOfRow` lo busca entre `div,button`) y que hay un `onPress` detrás leyendo
+   * el fuente, que es todo lo que se puede comprobar sin pulsar.
+   *
+   * Se pulsa **una vez cada una** y se mira el título de la hoja, porque abrir la hoja
+   * de otra tarea es el fallo que no se vería en una captura: los dos controles están
+   * en la misma fila y una hoja que se abría siempre con la primera se vería
+   * exactamente igual. Por eso el título es lo que se compara y no "se ha abierto
+   * algo": `until` espera a que el texto de arriba del todo sea **el nombre de esa
+   * tarea**, así que una hoja que se abre y no dice qué tarea es sale en rojo en vez
+   * de en verde.
+   */
+  const abrirCon = async (pulsado, tituloEsperado) => {
+    const hoja = await until(
+      `la hoja de ${tituloEsperado}`,
+      async () => (await sheetState(tab)).hayHoja ? tituloDeLaHoja(tab) : null,
+      (t) => t?.titulo === tituloEsperado,
+      { timeout: 12000, every: 300 },
+    );
+    if (hoja.ok) {
+      await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
+      await sleep(700);
+    }
+    return { ...pulsado, titulo: hoja.value?.titulo ?? null, abiertos: hoja.value?.todos ?? [], abierto: hoja.ok };
+  };
+
+  await tab.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  await goToList(listaA, 8);
+  const conPastilla = await abrirCon(await pulsarPastilla(tab, itemA.pan, "Mercadona"), "Pan");
+  check(
+    "un toque en la pastilla abre la hoja de esa tarea, con su nombre de título",
+    conPastilla.pulsado === true && conPastilla.etiqueta === "button" && conPastilla.abierto === true,
+    `la pastilla es un <${conPastilla.etiqueta ?? "—"}> y la hoja se tituló "${conPastilla.titulo ?? "—"}" (lo que hay arriba del todo en el panel: ${JSON.stringify(conPastilla.abiertos)})`,
+  );
+
+  await goToList(listaA, 8);
+  const conInsignia = await abrirCon(
+    await pulsarInsignia(tab, itemA.huevos, ETIQUETAS_HUEVOS),
+    "Huevos",
+  );
+  check(
+    "un toque en la insignia abre la hoja de esa tarea, con su nombre de título",
+    conInsignia.pulsado === true && conInsignia.etiqueta === "button" && conInsignia.abierto === true,
+    `la insignia dice "${conInsignia.texto ?? "—"}" y es un <${conInsignia.etiqueta ?? "—"}>, y la hoja se tituló "${conInsignia.titulo ?? "—"}" (lo que hay arriba del todo en el panel: ${JSON.stringify(conInsignia.abiertos)})`,
+  );
+  check(
+    "el título de la hoja es el de la tarea, y no un texto cualquiera de dentro",
+    conPastilla.abierto === true &&
+      conInsignia.abierto === true &&
+      conPastilla.titulo === "Pan" &&
+      conInsignia.titulo === "Huevos",
+    `la pastilla de "Pan" abrió "${conPastilla.titulo ?? "—"}" y la insignia de "Huevos" abrió "${conInsignia.titulo ?? "—"}"; el título se toma como el texto visible más alto del panel, y el campo del nombre ${conPastilla.abiertos?.length ? "está" : "no está"} en la hoja`,
+  );
+
+  /* --------------------------------------------------------------- 12e ------- */
+  section("12e. El servidor descarta lo que no es un color, y no falla");
+
+  /*
+   * Lo que se manda por el cable no es el mapa que la app quiere: es texto libre que
+   * llega de una build vieja, de un cliente que no sabe del campo o de alguien que
+   * lo editó a mano. Lo que **no** puede pasar es que eso tumbe la operación entera,
+   * porque un `tagColors` con una basura pierde el color de todas las demás
+   * etiquetas de la lista —y el castigo le toca a quien no escribió esa entrada—.
+   *
+   * Cada valor de la basura es una forma distinta de no ser un color: una cadena que
+   * no lo es, un objeto, un número, y la palabra `constructor`, que en un mapa hecho
+   * con `Object.fromEntries` es la **función** `Object` y no una etiqueta. Y una
+   * entrada **buena** al lado, `Verde: "  green  "`, porque un mapa del que sólo se
+   * comprueba que está vacío se obtiene igual de dos maneras opuestas —tirándolo todo
+   * o sin mirar ninguno— y lo que sale de verdad no es `{}`: es la buena, normalizada
+   * a su hex.
+   */
+  const basura = {
+    Mercadona: "no-es-un-color",
+    "   ": "#16A34A",
+    Larga: { no: "soy un color" },
+    Numero: 42,
+    Constructor: "constructor",
+    Verde: "  green  ",
+  };
+  const listaBasura = randomUUID();
+  const basuraPush = await api("/sync/push", {
+    method: "POST",
+    token: await tokenDeLaApi(),
+    body: {
+      deviceId: randomUUID(),
+      lastPulledAt: null,
+      operations: [
+        op("list", listaBasura, {
+          workspaceId: ws,
+          folderId: null,
+          title: "Basura",
+          kind: "tasks",
+          tagColors: basura,
+        }),
+      ],
+    },
+  });
+  const resultadosBasura = basuraPush.body?.data?.results ?? [];
+  const guardadaBasura = (
+    await api(`/lists/${listaBasura}`, { token: await tokenDeLaApi() })
+  ).body?.data?.tagColors;
+  check(
+    "el servidor descarta lo que no es un color, y el push sale aplicado y no rechazado",
+    basuraPush.status === 200 &&
+      resultadosBasura.length === 1 &&
+      resultadosBasura[0].status === "applied" &&
+      JSON.stringify(guardadaBasura) === JSON.stringify({ Verde: ICON_HEX.green }),
+    `se mandaron ${Object.keys(basura).length} entradas y de ellas ${Object.keys(basura).length - Object.keys(guardadaBasura ?? {}).length} se descartaron: queda ${JSON.stringify(guardadaBasura)} (el estado de la operación: ${resultadosBasura[0]?.status ?? "—"})`,
+  );
+
+  /* --------------------------------------------------------------- 12f ------- */
+  section("12f. Una etiqueta de 40 caracteres con un color libre no empuja la fila");
+
+  /*
+   * La etiqueta del máximo del contrato **con un color libre encima**. Antes llevaba
+   * el deducido, y una pastilla de 40 caracteres con el deducido es una pastilla de
+   * 40 caracteres: el ancho de una pastilla no depende del color, y el ancho del
+   * texto que lleva dentro tampoco porque el texto es el mismo. Entonces, ¿por qué
+   * repetirlo?
+   *
+   * Porque **el texto sí depende del color, y no de su longitud**: es el mismo
+   * nombre escrito en un tinte distinto, y el `letterSpacing` de la tipografía no es
+   * el mismo en todas las fuentes que se han usado. Lo que se mide es que la fila no
+   * crece y que el nombre sigue entero, con el tinte nuevo de fondo.
+   */
+  const largaLibre = "#1F6FEB";
+  await openLabels(listaB, itemB.ferreteria, "Barato");
+  const largaEscrita = await (async () => {
+    await pressTestIdRaw(tab, `tag-color-button-${SEED_LABELS.larga}`);
+    await sleep(500);
+    return escribirHexEnElSelector(tab, SEED_LABELS.larga, largaLibre);
+  })();
+  const largaPuesta = await until(
+    "el color libre de la etiqueta de 40 caracteres",
+    async () => resolvedColor(tab, SEED_LABELS.larga),
+    (r) => r?.nombre === largaLibre,
+    { timeout: 20000 },
+  );
+  check(
+    "el color libre se escribe también en la etiqueta de 40 caracteres",
+    largaEscrita.leido === largaLibre && largaEscrita.guardado === true && largaPuesta.ok,
+    `el campo leyó "${largaEscrita.leido ?? "—"}" y el botón anuncia "${largaPuesta.value?.nombre ?? "nada"}"`,
+  );
+  await pressLabel(tab, "Volver", { exact: true }).catch(() => false);
+  await sleep(300);
+  await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
+  await sleep(800);
+
+  await goToList(listaB, 4);
+  const geoLarga = await linesOfRow(tab, itemB.ferreteria, [SEED_LABELS.larga]);
+  const largaAhora = await pillOf(tab, SEED_LABELS.larga, `[data-testid="item-row-${itemB.ferreteria}"]`);
+  const tintEsperado = toRgb(mezclar(largaLibre, SCHEME.light.fill, 0.14));
+  check(
+    "una etiqueta de 40 caracteres con un color libre no empuja la fila",
+    largaAhora !== null &&
+      geoLarga.sobra <= 1 &&
+      largaAhora.rect.right <= geoLarga.rightEdge + 1 &&
+      largaAhora.fill === tintEsperado &&
+      (largaAhora.text ?? "").length === SEED_LABELS.larga.length,
+    `${SEED_LABELS.larga.length} caracteres con el tinte ${tintEsperado} de ${largaLibre}: ancho ${Math.round(largaAhora?.rect.width ?? 0)} pt, llega a ${Math.round(largaAhora?.rect.right ?? 0)} y la fila acaba en ${Math.round(geoLarga.rightEdge)}, en ${largaAhora?.lines ?? "—"} línea(s) de alto ${Math.round(largaAhora?.rect.height ?? 0)} pt y con el texto entero ("${largaAhora?.text ?? "—"}")`,
+  );
+  await shot(tab, `${SHOTS}/etiquetas-10-etiqueta-larga-color-libre.png`);
+
+  /* --------------------------------------------------------------- 12g ------- */
+  section("12g. La hoja con el selector abierto sigue desplazándose y el botón de añadir se alcanza");
+
+  /*
+   * El precio que el spec admite: el selector de una etiqueta **cabe en la hoja**, y
+   * una hoja con el selector abierto es más alta que la pantalla. Lo que se comprueba
+   * no es que quepa —no cabe, y no tiene por qué caber— sino que **la hoja se
+   * desplaza** y que **el botón de añadir se alcanza**, que es lo que importa para
+   * quien está debajo de media pantallada de color.
+   *
+   * La tarea es la de ocho etiquetas con la insignia al lado, porque es la que más
+   * crece, y se mide **en los dos esquemas**: si el desbordamiento fuera distinto en
+   * uno, el botón alcanzable en claro dejaría de serlo en oscuro y nadie se enteraría.
+   *
+   * Y las tres cosas que se piden están separadas porque cada una puede fallar sola:
+   * que haya desbordamiento (`desborda > 0`), que el `scrollTop` **se mueva** —un
+   * `scrollTop` que sigue en cero después de haberlo pedido es la firma de que se
+   * ha medido el contenedor equivocado— y que el botón esté entero dentro de la
+   * ventana una vez desplazado.
+   */
+  const desplazamientos = {};
+  for (const esquema of ["light", "dark"]) {
+    await tab.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-color-scheme", value: esquema }],
+    });
+    await openLabels(listaB, itemB.nevera, "Nevera");
+    await pressTestIdRaw(tab, `tag-color-button-${SEED_LABELS.cobertura[0]}`);
+    await sleep(900);
+    // La misma espera que en la sección 10 y por lo mismo: una hoja cuya fila de ocho
+    // pastillas se reparte en dos líneas en vez de tres es 23 pt más corta, y el
+    // desbordamiento que se afirma aquí depende de cuántas líneas tenga.
+    const fuenteDeLaHoja = await esperarIconos(tab);
+    if (!fuenteDeLaHoja.ok) {
+      note(`la fuente de los iconos no ha llegado a tiempo; la cifra de ${esquema} es de una pantalla con la fila de ocho en dos líneas`);
+    }
+    desplazamientos[esquema] = await desplazamientoDeLaHoja(tab);
+    await shot(
+      tab,
+      `${SHOTS}/etiquetas-11-hoja-desplazada-${esquema === "light" ? "claro" : "oscuro"}.png`,
+    );
+    await pressLabel(tab, "Cerrar", { exact: true }).catch(() => false);
+    await sleep(600);
+  }
+  await tab.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  const resumenDesplazamiento = ["light", "dark"]
+    .map((e) => {
+      const d = desplazamientos[e];
+      return d?.sinPanel || d?.sinAnadir || d?.sinDesplazable
+        ? `${e}: no medido (${JSON.stringify(d)})`
+        : `${e}: el contenedor mide ${d.clientHeight} de alto y tiene ${d.scrollHeight}, así que sobran ${d.desborda} pt; el botón está en ${d.antes.boton.top}–${d.antes.boton.bottom} con scrollTop ${d.antes.scrollTop} y en ${d.despues.boton.top}–${d.despues.boton.bottom} con scrollTop ${d.despues.scrollTop}, y la ventana va de ${d.ventana.top} a ${d.ventana.bottom}`;
+    })
+    .join(" | ");
+  check(
+    "la hoja con el selector abierto se desplaza, y el botón de añadir se alcanza",
+    ["light", "dark"].every((e) => {
+      const d = desplazamientos[e];
+      return d && !d.sinPanel && !d.sinAnadir && !d.sinDesplazable && d.desborda > 0 &&
+        d.antes.scrollTop === 0 && d.despues.scrollTop > 0 && d.cabe === true && d.enPantalla === true;
+    }),
+    resumenDesplazamiento,
+  );
+  check(
+    "la hoja con el selector abierto se desplaza lo mismo en claro que en oscuro",
+    desplazamientos.light?.desborda === desplazamientos.dark?.desborda,
+    `claro desbordan ${desplazamientos.light?.desborda ?? "—"} pt y oscuro ${desplazamientos.dark?.desborda ?? "—"} pt, con el scrollTop final en ${desplazamientos.light?.despues.scrollTop ?? "—"} y ${desplazamientos.dark?.despues.scrollTop ?? "—"}`,
+  );
+
   /* ----------------------------------------------------------------- 13 ----- */
   section("13. La consola, al final de todo");
 
@@ -2719,15 +3684,52 @@ try {
    *
    * Y lo que se quita **se cuenta y se escribe**, porque un filtro que se come
    * cosas en silencio es un filtro que un día se come la comprobación entera.
+   *
+   * ---
+   *
+   * **El filtro que estaba aquí no podía dispararse nunca, y ahora hay una
+   * comprobación que lo dice.**
+   *
+   * Era `/ 401 /` sobre `p.text`, y `collectProblems` arma la entrada de red como
+   * `` `${status} ${url}` `` —`"401 http://localhost:4879/api/v1/sync/pull"`—, así
+   * que **no hay ningún espacio delante del 401** y el patrón no casaba jamás: en las
+   * quince ejecuciones hasta aquí en que ha salido un 401 de sesión, `comidosPorSesion`
+   * fue vacío las quince y el filtro no había quitado nada. Un filtro que nunca
+   * quita nada es un filtro que no está, y da lo peor de los dos: se lee como una
+   * excepción controlada y no controla nada.
+   *
+   * Y el 401 llega **por dos lados**: la respuesta de red y la línea que el navegador
+   * escribe en la consola —`Failed to load resource: the server responded with a
+   * status of 401`—, que es `kind: "log"` y **no lleva la URL**, así que sola no se
+   * puede atribuir a `sync/` ni a nada. Por eso la de `log` sólo se quita cuando
+   * **también** hay un `http` de 401 en `sync/` que este filtro acepta: es la misma
+   * petición contada dos veces, y sin la respuesta no hay nada que mirar.
    */
-  const ruidoDeSesion = (p) =>
-    p.kind === "http" && / 401 /.test(p.text) && /\/sync\/(pull|push)/.test(p.text);
+  const ruidoDeSesion = (p, yaHay401DeSync = true) => {
+    if (yaHay401DeSync && p.kind === "log" && /Failed to load resource.*\b401\b/.test(p.text)) {
+      return true;
+    }
+    return p.kind === "http" && /^401\s/.test(p.text) && /\/sync\/(pull|push)/.test(p.text);
+  };
+  check(
+    "el filtro de 401 de sesión reconoce las dos formas en que el navegador lo cuenta, y sólo ésas",
+    ruidoDeSesion({ kind: "http", text: "401 http://localhost:4000/api/v1/sync/pull" }) &&
+      ruidoDeSesion({ kind: "log", text: "Failed to load resource: the server responded with a status of 401 (Unauthorized)" }) &&
+      !ruidoDeSesion({ kind: "http", text: "500 http://localhost:4000/api/v1/sync/pull" }) &&
+      !ruidoDeSesion({ kind: "http", text: "401 http://localhost:4000/api/v1/lists/9" }) &&
+      !ruidoDeSesion({ kind: "http", text: "404 http://localhost:4000/api/v1/sync/pull" }) &&
+      !ruidoDeSesion({ kind: "exception", text: "401 en sync/pull" }) &&
+      // La línea de consola sin una respuesta de 401 que la respalde: no se toca.
+      !ruidoDeSesion({ kind: "log", text: "Failed to load resource: the server responded with a status of 401 (Unauthorized)" }, false),
+    `reconoce el 401 de sync/pull y de sync/push por red y su línea de consola al lado; no reconoce un 500, un 404, un 401 fuera de sync/, una excepción, ni la línea de consola sola`,
+  );
   const todo = problems
     .map((p, i) => ({ ...p, i }))
     .slice(problemasDesdeElPrincipio);
   const comidosPorCorte = todo.filter((p) => problemasPorCortar.has(p.i));
-  const comidosPorSesion = todo.filter((p) => !problemasPorCortar.has(p.i) && ruidoDeSesion(p));
-  const reales = todo.filter((p) => !problemasPorCortar.has(p.i) && !ruidoDeSesion(p));
+  const hay401DeSync = todo.some((p) => !problemasPorCortar.has(p.i) && ruidoDeSesion(p, false));
+  const comidosPorSesion = todo.filter((p) => !problemasPorCortar.has(p.i) && ruidoDeSesion(p, hay401DeSync));
+  const reales = todo.filter((p) => !problemasPorCortar.has(p.i) && !ruidoDeSesion(p, hay401DeSync));
   check(
     "nada ha fallado en la consola en ninguna pantalla, ni durante el arranque",
     reales.length === 0,
