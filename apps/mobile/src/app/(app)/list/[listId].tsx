@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import type { IconName } from "@/components/ui/button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DoneTray } from "@/components/lists/done-tray";
@@ -894,24 +894,38 @@ function TaskRow({
         },
       ]}
     >
-      {/* The icon is its own target: it is a picture of what to buy, and
-          pressing it opens the pictures rather than the row. */}
-      {/* La casilla va dentro de una fila de una linea de alto. Sin ella se
-          centraría contra la columna entera —titulo e insignias— en vez de contra
-          la línea del título, y quedaría más baja que el icono. */}
-      <View style={styles.checkboxRow}>
-        <Checkbox checked={item.completed} onToggle={onToggle} label="" />
-      </View>
 
       {/*
         The column, and it has two children that take part in layout: the line of
-        the title and the line of the labels. The `gap: 2` is the distance under the
-        title and it is the same number it has always been — the other two children,
-        `nombreLargo.sheet` and `pistaNombre.node`, were never counted by it and
-        still are not: the sheet is a `Modal`, which on web is a portal out of this
-        box entirely, and the hint is `position: absolute`, and a child in either
-        of those is not a flex item for `gap` to put anything between. */}
-      <View style={[styles.flex, { gap: 2 }]}>
+        the title and the line of the labels.
+
+        The `gap` is the distance between those two lines, and **it is
+        `spacing.md`, 12 points, where it was 2 until now.** Two points was a
+        typographic leading, not a separation: the line of the labels sat almost
+        touching the title above it and read as part of the same paragraph, which
+        is the one thing a second line of metadata must not do. At 12 it is the
+        row's own `spacing.md`, so the distance from the title to its labels is
+        the same distance the row uses everywhere else, and a row with labels is
+        two lines that read as two lines.
+
+        Two children are still not counted by it and never were: `nombreLargo.sheet`
+        and `pistaNombre.node`. The sheet is a `Modal`, which on web is a portal
+        out of this box entirely, and the hint is `position: absolute`, and a child
+        in either of those is not a flex item for `gap` to put anything between.
+
+        **The checkbox used to be out here, a sibling of this column.** It was
+        centred by `styles.item`'s `alignItems: "center"` against the *whole row*,
+        and on a task with a badge or labels that put it below the line of the title
+        — measured at 12 points, because it was being centred on two lines while the
+        title was on one. Two rows that looked alike had the checkbox at two
+        heights, and the thing you tick was not next to the thing you are reading.
+        It is now inside the line of the title, and `styles.titulo`'s own
+        `alignItems: "center"` centres the checkbox, the icon and the title on
+        **that** line, and a title that wraps to two lines takes the checkbox with
+        it instead of leaving it at the top.
+
+        Which is why the line of the labels below is indented: see `styles.meta`. */}
+      <View style={[styles.flex, { gap: theme.spacing.md }]}>
         {/*
           The icon and the name, **on one line**, and that line is the whole fix.
 
@@ -952,6 +966,18 @@ function TaskRow({
           testID={`item-title-line-${item.id}`}
           style={[styles.titulo, { gap: theme.spacing.md }]}
         >
+          {/*
+            The tick, and it is **here and not beside the column** — see the
+            comment on the column for what it cost to have it out there. It is
+            first, and the icon after it: the order is tick, picture, name, which
+            is the order they are read in.
+            It is the only part of the line that is not the icon or the name, and
+            it keeps `label=""`, which is not the same as having no label: the
+            label is drawn even when empty, it just has `flex: 1`, and an empty
+            one took the whole row once. See `styles.label` in `checkbox.tsx`. */}
+          <Checkbox checked={item.completed} onToggle={onToggle} label="" />
+          {/* The icon is its own target: it is a picture of what to buy, and
+              pressing it opens the pictures rather than the row. */}
           {item.icon ? (
             <Pressable
               testID={`item-icon-${item.id}`}
@@ -1024,7 +1050,30 @@ function TaskRow({
             And it is compact, with a glyph: at this size the colour alone is not
             enough to sort a list by. */}
         {item.priority !== "none" || item.tags.length > 0 ? (
-          <View style={[styles.meta, { gap: theme.spacing.xs }]}>
+          <View
+            style={[
+              styles.meta,
+              {
+                gap: theme.spacing.xs,
+                /*
+                 * The indent, and it is the price of the checkbox having moved
+                 * into the line of the title: this line is a child of the column,
+                 * and the column now starts **at the checkbox**, so without this
+                 * the badges would start 22 points and a gap to the left of where
+                 * they have always started, hanging out under the tick.
+                 *
+                 * The box plus **one** gap, not two, and that is not an oversight:
+                 * it lines this line up with the name on a task with no icon, and
+                 * with the icon on one that has it — which is where it already
+                 * was, because the column used to begin after the checkbox. So
+                 * this keeps the alignment that was measured rather than picking
+                 * a new one, and a task with an icon and a task without still line
+                 * their labels up the same way they always have.
+                 */
+                paddingLeft: CHECKBOX_BOX_SIZE + theme.spacing.md,
+              },
+            ]}
+          >
             {item.priority !== "none" ? (
               <Badge
                 label={t(`items.priority.${item.priority}` as never)}
@@ -1102,23 +1151,21 @@ const styles = StyleSheet.create({
   },
   item: {
     flexDirection: "row",
-    /**
-     * Alineada arriba, y no centrada. La casilla y el icono tienen que caer sobre
-     * la **linea del titulo**, y el icono ya lo hace por vivir dentro de
-     * `styles.titulo`. Centrando aqui se centering la casilla contra el titulo mas
-     * lo que haya debajo, de modo que en una fila con insignia quedaba mas baja
-     * que el icono, y con dos lineas de titulo la diferencia crecia.
+    /*
+     * Alineada arriba, y no centrada.
      *
-     * La casilla lleva `checkboxRow` para ocupar exactamente una linea de alto, y
-     * asi su centro coincide con el del icono sin calcular ningun offset.
+     * El icono cae sobre la **linea del titulo** porque vive dentro de
+     * `styles.titulo`, y antes la casilla caia sobre la columna entera: al centrar
+     * aqui se centraba contra el titulo mas lo que hubiera debajo, y en una fila con
+     * insignia quedaba mas baja que el icono.
+     *
+     * **Y la casilla ya no necesita nada.** `main` la movio **dentro** de la linea del
+     * titulo y exporto `CHECKBOX_BOX_SIZE` desde `checkbox.tsx`, que es el mismo
+     * caja con su cuenta: la alineacion es estructura en vez de un alto de 23 puntos
+     * escrito a mano. Este `alignItems` se queda porque es lo que hace que la columna
+     * empiece en la casilla y no a un lado.
      */
     alignItems: "flex-start",
-  },
-  /** La altura de una linea, para que la casilla se centre contra el titulo. */
-  checkboxRow: {
-    // `type.body.lineHeight`, que es donde esta el nombre de la fila.
-    height: 23,
-    justifyContent: "center",
   },
   /**
    * La linea del icono y del nombre, y **`alignItems: "center"` aqui es el arreglo**.

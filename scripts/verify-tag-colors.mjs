@@ -589,9 +589,11 @@ const rowBoxes = (tab, itemId, title) =>
          */
         iconoEsHijoDeLaLinea:
           !!icono && !!nombre && icono.parentElement === porTestId(fila, "item-title-line-" + ${JSON.stringify(itemId)}),
-        // La casilla, que se queda centrada contra la fila entera y no contra la
-        // linea del titulo. Se mide para dejar el numero dicho, no para
-        // comprobarlo: es lo que se pidio que no se tocase.
+        // La casilla. Ahora vive **dentro** de la linea del titulo, asi que
+        // styles.titulo la centra contra esa linea y no contra la fila entera:
+        // se mide para comprobarlo, y se comprueba mas abajo. Antes se centraba
+        // contra la fila entera y por eso quedaba 12 pt por debajo en las filas de
+        // dos lineas; entonces esto era una nota y no una comprobación.
         casilla: caja(fila.querySelector('[role="checkbox"]')),
         lineas: hoja
           ? Math.max(
@@ -2151,6 +2153,35 @@ try {
     );
   }
 
+  /*
+   * Y el hueco **entre** las dos líneas, que es `spacing.md`: 12 puntos.
+   *
+   * Antes eran 2, y 2 no es una separación sino un interlineado: la línea de las
+   * etiquetas se quedaba pegada al título y se leía como parte del mismo párrafo,
+   * que es lo único que una segunda línea de metadatos no puede hacer.
+   *
+   * **Puede fallar**: la cuenta es la distancia entre el borde inferior de la línea
+   * del título y el borde superior de la de las etiquetas, y con el `gap: 2` de
+   * antes da 2. Si alguien lo baja otra vez, esto se pone rojo. Y solo se mira la
+   * fila que tiene segunda línea, porque en las que no la tienen no hay nada que
+   * separar y la cuenta daría el ruido del redondeo.
+   */
+  const conSegunda = Object.entries(filas).filter(([, v]) => v?.meta && v?.lineaTitulo);
+  const huecosVerticales = conSegunda.map(([k, v]) => [
+    k,
+    v.meta.y - (v.lineaTitulo.y + v.lineaTitulo.height),
+  ]);
+  check(
+    "las dos líneas de la fila están separadas por spacing.md, y no pegadas",
+    conSegunda.length > 0 &&
+      huecosVerticales.every(([, g]) => Math.abs(g - 12) <= TOLERANCIA),
+    huecosVerticales.length === 0
+      ? "ninguna fila con segunda línea, y el script no ha medido nada"
+      : huecosVerticales
+          .map(([k, g]) => `${k}: ${Math.round(g)} pt entre el título y sus etiquetas`)
+          .join(" | "),
+  );
+
   // **Dentro de la fila**: el icono y el nombre comparten el centro. Ésta es la
   // comprobación que antes fallaba —sin nada debajo el icono se centraba contra el
   // nombre entero y con algo debajo contra el nombre más la segunda línea— y por eso
@@ -2283,53 +2314,66 @@ try {
   );
 
   // Y **sin hueco reservado** cuando no hay icono. La referencia es la **línea del
-  // título** y no el borde de la fila: el borde de la fila está 42 pt más a la
-  // izquierda por la casilla (30) y el hueco de la fila (12), y comparar el nombre
-  // contra ese borde mide la casilla, no el hueco del icono.
+  // título**, y desde que la casilla está dentro de ella el borde izquierdo de esa
+  // línea **es** el de la casilla —antes el borde de la fila era el que quedaba 42 pt
+  // más a la izquierda por la casilla y el hueco de la fila, y comparar el nombre
+  // contra ese borde medía la casilla y no el hueco del icono—.
+  //
+  // El número esperado sale de **medir la casilla**, no de escribirlo: sin icono el
+  // nombre está al ancho de la casilla más un hueco, y si alguien volviera a
+  // reservar el sitio del icono esto daría 24 pt más y fallaría, que es justo lo que
+  // tiene que pillar.
   const sinIcono = await rowBoxes(tab, itemA.leche, "Leche");
+  const anchoCasilla = sinIcono?.casilla?.width ?? null;
   const huecos = {
     sinIcono: sinIcono?.titulo?.x - sinIcono?.lineaTitulo?.x,
     conIcono: filas.conDebajo?.titulo?.x - (filas.conDebajo?.icono?.x + filas.conDebajo?.icono?.width),
   };
   note(
-    `hueco entre el borde de la línea del título y el nombre: ${huecos.sinIcono} pt en la fila sin icono y ${huecos.conIcono} pt en la que lo tiene, y el nombre ocupa ${Math.round(sinIcono?.titulo?.width ?? 0)} pt de un total de ${Math.round(sinIcono?.lineaTitulo?.width ?? 0)}`,
+    `hueco entre el borde de la línea del título y el nombre: ${huecos.sinIcono} pt en la fila sin icono —la casilla mide ${anchoCasilla} pt— y ${huecos.conIcono} pt en la que lo tiene, y el nombre ocupa ${Math.round(sinIcono?.titulo?.width ?? 0)} pt de un total de ${Math.round(sinIcono?.lineaTitulo?.width ?? 0)}`,
   );
   check(
-    "una fila sin icono no deja hueco: el nombre empieza en el borde de su línea",
+    "una fila sin icono no deja hueco: el nombre va detrás de la casilla y no de un sitio reservado",
     sinIcono?.icono === null &&
       huecos.sinIcono !== null &&
       huecos.conIcono !== null &&
-      // La mitad sin icono es la que lleva el requisito, y va a cero: un hueco
-      // reservado se nota ahí. La mitad con icono va **acotada por los dos lados**,
-      // porque con un `Math.abs(...) <= 13` también pasaba un 0 —el icono pegado al
-      // nombre— y un 24 —el hueco del doble—, y son dos maneras de no fallar. Los
-      // dos números salen del `spacing.md` de la fila, que es 12.
-      Math.abs(huecos.sinIcono) <= TOLERANCIA &&
+      anchoCasilla !== null &&
+      // Sin icono el nombre arranca justo detrás de la casilla: su ancho más **un**
+      // hueco. La mitad con icono sigue yendo a `spacing.md`, y acotada por los dos
+      // lados, porque con un `Math.abs(...) <= 13` también pasaría un 0 —el icono
+      // pegado al nombre— y un 24 —el hueco del doble—, y son dos maneras de no
+      // fallar. Los dos números salen del `spacing.md` de la fila, que es 12.
+      Math.abs(huecos.sinIcono - (anchoCasilla + 12)) <= TOLERANCIA &&
       huecos.conIcono >= 12 - TOLERANCIA &&
       huecos.conIcono <= 12 + TOLERANCIA,
-    `sin icono el nombre está a ${huecos.sinIcono} pt del borde de la línea y no hay ningún nodo con el testID del icono; con icono está a ${huecos.conIcono} pt, que es el hueco de spacing.md que hay entre el icono y el nombre`,
+    `sin icono el nombre está a ${huecos.sinIcono} pt del borde de la línea, que son los ${anchoCasilla} de la casilla más un hueco de 12, y no hay ningún nodo con el testID del icono; con icono está a ${huecos.conIcono} pt, que es el hueco de spacing.md que hay entre el icono y el nombre`,
   );
 
   /*
-   * Y lo que **no** se ha tocado, medido para que el número quede dicho y no sea
-   * una opinión: la casilla se centra contra **la fila entera**, porque
-   * `styles.item` conserva su `alignItems: "center"` y la casilla no se ha movido.
+   * Y la casilla, que antes se centraba contra **la fila entera** y por eso quedaba
+   * 12 pt por debajo del centro de la línea del título en las filas de dos líneas.
+   * Eso era una nota y no una comprobación porque era un precio aceptado; ahora que
+   * la casilla vive dentro de la línea del título es una consecuencia, y una
+   * consecuencia que se puede volver a romper sin querer.
    *
-   * Eso significa que en una fila de dos líneas la casilla ya no comparte el centro
-   * con el icono, y antes sí lo compartía —no por casualidad, sino porque los dos
-   * se centraban contra la misma caja—. Es el precio de que el icono se centre
-   * contra **su** línea, y se dejó así porque es lo que se pidió; se anota aquí
-   * para que quien mire las capturas vea el número y no lo busque.
+   * Esta comprobación **puede fallar**: en el árbol de antes, la casilla era hermano
+   * de la columna y `styles.item` con `alignItems: "center"`, daba 12 pt en las filas
+   * con segunda línea y 0 en las que no la tienen. Si alguien la saca otra vez de la
+   * línea del título, los 12 pt vuelven y esto se pone rojo.
    */
-  note(
-    Object.entries(filas)
+  const desviacionCasilla = Object.entries(filas).map(([k, v]) => [
+    k,
+    v?.casilla && v?.lineaTitulo
+      ? v.casilla.centroY - v.lineaTitulo.centroY
+      : null,
+  ]);
+  check(
+    "la casilla se centra en la línea del título, y no en la fila entera",
+    desviacionCasilla.every(([, d]) => d !== null && Math.abs(d) <= TOLERANCIA),
+    desviacionCasilla
       .map(
-        ([k, v]) =>
-          `${k}: la casilla está a ${
-            v?.casilla && v?.lineaTitulo
-              ? Math.round(v.casilla.centroY - v.lineaTitulo.centroY)
-              : "—"
-          } pt del centro de la línea del título`,
+        ([k, d]) =>
+          `${k}: la casilla está a ${d === null ? "—" : Math.round(d)} pt del centro de la línea del título`,
       )
       .join(" | "),
   );
