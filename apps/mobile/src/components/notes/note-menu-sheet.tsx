@@ -102,10 +102,22 @@ export function NoteMenuSheet({
     }
   }, [note?.id, note?.title]);
 
+  /**
+   * Out of the whole sheet, and out of whatever page it is on.
+   *
+   * It did both at once — `setStep("menu")` **and** `onClose()` — so every "Cancelar"
+   * on a sub-page threw away the panel as well as going back. The two are separate
+   * jobs and they are separate now: `close` is the ✕ and closes, `volver` is the
+   * arrow and only goes back a step.
+   */
   const close = useCallback(() => {
-    setStep("menu");
     onClose();
   }, [onClose]);
+
+  /** Up one page, and the sheet stays open. */
+  const volver = useCallback(() => {
+    setStep("menu");
+  }, []);
 
   const rename = useCallback(async () => {
     if (!note || busy) return;
@@ -141,7 +153,13 @@ export function NoteMenuSheet({
 
   if (step === "rename") {
     return (
-      <Sheet visible onClose={close} title={t("note.rename")} scrollable>
+      <Sheet
+        visible
+        onClose={close}
+        onBack={volver}
+        title={t("note.rename")}
+        scrollable
+      >
         <View style={{ gap: theme.spacing.md }}>
           <TextField
             value={name}
@@ -160,7 +178,15 @@ export function NoteMenuSheet({
                 disabled: name.trim().length === 0 || busy,
                 onPress: () => void rename(),
               },
-              { key: "cancel", label: t("common.cancel"), onPress: close },
+              /*
+                "Cancelar" is now **"Volver"**, and it goes back and keeps the
+                sheet. It used to be `close`, which both went back and closed, so
+                the one button that sounded like it was leaving was the one that
+                was doing both jobs. The arrow in the header does the same thing
+                now, which is the point of the arrow: same place, same label, on
+                every page.
+              */
+              { key: "cancel", label: t("common.back"), onPress: volver },
             ]}
           />
         </View>

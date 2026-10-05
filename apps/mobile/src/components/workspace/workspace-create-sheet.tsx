@@ -7,6 +7,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
+import { FIELD_LIMITS } from "@/lib/lists/field-limit";
 import { DEFAULT_WORKSPACE_COLOR } from "@/lib/workspace/color";
 import { DEFAULT_WASH, type WashVariant } from "@/lib/workspace/wash";
 import { useTheme } from "@/theme";
@@ -114,6 +115,9 @@ export function WorkspaceCreateSheet({
           placeholder={t("workspaces.namePlaceholder")}
           autoCapitalize="sentences"
           returnKeyType="done"
+          // 80, and the counter says so. Before this, a space name of 81
+          // characters reached a column of 80 and came back as a 500.
+          limit={FIELD_LIMITS["workspace.name"]}
           onSubmitEditing={() => {
             void save();
           }}

@@ -19,6 +19,7 @@ import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useListItems } from "@/hooks/use-lists";
 import { pluralKey, useTranslation } from "@/lib/i18n";
+import { FIELD_LIMITS } from "@/lib/lists/field-limit";
 import { tagsByFrequency } from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
 
@@ -384,6 +385,7 @@ export function ItemEditSheet({
       // and delete, this panel is taller than a phone, and a panel that does not
       // scroll hides its own save button under the bottom of the screen.
       scrollable
+      onBack={page === "edit" ? undefined : () => setPage("edit")}
     >
       <View
         style={{
@@ -405,6 +407,10 @@ export function ItemEditSheet({
               onBlur={saveTitle}
               returnKeyType="next"
               selectTextOnFocus={false}
+              // The width the contracts will store it at, so the counter and the
+              // server agree. The title of a task is 300 on purpose, and a list of
+              // 300 of them is not a thing anyone writes.
+              limit={FIELD_LIMITS['list_item.title']}
             />
 
             <TextField
@@ -412,6 +418,7 @@ export function ItemEditSheet({
               value={annotation}
               onChangeText={setAnnotation}
               onBlur={saveNotes}
+              limit={FIELD_LIMITS['list_item.annotation']}
               placeholder={t("itemEdit.descriptionPlaceholder")}
               multiline
             />
@@ -819,14 +826,13 @@ export function ItemEditSheet({
           </View>
         ) : null}
 
-        {page !== "edit" ? (
-          <Button
-            label={t("common.back")}
-            variant="ghost"
-            fullWidth
-            onPress={() => setPage("edit")}
-          />
-        ) : null}
+        {/*
+          The "Volver" that was down here is gone, and not moved up to the header
+          by accident: it goes to the **same** place the arrow goes, on the **same**
+          pages, and it said the same thing the arrow says. Two controls for one job,
+          one at the bottom of a scrollable panel — where you have to scroll to find
+          it, which on the icons page is the reason the page has a scrollbar at all.
+        */}
       </View>
     </Sheet>
   );

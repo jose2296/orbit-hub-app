@@ -108,10 +108,21 @@ export function TemplateMenuSheet({
     }
   }, [template?.description, template?.id, template?.name]);
 
+  /**
+   * Out of the sheet, which is only what the ✕ does now.
+   *
+   * It used to also `setStep("menu")`, so the "Cancelar" of the rename page went
+   * back **and** closed — the same two-jobs-one-button as the note sheet, and the
+   * same fix. Going back is `volver`.
+   */
   const close = useCallback(() => {
-    setStep("menu");
     onClose();
   }, [onClose]);
+
+  /** Up one page, and the sheet stays open. */
+  const volver = useCallback(() => {
+    setStep("menu");
+  }, []);
 
   const save = useCallback(async () => {
     if (!template || busy) return;
@@ -160,6 +171,7 @@ export function TemplateMenuSheet({
         onClose={close}
         title={t("note.template.rename")}
         scrollable
+        onBack={volver}
       >
         <View style={{ gap: theme.spacing.md }}>
           <TextField
@@ -187,7 +199,12 @@ export function TemplateMenuSheet({
                 disabled: name.trim().length === 0 || busy,
                 onPress: () => void save(),
               },
-              { key: "cancel", label: t("common.cancel"), onPress: close },
+              /*
+                Was "Cancelar" wired to `close`, which went back a step and shut
+                the sheet in one press. It is "Volver" wired to `volver`, which only
+                goes back — and the header arrow does the same from higher up.
+              */
+              { key: "cancel", label: t("common.back"), onPress: volver },
             ]}
           />
         </View>
@@ -200,7 +217,8 @@ export function TemplateMenuSheet({
       <ShareStep
         template={template}
         busy={busy}
-        onBack={() => setStep("menu")}
+        onBack={volver}
+        onCloseSheet={close}
         onShare={async (input) => {
           setBusy(true);
           try {
@@ -329,11 +347,20 @@ function ShareStep({
   template,
   busy,
   onBack,
+  onCloseSheet,
   onShare,
 }: {
   template: NoteTemplate;
   busy: boolean;
   onBack: () => void;
+  /**
+   * Out of the sheet altogether, which is what the ✕ does.
+   *
+   * It used to be the same `onBack`, so the ✕ said "Cerrar" and went back to the
+   * menu instead of closing — and the ✕ in every other sheet in the app closes.
+   * Two props because there are two jobs and they are not the same one.
+   */
+  onCloseSheet: () => void;
   onShare: (input: {
     scope: "personal" | "workspace";
     workspaceId?: string;
@@ -349,7 +376,8 @@ function ShareStep({
   return (
     <Sheet
       visible
-      onClose={onBack}
+      onClose={onCloseSheet}
+      onBack={onBack}
       title={t("note.template.chooseSpace")}
       scrollable={false}
     >
@@ -399,11 +427,12 @@ function ShareStep({
           ) : null}
         </View>
 
-        <Pressable onPress={onBack} accessibilityRole="button">
-          <AppText variant="body" tone="muted">
-            {t("common.cancel")}
-          </AppText>
-        </Pressable>
+        {/*
+          The "Cancelar" that was down here went back a step, and the header now has
+          the arrow that does exactly that from the same place on every page. It was
+          the last row of a panel whose whole content is a list of spaces, so the row
+          that left it was the widest thing on screen.
+        */}
       </View>
     </Sheet>
   );

@@ -45,6 +45,22 @@ export interface SheetProps {
    */
   artwork?: ReactNode;
   children: ReactNode;
+  /**
+   * Go back one step, **and not close**.
+   *
+   * Seven sheets here hold more than one page, and each one had its own button at
+   * the *bottom* of the form labelled either "Back" or "Cancelar" — two labels for
+   * the same shape of button, one of which was lying, because it went up a step
+   * rather than out of the sheet. And the export page had no way back at all: the
+   * ✕ was the only exit and it closed everything.
+   *
+   * On the left of the header, which is where a back arrow goes and where the hand
+   * already is. Left out entirely when absent, so the eighteen sheets that are one
+   * step deep do not grow a control that does nothing.
+   */
+  onBack?: () => void;
+  /** What the back control is called, for a screen reader. */
+  backLabel?: string;
   /** Renders the content in a scroll view, for a long list of options. */
   scrollable?: boolean;
   /** Caps the height on a tall screen so a long list does not run off it. */
@@ -69,6 +85,8 @@ export function Sheet({
   subtitle,
   artwork,
   children,
+  onBack,
+  backLabel,
   scrollable = true,
   maxHeightRatio = 0.85,
 }: SheetProps) {
@@ -454,6 +472,38 @@ export function Sheet({
                 *move with it. One row, one height, the same whether there is a
                 picture or not.
               */}
+              {/*
+                The back control, **to the left of everything and not inside the
+                text block**.
+
+                `styles.close` carries `marginLeft: "auto"`, which is what throws
+                the ✕ to the right end. Putting the arrow there would make the two
+                fight over one row. So the arrow goes first in the row, the text
+                takes what is left, and the ✕ keeps pushing itself right.
+
+                It is the same thirty-point circle as the close, which is the point:
+                one sheet, one header, and the two controls that end something —
+                one step or all of it — are the same weight to the eye.
+              */}
+              {onBack ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={backLabel ?? t("common.back")}
+                  hitSlop={10}
+                  testID="sheet-back"
+                  onPress={onBack}
+                  style={({ pressed }) => [
+                    styles.back,
+                    {
+                      backgroundColor: theme.colors.surfaceMuted,
+                      borderRadius: theme.radius.pill,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
+                </Pressable>
+              ) : null}
               {artwork || title ? (
                 <View style={[styles.cabecera, { gap: theme.spacing.md }]}>
                   {artwork}
@@ -918,6 +968,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: "auto",
+  },
+  /**
+   * The back control, and **the same circle as `close` without the `auto` margin**.
+   *
+   * The margin is the whole difference. `close` needs it to reach the right end;
+   * the arrow has to be the first thing on the row, and taking it away is what
+   * leaves room for the title instead of letting the two push each other around.
+   */
+  back: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
   },
   option: {
     flexDirection: "row",
