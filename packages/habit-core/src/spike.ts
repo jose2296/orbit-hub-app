@@ -14,7 +14,9 @@ import * as rruleNamespace from 'rrule';
  *
  * - Node's ESM loader ignores `module` (rrule ships no `exports` map) and reads
  *   `main`, a CommonJS bundle whose named exports its lexer cannot see. There,
- *   `import { RRule } from 'rrule'` throws "does not provide an export named".
+ *   `import { RRule } from 'rrule'` throws
+ *   `Named export 'RRule' not found. The requested module 'rrule' is a
+ *   CommonJS module`.
  * - Expo's Metro resolves `browser, module, main` on **web**, so the browser
  *   gets `dist/esm/index.js`: a real ES module with named exports and no default.
  * - The same Metro resolves `react-native, browser, main` on **native**, so
@@ -23,18 +25,22 @@ import * as rruleNamespace from 'rrule';
  * Unwrapping the namespace by hand is the one form that holds in all three: the
  * namespace itself when the bundler picked the ES module, its `default` when the
  * loader picked CommonJS.
+ *
+ * Exported so the test builds its rules through this same path. A test that
+ * imported `{ RRule }` directly would pass on Vite's CJS interop and prove
+ * nothing about Node, Hermes or the browser.
  */
 const rrule = (rruleNamespace as { default?: typeof rruleNamespace }).default ?? rruleNamespace;
 
-const { RRule } = rrule;
+export const { RRule } = rrule;
 
 export const SPIKE_TZ = 'Europe/Madrid';
 
 /**
- * With `tzid`, rrule keeps an occurrence as the *local wall clock* of that
- * zone: the Date it hands back carries the zone's wall time in its UTC
- * components and the offset is not applied to it. So a dtstart is built with
- * `Date.UTC`, not with the machine's local constructor.
+ * With `tzid`, rrule hands back an occurrence as the **local wall clock** of that
+ * zone, stored in the UTC components of a `Date`, with the offset *not* applied.
+ * 08:00 in Madrid comes back as `08:00Z`, which is not an instant: it is a wall
+ * clock that happens to be spelled in UTC. So a dtstart is built with `Date.UTC`.
  */
 const wall = (year: number, month: number, day: number, hour: number, minute: number): Date =>
   new Date(Date.UTC(year, month - 1, day, hour, minute));
@@ -72,9 +78,75 @@ const first3 = (dates: Date[]): [Date, Date, Date] => {
 };
 
 /**
+ * Turning a wall clock into an instant takes an explicit step, and there are two
+ * ways to do it. They do not agree, and which one you pick decides what hour the
+ * person is reminded at:
+ *
+ * - `readAsWallClock` takes the UTC components as the local time in the zone and
+ *   asks the zone for its offset. This is the correct reading.
+ * - `readAsInstant` hands the `Date` over as an instant, which reads the wall
+ *   clock as if it were already UTC, so the answer lands a whole offset later.
+ *
+ * Both are measured for a day that exists and for the day inside the gap.
+ */
+const readAsWallClock = (occurrence: Date): DateTime =>
+  DateTime.fromObject(
+    {
+      year: occurrence.getUTCFullYear(),
+      month: occurrence.getUTCMonth() + 1,
+      day: occurrence.getUTCDate(),
+      hour: occurrence.getUTCHours(),
+      minute: occurrence.getUTCMinutes(),
+      second: occurrence.getUTCSeconds(),
+    },
+    { zone: SPIKE_TZ },
+  );
+
+const readAsInstant = (occurrence: Date): DateTime =>
+  DateTime.fromJSDate(occurrence, { zone: SPIKE_TZ });
+
+/**
+ * luxon types `toISO()` as `string | null`, and a `null` inside a measurement is
+ * worse than a crash: it would be frozen into the committed record as data and
+ * read later as a result.
+ */
+const iso = (value: DateTime): string => {
+  const text = value.toISO();
+  if (text === null) {
+    throw new Error(`spike got an invalid DateTime in ${SPIKE_TZ}: ${value.toString()}`);
+  }
+  return text;
+};
+
+type Reading = {
+  /** What rrule returned: a wall clock, offset not applied. */
+  rruleOccurrence: string;
+  readAsInstant: string;
+  readAsInstantLocal: string;
+  readAsWallClock: string;
+  readAsWallClockLocal: string;
+  readAsWallClockOffsetMinutes: number;
+};
+
+const reading = (occurrence: Date): Reading => {
+  const asInstant = readAsInstant(occurrence);
+  const asWallClock = readAsWallClock(occurrence);
+  return {
+    rruleOccurrence: occurrence.toISOString(),
+    readAsInstant: iso(asInstant),
+    readAsInstantLocal: asInstant.toFormat("yyyy-MM-dd'T'HH:mm"),
+    readAsWallClock: iso(asWallClock),
+    readAsWallClockLocal: asWallClock.toFormat("yyyy-MM-dd'T'HH:mm"),
+    readAsWallClockOffsetMinutes: asWallClock.offset,
+  };
+};
+
+/**
  * Everything in here must be byte-identical in Node, in the browser and in
  * Hermes. If two environments disagree on any of it, the combination is not
- * usable and Task 1 stops.
+ * usable and Task 1 stops. The record of the three observations is committed in
+ * `docs/architecture/adr/0033-recurrencia-con-rrule-y-luxon.md`, and the test
+ * checks this run against it.
  */
 export function spikeResult(): Record<string, unknown> {
   const mondays = mondaysAtEight();
@@ -82,22 +154,7 @@ export function spikeResult(): Record<string, unknown> {
   // Two days after the March change: Europe/Madrid is on CEST (UTC+2) from
   // 2026-03-29, and 08:00 has to stay 08:00.
   const [, afterChange] = first3(mondays);
-  // 2026-03-29 is the Sunday inside the gap.
-  const [, inTheGap] = first3(sundays);
-
-  // The same wall time, resolved as a real instant by luxon, is 06:00Z.
-  const realInstant = DateTime.fromObject(
-    { year: 2026, month: 3, day: 30, hour: 8, minute: 0 },
-    { zone: SPIKE_TZ },
-  );
-
-  // 02:30 on 2026-03-29 never happens in Europe/Madrid: the clock jumps from
-  // 02:00 to 03:00. The spec ruled that the occurrence is not dropped and falls
-  // on the first valid instant after the gap.
-  const gapWall = DateTime.fromObject(
-    { year: 2026, month: 3, day: 29, hour: 2, minute: 30 },
-    { zone: SPIKE_TZ },
-  );
+  const [beforeGap, insideGap, afterGap] = first3(sundays);
 
   return {
     probe1_mondaysAtEight: {
@@ -109,27 +166,28 @@ export function spikeResult(): Record<string, unknown> {
       iso: sundays.map((d) => d.toISOString()),
       dates: sundays.map((d) => d.toISOString().slice(0, 10)),
       utcHours: sundays.map((d) => d.getUTCHours()),
-      gapOccurrenceLocalDay: inTheGap.toISOString().slice(0, 10),
-      gapResolvedByLuxon: gapWall.isValid ? gapWall.toISO() : null,
-      gapOffsetMinutes: gapWall.isValid ? gapWall.offset : null,
+      // 2026-03-22, a Sunday that happens.
+      controlDay: reading(beforeGap),
+      // 2026-03-29, 02:30 does not exist: the clock jumps 02:00 -> 03:00.
+      gapDay: reading(insideGap),
+      // 2026-04-05, on CEST, to show the reading is not right by accident once.
+      weekAfterGap: reading(afterGap),
     },
-    probe3_localComponentsReadWithGetUtc: {
-      iso: afterChange.toISOString(),
-      utcHour: afterChange.getUTCHours(),
+    probe3_mondayAfterTheChange: {
+      ...reading(afterChange),
+      utcYear: afterChange.getUTCFullYear(),
       utcMonth: afterChange.getUTCMonth() + 1,
       utcDate: afterChange.getUTCDate(),
-      realInstantIso: realInstant.toUTC().toISO(),
-      realInstantOffsetMinutes: realInstant.offset,
-      wallTimeReadAsUtc: DateTime.fromJSDate(afterChange, { zone: 'utc' }).toISO(),
-      madridWallTimeIso: realInstant.toFormat("yyyy-MM-dd'T'HH:mm:ssZZ"),
+      utcHour: afterChange.getUTCHours(),
     },
   };
 }
 
 /**
- * Fingerprint of where the code is running, plus the reading that is *expected*
- * to differ: `getHours()` answers with the device's own offset, which is why the
- * engine reads the UTC components instead.
+ * Where the code is running, and the reading that depends on the device clock.
+ * `getHours()` cannot go in `spikeResult`: it answers with whatever zone the
+ * machine is set to, so two machines would compute two fingerprints. The test
+ * pins `TZ` and asserts the difference there instead.
  */
 export function spikeEnv(): Record<string, unknown> {
   const scope = globalThis as {
@@ -152,9 +210,9 @@ export function spikeEnv(): Record<string, unknown> {
       typeof Intl !== 'undefined' &&
       typeof Intl.DateTimeFormat.prototype.formatToParts === 'function',
     timeZoneRoundTrip: intl ? intl.resolvedOptions().timeZone : null,
-    localGetHours: afterChange.getHours(),
-    localGetUTCHours: afterChange.getUTCHours(),
     deviceTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    getHours: afterChange.getHours(),
+    getUTCHours: afterChange.getUTCHours(),
   };
 }
 
@@ -171,7 +229,3 @@ export function spikeFingerprint(): string {
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
-
-export const SPIKE_RESULT_LINE = (): string => `SPIKE_RESULT ${JSON.stringify(spikeResult())}`;
-export const SPIKE_FINGERPRINT_LINE = (): string => `SPIKE_FINGERPRINT ${spikeFingerprint()}`;
-export const SPIKE_ENV_LINE = (): string => `SPIKE_ENV ${JSON.stringify(spikeEnv())}`;
