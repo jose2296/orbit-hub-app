@@ -171,10 +171,6 @@ describe('una coleccion creada por sync llega al otro dispositivo', () => {
     expect(record?.shared).toBe(false);
   });
 
-  // El corte de un texto largo ya lo afirma `sync-limits.test.ts`, que lee el
-  // ancho real de la columna de las dos entidades nuevas. aqui no se repite: lo
-  // que importa del push es que la operacion entera se aplique, y eso lo dice el
-  // `status` de arriba.
   it('el pull no trae la coleccion de un espacio ajeno, aunque la otra persona tenga el suyo', async () => {
     // El filtro del bloque de `collections` es `workspace_id in (los espacios
     // donde es miembro)`. Si ese `in` se cae, el pull de cualquiera devuelve las
@@ -233,6 +229,10 @@ describe('el ciclo de update y delete de una coleccion', () => {
     const workspace = await createWorkspace(user, 'Personal');
     const collection = await createCollection(user, workspace.id, { name: 'Se va' });
     const antes = await pull(user);
+    // El cursor es la premisa del test, asi que se afirma: si se rompiera y
+    // volviera `null`, el pull de abajo seria completo y la lapida apareceria de
+    // todos modos, con este test en verde y sin mirar nada.
+    expect(antes.nextCursor).toBeTruthy();
 
     const response = await push(user, [
       operation({

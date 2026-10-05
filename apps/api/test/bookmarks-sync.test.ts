@@ -247,10 +247,11 @@ describe('el servidor se queda con el documento', () => {
   });
 
   it('un payload con document, plainText y extractionState los descarta en silencio', async () => {
-    // El `SYNC_WRITABLE_FIELDS` ya dice que no son escribibles, pero eso es una
-    // constante: el camino que de verdad importa es el del sanitizador, y su
-    // fallo es mudo. Sin esto, el push responde `applied` con la version sumada
-    // y el documento que nadie ha extraido aparece como si el servidor lo
+    // La puerta es el allow-list, y el sanitizador es la unica que la consulta
+    // (`sanitisePayload` arma el set desde `SYNC_WRITABLE_FIELDS`,
+    // `sync-service.ts:210`): no son dos capas, son una. El fallo es mudo, y por
+    // eso hay que vigilarlo: sin esto, el push responde `applied` con la version
+    // sumada y el documento que nadie ha extraido aparece como si el servidor lo
     // hubiera escrito. Y `extractionState: 'ready'` sobre un documento vacio es
     // un estado que la lista no sabe pintar.
     //
@@ -282,11 +283,47 @@ describe('el servidor se queda con el documento', () => {
     expect(record?.imageUrl).toBeNull();
   });
 
-  it('un update tampoco los escribe: no hay una segunda puerta', async () => {
-    // El registro es uno solo, asi que un update no podria colarlos. Se afirma
-    // en los dos caminos porque la fila nace en el de la izquierda y se escribe
-    // en el de la derecha, y porque un update es el camino que un cliente usa
-    // para "arreglar" lo que el servidor creo.
+  it('un update no los escribe tampoco: la puerta es una sola y es el allow-list', async () => {
+    /*
+     * El nombre de este test cambio porque el anterior decia una cosa que no es
+     * cierta: "no hay una segunda puerta".
+     *
+     * Lo que hay es **una** fuente de verdad y **una** puerta: `sanitisePayload`
+     * arma el set desde `SYNC_WRITABLE_FIELDS` (`sync-service.ts:210`), asi que
+     * la constante y el sanitizador no son dos capas que se puedan borrar por
+     * separado. Son la misma capa, contada dos veces.
+     *
+     * Lo que evita la segunda puerta es un detalle del sanitizador, y conviene
+     * que quede escrito porque es invisible: **el loop no tiene catch-all**. Termina
+     * en la rama de `metadata` (`:443-449`) y despues se cierra, asi que un campo
+     * sin rama propia nunca se copia a `clean`.
+     *
+     * Y aqui los siete campos del servidor no son todos iguales, que es lo que no
+     * se ve leyendo el allow-list. Probado con el sanitizador sin el gate del
+     * allow-list (`:214`), sobre un payload con los siete: sobreviven `url`,
+     * `document` y `description`, y **no** sobreviven `plainText`,
+     * `extractionState`, `extractionError`, `siteName` ni `imageUrl`. O sea:
+     *
+     * - `document` y `description` tienen rama propia en el sanitizador (la de
+     *   `document` es la de las notas, `:428`; `description` cae en la de
+     *   `name`/`description`/`emoji`, `:216`). Para esos dos, el allow-list es lo
+     *   **unico** que los frena: son la puerta real.
+     * - Los otros cinco no tienen rama, asi que los frena la caida sin catch-all.
+     *   Para esos hay dos capas, pero la segunda es un accidente --nadie eligio
+     *   droppearlos, simplemente no hay donde copiarlos-- y por eso no es una capa
+     *   de la que uno pueda depender.
+     *
+     * Lo que hay que vigilar, entonces, es el gate del allow-list (`:214`), no el
+     * final del loop. Anadir un `else clean[key] = value` **no** abre una segunda
+     * puerta por si solo: medido, el test sigue verde, porque el allow-list ya
+     * descarto el campo antes de llegar al final. Lo dangerouso es lo contrario:
+     * weakencer el gate del allow-list creyendo que la caida lo cubre, que es
+     * exactamente el error que este test sigue en pie para cazar.
+     *
+     * Se afirma en los dos caminos --create y update-- porque la fila nace en el
+     * de la izquierda y se escribe en el de la derecha, y porque un update es el
+     * camino que un cliente usa para "arreglar" lo que el servidor creo.
+     */
     const user = await createVerifiedUser(api);
     const workspace = await createWorkspace(user, 'Personal');
     const bookmark = await createBookmark(user, workspace.id);
@@ -327,11 +364,17 @@ describe('los anchos los corta el sanitizador, y el push entero aguanta', () => 
   });
 
   it('una etiqueta de 80 caracteres se corta a 40 y la operacion se aplica', async () => {
-    // Las etiquetas no tienen columna con ancho --son un `jsonb`-- asi que el
-    // corte lo hace el contrato y no la base, y por eso no lo vigila
-    // `sync-limits.test.ts`, que solo mira los `varchar`. Sin este corte el
-    // `safeParse` de despues rechaza la operacion entera: un `rejected` por una
-    // etiqueta larga es perder el enlace y la URL que si eran validas.
+    // Las etiquetas no tienen columna con ancho --son un `jsonb`-- asi que no las
+    // vigila `sync-limits.test.ts`, que solo mira los `varchar`.
+    //
+    // Y el corte lo hace **el sanitizador**, no el contrato: la rama de `tags`
+    // (`sync-service.ts:392-397`) hace `.slice(0, 40)` y `.filter(Boolean)`. El
+    // `.max(TAG_MAX)` del contrato **rechaza**, no recorta, asi que sin el
+    // sanitizador el `safeParse` de despues tumbaria la operacion entera: un
+    // `rejected` por una etiqueta larga es perder el enlace y la URL que si eran
+    // validas. Por eso el orden importa --primero se recorta, despues se valida-- y
+    // por eso el recorte tiene que estar en el sanitizador y no solo en el
+    // contrato.
     const user = await createVerifiedUser(api);
     const workspace = await createWorkspace(user, 'Personal');
 
@@ -392,6 +435,10 @@ describe('el ciclo de update y delete de un bookmark', () => {
     const workspace = await createWorkspace(user, 'Personal');
     const bookmark = await createBookmark(user, workspace.id, { title: 'Se va' });
     const antes = await pull(user);
+    // El cursor es la premisa del test, asi que se afirma: si se rompiera y
+    // volviera `null`, el pull de abajo seria completo y el borrado apareceria de
+    // todos modos, con este test en verde y sin mirar nada.
+    expect(antes.nextCursor).toBeTruthy();
 
     const response = await push(user, [
       operation({
