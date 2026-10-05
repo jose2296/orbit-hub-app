@@ -303,8 +303,10 @@ export function StatePickerSheet({
         share, rename and delete pages of one panel.
 
         **Both close this one on the way out**, in the order `exportar` there uses:
-        the panel leaves and the next thing arrives behind it, so the two are never
-        both up for longer than the exit.
+        the panel leaves and the next thing arrives behind it. **What that leaves on
+        screen was measured, not assumed** — 233 ms with two `sheet-dim` and two
+        `sheet-panel` in the document, y el comentario de `onEditTask` de abajo tiene
+        los numeros, el mecanismo y lo que NO se ha medido.
 
         The task panel is **above** the states editor and not below it: it is about
         the thing the sheet is open for, and the other one is about the board. That
@@ -327,10 +329,37 @@ export function StatePickerSheet({
           with one more glyph on it would be a control that says "edit" on something
           whose name and picture live three centimetres away from it.
 
-          **`onEditTask` before `onClose`,** the order the editor below already uses
-          and for the same reason: this panel leaves and the task panel arrives
-          behind it, so the two are never both up for longer than the exit. The
-          screen reads the task out of its own state —not out of the `item` this
+          **`onEditTask` before `onClose`, and the order is not what decides — the two
+          land in the same commit either way.** What decides is what is on screen during
+          the exit, and **that is measured, not argued**: the outgoing sheet stays
+          mounted for `SALIDA + 90` = 330 ms (`sheet.tsx:230`), so for **233 ms, in 15
+          of the 43 frames sampled, there are two `sheet-dim` and two `sheet-panel` in
+          the document** (`scripts/verify-state-picker.mjs`, block `1c`, which samples
+          from inside the gesture with a `requestAnimationFrame` installed before the
+          press).
+
+          Inside that window the arriving panel is the **last child of `body`** —
+          `ModalPortal` appends one div per modal — so it paints above the outgoing dim
+          and does not read darker for sitting over it. And the topmost element under a
+          backdrop point is the arriving sheet's on every frame **but the first**, where
+          it is the outgoing one: one frame, ~16 ms, and the reason is in the library
+          (`ModalAnimation.js:67` paints its wrapper as `{ opacity: 0 }`, with no
+          `position` and no `z-index`, until its `useEffect` sets `isRendering`, while
+          the outgoing modal keeps `visible={montada}` and stays in the `z-index: 9999`
+          layer). Its cost is nothing measurable: the outgoing sheet has already been
+          asked to close, so asking twice changes nothing, and the arriving panel is
+          still 91% of its height below where it will be.
+
+          **Not measured: native, and a phone-width sheet.** All of it is the web at
+          1440 x 900, where `Sheet` draws a centred dialog.
+
+          The order stays because no alternative is better on the numbers and all three
+          cost more — cutting the outgoing sheet leaves the background at zero for a
+          frame or two before the arriving dim ramps, deferring it does the same later,
+          and dropping its dim takes the composite to 0.62 → 0.30 → 0.62. What is left
+          is the background going from 0.62 to 0.66 for about 100 ms.
+
+          The screen reads the task out of its own state —not out of the `item` this
           sheet was handed— and it does it in the same commit, so it still has it.
         */}
         <Button
