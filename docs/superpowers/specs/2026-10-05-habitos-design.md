@@ -484,11 +484,29 @@ I/O. Ahi van los casos que matan habit trackers:
 
 - Habito a las 08:00 en `Europe/Madrid` cruzando **los dos** cambios de hora del ano.
 - **El ultimo domingo de marzo a las 02:30**: en Madrid esa hora local **no existe**,
-  el reloj salta de 02:00 a 03:00. **La ocurrencia no se pierde: se mueve al primer
-  instante valido despues del hueco**, las 03:00 de ese mismo dia. Se decide asi y no
-  saltandola porque el dia estaba programado y la persona no lo salto: descartarla
-  fabricaria un fallo que nadie cometio. Y para un recordatorio, disparar a las 03:00
-  es tarde; a las 00:00 del dia siguiente seria tarde de otra manera.
+  el reloj salta de 02:00 a 03:00. Medido el 2026-10-05 con `rrule@2.8.1` y
+  `luxon@3.7.2` (ADR 0033). **La ocurrencia no se pierde y no cambia de dia**;
+  queda a las **03:30** de ese mismo dia, porque la resolucion conserva los minutos
+  y suma lo que mide el salto. Se decide asi y no saltandola porque el dia estaba
+  programado y la persona no lo salto: descartarla fabricaria un fallo que nadie
+  cometio. Y para un recordatorio, disparar a las 03:30 es tarde; a las 00:00 del
+  dia siguiente seria tarde de otra manera.
+
+  **Y hay un hallazgo peor que el hueco, que solo aparece al medir.** `rrule` con
+  `tzid` devuelve **hora de pared local, no un instante**, y hay dos formas de
+  leerla y **una sola es correcta**:
+
+  | Lectura | Domingo normal (22 mar) | Dia del hueco (29 mar) |
+  | --- | --- | --- |
+  | Como instante, `fromJSDate` | 03:30 local | **04:30** local |
+  | Como hora de pared, `fromObject` | 02:30 local | **03:30** local |
+
+  La lectura "como instante" esta mal **en todas las ocurrencias, no solo el dia del
+  hueco**: trata la 02:30 como si fuera UTC y cae un offset entero mas tarde, una
+  hora en invierno y dos en verano. Leida como hora de pared, las 08:00 siguen
+  siendo las 08:00 los dos dias despues del cambio. **El motor tiene que exponer la
+  conversion a instante como funcion propia, y ningun sitio puede usar
+  `fromJSDate` sobre una ocurrencia.**
 - `BYMONTHDAY=31` en febrero: se salta, no rompe.
 - `FREQ=YEARLY` sin `UNTIL` con la ventana acotada: no se cuelga.
 - **El error de uno de la racha**: hoy sin marcar, ayer cumplido, la racha sigue viva.
