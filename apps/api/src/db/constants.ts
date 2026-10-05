@@ -78,17 +78,22 @@ export type { WorkspaceWash as WorkspaceWashName } from '@orbit-hub/contracts';
 /**
  * The ways a list can be read. `manual` is the order the items are in and the
  * only one where a row can be dragged.
+ *
+ * Derived from the contract rather than written out again. This used to be a
+ * second copy of the enum with two modes missing, and the sanitiser falls back
+ * to `manual` for anything it does not know — so choosing "by release date"
+ * painted, synced as `applied`, and came back as `manual` on the next pull, on
+ * every device, with no error anywhere. `sync-limits.test.ts` checks the two
+ * lists are the same list.
  */
-export const LIST_ORDER_MODES = [
-  'manual',
-  'alphabetical',
-  'alphabetical_desc',
-  'created_desc',
-  'created_asc',
-  'updated_desc',
-  'priority',
-] as const;
-export type ListOrderModeName = (typeof LIST_ORDER_MODES)[number];
+import { listOrderModeSchema } from '@orbit-hub/contracts';
+import type { ListOrderMode } from '@orbit-hub/contracts';
+
+export const LIST_ORDER_MODES = listOrderModeSchema.options;
+export type ListOrderModeName = ListOrderMode;
+
+export { listOrderModeSchema } from '@orbit-hub/contracts';
+export type { ListOrderMode } from '@orbit-hub/contracts';
 
 export { ITEM_ICONS } from '@orbit-hub/contracts';
 export type { ItemIcon } from '@orbit-hub/contracts';

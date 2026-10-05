@@ -30,7 +30,6 @@ import {
 } from '../../db/constants.js';
 import type {
   ListKindName,
-  ListOrderModeName,
   MembershipRoleName,
   SyncEntityName,
 } from '../../db/constants.js';
@@ -109,7 +108,66 @@ function noteFieldsForWrite(
  * Keeps only the fields the sync protocol owns, coerced to the column types.
  * Anything else in the payload is dropped instead of being written.
  */
-function sanitisePayload(
+/**
+ * Column widths for the free-text fields, per entity.
+ *
+ * These are the `varchar` lengths in `content-schema.ts`. The contract schemas
+ * in `packages/contracts` carry the same numbers as validation, and the two
+ * copies are checked against each other by `sync-limits.test.ts` — which reads
+ * the columns, so a migration that changes a width cannot leave this stale
+ * without a test going red.
+ */
+const STRING_LIMITS: Partial<Record<SyncEntityName, Record<string, number>>> = {
+  workspace: { name: 80, description: 500, emoji: 16 },
+  folder: { name: 120, emoji: 16 },
+  list: { title: 120, description: 1000, emoji: 16 },
+  list_item: { annotation: 2000 },
+  note: { title: 200 },
+};
+
+/**
+ * What a device is told when an operation fails.
+ *
+ * `The operation failed` was the answer for everything that was not an
+ * `HttpError`, and that includes every error Postgres raises on its own — a value
+ * too long for a column being the one that happens on ordinary input. The device
+ * records the reason and drops the operation from the outbox, so a message that
+ * says nothing is a message nobody can act on: the write is gone and there is no
+ * way to tell whether retrying could ever work.
+ *
+ * Postgres error codes are the ones worth naming, because they are stable and
+ * they are not guesswork: 22001 is a string longer than its column, 23505 a
+ * unique violation, 23503 a foreign key that does not resolve. Everything else
+ * stays as it was, because an invented message for an unknown failure is worse
+ * than an honest one.
+ */
+function describeFailureInner(error: unknown): string {
+  if (error instanceof HttpError) return error.message;
+
+  const code = (error as { code?: unknown } | null)?.code;
+
+  if (code === '22001') {
+    return 'A value is longer than the field allows, so it was not saved.';
+  }
+  if (code === '23505') {
+    return 'That would duplicate something that already exists, so it was not saved.';
+  }
+  if (code === '23503') {
+    return 'It refers to something that does not exist, so it was not saved.';
+  }
+
+  return 'The operation failed';
+}
+
+/**
+ * Exported for its tests, which is also how a test can name what a device is
+ * told about a failure without a database.
+ */
+export function describeFailure(error: unknown): string {
+  return describeFailureInner(error);
+}
+
+export function sanitisePayload(
   entity: SyncEntityName,
   payload: Record<string, unknown> | null,
 ): Record<string, unknown> {
@@ -120,7 +178,14 @@ function sanitisePayload(
     if (!allowed.has(key) || value === undefined) continue;
 
     if (key === 'name' || key === 'description' || key === 'emoji') {
-      clean[key] = value === null ? null : String(value).slice(0, key === 'name' ? 120 : 500);
+      // Keyed by entity, not by field name. `name` is varchar(80) on a workspace
+      // and varchar(120) on a folder, and `emoji` is varchar(16) everywhere: a
+      // single number per field name let a write past the column, and that is a
+      // 500 from Postgres on ordinary input rather than a rejected operation
+      // with a message. The widths live in `content-schema.ts`; a test in
+      // `sync-limits.test.ts` holds the two together.
+      const limit = STRING_LIMITS[entity]?.[key];
+      clean[key] = value === null ? null : String(value).slice(0, limit ?? 500);
       continue;
     }
 
@@ -150,7 +215,11 @@ function sanitisePayload(
     }
 
     if (key === 'title') {
-      clean[key] = String(value).slice(0, entity === 'list_item' ? 300 : 120);
+      // A list title is varchar(120) and a note title is varchar(200), so the
+      // old "everything that is not an item is 120" silently threw away eighty
+      // characters of a note title. The push still answered `applied`.
+      const limit = entity === 'list_item' ? 300 : STRING_LIMITS[entity]?.title ?? 120;
+      clean[key] = String(value).slice(0, limit);
       continue;
     }
 
@@ -178,8 +247,10 @@ function sanitisePayload(
 
     if (key === 'orderMode') {
       // An order from a newer build falls back to manual, which is the order
-      // the items are already in: a list is never left unreadable.
-      clean[key] = LIST_ORDER_MODES.includes(value as ListOrderModeName) ? value : 'manual';
+      // the items are already in: a list is never left unreadable. The list of
+      // orders is the contract's, so this cannot fall behind it again.
+      const known = LIST_ORDER_MODES.find((mode) => mode === value);
+      clean[key] = known ?? 'manual';
       continue;
     }
 
@@ -890,7 +961,7 @@ export class SyncService {
           error: applied.error ?? null,
         });
       } catch (error) {
-        const message = error instanceof HttpError ? error.message : 'The operation failed';
+        const message = describeFailure(error);
         logger.warn({ err: error, operationId: operation.operationId }, 'sync operation failed');
 
         results.push({
