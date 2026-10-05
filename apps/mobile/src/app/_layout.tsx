@@ -1,3 +1,5 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -63,6 +65,32 @@ function Navigation() {
   const t = useTranslation();
   const { status } = useSession();
 
+  /*
+    Los iconos son una fuente, no 131 ficheros: `Ionicons.ttf`, un solo glifo por
+    nombre. `<Ionicons>` devuelve un `<Text />` **vacio** hasta que la fuente ha
+    llegado — no un cuadrado de sustitucion, no un error, nada — y cada icono
+    arrancaba su propia carga desde su propio `componentDidMount`, sin ningun gate
+    que la esperara.
+
+    En web esa carga puede rechazar en silencio: el observador de la fuente
+    expira a los 12s y el `try/catch` de expo-font solo captura thrown
+    sincronicos, asi que el rechazo se propaga al `await`, el `setState` no llega
+    a correr y los iconos se quedan vacios **de forma permanente**, con un unico
+    error en consola. Elegir "por estreno" en una lista y verlo volver a "manual"
+    era el mismo tipo de fallo: algo que funciona en local y no en el despliegue.
+
+    Esto ya estaba escrito en `docs/roadmap.md` — "no era que la fuente no llegara
+    nunca; es que nadie la estaba esperando" — y se sorteo esperando 20s en
+    `scripts/verify-tag-colors.mjs`, que si espera. La app no esperaba nada.
+
+    Las dos mitades del gate importan: `loaded` para no pintar iconos vacios, y
+    `error` para no quedarse esperando una fuente que no va a llegar. Gatear solo
+    con `loaded` convierte un 404 en una pantalla en blanco permanente, que es el
+    mismo bug con otro disfraz.
+  */
+  const [fontsLoaded, fontError] = useFonts(Ionicons.font);
+  const fuenteLista = fontsLoaded || fontError !== null;
+
   useEffect(() => {
     // Expo requires this at the root of the app: a sign-in started in one tab
     // and finished in another only resumes if the page that receives the redirect
@@ -77,11 +105,13 @@ function Navigation() {
 
   useEffect(() => {
     // Hiding the splash on mount shows a blank frame while the session is
-    // restored and the entry route decides where to send the user.
-    if (status !== 'loading') {
+    // restored and the entry route decides where to send the user. The font is
+    // part of the same wait: with the splash already gone and the icons not
+    // drawn, the first thing on screen is a list of rows with nothing in them.
+    if (status !== 'loading' && fuenteLista) {
       void SplashScreen.hideAsync();
     }
-  }, [status]);
+  }, [status, fuenteLista]);
 
   return (
     <>
@@ -145,7 +175,7 @@ function Navigation() {
         written to remove. Measured, because the element was in the DOM with its
         text in it and the screenshot was a flat colour.
       */}
-      {status === 'loading' ? (
+      {status === 'loading' || !fuenteLista ? (
         <View
           testID="session-booting"
           accessibilityRole="progressbar"
