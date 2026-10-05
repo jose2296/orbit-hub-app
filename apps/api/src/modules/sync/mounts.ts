@@ -164,17 +164,23 @@ export async function montajesDe(
     }
 
     /*
-      `collection` y `bookmark` **no** entran en la proyeccion, y no es un olvido.
+      Compartir un enlace o una carpeta de enlaces no es parte de esta fase, y
+      eso es lo que impide que `collection` y `bookmark` lleguen aqui.
 
-      Compartir un enlace o una carpeta de enlaces no es parte de esta fase: no
-      hay modelo de montaje para ellos, no hay `shareNodeType` que los acepte, y
-      anadirlos aqui sin ese modelo produciria exactamente la clase de bug que
-      este archivo existe para evitar -- una fila reescrita a medias, colgando de
-      un espacio al que el otro dispositivo no tiene indice.
+      Conviene decir **que** los detiene, porque no es esta cadena de `if`: los de
+      arriba hacen `continue` y no `else`, asi que un `nodeType: 'collection'` que
+      llegara a esta fila se proyectaria igual, y proyectarlo es lo correcto: un
+      nodo propio, con su `folderId` y su `position`, tiene que aparecer bajo donde
+      lo recibio quien lo guardo. Lo que no se puede es *llegar*:
+      `montajesDe` se llama con lo que hay en `share_mounts`, y
+      `shareNodeTypeSchema` no acepta estas dos, asi que no hay grant que las
+      traga.
 
-      Su rama en `espacioDe` de todos modos esta, porque esa funcion se llama con
-      lo que dice la fila y el dia que haya comparticion tiene que responder bien.
-      Lo que no hay, mientras tanto, es el `resultado.set` de aqui.
+      Y "no hay grant" es una frase sobre TypeScript, no sobre la base:
+      `shares.nodeType` es un `varchar(16)` cuyo `$type<>` no existe en Postgres,
+      y una fila con un tipo raro metida por otra via pasaria por aqui. Por eso su
+      rama en `espacioDe` esta igual: esa funcion responde a lo que dice la fila,
+      y el dia que haya comparticion tiene que devolver bien.
     */
     resultado.set(`${montaje.nodeType}:${montaje.nodeId}`, destino);
   }

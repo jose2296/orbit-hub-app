@@ -153,7 +153,7 @@ const BOOKMARK_URL_MAX = 2048;
  * rechaza: el chequeo tiene que ser el mismo que el del contrato, no uno
  * parecido.
  */
-function esUrlQueSePuedePedir(value: unknown): value is string {
+export function esUrlQueSePuedePedir(value: unknown): value is string {
   return (
     typeof value === 'string' &&
     (value.startsWith('http://') || value.startsWith('https://')) &&
@@ -634,10 +634,25 @@ export class SyncService {
    * aqui" es un mensaje que la persona puede entender y un 404 no.
    */
   private async resolveCarpetaDeEsteEspacio(
-    folderId: string | null,
+    folderId: string | null | undefined,
     workspaceId: string,
   ): Promise<string | null> {
-    if (folderId === null) return null;
+    /**
+     * `== null` y no `=== null`, y no es estilo.
+     *
+     * `sanitisePayload` copia **solo las claves que vienen en el payload**, asi
+     * que una clave ausente llega aqui como `undefined`. Con un guard estricto,
+     * `undefined` pasaba el "no hay carpeta" y se iba a `eq(folders.id,
+     * undefined)`, que el driver traduce a `NULL`: la consulta no trae filas y el
+     * resultado es `HttpError.notFound('Folder not found')` para una coleccion que
+     * no queria estar en ninguna carpeta. Eso es el caso normal, no el exotico, y
+     * hacia que **no se pudiera crear ninguna coleccion**.
+     *
+     * Lo loose blinda a todos los que llamen a este metodo, no solo a los que se
+     * acuerden del `?? null`. Es el otro camino por el que vuelve a colarse
+     * `undefined`.
+     */
+    if (folderId == null) return null;
 
     const carpeta = await syncRepository.findEntity('folder', folderId);
     if (!carpeta || carpeta['deletedAt']) {
@@ -660,10 +675,12 @@ export class SyncService {
    * cumple con cualquier coleccion que exista, sea de quien sea.
    */
   private async findColeccionDeEsteEspacio(
-    collectionId: string | null,
+    collectionId: string | null | undefined,
     workspaceId: string,
   ): Promise<StoredEntity | null> {
-    if (collectionId === null) return null;
+    // Loose por la misma razon que `resolveCarpetaDeEsteEspacio`: una clave
+    // ausente en el payload es `undefined`, no `null`.
+    if (collectionId == null) return null;
 
     const coleccion = await syncRepository.findEntity('collection', collectionId);
     if (!coleccion || coleccion['deletedAt']) {
@@ -862,7 +879,7 @@ export class SyncService {
           await this.assertCanWrite(workspaceId, userId);
 
           const folderId = await this.resolveCarpetaDeEsteEspacio(
-            payload['folderId'] as string | null,
+            (payload['folderId'] as string | null | undefined) ?? null,
             workspaceId,
           );
 
@@ -917,16 +934,34 @@ export class SyncService {
           // flotando. Y un cliente que mande los tres campos y se equivoque en uno
           // recibe un `rejected` limpio en vez de un bookmark en el espacio
           // ajeno.
-          const rawCollectionId = payload['collectionId'] as string | null;
-          let collectionId: string | null = rawCollectionId ?? null;
-          let folderId = (payload['folderId'] as string | null) ?? null;
+          const collectionId = (payload['collectionId'] as string | null | undefined) ?? null;
+          const folderIdDelPayload = (payload['folderId'] as string | null | undefined) ?? null;
+          let folderId = folderIdDelPayload;
 
           if (collectionId !== null) {
             const coleccion = await this.findColeccionDeEsteEspacio(collectionId, workspaceId);
-            collectionId = coleccion === null ? null : (coleccion['id'] as string);
-            if (folderId === null) {
-              folderId = (coleccion?.['folderId'] as string | null) ?? null;
+            const carpetaDeLaColeccion = (coleccion?.['folderId'] as string | null) ?? null;
+
+            /*
+              Los dos campos tienen que decir lo mismo.
+
+              Aceptarlos y creerse el del cliente deja el bookmark clasificado en
+              una coleccion y archivado en una carpeta que no es la de esa
+              coleccion: un estado que ninguna pantalla sabe dibujar, y que la
+              regla de la spec no contempla porque dice que el destino **sale** de
+              la coleccion. Se rechaza con el motivo escrito porque el que se
+              equivoco es el cliente y necesita saber cual de los dos.
+            */
+            if (folderIdDelPayload !== null && folderIdDelPayload !== carpetaDeLaColeccion) {
+              throw HttpError.validation(
+                'The folder has to be the one that belongs to the collection',
+              );
             }
+            // Si no vino carpeta --ausente o en null-- la de la coleccion manda.
+            // Es lo que hace que la regla no dependa de que todos los clientes la
+            // hagan bien: uno que mande `folderId: null` con una coleccion que si
+            // tiene carpeta termina igual en la carpeta correcta.
+            folderId = carpetaDeLaColeccion;
           }
 
           folderId = await this.resolveCarpetaDeEsteEspacio(folderId, workspaceId);
@@ -1053,6 +1088,15 @@ export class SyncService {
     }
 
     // update
+    /**
+     * La operacion tal cual se va a escribir, y las entidades nuevas pueden
+     * necesitar corregirla antes: un cambio de coleccion tiene que mover la
+     * carpeta con ella, y eso no cabe en el payload que mando el cliente. Se
+     * reescribe la operacion y no el `updateEntity` para que los dos caminos de
+     * abajo --la coincidencia de version y el merge-- escriban lo mismo.
+     */
+    let operacion: SyncOperation = operation;
+
     if (entity === 'workspace') {
       await this.assertCanWrite(operation.entityId, userId);
     } else if (entity === 'folder' || entity === 'list') {
@@ -1099,36 +1143,66 @@ export class SyncService {
         verifica contra el workspace, y sin esto un update es un agujero igual de
         grande que el create: la FK se cumple porque la carpeta existe, y el
         bookmark queda colgando de una carpeta de otro espacio.
-
-        Y **no** se deriva `folderId` de la coleccion en un update, a diferencia
-        del create: en un create el destino es una consecuencia de elegir la
-        coleccion, y en un update es una decision consciente de la persona que
-        va en el payload. Corregirla aqui seria sobrescribir lo que alguien
-        eligio. Se comprueba, no se corrige.
       */
       const workspaceDeLaFila = this.workspaceDeLaFila(existing);
       if (workspaceDeLaFila !== null) {
+        const coleccion = await this.findColeccionDeEsteEspacio(
+          (destino['collectionId'] as string | null | undefined) ?? null,
+          workspaceDeLaFila,
+        );
         await this.resolveCarpetaDeEsteEspacio(
-          (destino['folderId'] as string | null) ?? null,
+          (destino['folderId'] as string | null | undefined) ?? null,
           workspaceDeLaFila,
         );
-        await this.findColeccionDeEsteEspacio(
-          (destino['collectionId'] as string | null) ?? null,
-          workspaceDeLaFila,
-        );
+
+        if (entity === 'bookmark' && 'collectionId' in destino) {
+          /*
+            La invariante que create establece tiene que sobrevivir a la primera
+            edicion.
+
+            Antes, un update que mandaba solo `collectionId` dejaba el `folderId`
+            viejo, que ya no era el de la coleccion nueva: la regla de la spec
+            era cierta al crear y falsa a partir de la primera edicion. Y uno
+            que mandara los dos con valores distintos se guardaba clasificado en
+            una coleccion y archivado en una carpeta que no era de esa coleccion.
+
+            Las tres formas, entonces:
+            - `collectionId` sin `folderId`: la carpeta se deriva de la
+              coleccion. Sale o no, y por eso cambiar de coleccion mueve la fila.
+            - los dos de acuerdo: se acepta tal cual.
+            - los dos en discrepancia: 422 con el motivo, porque el que se
+              equivoco es el cliente y necesita saber cual de los dos.
+          */
+          const carpetaDeLaColeccion = (coleccion?.['folderId'] as string | null) ?? null;
+          const carpetaDelPayload = (destino['folderId'] as string | null | undefined) ?? null;
+          const claveFolderId = Object.prototype.hasOwnProperty.call(destino, 'folderId');
+
+          if (claveFolderId && carpetaDelPayload !== carpetaDeLaColeccion) {
+            throw HttpError.validation(
+              'The folder has to be the one that belongs to the collection',
+            );
+          }
+
+          if (!claveFolderId) {
+            operacion = {
+              ...operation,
+              payload: { ...(operation.payload ?? {}), folderId: carpetaDeLaColeccion },
+            };
+          }
+        }
       }
     }
 
-    if (operation.baseVersion === existing.version) {
+    if (operacion.baseVersion === existing.version) {
       const row = await syncRepository.updateEntity(
         entity,
-        operation.entityId,
-        noteFieldsForWrite(entity, sanitisePayload(entity, operation.payload)),
+        operacion.entityId,
+        noteFieldsForWrite(entity, sanitisePayload(entity, operacion.payload)),
       );
       return { status: 'applied', version: row.version };
     }
 
-    const { values, conflictingFields } = merge(operation, existing);
+    const { values, conflictingFields } = merge(operacion, existing);
 
     if (conflictingFields.length === 0) {
       if (Object.keys(values).length === 0) {
