@@ -393,23 +393,38 @@ describe('cuantas columnas se pueden anclar', () => {
     /**
      * **And four more of the same shape, with both numbers written out.**
      *
-     * All of them come out of `columnLayout` — the column is a division of a track —
-     * and all of them are the case where three columns' worth of step and three
-     * steps' worth of scroll are the same quantity written two ways. Sweeping the
-     * track from 300 to 1800 with a gap of 12, **43** of them land a hair under an
-     * integer and these are four of the 43, with the width each step comes from and
-     * the quotient printed:
+     * The first number of each row is what `columnLayout` gives for that track with
+     * a gap of 12 — 1199 is five columns of `230.2`, 1792 is seven of
+     * `245.71428571428572` — **and the second is that same double multiplied by
+     * three, which is the whole of why the quotient lands under 3.** Doubling a
+     * double is exact, so one, two and four steps divide back exactly on all 1801
+     * tracks from 300 to 1800; three is the first whole count that rounds, and it
+     * rounds down on **43** of them, which are four of:
      *
-     * | pista | paso | tres pasos | cociente |
+     * | pista | paso de `columnLayout` | `3 × paso` | cociente |
      * | --- | --- | --- | --- |
      * | 1199 | `230.2` | `690.5999999999999` | `2.99999999999999956` |
      * | 1204 | `231.2` | `693.5999999999999` | `2.99999999999999956` |
      * | 1209 | `232.2` | `696.5999999999999` | `2.99999999999999956` |
      * | 1792 | `245.71428571428572` | `737.1428571428571` | `2.99999999999999956` |
      *
-     * `floor` of any of them is 2, so without the margin the pager answers **3**
-     * where it should answer **4**. Each of these four assertions dies on its own
-     * with the margin taken away.
+     * **It is not a board's own scroll, and the difference is the gap.** What the
+     * screen hands this function is a `maxScroll` — the content less the track — and
+     * a step of `columnOffset(1, …)`, which is `paso + 12` and not `paso`. **No
+     * board has a `maxScroll` bit-equal to `3 × paso`: 0 of 34523**, sweeping track
+     * widths 300 to 1800 with two to twenty-four states, so the second number above
+     * is the arithmetic and not a measurement and must not be read as one. A board
+     * that loses this page writes both numbers the way the screen writes them —
+     * track 722 with seven states is three columns of `232.66666666666666`, a
+     * `maxScroll` of `978.6666666666665`, a step of `244.66666666666666` and a
+     * quotient of `3.9999999999999996`, and **205 of the 1208 wide-track boards of
+     * the sweep on `anchorableColumns` lose exactly this one step.** Same boundary,
+     * same last bits.
+     *
+     * `floor` of any of the four rows is 2, so without the margin the pager answers
+     * **3** where it should answer **4**, and all four die on their own with the
+     * margin taken away — though in this suite the literal entry above dies first,
+     * at line 391, and the loop is never reached.
      */
     for (const [paso, tresPasos] of [
       [230.2, 690.5999999999999],
@@ -643,17 +658,41 @@ describe('donde acaba el scroller, que no es donde pedia la columna', () => {
    * `scrollPrevio` is what the re-base subtracts, and `irA` wrote the offset a tab
    * asked for into it before asking for the scroll. **react-native-web does
    * `node.scroll({left})`, which clips to the maximum, and a scroll that changes
-   * nothing fires no event** — so with the track already at its end, `onScroll` never
-   * came to correct it and `scrollPrevio` stayed ahead of the scroller for as long as
-   * that tab was selected.
+   * nothing fires no event** — so with the track already at its end, `onScroll`
+   * never came to correct it and `scrollPrevio` stayed ahead of the scroller for as
+   * long as that tab was selected.
    *
-   * Measured in the browser at 1440 with five states, `maxScroll` 283 and `offsets`
-   * `[0, 283, 566, 849, 1132]`: the fifth state's tab wrote **1132**, the scroll it
-   * asked for was clipped to 283, and `scrollPrevio` was still **1132** a whole
-   * gesture later.
+   * Measured in the browser at 1440 x 900 with five states and one long column on
+   * the left: a track of **1120** of content **1403**, so `maxScroll` is **283** and
+   * `offsets` is `[0, 283, 566, 849, 1132]`. The gesture that reaches the broken
+   * state is three steps **in this order** — drag the track left until `scrollLeft`
+   * is **283**, its real end; tap the fifth state's tab, the one at **1132**, which
+   * the scroller cannot anchor; drag twenty points, far below the 56 that counts.
+   *
+   * **The order is the whole of it**, because the tap's `scrollTo` of **1132** is
+   * clipped by the browser from **283** to **283**: it changes nothing, it fires no
+   * event, and `onScroll` never puts `scrollPrevio` back. Five repetitions each:
+   *
+   * | | clipped | not clipped |
+   * | --- | --- | --- |
+   * | `scrollPrevio` after the tab tap | **283** | **1132** |
+   * | scroll events the tab tap fired | **0** | **0** |
+   * | re-base at the settling | **0** | **−849** |
+   *
+   * The same three steps from the **first** column are the control, and they are
+   * why five repetitions of the earlier protocols saw nothing with the bug alive:
+   * there the scroll really goes from **0** to **283**, which fires **12 to 15**
+   * events, and they correct `scrollPrevio` before the finger arrives.
+   *
+   * **Not measured: the length of the spring in either run.**
+   * `lib/lists/board-paging.ts` says so next to the line, and says what the formula
+   * would give instead. Nothing here ran on native.
    */
   it('la posicion del scroller tambien se recorta, que es la otra mitad del rebase', () => {
-    // **40 puntos mas alla de su maximo**, que es lo que se quedaba escrito.
+    // Cuarenta puntos mas alla de su maximo. **No es un valor que la pantalla
+    // pueda dejar escrito**: `irA` escribe un desplazamiento de la tabla —0, 283,
+    // 566, 849, 1132— y nunca 323; este esta aqui por ser "mas alla del final" y
+    // nada mas, y el que si se queda escrito es el de la linea de 1132.
     expect(scrollTargetFor(undefined, 323, 283)).toBe(283);
     // Y un offset que no es un numero tambien: un destino no medido se lee como
     // "no se va a ninguna parte", y "no se va a ninguna parte" tiene que ser una

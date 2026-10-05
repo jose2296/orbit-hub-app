@@ -228,9 +228,16 @@ export function nextPageFor(
  * `objetivo - scrollPrevio`. Clipped to 283 out of an ordered 1132, the scroller
  * moves 0, the transform is charged a full 849 it will never get back, and the
  * columns fly three columns to the right and spring home. Measured in the browser at
- * 1440 with five states — `offsets` `[0, 283, 566, 849, 1132]`, `maxScroll` 283 — the
- * fifth state's tab followed by a **20-point** drag, which should have done nothing:
- * `trackX` at **848** on the first frame and back to zero 285 ms later.
+ * 1440 with five states — `offsets` `[0, 283, 566, 849, 1132]`, `maxScroll` 283 —
+ * from the first column, the fifth state's tab followed by a **20-point** drag,
+ * which should have done nothing: `trackX` at **848** on the first frame and back
+ * to zero 285 ms later.
+ *
+ * **That protocol starts at the first column, and that is also why it cannot show
+ * the other half of the repair** — the half about the position the screen was
+ * holding rather than the one it asked for, which needs a track that is already at
+ * its end before the tab is tapped. That gesture and its numbers are on the line
+ * below.
  *
  * So the target is clamped here, to `[0, maxScroll]`, and the order matters:
  *
@@ -242,9 +249,10 @@ export function nextPageFor(
  * 3. **otherwise the offset the column asked for**, and that is what the re-base and
  *    the tab both mean.
  *
- * **An unknown offset is the scroller's own position, unchanged.** That is what a
- * caller that has not measured the columns yet hands over, and the only safe answer
- * to "where do I go from where I am" is "nowhere".
+ * **An unknown offset is the scroller's own position, and it is clipped like
+ * everything else.** That is what a caller that has not measured the columns yet
+ * hands over, and the only safe answer to "where do I go from where I am" is
+ * "nowhere" — which has to be a place the scroller can be.
  */
 export function scrollTargetFor(
   offset: number | undefined,
@@ -266,8 +274,50 @@ export function scrollTargetFor(
    * missing: react-native-web does `node.scroll({left})`, which clips to the
    * maximum, **and a scroll that changes nothing fires no event** — so with the
    * track already at its end, nothing downstream ever hears that the position the
-   * caller was holding is a position the scroller is not at. Measured at 1440 with
-   * five states, `maxScroll` 283: a `scrollLeft` of 323 came back here as 323.
+   * caller was holding is a position the scroller is not at.
+   *
+   * Measured in the browser at 1440 x 900 with five states and one long column
+   * visible on the left: `columnLayout(1120, 12)` is four columns of `271`,
+   * `trackContentWidth(5, 271, 12)` is `1403`, `maxTrackScroll(1120, 1403)` is
+   * **283**, `offsets` is `[0, 283, 566, 849, 1132]` and
+   * `anchorableColumns(5, 283, 283)` is **2** — two of the five columns can sit
+   * flush left and the last three cannot. **The order of the protocol is the
+   * whole of it:**
+   *
+   * 1. drag the track left until `scrollLeft` is **283**, which is its real end;
+   * 2. tap the fifth state's tab, the one at **1132**, which the scroller cannot
+   *    anchor;
+   * 3. drag twenty points, far below the 56 that counts as a swipe.
+   *
+   * In step 2 the browser clips `scrollTo` of `1132` from **283** to **283**, **so
+   * it changes nothing and fires no event**, so `onScroll` never corrects
+   * `scrollPrevio` and the caller is left holding a position the scroller is not
+   * at. Five repetitions of the three steps, with this line and without it:
+   *
+   * | | clipped | not clipped |
+   * | --- | --- | --- |
+   * | `scrollPrevio` after the tab tap | **283** | **1132** |
+   * | scroll events the tab tap fired | **0** | **0** |
+   * | re-base at the settling | **0** | **−849** |
+   * | `trackX` charged | **−1.5** | **−850.5** |
+   *
+   * **Zero events in both of those columns is the whole of the trap**: the jump
+   * announces nothing either way, so the only thing the two runs differ in is what
+   * was written into `scrollPrevio` before it was asked for.
+   *
+   * **The control is the same protocol from the first column**, which is where the
+   * earlier rounds measured it and where this half stayed invisible through five
+   * repetitions of it: there the tap really does move the scroller from **0** to
+   * **283**, which fires **12 to 15** events with this line and **13 to 17**
+   * without it, and those put `scrollPrevio` back to the truth before the finger
+   * arrives. The re-base is **0** either way, which is why the protocol that
+   * starts at the first column cannot see any of this.
+   *
+   * **Not measured: how long the spring takes in either of those two runs.** It
+   * follows from the formula in the screen — `min(max(left / 2.6, 90), 320)`, which
+   * is 90 ms at `left` 1.5 and 320 ms at `left` 850.5 — and nobody watched it.
+   * **Nothing here ran on native**: there is no native target on this machine,
+   * which is the caveat the note on `trackRoomAt` below carries.
    *
    * Clipped with `end` and not with `maxScroll` on purpose, because when `end` *is*
    * `at` — the track has not been measured — clipping to a number that is not a

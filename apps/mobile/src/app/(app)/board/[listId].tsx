@@ -421,15 +421,27 @@ export default function BoardScreen() {
      *
      * `scrollTargetFor` does it to the destination: react-native-web does
      * `node.scroll({left})`, which clips to the maximum, and nothing compensated a
-     * transform charged with the difference. This is the other half. **`irA` writes
-     * `scrollPrevio` before asking for the scroll**, because the first event of an
-     * animated jump arrives a frame or more later, and a swipe that interrupts a tab
-     * tap would re-base against a position the board has already left. And a value
-     * past the end of the scroller **is** a position the board never reaches: with
-     * the track already at its maximum, `scrollTo` of a further offset changes
-     * nothing, **no event fires, and `onScroll` never corrects it** — so
-     * `scrollPrevio` stays ahead of the scroller for as long as that tab is the
-     * selected one.
+     * transform charged with the difference. This is the other half, and this is
+     * the writer: **the number that goes into `scrollPrevio` here is a position the
+     * scroller may never reach**, so it is the clipped one. Why it is written before
+     * the scroll is asked for, and not only from `onScroll`, is on `scrollPrevio`.
+     *
+     * Measured in the browser at 1440 x 900 with five states and one long column on
+     * the left: a track of **1120** of content **1403**, so `maxScroll` is **283**
+     * and the offsets are `[0, 283, 566, 849, 1132]`. Drag the track left until
+     * `scrollLeft` is **283**, tap this tab for the fifth state, then drag twenty
+     * points — **and the order is the whole of it**: with the track at its end the
+     * browser clips this tab's `scrollTo` of **1132** from **283** to **283**, which
+     * changes nothing **and fires no event**, so `onScroll` never comes to correct
+     * what was written here. Five repetitions of the three steps: written **283**
+     * with this line and **1132** without it, the re-base at the settling **0**
+     * against **−849**, and `trackX` charged **−1.5** against **−850.5**.
+     *
+     * Started from the first column instead — which is what the earlier rounds
+     * measured — the same tap really does move the scroller from **0** to **283**,
+     * fires **12 to 15** events and puts the truth back before the finger arrives,
+     * which is why that protocol saw nothing with the bug alive. **The length of the
+     * spring was not measured in either run**, and nothing here ran on native.
      *
      * `trackRoomAt` clips its own `scrollLeft` for the same reason and says so; this
      * is the third reader of the scroller's position, and it was the only one that
@@ -437,10 +449,8 @@ export default function BoardScreen() {
      */
     const x = scrollTargetFor(offsets[index], scrollPrevio.value, maxScroll);
     setActual(index);
-    // Written here and not only from `onScroll`, because the first scroll event of
-    // an animated jump arrives a frame or more after the jump is asked for — and a
-    // swipe that interrupts a tab tap would re-base against a position the board
-    // has already left. See `scrollPrevio`.
+    // The clipped number, and written before the scroll is asked for rather than
+    // only from `onScroll`. See `scrollPrevio` for why the order is this one.
     scrollPrevio.value = x;
     pista.current?.scrollTo({ x, animated: true });
   }
@@ -675,6 +685,13 @@ export default function BoardScreen() {
      * re-base is 0 and the track springs home over `PAGE_MIN` from six points.
      * Unclipped, `trackX` was at **848** on the first frame — three columns — and
      * back to zero **285 ms** later.
+     *
+     * **That gesture starts at the first column, which is also why it cannot show
+     * the other half of the clip.** There the tab really does move the scroller from
+     * `0` to `283`, the events that follow put `scrollPrevio` back to the truth, and
+     * the half about the position it was holding needs a board that is already at
+     * its end before the tab is tapped. That protocol and its numbers are on `irA`
+     * and in `lib/lists/board-paging.ts`.
      *
      * **So the answer is the clipped one and the tab keeps the unclipped one**, which
      * is the point of having `settle` return `next` separately: the fifth state is
