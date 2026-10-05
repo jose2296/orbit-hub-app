@@ -999,6 +999,29 @@ const es = {
   "board.editStates": "Editar los estados del tablero",
   "board.stateHere": "está aquí",
 
+  /*
+    El editor de estados, y sus tres frases.
+
+    **`board.editStatesHint` es la pista de un boton que solo tiene un icono**: el
+    boton de la cabecera es `iconOnly` —dos botones con etiqueta en la cabecera de
+    una pantalla se comieron 307 de los 398 puntos del contenido, medido en
+    `button.tsx`—, y un icono sin nombre no es un boton que nadie pueda usar.
+
+    **`board.addState` es la etiqueta de un campo y no la de un boton**: en la hoja
+    de estado el alta aparece al pulsar una fila, asi que "+ Nuevo estado…" a secas
+    es un boton. Aqui el campo esta siempre, porque este panel es un formulario y
+    no una lista de opciones, y su etiqueta tiene que decir que se anade una
+    columna.
+
+    **`board.stateColor` nombra el color de la columna y no el de un icono**: es la
+    misma paleta de doce —`ICON_COLOR_KEYS` es `ITEM_ICON_COLORS`— pero lo que se
+    colorea es el estado, y un "Color" sobre una tira de doce puntos al lado de un
+    campo que dice "Nombre del estado" no dice de que es el color.
+  */
+  "board.editStatesHint": "Abre el editor de los estados del tablero",
+  "board.addState": "Añadir estado",
+  "board.stateColor": "Color del estado",
+
   "items.empty.title": "Nada por aquí",
   "items.empty.body": "Añade el primer elemento a esta lista.",
   "items.titleLabel": "Nuevo elemento",
@@ -2001,6 +2024,19 @@ const en: Record<TranslationKey, string> = {
   "board.editTask": "Edit the task",
   "board.editStates": "Edit the board's states",
   "board.stateHere": "is here",
+
+  /*
+    The states editor, and its three phrases. `board.editStatesHint` is the hint of an
+    icon-only button, whose drawing has no name of its own; `board.addState` labels a
+    field rather than a button, because here the field is always there — this panel
+    is a form, not a list of options — and "+ New state…" on its own would be a
+    button; and `board.stateColor` names the colour of a column rather than of an
+    icon, which is the same palette of twelve under a name that says what it paints.
+    The Spanish note above says the same at more length.
+  */
+  "board.editStatesHint": "Opens the board's states editor",
+  "board.addState": "Add state",
+  "board.stateColor": "State colour",
 
   "items.empty.title": "Nothing here yet",
   "items.empty.body": "Add the first item to this list.",

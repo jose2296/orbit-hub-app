@@ -13,16 +13,20 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { BoardColumn } from "@/components/lists/board-column";
 import { BoardTabs } from "@/components/lists/board-tabs";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
+import { StateEditorSheet } from "@/components/lists/state-editor-sheet";
 import { StatePickerSheet } from "@/components/lists/state-picker-sheet";
 import { Screen } from "@/components/ui/screen";
+import { useHeaderAction } from "@/components/ui/header-action";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
+import type { BoardStates } from "@orbit-hub/contracts";
 import {
   columnLayout,
   columnOffset,
@@ -390,6 +394,138 @@ export default function BoardScreen() {
       : null,
   );
   useScreenTitle(list?.title ?? t("lists.notFound"));
+
+  /* ------------------------------------------- el editor de estados -- */
+
+  /**
+   * Whether the states editor is open, **and it is a flag and not a row.**
+   *
+   * The row goes in when the panel opens and out when it closes, and what the panel
+   * draws is the draft below rather than `list.states` — the same shape every other
+   * sheet in this app is opened with, where `null` is the way a sheet is closed and
+   * not a value it draws.
+   */
+  const [editorAbierto, setEditorAbierto] = useState(false);
+
+  /**
+   * The columns as the person is editing them, **and it is a copy of the list's own
+   * array to begin with.**
+   *
+   * This is what makes the panel's edits local: the panel hands back a new array
+   * through `onChange`, the screen keeps it here, and nothing reaches the outbox
+   * until the panel closes. Editing four colours in a row is then **one** push, and
+   * not four pushes of the same field with three of them overwritten by the last —
+   * which is not a matter of tidiness: the states travel as one field of the list,
+   * so they are one operation by construction, and the array it pushes is the whole
+   * thing.
+   *
+   * **It starts as the very array the list row holds, and not a copy of it**, so the
+   * "did anything change" question at the bottom is an identity comparison that can
+   * come out false: every edit this panel makes replaces the array with a **new** one
+   * —that is what `newState` and `editState` answer with— and a panel that is opened
+   * and closed without being touched never replaces it. A copy would make the two
+   * arrays unequal from the start and the comparison would always say yes.
+   */
+  const [borrador, setBorrador] = useState<BoardStates | null>(null);
+
+  /**
+   * The same two arrays, **readable at the moment the panel closes.**
+   *
+   * `onClose` reaches this screen from inside `Sheet`, and `Sheet` reaches it from
+   * three places: the cross, the backdrop and a worklet that pulls the panel down
+   * (`sheet.tsx`'s `descartar`, which calls it with `runOnJS`). The first two get
+   * whatever function the render they belong to was given, and the third captures it
+   * in the gesture — and a gesture is a thing that outlives the render that made
+   * it for as long as the UI thread holds it. Reading `borrador` out of a closure
+   * that may be one edit old is how a panel that renames two columns writes one of
+   * them.
+   *
+   * **It is the same shape as `scrollPrevio` below**, and the same reason: the
+   * truth a caller has to read is the latest one, and the latest one is not
+   * necessarily in the closure.
+   *
+   * And `fila` is a `List` read the same way, which is safe where `borrador` was
+   * not: `updateList` only ever uses `list.id`, and an id does not change under a
+   * stale closure.
+   */
+  const borradorRef = useRef<BoardStates | null>(null);
+  const alAbrirRef = useRef<BoardStates | null>(null);
+
+  /** Opening: the draft starts as the list's own array, and both refs say so. */
+  function abrirEditorDeEstados() {
+    alAbrirRef.current = states;
+    borradorRef.current = states;
+    setBorrador(states);
+    setEditorAbierto(true);
+  }
+
+  /** A change from the panel: it is the draft, and it has not been written. */
+  function cambiarEstados(siguientes: BoardStates) {
+    borradorRef.current = siguientes;
+    setBorrador(siguientes);
+  }
+
+  /**
+   * Closing: **one write, and only if something moved.**
+   *
+   * The comparison is by identity against the array the panel was opened with, and
+   * that is a real question rather than a formality: `editState`, `newState`,
+   * `moveState` and `removeState` all answer with **the array they were given**
+   * when there is nothing to change, so a panel that was opened and closed without
+   * being touched leaves the draft exactly as it found it, and a write here would
+   * put an operation in the outbox for a session where nobody did anything.
+   *
+   * **The limit this step inherits is the spec's own and it is written down in
+   * `docs/architecture/offline-sync.md`**: the columns are one field, so two people
+   * editing the same board at once means the last one wins, whole. It is not a merge
+   * and it is not fixed here.
+   */
+  function cerrarEditorDeEstados() {
+    setEditorAbierto(false);
+    const fila = list;
+    const escrito = borradorRef.current;
+    if (!fila || escrito === null || escrito === alAbrirRef.current) return;
+    void updateList(fila, { states: escrito });
+  }
+
+  /*
+    The editor, **in the header, and it is created here rather than added to
+    something.** `list/[listId].tsx` mounts its `ListMenuSheet` behind a ghost
+    `iconOnly` button at `useHeaderAction`, and this is the same call with the same
+    `testID` convention so a walkthrough has something stable to press. This screen
+    had no header action at all —only `useScreenTitle`— so the button is new, and it
+    is new for the reason the list screen's is: the columns of a board are edited
+    from anywhere on the board, not from inside a card.
+
+    **Two doors, and both of them are real.** This one, and the row
+    `state-picker-edit` inside the state sheet of a task. The second is not an
+    alternative: a board at `MAX_BOARD_STATES` cannot add a column from the picker
+    at all, so the door to rearranging them has to exist somewhere else, and a
+    person who has a card open is a person who is already looking for "which state
+    is this".
+
+    **`states.length > 0` is in the condition and not by accident.** This screen
+    returns `board.noStates` for a board with no columns, *before* the tree that
+    mounts the panel, so a button drawn there would open nothing: a dead press, which
+    is the exact defect this task exists to remove from `state-picker-edit`.
+  */
+  useHeaderAction(
+    () =>
+      list && !readOnly && states.length > 0 ? (
+        <Button
+          testID="board-states-button"
+          label={t("board.editStates")}
+          variant="ghost"
+          size="sm"
+          icon="options-outline"
+          iconOnly
+          accessibilityHint={t("board.editStatesHint")}
+          fullWidth={false}
+          onPress={abrirEditorDeEstados}
+        />
+      ) : null,
+    [list, readOnly, states.length, t],
+  );
 
   const [editing, setEditing] = useState<{
     /** Empty when the sheet is creating a task rather than editing one. */
@@ -1210,11 +1346,21 @@ export default function BoardScreen() {
         `countInState`, and a sheet that counted again would be a second answer to a
         question the screen has already answered.
 
-        `onEditStates` is the editor of Task 11, which does not exist in this
-        checkout yet. It is wired to a function that does nothing and says so,
-        because the alternative was not drawing the row at all and this sheet's
-        contract has it. **That press is dead today** and it is the one thing in this
-        task I could not finish; `board.editStates` is the label it will keep.
+        `onEditStates` opens the states editor, **and this row is the second of its
+        two doors.** It used to be wired to a function with an empty body, and it was
+        that way deliberately: the editor is Task 11 and until it existed the honest
+        thing was a body that says so rather than a row that was not drawn. It is
+        live now, and the other door is the header button of this screen.
+
+        **Two panels for one press is not what happens**: `state-picker-sheet` calls
+        `onEditStates()` and then `onClose()` in the same handler, so the picker is
+        asked to close in the same commit the editor is asked to open, and there is
+        the same window of two `sheet-panel`s in the document that `onEditTask` has —
+        measured, 220-241 ms in 15-16 of 22-44 sampled frames at 1440 x 900, and
+        `scripts/verify-state-picker.mjs` block `1c` is where those numbers come
+        from. `scripts/verify-state-editor.mjs`, bloque `9`, mide esa misma ventana
+        para este relevo con el mismo instrumento — y encuentra todo lo contrario,
+        que esta escrito en el punto 6.1 del informe de la tarea.
       */}
       {!readOnly ? (
         <StatePickerSheet
@@ -1247,12 +1393,41 @@ export default function BoardScreen() {
             if (!fila) return;
             setEditing({ itemId: fila.id, page: "edit" });
           }}
-          onEditStates={() => {
-            // Task 11. Deliberately empty, and written as a body with a name
-            // rather than as `() => {}` so that it reads as unfinished here and
-            // does not look like a no-op that somebody chose.
-          }}
+          onEditStates={abrirEditorDeEstados}
           onClose={() => setCambiandoEstado(null)}
+        />
+      ) : null}
+
+      {/*
+        The states editor, **mounted for good and opened by its prop**, for the same
+        reason the sheet above is: `useLastValue` is what lets a panel keep drawing
+        what it was drawing while it travels down the screen, and `sheet.tsx`
+        measures what is lost without it.
+
+        **`states` is the draft and not `list.states`.** That is the whole of the
+        "one write on close" rule on this side: the panel hands back a new array
+        through `onChange`, `borrador` keeps it, and `cerrarEditorDeEstados` is the
+        only thing here that calls `updateList`. A rename, a colour and an added
+        column are three `onChange` calls and **one** operation.
+
+        **A column edited from another device while this panel was open is in the
+        array it draws** — it is the list's array the draft started from, not a
+        frozen copy — but the panel's own draft is what gets written at the end, and
+        that is the documented limit of a field this wide: last write wins, whole.
+        It is written down in `docs/architecture/offline-sync.md`.
+
+        **`readOnly` does not mount it**, like the sheet above, and the sheet refuses
+        to draw itself when handed `readOnly` anyway: a viewer is not somebody to
+        hand a panel of controls that will not work.
+      */}
+      {!readOnly ? (
+        <StateEditorSheet
+          list={editorAbierto ? list : null}
+          states={borrador ?? states}
+          counts={counts}
+          readOnly={readOnly}
+          onChange={cambiarEstados}
+          onClose={cerrarEditorDeEstados}
         />
       ) : null}
     </Screen>
