@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 
 import type { ListItem, Priority, TagColors } from "@orbit-hub/contracts";
 import { derivedTagColor } from "@orbit-hub/contracts";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge, tonesFor } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
@@ -16,7 +16,10 @@ import { useFieldChain } from "@/lib/forms/field-chain";
 import { useListItems } from "@/hooks/use-lists";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { FIELD_LIMITS } from "@/lib/lists/field-limit";
-import { tagsByFrequency } from "@/lib/lists/item-presentation";
+import {
+  PRIORITY_TONE,
+  tagsByFrequency,
+} from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
 
 import { ItemIcon, IconPickerPanel } from "./icon-picker";
@@ -402,12 +405,52 @@ export function ItemEditSheet({
     }
   };
 
-  const toggleTag = (tag: string) =>
-    save({
-      tags: shown.tags.includes(tag)
-        ? shown.tags.filter((row) => row !== tag)
-        : [...shown.tags, tag],
-    });
+  /*
+   * **Dos acciones y un boton cada una, y por que no son las mismas.**
+   *
+   * Anadir y quitar son cosas distintas y por eso tienen botones distintos: el `+` de
+   * una etiqueta que la tarea **no** tiene, y la papelera de una que **si**. Antes un
+   * solo `toggleTag` hacia las dos cosas y el `+` estaba siempre ahi, tambien en las
+   * etiquetas que ya tenias —donde pulsarlo te quitaba la etiqueta sin avisar—. Eso es
+   * la confusion que se vino a quitar: **un `+` que en unos sitios anade y en otros
+   * quita.**
+   *
+   * La papelera **solo aparece en las etiquetas que la tarea lleva**, y la pastilla
+   * **deja de ser pulsable** en esta fila: pulsa el nombre y no pasa nada. Asi no hay
+   * dos caminos para quitar la misma etiqueta, y el que queda es el que se ve.
+   *
+   * Y quitar **esta tarea y solo esta**: las demas tareas de la lista se quedan con
+   * la etiqueta, y su color sigue siendo el mismo para ellas. Borrar la etiqueta de
+   * toda la lista es otra operacion y no existe —no hay ningun `deleteTag` en el
+   * repo, y anadirlo exigiria quitar el nombre de todas las tareas, que el write de
+   * item todavia no sabe hacer porque omite `tags` cuando el array queda vacio—.
+   */
+  const anadirTag = (tag: string) =>
+    save({ tags: shown.tags.includes(tag) ? shown.tags : [...shown.tags, tag] });
+
+  const quitarTag = (tag: string) =>
+    save({ tags: shown.tags.filter((row) => row !== tag) });
+
+  /**
+   * Quitar una etiqueta lo pregunta, y la pregunta **lleva el nombre en el titulo y en
+   * el boton**: `tags.removeConfirm` tiene `{name}` en los dos sitios, y por eso los dos
+   * se llaman con el. El cuerpo va sin nombre a proposito —`tags.removeConfirmBody`—:
+   * es la misma frase para cualquier etiqueta, y repetir el nombre ahi seria la tercera
+   * vez en dos lineas.
+   */
+  const confirmarQuitar = (tag: string) =>
+    Alert.alert(
+      t("tags.removeConfirm", { name: tag }),
+      t("tags.removeConfirmBody"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("tags.removeConfirm", { name: tag }),
+          style: "destructive",
+          onPress: () => quitarTag(tag),
+        },
+      ],
+    );
 
   /**
    * A tap on one swatch of a label the task already carries: one write, and the
@@ -545,7 +588,21 @@ export function ItemEditSheet({
 
             {/* The priority, as four things you can see rather than a dropdown of
                 words. And it is here, and not in a menu, because ordering a list
-                by urgency needs a way to *say* that a thing is urgent. */}
+                by urgency needs a way to *say* that a thing is urgent.
+
+                **Cada boton con el color de su tono, que es lo que faltaba.** Los
+                cuatro se dibujaban con `accent` cuando estaban activos y con
+                `surfaceMuted` cuando no, asi que los cuatro salian iguales: se elegia
+                a ciegas y lo unico que decia cual estaba elegido era estar pulsado. Y
+                el color de una prioridad es justo lo que estas mirando cuando la
+                eliges, porque en la lista sale con ese tono —`low` en `info`,
+                `medium` en `warning`, `high` en `danger`—: si aqui no se ve, la
+                eleccion se hace sin informacion.
+
+                **El tono sale de `PRIORITY_TONE`, el mismo mapa que pinta la insignia
+                de la fila, y no de aqui.** Estaba duplicado dentro de `[listId].tsx` y
+                este fichero lo hacia de otra manera; ahora los dos leen el mismo, y
+                cambiar el color de una prioridad es cambiarlo en un sitio. */}
             <View style={{ gap: theme.spacing.xs }}>
               <AppText variant="caption" tone="subtle">
                 {t("itemEdit.priority")}
@@ -553,6 +610,25 @@ export function ItemEditSheet({
               <View style={[styles.row, { gap: theme.spacing.xs }]}>
                 {PRIORITIES.map((option) => {
                   const active = option === shown.priority;
+                  const tone = PRIORITY_TONE[option];
+                  /*
+                    **Activo y lleno, inactivo y lavado.** El boton activo se pinta con
+                    el relleno del tono y el texto en su color, que es la insignia
+                    entera; el inactivo, con el mismo relleno a la repuesta y el mismo
+                    texto, para que **la fila se vea como la lista antes y despues de
+                    elegir**. El que marca cual esta elegido es el borde, no el color:
+                    con el color puesto en los dos, un boton no se distingue del otro
+                    por el tono sino por si esta dentro.
+                  */
+                  const { background: relleno, text: tinta } = tonesFor(
+                    theme.colors,
+                    tone,
+                  );
+                  // El borde del boton activo lleva el color del tono, y `tonesFor`
+                  // ya lo devolvió como `text`: para `neutral` ese color es
+                  // `textMuted` y no existe una entrada `theme.colors.neutral`, asi
+                  // que el borde sale de ahi y no de indexar el tema por el tono.
+                  const borde = tinta;
                   return (
                     <Pressable
                       key={option}
@@ -566,21 +642,14 @@ export function ItemEditSheet({
                         styles.priority,
                         {
                           borderRadius: theme.radius.pill,
-                          backgroundColor: active
-                            ? theme.colors.accent
-                            : theme.colors.surfaceMuted,
+                          backgroundColor: relleno,
+                          borderWidth: active ? 2 : 0,
+                          borderColor: borde,
                           opacity: pressed ? 0.7 : 1,
                         },
                       ]}
                     >
-                      <AppText
-                        variant="caption"
-                        style={{
-                          color: active
-                            ? theme.colors.onAccent
-                            : theme.colors.textMuted,
-                        }}
-                      >
+                      <AppText variant="caption" style={{ color: tinta }}>
                         {t(`items.priority.${option}` as never)}
                       </AppText>
                     </Pressable>
@@ -816,11 +885,22 @@ export function ItemEditSheet({
                   <TagChip tag={tag} colors={tagColors}>
                     {(ink) => (
                       <>
+                        {/*
+                          **La papelera de esta fila quita sin preguntar, y el motivo
+                          es que aqui no hay ambiguedad.** Esta fila solo lista etiquetas
+                          que la tarea lleva —es su propio contenido—, asi que la `x` es
+                          la unica accion que la pastilla puede tener y no hay nada que
+                          pueda leerse como "anadir". La de la fila de abajo, que esta
+                          entre el `+` y el pencil, si lo pregunta: ahi el boton cambia
+                          de signo segun si la tarea lleva la etiqueta, y un signo que
+                          cambia merece un aviso. Preguntar en las dos seria hacer al
+                          usuario confirmar algo que acaba de ver en pantalla.
+                        */}
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={t("tags.remove", { name: tag })}
                           hitSlop={8}
-                          onPress={() => toggleTag(tag)}
+                          onPress={() => quitarTag(tag)}
                           style={({ pressed }) => [
                             styles.chipAction,
                             {
@@ -876,48 +956,77 @@ export function ItemEditSheet({
                     { gap: theme.spacing.xs, flexWrap: "wrap" },
                   ]}
                 >
-                  {labels.map(({ tag, count }) => (
-                    <Fragment key={tag}>
-                      <TagChip tag={tag} colors={tagColors}>
-                        {(ink) => (
-                          <>
-                            {/* `TagChip` writes the name, so the count is what is
-                                left, and it goes first so the two buttons stay at
-                                the end of the pill. And it goes in the pill's own
-                                colour instead of in a `tone`: a `tone` would pick a
-                                token del tema, y sobre el tinte de la etiqueta
-                                ese token no es de este fondo. */}
-                            <AppText variant="caption" style={{ color: ink }}>
-                              {`· ${count}`}
-                            </AppText>
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel={t("tags.put", { name: tag })}
-                              hitSlop={8}
-                              onPress={() => toggleTag(tag)}
-                              style={({ pressed }) => [
-                                styles.chipAction,
-                                {
-                                  borderRadius: theme.radius.pill,
-                                  opacity: pressed ? 0.7 : 1,
-                                },
-                              ]}
-                            >
-                              <Ionicons name="add" size={12} color={ink} />
-                            </Pressable>
-                            <TagColorButton
-                              tag={tag}
-                              color={colorOf(tag)}
-                              open={colorDe === tag}
-                              ink={ink}
-                              hintProps={pistaColor.props}
-                              onPress={() =>
-                                setColorDe(colorDe === tag ? null : tag)
-                              }
-                            />
-                          </>
-                        )}
-                      </TagChip>
+                  {labels.map(({ tag, count }) => {
+                    const laTiene = shown.tags.includes(tag);
+                    return (
+                      <Fragment key={tag}>
+                        <TagChip tag={tag} colors={tagColors}>
+                          {(ink) => (
+                            <>
+                              {/* `TagChip` writes the name, so the count is what is
+                                  left, and it goes first so the buttons stay at
+                                  the end of the pill. And it goes in the pill's own
+                                  colour instead of in a `tone`: a `tone` would pick a
+                                  token del tema, y sobre el tinte de la etiqueta
+                                  ese token no es de este fondo. */}
+                              <AppText variant="caption" style={{ color: ink }}>
+                                {`· ${count}`}
+                              </AppText>
+                              {/*
+                                **Un boton o el otro, nunca los dos y nunca el mismo.**
+                                El `+` es para las etiquetas que esta tarea **no** lleva,
+                                y la papelera para las que **si** —y `laTiene` lo decide
+                                con `shown.tags`, que es la verdad del estado y no una
+                                cuenta aparte. Por eso el `+` que antes estaba siempre,
+                                y que en una etiqueta que ya tenias te quitaba la
+                                etiqueta sin preguntar, ahora solo aparece donde anade.
+                              */}
+                              {laTiene ? (
+                                <Pressable
+                                  accessibilityRole="button"
+                                  accessibilityLabel={t("tags.remove", { name: tag })}
+                                  hitSlop={8}
+                                  onPress={() => confirmarQuitar(tag)}
+                                  style={({ pressed }) => [
+                                    styles.chipAction,
+                                    {
+                                      borderRadius: theme.radius.pill,
+                                      opacity: pressed ? 0.7 : 1,
+                                    },
+                                  ]}
+                                >
+                                  <Ionicons name="remove" size={12} color={ink} />
+                                </Pressable>
+                              ) : (
+                                <Pressable
+                                  accessibilityRole="button"
+                                  accessibilityLabel={t("tags.put", { name: tag })}
+                                  hitSlop={8}
+                                  onPress={() => anadirTag(tag)}
+                                  style={({ pressed }) => [
+                                    styles.chipAction,
+                                    {
+                                      borderRadius: theme.radius.pill,
+                                      opacity: pressed ? 0.7 : 1,
+                                    },
+                                  ]}
+                                >
+                                  <Ionicons name="add" size={12} color={ink} />
+                                </Pressable>
+                              )}
+                              <TagColorButton
+                                tag={tag}
+                                color={colorOf(tag)}
+                                open={colorDe === tag}
+                                ink={ink}
+                                hintProps={pistaColor.props}
+                                onPress={() =>
+                                  setColorDe(colorDe === tag ? null : tag)
+                                }
+                              />
+                            </>
+                          )}
+                        </TagChip>
                       {colorDe === tag ? (
                         <View style={styles.anchoCompleto}>
                           <TagColorPicker
@@ -928,8 +1037,9 @@ export function ItemEditSheet({
                           />
                         </View>
                       ) : null}
-                    </Fragment>
-                  ))}
+                        </Fragment>
+                      );
+                    })}
                 </View>
               </View>
             ) : null}

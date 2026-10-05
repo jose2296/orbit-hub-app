@@ -490,6 +490,44 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
   });
 });
 
+describe('la pastilla va en negrita, y por una razon que hay que poder comprobar', () => {
+  /*
+   * **El 600 y no el 500 de `caption` es el peso de una insignia, y es lo que
+   * sostiene la lectura de 12 px a 3:1.** Sin este pin, alguien puede volver a
+   * quitarlo pensando que es cosmetica, y resulta que es lo que hace que una
+   * etiqueta se lea como el texto de color de una insignia de prioridad.
+   *
+   * **Y el pin mira el 600 y no el contraste**, porque el contraste lo mide
+   * `tag-colors.test.ts` sobre la funcion, y aqui lo que se afirma es que el
+   * componente **pasa** el peso. Las dos mitades del acuerdo van en sitios
+   * distintos a proposito: la cuenta en la funcion, la pintura en el componente.
+   */
+  it('el texto de la pastilla se pinta con peso 600', () => {
+    expect(sinComentarios(tagChip)).toMatch(/fontWeight:\s*["']600["']/);
+  });
+
+  /**
+   * Y el otro lado del acuerdo, que es que **el bold no baja el liston**: si
+   * alguien lee "12 px en negrita" y baja `MIN_LABEL_CONTRAST` pensando que WCAG
+   * permite 3:1 para negrita, este test lo dice. WCAG llama texto grande a 18 px, o
+   * a 14 px en negrita; `caption` son 12 px, y en negrita siguen siendo 12.
+   */
+  it('el peso 600 no aparece como motivo para bajar el liston', () => {
+    // El comentario de `TagChip` que explica el 600 tiene que decir que el bold no
+    // cambia el umbral, y decir los dos numeros de WCAG para que quien lo lea no tenga
+    // que buscarlos. Sin esa frase, el 600 se lee como un atajo para 3:1.
+    //
+    // **El comentario va dentro del bloque `fontWeight`, y se lee aqui a proposito:**
+    // `sinComentarios` lo quita de la cuenta, asi que este test mira el codigo limpio
+    // y la frase vive en el sitio donde alguien la va a leer al escribir el peso.
+    const bloque = tagChip.match(/fontWeight:\s*["']600["'][\s\S]*?\*\//);
+    expect(bloque, "el 600 tiene que seguir su explicacion").not.toBeNull();
+    expect(bloque?.[0]).toMatch(/no cambia el list[oó]n/i);
+    expect(bloque?.[0]).toMatch(/18 px/);
+    expect(bloque?.[0]).toMatch(/14 px/);
+  });
+});
+
 describe('los cuatro botones de prioridad se ven distintos entre si', () => {
   /*
    * **Estaban los cuatro con el color de acento cuando estaban activos**, asi que se
