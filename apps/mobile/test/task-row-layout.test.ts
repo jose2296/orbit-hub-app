@@ -96,6 +96,7 @@ const verifyTag = readFileSync(
 const checkbox = src('src/components/ui/checkbox.tsx');
 const badge = src('src/components/ui/badge.tsx');
 const listId = src('src/app/(app)/list/[listId].tsx');
+const itemPresentation = src('src/lib/lists/item-presentation.ts');
 const appHeader = src('src/components/ui/app-header.tsx');
 const screen = src('src/components/ui/screen.tsx');
 const spaceBand = src('src/components/workspace/space-band.tsx');
@@ -486,6 +487,78 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
     for (const cola of colas) {
       expect(cola.split(',').map((t) => t.trim())).toContain('button');
     }
+  });
+});
+
+describe('los cuatro botones de prioridad se ven distintos entre si', () => {
+  /*
+   * **Estaban los cuatro con el color de acento cuando estaban activos**, asi que se
+   * elegia a ciegas: los cuatro botones salian del mismo color y lo unico que decia
+   * cual estaba elegido era estar pulsado, que se va en cuanto levantas el dedo. Este
+   * pin va sobre el **tono por boton** y no sobre el mapa, porque lo que hay que
+   * proteger es que los cuatro sean distintos, y un mapa correcto pero con dos tonos
+   * iguales pasaria un pin que solo mirase "no es accent".
+   */
+  it('cada prioridad tiene su propio tono, y los cuatro no se repiten', () => {
+    const mapeo = itemPresentation.match(
+      /PRIORITY_TONE[^=]*=[\s\S]*?\};/,
+    )?.[0];
+    expect(mapeo, 'PRIORITY_TONE tiene que existir en item-presentation').toBeDefined();
+    const tonos = [...(mapeo ?? '').matchAll(/:\s*"([a-z]+)"/g)].map((m) => m[1]);
+    expect(tonos).toEqual(['neutral', 'info', 'warning', 'danger']);
+    expect(new Set(tonos).size).toBe(tonos.length);
+  });
+
+  it('el boton de la hoja pinta el tono en vez del acento', () => {
+    // El `accent` de antes era el bug: los cuatro activos salian iguales. Se mira la
+    // hoja limpia de comentarios, y `surfaceMuted` no aparece como relleno de un boton
+    // de prioridad: eso era lo que hacia el inactivo.
+    // La ventana es de 600 caracteres porque `tonesFor` esta unas lineas mas alla
+    // del array de estilos, no dentro: mira el relleno y el texto que salen de ahi.
+    const limpio = sinComentarios(itemEditSheet);
+    const bloque = limpio.match(/PRIORITY_TONE[\s\S]{0,1200}?styles\.priority[\s\S]{0,400}?\]\}/)?.[0];
+    expect(bloque, 'el boton de prioridad tiene que existir').toBeDefined();
+    expect(bloque).not.toMatch(/theme\.colors\.accent\b/);
+    expect(bloque).toMatch(/tonesFor\(/);
+  });
+
+  /**
+   * Y que el mapa **no tenga dos copias**, que es la causa de raiz: estaba dentro de
+   * `[listId].tsx` y el boton de la hoja hacia lo de otra manera. Un pin sobre "el
+   * fichero ya no lo define" vale mas que un pin sobre "el otro fichero lo importa",
+   * porque el segundo pasa mientras alguien tenga el mapa definido en los dos.
+   */
+  it('el mapa vive en un solo sitio y los dos lo importan', () => {
+    expect(sinComentarios(listId)).not.toMatch(/const PRIORITY_TONE/);
+    expect(sinComentarios(listId)).toMatch(/PRIORITY_TONE[,\s}]/);
+    expect(sinComentarios(itemEditSheet)).toMatch(/PRIORITY_TONE/);
+  });
+});
+
+describe('anadir y quitar son botones distintos, y el + solo anade', () => {
+  /*
+   * **El `+` que tambien quitaba es lo que se vino a quitar**, y el pin va sobre el
+   * `toggleTag` y no sobre el texto: `toggleTag` no volver a existir es lo que hace
+   * imposible el fallo, porque con un solo toggle los dos botones tendrian que
+   * compartir la misma funcion y uno de los dos mentiria sobre lo que hace.
+   */
+  it('no queda ningun toggle que anada y quite a la vez', () => {
+    expect(sinComentarios(itemEditSheet)).not.toMatch(/\btoggleTag\b/);
+  });
+
+  it('anadir solo anade y quitar solo quita, y el boton que se pinta depende de si la tiene', () => {
+    // El `+` no se pinta cuando la tarea ya lleva la etiqueta. Sin este `laTiene`,
+    // los dos botones estan siempre y el `+` vuelve a quitar en silencio.
+    expect(sinComentarios(itemEditSheet)).toMatch(/laTiene\s*=\s*shown\.tags\.includes/);
+    expect(sinComentarios(itemEditSheet)).toMatch(/name="remove"/);
+    expect(sinComentarios(itemEditSheet)).toMatch(/name="add"/);
+  });
+
+  it('la papelera de la fila de abajo pregunta antes, y la de arriba no', () => {
+    // Preguntar en las dos seria confirmar algo que el usuario acaba de ver en
+    // pantalla: en la fila de arriba la etiqueta esta en la propia pastilla.
+    const preguntar = sinComentarios(itemEditSheet).match(/confirmarQuitar\(/g) ?? [];
+    expect(preguntar).toHaveLength(1);
   });
 });
 

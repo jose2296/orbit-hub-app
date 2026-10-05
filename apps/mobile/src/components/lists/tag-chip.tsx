@@ -141,9 +141,27 @@ export function TagChip({
     style,
   ];
 
+  /*
+   * **`fontWeight: "600"` y no un token, y el motivo es que `caption` es de 12 px.**
+   * Una pastilla se lee como el texto de color de una insignia de prioridad, y esas
+   * escriben en el mismo `caption` con un peso mas fuerte que el de la escala —que en
+   * 12 px es 500—. Con el 600 el texto de una pastilla tiene la misma presencia que
+   * el de una insignia, que es lo que se quiso al parecérselas; y como el color
+   * elegido esta a 3:1 sobre su propio relleno —el liston de las insignias—, el peso
+   * es lo que sostiene la lectura de esos 12 px.
+   *
+   * **El bold no cambia el liston.** WCAG llama "texto grande" a 18 px, o a 14 px en
+   * negrita, y a 12 px le toca 4.5:1 aunque sea negrita: el peso cambia como se ve,
+   * no cual es el minimo. Por eso `MIN_LABEL_CONTRAST` esta en 3 por decision propia y
+   * no por este peso —ver el comentario de la constante en `tag-colors.ts`—, que es
+   * un punto en el que los dos cambios se apoyan el uno en el otro y conviene no
+   * confundirlos.
+   */
+  const estiloDelTexto = { color: text, fontWeight: "600" as const };
+
   const dentro = (
     <>
-      <AppText variant="caption" style={{ color: text }}>
+      <AppText variant="caption" style={estiloDelTexto}>
         {tag}
       </AppText>
       {typeof children === "function" ? children(text) : children}
