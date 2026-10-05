@@ -145,13 +145,17 @@ export function contrastRatio(a: string, b: string): number {
  * lo mismo, y conviene no contarlo como si lo fuera.
  *
  * **Y el precio de llegar a 4.5:1 son esos puntos de recorrido, no el paso de la
- * cuenta**, sino el 14% de mezcla. Afinar el paso **no acorta el viaje**: la cuenta
- * sale en cuanto un candidato pasa, asi que un paso mas fino cae en **otro hex, con
- * el contraste un poco mas bajo y siempre por encima de la linea** —el bucle solo
- * devuelve dentro del `if` que la exige, asi que "por debajo" no puede salir—.
- * Ni mas lejos ni mas corto: el mismo sitio de la escala de contraste, redondeado a
- * otro lado. Quien quiera que el texto se parezca mas
- * al color elegido tiene **una sola palanca y es `MEZCLA_DE_LA_PASTILLA`**: subirla
+ * cuenta**, sino el 14% de mezcla. Afinar el paso **no alarga el viaje**: la cuenta
+ * sale en cuanto un candidato pasa, asi que un paso mas fino cae en un candidato
+ * **que pasa igual de facil, y a veces en el mismo hex** —la rejilla fina contiene a
+ * la gruesa, y el mismo punto esta en las dos—, con el contraste un poco mas bajo y
+ * siempre por encima de la linea —el bucle solo devuelve dentro del `if` que la
+ * exige, asi que "por debajo" no puede salir—. Lo que **no** se puede decir es que el
+ * paso mas fino caiga siempre en otro hex, ni que el contraste siempre baje: eso
+ * depende del color, y si el viaje se da la vuelta **no lo decide el paso sino
+ * `clamp01`, que es monotono y no puede dar marcha atras**. Quien quiera que el
+ * texto se parezca mas al color elegido tiene **una sola palanca y es
+ * `MEZCLA_DE_LA_PASTILLA`**: subirla
  * acerca el relleno al color y acorta el viaje, y bajarla hace lo contrario. Cuanto
  * se puede subir sin perder legibilidad es la pregunta abierta de esta funcion, y la
  * razon por la que el 14% no esta canonizado en ningun sitio mas que en la constante

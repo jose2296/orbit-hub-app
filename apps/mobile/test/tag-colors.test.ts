@@ -264,11 +264,25 @@ describe("el mapa de colores que se guarda", () => {
   });
 
   it("el validador del movil y el del contrato aceptan lo mismo", () => {
-    // Hay dos validadores de hex en este repositorio y no pueden ser uno:
-    // `esHex` esta en el movil porque el selector de espacios lo usa desde antes de
-    // que existieran las etiquetas, y `normalizaColor` esta en el contrato porque
-    // `packages/contracts` no puede importar de `apps/mobile` y es el servidor —no
-    // el cliente— quien normaliza lo que se guarda.
+    // **Hay cinco reglas de hex en este repositorio y no pueden ser una.** Las dos
+    // que este test ata son `esHex` —en el movil, porque el selector de espacios lo
+    // usa desde antes de que existieran las etiquetas— y `normalizaColor` —en el
+    // contrato, porque `packages/contracts` no puede importar de `apps/mobile` y es
+    // el servidor —no el cliente— quien normaliza lo que se guarda. Las dos aceptan
+    // tres o seis digitos.
+    //
+    // **Las otras tres aceptan solo seis, y el mismo `#fff` que el selector de
+    // etiquetas acepta y el contrato guarda, el selector de espacios lo rechaza**:
+    // `ES_HEX` en `workspace-color-picker.tsx`, `ES_HEX` en
+    // `lib/workspace/recent-colors.ts`, y la regla de `color`/`colorTo` en
+    // `sync-service.ts`, que es la del servidor. Ni siquiera se parecen entre si: la
+    // de los recientes exige `#` y mayusculas, y la del servidor exige `#`.
+    //
+    // **Eso es preexistente y esta fuera de este plan**, asi que este comentario lo
+    // nombra y no lo arregla: `workspace-color-picker.tsx` no es de esta rama, y la
+    // regla que mas se le acerca es `esHex`. Lo que este test ata son **las dos
+    // primeras y nada mas** —cambiar las otras tres no lo rompe, y hacerlas iguales
+    // tampoco es trabajo suyo—.
     //
     // Lo que los ata es esta lista, y solo esta lista. Si un dia uno se estrecha o
     // el otro se ensancha, el campo de un selector acepta un color que el mapa no

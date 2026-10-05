@@ -262,7 +262,6 @@ const es = {
   "tags.colorCustom": "Un color tuyo, escrito como #RRGGBB",
   "tags.colorBad": "Un color se escribe con tres o seis cifras: #1F6FEB.",
   "tags.colorSquareValue": "Saturación {saturation}%, claridad {brightness}%",
-  "tags.colorHue": "Tono del color",
   "tags.colorUse": "Usar este color",
   /*
    * Los nombres accesibles del selector, **todos con `{name}` al final**, y el motivo
@@ -1294,7 +1293,6 @@ const en: Record<TranslationKey, string> = {
   "tags.colorCustom": "One of yours, written as #RRGGBB",
   "tags.colorBad": "A colour is three or six digits: #1F6FEB.",
   "tags.colorSquareValue": "Saturation {saturation}%, brightness {brightness}%",
-  "tags.colorHue": "Colour tone",
   "tags.colorUse": "Use this colour",
   "tags.pendingLabel": "the new label",
   "tags.colorOf": "Colour of {name}",
