@@ -13,9 +13,13 @@
  *   node scripts/verify-spike.mjs node
  *       Computes it here and compares. No arguments, no human.
  *
- *   node scripts/verify-spike.mjs hermes [--serial emulator-5554]
+ *   node scripts/verify-spike.mjs hermes [--serial <id>]
  *       Reads `adb logcat` itself, extracts the fingerprint, and checks that the
- *       log really came from Hermes (`SPIKE_ENV.engine`) before trusting it.
+ *       log really came from Hermes (`SPIKE_ENV.engine`) before trusting it. The
+ *       serial comes from `--serial`, then `ANDROID_SERIAL`, then the default, in
+ *       that order, and it is looked up in `adb devices` before anything is read:
+ *       a serial that is not there is said out loud instead of falling back to
+ *       whatever emulator happens to be up.
  *
  *   node scripts/verify-spike.mjs browser < console.txt
  *       The browser console cannot be piped, so the two `SPIKE_*` lines are
@@ -39,7 +43,7 @@ const ADR = new URL(
   '../../../docs/architecture/adr/0033-recurrencia-con-rrule-y-luxon.md',
   import.meta.url,
 );
-const SERIAL = process.env.ANDROID_SERIAL ?? 'emulator-5554';
+const DEFAULT_SERIAL = 'emulator-5554';
 
 const fail = (message) => {
   console.error(`FAIL  ${message}`);
@@ -49,9 +53,58 @@ const fail = (message) => {
 const usage = (message) => {
   console.error(`ERROR ${message}`);
   console.error(
-    'usage: verify-spike.mjs node | hermes [--serial <id>] | browser | --refresh',
+    'usage: verify-spike.mjs node\n' +
+      '       verify-spike.mjs hermes [--serial <id>]\n' +
+      '       verify-spike.mjs browser < console.txt\n' +
+      '       verify-spike.mjs --refresh',
   );
   process.exit(2);
+};
+
+/**
+ * Que flags existen y cuales llevan valor. `--serial` estaba documentado en la
+ * cabecera y en el ADR, se aceptaba en silencio, y el script comparaba el registro
+ * del emulador que no te habian pedido: un flag que hace otra cosa de la que dice
+ * es peor que no tenerlo. Por eso un flag desconocido es un error de comando y no
+ * una opcion ignorada.
+ */
+const FLAGS_WITH_VALUE = new Set(['--serial']);
+const BOOLEAN_FLAGS = new Set(['--refresh']);
+
+const parseArgs = (argv) => {
+  const flags = new Map();
+  const words = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) {
+      words.push(arg);
+      continue;
+    }
+    const equals = arg.indexOf('=');
+    const name = equals === -1 ? arg : arg.slice(0, equals);
+    if (FLAGS_WITH_VALUE.has(name)) {
+      if (equals !== -1) {
+        flags.set(name, arg.slice(equals + 1));
+        continue;
+      }
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('--')) {
+        usage(`${name} needs a value, as in --serial ${DEFAULT_SERIAL}`);
+      }
+      flags.set(name, next);
+      i += 1;
+      continue;
+    }
+    if (BOOLEAN_FLAGS.has(name)) {
+      if (equals !== -1) {
+        usage(`${name} does not take a value`);
+      }
+      flags.set(name, true);
+      continue;
+    }
+    usage(`unknown flag "${name}"`);
+  }
+  return { words, flags };
 };
 
 /**
@@ -143,20 +196,76 @@ const check = (measured, expected, label) => {
   console.log(`ok    ${label}: ${measured.fingerprint} (${measured.engine})`);
 };
 
-const fromAdb = () => {
+/**
+ * Que aparato se lee, y de donde sale su nombre: `--serial` gana sobre
+ * `ANDROID_SERIAL`, que gana sobre el valor por defecto. El nombre se comprueba
+ * contra `adb devices` antes de leer nada, porque leer el logcat de otro aparato y
+ * comparar su registro con el del pedido es una comprobacion de otra cosa
+ * haciendose pasar por esta.
+ */
+const adb = (args, what) => {
   try {
-    return execFileSync('adb', ['-s', SERIAL, 'logcat', '-d'], {
+    return execFileSync('adb', args, {
       encoding: 'utf8',
       timeout: 60_000,
       maxBuffer: 64 * 1024 * 1024,
     });
   } catch (error) {
-    fail(
-      `cannot read logcat from ${SERIAL} (${error.message}). ` +
-        'Is the emulator up, and has the app loaded a bundle from Metro?',
-    );
+    fail(`adb ${args.join(' ')} failed (${error.message}). ${what}`);
   }
 };
+
+const parseDevices = (listing) =>
+  listing
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(
+      (line) => line.length > 0 && !line.startsWith('List of devices') && !line.startsWith('*'),
+    )
+    .map((line) => {
+      const [id, ...rest] = line.split(/\s+/);
+      return { id, state: rest.join(' ') || 'unknown' };
+    });
+
+const resolveSerial = (requested) => {
+  const serial = requested ?? process.env.ANDROID_SERIAL ?? DEFAULT_SERIAL;
+  const from = requested
+    ? '--serial'
+    : process.env.ANDROID_SERIAL
+      ? 'ANDROID_SERIAL'
+      : 'the default';
+
+  const devices = parseDevices(
+    adb(['devices'], 'Without the device list there is no way to tell whether the serial exists.'),
+  );
+  const found = devices.find((device) => device.id === serial);
+  if (!found) {
+    fail(
+      `no device with serial "${serial}" is attached (taken from ${from}). ` +
+        `adb devices lists: ${
+          devices.length === 0
+            ? '(nothing)'
+            : devices.map((d) => `${d.id} [${d.state}]`).join(', ')
+        }. ` +
+        'Start it, or pass the serial that is really there with --serial <id>. ' +
+        'Nothing was measured: falling back to another device would compare the wrong record.',
+    );
+  }
+  if (found.state !== 'device') {
+    fail(
+      `"${serial}" is attached but its state is "${found.state}", not "device". ` +
+        'adb cannot read a logcat from it until it is up, so nothing was measured.',
+    );
+  }
+  console.log(`serial ${serial} (from ${from}), state ${found.state}`);
+  return serial;
+};
+
+const fromAdb = (serial) =>
+  adb(
+    ['-s', serial, 'logcat', '-d'],
+    `Is ${serial} up, and has the app loaded a bundle from Metro?`,
+  );
 
 const readStdin = () => {
   try {
@@ -190,9 +299,20 @@ const refresh = async ({ text, record }) => {
   );
 };
 
-const argv = process.argv.slice(2);
-const environment = argv.find((a) => !a.startsWith('--'));
-const wantsRefresh = argv.includes('--refresh');
+const { words, flags } = parseArgs(process.argv.slice(2));
+const [environment, ...extraWords] = words;
+const wantsRefresh = flags.get('--refresh') === true;
+const serialFlag = flags.get('--serial');
+
+if (extraWords.length > 0) {
+  usage(`unexpected extra argument "${extraWords[0]}"`);
+}
+if (wantsRefresh && environment !== undefined) {
+  usage('--refresh measures this checkout, so it takes no environment');
+}
+if (serialFlag !== undefined && environment !== 'hermes') {
+  usage(`--serial only applies to hermes, not to ${environment ?? 'a missing environment'}`);
+}
 
 if (wantsRefresh) {
   await refresh(readRecord());
@@ -240,7 +360,8 @@ if (wantsRefresh) {
   }
 } else if (environment === 'hermes') {
   const { record } = readRecord();
-  const measured = extract(fromAdb(), `adb logcat on ${SERIAL}`);
+  const serial = resolveSerial(serialFlag);
+  const measured = extract(fromAdb(serial), `adb logcat on ${serial}`);
   if (measured.engine !== 'hermes') {
     fail(
       `that log line says engine "${measured.engine}", not hermes. ` +
