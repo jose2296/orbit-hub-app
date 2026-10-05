@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import type { AccessibilityActionEvent } from "react-native";
+import { runOnJS } from "react-native-reanimated";
 
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -384,14 +385,48 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
   const alMoverTiraRef = useRef(alMoverTira);
   alMoverTiraRef.current = alMoverTira;
 
+  /*
+    The two arrows on the JS thread. Created **once** and reading the ref each time
+    they are called, which is all that is needed for the gesture not to be rebuilt
+    with a finger on it without keeping the first render's measured width.
+  */
+  const moverCuadrado = useCallback((x: number, y: number) => {
+    alMoverCuadradoRef.current(x, y);
+  }, []);
+  const moverTira = useCallback((x: number) => {
+    alMoverTiraRef.current(x);
+  }, []);
+
   const gestoCuadrado = useMemo(
     () =>
       Gesture.Pan()
         // From the first pixel: tapping the square is a choice, and a threshold
         // would mean a tap lands nowhere.
-        .minDistance(0)
-        .onBegin((e) => alMoverCuadradoRef.current(e.x, e.y))
-        .onUpdate((e) => alMoverCuadradoRef.current(e.x, e.y)),
+        /*
+          `runOnJS`, for the reason `workspace-color-picker.tsx` gives in full: a
+          gesture callback runs on the UI thread, and `alMoverCuadradoRef.current` is
+          an ordinary JavaScript function living on the JS thread. Called from there it
+          does not run — the call stays on the thread that cannot run it. The gesture
+          registers, the app opens, the finger moves across the square and the colour
+          does not change. It breaks nothing at compile time or at launch, which is
+          what makes it this bad.
+
+          **And the `runOnJS` wraps an arrow, not the callback.** `runOnJS(fn)` returns
+          a new function, and that call is evaluated **when the gesture is built** —
+          once, because the `useMemo` above has `[]`. Writing
+          `runOnJS(alMoverCuadradoRef.current)(e.x, e.y)` therefore looks like it reads
+          the ref on every movement and does not: it keeps whatever the ref held on the
+          first render, when `onLayout` had not run yet and the box was still the
+          assumed width and `anchoTira` was 0.
+
+          That was true of this file as well as the workspace one, and it is why the
+          square came out wrong and the whole strip did nothing —with a width of 0,
+          `puntoAHue` returns hue 0 every time. The arrow is created once, so the
+          gesture is not rebuilt with a finger on it, and it reads the ref **when it is
+          called**, which is the moment that matters.
+        */
+        .onBegin((e) => runOnJS(moverCuadrado)(e.x, e.y))
+        .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y)),
     [],
   );
 
@@ -399,8 +434,8 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
     () =>
       Gesture.Pan()
         .minDistance(0)
-        .onBegin((e) => alMoverTiraRef.current(e.x))
-        .onUpdate((e) => alMoverTiraRef.current(e.x)),
+        .onBegin((e) => runOnJS(moverTira)(e.x))
+        .onUpdate((e) => runOnJS(moverTira)(e.x)),
     [],
   );
 

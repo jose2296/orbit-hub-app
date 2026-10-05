@@ -530,6 +530,10 @@ export function ItemEditSheet({
               // server agree. The title of a task is 300 on purpose, and a list of
               // 300 of them is not a thing anyone writes.
               limit={FIELD_LIMITS['list_item.title']}
+              // La clave existed, en los dos idiomas, sin que nadie la usara: un
+              // ejemplo de titulo escrito y nunca conectado. Es el campo que mas
+              // se abre de la app, asi que es el primero que se nota vacio.
+              placeholder={t("items.titlePlaceholder")}
             />
 
             <TextField

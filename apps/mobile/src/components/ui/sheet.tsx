@@ -20,7 +20,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { useTranslation } from "@/lib/i18n";
@@ -354,6 +354,35 @@ export function Sheet({
       statusBarTranslucent
     >
       {/*
+        `GestureHandlerRootView` **inside** the `Modal`, and not only the one in
+        `app/_layout.tsx`.
+
+        On Android a React Native `Modal` is not a view: it is a separate native
+        window with its own tree. A `GestureDetector` that lives inside it does not
+        hang off the app's `GestureHandlerRootView`, and without a root of its own
+        **the gesture is never registered**: no error, no crash, the panel opens and
+        the finger moves across the square and nothing happens.
+
+        This is what made both colour pickers — the workspace one and the tag one —
+        change neither the colour nor the hue on a phone, with `runOnJS` in place and
+        without it. Both pickers live inside a `Sheet`, and the `Sheet` is a `Modal`.
+        On the web `Modal` is a div in the same tree, `_layout`'s root does cover it,
+        and that is why the bug was never visible there.
+
+        This repo has now paid this same bill twice; the first time is written in
+        `docs/roadmap.md`: without `GestureHandlerRootView` the gesture handler does
+        not set `touch-action: none` and the browser keeps the finger. There it was the
+        browser taking the gesture and there was no way to give it back; here it is the
+        modal's native window, and there is not either.
+
+        **It goes inside and not around the `Modal`**: a root around the `Modal` is a
+        root in the app's window, which is exactly the one that does not contain the
+        panel's gestures. And `flex: 1` because this is the view that has to be
+        measured, not the content: a container with no height receives no touches,
+        which is the same failure shape as the `flex: 1` on the hue strip.
+      */}
+      <GestureHandlerRootView style={styles.raizGestos}>
+      {/*
         `animationType="none"`, **and that is the point of the whole file**.
 
         It was `slide` on a phone, and the modal is the *root*: the dimming is a
@@ -607,6 +636,33 @@ export function Sheet({
           </Body>
         </Animated.View>
       </View>
+      {/*
+        `GestureHandlerRootView` **dentro** del `Modal`, y no solo el que hay en
+        `app/_layout.tsx`.
+
+        En Android un `Modal` de React Native no es una vista: es una ventana nativa
+        aparte, con su propio árbol. Un `GestureDetector` que vive dentro de ella no
+        cuelga del `GestureHandlerRootView` de la app, y sin una raiz propia **el gesto
+        no se registra**: no hay error, no hay crash, el panel abre y el dedo se mueve
+        sobre el cuadrado sin que pase nada.
+
+        Esto es lo que hacia que los dos selectores de color —el de workspace y el de
+        etiquetas— no cambiaran ni el color ni el tono en un movil, con `runOnJS`
+        puesto y sin él. Los dos picker viven dentro de un `Sheet`, y el `Sheet` es un
+        `Modal`. En la web `Modal` es un div en el mismo arbol, la raiz de `_layout` si
+        lo cubre, y por ahi el bug nunca se vio.
+
+        Es la segunda vez que este repo paga esta misma factura; la primera esta
+        escrita en `docs/roadmap.md`: sin `GestureHandlerRootView` el gestor de gestos
+        no pone `touch-action: none` y el navegador se queda con el dedo. Ahi era el
+        navegador tomando el gesto, y no habia forma dearlo; aqui es la ventana nativa
+        del modal, y tampoco.
+
+        **Va dentro y no envolviendo el `Modal`**: una raiz alrededor del `Modal` es
+        una raiz en la ventana de la app, que es justo la que no contiene los gestos
+        del panel.
+      */}
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -926,6 +982,15 @@ export function useLastValue<T>(valor: T | null | undefined): T | null {
 
 
 const styles = StyleSheet.create({
+  /*
+    The gesture root's own style, and it is only `flex: 1` because it has to be
+    measured. It is the direct child of the `Modal`, so it is what gives the modal's
+    window its size; a root that collapsed to zero would leave the panel unmeasurable
+    and a view with no height takes no touches.
+  */
+  raizGestos: {
+    flex: 1,
+  },
   root: {
     flex: 1,
     justifyContent: "flex-end",
