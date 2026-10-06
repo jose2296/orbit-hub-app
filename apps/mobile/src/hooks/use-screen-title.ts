@@ -1,6 +1,8 @@
 import { useNavigation } from 'expo-router';
 import { useEffect } from 'react';
 
+import type { IconRef } from '@orbit-hub/contracts';
+
 /**
  * Puts the title of the screen in the header.
  *
@@ -10,7 +12,15 @@ import { useEffect } from 'react';
  * is a hook and not a prop: setting it again when the data lands is the whole
  * point, and a screen that forgot to would sit there saying "List" forever.
  */
-export function useScreenTitle(title: string | null | undefined) {
+/**
+ * Puts the title — and the icon beside it — in the header.
+ *
+ * The icon travels in the same call because it changes with the same data: a
+ * list that gains an icon gains it in the header on the same paint as everywhere
+ * else, and a second hook or a second effect for it would be a second place that
+ * can go stale.
+ */
+export function useScreenTitle(title: string | null | undefined, icon?: IconRef | null) {
   /*
     The navigator that draws **this** screen's header, which is the one
     `useNavigation` hands back — and not the one above it.
@@ -30,6 +40,6 @@ export function useScreenTitle(title: string | null | undefined) {
 
   useEffect(() => {
     if (!title) return;
-    navigation.setOptions({ title });
-  }, [navigation, title]);
+    navigation.setOptions({ title, icono: icon ?? null });
+  }, [navigation, title, icon]);
 }

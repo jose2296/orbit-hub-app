@@ -200,9 +200,10 @@ describe('el cuerpo no es el mas pequeno', () => {
     const cabecera = readFileSync(join(import.meta.dirname, '..', 'src/components/ui/app-header.tsx'), 'utf8');
 
     // El nombre de una carpeta: era `callout` (14), por debajo de "Inicio" (16).
-    // El icono va en la misma línea, delante del nombre: un `AppIcon` con el
-    // icono de la carpeta y no el emoji concatenado al texto.
-    expect(drawer).toMatch(/variant="body"[^>]*>\s*\{folder\.icon[\s\S]{0,200}?\{folder\.name/);
+    // El icono va en su propia vista delante del nombre — un `AppIcon` con el
+    // icono de la carpeta, y no el emoji concatenado al texto — porque un dibujo
+    // dentro del texto hereda su tamano y su recorte en vez de tener el suyo.
+    expect(drawer).toMatch(/<AppIcon icon=\{folder\.icon[\s\S]{0,800}?\{folder\.name/);
     expect(drawer).toMatch(/variant="body"[^>]*>\s*\{list\.title/);
 
     // El titulo de la pantalla: `heading`, que con la tabla nueva son veinte. Se

@@ -10,7 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
-import type { DashboardWidget, WorkspaceWash } from "@orbit-hub/contracts";
+import type { DashboardWidget, IconRef, WorkspaceWash } from "@orbit-hub/contracts";
 
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { AddMenu, useAddMenu, type AddMenuOption } from "@/components/ui/add-menu";
@@ -190,7 +190,7 @@ export interface PanelGridProps {
   describe: (widget: DashboardWidget) => {
     title: string;
     subtitle: string;
-    emoji: string | null;
+    icon: IconRef | null;
     href: string | null;
     /**
      * What the card *is*, so a card can be told apart from a folder or from a
@@ -1956,7 +1956,7 @@ function ScreenOfPanel({
               id={widget.id}
               title={info.title}
               subtitle={info.subtitle}
-              emoji={info.emoji}
+              icon={info.icon}
               colorKey={colorKeyOf(widget)}
               wash={washOf?.(widget)}
               colorToKey={colorToOf?.(widget)}

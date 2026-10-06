@@ -62,7 +62,7 @@ export default function FolderScreen() {
     [folders, folderId],
   );
 
-  useScreenTitle(folder?.name ?? t("folders.title"));
+  useScreenTitle(folder?.name ?? t("folders.title"), folder?.icon ?? null);
 
   /*
    * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.

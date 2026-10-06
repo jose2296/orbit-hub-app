@@ -1,4 +1,4 @@
-import type { Folder, List, ListOrderMode, Note } from "@orbit-hub/contracts";
+import type { Folder, IconRef, List, ListOrderMode, Note } from "@orbit-hub/contracts";
 import { normaliseToCompare } from "@/lib/lists/done-match";
 
 /**
@@ -22,6 +22,12 @@ export type ContentRow = {
   listKind?: List["kind"];
   itemCount?: number;
   notePreview?: string;
+  /**
+   * The icon somebody chose for it, or null. It travels in the row because the
+   * row is what the list draws, and asking the entity for it per row would be a
+   * lookup per row for something the row already holds.
+   */
+  icon: IconRef | null;
 };
 
 export const toRow = {
@@ -32,6 +38,7 @@ export const toRow = {
     position: folder.position ?? 0,
     createdAt: String(folder.createdAt ?? ""),
     folderId: folder.parentId ?? null,
+    icon: folder.icon ?? null,
   }),
   list: (list: List): ContentRow => ({
     kind: "list",
@@ -42,6 +49,7 @@ export const toRow = {
     folderId: list.folderId ?? null,
     listKind: list.kind,
     itemCount: list.itemCount,
+    icon: list.icon ?? null,
   }),
   note: (note: Note): ContentRow => ({
     kind: "note",
@@ -51,6 +59,7 @@ export const toRow = {
     createdAt: String(note.createdAt ?? ""),
     folderId: note.folderId ?? null,
     notePreview: note.plainText,
+    icon: note.icon ?? null,
   }),
 };
 

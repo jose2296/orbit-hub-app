@@ -1,8 +1,7 @@
-import type { DashboardWidget, Folder, List, Note } from "@orbit-hub/contracts";
+import type { DashboardWidget, Folder, IconRef, List, Note } from "@orbit-hub/contracts";
+import { sanitiseIconRef } from "@orbit-hub/contracts";
 
 import { MIN_CARD_COLUMNS, MIN_CARD_ROWS, pageCount, pageForNewCard } from "./panel";
-
-import { iconEmoji } from "@/lib/icons/resolve-icon";
 
 /**
  * Pinning a thing to the dashboard.
@@ -41,7 +40,9 @@ export function listWidget(list: List): DashboardWidget {
       listId: list.id,
       title: list.title,
       kind: list.kind,
-      emoji: iconEmoji(list.icon),
+      // The whole icon, not just its emoji: a card of a list with a drawing
+      // shows the drawing, and one without shows nothing — as before.
+      icon: list.icon ?? null,
     },
   };
 }
@@ -60,10 +61,26 @@ export function folderWidget(folder: Folder): DashboardWidget {
     settings: {
       folderId: folder.id,
       title: folder.name,
-      emoji: iconEmoji(folder.icon),
+      // The whole icon, like the list above.
+      icon: folder.icon ?? null,
       workspaceId: folder.workspaceId,
     },
   };
+}
+
+/**
+ * The icon a card was pinned with, in either of the two shapes settings come in.
+ *
+ * New pins store the whole `IconRef` under `icon`; pins from before that stored
+ * the emoji string under `emoji`. Both read, because a panel somebody arranged
+ * months ago is not something a new build gets to forget.
+ */
+export function widgetIcon(settings: DashboardWidget["settings"]): IconRef | null {
+  const direct = sanitiseIconRef(settings?.["icon"] ?? null);
+  if (direct) return direct;
+  const emoji = settings?.["emoji"];
+  if (typeof emoji !== "string" || emoji.length === 0) return null;
+  return sanitiseIconRef({ type: "emoji", value: emoji, color: "auto" });
 }
 
 /** Whether a widget is a folder's card, whatever the payload is called. */

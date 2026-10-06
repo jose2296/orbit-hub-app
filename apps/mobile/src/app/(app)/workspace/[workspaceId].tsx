@@ -87,7 +87,7 @@ export default function WorkspaceScreen() {
    */
   // The second colour went with it because it is the person's own choice, and a
   // band that drops it paints a different pair from the one the picker shows.
-  useScreenTitle(workspace?.name ?? t("workspaces.title"));
+  useScreenTitle(workspace?.name ?? t("workspaces.title"), workspace?.icon ?? null);
 
   /*
    * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.

@@ -14,9 +14,10 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import type { WorkspaceWash } from "@orbit-hub/contracts";
+import type { IconRef, WorkspaceWash } from "@orbit-hub/contracts";
 
 import { useA11yHint } from "@/components/ui/a11y-hint";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { SpaceWash } from "@/components/ui/wash";
 import { oneStepTowards, resizeStartSize, sizeFromDrag } from "@/lib/dashboard/panel";
@@ -110,7 +111,8 @@ export interface PanelCardProps {
   id: string;
   title: string;
   subtitle: string;
-  emoji: string | null;
+  /** The icon somebody chose for the card's subject, or null. Drawn whole. */
+  icon: IconRef | null;
   /**
    * What this card is, drawn as an icon.
    *
@@ -183,7 +185,7 @@ export function PanelCard({
   id,
   title,
   subtitle,
-  emoji,
+  icon,
   mark,
   colorKey,
   wash,
@@ -517,16 +519,15 @@ export function PanelCard({
             />
 
             {/*
-              The mark, and the emoji beside it, and the order they are in.
+              The mark, and the icon beside it, and the order they are in.
 
               The mark comes first because it is the part that is *not* decoration:
               it is the same on every card of the same kind, so the eye can pick
-              "the film one" out of a grid without reading a word. The emoji is the
-              person's own, so it goes after and stays out of the way — and on a
-              card of one row, where there is room for the name and nothing else,
-              only the mark survives. Dropping the emoji there is not losing
-              information: the name is the thing being read and the mark is the
-              thing being recognised.
+              "the film one" out of a grid without reading a word. The icon is the
+              person's own, so it goes after and stays out of the way — on a card
+              of one row too, at the mark's own size, because a card whose icon
+              only appears when it is tall is a card that hides what the person
+              chose in the size new cards are born in.
             */}
             <View style={styles.body}>
               <View style={styles.markRow}>
@@ -536,11 +537,7 @@ export function PanelCard({
                 color={paint.foreground}
                 style={styles.mark}
               />
-                {emoji && !compact ? (
-                  <AppText variant="title" style={styles.emoji}>
-                    {emoji}
-                  </AppText>
-                ) : null}
+                <AppIcon icon={icon} size={compact ? 14 : 22} />
               </View>
 
               <AppText

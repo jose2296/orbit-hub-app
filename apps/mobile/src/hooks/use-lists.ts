@@ -8,7 +8,7 @@ import type {
   Priority,
   SearchResult,
 } from "@orbit-hub/contracts";
-import { notePreviewBelowTitle } from "@orbit-hub/contracts";
+import { notePreviewBelowTitle, sanitiseIconRef } from "@orbit-hub/contracts";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -914,6 +914,7 @@ export function useLocalSearch() {
         kind: null,
         title: record.name,
         subtitle: record.description ?? null,
+        icon: sanitiseIconRef((record as { icon?: unknown }).icon),
         updatedAt: record.updatedAt,
       });
     }
@@ -937,6 +938,7 @@ export function useLocalSearch() {
         kind: null,
         title: record.name,
         subtitle: workspacesById.get(record.workspaceId)?.name ?? null,
+        icon: sanitiseIconRef((record as { icon?: unknown }).icon),
         updatedAt: record.updatedAt,
       });
     }
@@ -954,6 +956,7 @@ export function useLocalSearch() {
         kind: record.kind,
         title: record.title,
         subtitle: record.description,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }
@@ -980,6 +983,7 @@ export function useLocalSearch() {
         // So the hit can be ticked from the search itself, which is the whole
         // reason somebody is looking for "milk" a second time.
         completed: record.completed,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }
@@ -1008,6 +1012,7 @@ export function useLocalSearch() {
         // A note is not a row, so there is nothing to tick. Null and not false,
         // because false would draw an empty checkbox next to a document.
         completed: null,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }

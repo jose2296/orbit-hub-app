@@ -389,7 +389,7 @@ export default function ListScreen() {
 
   // The header carries the name of the list, so the screen only says what kind
   // of list it is and where it lives.
-  useScreenTitle(list?.title ?? t("lists.notFound"));
+  useScreenTitle(list?.title ?? t("lists.notFound"), list?.icon ?? null);
 
   /*
    * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.

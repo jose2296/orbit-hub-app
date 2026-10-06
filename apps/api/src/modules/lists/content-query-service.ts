@@ -298,6 +298,7 @@ export class ContentQueryService {
         kind: null,
         title: row.name,
         subtitle: row.description,
+        icon: sanitiseIconRef(row.icon),
         updatedAt: row.updatedAt.toISOString(),
       });
     }
@@ -325,6 +326,7 @@ export class ContentQueryService {
           kind: null,
           title: row.name,
           subtitle: null,
+          icon: sanitiseIconRef(row.icon),
           updatedAt: row.updatedAt.toISOString(),
         });
       }
@@ -356,6 +358,7 @@ export class ContentQueryService {
           kind: row.kind,
           title: row.title,
           subtitle: row.description,
+          icon: sanitiseIconRef(row.icon),
           updatedAt: row.updatedAt.toISOString(),
         });
       }
@@ -387,6 +390,7 @@ export class ContentQueryService {
           title: row.item.title,
           subtitle: row.list.title,
           completed: row.item.completed,
+          icon: sanitiseIconRef(row.item.icon),
           updatedAt: row.item.updatedAt.toISOString(),
         });
       }
@@ -425,6 +429,7 @@ export class ContentQueryService {
           subtitle: notePreviewBelowTitle(row.document, row.title),
           // `null` and not `false`: a note is not a row and cannot be ticked.
           completed: null,
+          icon: sanitiseIconRef(row.icon),
           updatedAt: row.updatedAt.toISOString(),
         });
       }

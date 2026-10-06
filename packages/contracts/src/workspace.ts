@@ -1026,6 +1026,15 @@ export const searchResultSchema = z.object({
    * to leave and come back from.
    */
   completed: z.boolean().nullable().default(null),
+  /**
+   * The icon somebody chose for the hit, or null.
+   *
+   * It travels here for the same reason `completed` does: the point of finding
+   * something is recognising it, and a list of results that cannot show the
+   * picture is a list you have to open one by one. Nullable like the column,
+   * because most rows have no icon and that is a state, not a gap.
+   */
+  icon: iconRefSchema.default(null),
   updatedAt: isoDateTimeSchema,
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;
