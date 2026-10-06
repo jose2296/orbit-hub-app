@@ -3,9 +3,11 @@ import type {
   Habit,
   HabitEntry,
   HabitEntryStatus,
+  HabitSchedule,
   HabitSummary,
   LocalDate,
 } from "@orbit-hub/contracts";
+import { habitScheduleSchema, localDateSchema } from "@orbit-hub/contracts";
 import {
   describeSchedule,
   periodBounds,
@@ -361,6 +363,272 @@ export async function setEntryAmount(
   return { ok: true, entry: toWritten(habitId, date, values, existing.version) };
 }
 
+/**
+ * El UNTIL de una regla como dia local, o null si no hay o no vale.
+ *
+ * Solo lee los ocho primeros digitos (`YYYYMMDD`, con o sin hora detras):
+ * la hora no pinta nada porque el habito cuenta dias, y un UNTIL que no
+ * trae dia no es adoptable ni normalizable.
+ */
+export function extractUntilDate(rule: string): LocalDate | null {
+  const match = rule.match(/UNTIL=([0-9A-Za-z]+)/);
+  const digits = (match?.[1] ?? "").slice(0, 8);
+  if (!/^\d{8}$/.test(digits)) return null;
+  const text = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  return localDateSchema.safeParse(text).success ? (text as LocalDate) : null;
+}
+
+/**
+ * endDate es la unica fuente de verdad para el fin.
+ *
+ * Al guardar, una regla que trae UNTIL se reescribe con el endDate vigente
+ * (o se le quita si no hay): dos sitios para el mismo dato son una
+ * sorpresa, y el campo manda. Una regla sin UNTIL se deja tal cual aunque
+ * haya endDate: el fin ya vive en el campo y la regla limpia no se ensucia.
+ *
+ * El UNTIL se escribe como fin de dia en UTC (`T235959Z`): el motor lee las
+ * ocurrencias como hora de pared en la zona, asi que ese instante incluye
+ * todo el ultimo dia local y nada del siguiente.
+ */
+export function normalizeRuleUntil(rule: string, endDate: LocalDate | null): string {
+  const parts = rule.split(";").filter((part) => !part.startsWith("UNTIL="));
+  if (parts.length === rule.split(";").length) return rule;
+  if (endDate === null) return parts.join(";");
+  return [...parts, `UNTIL=${endDate.replaceAll("-", "")}T235959Z`].join(";");
+}
+
+/**
+ * Si ese horario se puede guardar, con la misma puerta que el servidor
+ * (`assertScheduleUsable`): la regla se prueba contra un dia y la cuota
+ * contra el contrato. Lo que aqui no pasa no se encola.
+ */
+export function scheduleUsable(schedule: HabitSchedule, timezone: string): boolean {
+  if (schedule.kind === "quota") {
+    // El tope fisico vive en el contrato (31 por semana, 366 por ano): un
+    // numero mayor lo rechaza el push y aqui no sale del telefono.
+    return habitScheduleSchema.safeParse(schedule).success;
+  }
+  try {
+    const today = todayIn(timezone);
+    scheduledDates(schedule, today, today, timezone);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function habitRangeUsable(startDate: LocalDate, endDate: LocalDate | null): boolean {
+  return endDate === null || endDate >= startDate;
+}
+
+export interface CreateHabitInput {
+  name: string;
+  schedule: HabitSchedule;
+  timezone: string;
+  startDate: LocalDate;
+  endDate: LocalDate | null;
+  targetValue: number | null;
+}
+
+export type CreateHabitResult = { ok: true; habitId: string } | { ok: false };
+
+/**
+ * Crea el habito en local y lo encola, como `createNoteAction`: primero la
+ * fila en cache y despues la operacion, sin esperar a la red. Es un `create`
+ * de `habit` y no un `update` sin fila, que el push rechaza.
+ */
+export async function createHabit(input: CreateHabitInput): Promise<CreateHabitResult> {
+  if (input.name.trim().length === 0) return { ok: false };
+  if (!habitRangeUsable(input.startDate, input.endDate)) return { ok: false };
+  if (!scheduleUsable(input.schedule, input.timezone)) return { ok: false };
+  const schedule =
+    input.schedule.kind === "rrule"
+      ? { ...input.schedule, rule: normalizeRuleUntil(input.schedule.rule, input.endDate) }
+      : input.schedule;
+  const id = Crypto.randomUUID();
+  const now = new Date().toISOString();
+  const habit: Habit = {
+    id,
+    version: 0,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    name: input.name.trim(),
+    description: null,
+    schedule,
+    timezone: input.timezone,
+    weekStart: 0,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    targetValue: input.targetValue,
+    position: 0,
+    archivedAt: null,
+  };
+  const store = await getLocalStoreReady();
+  await store.upsertCached([
+    {
+      entity: "habit",
+      entityId: id,
+      version: 0,
+      updatedAt: now,
+      deletedAt: null,
+      payload: JSON.stringify(habit),
+      pending: JSON.stringify(habit),
+    },
+  ]);
+  await enqueueOperation({
+    kind: "create",
+    entity: "habit",
+    entityId: id,
+    baseVersion: 0,
+    payload: {
+      name: habit.name,
+      description: habit.description,
+      schedule: habit.schedule,
+      timezone: habit.timezone,
+      weekStart: habit.weekStart,
+      startDate: habit.startDate,
+      endDate: habit.endDate,
+      targetValue: habit.targetValue,
+      position: habit.position,
+    },
+  });
+  return { ok: true, habitId: id };
+}
+
+export interface HabitChanges {
+  name?: string;
+  description?: string | null;
+  schedule?: HabitSchedule;
+  weekStart?: 0 | 1;
+  startDate?: LocalDate;
+  endDate?: LocalDate | null;
+  targetValue?: number | null;
+  position?: number;
+}
+
+export type UpdateHabitResult = { ok: true } | { ok: false };
+
+/**
+ * Cambia un habito con la misma disciplina que al crearlo: lo fundido se
+ * valida y el UNTIL se renormaliza con el fin vigente, porque un fin
+ * cambiado con una regla intacta dejaria el UNTIL viejo mandando.
+ */
+export async function updateHabit(
+  habitId: string,
+  changes: HabitChanges,
+): Promise<UpdateHabitResult> {
+  const store = await getLocalStoreReady();
+  const row = await store.getCached("habit", habitId);
+  if (!row || row.deletedAt) return { ok: false };
+  const current = readHabitFromRow(row);
+  const name = changes.name ?? current.name;
+  const startDate = changes.startDate ?? current.startDate;
+  const endDate = changes.endDate !== undefined ? changes.endDate : current.endDate;
+  const schedule = changes.schedule ?? current.schedule;
+  if (name.trim().length === 0) return { ok: false };
+  if (!habitRangeUsable(startDate, endDate)) return { ok: false };
+  if (!scheduleUsable(schedule, current.timezone)) return { ok: false };
+  const values: Record<string, unknown> = {
+    ...changes,
+    name: name.trim(),
+    schedule:
+      schedule.kind === "rrule"
+        ? { ...schedule, rule: normalizeRuleUntil(schedule.rule, endDate) }
+        : schedule,
+  };
+  const base = parsePayload(row);
+  const now = new Date().toISOString();
+  await store.upsertCached([
+    {
+      entity: "habit",
+      entityId: habitId,
+      version: row.version,
+      updatedAt: now,
+      deletedAt: null,
+      payload: JSON.stringify({ ...base, ...values }),
+      pending: JSON.stringify(values),
+    },
+  ]);
+  await enqueueOperation({
+    kind: "update",
+    entity: "habit",
+    entityId: habitId,
+    baseVersion: row.version,
+    payload: values,
+    base,
+  });
+  return { ok: true };
+}
+
+async function setHabitArchived(habitId: string, archivedAt: string | null): Promise<boolean> {
+  const store = await getLocalStoreReady();
+  const row = await store.getCached("habit", habitId);
+  if (!row || row.deletedAt) return false;
+  const base = parsePayload(row);
+  const values = { archivedAt };
+  const now = new Date().toISOString();
+  await store.upsertCached([
+    {
+      entity: "habit",
+      entityId: habitId,
+      version: row.version,
+      updatedAt: now,
+      deletedAt: null,
+      payload: JSON.stringify({ ...base, ...values }),
+      pending: JSON.stringify(values),
+    },
+  ]);
+  await enqueueOperation({
+    kind: "update",
+    entity: "habit",
+    entityId: habitId,
+    baseVersion: row.version,
+    payload: values,
+    base,
+  });
+  return true;
+}
+
+/** Archiva: la historia se sigue pudiendo leer, la lista la esconde. */
+export async function archiveHabit(habitId: string): Promise<boolean> {
+  return setHabitArchived(habitId, new Date().toISOString());
+}
+
+/** Desarchiva: vuelve a la lista. */
+export async function unarchiveHabit(habitId: string): Promise<boolean> {
+  return setHabitArchived(habitId, null);
+}
+
+/**
+ * Borra un habito: lapida en local para que otros dispositivos se enteren,
+ * como al desmarcar una entrada. Borrar lo inexistente es false.
+ */
+export async function removeHabit(habitId: string): Promise<boolean> {
+  const store = await getLocalStoreReady();
+  const row = await store.getCached("habit", habitId);
+  if (!row || row.deletedAt) return false;
+  const now = new Date().toISOString();
+  await store.upsertCached([
+    {
+      entity: "habit",
+      entityId: habitId,
+      version: row.version,
+      updatedAt: now,
+      deletedAt: now,
+      payload: row.payload,
+      pending: null,
+    },
+  ]);
+  await enqueueOperation({
+    kind: "delete",
+    entity: "habit",
+    entityId: habitId,
+    baseVersion: row.version,
+  });
+  return true;
+}
+
 function byPositionThenCreated(a: Habit, b: Habit): number {
   if (a.position !== b.position) return a.position - b.position;
   return a.createdAt.localeCompare(b.createdAt);
@@ -401,6 +669,11 @@ export function useHabits(options: { includeArchived?: boolean } = {}): {
   habits: HabitSummary[];
   isLoading: boolean;
   reload: () => void;
+  create: (input: CreateHabitInput) => Promise<CreateHabitResult>;
+  update: (habitId: string, changes: HabitChanges) => Promise<UpdateHabitResult>;
+  archive: (habitId: string) => Promise<boolean>;
+  unarchive: (habitId: string) => Promise<boolean>;
+  remove: (habitId: string) => Promise<boolean>;
 } {
   const [habits, setHabits] = useState<HabitSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -419,7 +692,39 @@ export function useHabits(options: { includeArchived?: boolean } = {}): {
     });
   }, [load]);
 
-  return useMemo(() => ({ habits, isLoading, reload: load }), [habits, isLoading, load]);
+  return useMemo(
+    () => ({
+      habits,
+      isLoading,
+      reload: load,
+      create: async (input: CreateHabitInput): Promise<CreateHabitResult> => {
+        const result = await createHabit(input);
+        await load();
+        return result;
+      },
+      update: async (habitId: string, changes: HabitChanges): Promise<UpdateHabitResult> => {
+        const result = await updateHabit(habitId, changes);
+        await load();
+        return result;
+      },
+      archive: async (habitId: string): Promise<boolean> => {
+        const result = await archiveHabit(habitId);
+        await load();
+        return result;
+      },
+      unarchive: async (habitId: string): Promise<boolean> => {
+        const result = await unarchiveHabit(habitId);
+        await load();
+        return result;
+      },
+      remove: async (habitId: string): Promise<boolean> => {
+        const result = await removeHabit(habitId);
+        await load();
+        return result;
+      },
+    }),
+    [habits, isLoading, load],
+  );
 }
 
 export function useHabit(habitId: string | null): {
@@ -432,6 +737,10 @@ export function useHabit(habitId: string | null): {
   skip: (date: LocalDate) => Promise<MarkResult>;
   clear: (date: LocalDate) => Promise<boolean>;
   setAmount: (date: LocalDate, amount: number | null) => Promise<MarkResult>;
+  update: (changes: HabitChanges) => Promise<UpdateHabitResult>;
+  archive: () => Promise<boolean>;
+  unarchive: () => Promise<boolean>;
+  remove: () => Promise<boolean>;
 } {
   const [habit, setHabit] = useState<Habit | null>(null);
   const [entries, setEntries] = useState<HabitEntry[]>([]);
@@ -477,6 +786,13 @@ export function useHabit(habitId: string | null): {
         habitId
           ? setEntryAmount(habitId, date, amount)
           : Promise.resolve({ ok: false } as MarkResult),
+      update: (changes: HabitChanges) =>
+        habitId
+          ? updateHabit(habitId, changes)
+          : Promise.resolve({ ok: false } as UpdateHabitResult),
+      archive: () => (habitId ? archiveHabit(habitId) : Promise.resolve(false)),
+      unarchive: () => (habitId ? unarchiveHabit(habitId) : Promise.resolve(false)),
+      remove: () => (habitId ? removeHabit(habitId) : Promise.resolve(false)),
     }),
     [habit, entries, isLoading, load, habitId],
   );

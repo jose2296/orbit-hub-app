@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { progressForPeriod } from "@orbit-hub/habit-core";
-import type { Habit, LocalDate } from "@orbit-hub/contracts";
+import type { Habit, HabitSchedule, LocalDate } from "@orbit-hub/contracts";
 
 import type { CachedEntity, LocalStore, PendingOperationRecord } from "../src/lib/offline/local-store";
 
@@ -154,15 +154,22 @@ vi.mock("expo-crypto", () => {
 });
 
 const {
+  archiveHabit,
   checkInHabit,
   clearHabitEntry,
+  createHabit,
+  extractUntilDate,
   loadHabitDetail,
   loadHabitSummaries,
   nextScheduledDate,
+  normalizeRuleUntil,
   readEntryFromRow,
+  removeHabit,
   setEntryAmount,
   skipHabit,
   toHabitRecord,
+  unarchiveHabit,
+  updateHabit,
 } = await import("../src/hooks/use-habits");
 
 beforeEach(() => {
@@ -319,5 +326,160 @@ describe("el hook de habitos", () => {
     cache.set(clave("habit_entry", "e1"), filaEntrada("e1", MIERCOLES, "done", 5));
     const detalle = await loadHabitDetail(tienda as unknown as LocalStore, HABIT_ID);
     expect(detalle.entries.map((e) => readEntryFromRow(filaEntrada("e1", e.date, e.status))).length).toBe(1);
+  });
+});
+
+describe("las mutaciones del habito", () => {
+  const ZONA = "Europe/Madrid";
+
+  function habitoGuardado(id: string): Habit {
+    const fila = cache.get(clave("habit", id));
+    if (!fila) throw new Error("el habito tendria que estar en cache");
+    return JSON.parse(fila.payload) as Habit;
+  }
+
+  it("crear rechaza un horario imposible sin encolar", async () => {
+    const resultado = await createHabit({
+      name: "Leer",
+      schedule: { kind: "rrule", rule: "NOT_A_RULE" },
+      timezone: ZONA,
+      startDate: "2026-03-02",
+      endDate: null,
+      targetValue: null,
+    });
+
+    expect(resultado).toEqual({ ok: false });
+    expect(outbox).toHaveLength(0);
+    expect([...cache.values()].filter((fila) => fila.entity === "habit")).toHaveLength(0);
+  });
+
+  it("crear rechaza el nombre vacio y el fin anterior al inicio", async () => {
+    const base = {
+      schedule: { kind: "rrule", rule: "FREQ=DAILY" } as HabitSchedule,
+      timezone: ZONA,
+      startDate: "2026-03-02" as LocalDate,
+      endDate: null,
+      targetValue: null,
+    };
+    expect(await createHabit({ ...base, name: "   " })).toEqual({ ok: false });
+    expect(
+      await createHabit({ ...base, name: "Leer", endDate: "2026-03-01" }),
+    ).toEqual({ ok: false });
+    expect(outbox).toHaveLength(0);
+  });
+
+  it("crear guarda con el UNTIL de endDate cuando la regla trae otro", async () => {
+    const resultado = await createHabit({
+      name: "Leer",
+      schedule: { kind: "rrule", rule: "FREQ=DAILY;UNTIL=20261231T235959Z" },
+      timezone: ZONA,
+      startDate: "2026-03-02",
+      endDate: "2026-04-30",
+      targetValue: null,
+    });
+    if (!resultado.ok) throw new Error("tendria que haberse creado");
+
+    // endDate es la unica fuente de verdad: el UNTIL que traia se reemplaza.
+    expect(habitoGuardado(resultado.habitId).schedule).toEqual({
+      kind: "rrule",
+      rule: "FREQ=DAILY;UNTIL=20260430T235959Z",
+    });
+    // Y recarga: la lista lo trae sin esperar al pull.
+    const visibles = await loadHabitSummaries(tienda as unknown as LocalStore, false);
+    expect(visibles.map((resumen) => resumen.habit.id)).toContain(resultado.habitId);
+    expect(outbox[0]).toMatchObject({ kind: "create", entity: "habit" });
+  });
+
+  it("crear sin endDate quita el UNTIL de la regla", async () => {
+    const resultado = await createHabit({
+      name: "Leer",
+      schedule: { kind: "rrule", rule: "FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z" },
+      timezone: ZONA,
+      startDate: "2026-03-02",
+      endDate: null,
+      targetValue: null,
+    });
+    if (!resultado.ok) throw new Error("tendria que haberse creado");
+
+    expect(habitoGuardado(resultado.habitId).schedule).toEqual({
+      kind: "rrule",
+      rule: "FREQ=WEEKLY;BYDAY=MO",
+    });
+  });
+
+  it("una regla sin UNTIL se guarda tal cual aunque haya endDate", async () => {
+    const resultado = await createHabit({
+      name: "Leer",
+      schedule: { kind: "rrule", rule: "FREQ=DAILY" },
+      timezone: ZONA,
+      startDate: "2026-03-02",
+      endDate: "2026-04-30",
+      targetValue: null,
+    });
+    if (!resultado.ok) throw new Error("tendria que haberse creado");
+
+    // El fin vive en el campo endDate; la regla limpia no se ensucia.
+    const guardado = habitoGuardado(resultado.habitId);
+    expect(guardado.schedule).toEqual({ kind: "rrule", rule: "FREQ=DAILY" });
+    expect(guardado.endDate).toBe("2026-04-30");
+  });
+
+  it("actualizar valida antes de escribir", async () => {
+    cache.set(clave("habit", HABIT_ID), filaHabito());
+
+    expect(
+      await updateHabit(HABIT_ID, { schedule: { kind: "rrule", rule: "FREQ=XXX" } }),
+    ).toEqual({ ok: false });
+    expect(outbox).toHaveLength(0);
+  });
+
+  it("actualizar reescribe el UNTIL con el fin vigente", async () => {
+    cache.set(clave("habit", HABIT_ID), filaHabito());
+
+    const resultado = await updateHabit(HABIT_ID, {
+      schedule: { kind: "rrule", rule: "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261231T235959Z" },
+      endDate: "2026-05-31",
+    });
+    expect(resultado).toEqual({ ok: true });
+    expect(habitoGuardado(HABIT_ID).schedule).toEqual({
+      kind: "rrule",
+      rule: "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260531T235959Z",
+    });
+    expect(outbox[0]).toMatchObject({ kind: "update", entity: "habit" });
+  });
+
+  it("archivar y desarchivar recargan", async () => {
+    cache.set(clave("habit", HABIT_ID), filaHabito());
+
+    expect(await archiveHabit(HABIT_ID)).toBe(true);
+    expect(habitoGuardado(HABIT_ID).archivedAt).not.toBeNull();
+    const sinArchivados = await loadHabitSummaries(tienda as unknown as LocalStore, false);
+    expect(sinArchivados).toHaveLength(0);
+
+    expect(await unarchiveHabit(HABIT_ID)).toBe(true);
+    expect(habitoGuardado(HABIT_ID).archivedAt).toBeNull();
+    const recargados = await loadHabitSummaries(tienda as unknown as LocalStore, false);
+    expect(recargados.map((resumen) => resumen.habit.id)).toEqual([HABIT_ID]);
+  });
+
+  it("borrar pone lapida y encola delete", async () => {
+    cache.set(clave("habit", HABIT_ID), filaHabito());
+
+    expect(await removeHabit(HABIT_ID)).toBe(true);
+    const recargados = await loadHabitSummaries(tienda as unknown as LocalStore, true);
+    expect(recargados).toHaveLength(0);
+    expect(outbox[0]).toMatchObject({ kind: "delete", entity: "habit" });
+    expect(await removeHabit(HABIT_ID)).toBe(false);
+  });
+
+  it("el UNTIL se lee como dia local", () => {
+    expect(extractUntilDate("FREQ=DAILY;UNTIL=20260430T235959Z")).toBe("2026-04-30");
+    expect(extractUntilDate("FREQ=DAILY")).toBeNull();
+    expect(extractUntilDate("FREQ=DAILY;UNTIL=basura")).toBeNull();
+  });
+
+  it("normalizar solo toca reglas que traen UNTIL", () => {
+    expect(normalizeRuleUntil("FREQ=DAILY", "2026-04-30")).toBe("FREQ=DAILY");
+    expect(normalizeRuleUntil("FREQ=DAILY;UNTIL=20261231T235959Z", null)).toBe("FREQ=DAILY");
   });
 });

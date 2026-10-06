@@ -1,16 +1,10 @@
-import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
-import type {
-  Habit,
-  HabitSchedule,
-  LocalDate,
-} from "@orbit-hub/contracts";
-import { habitScheduleSchema, localDateSchema } from "@orbit-hub/contracts";
+import type { HabitSchedule, LocalDate } from "@orbit-hub/contracts";
+import { localDateSchema } from "@orbit-hub/contracts";
 import {
   describeSchedule,
-  scheduledDates,
   todayIn,
   type ScheduleDescription,
   type WeekDayKey,
@@ -24,8 +18,11 @@ import { ListRow } from "@/components/ui/list-row";
 import { Screen } from "@/components/ui/screen";
 import { Segmented } from "@/components/ui/segmented";
 import { TextField } from "@/components/ui/text-field";
-import { getLocalStoreReady } from "@/lib/offline/local-store";
-import { enqueueOperation } from "@/lib/offline/sync-service";
+import {
+  extractUntilDate,
+  scheduleUsable,
+  useHabits,
+} from "@/hooks/use-habits";
 import { FIELD_LIMITS } from "@/lib/lists/field-limit";
 import { pluralKey, useTranslation, type Translate } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -152,26 +149,6 @@ export function compileSchedule(input: CompiledScheduleInput): HabitSchedule | n
 }
 
 /**
- * Si ese horario se puede guardar, con la misma puerta que el servidor
- * (`assertScheduleUsable`): la regla se prueba contra un dia y la cuota
- * contra el contrato. Lo que aqui no pasa no se encola.
- */
-export function scheduleUsable(schedule: HabitSchedule, timezone: string): boolean {
-  if (schedule.kind === "quota") {
-    // El tope fisico vive en el contrato (31 por semana, 366 por ano): un
-    // numero mayor lo rechaza el push y aqui no sale del telefono.
-    return habitScheduleSchema.safeParse(schedule).success;
-  }
-  try {
-    const today = todayIn(timezone);
-    scheduledDates(schedule, today, today, timezone);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * La zona del telefono, o UTC si no se puede leer.
  *
  * Se valida con la misma funcion que la usara: una zona que `todayIn` no
@@ -189,72 +166,6 @@ export function deviceTimezone(): string {
     }
   }
   return "UTC";
-}
-
-export interface NewHabitInput {
-  name: string;
-  schedule: HabitSchedule;
-  timezone: string;
-  startDate: LocalDate;
-  endDate: LocalDate | null;
-  targetValue: number | null;
-}
-
-/**
- * Crea el habito en local y lo encola, como `createNoteAction`: primero la
- * fila en cache y despues la operacion, sin esperar a la red. Es un `create`
- * de `habit` y no un `update` sin fila, que el push rechaza.
- */
-export async function createHabitAction(input: NewHabitInput): Promise<string> {
-  const id = Crypto.randomUUID();
-  const now = new Date().toISOString();
-  const habit: Habit = {
-    id,
-    version: 0,
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-    name: input.name,
-    description: null,
-    schedule: input.schedule,
-    timezone: input.timezone,
-    weekStart: 0,
-    startDate: input.startDate,
-    endDate: input.endDate,
-    targetValue: input.targetValue,
-    position: 0,
-    archivedAt: null,
-  };
-  const store = await getLocalStoreReady();
-  await store.upsertCached([
-    {
-      entity: "habit",
-      entityId: id,
-      version: 0,
-      updatedAt: now,
-      deletedAt: null,
-      payload: JSON.stringify(habit),
-      pending: JSON.stringify(habit),
-    },
-  ]);
-  await enqueueOperation({
-    kind: "create",
-    entity: "habit",
-    entityId: id,
-    baseVersion: 0,
-    payload: {
-      name: habit.name,
-      description: habit.description,
-      schedule: habit.schedule,
-      timezone: habit.timezone,
-      weekStart: habit.weekStart,
-      startDate: habit.startDate,
-      endDate: habit.endDate,
-      targetValue: habit.targetValue,
-      position: habit.position,
-    },
-  });
-  return id;
 }
 
 /**
@@ -325,6 +236,7 @@ export default function HabitNewScreen() {
   const router = useRouter();
   const theme = useTheme();
   const t = useTranslation();
+  const { create } = useHabits();
 
   const [timezone] = useState(deviceTimezone);
   const [name, setName] = useState("");
@@ -430,7 +342,9 @@ export default function HabitNewScreen() {
     if (name.trim().length === 0) return;
     setSaving(true);
     try {
-      await createHabitAction({
+      // Las mutaciones viven en el hook: la pantalla compila y valida para
+      // la vista previa, pero quien escribe y normaliza el UNTIL es `create`.
+      const created = await create({
         name: name.trim(),
         schedule,
         timezone,
@@ -438,6 +352,7 @@ export default function HabitNewScreen() {
         endDate: endText.trim().length === 0 ? null : endDate,
         targetValue,
       });
+      if (!created.ok) return;
       router.back();
     } finally {
       setSaving(false);
@@ -540,6 +455,13 @@ export default function HabitNewScreen() {
               onChangeText={setAdvancedRule}
               autoCapitalize="none"
               autoCorrect={false}
+              onBlur={() => {
+                // endDate es la unica fuente de verdad: al salir del campo
+                // con un UNTIL valido se adopta como fecha de fin, para que
+                // el guardar no lo reescriba por detras sin avisar.
+                const adopted = extractUntilDate(advancedRule);
+                if (adopted !== null) setEndText(adopted);
+              }}
               error={
                 advancedRule.trim().length > 0 && !ruleValid
                   ? t("habits.error.invalidRule")

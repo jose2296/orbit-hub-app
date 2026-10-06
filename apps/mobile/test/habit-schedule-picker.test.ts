@@ -208,15 +208,29 @@ describe("el cableado de la pantalla", () => {
     expect(codigo).toContain("habits.schedule.");
   });
 
-  it("el titulo lo pone el layout y guardar va por el outbox", () => {
+  it("el titulo lo pone el layout y guardar va por el hook", () => {
     const layout = fuente(["app", "(app)", "_layout.tsx"]);
     expect(layout).toContain('name="habit/new"');
     expect(layout).toContain('t("habits.add")');
     // La pantalla no publica el suyo: el layout ya lo dice.
     expect(pantalla()).not.toContain("useScreenTitle");
-    // Local primero y encolado despues, como las notas: crear es un `create`
-    // de `habit` y no un `update` sin fila, que el push rechaza.
-    expect(pantalla()).toContain('entity: "habit"');
-    expect(pantalla()).toContain('kind: "create"');
+    // Las mutaciones viven en `use-habits`: la pantalla consume `create`
+    // del hook y no guarda por su cuenta.
+    const codigo = pantalla();
+    expect(codigo).toContain("useHabits");
+    expect(codigo).toMatch(/const \{\s*create\s*\} = useHabits\(\)/);
+    expect(codigo).toContain("await create({");
+    expect(codigo).not.toContain("createHabitAction");
+    expect(codigo).not.toContain('entity: "habit"');
+  });
+
+  it("el avanzado con UNTIL adopta la fecha de fin al salir del campo", () => {
+    const codigo = pantalla();
+    // endDate es la unica fuente de verdad: al salir del campo con un UNTIL
+    // valido, el formulario lo adopta para que el guardar no sorprenda
+    // reescribiendolo por detras.
+    expect(codigo).toContain("extractUntilDate");
+    expect(codigo).toContain("onBlur");
+    expect(codigo).toContain("setEndText");
   });
 });
