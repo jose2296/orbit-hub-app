@@ -156,6 +156,34 @@ it('la semana en curso solo cuenta si ya cumplio la cuota', () => {
   expect(currentStreak(quotaHabit, marks, TODAY)).toBe(1);
 });
 
+// Consulta historica: el today parametro va por detras del hoy real (el
+// reloj sigue en 2026-03-05) y el `open` de `progressForPeriod` ya no lo
+// cubre. El periodo de ese today manda igual que el en curso.
+it('una consulta historica de cuota cuenta hasta ese today', () => {
+  // Pregunta al 2026-02-25: esa semana cumplio y la anterior tambien, asi
+  // que la racha hasta entonces es 2, aunque ambas esten cerradas para el
+  // hoy real.
+  const marks = [
+    entry('h-quota', '2026-02-24'),
+    entry('h-quota', '2026-02-26'),
+    entry('h-quota', '2026-02-17'),
+    entry('h-quota', '2026-02-19'),
+  ];
+  expect(currentStreak(quotaHabit, marks, '2026-02-25')).toBe(2);
+});
+
+it('en consulta historica, el periodo de ese today sin cuota no rompe', () => {
+  // La semana del today historico lleva 1 de 2: no cuenta, pero tampoco
+  // rompe; la anterior cumplio y sostiene la racha en 1. Con `open` a
+  // solas ese periodo contaria como fallo y daria 0.
+  const marks = [
+    entry('h-quota', '2026-02-24'),
+    entry('h-quota', '2026-02-17'),
+    entry('h-quota', '2026-02-19'),
+  ];
+  expect(currentStreak(quotaHabit, marks, '2026-02-25')).toBe(1);
+});
+
 // El limite de la vida del habito.
 it('el recorrido termina en startDate', () => {
   // Habito creado hoy y marcado ayer: ayer esta antes de startDate, asi
