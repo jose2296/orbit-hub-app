@@ -6,6 +6,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useFieldChain } from "@/lib/forms/field-chain";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { Sheet, SheetOptions, type SheetOption, useLastValue } from "@/components/ui/sheet";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import {
@@ -98,6 +99,22 @@ export function TemplateMenuSheet({
   const cadena = useFieldChain(2);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
+  const { setSucio } = useSheetSucio();
+
+  /*
+    Sucio **solo en la pagina de renombrar**, y con los dos campos por delante de
+    sus valores de partida.
+
+    El menu y la pagina de compartir no tienen nada escrito, y en el resto no hay
+    borrador que perder.
+  */
+  useEffect(() => {
+    setSucio(
+      step === "rename" &&
+        (name.trim() !== (template?.name ?? "").trim() ||
+          description.trim() !== (template?.description ?? "").trim()),
+    );
+  }, [step, name, description, template?.name, template?.description, setSucio]);
 
   // Re-seeded on every open, so the box holds this template's words and not the
   // ones somebody typed into another one ten minutes ago.
@@ -174,6 +191,9 @@ export function TemplateMenuSheet({
         title={t("note.template.rename")}
         scrollable
         onBack={volver}
+        /* El Guardar es el del pie, y abajo solo queda el contenido. */
+        onSave={() => void save()}
+        saveDisabledReason={name.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined}
       >
         <View style={{ gap: theme.spacing.md }}>
           <TextField
@@ -197,24 +217,15 @@ export function TemplateMenuSheet({
             returnKeyType="go"
             onSubmitEditing={() => void save()}
           />
-          <SheetOptions
-            options={[
-              {
-                key: "save",
-                label: busy ? t("common.saving") : t("common.save"),
-                icon: "checkmark",
-                tone: "accent",
-                disabled: name.trim().length === 0 || busy,
-                onPress: () => void save(),
-              },
-              /*
-                Was "Cancelar" wired to `close`, which went back a step and shut
-                the sheet in one press. It is "Volver" wired to `volver`, which only
-                goes back — and the header arrow does the same from higher up.
-              */
-              { key: "cancel", label: t("common.back"), onPress: volver },
-            ]}
-          />
+          {/*
+            Y aqui **no hay botones**: el de guardar esta en el pie y el "Volver"
+            tambien se fue.
+
+            El "Volver" estaba cableado a `volver`, que solo retrocede un paso —no
+            cerraba—, y la flecha de la cabecera hace exactamente lo mismo desde mas
+            arriba. Dos formas de lo mismo, y la de abajo era ademas la salida que
+            **no preguntaba** lo que habia escrito en los dos campos.
+          */}
         </View>
       </Sheet>
     );

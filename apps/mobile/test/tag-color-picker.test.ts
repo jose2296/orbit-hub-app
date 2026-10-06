@@ -274,54 +274,48 @@ describe("los dos montajes del selector en la hoja", () => {
     expect(deLaEtiquetaNueva[0]).not.toContain("onClose");
   });
 
-  it("el alta de una etiqueta con color pasa por el mismo guard que elegir uno", () => {
-    // `setTagColor` planifica desde la `list` que su llamante capturo, asi que dos
-    // escrituras de color dentro de una se planifican desde el mismo mapa y la
-    // segunda se come la primera. El alta con color son dos escrituras seguidas, asi
-    // que es el caso para el que existe el guard, no un detalle.
-    const addTag = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/);
+  it("el alta de una etiqueta con color va al borrador, y no a la lista", () => {
+    /*
+      Antes pasaba por el mismo guard async que elegir un color, porque eran dos
+      escrituras seguidas que partian del mismo mapa. Ahora no hay escrituras
+      seguidas: el alta deja el color en `colores` y sale todo junto al confirmar,
+      en serie, que es lo unico que impide que dos escrituras partan del mismo mapa.
+    */
+    const addTag = hoja.match(/const addTag = \(\) => \{([\s\S]*?)\n  \};/);
     expect(addTag).not.toBeNull();
     const cuerpo = addTag?.[1] ?? "";
-    expect(cuerpo).toContain("await onTagColor(trimmed, color);");
+    expect(cuerpo).toContain("setColores((previos) => ({ ...previos, [trimmed]: color }))");
+    expect(cuerpo, "el alta ya no escribe").not.toContain("onTagColor");
+    expect(cuerpo, "y ya no es async").not.toContain("await");
     // Y por la prop y no por el hook: la hoja recibe `listId` y `tagColors`, no la
     // lista, y la lista es justo de donde se planifica el cambio.
     expect(hoja).not.toContain("setTagColor");
   });
 
   /**
-   * **El guard va antes de los dos `set`, y eso es lo que cuesta el perder color.**
+   * **El volcado es en serie, y eso es lo que impide que una escritura se coma a
+   * la otra.**
    *
-   * Con el guard despues de limpiar, un toque que llega mientras `pickColor` escribe
-   * deja la etiqueta puesta sin color, tira el color pendiente con el nombre, y no
-   * queda nada de donde recuperarlo: `pendiente` nunca estuvo en `tagColors`. La
-   * perdida de datos era **una consecuencia del orden y no del guard**, asi que el
-   * arreglo no es un flag nuevo sino una linea movida.
+   * `onTagColor` planifica desde la lista que su llamante capturo, asi que dos
+   * escrituras a la vez parten del mismo mapa y la segunda se come a la primera sin
+   * que ninguna se entere. Antes lo impedia el flag `guardando`, que ya no existe
+   * porque ya no hay escrituras concurrentes que impedir — el volcado es la unica,
+   * y va de una en una con `await` dentro de un `for`.
    *
-   * Se comprueba **por la posicion y no por la presencia**: `if (guardando) return;`
-   * seguido de `if (shown.tags.includes(trimmed)) return;` seguido de `setNewTag("")`
-   * seguido de `setPendiente(null)`, en ese orden. Un test que solo buscara el texto
-   * seguiria en verde con el guard donde estaba, que es justo el arrangement que
-   * perderia el color.
+   * Un test que solo buscara "hay un await" seguiria en verde con un
+   * `Promise.all`, que es justo el arrangement que perderia el color.
    */
-  it("el guard y la comprobacion de duplicado van antes de limpiar nada", () => {
-    const cuerpo = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "";
-    const guard = cuerpo.indexOf("if (guardando) return;");
-    const duplicado = cuerpo.indexOf("if (shown.tags.includes(trimmed)) return;");
-    const limpiaNombre = cuerpo.indexOf('setNewTag("")');
-    const limpiaColor = cuerpo.indexOf("setPendiente(null)");
-    const guarda = cuerpo.indexOf("save({ tags: [...shown.tags, trimmed] });");
-    expect([guard, duplicado, limpiaNombre, limpiaColor, guarda].every((i) => i >= 0)).toBe(true);
-    expect({
-      guardAntesDeLimpiar: guard < limpiaNombre && guard < limpiaColor,
-      duplicadoAntesDeLimpiar: duplicado < limpiaNombre && duplicado < limpiaColor,
-      guardAntesDeEscribir: guard < guarda,
-      limpiaDespuesDeLeerElColor: cuerpo.indexOf("const color = pendiente;") < limpiaColor,
-    }).toEqual({
-      guardAntesDeLimpiar: true,
-      duplicadoAntesDeLimpiar: true,
-      guardAntesDeEscribir: true,
-      limpiaDespuesDeLeerElColor: true,
-    });
+  it("los colores salen de uno en uno al confirmar", () => {
+    const volcado = hoja.match(/const volcarColores = async \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? '';
+    expect(volcado, "existe el volcado").not.toBe('');
+    expect(volcado, "un bucle y no un Promise.all").toMatch(/for \(const .* of Object\.entries\(colores\)\)/);
+    expect(volcado, "con await dentro").toContain("await onTagColor(etiqueta, color);");
+    expect(volcado, "y sin Promise.all").not.toContain("Promise.all");
+    // Y el que no ha cambiado no sale: escribir lo mismo es una operacion en la
+    // cola de sincronizacion por nada.
+    expect(volcado, "salta lo que no cambio").toContain(
+      "if ((tagColors[etiqueta] ?? null) === color) continue;",
+    );
   });
 
   it("el color pendiente se vacia con el nombre, y en los dos caminos que lo vacian", () => {

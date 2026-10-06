@@ -1481,3 +1481,63 @@ describe('#7: la hoja cambia de alto persiguiendo al contenido', () => {
     expect(cuerpo, 'el cuerpo tarda mas que la entrada').toBeGreaterThan(duracion);
   });
 });
+
+describe('los colores de etiqueta tambien esperan al Guardar', () => {
+  const panel = sinComentarios(
+    readFileSync(
+      join(import.meta.dirname, '../src/components/lists/item-edit-sheet.tsx'),
+      'utf8',
+    ),
+  );
+
+  it('elegir un color no escribe: va al borrador y es sincrono', () => {
+    /*
+      Era la ultima puerta por la que el panel guardaba solo: cambiabas el color de
+      una etiqueta, salias sin pulsar Guardar, y el color se quedaba puesto. Y no
+      era un descuido menor — era el campo con mas pasos para llegar hasta el, asi
+      que era tambien el que mas dolia perder... o el que menos se notaba haber
+      guardado sin querer.
+    */
+    const pick = panel.match(/const pickColor = \([^)]*\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    expect(pick, 'existe pickColor').not.toBe('');
+    expect(pick, 'escribe en el borrador').toContain('setColores(');
+    expect(pick, 'y no en la lista').not.toContain('onTagColor');
+    expect(pick, 'sin esperas').not.toContain('await');
+  });
+
+  it('"sucio" cuenta los colores, con null y ausente como lo mismo', () => {
+    // Alguien que elige un color y vuelve al deducido no ha cambiado nada, y la
+    // pregunta no debe fingir lo contrario.
+    expect(panel, 'los colores ensucian').toContain('sameColors(colores');
+    expect(panel, 'null y ausente son deducido').toMatch(
+      /\(a\[clave\] \?\? null\) !== /,
+    );
+  });
+
+  it('el panel ensena el borrador, no lo guardado', () => {
+    // Elegir un color y ver el viejo hasta pulsar Guardar es un panel que miente
+    // sobre lo que va a guardar.
+    const chips = panel.match(/colors=\{[^}]*\}/g) ?? [];
+    expect(chips.length, 'las pastillas leen el borrador').toBeGreaterThan(0);
+    for (const chip of chips) {
+      expect(chip, 'ninguna lee lo guardado').not.toContain('colors={tagColors}');
+    }
+  });
+
+  it('al confirmar, la tarea va primero y los colores despues', () => {
+    /*
+      La etiqueta tiene que estar **en la tarea** antes de que el mapa tenga clave
+      para ella, o el servidor recibe un color para una etiqueta que ninguna fila
+      lleva. Y si algo falla, igual se intenta cerrar: el "sucio" sigue puesto, asi
+      que cerrar pregunta en vez de perder en silencio.
+    */
+    const confirmar = panel.match(/const confirmar = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    expect(confirmar, 'existe confirmar').not.toBe('');
+    const tarea = confirmar.indexOf('await updateItem(');
+    const colores = confirmar.indexOf('await volcarColores();');
+    const cierre = confirmar.indexOf('onClose();');
+    expect(tarea, 'escribe la tarea').toBeGreaterThan(-1);
+    expect(colores, 'y luego vuelca').toBeGreaterThan(tarea);
+    expect(cierre, 'y cierra al final').toBeGreaterThan(colores);
+  });
+});

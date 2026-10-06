@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 
 import { Sheet, SheetOptions, type SheetOption } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
@@ -91,6 +92,19 @@ export function SaveTemplateSheet({
     }
   }, [description, document, name, onClose, onSaved, saving, scope, t, workspaceId]);
 
+  const { setSucio } = useSheetSucio();
+
+  /**
+   * Sucio **solo con el nombre cambiado**.
+   *
+   * El ambito —"en el espacio" o "solo mia"— es elegir entre dos botones y se ve
+   * cual esta elegido, asi que no hay nada que perder y nada que preguntar. El
+   * nombre es lo que se escribe, y es lo que se pierde en silencio.
+   */
+  useEffect(() => {
+    setSucio(name.trim() !== initialName.trim());
+  }, [name, initialName, setSucio]);
+
   const opciones: SheetOption[] = [
     {
       key: "workspace",
@@ -106,14 +120,13 @@ export function SaveTemplateSheet({
       selected: scope === "personal",
       onPress: () => setScope("personal"),
     },
-    {
-      key: "save",
-      label: t("note.templates.saveCurrent"),
-      icon: "bookmark-outline",
-      tone: "accent",
-      disabled: name.trim().length === 0 || saving,
-      onPress: () => void save(),
-    },
+    /*
+      Y **no hay fila de "guardar"**, porque el Guardar es el del pie del panel.
+
+      Estaba aqui como una fila mas del menu, entre "en el espacio" y "solo mia", y
+      una accion que se guarda en una lista de opciones es una accion que hay que
+      buscar leyendo: el mismo boton, en dos sitios distintos, y solo uno se mueve.
+    */
   ];
 
   return (
@@ -122,6 +135,9 @@ export function SaveTemplateSheet({
       onClose={onClose}
       title={t("note.templates.saveCurrent")}
       scrollable
+      /* El Guardar es el del pie, como en las demas hojas. */
+      onSave={() => void save()}
+      saveDisabledReason={name.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined}
     >
       <View style={{ gap: theme.spacing.md }}>
         <TextField

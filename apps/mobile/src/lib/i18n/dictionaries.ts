@@ -462,6 +462,7 @@ const es = {
   "share.roleViewerHint": "Puede mirarla, pero no tocarla.",
   "share.send": "Compartir",
   "share.sending": "Compartiendo…",
+  "share.pickSomebody": "Elige a quién",
   "share.sent": "Ya está compartido",
   "share.sentBody":
     "Le llega un correo y aparece en su bandeja hasta que decide dónde ponerlo. Tú decides quién lo ve en cualquier momento: deja de compartir y desaparece de su móvil.",
@@ -1489,6 +1490,7 @@ const en: Record<TranslationKey, string> = {
   "share.roleViewerHint": "They can look, but not touch it.",
   "share.send": "Share",
   "share.sending": "Sharing…",
+  "share.pickSomebody": "Pick somebody",
   "share.sent": "Shared",
   "share.sentBody":
     "They get an email and it shows up in their inbox until they decide where to put it. You decide who sees it at any time: stop sharing and it leaves their phone.",

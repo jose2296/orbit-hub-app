@@ -101,6 +101,26 @@ function sameLabels(a: string[], b: string[]): boolean {
   return a.every((tag) => m.has(tag));
 }
 
+/**
+ * Whether two colour maps say the same, **key by key**.
+ *
+ * `null` and absent are both "derived", so both count as the same as each other:
+ * somebody who picks a colour and then goes back to derived has not changed
+ * anything, and the question must not pretend otherwise.
+ */
+function sameColors(
+  a: Record<string, string | null>,
+  b: TagColors,
+): boolean {
+  const claves = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const clave of claves) {
+    if ((a[clave] ?? null) !== ((b as Record<string, string>)[clave] ?? null)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** What a row being written looks like before it exists. */
 interface Draft {
   title: string;
@@ -202,8 +222,23 @@ export function ItemEditSheet({
    * writes are of different entities and only the colours need guarding, and for why
    * the check has to come first rather than after the two clears.
    */
-  const [guardando, setGuardando] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+
+  /*
+    Los colores de las etiquetas, y **tambien en borrador**.
+
+    `tagColors` viene por props —es de la lista, no de la tarea— y hasta ahora
+    `pickColor` lo escribia al instante por `onTagColor`. Eso era la ultima puerta
+    por la que el panel guardaba solo: cambiabas el color de una etiqueta, salias
+    sin pulsar Guardar, y el color se quedaba puesto.
+
+    Asi que el borrador es un mapa con **solo lo cambiado**: `null` significa
+    "vuelto al deducido" y ausente significa "igual que estaba". Al confirmar se
+    vuelca la diferencia por `onTagColor`, en serie y no en paralelo — que es lo
+    que hacia `guardando` antes, y sin el dos escrituras planificaban desde la misma
+    lista y la segunda se comia a la primera.
+  */
+  const [colores, setColores] = useState<Record<string, string | null>>({});
 
   /*
    * The colour chosen for a label that **does not exist yet**, and the whole of why
@@ -255,6 +290,10 @@ export function ItemEditSheet({
     setTitle(item.title);
     setAnnotation(item.annotation ?? "");
     setNewTag("");
+    // Y los colores del borrador, por el mismo motivo que el resto: el panel se
+    // queda montado al cerrarse, y sin esto la siguiente tarea abre con los
+    // colores que se tocaron en la anterior.
+    setColores({});
     // And the picker with it: `colorDe` is state of this component and the panel
     // stays mounted while it is closed (it returns `null` rather than being
     // unmounted), so a panel closed with a picker open came back with that same
@@ -277,6 +316,7 @@ export function ItemEditSheet({
       // pending colour is cleared here as well and not only there.
       setPendiente(null);
       setDraft(EMPTY_DRAFT);
+      setColores({});
     }
   }, [isNew, initialTitle]);
 
@@ -331,7 +371,25 @@ export function ItemEditSheet({
    * `TagChip`. It is here because the button that opens the picker has to *say*
    * the colour out loud, in the words the dictionary has for it.
    */
-  const colorOf = (tag: string): string => tagColors[tag] ?? derivedTagColor(tag);
+  /*
+    El color que el panel enseña para una etiqueta, y **sale del borrador primero**.
+
+    Sin esto, elegir un color y ver el viejo hasta pulsar Guardar es un panel que
+    miente sobre lo que va a guardar. El `null` del borrador —"vuelto al deducido"—
+    se salta a proposito: si llegara al `TagChip` pintaria "sin color", y lo que hay
+    que pintar es el deducido.
+  */
+  const coloresVistos: TagColors = useMemo(() => {
+    const vistos: Record<string, string> = { ...tagColors };
+    for (const [etiqueta, color] of Object.entries(colores)) {
+      if (color === null) delete vistos[etiqueta];
+      else vistos[etiqueta] = color;
+    }
+    return vistos as TagColors;
+  }, [tagColors, colores]);
+
+  const colorOf = (tag: string): string =>
+    coloresVistos[tag] ?? derivedTagColor(tag);
 
   const { setSucio } = useSheetSucio();
 
@@ -365,9 +423,10 @@ export function ItemEditSheet({
       draft.iconStyle !== (isNew ? "outline" : base.iconStyle) ||
       draft.iconColor !== (isNew ? "neutral" : base.iconColor) ||
       draft.completed !== (isNew ? false : base.completed) ||
-      !sameLabels(draft.tags, isNew ? [] : base.tags)
+      !sameLabels(draft.tags, isNew ? [] : base.tags) ||
+      !sameColors(colores, isNew ? {} : tagColors)
     );
-  }, [isNew, item, title, annotation, draft]);
+  }, [isNew, item, title, annotation, draft, colores, tagColors]);
 
   /*
     Los hooks van **antes** del `return null` de mas abajo, y no por estetica.
@@ -404,25 +463,55 @@ export function ItemEditSheet({
    * Antes eran siete escrituras repartidas por el panel, y por eso perder la nota
    * al cambiar el icono no era un descuido: era la forma normal de funcionar.
    */
+  /**
+   * Vuelca los colores del borrador a la lista, **en serie**.
+   *
+   * En serie y no en paralelo, y no por lentitud: `onTagColor` planifica desde la
+   * lista que su llamador capturo, asi que dos escrituras a la vez parten del mismo
+   * mapa y la segunda se come a la primera sin que ninguna se entere. Era lo que
+   * impedia el flag `guardando`, que ya no existe porque ya no hay escrituras
+   * concurrentes que impedir — esta es la unica, y va de una en una.
+   */
+  const volcarColores = async () => {
+    for (const [etiqueta, color] of Object.entries(colores)) {
+      if ((tagColors[etiqueta] ?? null) === color) continue;
+      await onTagColor(etiqueta, color);
+    }
+  };
+
   const confirmar = () => {
     if (isNew) {
       void create();
       return;
     }
-    void updateItem(item!, {
-      // Los dos textos se leen **vivos**, no del borrador: el `setState` de un
-      // campo no ha llegado al borrador en este mismo frame, asi que leer el
-      // borrador aqui guardaria el nombre de hace un instante.
-      title: title.trim(),
-      annotation: annotation.trim() || null,
-      priority: draft.priority,
-      icon: draft.icon,
-      iconStyle: draft.iconStyle,
-      iconColor: draft.iconColor,
-      tags: draft.tags,
-      completed: draft.completed,
-    });
-    onClose();
+    /*
+      En orden y con el cierre al final, pase lo que pase.
+
+      La tarea va primero y los colores despues, porque la etiqueta tiene que estar
+      **en la tarea** antes de que el mapa tenga clave para ella. Y si algo falla,
+      igual se intenta cerrar: el "sucio" sigue puesto, asi que cerrar pregunta "lo
+      pierdes" en vez de perderlo en silencio.
+    */
+    void (async () => {
+      try {
+        await updateItem(item!, {
+          // Los dos textos se leen **vivos**, no del borrador: el `setState` de un
+          // campo no ha llegado al borrador en este mismo frame, asi que leer el
+          // borrador aqui guardaria el nombre de hace un instante.
+          title: title.trim(),
+          annotation: annotation.trim() || null,
+          priority: draft.priority,
+          icon: draft.icon,
+          iconStyle: draft.iconStyle,
+          iconColor: draft.iconColor,
+          tags: draft.tags,
+          completed: draft.completed,
+        });
+        await volcarColores();
+      } finally {
+        onClose();
+      }
+    })();
   };
 
   /**
@@ -485,16 +574,19 @@ export function ItemEditSheet({
    * So the tap is still a no-op, but it leaves the name and the colour where they were
    * instead of throwing both away.
    */
-  const addTag = async () => {
+  const addTag = () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
-    if (guardando) return;
     if (shown.tags.includes(trimmed)) return;
 
-    // Read into a local before the name is cleared, because clearing the name is what
-    // invalidates it — the effect above drops `pendiente` on the next render — and the
-    // `await` below would otherwise be reading state that has already stopped meaning
-    // "the colour of the label I am about to create".
+    /*
+      El color pendiente va **al borrador**, y no a la lista.
+
+      Antes se escribia aqui por `onTagColor`, y era la otra puerta por la que el
+      panel guardaba solo. Ahora se queda en `colores` y sale con todo lo demas al
+      confirmar — en serie con el resto, que es lo unico que impide que dos
+      escrituras partan del mismo mapa.
+    */
     const color = pendiente;
     setNewTag("");
     setPendiente(null);
@@ -505,12 +597,7 @@ export function ItemEditSheet({
     // which is a colour like any other and not a missing one, and nothing is written
     // to `tagColors` for it.
     if (!color) return;
-    setGuardando(true);
-    try {
-      await onTagColor(trimmed, color);
-    } finally {
-      setGuardando(false);
-    }
+    setColores((previos) => ({ ...previos, [trimmed]: color }));
   };
 
   const toggleTag = (tag: string) =>
@@ -556,18 +643,19 @@ export function ItemEditSheet({
    *   `finally` closes the picker either way, so a write that throws cannot leave
    *   the panel stuck open.
    */
-  const pickColor = async (tag: string, option: string | null) => {
-    if (guardando) return;
-    setGuardando(true);
-    try {
-      await onTagColor(tag, option);
-    } finally {
-      setGuardando(false);
-      // Only closes its own picker: the write takes long enough for somebody to
-      // open another label's colours, and closing that one instead would be a
-      // picker that opened and vanished on its own.
-      setColorDe((current) => (current === tag ? null : current));
-    }
+  const pickColor = (tag: string, option: string | null) => {
+    /*
+      Al borrador, y **sincrono**.
+
+      Antes escribia por `onTagColor` y tardaba lo bastante para que alguien abriera
+      los colores de otra etiqueta mientras tanto — de ahi el cierre cuidadoso de
+      abajo y el flag `guardando`. Ahora no hay espera: el mapa cambia en el acto y
+      el cierre puede ser inmediato, porque ya no hay nada que llegue tarde.
+    */
+    setColores((previos) => ({ ...previos, [tag]: option }));
+    // Only closes its own picker: closing another label's colours instead would be
+    // a picker that opened and vanished on its own.
+    setColorDe((current) => (current === tag ? null : current));
   };
 
   /** Writes the row for the first time, with everything the panel was given. */
@@ -585,6 +673,9 @@ export function ItemEditSheet({
       iconColor: draft.iconColor,
       tags: draft.tags,
     });
+    // Y los colores de las etiquetas que se crearon aqui: sin esto, crear una
+    // tarea con una etiqueta de color dejaba la etiqueta sin su color.
+    await volcarColores();
     onClose();
   };
 
@@ -937,7 +1028,7 @@ export function ItemEditSheet({
             >
               {shown.tags.map((tag) => (
                 <Fragment key={tag}>
-                  <TagChip tag={tag} colors={tagColors}>
+                  <TagChip tag={tag} colors={coloresVistos}>
                     {(ink) => (
                       <>
                         <Pressable
@@ -1002,7 +1093,7 @@ export function ItemEditSheet({
                 >
                   {labels.map(({ tag, count }) => (
                     <Fragment key={tag}>
-                      <TagChip tag={tag} colors={tagColors}>
+                      <TagChip tag={tag} colors={coloresVistos}>
                         {(ink) => (
                           <>
                             {/* `TagChip` writes the name, so the count is what is
