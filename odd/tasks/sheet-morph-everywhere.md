@@ -26,7 +26,7 @@ pages swap instantly. The pilot (`create-sheet` + FloatingButton) was approved b
 - [x] T1 `lib/touch-origin` (last touch point, recency) + unit test; record it at the app root and inside `Sheet`
 - [x] T2 `Sheet`: origin fallback to last touch; `step` prop (SheetStep inside); create-sheet uses the prop
 - [x] T3 Pass `step` to list-menu, note-menu, template-menu, workspace-menu, item-edit
-- [~] T4 Browser check of every sheet (open morph, step change, back, close, light/dark); fix findings
+- [x] T4 Browser check of every sheet (open morph, step change, back, close, light/dark); fix findings
 - [ ] T5 Cleanup: demo route stays dev-only decision, docs note, typecheck + tests
 
 ## Acceptance
@@ -45,6 +45,9 @@ pages swap instantly. The pilot (`create-sheet` + FloatingButton) was approved b
   list filter, add-menu -> where-note, create-from-/notes, save-template, media-actions open.
 - Found + fixed (pre-existing): note-menu "menu"/"rename" steps used a literal `visible`, so the menu never closed when the
   parent closed it (save-as-template sheet opened hidden behind it).
-- Not verified: /lists FAB create, template page menu, folder menu/create folder, share-node/place-share, reorder, providers,
-  media "Añadir a otra lista", wide (desktop) layout, native (Android/iOS).
+- Round 2 OK: create folder, folder menu (+ create list here; Escape = back, X closes), list share step, media
+  "Añadir a otra lista", wide desktop 1280x800 (panel ends centred, morph starts at the FAB, step keeps it centred).
+- Folder menu subpages are separate Sheet instances (one hides, another opens), so they morph from the touch point; no `step`.
+- Not verified: /lists FAB create, template-page menu (own template not found after save), place-share, reorder, providers,
+  native (Android/iOS).
 - Env notes: API 500 on /people and 501 on /catalog/details are dev-environment (PGlite / no provider), not UI.
