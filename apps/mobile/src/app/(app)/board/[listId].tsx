@@ -677,6 +677,27 @@ export default function BoardScreen() {
   );
 
   /**
+   * The state row inside the task panel was pressed: **open the state sheet for
+   * whatever the panel is open for.**
+   *
+   * Editing a row opens it for that row's id, so the sheet's pick moves it.
+   * Creating opens it for the draft (`eligiendoColumna`), so the pick is kept
+   * until the row is created. In `readOnly` there is no sheet mounted at all, so
+   * this goes nowhere rather than opening a panel nobody mounted.
+   */
+  function abrirEstadosParaFormulario() {
+    if (readOnly || !editing) return;
+    // A new opening and a new `key` (`aperturaHoja` above says why): the sheet
+    // remounts after the panel and paints on top of it.
+    setAperturaHoja((n) => n + 1);
+    if (editing.itemId === "") {
+      setEligiendoColumna(true);
+      return;
+    }
+    if (editingItem) setCambiandoEstado(editingItem.id);
+  }
+
+  /**
    * The task whose column is being changed, and **nothing else.**
    *
    * An id and not the row, **and the reason is that an id cannot go stale.**
@@ -706,6 +727,45 @@ export default function BoardScreen() {
    * out of date.
    */
   const [cambiandoEstado, setCambiandoEstado] = useState<string | null>(null);
+  /**
+   * How many times the state sheet has been opened, **and it is the sheet's
+   * `key`.**
+   *
+   * Two sheets live on this screen at once — the task panel below and the state
+   * sheet above it — and which one paints on top is the order of their portals
+   * in `document.body`, which is the order they mounted in. That order does not
+   * survive a reopening: the task panel unmounts when it closes (`return null`
+   * on no row) and mounts again on the next tap, so its portal lands **after**
+   * the state sheet's, which never unmounts — and the panel paints over the
+   * sheet it opened, whose rows stop receiving touches.
+   *
+   * A new `key` on every opening remounts the sheet **after** the panel, so its
+   * portal goes last and it paints on top, every time. The remount loses
+   * nothing: the sheet resets its field on opening anyway (`abierto` effect),
+   * and what it draws comes from the screen's props, which are already the new
+   * ones on the first render.
+   */
+  const [aperturaHoja, setAperturaHoja] = useState(0);
+  /**
+   * The column chosen for the row being written, **`null` for "none was chosen".**
+   *
+   * A row being written has no id for `cambiandoEstado` to hold, so the choice
+   * cannot live there: it lives here, next to the form that will send it, from
+   * the moment the sheet hands it over until the row is created or the panel is
+   * closed. It is reset on both — opening the create panel and closing any panel —
+   * because the panel stays mounted while it is closed and a choice left here
+   * would be waiting for the next row.
+   */
+  const [columnaBorrador, setColumnaBorrador] = useState<string | null>(null);
+  /**
+   * Whether the state sheet is open for the row being written.
+   *
+   * `cambiandoEstado` says the same for a row that exists, and the two are never
+   * set at once: the form is either editing (the sheet opens for that row's id)
+   * or creating (it opens for the draft). Two booleans would be two ways to be
+   * open; an id and a flag is one open state each.
+   */
+  const [eligiendoColumna, setEligiendoColumna] = useState(false);
   const tareaEstado = useMemo(
     () =>
       cambiandoEstado
@@ -733,6 +793,24 @@ export default function BoardScreen() {
     const escribir = stateIdToWrite(states, fila.stateId, stateId);
     if (escribir === null) return;
     void updateItem(fila, { stateId: escribir });
+  }
+
+  /**
+   * A column was chosen in the state sheet, **and where the choice goes depends
+   * on what the sheet is open for.**
+   *
+   * For a row that exists it is a move now (`moverA`, which skips the write when
+   * the row is already there). For a row being written there is no row to move,
+   * so the choice is kept in `columnaBorrador` and the create panel sends it with
+   * the rest when the row is created. The sheet closes itself either way — its
+   * `elegir` calls `onClose` after `onPick` — so this function only routes.
+   */
+  function elegirColumna(stateId: string) {
+    if (eligiendoColumna) {
+      setColumnaBorrador(stateId);
+      return;
+    }
+    moverA(stateId);
   }
 
   /**
@@ -793,6 +871,37 @@ export default function BoardScreen() {
     // be written, and the result would be a column that exists on the server with
     // the task still in the old one.
     await updateItem(fila, { stateId: nuevo.id });
+  }
+
+  /**
+   * «+ Nuevo estado…» for a row being written: **the column is created and chosen
+   * for the draft, in that order, and nothing is moved.**
+   *
+   * There is no row to move into it — the row does not exist — so the second half
+   * of `crearEstadoYMover` has nothing to act on. What travels instead is the
+   * minted id into `columnaBorrador`, and the create panel sends it with the row.
+   * The ordering argument is the same one as there: the states are written first
+   * and awaited, so by the time the row is created the column exists.
+   */
+  async function crearEstadoYElegir(titulo: string) {
+    if (!list) return;
+    const nuevo = newState(states, titulo);
+    if (!nuevo) return;
+    await updateList(list, { states: [...states, nuevo] });
+    setColumnaBorrador(nuevo.id);
+  }
+
+  /**
+   * A column was created in the state sheet, **and what happens next depends on
+   * what the sheet is open for** — the same branch as `elegirColumna`, one
+   * function below the other so the two cannot drift apart.
+   */
+  function crearColumna(titulo: string) {
+    if (eligiendoColumna) {
+      void crearEstadoYElegir(titulo);
+      return;
+    }
+    void crearEstadoYMover(titulo);
   }
 
   /* ------------------------------------------- reordenar dentro de un estado -- */
@@ -1445,7 +1554,12 @@ export default function BoardScreen() {
             testID="item-create-button"
             label={t("itemCreate.title")}
             hint={t("itemCreate.titleHint")}
-            onPress={() => setEditing({ itemId: "", page: "edit" })}
+            onPress={() => {
+            // A create panel always starts with no column chosen, even if the
+            // last one was closed with a choice in it.
+            setColumnaBorrador(null);
+            setEditing({ itemId: "", page: "edit" });
+          }}
           />
         </>
       }
@@ -1654,26 +1768,24 @@ export default function BoardScreen() {
                         contra de los numeros que dice explicar.
                       */
                       /*
-                        **A card opens the state sheet and not the task panel**, and
-                        this is the spec's sentence and not a preference: *"Tocar la
-                        tarjeta abre la hoja de estado"* —
-                        `docs/superpowers/specs/2026-10-03-tablero-de-estados-design.md`,
-                        "Mover de estado". Moving a task between columns is the thing a
-                        board is for and it had no way in from a card at all.
+                        **A card opens the task panel, and the state sheet opens
+                        from inside it.**
 
-                        **The task panel is still mounted and it is still reachable**,
-                        but not from the card's own press and **not through the icon
-                        either**, which is what the first version of this comment
-                        claimed and it was false: `task-row.tsx` draws the icon
-                        pressable only as `{item.icon ? … : null}` and `icon` is
-                        `null` on every task created in the app
-                        (`item-record.ts`), so on an icon-less card — the default,
-                        and every card this walkthrough seeded — the title, the
-                        description, the urgency and the labels had **no route at
-                        all**. The road now is the state sheet's own row
-                        `board.editTask`, which opens this panel on the task that
-                        was tapped. The spec puts it exactly there: *"Desde ahí se
-                        entra al editor completo"*.
+                        This used to be the other way round — the card opened the
+                        state sheet and the panel was a row inside it — because the
+                        spec said *"Tocar la tarjeta abre la hoja de estado"*.
+                        That decision was revisited: moving a task between columns
+                        already has its gesture (the long-press drag, `onReorder`
+                        below), while the name, the description, the urgency and
+                        the labels had no direct road at all for a task without an
+                        icon. So the tap now goes straight to the panel, and the
+                        column is a row inside it (`item-state-row`) that opens
+                        the state sheet on top.
+
+                        The state sheet's own `onEditTask` door was removed with
+                        the reversal: it led from the sheet back to the panel the
+                        sheet had been opened from, which is a round trip rather
+                        than a road.
 
                         With `readOnly` there is no state sheet mounted below, so this
                         press has nowhere to go, and it is stopped here rather than
@@ -1683,7 +1795,7 @@ export default function BoardScreen() {
                       */
                       onOpenTask={(item) => {
                         if (readOnly) return;
-                        setCambiandoEstado(item.id);
+                        setEditing({ itemId: item.id, page: "edit" });
                       }}
                       onOpenIcon={(item) =>
                         setEditing({ itemId: item.id, page: "icon" })
@@ -1741,7 +1853,20 @@ export default function BoardScreen() {
         tagColors={list.tagColors ?? {}}
         showCompleted={false}
         onTagColor={(tag, color) => setTagColor(list, tag, color)}
-        onClose={() => setEditing(null)}
+        onClose={() => {
+          // The draft choice dies with the panel: it belongs to the row being
+          // written, and the panel stays mounted while it is closed.
+          setColumnaBorrador(null);
+          setEditing(null);
+        }}
+        /*
+          **The board's columns, and only a board passes them.** This panel is
+          used by every list in the app, and the state row is drawn when `states`
+          is not empty — a plain list passes nothing and cannot get one.
+        */
+        states={states}
+        draftStateId={columnaBorrador}
+        onOpenStates={abrirEstadosParaFormulario}
       />
 
       {/*
@@ -1779,37 +1904,25 @@ export default function BoardScreen() {
       */}
       {!readOnly ? (
         <StatePickerSheet
+          key={aperturaHoja}
           item={tareaEstado}
           states={states}
           counts={counts}
           readOnly={readOnly}
-          onPick={moverA}
-          onCreate={(titulo) => void crearEstadoYMover(titulo)}
+          onPick={elegirColumna}
+          onCreate={(titulo) => crearColumna(titulo)}
           /*
-            The task's own panel, **and the id is read from `tareaEstado` and not
-            carried as a second argument.** `onEditTask` is called **before**
-            `onClose`, in the same handler and therefore in the same commit, so
-            `cambiandoEstado` is still the id of the card that se toco cuando esto
-            corre; las dos actualizaciones aterrizan juntas y `editingItem` de abajo
-            resuelve la fila fuera de `items` por ese id, que es la misma busqueda
-            que hace cualquier otra pulsacion.
-
-            **Lo que esto NO es** es una lectura del `tarea` congelado de la hoja.
-            Daria la misma respuesta hoy, y la seguiria dando para una pulsacion que
-            llega 300 ms despues de que la hoja empezara a irse —`useLastValue`
-            sigue dibujando la tarea que le dieron. El estado de arriba es el que
-            sabe si hay una tarea, asi que es el que contesta.
-
-            `page: "edit"` y no los iconos: el icono es su propio blanco en la
-            tarjeta y esta fila es sobre la tarea entera.
+            **Choosing for a row that does not exist yet.** `item` cannot say
+            "open" here — there is no row — so `draft` says it, and the choice
+            lands in `columnaBorrador` instead of on the store. `null` the rest
+            of the time: the sheet is either choosing for a row or closed.
           */
-          onEditTask={() => {
-            const fila = tareaEstado;
-            if (!fila) return;
-            setEditing({ itemId: fila.id, page: "edit" });
-          }}
+          draft={eligiendoColumna ? { stateId: columnaBorrador } : null}
           onEditStates={abrirEditorDeEstados}
-          onClose={() => setCambiandoEstado(null)}
+          onClose={() => {
+            setCambiandoEstado(null);
+            setEligiendoColumna(false);
+          }}
         />
       ) : null}
 

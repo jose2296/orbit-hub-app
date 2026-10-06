@@ -563,6 +563,23 @@ export function useListItems(listId: string | undefined) {
       iconStyle?: ListItem["iconStyle"];
       iconColor?: ListItem["iconColor"];
       tags?: string[];
+      /**
+       * The column of a board this row is created in, **and not a default.**
+       *
+       * It is here because the panel that asks for a create is the same panel that
+       * now asks which column, and it asks on **both** kinds of create —the `+` of
+       * a board and the `+` of a list— so the column cannot live in the panel's
+       * call site: the panel writes the column itself, through `Draft`, and the
+       * row it builds has to be able to carry it.
+       *
+       * **Absent means "the first column" and not "no column".** A row created on a
+       * board without one has a null `stateId`, and null is the contract's way of
+       * saying it is in the first state, so sending nothing and sending null are
+       * the same request and the server decides. Only a column somebody actually
+       * chose travels, which is also why this is not `stateId: string` — a
+       * required one would make every other caller invent a column.
+       */
+      stateId?: string | null;
     }): Promise<{ added: boolean; itemId: string | null }> => {
       if (!listId) return { added: false, itemId: null };
 
@@ -596,6 +613,7 @@ export function useListItems(listId: string | undefined) {
         iconStyle: input.iconStyle,
         iconColor: input.iconColor,
         tags: input.tags,
+        stateId: input.stateId ?? null,
         externalId: input.externalId ?? null,
         metadata: input.metadata ?? null,
       });
@@ -627,6 +645,14 @@ export function useListItems(listId: string | undefined) {
           ...(input.iconColor ? { iconColor: input.iconColor } : {}),
           ...(input.annotation ? { annotation: input.annotation } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
+          /*
+            **Only a chosen column travels.** A row created on a board with no
+            choice has a null `stateId` locally, and the server resolves that to
+            the first state on its own — sending `stateId: null` would be the same
+            request said twice, and would put a column on the wire that nobody
+            picked. Anything that is not a `string` is left out for that reason.
+          */
+          ...(typeof input.stateId === "string" ? { stateId: input.stateId } : {}),
           // The provider id travels with the item so the same title is
           // recognisable later, and so a future import can tell them apart.
           ...(input.externalId ? { externalId: input.externalId } : {}),

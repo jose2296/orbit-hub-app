@@ -28,6 +28,7 @@ const screen = src('src/components/ui/screen.tsx');
 const spaceBand = src('src/components/workspace/space-band.tsx');
 const statePickerSheet = src('src/components/lists/state-picker-sheet.tsx');
 const boardScreen = src('src/app/(app)/board/[listId].tsx');
+const itemEditSheet = src('src/components/lists/item-edit-sheet.tsx');
 
 describe('la casilla no se come la fila', () => {
   /**
@@ -139,41 +140,33 @@ describe('la fila sabe dibujarse sin casilla y con filo de estado', () => {
   });
 
   /**
-   * The card of a board has **two** doors to the task panel, and only one of them
-   * is drawn per card.
+   * A board card has **one** door to the task panel, and it is the tap itself.
    *
-   * A tap on a board card opens the **state** sheet — the spec's own sentence,
-   * *"Tocar la tarjeta abre la hoja de estado"* — and the card's other target is the
-   * icon, which is drawn **only when the task has one**: `{item.icon ? … : null}`,
-   * and `icon` is `null` on every task created in the app (`item-record.ts`). So on
-   * an icon-less card the icon is not a second door, it is no door at all.
+   * It used to be two: the tap opened the state sheet and a row inside it
+   * (`state-picker-edit-task`, `onEditTask`) opened the panel. That decision was
+   * revisited — the tap now opens the panel straight away and the column is a row
+   * inside it (`item-state-row`) — so the sheet no longer carries a door back to
+   * the room it was opened from. These assertions are here because a route that
+   * exists only in someone's head is exactly what went missing once already, and
+   * because a door that comes back would be a round trip dressed as a feature.
    *
-   * That is not hypothetical: it is what the first review of Task 10 found. A card
-   * tap opened the state sheet, the sheet had no link to the task panel, and the
-   * **description — which the spec says lives in the edit sheet — had no route at
-   * all**. The comment in the screen claimed the panel was reachable through the
-   * icon, and it was reachable on no card the walkthrough had ever seeded.
-   *
-   * So the second door is a row of the state sheet (`state-picker-edit-task`), and
-   * these assertions are here because a route that exists only in someone's head
-   * is exactly what went missing. The browser walkthrough proves the door opens;
-   * these prove it is still in the source, without a browser.
+   * The browser walkthrough proves the door opens; these prove the wiring is
+   * still in the source, without a browser.
    */
-  it('la tarjeta de un tablero tiene dos puertas al panel, y una solo se dibuja con icono', () => {
-    // The icon is conditional — this is the fact the whole second door rests on.
+  it('la tarjeta de un tablero abre el panel, y la hoja ya no lleva la vuelta', () => {
+    // The icon is conditional — this is the fact the old second door rested on.
     expect(taskRow).toContain('{item.icon ? (');
-    // And the state sheet has the door for the card that has no icon.
-    expect(statePickerSheet).toContain('testID="state-picker-edit-task"');
-    expect(statePickerSheet).toContain('onEditTask');
-    // It is wired, not declared: a prop nobody passes is a row that does nothing,
-    // and that is a no-op dressed as a feature.
-    expect(boardScreen).toContain('onEditTask={');
-    // And the row asks the screen for the task that was tapped rather than
-    // guessing: the screen reads it out of `cambiandoEstado`, which is the state
-    // that knows whether there is a task, and the press and the close are one
-    // commit so it is still the right id when this runs.
-    expect(boardScreen).toContain('const fila = tareaEstado;');
-    expect(statePickerSheet).toContain('onEditTask();');
+    // The card's own press opens the task panel, not the state sheet.
+    expect(boardScreen).toContain('setEditing({ itemId: item.id, page: "edit" })');
+    // And the sheet has no way back: no row, no prop, no call.
+    expect(statePickerSheet).not.toContain('state-picker-edit-task');
+    expect(statePickerSheet).not.toContain('onEditTask');
+    expect(boardScreen).not.toContain('onEditTask={');
+    // The column lives inside the panel instead: the row is drawn there and it
+    // opens the sheet the screen owns.
+    expect(itemEditSheet).toContain('testID="item-state-row"');
+    expect(itemEditSheet).toContain('onOpenStates');
+    expect(boardScreen).toContain('onOpenStates={abrirEstadosParaFormulario}');
   });
 
   it('la pantalla de listas usa la fila del componente, y no una suya', () => {

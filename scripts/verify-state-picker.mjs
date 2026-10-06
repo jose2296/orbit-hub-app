@@ -396,10 +396,6 @@ const LEER_HOJA = `(() => {
     filas,
     nuevo: nuevo ? { texto: nuevo.innerText, disabled: nuevo.getAttribute('aria-disabled') === 'true' || nuevo.disabled === true } : null,
     hayBotonEditar: !!panel.querySelector('[data-testid="state-picker-edit"]'),
-    // El panel de la tarea, y es un testID aparte del de los estados porque son
-    // dos editores distintos —el de la tarea y el del tablero— y porque esta es la
-    // unica puerta que queda al panel cuando la tarjeta no tiene icono.
-    hayBotonEditarTarea: !!panel.querySelector('[data-testid="state-picker-edit-task"]'),
     texto: panel.innerText,
   };
 })()`;
@@ -447,29 +443,30 @@ const readBoard = (tab) => tab.evaluate(TABLERO);
  * distingue. En la pagina de edicion hay exactamente un `textarea` —la
  * descripcion—, y esta comprobacion cuenta eso en vez de suponerlo.
  */
-const LEER_PANEL_TASK = `(() => {
-  // **Se mira en todos los paneles y no en el primero**, y el motivo es la
-  // transicion: la hoja de estado no se desmonta hasta \`SALIDA + 90\` = 330 ms
-  // (\`sheet.tsx\`) y el panel de la tarea se monta en el mismo commit, asi que
-  // durante la salida hay **dos** \`sheet-panel\` en el documento y
-  // \`querySelector\` devuelve el que se va. El que tiene \`item-name\` es el que
-  // importa, y se busca por ese.
-  const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
-  const panel = paneles.find((p) => p.querySelector('[data-testid="item-name"]')) ?? null;
-  if (!panel) return { nombre: null, descripcion: null, areas: 0, paneles: paneles.length };
-  const nombre = panel.querySelector('[data-testid="item-name"]');
-  const areas = [...panel.querySelectorAll('textarea')];
-  return {
-    nombre: nombre ? nombre.value : null,
-    // El valor, y no un booleano: un \`textarea\` vacio prueba que hay un campo, y lo
-    // que se quiere es que **sea el de la descripcion de esta tarea**.
-    descripcion: areas.length === 1 ? areas[0].value : null,
-    areas: areas.length,
-    paneles: paneles.length,
-  };
-})()`;
 
 /** Donde esta el centro de un elemento por su `testID`, o `null` si no esta. */
+/**
+ * Evaluar con reintento, porque `cdp.mjs` pierde respuestas.
+ *
+ * `Page.navigate` cae una de cada dos, y `Runtime.evaluate` tambien cae —rara
+ * vez, pero cuando cae la corrida entera muere con "no respondio en 60000 ms"
+ * en un punto que no tiene nada que ver con la app. El reintento vive aqui y no
+ * en `cdp.mjs`: ese fichero lo comparten cinco guiones mas y el que navega y
+ * pregunta mucho es este. Tres intentos con un segundo entre ellos; si el tercero
+ * tampoco responde, el error sale tal cual y no disfrazado de fallo de la app.
+ */
+async function evaluar(tab, codigo, intentos = 3) {
+  let ultimo = null;
+  for (let i = 1; i <= intentos; i += 1) {
+    try {
+      return await tab.evaluate(codigo);
+    } catch (e) {
+      ultimo = e;
+      if (i < intentos) await sleep(1000);
+    }
+  }
+  throw ultimo;
+}
 /**
  * El centro de un elemento, por su `testID` y opcionalmente por un descendiente.
  *
@@ -487,7 +484,7 @@ const LEER_PANEL_TASK = `(() => {
  * activa por mucho que el ancestro tenga manejadores.
  */
 const centro = (tab, testId, dentro) =>
-  tab.evaluate(`(() => {
+  evaluar(tab, `(() => {
     // **El selector se arma con \`JSON.stringify\` y no con comillas a pelo.**
     // React Native Web escribe los \`testID\` como \`data-testid\`, y un id como
     // \`item-row-6a0068a7-…\` entre comillas dobles es un selector que el navegador
@@ -587,23 +584,77 @@ const esperarTareaCerrada = (tab) => esperarPanelFuera(tab, HAY_PANEL_TASK);
 /**
  * **Tocar una tarjeta por su boton de titulo**, y no por el centro de la tarjeta.
  *
- * Es el unico control de la tarjeta que abre la hoja de estado, y `task-row.tsx` lo
- * pone como el `<button>` con `aria-label` del titulo. Se busca por
- * `button[aria-label]` **y no por la clase**: una clase de react-native-web es un
- * nombre interno que cambia entre versiones —`r-cursor-1loqt21` hoy—, y un recorrido
- * que depende de ella se rompe con una actualizacion sin que cambie la app.
+ * Es el unico control de la tarjeta que abre algo —desde el lote 1B, el
+ * formulario de la tarea— y `task-row.tsx` lo pone como el `<button>` con
+ * `aria-label` del titulo. Se busca por `button[aria-label]` **y no por la
+ * clase**: una clase de react-native-web es un nombre interno que cambia entre
+ * versiones —`r-cursor-1loqt21` hoy—, y un recorrido que depende de ella se
+ * rompe con una actualizacion sin que cambie la app.
+ *
+ * El centro de la fila puede caer fuera del boton, y entonces el toque lo coge
+ * el gesto de arrastrar y no se abre nada — un fallo que se lee como "la tarjeta
+ * no abre" cuando lo que paso fue pulsar al lado del boton.
  */
 const tapTarjeta = (tab, id) => tap(tab, `item-row-${id}`, " button[aria-label]");
 
-/** Deja el elemento en pantalla antes de pedir su centro. */
-const verPrimero = async (tab, testId) => {
-  await tab.evaluate(`(() => {
-    const el = document.querySelector('[data-testid=' + JSON.stringify(${JSON.stringify(testId)}) + ']');
-    if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" });
-    return !!el;
-  })()`);
-  await sleep(120);
+/**
+ * Abrir la hoja de estados sobre una tarjeta, por el camino que hay desde el
+ * lote 1B: la tarjeta abre el formulario y la fila de estado del formulario
+ * (`item-state-row`) abre la hoja encima.
+ *
+ * Dos esperas con nombre y no dos `sleep`: el formulario tarda lo que tarde en
+ * montar y la hoja lo suyo, y un recorrido que supone 300 ms falla cuando el
+ * navegador va cargado — que se lee como "la hoja no se abre" cuando lo que se
+ * rompio fue la maquina. Cada espera dice cuanto tardo, para que un lento cante
+ * antes de ser un fallo.
+ */
+const abrirHoja = async (tab, id) => {
+  /*
+    **Cerrar antes de abrir.** Cada bloque deja sus paneles como los deja —la hoja,
+    el formulario, o los dos— y un toque a una tarjeta con la hoja encima no
+    llega a la tarjeta: lo coge la hoja. Se cierran por la X de cada panel, que
+    es el unico `button` sin `testID` que hay en ellos, de arriba abajo.
+  */
+  for (let i = 0; i < 3; i += 1) {
+    const n = await evaluar(tab, `document.querySelectorAll('[data-testid="sheet-panel"]').length`);
+    if (n === 0) break;
+    const cerrada = await evaluar(tab, `(() => {
+      const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+      const ultimo = paneles[paneles.length - 1];
+      const x = ultimo ? ultimo.querySelector('button:not([data-testid])') : null;
+      if (!x) return false;
+      const r = x.getBoundingClientRect();
+      if (r.width === 0) return false;
+      x.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      x.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      x.click();
+      return true;
+    })()`);
+    if (!cerrada) break;
+    await sleep(500);
+  }
+  await tapTarjeta(tab, id);
+  let desde = Date.now();
+  while (Date.now() - desde < 8000) {
+    const form = await evaluar(tab, `!!document.querySelector('[data-testid="item-state-row"]')`);
+    if (form) break;
+    await sleep(250);
+  }
+  const form = await evaluar(tab, `!!document.querySelector('[data-testid="item-state-row"]')`);
+  if (!form) throw new Error(`el formulario no se abrio sobre la tarjeta ${id}`);
+  await tap(tab, "item-state-row");
+  desde = Date.now();
+  let hoja = null;
+  while (Date.now() - desde < 8000) {
+    hoja = await evaluar(tab, LEER_HOJA);
+    if (hoja) break;
+    await sleep(250);
+  }
+  if (!hoja) throw new Error(`la hoja no se abrio sobre la tarjeta ${id}`);
+  return hoja;
 };
+
+/** Deja el elemento en pantalla antes de pedir su centro. */
 
 /**
  * **La ventana del relevo, muestreada desde dentro del gesto.**
@@ -639,244 +690,7 @@ const verPrimero = async (tab, testId) => {
  *    punto fijo a la izquierda del panel, que en el tablero ancho es fondo, y `centro`
  *    es el de mas arriba en el centro del panel que entra.
  */
-const INSTALAR_MUESTREO = (donde) => `(() => {
-  const reg = { donde: ${JSON.stringify(donde)}, t0: performance.now(), muestras: [], vivo: true };
-  window.__relevo = reg;
-  const portales = () => [...document.body.children];
-  const portalDe = (el) => {
-    const d = el && el.closest("body > div");
-    return d ? portales().indexOf(d) : -1;
-  };
-  const subidaDe = (el) => {
-    const t = (getComputedStyle(el).transform || "").match(/,\\s*(-?[\\d.]+)\\s*\\)$/);
-    return t ? Math.round(Number(t[1])) : 0;
-  };
-  const paso = () => {
-    const dims = [...document.querySelectorAll('[data-testid="sheet-dim"]')];
-    const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
-    const deQuien = (el) => {
-      const p = portalDe(el);
-      if (p < 0) return "nada";
-      const mio = paneles.find((pan) => portalDe(pan) === p);
-      if (!mio) return "velo#" + p;
-      const quien = mio.querySelector('[data-testid^="state-picker-row-"]')
-        ? "hoja"
-        : mio.querySelector('[data-testid="item-name"]')
-          ? "tarea"
-          : "otro";
-      return quien + "#" + p;
-    };
-    /*
-      **El velo son dos numeros y no uno.** El \`backgroundColor\` lleva el alfa del
-      token (\`rgba(10, 13, 26, 0.62)\` en claro, 0.76 en oscuro) y la \`opacity\` del
-      elemento es la que anima \`sheet.tsx\`: el oscurecimiento de cada capa es el
-      producto de los dos, y dos capas **se multiplican**, no se suman — lo que queda
-      del fondo es \`Π(1 - osc)\`. Medir solo la \`opacity\` daria 1 con una sola capa y
-      no distinguiria una hoja de dos, que es justo lo que hay que distinguir.
-    */
-    const capas = dims.map((d) => {
-      const cs = getComputedStyle(d);
-      const encontrado = cs.backgroundColor.match(/^rgba?\\(([^)]+)\\)$/);
-      const partes = (encontrado ? encontrado[1] : "").split(",").map((x) => Number(x.trim()));
-      const alfa = partes.length >= 4 && !Number.isNaN(partes[3]) ? partes[3] : null;
-      const op = Number(cs.opacity);
-      /*
-        **Un velo cuyo color no se puede leer no es un velo de alfa 1.** Con el
-        valor por defecto de antes, un \`backgroundColor\` en un formato que la
-        expresion regular no reconoce contaba como opaco y el compuesto salia
-        mas alto de lo que es —que es la direccion que hace caer la comprobacion,
-        no la que la deja pasar—, pero de todos modos un numero inventado no
-        vale. Aqui queda \`alfa: null\`, \`osc: null\` y el recuento de
-        fotogramas sin alfa legible (\`sinAlfa\`), que la comprobacion del
-        velo mira: si un dia el tema escribe el overlay en otro formato, esto dice
-        "no lo he medido" en vez de dar un numero.
-      */
-      const osc = alfa === null ? null : Number((op * alfa).toFixed(3));
-      return {
-        op: Number(op.toFixed(2)),
-        alfa,
-        osc,
-        color: cs.backgroundColor,
-      };
-    });
-    if (capas.some((c) => c.alfa === null)) reg.sinAlfa = (reg.sinAlfa ?? 0) + 1;
-    // Un velo sin alfa legible pesa 1 en el compuesto: se cuenta como opaco, que es
-    // lo que hace que el numero no baje, y \`sinAlfa\` deja constancia de que ese
-    // fotograma no es una medicion del velo sino una asuncion. La comprobacion
-    // del velo no pasa mientras \`sinAlfa\` sea mayor que cero.
-    const veloTotal = 1 - capas.reduce((t, c) => t * (1 - (c.osc ?? 1)), 1);
-    const tarea = paneles.find((p) => p.querySelector('[data-testid="item-name"]')) ?? null;
-    const hoja = paneles.find((p) => p.querySelector('[data-testid^="state-picker-row-"]')) ?? null;
-    const r = tarea ? tarea.getBoundingClientRect() : null;
-    const dentro = r && r.width > 0 && r.top < window.innerHeight && r.bottom > 0;
-    const cx = r ? Math.round(r.left + r.width / 2) : 0;
-    const cy = r ? Math.max(2, Math.min(Math.round(r.top + r.height / 2), window.innerHeight - 2)) : 0;
-    reg.muestras.push({
-      t: Math.round(performance.now() - reg.t0),
-      dims: dims.length,
-      paneles: paneles.length,
-      velos: capas,
-      veloTotal: Number(veloTotal.toFixed(3)),
-      quien: paneles.map(deQuien).join(" + "),
-      /* Los dos rectangulos, porque la pregunta de "se ve el de abajo" es de
-         geometria y no de orden: con los dos paneles medidos en el mismo
-         fotograma se responde si el que entra tapa al que se va o si se ven los
-         dos a la vez. */
-      rectHoja: hoja ? [hoja.getBoundingClientRect().top, hoja.getBoundingClientRect().bottom] : null,
-      rectTarea: tarea ? [tarea.getBoundingClientRect().top, tarea.getBoundingClientRect().bottom] : null,
-      veloDe: dims.map(deQuien).join(" + "),
-      fondo: deQuien(document.elementFromPoint(60, 300)),
-      // **La pila entera bajo el punto, en los fotogramas de la ventana.**
-      // elementFromPoint devuelve el de mas arriba y elementsFromPoint devuelve
-      // todos: la diferencia entre los dos es lo que separa un fondo mal
-      // alcanzado de un elemento que todavia no estaba en el arbol, y es la
-      // pregunta que decide si el peligro del relevo es real.
-      pilaVentana:
-        dims.length > 1
-          ? document
-              .elementsFromPoint(60, 300)
-              .slice(0, 4)
-              .map((e) => {
-                const r = e.getBoundingClientRect();
-                return (
-                  (e.getAttribute("data-testid") || e.getAttribute("role") || e.tagName) +
-                  " " + Math.round(r.width) + "x" + Math.round(r.height) +
-                  " en " + Math.round(r.left) + "," + Math.round(r.top)
-                );
-              })
-              .join(" > ")
-          : null,
-      centro: dentro ? deQuien(document.elementFromPoint(cx, cy)) : "fuera de pantalla",
-      tareaEnPantalla: dentro === true,
-      subidaTarea: tarea ? subidaDe(tarea) : null,
-      subidaHoja: hoja ? subidaDe(hoja) : null,
-    });
-    if (reg.vivo && performance.now() - reg.t0 < 700) requestAnimationFrame(paso);
-    else reg.vivo = false;
-  };
-  requestAnimationFrame(paso);
-  return true;
-})()`;
 
-const LEER_MUESTREO = `(() => {
-  const reg = window.__relevo;
-  if (!reg) return { error: "el muestreo no estaba instalado" };
-  reg.vivo = false;
-  const m = reg.muestras;
-  // **La ventana de dos hojas**: los fotogramas en los que el documento tiene mas de
-  // un velo o mas de un panel. Es la pregunta con nombre, y su duracion en
-  // milisegundos es lo que dice si el relevo es un commit o dos.
-  const conDos = m.filter((x) => x.dims > 1 || x.paneles > 1);
-  const llega = m.findIndex((x) => x.quien.indexOf("tarea#") >= 0);
-  const despues = llega >= 0 ? m.slice(llega) : [];
-  const pico = m.reduce((a, b) => (b.veloTotal > a.veloTotal ? b : a), m[0] ?? { veloTotal: 0 });
-  const picoDeLaVentana = conDos.length
-    ? conDos.reduce((a, b) => (b.veloTotal > a.veloTotal ? b : a))
-    : null;
-  const capa = (v) => "op " + v.op + " x alfa " + v.alfa + " = " + v.osc;
-  return {
-    donde: reg.donde,
-    fotogramas: m.length,
-    hasta: m.length ? m.at(-1).t : 0,
-    llegada: llega >= 0 ? m[llega].t : null,
-    ventana: conDos.length
-      ? {
-          desde: conDos[0].t,
-          hasta: conDos.at(-1).t,
-          ms: conDos.at(-1).t - conDos[0].t,
-          fotogramas: conDos.length,
-        }
-      : { desde: null, hasta: null, ms: 0, fotogramas: 0 },
-    quienEnLaVentana: conDos[0] ? conDos[0].quien : null,
-    // Los dos rectangulos en el mismo fotograma, para poder decir si el panel que
-    // entra tapa al que se va o si se ven los dos a la vez. Sin plantillas de
-    // texto aqui: esto vive dentro de una plantilla del fichero y una mas
-    // cerraria la de fuera.
-    rectsEnLaVentana: conDos[0]
-      ? "la que se va de " + Math.round(conDos[0].rectHoja?.[0] ?? 0) + " a " +
-        Math.round(conDos[0].rectHoja?.[1] ?? 0) + ", y la que entra de " +
-        Math.round(conDos[0].rectTarea?.[0] ?? 0) + " a " +
-        Math.round(conDos[0].rectTarea?.[1] ?? 0) + " (ventana de " + window.innerHeight + " px)"
-      : null,
-    velosEnLaVentana: (conDos[0]?.velos ?? []).map(capa),
-    picoVeloEnLaVentana: picoDeLaVentana ? picoDeLaVentana.veloTotal : null,
-    velosDelPicoDeLaVentana: (picoDeLaVentana?.velos ?? []).map(capa),
-    maxDims: m.reduce((a, x) => Math.max(a, x.dims), 0),
-    maxPaneles: m.reduce((a, x) => Math.max(a, x.paneles), 0),
-    picoVelo: pico.veloTotal ?? 0,
-    velosDelPico: (pico.velos ?? []).map(capa),
-    picoEn: pico.t ?? null,
-    velosDistintos: [...new Set(m.flatMap((x) => x.velos.map((v) => v.osc)))].sort(
-      (a, b) => a - b,
-    ),
-    sinVelo: m.filter((x) => x.paneles > 0 && x.dims === 0).length,
-    // Los fotogramas en los que un velo traia un color cuyo alfa no se pudo leer.
-    sinAlfa: reg.sinAlfa ?? 0,
-    fondoTrasLaLlegada: [...new Set(despues.map((x) => x.fondo))],
-    /*
-      Los fotogramas en los que el fondo de mas arriba es el de la hoja que se va, con
-      lo que habia en pantalla en ese momento. Sin esto un FALLA solo dice que la
-      comprobacion fallo; esto dice en que fotograma y con que numeros, que es la
-      diferencia entre un fallo que se entiende y uno que se busca.
-    */
-    fondoMalo: despues
-      .filter((x) => x.fondo.startsWith(String.fromCharCode(104) + "oja#"))
-      .map(
-        (x) =>
-          "t=" + x.t + " ms, dims=" + x.dims + ", paneles=" + x.paneles +
-          ", fondo=" + x.fondo + ", quien=" + x.quien +
-          ", velos=" + x.velos.map((v) => v.osc) +
-          ", subida del que entra=" + x.subidaTarea +
-          ", rect del que entra=" + JSON.stringify(x.rectTarea) +
-          ", rect del que se va=" + JSON.stringify(x.rectHoja) + ", pila=" + x.pilaVentana,
-      ),
-    // Los instantes de los fotogramas en los que el fondo de mas arriba NO es el de
-    // la hoja que entra: uno solo es lo medido, y es el primero de la ventana.
-    fondoMaloT: despues
-      .filter((x) => x.fondo.startsWith(String.fromCharCode(104) + "oja#"))
-      .map((x) => x.t),
-    // **Los mismos fotogramas, pero por posicion dentro de la ventana y no por
-    // cuenta.** Un tope de "dos fotogramas" depende de cada cuanto el navegador
-    // pinto: con la maquina cargada un fotograma puede tardar 140 ms, y el mismo
-    // useEffect de ModalAnimation que dura un frame en una maquina
-    // descargada cabe en dos en una cargada. La posicion no depende de eso: lo
-    // que se vigila es que el orden invertido este **al principio de la ventana**
-    // y no repartido, que es lo que distingue una carrera de una capa mal puesta.
-    fondoMaloPos: conDos
-      .map((x, i) => (x.fondo.startsWith(String.fromCharCode(104) + "oja#") ? i : -1))
-      .filter((i) => i >= 0),
-    centroMaloPos: conDos
-      .map((x, i) =>
-        x.tareaEnPantalla && !x.centro.startsWith("tarea#") ? i : -1,
-      )
-      .filter((i) => i >= 0),
-    centroMalo: despues.filter((x) => x.tareaEnPantalla && !x.centro.startsWith("tarea#")).length,
-    /*
-      **La subida del panel que entra, en pixeles y fotograma a fotograma de la
-      ventana.** Esta existia en el resumen desde la ronda 2 y **ninguna
-      comprobacion la imprimia**: era el numero que el comentario de mas abajo
-      daba por bueno ("91% de su altura") sin que nada lo dijera. Se imprime
-      entero, porque su valor no es el que el comentario suponia.
-    */
-    subidasEnLaVentana: conDos.map(
-      (x) => x.t + " ms: " + (x.subidaTarea === null ? "sin panel" : x.subidaTarea + " px"),
-    ),
-    // El alto del panel que entra en el primer fotograma de la ventana, para poder
-    // contrastar la subida contra el alto: sheet.tsx:290 dice que la subida es
-    // "(1 - entrada) * altoPanel", y los dos factores estan en [0, 1], asi que la
-    // subida no puede pasar del alto. Un tope que sale del codigo, no del ojo.
-    // **Sin ventana esto sale null**, y la comprobacion de la subida cae: una
-    // medida sin marco no es una medida.
-    altoTareaEnLaVentana: conDos[0]?.rectTarea
-      ? Math.round(conDos[0].rectTarea[1] - conDos[0].rectTarea[0])
-      : null,
-    subidaTareaMax: despues.reduce((a, x) => Math.max(a, x.subidaTarea ?? 0), 0),
-    subidaTareaFin: despues.length ? despues.at(-1).subidaTarea : null,
-    subidaHojaMax: m.reduce((a, x) => Math.max(a, x.subidaHoja ?? 0), 0),
-    ordenFinal: m.length ? m.at(-1).quien : null,
-    velosFinales: (m.at(-1)?.velos ?? []).map(capa),
-  };
-})()`;
 
 /**
  * El alfa del velo que escribe el tema, leido del propio `sheet-dim`.
@@ -890,14 +704,6 @@ const LEER_MUESTREO = `(() => {
  * antes de comparar. El `ok` lleva el color para que un `null` se vea sin abrir
  * el fichero.
  */
-const LEER_VELO = `(() => {
-  const el = document.querySelector('[data-testid="sheet-dim"]');
-  if (!el) return { color: "(no hay sheet-dim en el documento)", alfa: null };
-  const color = getComputedStyle(el).backgroundColor;
-  const partes = (color.match(/^rgba?\\(([^)]+)\\)$/) || [, ""])[1].split(",").map((p) => p.trim());
-  if (partes.length < 4) return { color, alfa: null };
-  return { color, alfa: Number(partes[3]) };
-})()`;
 
 /**
  * Un relevo medido: se instala el muestreo, se toca, **se espera a que la ventana se
@@ -907,14 +713,6 @@ const LEER_VELO = `(() => {
  * quedan cortos por 330 + lo que tarde el toque en llegar al boton, y resumir con el
  * bucle a medias es medir la ventana por la mitad sin decir que se ha medido a medias.
  */
-async function medirReleve(tab, testId, donde) {
-  await tab.evaluate(INSTALAR_MUESTREO(donde));
-  await tap(tab, testId);
-  await sleep(300);
-  const resumen = await tab.evaluate(LEER_MUESTREO);
-  if (resumen?.error) throw new Error(`${donde}: ${resumen.error}`);
-  return resumen;
-}
 
 const chrome = await launchChrome({ width: 1440, height: 900 });
 let tab;
@@ -1013,12 +811,25 @@ try {
   note(`columnas: ${visto.columnas.map((c) => `${c.columna.slice(0, 4)}=[${c.tarjetas.join(",")}]`).join(" ")}`);
   await tab.screenshot(`${SHOTS}/01-tablero-claro.png`);
 
-  /* --- 1. La hoja se abre tocando una tarjeta, y el estado actual sale marcado --- */
+  /* --- 1. La tarjeta abre el formulario, su fila abre la hoja, y el estado actual sale marcado --- */
 
+  /*
+    **Desde el lote 1B la tarjeta ya no abre la hoja**: abre el formulario de la
+    tarea, y la columna se elige en su fila de estado (`item-state-row`), que
+    abre esta hoja encima. Lo que este bloque comprueba de la apertura es ese
+    camino en dos pasos —que el panel es el formulario y que la hoja sale de su
+    fila— y todo lo demas (la marcada, los contadores, el fondo) se lee una vez
+    la hoja esta abierta, como antes.
+  */
   await tapTarjeta(tab, porTitulo.get("Ready-1").id);
   await sleep(500);
+  const formAbierto = await tab.evaluate(`!!document.querySelector('[data-testid="item-state-row"]')`);
+  check("tocar una tarjeta abre el formulario y no la hoja", formAbierto === true, formAbierto ? "fila de estado a la vista" : "sin fila de estado");
+  await tap(tab, "item-state-row");
+  await sleep(500);
   let hoja = await tab.evaluate(LEER_HOJA);
-  check("tocar una tarjeta abre la hoja de estado", hoja !== null);
+  check("y su fila de estado abre la hoja", hoja !== null);
+  await tab.screenshot(`${SHOTS}/01-hoja-abierta-claro.png`);
 
   if (hoja) {
     note(`hoja: ${hoja.filas.map((f) => `${f.titulo} · ${f.numero}${f.marcada ? " [MARCADA]" : ""}`).join(" | ")}`);
@@ -1095,7 +906,15 @@ try {
     );
 
     check("hay enlace al editor completo", hoja.hayBotonEditar);
-    check("y hay un enlace al panel de la tarea", hoja.hayBotonEditarTarea);
+    /*
+      **Y ya no hay vuelta al panel de la tarea, a proposito.** La hoja solo se
+      abre desde dentro de ese panel desde el lote 1B, asi que una fila que lo
+      abriera seria la vuelta al sitio del que se vino — un rodeo vestido de
+      puerta. Se lee del documento y no del lector de arriba, que ya no trae ese
+      campo: si esta comprobacion cae es que la fila volvio.
+    */
+    const hayVuelta = await tab.evaluate(`!!document.querySelector('[data-testid="state-picker-edit-task"]')`);
+    check("y NO hay vuelta al panel de la tarea", hayVuelta === false, "sin state-picker-edit-task");
     await tab.screenshot(`${SHOTS}/02-hoja-abierta-claro.png`);
   }
 
@@ -1160,25 +979,16 @@ try {
   /** Los cinco segundos de gracia del agrupador, redondeados a seis. */
   const ESPERA = 6000;
 
-  /* --- 1b. Las dos puertas al panel de la tarea --- */
+  /* --- 1b. El icono sigue siendo condicional, y la tarjeta sin icono llega al panel por su propio toque --- */
 
   /*
-    **Este bloque es el que comprueba el hallazgo de la primera revision: sin el,
-    el recorrido entero pasa en verde con la descripcion sin camino a ninguna parte.**
-
-    La hoja sigue abierta sobre `Ready-1`, que **no tiene icono** —la siembra lo
-    pone solo en `CON_ICONO`—, y por lo tanto su tarjeta no dibuja el icono
-    pulsable de `TaskRow` (`{item.icon ? … : null}`). Lo que se comprueba aqui es:
-
-    1. que la tarjeta **con** icono sembrado si lo dibuja, y que la **sin** icono no
-       —el hecho que hace necesaria la segunda puerta, medido y no supuesto;
-    2. que la hoja tiene la fila `state-picker-edit-task`;
-    3. que esa fila abre **el panel de la tarea** con el nombre y **la descripcion
-       que se sembraron**, que es donde el spec dice que vive.
-
-    Se mira `item-name` y no el titulo del panel porque `item-name` es un
-    `testID` que **solo existe en la pagina de edicion** de `item-edit-sheet.tsx`:
-    el titulo lo pone cualquiera de las paginas, el campo del nombre no.
+    **Lo que queda del bloque que comprobo el hallazgo de la primera revision.**
+    El resto —la fila `state-picker-edit-task` y el relevo a la hoja del panel—
+    se fue en el lote 1B con el camino que justificaba: la tarjeta abre el panel
+    directamente, asi que una tarjeta sin icono ya no necesita una segunda puerta
+    en la hoja. Lo que sigue valiendo es el hecho medido que la hacia necesaria:
+    la tarjeta **con** icono sembrado dibuja su icono pulsable y la **sin** icono
+    no (`{item.icon ? … : null}`), y desde las dos se llega al panel con el toque.
   */
   const tarjetas = await tab.evaluate(`(() => {
     const ids = ${JSON.stringify(TAREAS.map((t) => t.id))};
@@ -1199,373 +1009,29 @@ try {
     `${CON_ICONO} en el tablero: ${conIcono?.enElTablero}, con icono: ${conIcono?.conIcono}`,
   );
   check(
-    `**y la de "${CON_DESCRIPCION}", sembrada sin icono, NO dibuja ninguno** — por eso hace falta la fila del panel`,
+    `**y la de "${CON_DESCRIPCION}", sembrada sin icono, NO dibuja ninguno** — y aun asi su toque abre el panel`,
     sinIcono?.enElTablero === true && sinIcono?.conIcono === false,
     `${CON_DESCRIPCION} en el tablero: ${sinIcono?.enElTablero}, con icono: ${sinIcono?.conIcono}`,
   );
 
-  /*
-    **El muestreo se instala antes del toque, no despues.** Es la parte de este bloque
-    que no se puede hacer de otra manera: el relevo abre y cierra una ventana de unos
-    330 ms en medio de un gesto, y `tap` duerme 400 ms al final, asi que cualquier
-    lectura posterior describe un estado que ya no existia. `medirReleve` hace las tres
-    cosas en su orden —instalar, tocar, esperar a que la ventana se cierre y solo
-    entonces resumir— y el resumen sale con los numeros de todos los fotogramas.
-  */
-  const relevo = await medirReleve(tab, "state-picker-edit-task", "relevo-claro");
-  const panelDeLaTarea = await tab.evaluate(LEER_PANEL_TASK);
-  check(
-    "**desde una tarjeta SIN icono se llega al panel de la tarea, con su nombre y su descripcion**",
-    panelDeLaTarea?.nombre === "Ready-1" && panelDeLaTarea?.descripcion === DESCRIPCION,
-    `nombre: ${panelDeLaTarea?.nombre ?? "(no hay panel con item-name)"} | ` +
-      `descripcion: ${panelDeLaTarea?.descripcion ?? "-"} (sembrada: "${DESCRIPCION}") | ` +
-      `textareas: ${panelDeLaTarea?.areas ?? "-"} | paneles a la vez: ${panelDeLaTarea?.paneles ?? "-"}`,
-  );
-  await tab.screenshot(`${SHOTS}/12-panel-desde-una-tarjeta-sin-icono.png`);
-
-/* --- 1c. La ventana del relevo: dos hojas, medidas --- */
+  /* --- 1c. La ventana del relevo: eliminada en el lote 1B --- */
 
   /*
-    **La ventana del relevo, y por que esta a parte.**
+    **Este bloque media el relevo hoja-de-estado -> panel-de-la-tarea**: 220-241 ms
+    con dos `sheet-dim` y dos `sheet-panel` en el documento, el velo compuesto y
+    los fotogramas con el fondo ajeno. El flujo ya no existe —la tarjeta abre el
+    panel directamente y la hoja sale de dentro de el—, asi que no hay ventana que
+    medir. Se elimina en vez de saltarse: un bloque saltado es una medicion que
+    parece pendiente y esta no lo esta, esta obsoleta.
 
-    La fila `state-picker-edit-task` llama a `onEditTask()` y a `onClose()` en el mismo
-    manejador, o sea en el mismo commit: el panel de la tarea se monta y la hoja de
-    estado recibe `visible: false` a la vez. **El commit es uno y el documento no lo es
-    durante la salida de la hoja que se va** —`Sheet` no se desmonta hasta
-    `SALIDA + 90` = 330 ms (`sheet.tsx:230`)—, asi que hay una ventana en la que estan
-    las dos: dos `sheet-dim` y dos `sheet-panel`.
-
-    Y no se puede responder leyendo el DOM despues, que es lo que hacia la primera
-    version de este bloque: `LEER_PANEL_TASK` de arriba dice `paneles a la vez: 1` y ese
-    1 se leia **400 ms despues del toque**, con la hoja que se va ya desmontada. Un
-    numero asi no dice nada de la ventana: es una foto de despues con la etiqueta de
-    durante. Los numeros de aqui salen de `relevo`, que se leyo mientras la ventana
-    estaba abierta.
-
-    **Lo medido decide lo que se hace, y lo medido dice que no hay que hacer nada.**
-    Con el codigo de este checkout, a 1440 x 900, la ventana dura **entre 220 y 241 ms en 15 o
-    16 fotogramas** —tres corridas con la maquina cargada la cerraron en 8—; el rango es de
-    las diecinueve corridas completas de la ronda 3. El numero fluctua porque depende de donde
-    caiga cada fotograma dentro de la salida, y por eso lo que se comprueba es la forma y no
-    el milisegundo. En esos fotogramas:
-
-    - la hoja que entra esta en el portal **#6** y la que se va en el **#5**: es la
-      ultima del `body`, y por lo tanto la que se pinta encima y la que recibe las
-      pulsaciones;
-    - **el punto de fondo no siempre devuelve la entrante.** En diecinueve corridas completas
-      de esta ronda (38 mediciones, una por pasada) el punto de fondo dio `["tarea#6"]` —cero
-      fotogramas con el fondo de la hoja que se va— **12 veces**, y uno o dos fotogramas malos
-      las otras 26, **siempre en las posiciones 0 y 1 de la ventana**. La version anterior de este
-      comentario afirmaba lo contrario —"siempre `tarea#6`, ninguna pulsacion alcanza a la
-      hoja que se va"— y se contradecia mas abajo, en el comentario del quinto `check`, que
-      si describe el fotograma. Lo que queda es lo que las corridas enseñan: **el orden
-      invertido existe, dura de uno a dos fotogramas y siempre esta al principio de la
-      ventana**. El mecanismo esta en `ModalAnimation.js:67` y esta en el comentario del
-      quinto `check`, que es donde vive;
-    - el panel que entra esta **encima del velo que se va** —portal 6 sobre portal 5—,
-      asi que **no lo oscurece**: se puede leer con los dos arriba;
-    - el unico numero que se mueve es el fondo de la pantalla: de **0.62 a 0.629-0.705** en
-      claro —un 1% a un 14% relativo— y de **0.76 a 0.765-0.886** en oscuro, un 1% a un 17%.
-      El pico se mueve con el fotograma porque depende de donde caiga dentro de los dos
-      desvanecidos, y con el ancho del pico —la ventana empieza antes de que el velo
-      entrante haya subido y termina cuando el saliente ya ha bajado del todo—.
-
-    Un pico de 1-17% en el fondo durante unos 100 ms esta por debajo del umbral, y las formas
-    de quitarlo cambian ese pico por un hueco **mas claro**, que se ve mas. **Ese argumento
-    no trae una tabla de numeros medidos y no puede traerla**: en la ronda 2 se publico una
-    con tres filas de cifras que no habian salido de ninguna corrida, y la tercera ni
-    siquiera era derivable de su propio mecanismo. Lo que sostiene la decision es lo que
-    sale del codigo: `fondo` arranca en 0 (`sheet.tsx:105`) y tarda 150 ms en llegar a 1
-    (`sheet.tsx:130`), asi que **en el instante del relevo el velo entrante vale 0** y
-    cualquier arreglo que quite un velo deja el compuesto en el valor del otro —0 en ese
-    instante—, que es un hueco sin oscurecer mas largo que el 1-17% que evita. La tabla y
-    el porque de borrarla estan en el informe de la ronda 3.
-
-    Asi que aqui no hay nada que arreglar: **lo que hay es una forma de que esto cambie
-    sin que nadie se entere**, y son las seis comprobaciones siguientes. No son "todo
-    bien": son las seis cosas que tienen que seguir siendo verdad.
+    Lo que el bloque guardaba y sigue valiendo vive en `sheet.tsx` (SALIDA + 90) y
+    en el lote 1B, que comprueba la apertura apilada —formulario debajo, hoja
+    encima— en `.superpowers/sdd/2026-10-03-tablero-de-estados/verificar-lote-1b.mjs`.
   */
-  const veloDeLaTanda = await tab.evaluate(LEER_VELO);
-  if (veloDeLaTanda.alfa == null) {
-    note(
-      `el velo del tema no se ha podido leer (${veloDeLaTanda.color}): las dos ` +
-        "comprobaciones de velo de este bloque van a fallar por falta de techo, no por",
-    );
-  }
-
-  /*
-    **La primera comprobacion es sobre el instrumento, y es la que impide que las otras
-    cuatro sean un numero sin ningun gesto detras.**
-
-    Si el muestreo no llega a ver el relevo —porque el bucle se para antes, porque la
-    pulsacion no ocurrio, porque la ventana fue tan corta que no hubo ni un
-    fotograma— `relevo.llegada` sale `null` y las demas sumarian comparaciones sobre
-    una lista vacia, que es lo unico que sale bien de un instrumento que no midio nada.
-    Un recorrido que solo mira el final del gesto no puede distinguir "no ha pasado
-    nada" de "no lo he mirado", que es exactamente el fallo que la primera version de
-    este bloque tenia.
-  */
-  check(
-    "**el relevo se ha medido mientras estaba abierto, no despues**",
-    (relevo.fotogramas ?? 0) >= 10 && relevo.llegada != null && (relevo.hasta ?? 0) >= 400,
-    `${relevo.fotogramas} fotogramas en ${relevo.hasta} ms | el panel de la tarea aparece en el ` +
-      `fotograma de ${relevo.llegada} ms | ventana de dos hojas: ${relevo.ventana.ms} ms ` +
-      `(${relevo.ventana.fotogramas} fotogramas)`,
-  );
-
-  /*
-    **Cuantas hojas hay a la vez: exactamente dos, y la ventana no crece.**
-
-    El maximo de los dos recuentos en todos los fotogramas es la respuesta cruda, y son
-    **dos y no tres**: una tercera hoja en el relevo seria otro `Modal` en el `body` y el
-    numero lo diria. Y la duracion lleva un techo de 400 ms porque la ventana no es una
-    constante del codigo —es la salida de `Sheet`—: si `SALIDA` subiera, o si
-    `onEditTask` se llamara antes de tiempo, esta comprobacion caeria en vez de dejar que
-    el comentario del componente se quedara diciendo una verdad que ya no es.
-  */
-  check(
-    "**la ventana son dos hojas y no mas, y no dura mas de lo que dura una salida**",
-    (relevo.maxDims ?? 9) === 2 && (relevo.maxPaneles ?? 9) === 2 &&
-      (relevo.ventana.ms ?? 0) > 0 && (relevo.ventana.ms ?? 0) <= 400,
-    `maximo de sheet-dim: ${relevo.maxDims}, de sheet-panel: ${relevo.maxPaneles} | ` +
-      `con dos a la vez: ${relevo.ventana.ms} ms de los ${relevo.hasta} medidos ` +
-      `(${relevo.ventana.fotogramas} fotogramas) | en la ventana: ${relevo.quienEnLaVentana} | ` +
-      `${relevo.rectsEnLaVentana ?? ""}`,
-  );
-
-  /*
-    **El velo, comparado con el velo del tema.**
-
-    Dos velos no se suman: se multiplican, asi que el compuesto es `1 - Π(1 - a)` con
-    `a = opacidad x alfa del token`, y los dos numeros se leen del elemento. El techo es
-    **un 20% por encima del velo que el tema escribe** —`techoVelo`, mas abajo, que las dos
-    comprobaciones comparten— y no un numero absoluto, para que la comprobacion sea la misma
-    en las dos pasadas: leidos del elemento, en claro son 0.62 y en oscuro 0.76.
-
-    Ese 20% no es un margen puesto a ojo: es el maximo medido redondeado hacia arriba, y el
-    maximo esta mas abajo con su cuenta. Y el margen tiene que existir porque los dos
-    desvanizados no coinciden: el velo que entra dura 150 ms y el que sale 180
-    (`sheet.tsx:130` y `sheet.tsx:214`), asi que mientras los dos coexisten el que entra
-    todavia va por su cuenta y el compuesto **no puede** llegar a dos velos completos, que
-    es `1 - (1 - 0.62)²` = 0.856 en claro y 0.942 en oscuro.
-    **Ese techo esta medido**, con la mutacion que quita el desvanecido del velo saliente
-    (`sheet.tsx:214`) y deja las dos capas en opacidad 1: la corrida dio 0.856 en claro y
-    0.942 en oscuro, los dos por encima de sus techos, y las dos comprobaciones cayeron. Sin
-    esa mutacion el pico real anda en 0.629-0.705 en claro y 0.765-0.886 en oscuro. Ese es
-    el fallo que muerde, y muerde en las dos pasadas.
-
-    **El techo tiene que existir para que la comprobacion pueda fallar, asi que su
-    ausencia la hace caer.** Sin `sheet-dim` el alfa se leeria `1` (ver `LEER_VELO`) y el
-    techo se iria al maximo, con lo que **cualquier** compuesto pasaria; con el velo
-    presente pero de un color sin alfa legible, `sinAlfa` cuenta los fotogramas y el mismo.
-    Las dos cosas salen en la linea del `ok`.
-
-    **El 15% de la ronda 2 era una cifra puesta a ojo, y medirla la ha desmentido.** Era el
-    techo que decia "lo que permite el desvanecido", y en las diecinueve corridas completas
-    de la ronda 3 el pico real subio a **0.705 en claro** —0.62 x 1.15 = 0.713, al limite— y
-    a **0.886 en oscuro**, que es un **16.6%** sobre el token y **se paso del techo de
-    0.874**: una corrida en `FALLA` y las demas en verde. El techo aqui es **1.20**, derivado
-    del maximo medido y no de una idea de cuanto "deberia" subir. Sigue muerdiendo: la
-    mutacion del desvanecido da 0.856 en claro —sobre un techo de 0.744— y 0.942 en oscuro
-    —sobre 0.912—, asi que las dos comprobaciones caen igual. Lo que **no** se puede decir es
-    que el pico real se quede en un 15%: se queda en un 1%-17%, y depende de donde caiga el
-    fotograma dentro de los dos desvanizados.
-  */
-  const techoVelo = (alfa) =>
-    alfa == null ? null : Math.round(alfa * 1.2 * 1000) / 1000;
-  check(
-    "**el velo de la pantalla no se pasa de un 20% por encima del velo del tema**",
-    (relevo.picoVelo ?? 1) <= techoVelo(veloDeLaTanda?.alfa) &&
-      veloDeLaTanda?.alfa != null &&
-      (relevo.sinAlfa ?? 0) === 0,
-    `pico del velo compuesto: ${relevo.picoVelo} en el fotograma de ${relevo.picoEn} ms ` +
-      `(capas: ${relevo.velosDelPico}) | el tema escribe ${veloDeLaTanda?.color} y el techo ` +
-      `es ${techoVelo(veloDeLaTanda?.alfa) ?? "n/d (sin alfa legible: la comprobacion no puede pasar)"} | ` +
-      `fotogramas con un velo sin alfa legible: ${relevo.sinAlfa} | el pico dentro de la ventana de dos hojas: ` +
-      `${relevo.picoVeloEnLaVentana} (${relevo.velosDelPicoDeLaVentana})`,
-  );
-
-  /*
-    **Y que la ventana no se paga con un fondo sin velar.**
-
-    Un recorte de la ventana se puede pagar de otra manera: que la hoja que se va se vaya
-    y el panel que entra aun no haya puesto su velo. Eso es un tablero sin oscurecer
-    durante un fotograma o dos, y aqui no se nota; con una maquina cargada se nota. Se
-    cuenta, y el numero sale en la linea del `ok` para que un fallo diga cuantos
-    fotogramas fueron.
-  */
-  check(
-    "**y ningun fotograma del relevo tiene un panel sin velo delante**",
-    (relevo.sinVelo ?? 9) === 0,
-    `fotogramas con panel y sin velo: ${relevo.sinVelo} de ${relevo.fotogramas}` +
-      ` | velos al final: ${relevo.velosFinales}`,
-  );
-
-/*
-    **A donde llega una pulsacion, que es el peligro de dos fondos — y aqui hay UN
-    fotograma, o dos, que no son los que uno quiere.**
-
-    `fondo` es el elemento de mas arriba en un punto a la izquierda del panel, o sea uno
-    de los dos fondos. Lo que no puede pasar es que ese fondo sea **el de la hoja que se
-    va** y se quede si: una pulsacion ahi cerraria la hoja de estado —que se esta yendo
-    sola— mientras el panel de la tarea se queda abierto encima, y una pulsacion sobre una
-    fila suya moveria la tarea.
-
-    **Medido: en uno o dos fotogramas de cada relevo, el de mas arriba es el de la que se
-    va.** No sale en todas las corridas: en las 38 mediciones de la ronda 3 (diecinueve corridas
-    completas, una por pasada) salio **12 veces con 0 fotogramas, 23 con 1 y 3 con 2**, pero
-    cuando sale **siempre esta en las posiciones 0 y 1 de la ventana**. El mecanismo esta
-    en react-native-web y no en esta app:
-
-    - `ModalAnimation` (RNW 0.21.2, `ModalAnimation.js:67`) pinta su envoltorio con
-      `isRendering ? getAnimationStyle(...) : styles.hidden`, y **`isRendering` lo pone un
-      `useEffect`**. En el primer fotograma de una hoja recien montada el envoltorio es
-      `styles.hidden` = `{ opacity: 0 }`: sin `position` y sin `z-index`.
-    - La hoja que se va, en cambio, sigue con `visible={montada}` en su `Modal` —de eso
-      sirve `montada`— y su envoltorio va con `styles.container` = `z-index: 9999`.
-    - Con una en la capa de `z-index: 9999` y la otra en la de `auto`, **gana la que se
-      va**, hasta que el `useEffect` de la entrante la mete en su capa. Uno o dos
-      fotogramas.
-
-    **Lo que cuesta, y que parte de eso se puede decir.** La hoja que se va en ese fotograma
-    ya esta cerrando —su `onClose` se llamo en el mismo commit, y volver a llamarlo no
-    cambia nada—, y eso es lo que sostiene el "el coste es nada". Lo que **no** se puede
-    decir es que el panel que entre este lejos de su sitio: eso se afirmaba con un 91% que
-    salia de `entrada = 0.09` a los 16 ms, un numero que no esta en ninguna parte —la
-    cuenta del `Easing.out(cubic)` da 0.244 a los 16 ms, y `sheet.tsx:290` multiplica por
-    `altoPanel`, que es 0 hasta el primer `onLayout` (`sheet.tsx:399`)—. La sexta
-    comprobacion imprime la subida real, en pixeles y fotograma a fotograma, y es la que
-    manda.
-
-    Por eso la comprobacion no dice "nunca" sino **"solo al principio de la ventana"**: si el
-    orden de pintado se invirtiese entero —es decir, si la que se va quedara encima durante
-    toda su salida— las posiciones serian todas y esto caeria. Y el tope se cuenta **por
-    posicion dentro de la ventana, no por numero de fotogramas**: en una maquina descargada
-    la carrera dura un fotograma, pero con la maquina cargada un fotograma puede tardar mas
-    de 100 ms y la misma carrera ocupa dos capturas. Medido: 0, 1 y 2 fotogramas, **siempre
-    en las posiciones 0 y 1**. Es un tope medido sobre lo que se ha visto, no una figura de
-    rock: lo que no se permite es que llegue a la posicion 3.
-
-    Y `centro` es la otra mitad: el panel que entra tiene que **poder pulsarse** en el
-    resto de la ventana, y lo tiene —el centro del panel que entra devuelve suyo en todos
-    los fotogramas salvo los mismos del principio, por el mismo `z-index` de arriba.
-  */
-  check(
-    "**una pulsacion en el fondo llega a la hoja que entra, y su panel se puede pulsar**",
-    (relevo.fondoTrasLaLlegada ?? []).length <= 2 &&
-      (relevo.fondoMaloPos ?? []).every((i) => i < 3) &&
-      (relevo.centroMaloPos ?? []).every((i) => i < 3),
-    `fondo de mas arriba tras la llegada: ${JSON.stringify(relevo.fondoTrasLaLlegada)} | ` +
-      `fotogramas con el fondo de la hoja que se va: ${(relevo.fondoMaloT ?? []).length}` +
-      `${(relevo.fondoMaloT ?? []).length ? ` (en el ${(relevo.fondoMaloT ?? []).join(", ")} ms, y la ventana empieza en el ${relevo.ventana.desde} ms; posiciones ${JSON.stringify(relevo.fondoMaloPos)} de ${relevo.ventana.fotogramas})` : ""} | ` +
-      `fotogramas con el centro del panel que entra debajo de otro: ${relevo.centroMalo}` +
-      `${relevo.centroMalo ? ` (posiciones ${JSON.stringify(relevo.centroMaloPos)} de ${relevo.ventana.fotogramas})` : ""} | ` +
-      `orden al final: ${relevo.ordenFinal}`,
-  );
-
-  /*
-    **La subida del panel que entra, en pixeles y en los quince fotogramas de la
-    ventana. Esta comprobacion existe porque el numero se afirmaba y no se
-    imprimia.**
-
-    Dos rondas el comentario de este bloque y el de `onEditTask` de
-    `state-picker-sheet.tsx` dijeron que "el panel que entra todavia esta al 91% de
-    su altura hacia abajo", y ese 91% **no salia de ninguna comprobacion**: el
-    muestreo guardaba `subidaTarea` (`INSTALAR_MUESTREO`), el resumen lo llevaba a
-    `subidaTareaMax` y `subidaTareaFin`, y ningun `check()` lo imprimia. Un numero
-    que solo existe en el resumen es un numero que nadie mira.
-
-    **Y el 91% tampoco sale del codigo.** `sheet.tsx:126` anima `entrada` a 1 en
-    `DURACION` = 180 ms con `Easing.out(Easing.cubic)`, asi que a los 16 ms vale
-    `1 - (1 - 16/180)³` = 0.244 y no 0.09 — el 0.09 corresponde a unos 5.5 ms. Y
-    `sheet.tsx:290` multiplica por `altoPanel.value`, que **es 0 hasta el primer
-    `onLayout`** (lo dice el comentario de `sheet.tsx:287-288`), de modo que en el
-    fotograma de llegada la subida puede ser exactamente 0: el panel en su sitio,
-    al reves de "91% por debajo".
-
-    Lo que se comprueba no es la forma de la subida —esa la cuenta del `Easing`, y
-    no vale como medida— sino dos cosas que si valen: que **todos** los fotogramas
-    de la ventana traigan un numero (si alguno saliera `sin panel`, el resumen
-    estaria describiendo un panel que no estaba) y que la subida **no pase del alto
-    del panel**, que es lo que sale de `sheet.tsx:290` con los dos factores en
-    [0, 1]. Los numeros enteros van en la linea del `ok`.
-  */
-  const subidas = relevo.subidasEnLaVentana ?? [];
-  const conNumero = subidas.filter((s) => !s.includes("sin panel"));
-  check(
-    "**la subida del panel que entra sale medida en cada fotograma de la ventana**",
-    subidas.length === (relevo.ventana.fotogramas ?? -1) &&
-      conNumero.length === subidas.length &&
-      relevo.altoTareaEnLaVentana != null &&
-      (relevo.subidaTareaMax ?? Infinity) <= relevo.altoTareaEnLaVentana,
-    `subida, fotograma a fotograma: ${subidas.join(", ")} | alta del panel que entra: ` +
-      `${relevo.altoTareaEnLaVentana} px | subida maxima: ${relevo.subidaTareaMax} px | ` +
-      `subida al final: ${relevo.subidaTareaFin} px`,
-  );
-  /*
-    **El panel se cierra por el boton de la `X`, con el mismo toque que el resto del
-    recorrido** y no con un `click` sintetico. `sheet.tsx` pone ese boton como un
-    `Pressable` con `accessibilityRole="button"`, y react-native-web lo pinta como
-    un `<div role="button">` con manejadores de puntero: un `MouseEvent('click')`
-    a pelo depende de que el navegador sintetice los de compatibilidad y es
-    exactamente el atajo que el comentario de `tap` dice que no funciona. Se toca
-    por coordenadas con `Input.dispatchTouchEvent`.
-
-    **Se busca por su etiqueta y no por "el primer boton del panel".** La `X` de
-    `sheet.tsx` es un `Pressable` con `accessibilityLabel={t("common.close")}`, y esa
-    etiqueta es lo unico que la distingue: la pagina de edicion tiene cuatro
-    prioridades pulsables y un boton por etiqueta, todos con `role="button"`, asi que
-    "el primero" seria el que saliera por orden del DOM.
-
-    **La frase se lee del pulsable de fuera y no esta escrita aqui.** Ese pulsable y el
-    boton de la `X` llevan la misma etiqueta, y el pulsable esta **fuera** del panel
-    —es su hermano en el `root` de `Sheet`—, asi que tomarla de ahi la deja en el
-    idioma que tenga la sesion y no en el que el fichero asumia. Es el hermano
-    **siguiente** al `sheet-dim` porque ese es el orden del fuente; un "primer
-    `aria-label` que diga cerrar" en la pagina es "Cerrar el menú" de la cabecera, y
-    eso es exactamente lo que fallo en la primera corrida.
-  */
-  const botonDeCerrar = await tab.evaluate(`(() => {
-    const panel = [...document.querySelectorAll('[data-testid="sheet-panel"]')]
-      .find((p) => p.querySelector('[data-testid="item-name"]'));
-    if (!panel) return { error: 'no hay panel con item-name' };
-    // **La frase se lee del fondo pulsable, que es el hermano siguiente al
-    // \`sheet-dim\`**, y no de cualquier \`aria-label\` que diga "cerrar": en una
-    // pantalla de listas hay media docena ("Cerrar el menú" entre ellas) y el
-    // primero que aparece no es el de la hoja. La posicion es la de \`sheet.tsx\`:
-    // dim, pulsable de fuera, panel.
-    const dim = document.querySelector('[data-testid="sheet-dim"]');
-    const frase = dim?.nextElementSibling?.getAttribute('aria-label');
-    if (!frase) return { error: 'el pulsable de fuera no tiene aria-label' };
-    const botones = [...panel.querySelectorAll('[aria-label="' + frase + '"]')];
-    if (botones.length !== 1) return { error: 'botones con "' + frase + '" dentro del panel: ' + botones.length };
-    const r = botones[0].getBoundingClientRect();
-    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-  })()`);
-  if (botonDeCerrar.error) {
-    check("el panel de la tarea se cierra con su boton", false, botonDeCerrar.error);
-  } else {
-    await tab.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [{ x: botonDeCerrar.x, y: botonDeCerrar.y, radiusX: 8, radiusY: 8, force: 1 }],
-    });
-    await sleep(80);
-    await tab.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  }
-  const panelFuera = await esperarTareaCerrada(tab);
-  check(
-    "**y el panel de la tarea se cierra con su boton, y la hoja de estado se fue con el**",
-    panelFuera.sigue === false && (await tab.evaluate(LEER_HOJA)) === null,
-    `${panelFuera.detalle} — hoja de estado: ${
-      (await tab.evaluate(LEER_HOJA)) === null ? "cerrada tambien" : "SIGUE ABIERTA"
-    }`,
-  );
-
   /* --- 2. Elegir la columna en la que ya esta: no encola nada --- */
 
   const desde1 = Date.now();
-  await tapTarjeta(tab, porTitulo.get("Ready-1").id);
-  await sleep(300);
+  await abrirHoja(tab, porTitulo.get("Ready-1").id);
   await tap(tab, `state-picker-row-${ESTADOS[1].id}`);
   /*
     **Esperar a que se cierre, y no suponer que ya se ha cerrado.**
@@ -1591,8 +1057,7 @@ try {
 
   vaciarPushes();
   const desde2 = Date.now();
-  await tapTarjeta(tab, porTitulo.get("Ready-1").id);
-  await sleep(450);
+  await abrirHoja(tab, porTitulo.get("Ready-1").id);
   await tab.screenshot(`${SHOTS}/03-hoja-para-mover.png`);
   await tap(tab, `state-picker-row-${ESTADOS[3].id}`);
   await sleep(ESPERA);
@@ -1634,9 +1099,7 @@ try {
 
   /* --- 4. «+ Nuevo estado...»: crea la columna y la tarjeta cae dentro --- */
 
-  await tapTarjeta(tab, porTitulo.get("WIP-1").id);
-  await sleep(450);
-  hoja = await tab.evaluate(LEER_HOJA);
+  hoja = await abrirHoja(tab, porTitulo.get("WIP-1").id);
   check("la hoja se abre sobre otra tarjeta", hoja?.filas?.length === 5);
   await tab.screenshot(`${SHOTS}/05-hoja-para-nuevo-estado.png`);
 
@@ -1783,9 +1246,7 @@ try {
   await tab.screenshot(`${SHOTS}/08-tablero-con-24.png`);
 
   if (tablero?.columnas?.length === 24) {
-    await tapTarjeta(tab, porTitulo.get("Backlog-1").id);
-    await sleep(500);
-    hoja = await tab.evaluate(LEER_HOJA);
+    hoja = await abrirHoja(tab, porTitulo.get("Backlog-1").id);
     check("la hoja se abre con 24 estados", hoja?.filas?.length === 24, `filas: ${hoja?.filas?.length}`);
     check(
       "el boton de nuevo estado sale APAGADO",
@@ -1872,9 +1333,7 @@ try {
   if (!enPantalla) throw new Error("no hay ninguna tarjeta en el tablero para la pasada en oscuro");
   note(`pasada en oscuro sobre la tarjeta "${enPantalla}"`);
   const idEnOscuro = TAREAS.find((t) => t.title === enPantalla)?.id ?? enPantalla;
-  await tapTarjeta(tab, idEnOscuro);
-  await sleep(600);
-  const oscuro = await tab.evaluate(LEER_HOJA);
+  const oscuro = await abrirHoja(tab, idEnOscuro);
   check("la hoja se abre tambien en oscuro", oscuro?.filas?.length === 24, `filas: ${oscuro?.filas?.length}`);
 
   /*
@@ -1932,75 +1391,12 @@ try {
   await tab.screenshot(`${SHOTS}/11-hoja-oscuro.png`);
 
 /*
-    **El relevo tambien en oscuro, y aqui el velo es el que mas se mueve.**
+  /* --- El relevo en oscuro: eliminado con el de claro en el lote 1B --- */
 
-    El velo del tema oscuro es `rgba(2, 4, 10, 0.76)` (`tokens.ts`), y dos velos de 0.76
-    llegaron a valer **0.942** en la mutacion que quita el desvanecido del saliente —esa
-    cifra esta medida, en esa mutacion—. Sin ella el compuesto sale **entre 0.765 y 0.886**
-    en las diecinueve corridas completas de la ronda 3, porque el velo que entra dura 150 ms y cuando el
-    compuesto llega a su maximo el de la hoja que se va ya va por debajo: de un 1% a un
-    17% por encima del token. **El techo de la comprobacion es 1.20 y no el 1.15 de la ronda
-    2**, porque el pico de 0.886 —un 16.6%— se paso de 0.874 y hizo caer la comprobacion en
-    una corrida; el detalle esta en el comentario de la comprobacion del velo en claro, que
-    es donde vive `techoVelo`. Que el techo sea **relativo al token** y no absoluto es justo
-    por el maximo que se acaba de medir: la misma regla sirve para las dos pasadas y compara
-    cada una con su propio tema.
-
-    **La fila hay que verla antes de tocarla, y no es un detalle del guion**: con 24
-    columnas las dos puertas quedan bajo el pliegue del panel —`maxHeightRatio` es 0.85
-    y el cuerpo es un `ScrollView`—, asi que el centro de la fila cae fuera de la
-    pantalla y el toque no llega a nada. `verPrimero` la deja en pantalla con
-    `scrollIntoView`, que en react-native-web es un desplazamiento de verdad porque el
-    `ScrollView` es un `div` con `overflow`.
-
-    Las dos comprobaciones son las de la pasada en clara con los mismos topes: dos hojas y
-    no mas, ventana corta, y **el fondo ajeno solo al principio de la ventana** —los del
-    primer `useEffect` de `ModalAnimation`, que esta explicado alli y no se repite—. Ese
-    tope cambio de forma en la ronda 3: era "un fotograma malo" y hay corridas en las que
-    salen dos, asi que ahora se cuenta **por posicion dentro de la ventana** y se pide que
-    no llegue a la tercera.
+  /*
+    Media la ventana hoja-de-estado -> panel-de-la-tarea en oscuro, con los mismos
+    topes que en claro. El flujo ya no existe y se fue con el bloque 1c.
   */
-  const veloEnOscuro = await tab.evaluate(LEER_VELO);
-  if (veloEnOscuro.alfa == null) {
-    note(
-      `en oscuro el velo del tema tampoco se ha podido leer (${veloEnOscuro.color}): la ` +
-        "comprobacion de velo de abajo va a fallar por falta de techo, no por el velo.",
-    );
-  }
-  await verPrimero(tab, "state-picker-edit-task");
-  const relevoOscuro = await medirReleve(tab, "state-picker-edit-task", "relevo-oscuro");
-  check(
-    "**y en oscuro la ventana del relevo son dos hojas, y el fondo ajeno solo al principio**",
-    (relevoOscuro.maxDims ?? 9) === 2 && (relevoOscuro.maxPaneles ?? 9) === 2 &&
-      (relevoOscuro.ventana.ms ?? 0) > 0 && (relevoOscuro.ventana.ms ?? 0) <= 400 &&
-      (relevoOscuro.centroMaloPos ?? []).every((i) => i < 3) &&
-      (relevoOscuro.fondoMaloPos ?? []).every((i) => i < 3),
-    `ventana de dos hojas: ${relevoOscuro.ventana.ms} ms (${relevoOscuro.ventana.fotogramas} ` +
-      `fotogramas) | maximo de sheet-dim: ${relevoOscuro.maxDims}, de sheet-panel: ` +
-      `${relevoOscuro.maxPaneles} | fondo de mas arriba: ` +
-      `${JSON.stringify(relevoOscuro.fondoTrasLaLlegada)} | fotogramas con el fondo de la hoja ` +
-      `que se va: ${(relevoOscuro.fondoMaloT ?? []).length}` +
-      `${(relevoOscuro.fondoMaloT ?? []).length ? ` (en el ${(relevoOscuro.fondoMaloT ?? []).join(", ")} ms, y la ventana empieza en el ${relevoOscuro.ventana.desde} ms; posiciones ${JSON.stringify(relevoOscuro.fondoMaloPos)} de ${relevoOscuro.ventana.fotogramas})` : ""} | ` +
-      `fotogramas con el centro del panel que entra ` +
-      `debajo de otro: ${relevoOscuro.centroMalo} (posiciones ` +
-      `${JSON.stringify(relevoOscuro.centroMaloPos)}) | fotogramas con panel sin velo: ` +
-      `${relevoOscuro.sinVelo}`,
-  );
-  check(
-    "**y en oscuro el velo tampoco se pasa de un 20% por encima del del tema**",
-    (relevoOscuro.picoVelo ?? 1) <= techoVelo(veloEnOscuro?.alfa) &&
-      veloEnOscuro?.alfa != null &&
-      (relevoOscuro.sinAlfa ?? 0) === 0,
-    `pico del velo compuesto: ${relevoOscuro.picoVelo} en el fotograma de ` +
-      `${relevoOscuro.picoEn} ms (capas: ${relevoOscuro.velosDelPico}) | el tema escribe ` +
-      `${veloEnOscuro?.color} y el techo es ${
-        techoVelo(veloEnOscuro?.alfa) ?? "n/d (sin alfa legible: la comprobacion no puede pasar)"
-      } | fotogramas con un velo sin alfa legible: ${relevoOscuro.sinAlfa} | el pico ` +
-      `dentro de la ventana: ${relevoOscuro.picoVeloEnLaVentana} ` +
-      `(${relevoOscuro.velosDelPicoDeLaVentana})`,
-  );
-
-
   /*
     **El filtro es estrecho a proposito, y lo que estaba ahi antes tapaba justo lo
     que este recorrido necesita.**

@@ -33,21 +33,21 @@ export interface StatePickerSheetProps {
   /** Create a column **and** move the task into it. One tap, two writes. */
   onCreate: (title: string) => void;
   /**
-   * Opens the panel of **this** task, and it is a separate prop from
-   * `onEditStates` because they are two different editors: one is about the task
-   * (name, description, urgency, labels, icon) and the other is about the board's
-   * columns.
+   * Choose a column for a row that does not exist yet, **`null` when the sheet
+   * is choosing for a row that does.**
    *
-   * **And it is here at all because the card's own press is this sheet.** The spec's
-   * sentence is *"Tocar la tarjeta abre la hoja de estado"* ("Mover de estado"), so a
-   * tap on a board card opens this panel and not the task panel — and the only other
-   * target on a card is the icon, which `TaskRow` draws **only when the task has
-   * one** (`item.icon ? … : null`), and `icon` is `null` for every task created in
-   * the app. So without this link the description, the urgency and the labels of an
-   * icon-less board task have no route at all, and the spec says the description
-   * *"vive en la hoja de edición"*: it would live nowhere.
+   * A row being written has no id for the screen's `cambiandoEstado` to hold, so
+   * "the sheet is open" cannot be said with the task: it is said with this. The
+   * screen sets it while its create panel is open and clears it after, and the
+   * choice lands back in the panel instead of on the store — there is no row to
+   * write it to until the row is created.
+   *
+   * **`stateId` is the choice so far and not a default.** `null` is "nobody has
+   * chosen", which `stateOf` reads as the first column — the same answer the row
+   * will get if it is created without touching anything — so the highlight is the
+   * outcome rather than a guess.
    */
-  onEditTask: () => void;
+  draft?: { stateId: string | null } | null;
   /** Opens the editor that renames, colours, reorders and deletes columns. */
   onEditStates: () => void;
   onClose: () => void;
@@ -78,13 +78,32 @@ export function StatePickerSheet({
   readOnly,
   onPick,
   onCreate,
-  onEditTask,
+  draft = null,
   onEditStates,
   onClose,
 }: StatePickerSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
   const tarea = useLastValue(pedido);
+  const borradorVisto = useLastValue(draft);
+
+  /**
+   * Which of the two things this sheet is open for, **frozen while it closes.**
+   *
+   * A string and not two booleans because the answer has three values — a row, a
+   * row being written, and closed — and two booleans can say all four. It is the
+   * frozen one that is read and not the live props for the same reason `tarea`
+   * is: the sheet takes 330 ms to travel down (`sheet.tsx:230`), and a mode read
+   * off the live props flips to "closed" in the frame the dismissal is asked
+   * for, which moves the title and the highlight while the panel is leaving.
+   *
+   * The live props still decide **whether** it is open (`abierto` below): what is
+   * frozen is only what it draws.
+   */
+  const modo = useLastValue(
+    draft != null ? "borrador" : pedido !== null ? "fila" : null,
+  );
+  const esBorrador = modo === "borrador";
 
   /**
    * The column the task is drawn in, **and it is `stateOf` and not
@@ -93,20 +112,29 @@ export function StatePickerSheet({
    * the first column, so comparing the raw value marks the wrong row and leaves the
    * row that is really in the first column unmarked. Same rule, same reason, and it
    * is the reason `board.ts` never compares `stateId` against a column id.
+   *
+   * In draft mode there is no task, so the choice so far is read instead — `null`
+   * for "nobody has chosen", which `stateOf` answers with the first column, the
+   * same place the row will land if it is created untouched.
    */
-  const actual = stateOf(states, tarea?.stateId ?? null)?.id ?? null;
+  const actual =
+    stateOf(states, esBorrador ? (borradorVisto?.stateId ?? null) : (tarea?.stateId ?? null))?.id ?? null;
 
   /** Whether the board is at the cap, which is `MAX_BOARD_STATES` and not a number of our own. */
   const alTope = states.length >= MAX_BOARD_STATES;
 
   /**
-   * Whether the sheet is open, **asked of the caller's argument and not of
+   * Whether the sheet is open, **asked of the caller's arguments and not of
    * `tarea`.** This is the edge everything about mounting hangs off, and the two
    * are not the same value: `tarea` is frozen while the sheet is closed, on
    * purpose, so that it keeps drawing the task it was showing while it travels
    * down the screen.
+   *
+   * Either argument opens it — a row, or a row being written — because "open"
+   * and "what for" are the live props' two jobs, and the frozen half (`modo`
+   * above) only decides what is drawn.
    */
-  const abierto = pedido !== null;
+  const abierto = pedido !== null || draft != null;
 
   /** Whether the field for a new column is open, and what has been typed in it. */
   const [escribiendo, setEscribiendo] = useState(false);
@@ -182,13 +210,18 @@ export function StatePickerSheet({
     very first render where the answer is different.
   */
   if (readOnly) return null;
-  if (!tarea) return null;
+  /*
+    **Closed is `modo`, not "no task".** A sheet choosing for a row being written
+    has no task by definition, so asking `tarea` here would close it in the frame
+    it was asked to open.
+  */
+  if (modo === null) return null;
 
   return (
     <Sheet
       visible={abierto}
       onClose={onClose}
-      title={tarea.title}
+      title={esBorrador ? t("itemEdit.state") : (tarea?.title ?? "")}
       subtitle={t("board.move")}
       scrollable
     >
@@ -289,25 +322,14 @@ export function StatePickerSheet({
       </View>
 
       {/*
-        **Two doors, and both of them underneath and not instead**: this panel
-        answers "which column", the task's own panel answers "what this task is" and
-        the states editor answers "what columns are there". A board at the cap has no
-        way to add one from here, so the door to rearranging them has to be on the
-        sheet somebody opens when they want to move a card — and the door to the
-        description has to be there too, because **this sheet is what a tap on a card
-        opens** and a card has no other target unless it has an icon.
-
-        **Neither is a second sheet**: two panels on one screen are two backdrops,
-        and a press that reaches the wrong one closes what is under it instead of
-        doing what was asked. That is the argument in `list-menu-sheet.tsx` for making
-        share, rename and delete pages of one panel.
-
-        **Both close this one on the way out**, in the order `exportar` there uses:
-        the panel leaves and the next thing arrives behind it. **What that leaves on
-        screen was measured, not assumed** — 220-241 ms in 15-16 of 22-44 sampled
-        frames with two `sheet-dim` and two `sheet-panel` in the document, and the
-        `onEditTask` comment below has the numbers, the mechanism, and what has **not**
-        been measured.
+        **One door, and underneath and not instead**: this panel answers "which
+        column" and the states editor answers "what columns are there". It used
+        to be two — the second one opened the task's own panel — and it stopped
+        being two the day a tap on a card started opening that panel directly:
+        this sheet is now only ever opened from inside it, so the door led back
+        to the room it came from. What is left closes this one on the way out,
+        in the order `exportar` in `list-menu-sheet.tsx` uses: the panel leaves
+        and the next thing arrives behind it.
 
         The task panel is **above** the states editor and not below it: it is about
         the thing the sheet is open for, and the other one is about the board. That
@@ -315,77 +337,6 @@ export function StatePickerSheet({
         measurement.
       */}
       <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
-        {/*
-          The task's own panel, **and this is the door that did not exist.** A tap on
-          a board card opens this sheet — that is the spec's sentence — so the card's
-          only other target, the icon, is the only road to the description, the
-          urgency and the labels, and `TaskRow` draws that icon **only when the task
-          has one** (`item.icon ? … : null`, and `icon` is `null` on every task
-          created in the app). For an icon-less task the road ended here.
-
-          **It is a row of this sheet and not a second target on the card** for the
-          same reason `onEditStates` is not: two panels on one screen are two
-          backdrops, and the second sheet is the list screen's own `ItemEditSheet`,
-          which knows about tags, icon colours and the description field. A card
-          with one more glyph on it would be a control that says "edit" on something
-          whose name and picture live three centimetres away from it.
-
-          **`onEditTask` before `onClose`, and the order is not what decides — the two
-          land in the same commit either way.** What decides is what is on screen during
-          the exit, and **that is measured, not argued**: the outgoing sheet stays
-          mounted for `SALIDA + 90` = 330 ms (`sheet.tsx:230`), so for **220-241 ms, in 15-16
-          of the 22-44 frames sampled, there are two `sheet-dim` and two `sheet-panel` in
-          the document** (`scripts/verify-state-picker.mjs`, block `1c`, which samples
-          from inside the gesture with a `requestAnimationFrame` installed before the
-          press). The frame count is the fixed part; the milliseconds move between runs,
-          because they depend on where each frame lands inside the exit.
-
-          Inside that window the arriving panel is the **last child of `body`** —
-          `ModalPortal` appends one div per modal — so it paints above the outgoing dim
-          and does not read darker for sitting over it. And the topmost element under a
-          backdrop point is the arriving sheet's on every frame **except the first one or
-          two**, where it is the outgoing one: measured 0, 1 or 2 frames, always in the
-          first positions of the window, and the reason is in the library
-          (`ModalAnimation.js:67` paints its wrapper as `{ opacity: 0 }`, with no
-          `position` and no `z-index`, until its `useEffect` sets `isRendering`, while
-          the outgoing modal keeps `visible={montada}` and stays in the `z-index: 9999`
-          layer). **What that costs is not measured, and is not claimed to be**: the
-          outgoing sheet has already been asked to close, so asking twice changes nothing,
-          and there is deliberately no argument here about how far the arriving panel has
-          travelled — a previous version of this comment made one ("still 91% of its
-          height below") and no run ever printed the number behind it. It is printed now,
-          in pixels and frame by frame, in the sixth check of block `1c`.
-
-          **Not measured: native, and a phone-width sheet.** All of it is the web at
-          1440 x 900, where `Sheet` draws a centred dialog.
-
-          The order stays because the alternative costs more, and that argument is made
-          **from the code and not from a table of numbers that were never measured** — a
-          table like that shipped in round 2 and was deleted in round 3, along with the
-          sentence that headed it. `fondo` starts at 0 (`sheet.tsx:105`) and takes 150 ms
-          to reach 1 (`sheet.tsx:130`), so at the moment of the handover the arriving
-          veil is worth 0: **any** change that removes a veil leaves the composite at the
-          other veil's value, and at that instant that is 0 — a background with no dim at
-          all, and for longer than the 1-17% peak this keeps — the measured range, and the
-          top of it is the run whose compositing frame landed mid-fade on both veils.
-          Cutting the
-          outgoing sheet also takes the 240 ms of panel travel (`SALIDA`) with it. What is
-          left is the background going from 0.62 to 0.63-0.71 for about 100 ms.
-
-          The screen reads the task out of its own state —not out of the `item` this
-          sheet was handed— and it does it in the same commit, so it still has it.
-        */}
-        <Button
-          testID="state-picker-edit-task"
-          label={t("board.editTask")}
-          variant="ghost"
-          icon="create-outline"
-          fullWidth
-          onPress={() => {
-            onEditTask();
-            onClose();
-          }}
-        />
         <Button
           testID="state-picker-edit"
           label={t("board.editStates")}
