@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 
 import type { ListItem, Priority, TagColors } from "@orbit-hub/contracts";
@@ -59,18 +59,17 @@ export interface ItemEditSheetProps {
    * It lands on the list and not on the task, which is why the signature has no
    * task in it: one write recolours every row that carries the label.
    *
-   * **It may hand back the write, and this panel waits for it** — hence
+   * **It may hand back the write, and this panel does not wait for it** — hence
    * `void | Promise<void>`, so a caller with nothing to wait for can ignore it.
    * The chosen colour arrives at `tagColors` only after the store has been
-   * written and read back, so a picker that closed on the tap had nothing on
-   * screen to show for it: the tap read as one that did nothing, and the button's
-   * own words ("now Red") were a round trip out of date. The picker therefore
-   * waits for the write and closes with it, in the same render that repaints the
-   * pill.
+   * written and read back, so the pill is painted from the sheet's optimistic
+   * map in the meantime (see `coloresVistos`): the tap reads as answered in the
+   * frame that answered it, and the picker stays open so more colours can be
+   * tried. Closing is the person's own press, not the write's.
    *
-   * **Two doors in this panel call it and one guard covers both**: a colour chosen
+   * **Two doors in this panel call it and one chain orders both**: a colour chosen
    * for a label the task carries (`pickColor`) and a colour chosen for a label that
-   * is about to exist (`addTag`). See `guardando` for why that matters.
+   * is about to exist (`addTag`). See `colaDeColores` for why that matters.
    */
   onTagColor: (tag: string, color: string | null) => void | Promise<void>;
   onClose: () => void;
@@ -216,22 +215,39 @@ export function ItemEditSheet({
   const coloresPintados: TagColors = { ...colores };
   if (vistaPrevia && vistaPrevia.tag === colorDe) coloresPintados[vistaPrevia.tag] = vistaPrevia.hex;
   /*
-   * Whether a colour is being written right now, and **one write at a time**.
+   * The colour writes in flight, in order, and **every tap gets its write**.
    *
-   * It exists because the picker waits for the write it started (see
-   * `onTagColor`), and a picker that is waiting is a picker that can be tapped
-   * again: two taps inside one write would plan both from the same captured
-   * `list` and the second would eat the first. Closing the picker on the tap was
-   * what stopped that before; the guard replaces the closing as the thing that
-   * stops it.
+   * The picker stays open while colours are chosen, so a second tap can arrive
+   * while the first write has not finished —two quick taps on two swatches, or a
+   * tap and a label created with a colour right after. Dropping the second tap
+   * would leave the pill showing a colour the finger never chose, and running
+   * both at once would plan both from the same map and let the second eat the
+   * first. So each write waits for the one before it: the chain is the order the
+   * taps arrived in, and each write plans from the store fresh (see
+   * `setTagColor`), which by then includes everything already written.
    *
-   * **And it is checked by the other door too, as its first statement.** Adding a
-   * label *with* a colour is also two colour-bearing writes in a row, so `addTag` asks
-   * the same question before it has touched anything; see there for why those two
-   * writes are of different entities and only the colours need guarding, and for why
-   * the check has to come first rather than after the two clears.
+   * A write that throws does not break the chain: the `catch` keeps a slot that
+   * only ever resolves, so the tap after a failed one still writes. Nothing in
+   * this app reports a failed write —there is no error path to report it
+   * on— and the pill keeps showing the optimistic colour either way, which the
+   * next successful write then confirms or the next tap replaces.
    */
-  const [guardando, setGuardando] = useState(false);
+  const colaDeColores = useRef<Promise<void>>(Promise.resolve());
+  /**
+   * Runs `escribir` after every write already queued, and queues it.
+   *
+   * Fire-and-forget on purpose: no caller waits for a colour write, and the
+   * queued slot never rejects, so there is nothing to `void` and nothing
+   * unhandled. The only thing that matters is that the writes run in tap order.
+   * (`colaDeColores` and not `cadena`: that name is already the focus chain of
+   * the form fields two screens above.)
+   */
+  const encolarColor = (escribir: () => Promise<void>): void => {
+    colaDeColores.current = colaDeColores.current.then(escribir).then(
+      () => undefined,
+      () => undefined,
+    );
+  };
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
   /*
@@ -402,27 +418,35 @@ export function ItemEditSheet({
    * no row carries and the server would have to decide whether to keep it.
    *
    * **`onTagColor` and not `setTagColor`,** and not because it is tidier: this sheet
-   * receives `listId` and `tagColors`, not the list, and the list is the thing the
-   * colour is planned from. The parent holds it and hands the write down, and the
+   * receives `listId` and `tagColors`, not the list, and the colour write plans
+   * from the cached list. The parent holds the write and hands it down, and the
    * `pickColor` below already writes through the same prop for the same reason.
    *
-   * **The guard is checked here too, and this is the reason the guard exists.**
-   * `setTagColor` plans from the `list` its caller captured, so two colour writes
-   * inside one would both plan from the same map and the second would eat the first
-   * without either of them finding out. A label with a colour is exactly that: two
-   * writes in a row. So `guardando` is one flag for both doors.
+   * **Queued behind the other colour writes, and this is why the queue exists.**
+   * Adding a label with a colour is two writes in a row, and a swatch tap on an
+   * open picker can land right before it: without ordering, the two would plan
+   * from the same map and the second would eat the first without either of them
+   * finding out. `encolarColor` runs them in tap order, and each one plans from
+   * the store fresh, so by the time this one plans, the tap's colour is already
+   * in the map it reads.
    *
-   * **And it is the first thing checked, which is what makes it the same door as
-   * `pickColor`.** There it was `if (guardando) return;` as the very first statement
-   * —a total no-op that costs the tap and nothing else— and here it sat *after* the two
-   * clears and after the `save`, so a tap that arrived while `pickColor` was writing
-   * put the label on the task with no colour, dropped the pending colour with the name,
-   * and had nothing left to restore it from: `pendiente` had never been in
-   * `tagColors`. **The data loss was a consequence of the order, not of the guard**,
-   * and moving the check above the clears makes the two doors the same shape. What is
-   * left is an ignored tap —the name stays, the colour stays, and the person can press
-   * again a moment later— instead of a label written without its colour and no trace of
-   * the colour anywhere.
+   * **And the checks come before the clears, which is what keeps this from losing
+   * colour.** The duplicate check and the read of `pendiente` sit above the two
+   * clears, so a tap that arrives for a name already on the task leaves the name
+   * and the colour where they were instead of clearing both and writing a label
+   * with no colour and no trace of the colour anywhere. What used to guard the
+   * writes was a flag (`guardando`) that dropped the tap; the queue replaced the
+   * dropping as the thing that keeps two writes from colliding, so no tap is lost
+   * and the order of the checks is all that is left to protect.
+   *
+   * **And the checks are the first thing, which is what keeps a tap from losing
+   * colour.** They sat *after* the two clears and after the `save` once, so a tap
+   * for a name already on the task put the label on with no colour, dropped the
+   * pending colour with the name, and had nothing left to restore it from:
+   * `pendiente` had never been in `tagColors`. **The data loss was a consequence
+   * of the order**, and moving the checks above the clears is what fixes it. What
+   * is left is a no-op tap —the name stays, the colour stays— instead of a label
+   * written without its colour and no trace of the colour anywhere.
    *
    * **The duplicate check sits here for the same reason, and it is not new.** A name
    * already on this task is not a new label, so nothing is written; what used to happen
@@ -436,7 +460,6 @@ export function ItemEditSheet({
   const addTag = async () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
-    if (guardando) return;
     if (shown.tags.includes(trimmed)) return;
 
     // Read into a local before the name is cleared, because clearing the name is what
@@ -453,12 +476,11 @@ export function ItemEditSheet({
     // which is a colour like any other and not a missing one, and nothing is written
     // to `tagColors` for it.
     if (!color) return;
-    setGuardando(true);
-    try {
-      await onTagColor(trimmed, color);
-    } finally {
-      setGuardando(false);
-    }
+    // Queued and not awaited, like every other colour write: the picker that chose
+    // it is the always-visible one, which never closes, so there is nothing to wait
+    // for — and the chain (`encolarColor`) is what keeps this write ordered against
+    // a swatch tap that landed a moment earlier.
+    encolarColor(() => Promise.resolve().then(() => onTagColor(trimmed, color)));
   };
 
   /*
@@ -510,7 +532,7 @@ export function ItemEditSheet({
 
   /**
    * A tap on one swatch of a label the task already carries: one write, and the
-   * picker closes **after** it.
+   * picker stays open.
    *
    * `option` is **a hex and not a name from the twelve any more**, because
    * `TagColorPicker` hands back whatever was chosen and a free colour is not in
@@ -519,49 +541,35 @@ export function ItemEditSheet({
    *
    * Two things are happening here and both were measured, not chosen:
    *
-   * - **The await.** `tagColors` is what the pills are painted from, and it only
-   *   moves once the store has been written and read back, so a picker that closed
-   *   on the tap left that tap with nothing on screen: the picker disappearing was
-   *   the whole of it, and the colour landed some milliseconds later with nothing
-   *   to connect the two. Awaiting means the picker unmounts in the **same commit**
-   *   that repaints the pill —the hook's `setLists` and the two state changes
-   *   below are queued in one batch and React 18 flushes them in one pass— so the
-   *   tap has its consequence in the frame that answered it, and the button's
-   *   "now Red" is true when it is last read.
+   * - **The optimistic paint.** `tagColors` only moves once the store has been
+   *   written and read back, so the pill is painted from `coloresVistos` in the
+   *   meantime: setting the override is synchronous, so the same commit that
+   *   starts the write already paints the new colour. React 18 flushes the state
+   *   changes in one pass, so the tap has its consequence in the frame that
+   *   answered it.
    *
-   *   What that does **not** give is the chosen swatch sitting there ringed for an
-   *   extra frame: React never renders between the write and the close, and making
-   *   it render would mean awaiting a frame after the write, which buys nothing an
-   *   eye can see. A ring on the tap itself would mean optimising the colour into
-   *   local state first, which is what `icon-picker.tsx` does with its own swatches
-   *   and is deliberately not done here: this ring is read back from the store, and
-   *   a ring that is not what the store says is a lie while it is on screen.
-   * - **The guard.** That open picker is a second tap away, and `setTagColor`
-   *   plans from the `list` its caller captured: two taps inside one write would
-   *   both plan from the same map and the second would silently eat the first.
-   *   `guardando` is what keeps it to one write. The write is a local one, so
-   *   this is milliseconds; nothing in this app reports a failed write, and the
-   *   `finally` closes the picker either way, so a write that throws cannot leave
-   *   the panel stuck open.
+   * - **No closing.** The picker used to close in the write's `finally`, and
+   *   closing revealed the new-label form underneath —tapping a colour read as
+   *   being thrown out of editing and into creating a new label. Now choosing a
+   *   colour is trying it: the pill follows every tap (and every drag, through
+   *   the preview), and the picker closes only on an explicit press, the pencil
+   *   or "close".
+   *
+   * - **The chain.** That open picker is a second tap away, and a tap that
+   *   arrived while a write was in flight used to be dropped by a guard —a pill
+   *   showing a colour the finger never chose. Now every tap paints at once and
+   *   queues its write behind the ones before it (`encolarColor`), and each
+   *   write plans from the store fresh, so two quick taps land in tap order and
+   *   neither eats the other.
    */
-  const pickColor = async (tag: string, option: string | null) => {
-    if (guardando) return;
+  const pickColor = (tag: string, option: string | null) => {
     // Paint it now: the store answers later, and the pill should not wait.
     // `option` is already normalised by the picker's single door (`escribir`),
     // so what goes in the override is exactly what the write carries —including
     // `null`, which is stored and not removed, because `tagColors` still holds
     // the old colour until the store answers (see `coloresVistos` above).
     setColoresVistos((previos) => (previos[tag] === option ? previos : { ...previos, [tag]: option }));
-    setGuardando(true);
-    try {
-      await onTagColor(tag, option);
-    } finally {
-      setGuardando(false);
-      // Only closes its own picker: the write takes long enough for somebody to
-      // open another label's colours, and closing that one instead would be a
-      // picker that opened and vanished on its own.
-      setColorDe((current) => (current === tag ? null : current));
-    }
+    encolarColor(() => Promise.resolve().then(() => onTagColor(tag, option)));
   };
 
   /** Writes the row for the first time, with everything the panel was given. */

@@ -808,16 +808,17 @@ export default function ListScreen() {
         tagColors={list?.tagColors ?? {}}
         onTagColor={(tag, color) =>
           /*
-           * `setTagColor` plans from **this** `list`, and not from the cache it
-           * has just written, so two colour writes before the next render would
-           * both plan from the same map and the second one would quietly eat the
-           * first. The sheet keeps a second tap from arriving while a write is in
-           * flight, so a tap is one write of one label; the promise comes **back**
-           * rather than being dropped with a `void`, because the sheet waits for it
-           * before taking the picker down — a picker unmounted on the tap has
-           * nothing left on screen to show the colour that was just chosen.
+           * `setTagColor` plans from the cache it is about to write, not from
+           * **this** `list`, so two colour writes before the next render plan
+           * from two different maps and the second keeps the first. That is what
+           * lets the sheet keep its picker open while colours are chosen: a tap
+           * is still one write of one label, and the promise comes **back**
+           * rather than being dropped with a `void` — but nothing waits for it
+           * to take the picker down any more. The picker stays, the pill follows
+           * every tap through the sheet's optimistic map, and closing is the
+           * person's own press (the pencil, or "close"), not the write's.
            */
-          list ? setTagColor(list, tag, color) : undefined
+          list ? setTagColor(list.id, tag, color) : undefined
         }
         onClose={() => setEditing(null)}
       />

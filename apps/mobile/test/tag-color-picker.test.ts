@@ -318,52 +318,64 @@ describe("los dos montajes del selector en la hoja", () => {
     expect(deLaEtiquetaNueva[0]).not.toContain("onClose");
   });
 
-  it("el alta de una etiqueta con color pasa por el mismo guard que elegir uno", () => {
-    // `setTagColor` planifica desde la `list` que su llamante capturo, asi que dos
-    // escrituras de color dentro de una se planifican desde el mismo mapa y la
-    // segunda se come la primera. El alta con color son dos escrituras seguidas, asi
-    // que es el caso para el que existe el guard, no un detalle.
+  it("el alta de una etiqueta con color se encola detras de elegir uno", () => {
+    // El alta con color son dos escrituras seguidas, y un toque en un atajo puede
+    // caer justo antes: sin orden, las dos se planificarian desde el mismo mapa y
+    // la segunda se comeria la primera. Por eso el color del alta va por la misma
+    // cadena que `pickColor`, y cada escritura planifica desde el store fresco.
     const addTag = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/);
     expect(addTag).not.toBeNull();
     const cuerpo = addTag?.[1] ?? "";
-    expect(cuerpo).toContain("await onTagColor(trimmed, color);");
+    expect(cuerpo).toContain("encolarColor(() => Promise.resolve().then(() => onTagColor(trimmed, color)));");
+    expect(cuerpo).not.toContain("await onTagColor");
     // Y por la prop y no por el hook: la hoja recibe `listId` y `tagColors`, no la
-    // lista, y la lista es justo de donde se planifica el cambio.
+    // lista, y la escritura vive en quien la tiene.
     expect(hoja).not.toContain("setTagColor");
   });
 
+  it("elegir un color no cierra el selector: solo lo cierra un cierre", () => {
+    // Cerrar al escribir revelaba el formulario de etiqueta nueva y leer eso era
+    // salir de edicion para entrar en creacion. Ahora elegir es probar: la
+    // pastilla sigue cada toque y el selector se queda, y solo el lapiz o
+    // "cerrar" lo quitan. Si `pickColor` volviera a llamar a `setColorDe`, el
+    // arreglo entero se iria con el.
+    const pick = hoja.match(/const pickColor = \([^)]*\) => \{([\s\S]*?)\n  \};/);
+    expect(pick).not.toBeNull();
+    const cuerpoPick = pick?.[1] ?? "";
+    expect(cuerpoPick).toContain("encolarColor(");
+    expect(cuerpoPick).not.toContain("setColorDe");
+    expect(cuerpoPick).not.toContain("guardando");
+  });
+
   /**
-   * **El guard va antes de los dos `set`, y eso es lo que cuesta el perder color.**
+   * **La comprobacion de duplicado va antes de los dos `set`, y eso es lo que
+   * cuesta el perder color.**
    *
-   * Con el guard despues de limpiar, un toque que llega mientras `pickColor` escribe
-   * deja la etiqueta puesta sin color, tira el color pendiente con el nombre, y no
-   * queda nada de donde recuperarlo: `pendiente` nunca estuvo en `tagColors`. La
-   * perdida de datos era **una consecuencia del orden y no del guard**, asi que el
-   * arreglo no es un flag nuevo sino una linea movida.
+   * Con la comprobacion despues de limpiar, un toque para un nombre que ya esta
+   * en la tarea deja la etiqueta puesta sin color, tira el color pendiente con
+   * el nombre, y no queda nada de donde recuperarlo: `pendiente` nunca estuvo en
+   * `tagColors`. La perdida de datos era **una consecuencia del orden**, asi que
+   * lo que se fija es el orden.
    *
-   * Se comprueba **por la posicion y no por la presencia**: `if (guardando) return;`
-   * seguido de `if (shown.tags.includes(trimmed)) return;` seguido de `setNewTag("")`
-   * seguido de `setPendiente(null)`, en ese orden. Un test que solo buscara el texto
-   * seguiria en verde con el guard donde estaba, que es justo el arrangement que
-   * perderia el color.
+   * Se comprueba **por la posicion y no por la presencia**: un test que solo
+   * buscara el texto seguiria en verde con la comprobacion donde estaba, que es
+   * justo el arrangement que perderia el color. Y sin guard que perder: ningun
+   * toque se tira, todos se encolan, asi que no hay "antes de tirar nada" que
+   * fijar.
    */
-  it("el guard y la comprobacion de duplicado van antes de limpiar nada", () => {
+  it("la comprobacion de duplicado va antes de limpiar nada", () => {
     const cuerpo = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "";
-    const guard = cuerpo.indexOf("if (guardando) return;");
     const duplicado = cuerpo.indexOf("if (shown.tags.includes(trimmed)) return;");
     const limpiaNombre = cuerpo.indexOf('setNewTag("")');
     const limpiaColor = cuerpo.indexOf("setPendiente(null)");
     const guarda = cuerpo.indexOf("save({ tags: [...shown.tags, trimmed] });");
-    expect([guard, duplicado, limpiaNombre, limpiaColor, guarda].every((i) => i >= 0)).toBe(true);
+    expect(cuerpo).not.toContain("guardando");
+    expect([duplicado, limpiaNombre, limpiaColor, guarda].every((i) => i >= 0)).toBe(true);
     expect({
-      guardAntesDeLimpiar: guard < limpiaNombre && guard < limpiaColor,
       duplicadoAntesDeLimpiar: duplicado < limpiaNombre && duplicado < limpiaColor,
-      guardAntesDeEscribir: guard < guarda,
       limpiaDespuesDeLeerElColor: cuerpo.indexOf("const color = pendiente;") < limpiaColor,
     }).toEqual({
-      guardAntesDeLimpiar: true,
       duplicadoAntesDeLimpiar: true,
-      guardAntesDeEscribir: true,
       limpiaDespuesDeLeerElColor: true,
     });
   });

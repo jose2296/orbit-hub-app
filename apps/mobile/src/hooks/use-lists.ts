@@ -326,14 +326,27 @@ export function useLists(filters: ListFilters = {}) {
    * Local-first like every other write here — the label repaints from the cache
    * at once and the operation waits in the outbox, so choosing a colour on a
    * train is a colour when the train stops.
+   *
+   * **Planned from the store and not from a captured list, and that is the whole
+   * of this function.** The sheet keeps its colour picker open while colours are
+   * chosen, so two colour writes can be in flight at once —two quick taps, or a
+   * tap and a label created with a colour right after— and planning both from the
+   * same captured map would make the second quietly eat the first. Reading the
+   * cached list at write time means every write plans from everything already
+   * written, no matter how close together the taps were. The `readRecord` merge
+   * is what makes that true: it layers the pending writes over the server's
+   * copy, so "fresh" includes what has not synced yet.
    */
   const setTagColor = useCallback(
-    async (list: List, tag: string, color: string | null) => {
+    async (listId: string, tag: string, color: string | null) => {
+      const store = await getLocalStoreReady();
+      const cached = await store.getCached("list", listId);
+      const fresh = cached ? withListDefaults(readRecord<List>(cached)) : null;
       // `?? {}` because a list that did not come through `withListDefaults`
       // arrives with no `tagColors` key at all, and a list with no colours
       // chosen is a map with nothing in it.
-      await localUpdate("list", list.id, {
-        tagColors: planTagColorChange(list.tagColors ?? {}, tag, color),
+      await localUpdate("list", listId, {
+        tagColors: planTagColorChange(fresh?.tagColors ?? {}, tag, color),
       });
       await load();
     },
