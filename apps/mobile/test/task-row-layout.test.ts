@@ -96,6 +96,7 @@ const verifyTag = readFileSync(
 const checkbox = src('src/components/ui/checkbox.tsx');
 const badge = src('src/components/ui/badge.tsx');
 const listId = src('src/app/(app)/list/[listId].tsx');
+const itemPresentation = src('src/lib/lists/item-presentation.ts');
 const appHeader = src('src/components/ui/app-header.tsx');
 const screen = src('src/components/ui/screen.tsx');
 const spaceBand = src('src/components/workspace/space-band.tsx');
@@ -390,6 +391,29 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
   });
 
   /**
+   * La pastilla de la fila lleva **un poco mas de aire dentro que la del
+   * componente**, y solo la de la fila.
+   *
+   * `TagChip` en `size="compact"` trae `paddingHorizontal: xs` (4), que en la
+   * fila se lee apretado al lado de la insignia. La fila le suma `sm` (8) por
+   * `style` —que el componente aplica el ultimo, asi que gana— y la hoja no lo
+   * lleva: sus pastillas quedan como el componente las dibuja. Medido en el
+   * navegador: 8 px a cada lado en las filas, en los dos temas.
+   */
+  it('la pastilla de la fila suma padding horizontal por style y la hoja no', () => {
+    const soloLaFila = sinComentarios(listId).slice(
+      sinComentarios(listId).indexOf('function TaskRow('),
+    );
+    expect(aperturas(soloLaFila, 'TagChip')[0]).toContain(
+      'paddingHorizontal: theme.spacing.sm',
+    );
+    const hoja = sinComentarios('src/components/lists/item-edit-sheet.tsx');
+    for (const apertura of aperturas(hoja, 'TagChip')) {
+      expect(apertura).not.toContain('paddingHorizontal');
+    }
+  });
+
+  /**
    * La fila es **el unico sitio de la app** que le pasa un toque a una insignia o a
    * una pastilla, y se pregunta a todos los `.tsx` en vez de a los que hoy lo hacen.
    *
@@ -486,6 +510,176 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
     for (const cola of colas) {
       expect(cola.split(',').map((t) => t.trim())).toContain('button');
     }
+  });
+});
+
+describe('la pastilla va en negrita, y por una razon que hay que poder comprobar', () => {
+  /*
+   * **El 600 y no el 500 de `caption` es el peso de una insignia, y es lo que
+   * sostiene la lectura de 12 px a 3:1.** Sin este pin, alguien puede volver a
+   * quitarlo pensando que es cosmetica, y resulta que es lo que hace que una
+   * etiqueta se lea como el texto de color de una insignia de prioridad.
+   *
+   * **Y el pin mira el 600 y no el contraste**, porque el contraste lo mide
+   * `tag-colors.test.ts` sobre la funcion, y aqui lo que se afirma es que el
+   * componente **pasa** el peso. Las dos mitades del acuerdo van en sitios
+   * distintos a proposito: la cuenta en la funcion, la pintura en el componente.
+   */
+  it('el texto de la pastilla se pinta con peso 600', () => {
+    expect(sinComentarios(tagChip)).toMatch(/fontWeight:\s*["']600["']/);
+  });
+
+  /**
+   * Y el otro lado del acuerdo, que es que **el bold no baja el liston**: si
+   * alguien lee "12 px en negrita" y baja `MIN_LABEL_CONTRAST` pensando que WCAG
+   * permite 3:1 para negrita, este test lo dice. WCAG llama texto grande a 18 px, o
+   * a 14 px en negrita; `caption` son 12 px, y en negrita siguen siendo 12.
+   */
+  it('el peso 600 no aparece como motivo para bajar el liston', () => {
+    // El comentario de `TagChip` que explica el 600 tiene que decir que el bold no
+    // cambia el umbral, y decir los dos numeros de WCAG para que quien lo lea no tenga
+    // que buscarlos. Sin esa frase, el 600 se lee como un atajo para 3:1.
+    //
+    // **El comentario va dentro del bloque `fontWeight`, y se lee aqui a proposito:**
+    // `sinComentarios` lo quita de la cuenta, asi que este test mira el codigo limpio
+    // y la frase vive en el sitio donde alguien la va a leer al escribir el peso.
+    const bloque = tagChip.match(/fontWeight:\s*["']600["'][\s\S]*?\*\//);
+    expect(bloque, "el 600 tiene que seguir su explicacion").not.toBeNull();
+    expect(bloque?.[0]).toMatch(/no cambia el list[oó]n/i);
+    expect(bloque?.[0]).toMatch(/18 px/);
+    expect(bloque?.[0]).toMatch(/14 px/);
+  });
+});
+
+describe('los cuatro botones de prioridad se ven distintos entre si', () => {
+  /*
+   * **Estaban los cuatro con el color de acento cuando estaban activos**, asi que se
+   * elegia a ciegas: los cuatro botones salian del mismo color y lo unico que decia
+   * cual estaba elegido era estar pulsado, que se va en cuanto levantas el dedo. Este
+   * pin va sobre el **tono por boton** y no sobre el mapa, porque lo que hay que
+   * proteger es que los cuatro sean distintos, y un mapa correcto pero con dos tonos
+   * iguales pasaria un pin que solo mirase "no es accent".
+   */
+  it('cada prioridad tiene su propio tono, y los cuatro no se repiten', () => {
+    const mapeo = itemPresentation.match(
+      /PRIORITY_TONE[^=]*=[\s\S]*?\};/,
+    )?.[0];
+    expect(mapeo, 'PRIORITY_TONE tiene que existir en item-presentation').toBeDefined();
+    const tonos = [...(mapeo ?? '').matchAll(/:\s*"([a-z]+)"/g)].map((m) => m[1]);
+    expect(tonos).toEqual(['neutral', 'info', 'warning', 'danger']);
+    expect(new Set(tonos).size).toBe(tonos.length);
+  });
+
+  it('el boton de la hoja pinta el tono en vez del acento', () => {
+    // El `accent` de antes era el bug: los cuatro activos salian iguales. Se mira la
+    // hoja limpia de comentarios, y `surfaceMuted` no aparece como relleno de un boton
+    // de prioridad: eso era lo que hacia el inactivo.
+    // La ventana es de 600 caracteres porque `tonesFor` esta unas lineas mas alla
+    // del array de estilos, no dentro: mira el relleno y el texto que salen de ahi.
+    const limpio = sinComentarios(itemEditSheet);
+    const bloque = limpio.match(/PRIORITY_TONE[\s\S]{0,1200}?styles\.priority[\s\S]{0,400}?\]\}/)?.[0];
+    expect(bloque, 'el boton de prioridad tiene que existir').toBeDefined();
+    expect(bloque).not.toMatch(/theme\.colors\.accent\b/);
+    expect(bloque).toMatch(/tonesFor\(/);
+  });
+
+  /**
+   * Y que el mapa **no tenga dos copias**, que es la causa de raiz: estaba dentro de
+   * `[listId].tsx` y el boton de la hoja hacia lo de otra manera. Un pin sobre "el
+   * fichero ya no lo define" vale mas que un pin sobre "el otro fichero lo importa",
+   * porque el segundo pasa mientras alguien tenga el mapa definido en los dos.
+   */
+  it('el mapa vive en un solo sitio y los dos lo importan', () => {
+    expect(sinComentarios(listId)).not.toMatch(/const PRIORITY_TONE/);
+    expect(sinComentarios(listId)).toMatch(/PRIORITY_TONE[,\s}]/);
+    expect(sinComentarios(itemEditSheet)).toMatch(/PRIORITY_TONE/);
+  });
+});
+
+describe('la pagina de etiquetas monta un solo selector a la vez', () => {
+  /*
+   * **Este pin es de un fallo que se vio en pantalla y que ningun test de ahi
+   * cubria.** El selector de la etiqueta nueva estaba montado **sin condicion
+   * alrededor** —`TextField`, selector y boton, siempre—, porque la idea era elegir
+   * el color de una etiqueta que aun no existe sin escribir antes el nombre. La idea
+   * es buena; lo que faltaba era que **no conviviera con el otro selector**: al
+   * pulsar "editar" en una etiqueta que ya existe se veian los dos formularios
+   * enteros a la vez, con dos tiras de tono, dos cuadrados, dos campos de hex y dos
+   * botones de guardar, y nada mas que un nombre para saber cual estabas tocando.
+   *
+   * El pin va sobre la **condicion del selector pendiente**, no sobre un recuento de
+   * `<TagColorPicker>`: un recuento pasa con tres mounts si uno esta bien condicionado,
+   * y lo que importa es que los de edicion y el de la nueva **no puedan coexistir**.
+   */
+  it('el bloque de la etiqueta nueva solo se pinta si no se esta editando una', () => {
+    const limpio = sinComentarios(itemEditSheet);
+    // El selector pendiente va dentro de un `{colorDe === null ? ... : null}`, y lo
+    // que se afirma es que la condicion existe y rodea al bloque entero.
+    const bloque = limpio.match(
+      /colorDe === null \?[\s\S]{0,4000}?<TagColorPicker[\s\S]{0,200}?tag=\{nombreNuevo/,
+    );
+    expect(
+      bloque,
+      'el selector de la etiqueta nueva tiene que estar dentro de una condicion que lo apague al editar',
+    ).not.toBeNull();
+    // Y que la condicion sea de verdad una condicion del render, no un comentario o
+    // un nombre: el `?` tiene que ir detras de `colorDe === null`.
+    expect(limpio).toMatch(/\{colorDe === null \? \(/);
+  });
+
+  it('y al editar una etiqueta, lo que se aparta es el bloque de la nueva, entero', () => {
+    // Solo el selector, o el campo en blanco tambien. Con el campo a la vista y el
+    // selector no, el panel sigue teniendo dos "elige un color" y el que se aparta
+    // tiene que ser el bloque entero, campo incluido.
+    const limpio = sinComentarios(itemEditSheet);
+    const desde = limpio.indexOf('colorDe === null ?');
+    const hasta = limpio.indexOf('nombreNuevo || undefined');
+    const trozo = limpio.slice(desde, hasta);
+    expect(trozo).toMatch(/<TextField/);
+    expect(trozo.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Y que la condicion sea la que ya existe, no una nueva: **`colorDe` es el estado
+   * del selector de edicion**, y el bloque nuevo tiene que mirar el mismo. Si
+   * alguien añade un segundo sitio que abra un selector de edicion y no lo cierra,
+   * esto se pone rojo.
+   */
+  it('la condicion es el mismo estado que abren los lapices', () => {
+    const limpio = sinComentarios(itemEditSheet);
+    // Los dos lapices abren y cierran `colorDe` con la misma ternaria.
+    const abre = [...limpio.matchAll(/setColorDe\(colorDe === tag \? null : tag\)/g)];
+    expect(abre).toHaveLength(2);
+    // Y el estado es `string | null`: con un objeto dentro habria que comparar el tag
+    // y la fila, y este es el mismo para las dos filas porque son disjuntas.
+    expect(limpio).toMatch(/useState<string \| null>\(null\)/);
+  });
+});
+
+describe('anadir y quitar son botones distintos, y el + solo anade', () => {
+  /*
+   * **El `+` que tambien quitaba es lo que se vino a quitar**, y el pin va sobre el
+   * `toggleTag` y no sobre el texto: `toggleTag` no volver a existir es lo que hace
+   * imposible el fallo, porque con un solo toggle los dos botones tendrian que
+   * compartir la misma funcion y uno de los dos mentiria sobre lo que hace.
+   */
+  it('no queda ningun toggle que anada y quite a la vez', () => {
+    expect(sinComentarios(itemEditSheet)).not.toMatch(/\btoggleTag\b/);
+  });
+
+  it('anadir solo anade y quitar solo quita, y el boton que se pinta depende de si la tiene', () => {
+    // El `+` no se pinta cuando la tarea ya lleva la etiqueta. Sin este `laTiene`,
+    // los dos botones estan siempre y el `+` vuelve a quitar en silencio.
+    expect(sinComentarios(itemEditSheet)).toMatch(/laTiene\s*=\s*shown\.tags\.includes/);
+    expect(sinComentarios(itemEditSheet)).toMatch(/name="remove"/);
+    expect(sinComentarios(itemEditSheet)).toMatch(/name="add"/);
+  });
+
+  it('la papelera de la fila de abajo pregunta antes, y la de arriba no', () => {
+    // Preguntar en las dos seria confirmar algo que el usuario acaba de ver en
+    // pantalla: en la fila de arriba la etiqueta esta en la propia pastilla.
+    const preguntar = sinComentarios(itemEditSheet).match(/confirmarQuitar\(/g) ?? [];
+    expect(preguntar).toHaveLength(1);
   });
 });
 

@@ -289,7 +289,7 @@ const es = {
   /* `tags.colorUseOf` se fue con el boton de "usar este color". */
   "tags.colorCloseOf": "Cerrar el selector de color de {name}",
   "tags.recentColors": "Los que has usado en etiquetas",
-  "tags.recentColorOf": "Usar el color {color}",
+  "tags.recentColorOf": "Usar el color {color} para {name}",
   "icons.title": "Icono",
   "icons.none": "Sin icono",
   "icons.search": "Buscar un icono",
@@ -733,8 +733,11 @@ const es = {
   "itemEdit.done": "Ya está hecho",
   "itemEdit.changePriority": "Cambiar la urgencia, ahora {name}",
   "itemEdit.delete": "Eliminar este elemento",
-  "tags.remove": "Quitar la etiqueta {name}",
   "tags.put": "Poner la etiqueta {name}",
+  "tags.remove": "Quitar la etiqueta {name} de esta tarea",
+  "tags.removeConfirm": "Quitar \"{name}\"",
+  "tags.removeConfirmBody":
+    "Se la quita a esta tarea. Las demas tareas de la lista se quedan con ella.",
   "create.title": "Crear",
   "create.listHint": "Tareas, películas, series o libros.",
   "create.folderHint": "Para agrupar listas y carpetas.",
@@ -1327,7 +1330,7 @@ const en: Record<TranslationKey, string> = {
   /* `tags.colorUseOf` went with the "use this colour" button. */
   "tags.colorCloseOf": "Close the colour picker of {name}",
   "tags.recentColors": "The ones you have used on labels",
-  "tags.recentColorOf": "Use the colour {color}",
+  "tags.recentColorOf": "Use the colour {color} for {name}",
   "icons.title": "Icon",
   "icons.none": "No icon",
   "icons.search": "Find an icon",
@@ -1758,8 +1761,11 @@ const en: Record<TranslationKey, string> = {
   "itemEdit.done": "Already done",
   "itemEdit.changePriority": "Change how urgent it is, now {name}",
   "itemEdit.delete": "Delete this item",
-  "tags.remove": "Take the label {name} off",
   "tags.put": "Put the label {name} on",
+  "tags.remove": "Take the label {name} off this task",
+  "tags.removeConfirm": "Take off \"{name}\"",
+  "tags.removeConfirmBody":
+    "It comes off this task only. The other tasks in the list keep it.",
   "create.title": "Create",
   "create.listHint": "Tasks, films, series or books.",
   "create.folderHint": "To group lists and folders.",

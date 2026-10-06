@@ -304,6 +304,23 @@ function contrastRatio(a, b) {
 }
 
 /** Los fondos y el texto de cada esquema, de `apps/mobile/src/theme/tokens.ts`. */
+/**
+ * The two numbers the pill is painted with, and **the same two that
+ * `tag-colors.ts` has**: `MEZCLA_DE_LA_PASTILLA` of 14% to 6% and
+ * `MIN_LABEL_CONTRAST` of 4.5 to 3.
+ *
+ * They are written here and not imported because this file is a browser check and
+ * the app's constants are TypeScript; what holds them together is that **a change in
+ * one without a change here turns this whole file red**, which is the point: the
+ * first version of this comment put 4.5 and 0.14 inline and the file asserted the old
+ * design without anybody noticing until five checks failed at once and looked like
+ * five different bugs. One line each, and the reason they changed is in the
+ * commits that changed them.
+ */
+const LISTON_DE_LA_PASTILLA = 3;
+const MEZCLA_DE_LA_PASTILLA = 0.06;
+const MEZCLA_PORCIENTO = `${Math.round(MEZCLA_DE_LA_PASTILLA * 100)}%`;
+
 const SCHEME = {
   light: { fill: "#F0F2F8", text: "#0E1220" },
   dark: { fill: "#1B2231", text: "#F3F6FC" },
@@ -350,7 +367,7 @@ function pastillaSeLee(pastilla, esquema) {
   if (!pastilla?.textColor || !pastilla?.fill) return false;
   if (!SCHEME[esquema]) return false;
   return (
-    contrastRatio(comoHex(pastilla.textColor), comoHex(pastilla.fill)) >= 4.5 &&
+    contrastRatio(comoHex(pastilla.textColor), comoHex(pastilla.fill)) >= LISTON_DE_LA_PASTILLA &&
     pastilla.textColor !== toRgb(SCHEME[esquema].text)
   );
 }
@@ -373,7 +390,7 @@ function pastillaSeLee(pastilla, esquema) {
 const textoEnElTema = (pastilla, esquema) =>
   Boolean(pastilla?.textColor) && pastilla.textColor === toRgb(SCHEME[esquema].text);
 
-/** El 4.5:1 del texto de una pastilla contra **su propio** relleno, medido. */
+/** El liston del texto de una pastilla contra **su propio** relleno, medido. */
 const contrasteDeLaPastilla = (pastilla) =>
   pastilla?.textColor && pastilla?.fill
     ? contrastRatio(comoHex(pastilla.textColor), comoHex(pastilla.fill))
@@ -2291,11 +2308,11 @@ try {
   // seis lineas y una copia de `mixHex`, que es lo unico de la regla que este
   // archivo reimplementa: la busqueda del texto, que es la parte con la cuenta
   // larga, no se reimplementa en ningun sitio.
-  const tinteEsperado = mezclar(ICON_HEX[urgenteDeducedido], SCHEME.light.fill, 0.14);
+  const tinteEsperado = mezclar(ICON_HEX[urgenteDeducedido], SCHEME.light.fill, MEZCLA_DE_LA_PASTILLA);
   check(
     "una etiqueta sin color elegido se pinta con el color que deduce su nombre",
     urgenteAntes?.fill === toRgb(tinteEsperado) && pastillaSeLee(urgenteAntes, "light"),
-    `urgente deduce ${urgenteDeducedido} (${ICON_HEX[urgenteDeducedido]}), la pastilla pinta ${urgenteAntes?.textColor} sobre ${urgenteAntes?.fill}, y su tinte al 14% sobre ${SCHEME.light.fill} es ${toRgb(tinteEsperado)}`,
+    `urgente deduce ${urgenteDeducedido} (${ICON_HEX[urgenteDeducedido]}), la pastilla pinta ${urgenteAntes?.textColor} sobre ${urgenteAntes?.fill}, y su tinte al ${MEZCLA_PORCIENTO} sobre ${SCHEME.light.fill} es ${toRgb(tinteEsperado)}`,
   );
 
   await goToList(listaA, 6);
@@ -3183,7 +3200,7 @@ try {
   const enLasDosTareas = [];
   for (const [i, etiqueta] of SEED_LABELS.libres.entries()) {
     const hex = HEX_LIBRES[i];
-    const esperado = toRgb(mezclar(hex, SCHEME.light.fill, 0.14));
+    const esperado = toRgb(mezclar(hex, SCHEME.light.fill, MEZCLA_DE_LA_PASTILLA));
     const leidas = [];
     for (const item of [itemA.paleta, itemA.repetidas]) {
       await goToList(listaA, 8);
@@ -3194,7 +3211,7 @@ try {
       leidas.every((p) => p && p.textColor === leidas[0].textColor && p.fill === leidas[0].fill);
     enLasDosTareas.push({ etiqueta, hex, leidas, misma, esperado });
     note(
-      `${etiqueta} en "${hex}": Paleta pinta ${leidas[0]?.textColor} sobre ${leidas[0]?.fill} y Repetidas ${leidas[1]?.textColor} sobre ${leidas[1]?.fill}; el tinte del 14% de ${hex} sobre ${SCHEME.light.fill} es ${esperado}`,
+      `${etiqueta} en "${hex}": Paleta pinta ${leidas[0]?.textColor} sobre ${leidas[0]?.fill} y Repetidas ${leidas[1]?.textColor} sobre ${leidas[1]?.fill}; el tinte del ${MEZCLA_PORCIENTO} de ${hex} sobre ${SCHEME.light.fill} es ${esperado}`,
     );
   }
   check(
@@ -3208,7 +3225,7 @@ try {
     enLasDosTareas
       .map(
         (e) =>
-          `${e.etiqueta}: las dos iguales y con el tinte del 14% de ${e.hex} (${e.esperado}), leídas ${e.leidas.map((p) => p?.fill ?? "sin pastilla").join(" y ")}`,
+          `${e.etiqueta}: las dos iguales y con el tinte del ${MEZCLA_PORCIENTO} de ${e.hex} (${e.esperado}), leídas ${e.leidas.map((p) => p?.fill ?? "sin pastilla").join(" y ")}`,
       )
       .join("; "),
   );
@@ -3252,7 +3269,7 @@ try {
     "el color libre sigue en su pastilla después de recargar, en las dos tareas",
     trasRecargar.length === HEX_LIBRES.length &&
       trasRecargar.every((t) => {
-        const esperado = toRgb(mezclar(t.esperado, SCHEME.light.fill, 0.14));
+        const esperado = toRgb(mezclar(t.esperado, SCHEME.light.fill, MEZCLA_DE_LA_PASTILLA));
         return (
           t.paleta?.fill === esperado && t.repetidas?.fill === esperado &&
           t.paleta?.textColor === t.repetidas?.textColor
@@ -3351,7 +3368,7 @@ try {
         enElTema.push(`${esquema}/${etiqueta}: ${pastilla.textColor} es el texto del tema`);
       }
       const r = contrasteDeLaPastilla(pastilla);
-      if (r < 4.5) {
+      if (r < LISTON_DE_LA_PASTILLA) {
         cortasDe.push(
           `${esquema}/${etiqueta}: ${r.toFixed(2)}:1 con ${pastilla.textColor} sobre ${pastilla.fill}`,
         );
@@ -3388,10 +3405,10 @@ try {
       (enElTema.length ? `; en el tema: ${enElTema.join(", ")}` : "; ninguna en el texto del tema"),
   );
   check(
-    "el texto de la pastilla llega a 4.5:1 contra su propio relleno, en los dos esquemas",
+    `el texto de la pastilla llega a ${LISTON_DE_LA_PASTILLA}:1 contra su propio relleno, en los dos esquemas`,
     leidasTodas && cortasDe.length === 0,
     `${MEDIDAS.length} pastillas medidas con la cuenta del guion, cada una contra el relleno que ella pintó` +
-      (cortasDe.length ? `; cortas o ausentes: ${cortasDe.join(", ")}` : "; ninguna por debajo de 4.5:1"),
+      (cortasDe.length ? `; cortas o ausentes: ${cortasDe.join(", ")}` : `; ninguna por debajo de ${LISTON_DE_LA_PASTILLA}:1`),
   );
   for (const esquema of ["light", "dark"]) {
     const ratios = porEsquema[esquema]
@@ -3563,7 +3580,7 @@ try {
   await goToList(listaB, 4);
   const geoLarga = await linesOfRow(tab, itemB.ferreteria, [SEED_LABELS.larga]);
   const largaAhora = await pillOf(tab, SEED_LABELS.larga, `[data-testid="item-row-${itemB.ferreteria}"]`);
-  const tintEsperado = toRgb(mezclar(largaLibre, SCHEME.light.fill, 0.14));
+  const tintEsperado = toRgb(mezclar(largaLibre, SCHEME.light.fill, MEZCLA_DE_LA_PASTILLA));
   check(
     "una etiqueta de 40 caracteres con un color libre no empuja la fila",
     largaAhora !== null &&

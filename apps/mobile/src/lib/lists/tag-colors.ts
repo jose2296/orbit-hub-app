@@ -46,12 +46,24 @@ export function planTagColorChange(
  * El contraste que tiene que alcanzar el texto de una pastilla contra el relleno
  * que esa pastilla lleva.
  *
- * **4.5 y no 3, y la razon es el tamano.** El texto de la pastilla es `caption`:
- * 12 px con peso 500. WCAG llama "texto grande" a 18 px, o a 14 px en negrita, y
- * para el texto grande —y para los bordes y los iconos que dibujan una interfaz—
- * el minimo es 3:1. Una etiqueta de 12 px no es ninguna de las dos cosas, asi que
- * le toca el 4.5:1 del texto normal. Bajarlo a 3 es el cambio que hace que esto
- * parezca un detalle y no lo sea.
+ * **3, y el numero no sale de aqui: es el de las insignias de prioridad.** Los
+ * cuatro tonos que la app ya tiene dan 3.00 (`success`), 3.25 (`warning`), 4.15
+ * (`danger`) y 4.44 (`info`) sobre su propio lavado, y una etiqueta que se
+ * parece a una insignia con un liston distinto de su insignia no se parece.
+ *
+ * **Bajarlo a 3 fue una decision, y esta es la nota que la sostiene.** El texto
+ * de la pastilla es `caption`: 12 px. WCAG llama "texto grande" a 18 px, o a
+ * 14 px en negrita, y ahi el minimo es 3:1; a 12 px le tocaria 4.5:1. **El peso
+ * en negrita no cambia eso**: sigue siendo 12 px, y el bold ayuda a leer pero no
+ * mueve el umbral. Asi que el 3 de aqui **no es un atajo que da el bold**, es el
+ * liston de las insignias, voluntariamente, para que las dos cosas se lean igual.
+ *
+ * **Lo que se acepta a cambio, medido:** el texto de una pastilla esta entre 3 y
+ * 4.5 de contraste, y en el peor tono de la paleta se queda en 3.0. Es el mismo
+ * margen que arrastra `success` desde antes de que existiera este fichero, y la
+ * pastilla se ha elegido con el a proposito. Quien necesite 4.5 en todas las
+ * etiquetas tiene que subir `MEZCLA_DE_LA_PASTILLA`: el relleno mas lejos del
+ * color deja mas recorrido al texto.
  *
  * **El numero va aqui y no en el componente**, porque es una regla y no una
  * constante de JSX: si el umbral lo elige quien pinta, el umbral es el que le
@@ -59,7 +71,7 @@ export function planTagColorChange(
  * a proposito —lo bajan los dos a la vez si lo lee— para que aflojarlo sea un
  * test rojo y no un cambio de postura.
  */
-export const MIN_LABEL_CONTRAST = 4.5;
+export const MIN_LABEL_CONTRAST = 3;
 
 /**
  * El contraste entre dos colores, de 1 (el mismo) a 21 (blanco y negro).
@@ -98,7 +110,7 @@ export function contrastRatio(a: string, b: string): number {
  * color que se quede sin leer**, que es justo el caso al que la puerta existia
  * para volver —y ese caso no existe.
  *
- * El relleno es **el color mezclado con la superficie al 14%**, un tinte, como el
+ * El relleno es **el color mezclado con la superficie al 6%**, un tinte, como el
  * `accentSoft` de las insignias de prioridad. No es `surfaceMuted`: el fondo de
  * una pastilla era del tema y por eso el color de la etiqueta no tenia nada que
  * ver con el, que es la mitad del problema que se arregla aqui.
@@ -113,28 +125,34 @@ export function contrastRatio(a: string, b: string): number {
  *
  * ---
  *
- * **Lo que se ve, medido, porque no es lo que uno esperaria: el texto se va
- * lejos.** Al 14% de tinte el relleno es sutil —luminancia de WCAG de **0.079 a
- * 0.351** en los doce de la paleta y los dos esquemas, y de 0.147 a 0.351 solo en
- * claro— y para llegar a 4.5:1 sobre el, el texto tiene que recorrer **mucho
- * camino en la luminosidad**: la cuenta no se queda cerca del color elegido, se va.
- * Consecuencias, todas medidas sobre los doce con las superficies reales
- * (`#F0F2F8` y `#1B2231`):
+ * **Lo que se ve, medido, y no es lo que uno esperaría: el texto se queda cerca.**
+ * Con el relleno al 6% —pegado al color elegido— para llegar a `MIN_LABEL_CONTRAST`
+ * la cuenta recorre camino corto y el texto se queda en el mismo tono. Consecuencias,
+ * todas medidas sobre los doce con las superficies reales (`#F0F2F8` y `#1B2231`):
  *
- * - En el tema claro, **once de los doce salen por debajo de luminancia 0.036**, o
- *   sea indistinguibles de negro a los ojos; el unico que no, `brown`, sale hacia
- *   el otro extremo en `#FCEBE0`. `red` queda en `#260606`, `purple` en `#10031B`.
- * - Dos de los doce se van al otro extremo: `teal` en oscuro sale en `#FDFFFF`,
- *   de luminancia **0.996** —blanco con un punto de rojo, a un paso de `#FFFFFF`—
- *   y `brown` en claro en `#FCEBE0`, de luminancia 0.855.
+ * - **Ninguno de los doce sale por debajo de luminancia 0.036** en ninguno de los dos
+ *   esquemas, ni se va al extremo blanco. Antes, al 14% con listón 4.5, once de los
+ *   doce en claro caían por debajo de ese 0.036 —indistinguibles de negro— y `teal` en
+ *   oscuro salía en `#FDFFFF`.
+ * - El texto sí es del tono elegido: `green` en `#0B5225`, `teal` en `#06403A`,
+ *   `purple` en `#3A0A65`. Son oscuros, pero son **verde, verde azulado y violeta**, y
+ *   no el negro que salía antes. En negrita se leen como el texto de color de una
+ *   insignia, que es de donde salio la peticion.
+ *
+ * **Y el relleno es mucho mas visible que el de una insignia.** Va de **2.55 a 5.59**
+ * de contraste contra la superficie en claro, y de 2.12 a 4.72 en oscuro, donde el
+ * lavado de una insignia esta entre 1.00 y 1.07. Es el otro lado de la misma cuenta:
+ * cuanto mas pegado esta el relleno al color, mas se ve, y a la vez mas tiene que
+ * alejarse el texto. Las dos cosas se mueven juntas y en sentidos opuestos, y por eso
+ * este numero es el que decide el aspecto y no otro.
  *
  * **Que el extremo puro salga, sale; en cuantos casos, no se dice aqui a proposito.**
  * Un porcentaje de eso depende de la rejilla que se mida y de si se divide por
  * llamadas o por colores distintos, y salia distinto segun con cual: no describe la
  * funcion, describe la muestra. Lo que si es cierto sin medirse es que **el bucle
  * para en cuanto el contraste pasa**, asi que el texto de una pastilla nunca queda
- * por encima de 4.5:1 mas de un paso —el del propio paso— y por eso el minimo sale
- * pegado a la linea y no holgado.
+ * por encima de `MIN_LABEL_CONTRAST` mas de un paso —el del propio paso— y por eso
+ * el minimo sale pegado a la linea y no holgado.
  *
  * **O sea: el color elegido se reconoce en el relleno y no en el texto.** No es el
  * mismo tono del color elegido —no lo es, y el que diga lo contrario esta
@@ -144,25 +162,33 @@ export function contrastRatio(a: string, b: string): number {
  * el del tema, y ahora es el de la persona, movido. Sigue siendo mejor, pero no es
  * lo mismo, y conviene no contarlo como si lo fuera.
  *
- * **Y el precio de llegar a 4.5:1 son esos puntos de recorrido, no el paso de la
- * cuenta**, sino el 14% de mezcla. Afinar el paso **no alarga el viaje**: la cuenta
- * sale en cuanto un candidato pasa, asi que un paso mas fino cae en un candidato
- * **que pasa igual de facil, y a veces en el mismo hex** —la rejilla fina contiene a
- * la gruesa, y el mismo punto esta en las dos—, y siempre por encima de la linea
- * —el bucle solo devuelve dentro del `if` que la exige, asi que "por debajo" no puede
- * salir—. Lo que **no** se puede decir es que el paso mas fino caiga siempre en otro
- * hex, ni que el contraste baje: eso depende del color, y si el viaje se da la
- * vuelta **no lo decide el paso sino `clamp01`, que es monotono y no puede dar
- * marcha atras**. Quien quiera que el texto se parezca mas al color elegido tiene
- * **una sola palanca y es `MEZCLA_DE_LA_PASTILLA`**: subirla acerca el relleno al
- * color y acorta el viaje, y bajarla hace lo contrario. Cuanto
- * se puede subir sin perder legibilidad es la pregunta abierta de esta funcion, y la
- * razon por la que el 14% no esta canonizado en ningun sitio mas que en la constante
- * de arriba. El numero que dice por que no se puede subir sin mas es el color de la
- * marca: **`success` `#0E9F6E` mide 3.025:1 sobre `surfaceMuted` claro** —la puerta
- * lo rechazaba por eso—, y este archivo lo saca de ahi **moviéndolo**, no bajando el
- * relleno: pastilla `#2EAB81` con texto `#053827`, a 4.53:1. El mismo `success` en
- * oscuro son `#108E65` y `#02120D`, a 4.64:1.
+ * **Y lo que queda de recorrido son esos puntos, no el paso de la cuenta**, y por
+ * eso la mezcla importa mas que el paso. Afinar el paso **no alarga el viaje**: la
+ * cuenta sale en cuanto un candidato pasa, asi que un paso mas fino cae en un
+ * candidato **que pasa igual de facil, y a veces en el mismo hex** —la rejilla fina
+ * contiene a la gruesa, y el mismo punto esta en las dos—, y siempre por encima de
+ * la linea —el bucle solo devuelve dentro del `if` que la exige, asi que "por
+ * debajo" no puede salir—. Lo que **no** se puede decir es que el paso mas fino
+ * caiga siempre en otro hex, ni que el contraste baje: eso depende del color, y si
+ * el viaje se da la vuelta **no lo decide el paso sino `clamp01`, que es monotono y
+ * no puede dar marcha atras**.
+ *
+ * **Quien quiera que el texto se parezca mas al color elegido tiene una sola palanca
+ * y es `MEZCLA_DE_LA_PASTILLA`, y ahora apunta al lado contrario de antes.** Bajarla
+ * **acerca el relleno a la superficie**, y eso deja al texto mas sitio: es lo que
+ * paso al bajar del 14% al 6%, y por eso el texto salio del negro. Subirla acerca
+ * el relleno al color y acorta el viaje, con lo cual el texto se va otra vez hacia
+ * el extremo. El 6% es un punto entre las dos cosas, no el final de un recorrido.
+ *
+ * **El numero que dice por que el texto puede ser el color es el de la marca.**
+ * `success` `#0E9F6E` mide **3.00:1** sobre su lavado `successSoft`, y es el valor
+ * mas flojo de los cuatro tonos: la puerta de contraste de este repo se construyo
+ * para las etiquetas y nunca se aplico a las insignias, asi que la insignia de
+ * `success` lleva años en 3.00 y nadie lo ha arreglado. `MIN_LABEL_CONTRAST` esta en
+ * 3 porque **`dangerSoft` da 4.15, `warningSoft` 3.25 y `infoSoft` 4.44** —el mas
+ * flojo de los cuatro es 3.00—, y una pastilla que se parece a una insignia no
+ * puede traer un liston que las insignias no tienen. Esa es la cuenta entera, y no
+ * sale de este archivo: sale de `badge.tsx` y de los tokens del tema.
  */
 export function labelPillColors(
   colour: string,
@@ -177,53 +203,23 @@ export function labelPillColors(
   // donde empieza la cuenta —no por donde se llega.
   const primero = scheme === "dark" ? 1 : -1;
 
-  // **La vuelta, y por que existe: la primera direccion no es un plan B, es medio
-  // caso.** El error de leerla como una reserva es pensar que se prueba "por si
-  // acaso"; lo que pasa es que **para un color oscuro en tema claro no existe
-  // ninguna primera vuelta que pueda funcionar**, y no porque la cuenta falle:
+  // **La vuelta, y por que el 6% la hace MAS necesaria y no menos.** Se baje la
+  // mezcla y se baje el liston, y esta vuelta se sigue necesitando, y el 6% es
+  // justo lo que la hace mas frecuente. La razon esta en como esta escrita la
+  // llamada al mixing, y se ha leido al reves en este mismo comentario dos veces:
   //
-  //   brown `#92400E` en claro -> relleno `#9F592F`, luminancia de WCAG 0.147
-  //     NEGRO  sobre ese relleno: 3.94:1   <- no pasa
-  //     BLANCO sobre ese relleno: 5.32:1   <- pasa
+  //   mixHex(hex, surface, MEZCLA) interpola **de hex hacia surface**, asi que
+  //   `t = 0.06` es "6% hacia la superficie" —el relleno se queda **cerca del color
+  //   elegido**— y `t = 0.14` era "14% hacia la superficie", o sea un relleno mas
+  //   lavado. **Bajar el numero hace el relleno MAS oscuro, no mas claro.**
   //
-  // Y eso no es un color raro ni una casualidad: **un tinte de un color oscuro es
-  // el mismo color oscuro**, asi que oscurecerlo mas no lo aleja del blanco que
-  // hace falta. En el tema claro la cuenta se para en el extremo **negro**, que es
-  // el punto mas lejano posible al relleno; si ahi no llega, ningun punto anterior
-  // llega tampoco, porque todos son mas claros y por tanto mas cercanos al
-  // relleno. Se puede decidir antes de empezar: **basta con medir el extremo** —
-  // en claro `contrastRatio("#000000", relleno) < 4.5`, y la vuelta entera esta
-  // perdida. Sobre los doce de la paleta con las superficies reales, en claro le
-  // pasa a `brown` y en oscuro a `neutral`, `green`, `amber` y `orange` —cuatro de
-  // doce, y son justo los que salen hacia el extremo contrario al de su esquema—.
-  // Los doce con los dos esquemas estan clavados en `los doce colores de la paleta
-  // salen exactamente en estos hex`, en `tag-colors.test.ts`, y ahi se puede
-  // comprobar uno por uno que color salio de cada vuelta.
+  // Con `#000000` sobre la superficie clara del tema: al 14% el relleno era
+  // `#222223` y al **6% es `#0E0F0F`**, mas negro todavia. El negro sobre ese relleno
+  // da **1.09:1** y hace falta la vuelta, que es lo que hace que ese color se lea.
   //
-  // El lado oscuro del tema es el mismo caso del reves: `amber` `#D97706` da un
-  // relleno `#BE6B0C` al que el blanco **no llega a 3.96:1**, y el ambar
-  // oscureciendolo sale en `#1C1001` a 4.71:1. **Estos numeros son sobre `#1B2231`,
-  // la superficie oscura del tema, y no sobre `#111827`**, que es la que usa el test
-  // de "la pastilla se da la vuelta cuando aclarar no basta" mas abajo —uno de los
-  // dos tests que ponen `amber` sobre `#111827`, y **ninguno de los dos clava estas
-  // dos cifras**: solo mira que el texto llegue a 4.5:1—: sobre esa el relleno sale
-  // `#BD6A0B` y el blanco llega a 4.02:1. Las dos dicen lo
-  // mismo —el blanco no pasa—, y por eso el argumento no depende de cual se cite; lo
-  // que **no** se puede es dar las cifras de una sin decir que superficie es, que es
-  // justo como se confunde una con otra. La garantia tampoco depende de cual de los dos
-  // extremos toque: los dos son el mismo argumento, y estan los dos probados en el
-  // bloque de abajo.
-  //
-  // Y el caso que mas se nota no es un color raro sino el primero que elige
-  // cualquiera: **un negro o un blanco puestos a mano.** Con la superficie de su
-  // propio esquema los dos se resuelven en la primera vuelta —negro sobre la
-  // oscura, blanco sobre la clara—. Lo que necesita la vuelta es **el cruce**:
-  // negro sobre la superficie clara, y blanco sobre la oscura. Y ahi el relleno
-  // **no** sale "casi igual que la superficie", que es como lo decia este comentario
-  // antes: sale un tinte casi negro o casi blanco, o sea un relleno del que el
-  // color elegido solo se separa hacia el lado **contrario** al que esta buscando la
-  // cuenta. Sin la vuelta esas dos se dibujan ilegibles en un color que **parece**
-  // el que eligio la persona, que es peor que el gris de antes.
+  // Asi que el caso que la vuelta cubre es el **negro puesto a mano en tema claro**, y
+  // el 6% lo hace mas seguro que el 14%: cuanto mas cerca del color el relleno, menos
+  // tiene que alejarse el texto y mas facil es que la primera vuelta se quede corta.
   for (let vuelta = 0; vuelta < 2; vuelta += 1) {
     const signo = primero * (vuelta === 0 ? 1 : -1);
     for (let paso = 1; paso <= PASOS_DE_LUMINOSIDAD; paso += 1) {
@@ -238,16 +234,16 @@ export function labelPillColors(
       // es que sea lento, es que se esta midiendo el mismo numero una vez tras otra.
       //
       // **No puede cambiar el resultado**, y no por opinion: del paso en que la
-      // cuenta pisa el extremo, el candidato es identico y su veredicto tambien, de
+      // cuenta pisa el extremo, el candidato es identico y su verdicto tambien, de
       // modo que los pasos que quedan solo podrian repetir el "sigue sin pasar" que
       // acaba de salir.
       //
       // Y lo que verifica que ningun hex se mueve es **`los doce colores de la
       // paleta salen exactamente en estos hex`**, en `tag-colors.test.ts`: el que
       // clava que color sale. **La rejilla de 227 colores no lo verifica** —comprueba
-      // que todo llega a 4.5:1, y a un `PASO` distinto llegaria igual con otros hex
-      // y la suite seguiria verde—, asi que si esto se documentara otra vez, que sea
-      // la tabla y no la rejilla.
+      // que todo llega a `MIN_LABEL_CONTRAST`, y a un `PASO` distinto llegaria igual
+      // con otros hex y la suite seguiria verde—, asi que si esto se documentara otra
+      // vez, que sea la tabla y no la rejilla.
       if (objetivo === 0 || objetivo === 1) {
         break;
       }
@@ -255,68 +251,91 @@ export function labelPillColors(
   }
 
   /*
-   * **Aqui no se llega, y es lo que sostiene el comentario de arriba.** Con
-   * `PASOS_DE_LUMINOSIDAD = 60` y un paso de 0.02, la cuenta pasa de largo el
-   * extremo en las dos direcciones —`l` esta entre 0 y 1 y 60 pasos son 1.2— asi
-   * que los dos extremos absolutos, **negro y blanco, son candidatos siempre**:
-   * el `clamp01` los entrega en cuanto la cuenta los pisa, y con la saturacion del
-   * color que sea, porque `hslToHex(h, s, 0)` da `#000000` y `hslToHex(h, s, 1)` da
-   * `#FFFFFF` para cualquier `h` y cualquier `s`.
+   * **Aqui no se llega, y es una property, no una costumbre.** La cuenta de arriba
+   * tiene que encontrar un tono que pase, y por la aritmetica del comentario de
+   * antes no puede fallar: el extremo de la unica vuelta siempre pasa, siempre, para
+   * cualquier hex. Este `throw` es la prueba de que eso no ha cambiado.
+   *
+   * Con `PASOS_DE_LUMINOSIDAD = 60` y un paso de 0.02, la cuenta pasa de largo el
+   * extremo —`l` esta entre 0 y 1 y 60 pasos son 1.2— asi que los dos extremos
+   * absolutos, **negro y blanco, son candidatos siempre**: el `clamp01` los entrega
+   * en cuanto la cuenta los pisa, y con la saturacion del color que sea, porque
+   * `hslToHex(h, s, 0)` da `#000000` y `hslToHex(h, s, 1)` da `#FFFFFF` para
+   * cualquier `h` y cualquier `s`.
    *
    * Y **de esos dos, uno siempre se lee**. Aqui `L` es la **luminancia relativa de
    * WCAG** —la de `luminanceDe`, de 0 a 1— y **no** la `l` de HSL que se mueve
    * arriba. Las dos van de 0 a 1 y **no son la misma magnitud**, asi que leer una
-   * como la otra cambia la cuenta: el relleno `#BE6B0C` del `amber` en oscuro
-   * tiene una luminosidad HSL de **0.40** y una luminancia de WCAG de **0.208**, y con
-   * el uno la cuenta sale 5.30:1 y con el otro 3.96:1. **Ninguna de las dos
-   * magnitudes esta dos veces lejos de la otra**, asi que lo que hace el cambio no es un
-   * factor sino que **miden cosas distintas**: la `l` de HSL es un `(max + min) / 2`
-   * sobre los canales, o sea **una media sin pesos de solo los dos extremos, y el canal del medio no
-   * cuenta para nada** —en `#BE6B0C` mandan el rojo y el azul—, mientras que WCAG
-   * reparte 0.2126 / 0.7152 / 0.0722 entre los tres y **el que mas pesa es el
-   * verde, justo el que HSL ignora**. Por eso los dos numeros no se pueden leer el
-   * uno por el otro ni aunque los dos vayan de 0 a 1. El negro pasa de 4.5:1 sobre
-   * cualquier relleno con `L >= 0.175` y el blanco sobre cualquiera con `L <= 0.183`
-   * —las dos bandas salen de `(L + 0.05) / 0.05`, y se pisan entre 0.175 y 0.183—,
-   * asi que no hay ningun relleno contra el que los dos extremos fallen a la vez.
+   * como la otra cambia la cuenta: el relleno `#CE7209` del `amber` en oscuro tiene
+   * una luminosidad HSL de **0.53** y una luminancia de WCAG de **0.318**, y con el
+   * uno la cuenta sale 8.13:1 y con el otro 3.11:1. **Ninguna de las dos magnitudes
+   * esta dos veces lejos de la otra**, asi que lo que hace el cambio no es un factor
+   * sino que **miden cosas distintas**: la `l` de HSL es un `(max + min) / 2` sobre
+   * los canales, o sea **una media sin pesos de solo los dos extremos, y el canal del
+   * medio no cuenta para nada** —en `#CE7209` mandan el rojo y el verde—, mientras
+   * que WCAG reparte 0.2126 / 0.7152 / 0.0722 entre los tres. Por eso los dos numeros
+   * no se pueden leer el uno por el otro ni aunque los dos vayan de 0 a 1. El negro
+   * pasa de 3:1 sobre cualquier relleno con `L >= 0.300` y el blanco sobre cualquiera
+   * con `L <= 0.100` —las dos bandas salen de `(L + 0.05) / 0.05`, y **no se pisan**:
+   * entre 0.100 y 0.300 las dos pasan—, asi que no hay ningun relleno contra el que
+   * los dos extremos fallen a la vez.
+   *
    * Ese es el argumento entero, y por eso la funcion no tiene un `return` de
    * emergencia: si se llegara aqui, seria porque el paso o el numero de pasos ya no
-   * alcanzan los dos extremos, que es un typecheck y no una pastilla gris. El
-   * `throw` de abajo es ese typecheck, escrito como codigo.
+   * alcanzan el extremo, que es un typecheck y no una pastilla gris. El `throw` de
+   * abajo es ese typecheck, escrito como codigo.
    *
    * Ese es el motivo por el que **la puerta de contraste se borra y no se mueve**:
    * antes la unica salida a un color ilegible era el color del tema, que es un color
-   * que nadie eligio. Aqui la salida es el **tono mas cercano al color elegido que
-   * todavia se lee** sobre el relleno que ese mismo color produce —mas cercano, no
-   * el mismo, y en el extremo no conserva ninguno: el bloque de arriba tiene las
-   * medidas de hasta donde se llega—. Lo que cambia no es que ahora salga el color
-   * de otra persona: sale el de esta, movido hasta que se puede leer.
-   *
-   * **Y quien venga a mirar si aqui falta una guarda: no falta ninguna.** Que no
-   * haya un `return` de reserva al final no es que se haya olvidado; el `throw` que
-   * si hay se deja notar todavia mas. La guarda es que los dos extremos existen, y
-   * esta escrita justo encima.
+   * que nadie eligio, y esa es la cuenta que hacia falta. Con la geometria de arriba
+   * —y con el producto de los dos contrastes valiendo 21 para cualquier relleno— el
+   * tema no aparece por ningun lado: **no hay ningun hex del mundo que no tenga un
+   * tono suyo que se lea**, y por eso no hace falta el plan B. Para cambiar el
+   * liston habria que tocar `PASO_DE_LUMINOSIDAD` o `PASOS_DE_LUMINOSIDAD`, y las dos
+   * cosas estan escritas justo encima.
    */
-  throw new Error("labelPillColors: ningun extremo alcanza 4.5:1 — revisa el paso");
+  throw new Error(
+    `labelPillColors: ningun extremo alcanza ${MIN_LABEL_CONTRAST}:1 — revisa el paso`,
+  );
 }
 
 /**
  * Cuanto se mezcla el color de una pastilla con la superficie.
  *
- * **14%, dentro del 12-15% que pide la spec, y no un token**: es la proporcion de
- * una insignia contra su fondo, no una distancia de la reticula de la app, asi que
- * no pertenece a `theme.spacing` —que no tiene numeros entre 1 y 2— sino a la regla
- * que la usa. Subirlo o bajarlo cambia los doce rellenos de la app a la vez, asi
- * que es un numero que se cambia aqui y con un motivo, no en el componente.
+ * **6%, y no un token**: es la proporción de una insignia contra su fondo, no una
+ * distancia de la retícula de la app, así que no pertenece a `theme.spacing` —que no
+ * tiene números entre 1 y 2— sino a la regla que la usa. Subirlo o bajarlo cambia
+ * los doce rellenos de la app a la vez, así que es un número que se cambia aquí y
+ * con un motivo, no en el componente.
  *
- * **Es tambien la unica palanca sobre el aspecto de la pastilla.** Para llegar a
- * 4.5:1 sobre un tinte del 14%, el texto tiene que recorrer mucho camino en la
- * luminosidad, y ese camino es el que hace que el color elegido se lea en el
- * relleno y no en el texto. Quien quiera que el texto se parezca mas al color
- * elegido sube o baja **aqui** y no toca el paso de la cuenta. El bloque de
- * `labelPillColors` explica el porque con las cifras.
+ * **Bajó de 14% a 6%, y el motivo es que el color se vea más, no menos.**
+ * `mixHex(hex, surface, t)` interpola **de `hex` hacia `surface`**, así que `t = 0.06`
+ * es "6% hacia la superficie": el relleno se queda **pegado al color elegido**. Bajar
+ * el número hace el relleno más del color, que es lo que quería quien lo pidió —un
+ * fondo "un poco más fuerte" del mismo tono— y no al revés.
+ *
+ * **Lo que cuesta, medido, y es menos de lo que parecía.** Con el 14% el texto tenía
+ * que recorrer tanto camino en la luminosidad que salía casi negro —once de los doce
+ * por debajo de luminancia 0.036, indistinguibles de negro a los ojos— y una etiqueta
+ * cuyo color no puedes ver en el texto no se parece a una insignia, que sí enseña el
+ * suyo: `success` escribe `#0E9F6E`, que es verde, no negro. Con el relleno al 6%
+ * **ninguno de los doce sale por debajo de 0.036** —medido, cero de doce en los dos
+ * esquemas— y el color elegido se reconoce en el texto además de en el relleno:
+ * `green` da `#0B5225` y `teal` `#06403A`, que son verde y verde azulado.
+ *
+ * **Y la otra mitad de lo que se pidió también se cumple por el mismo número.** Con
+ * el relleno casi igual al color, el texto tiene que irse hacia el extremo contrario,
+ * y de ahi el peso: `TagChip` pinta el texto en **negrita**, que es lo que hace que
+ * una etiqueta de 12 px con 3:1 se lea como una insignia y no como una nota al pie.
+ *
+ * **Lo que este número NO hace es esconder el relleno, y conviene no creerlo.** El
+ * lavado de una insignia está entre 1.00 y 1.04 de contraste contra la superficie
+ * —casi invisible, que es lo que la hace parecer texto de color— y el relleno de una
+ * pastilla al 6% va de **2.55 a 5.59**: se ve unas cinco veces más. Es lo que se
+ * pidió y es lo que hay; la semejanza con la insignia está en **el texto del mismo
+ * tono en negrita**, no en un relleno que se esconda.
  */
-const MEZCLA_DE_LA_PASTILLA = 0.14;
+const MEZCLA_DE_LA_PASTILLA = 0.06;
 
 /**
  * El paso con el que se busca el texto legible, y cuantos pasos hay.
@@ -338,7 +357,7 @@ const MEZCLA_DE_LA_PASTILLA = 0.14;
  * salen exactamente en estos hex`, en `tag-colors.test.ts`, clava que color sale de
  * los doce en los dos esquemas: es el unico sitio al que puede mirar este comentario
  * para saber que el cambio no movio nada. **La rejilla de 227 colores no lo clava**,
- * porque solo mira que todo llegue a 4.5:1.
+ * porque solo mira que todo llegue a `MIN_LABEL_CONTRAST`.
  *
  * **60 pasos, y son de sobra** —de hecho, con el `break` del extremo **nunca se
  * llegan a gastar**: desde cualquier punto de 0 a 1, llegar al extremo son 50 pasos a

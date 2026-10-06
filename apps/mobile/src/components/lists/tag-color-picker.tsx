@@ -57,30 +57,20 @@ export { hexDeHsv, normalizaHex, tintaDe };
  *
  * ---
  *
- * **The recents are dead in every instance that closes itself, and only alive in the
- * one that does not.** Task 5 mounts this panel in two places and only one of them
- * keeps it: under the new-label field it is always visible, and beside a label the
- * task already carries it is mounted only while that label's picker is open —which is
- * the shape the strip it replaced had, so closing it does what closing it did.
- *
- * **`escribir` pushes into `recientes` and `pickColor` unmounts this panel in the same
- * `finally` that writes.** So in a pill-mounted instance a free colour is added to the
- * row and the row is destroyed in the same commit: it is never rendered, not even for
- * a frame, and the row is not "reset between openings" — it is **unreachable**, and
- * reopening finds nothing because nothing was ever there to keep. **Only the
- * always-visible instance accumulates anything**, which is where the row earns its
- * place: you type a name, you try a free colour on it, you change your mind about the
- * hue and it is one press away.
+ * **The recents are alive in every instance, because no instance closes itself
+ * any more.** Task 5 mounts this panel in two places: under the new-label field
+ * it is always visible, and beside a label the task already carries it is
+ * mounted only while that label's picker is open. `escribir` pushes into
+ * `recientes`, and since the picker stays open after choosing, a free colour
+ * tried on an existing label sits in the row one press away — reopening is not
+ * needed because nothing was ever destroyed.
  *
  * The alternative was to keep the panel mounted and hide it, or to lift the recents
  * into the sheet and pass them in, and both were left out on purpose: hiding it keeps
  * a full picker —square, strip, field and thirteen swatches— in the tree and in the
  * accessibility order of a panel that is not showing it, and lifting the recents would
  * give `TagColorPicker` a second source for the same state, which is the shape that
- * ends with two lists of recents and one of them stale. A row that is only reachable
- * from one of two instances is odd, and it is a cost with a price on it: **a free
- * colour chosen for an existing label is not one press away next time — the twelve
- * are, and those are the colours most labels actually get.**
+ * ends with two lists of recents and one of them stale.
  */
 export interface TagColorPickerProps {
   /** The colour currently chosen, or `null` for "derived from the name". */
@@ -91,6 +81,19 @@ export interface TagColorPickerProps {
   onClose?: () => void;
   /** The label name, used for the accessibility labels. */
   tag?: string;
+  /**
+   * Called whenever the square's colour changes, committed or not.
+   *
+   * Dragging the square or the hue strip only touches this panel's local state
+   * until something is pressed, so without this the label keeps its old colour
+   * while a new one is already on screen under the finger. The sheet paints the
+   * pill with it, so choosing is judging against the real pill and not against a
+   * square. It also fires when the colour arrives from outside (mount, "back to
+   * derived"), with the same value everything already shows, so those calls
+   * change nothing. Omitted where there is no pill to paint — the new-label
+   * instance.
+   */
+  onPreviewChange?: (hex: string) => void;
 }
 
 /**
@@ -179,7 +182,7 @@ function esDeLaPaleta(hex: string): boolean {
  * here and there, and a write per colour crossed is a queue full of operations and
  * a label flickering between colours while somebody is trying to look at one.
  */
-export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPickerProps) {
+export function TagColorPicker({ value, onChange, onClose, tag, onPreviewChange }: TagColorPickerProps) {
   const theme = useTheme();
   const t = useTranslation();
 
@@ -215,6 +218,23 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
     nada que escribir. Sin boton no hay nada que apagar.
   */
 
+  /*
+   * The square's colour, reported up while it is still a draft.
+   *
+   * The latest callback comes from a ref — the sheet passes an inline arrow, so
+   * it is a new function every render, and the gestures above already say why a
+   * callback that changes underfoot does not go in a dep list. The colour is
+   * what matters, so it is the only dep. And the draft never flows back into
+   * `value`: that prop is the committed colour, and feeding the draft into it
+   * would make the sync effect above snap the square back under the finger
+   * mid-drag.
+   */
+  const vistaPreviaRef = useRef(onPreviewChange);
+  vistaPreviaRef.current = onPreviewChange;
+  useEffect(() => {
+    vistaPreviaRef.current?.(colorDelCuadrado);
+  }, [colorDelCuadrado]);
+
   /**
    * **Whose colour this panel is choosing**, and every accessible name below ends
    * with it.
@@ -235,12 +255,20 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
    * "Colour tone of the new label" and "Colour tone of Mercadona" are two different
    * things being said, and "Colour tone" said twice is nothing at all.
    *
-   * `recentColors` and `recentColorOf` are the two names that are **not** qualified,
-   * and the reason is measured rather than hoped: the recents row only renders when
-   * there is something in it, and in a pill-mounted panel there never is, because
-   * `pickColor` unmounts the panel in the same `finally` that writes. One instance
-   * renders that row, so its names are unambiguous. **If the panel ever stopped
-   * closing on a write, those two keys would need a tag like the rest.**
+   * `recentColors` is the one name that is **not** qualified, and `recentColorOf`
+   * is qualified because the row is alive in every instance now.
+   *
+   * The recents row only renders when there is something in it, and it used to be
+   * that a pill-mounted instance never had anything: `pickColor` unmounted the
+   * panel on the write, so a free colour went into the row and the row was
+   * destroyed in the same commit. Now the picker stays open and the row
+   * accumulates there too — which is where it earns its place twice over: you try
+   * a free colour on a label, you change your mind about the hue, and it is one
+   * press away. Two instances never show it at once (the new-label block unmounts
+   * while a picker is open), but the same words at different times about different
+   * labels is the same ambiguity, so every recent says whose label it is for. The
+   * header stays generic: it names the group ("the ones you have used"), and the
+   * buttons name the target.
    */
   const nombreDe = tag ?? t("tags.pendingLabel");
 
@@ -812,8 +840,8 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
         The free colours of this session, and nothing else: the twelve are above,
         and a list that repeated them would push out the ones that are not there
         anywhere else. Empty until something has been chosen, and never a row of
-        nothing — **and in a panel that closes on a write it is never anything**; see
-        the header.
+        nothing — and alive in every instance now that the picker stays open
+        instead of unmounting on a write; see the header.
       */}
       {recientes.length > 0 ? (
         <View style={{ gap: theme.spacing.xs }}>
@@ -825,7 +853,7 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
               <Pressable
                 key={hex}
                 accessibilityRole="button"
-                accessibilityLabel={t("tags.recentColorOf", { color: hex })}
+                accessibilityLabel={t("tags.recentColorOf", { color: hex, name: nombreDe })}
                 hitSlop={6}
                 onPress={() => {
                   setHsv(hexToHsv(hex));
