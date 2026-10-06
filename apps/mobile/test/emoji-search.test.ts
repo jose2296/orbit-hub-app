@@ -1,4 +1,5 @@
 import { EMOJI_CATALOG, EMOJI_GROUPS } from "@/lib/icons/emoji-catalog.generated";
+import { EMOJI_ALIASES } from "@/lib/icons/emoji-aliases";
 import { normaliseQuery, searchEmojis } from "@/lib/icons/search-emoji";
 import { describe, expect, it } from "vitest";
 
@@ -58,6 +59,31 @@ describe("buscar un emoji en una app que está en español", () => {
     expect(normaliseQuery("PAÑAL")).toBe("panal");
     expect(normaliseQuery("Camión")).toBe("camion");
     expect(normaliseQuery("  Niño  ")).toBe("nino");
+  });
+
+  it("normaliza los guiones bajos de los alias", () => {
+    // Los valores de la tabla se escriben `musical_note` y el catálogo guarda
+    // `musical note`. Sin esto, `cancion`, `alarma` e `indice` no encontraban
+    // nada — tres alias muertos que nadie notaba porque nadie los probaba.
+    expect(normaliseQuery("musical_note")).toBe("musical note");
+    expect(normaliseQuery("alarm_clock")).toBe("alarm clock");
+  });
+
+  it("cada palabra de la tabla encuentra al menos un emoji", () => {
+    // La red que impide que la tabla se pudra: medida una vez, 126 de 160
+    // palabras cotidianas no devolvían nada. Un alias que no resuelve es una
+    // promesa rota en silencio.
+    for (const palabra of Object.keys(EMOJI_ALIASES)) {
+      expect(searchEmojis(palabra).length, palabra).toBeGreaterThan(0);
+    }
+  });
+
+  it("encuentra el papel higiénico buscando papel", () => {
+    // El reporte que motivo la tabla grande: "papel" no encontraba nada y
+    // "paper" si. Ahora lo encuentra, y "papel higienico" lo pone el primero.
+    expect(searchEmojis("papel").map((entry) => entry.emoji)).toContain("🧻");
+    expect(searchEmojis("papel higienico")[0]?.emoji).toBe("🧻");
+    expect(searchEmojis("papel higiénico")[0]?.emoji).toBe("🧻");
   });
 
   it("muestra todo cuando no hay nada escrito", () => {

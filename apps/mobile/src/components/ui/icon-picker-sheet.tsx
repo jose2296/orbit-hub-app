@@ -18,7 +18,7 @@ import {
   vectorGlyph,
 } from "@orbit-hub/contracts";
 
-import { useTranslation } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 import { EMOJI_GROUP_LABELS, emojiGroupLabel } from "@/lib/icons/emoji-group-labels";
 import {
   buildIconGrid,
@@ -109,6 +109,7 @@ function IconPickerBody({
 }: Pick<IconPickerSheetProps, "current" | "onSelect">) {
   const theme = useTheme();
   const t = useTranslation();
+  const { locale } = useI18n();
   const { height } = useWindowDimensions();
 
   // On the tab the chosen icon is on, not always emojis: see `initialTab`.
@@ -160,10 +161,17 @@ function IconPickerBody({
   const grid = useMemo(
     () =>
       buildIconGrid(
-        { kind: tab, query: debounced, columns, onPickEmoji: pickEmoji, onPickVector: pickVector },
+        {
+          kind: tab,
+          query: debounced,
+          columns,
+          locale,
+          onPickEmoji: pickEmoji,
+          onPickVector: pickVector,
+        },
         conTitulos ? "on" : "off",
       ),
-    [columns, conTitulos, debounced, pickEmoji, pickVector, tab],
+    [columns, conTitulos, debounced, locale, pickEmoji, pickVector, tab],
   );
 
   /*

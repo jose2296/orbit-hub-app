@@ -5,7 +5,7 @@ import {
   labelOf,
   vectorGlyph,
 } from "@orbit-hub/contracts";
-import type { IconLibrary, VectorIconCategory } from "@orbit-hub/contracts";
+import type { IconLibrary, Locale, VectorIconCategory } from "@orbit-hub/contracts";
 
 /**
  * One cell per drawing, with every word that finds it.
@@ -45,6 +45,12 @@ export interface VectorDrawing {
   label: string;
   /** Every word that finds it, accents folded and lower case. */
   words: readonly string[];
+  /**
+   * The same, in English: the glyph name split into words (`food-apple` finds
+   * `food` and `apple`). Always the fallback, never the primary — see
+   * `searchDrawings`.
+   */
+  english: readonly string[];
 }
 
 /**
@@ -127,6 +133,11 @@ function groupByDrawing(): VectorDrawing[] {
         library: entry.library,
         category,
         label,
+        english: glyph
+          .replace(/-outline$/, "")
+          .split(/[-_]/)
+          .map((part) => part.toLowerCase())
+          .filter(Boolean),
         // A drawing collects the extra words of **every** key that draws it: five
         // people can call the same picture and all five have to find it.
         words: wordsOf(
@@ -149,44 +160,75 @@ export function drawingsOf(category: VectorIconCategory): VectorDrawing[] {
 }
 
 /**
- * The drawings for what was typed, best match first.
+ * How well one word matches a list of words: exact key first, then prefix, then
+ * inside. Shared by both languages so the tiers stay comparable.
+ */
+function tierOf(term: string, key: string, words: readonly string[]): number {
+  if (key === term) return 3;
+  if (words.some((word) => word.startsWith(term))) return 2;
+  if (words.some((word) => word.includes(term))) return 1;
+  return 0;
+}
+
+/**
+ * The drawings for what was typed, best match first — in the user's language,
+ * with English always as the fallback.
  *
  * Every word has to match, and a match can be anywhere in a drawing's words: the
  * whole point of collapsing eleven keys into one cell is that all eleven of them
  * still find it. Nothing typed is everything, in catalogue order — the grid shows
  * the whole catalogue and the search narrows it.
+ *
+ * Two tiers, and the primary language always wins: with `es`, a Spanish score of
+ * 1 outranks an English score of 3, because the person typed in Spanish. English
+ * is the net underneath — "apple" finds the manzana even though no Spanish word
+ * for it exists in the catalogue. With `en` it is the other way around. A query
+ * mixing both languages matches neither tier on every word, and finds nothing:
+ * half a query in each language is not a query in either.
  */
-export function searchDrawings(query: string): readonly VectorDrawing[] {
+export function searchDrawings(query: string, locale: Locale = "es"): readonly VectorDrawing[] {
   const terms = normalise(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return DRAWINGS;
 
-  const scored: Array<{ drawing: VectorDrawing; score: number }> = [];
+  const scored: Array<{ drawing: VectorDrawing; tier: number; score: number }> = [];
   for (const drawing of DRAWINGS) {
-    let score = 0;
-    let matches = true;
+    // The key itself belongs to the primary language: it is the Spanish word.
+    // In English locale the key still counts as primary — it is the drawing's
+    // own name, and names are not translated.
+    const primario = locale === "en" ? drawing.english : drawing.words;
+    const respaldo = locale === "en" ? drawing.words : drawing.english;
 
+    let puntos = 0;
+    let enPrimario = true;
     for (const term of terms) {
-      if (drawing.key === term) {
-        score += 3;
-        continue;
+      const tier = tierOf(term, drawing.key, primario);
+      if (tier === 0) {
+        enPrimario = false;
+        break;
       }
-      // A whole word starting with it beats one that merely contains it, because
-      // "pan" should find bread before it finds "campana".
-      if (drawing.words.some((word) => word.startsWith(term))) {
-        score += 2;
-        continue;
-      }
-      if (drawing.words.some((word) => word.includes(term))) {
-        score += 1;
-        continue;
-      }
-      matches = false;
-      break;
+      puntos += tier;
     }
 
-    if (matches) scored.push({ drawing, score });
+    if (enPrimario) {
+      scored.push({ drawing, tier: 1, score: puntos });
+      continue;
+    }
+
+    let puntosRespaldo = 0;
+    let enRespaldo = true;
+    for (const term of terms) {
+      const tier = tierOf(term, drawing.key, respaldo);
+      if (tier === 0) {
+        enRespaldo = false;
+        break;
+      }
+      puntosRespaldo += tier;
+    }
+    if (enRespaldo) scored.push({ drawing, tier: 2, score: puntosRespaldo });
   }
 
-  scored.sort((a, b) => b.score - a.score || a.drawing.key.localeCompare(b.drawing.key));
+  scored.sort(
+    (a, b) => a.tier - b.tier || b.score - a.score || a.drawing.key.localeCompare(b.drawing.key),
+  );
   return scored.map((entry) => entry.drawing);
 }

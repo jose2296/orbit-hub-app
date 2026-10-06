@@ -2,10 +2,17 @@
  * Spanish words that are not in the data.
  *
  * `emojilib` brings 15412 keywords in English and there is no Spanish edition:
- * "book" finds a book and "libro" finds nothing. This is the short table that
- * closes the gap for the words of this app, and it is short on purpose — it is
- * not a dictionary and it is not going to become one. The words that are missing
- * are found when somebody types them and gets nothing.
+ * "book" finds a book and "libro" finds nothing. This table closes the gap for
+ * the words of this app.
+ *
+ * It is curated and not a dictionary, but "short on purpose" turned out to be
+ * wrong as stated: measured once, 126 of 160 everyday words ("papel", "mano",
+ * "puerta"...) returned nothing, so the table was not a shortcut but a hole.
+ * Every entry below was checked against the real data — English word exists AND
+ * returns the right emoji, because substring matching bites both ways (`bus`
+ * finds businessmen through "business", `liver` finds trucks through
+ * "delivery"). `test/emoji-search.test.ts` asserts every single key resolves,
+ * so a dead alias fails loudly instead of rotting silently.
  *
  * The key is what the person types on a Spanish keyboard, and the value is what
  * the data brings. A key that is already English needs no alias and gets none.
@@ -86,5 +93,72 @@ export const EMOJI_ALIASES: Record<string, string> = {
   peligro: "warning",
   estrella: "star",
   favorita: "star",
-  hecho: "white_check_mark",
+  hecho: "check",
+  papel: "paper",
+  higienico: "toilet",
+  tijeras: "scissors",
+  botella: "bottle",
+  plato: "plate",
+  cuchara: "spoon",
+  tenedor: "fork",
+  cuchillo: "knife",
+  cama: "bed",
+  arbol: "tree",
+  flor: "flower",
+  carta: "letter",
+  regalo: "gift",
+  fiesta: "party",
+  cumpleanos: "birthday",
+  bebe: "baby",
+  pelo: "hair",
+  camisa: "shirt",
+  sombrero: "hat",
+  paraguas: "umbrella",
+  maleta: "luggage",
+  barco: "boat",
+  playa: "beach",
+  montana: "mountain",
+  jardin: "garden",
+  medico: "doctor",
+  farmacia: "pharmacy",
+  dentista: "dentist",
+  policia: "police",
+  bombero: "firefighter",
+  cocinero: "cook",
+  profesor: "teacher",
+  alumno: "student",
+  examen: "exam",
+  lapiz: "pencil",
+  regla: "ruler",
+  mochila: "backpack",
+  paz: "peace",
+  muerte: "death",
+  enfermedad: "disease",
+  fiebre: "fever",
+  moco: "snot",
+  herida: "wound",
+  sangre: "blood",
+  hueso: "bone",
+  cerebro: "brain",
+  musculo: "muscle",
+  dedo: "finger",
+  nariz: "nose",
+  lengua: "tongue",
+  diente: "tooth",
+  dientes: "teeth",
+  cuello: "neck",
+  rodilla: "knee",
+  barriga: "belly",
+  pulgar: "thumb",
+  indice: "index_finger",
+  vena: "vein",
+  pies: "feet",
+  dedos: "fingers",
+  fuego: "fire",
+  ciudad: "city",
+  bicicleta: "bike",
+  pantalon: "pants",
+  muneca: "wrist",
+  munecas: "wrist",
+  ceja: "eyebrow",
 };

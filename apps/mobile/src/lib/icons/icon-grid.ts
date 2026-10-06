@@ -1,4 +1,4 @@
-import type { IconLibrary, IconRef } from "@orbit-hub/contracts";
+import type { IconLibrary, IconRef, Locale } from "@orbit-hub/contracts";
 import { VECTOR_ICON_CATEGORIES } from "@orbit-hub/contracts";
 
 import { EMOJI_CATALOG, EMOJI_GROUPS } from "@/lib/icons/emoji-catalog.generated";
@@ -76,6 +76,8 @@ export interface BuildIconGridInput {
   kind: "emoji" | "vector";
   query: string;
   columns: number;
+  /** The user's language: the search ranks in it first, English second. */
+  locale?: Locale;
   /**
    * Called with the key **and the library** to store when a drawing is picked.
    *
@@ -122,7 +124,7 @@ export function buildIconGrid(input: BuildIconGridInput, titles: Titles = "on"):
           value: entry.emoji,
           onPick: () => onPickEmoji?.(entry.emoji),
         }))
-      : searchDrawings(input.query).map((drawing) => ({
+      : searchDrawings(input.query, input.locale ?? "es").map((drawing) => ({
           id: drawing.id,
           category: drawing.category,
           label: drawing.label,

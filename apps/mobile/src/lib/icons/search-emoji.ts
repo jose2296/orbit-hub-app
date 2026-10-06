@@ -10,7 +10,11 @@ import type { EmojiEntry } from "./emoji-catalog.generated";
  * keyboard with the accent key.
  */
 export function normaliseQuery(query: string): string {
-  return query.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  // Underscores to spaces too: alias values are written `musical_note` and the
+  // catalogue holds `musical note`, and without this three aliases (`cancion`,
+  // `alarma`, `hecho`) matched nothing at all. Found because the new meta-test
+  // asserts every alias resolves.
+  return query.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/_/g, " ");
 }
 
 export interface SearchEmojisOptions {

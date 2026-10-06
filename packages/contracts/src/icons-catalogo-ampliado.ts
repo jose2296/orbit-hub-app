@@ -314,6 +314,10 @@ export const EXTRA_LABELS: Record<string, string> = {
  * stops working.
  */
 export const EXTRA_KEYWORDS: Record<string, string> = {
+  // El perro y el gato dibujan la misma huella: sin esto, "dog" encuentra el
+  // perrito caliente y los de servicio pero no la huella, que es el dibujo.
+  perro: "dog|mascota|can",
+  gato: "cat|mascota|felino|minino",
   datos_moviles: "cobertura|senal|movil|4g",
   radio: "wifi|inalambrico|senal",
   micro_silenciado: "silenciar|mute",

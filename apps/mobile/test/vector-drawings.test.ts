@@ -160,3 +160,53 @@ describe("cómo se reparten por categoría", () => {
     }
   });
 });
+
+describe("buscar en ingles como respaldo", () => {
+  it("encuentra la manzana escribiendo apple", () => {
+    // El hueco que motivo esto: los dibujos solo se buscaban en espanol y
+    // "apple" no encontraba nada aunque el glifo se llame `food-apple`.
+    const manzana = DRAWINGS.find((entry) => entry.key === "manzana")!;
+    expect(searchDrawings("apple")).toContain(manzana);
+  });
+
+  it("encuentra por el nombre del glifo aunque nadie lo llame asi", () => {
+    // El perro y el gato dibujan la misma huella ("paw"): "dog" tiene que
+    // encontrar esa celda, y no solo el perrito caliente y los de servicio.
+    const huella = DRAWINGS.find((entry) => entry.aliases.includes("perro"))!;
+    expect(searchDrawings("dog")).toContain(huella);
+    expect(searchDrawings("soccer")).toContain(
+      DRAWINGS.find((entry) => entry.key === "futbol")!,
+    );
+  });
+
+  it("el espanol va primero: una coincidencia floja en espanol gana a una exacta en ingles", () => {
+    // Quien escribe en espanol busca en espanol. El ingles es la red de abajo,
+    // no el primer resultado.
+    const enEspanol = searchDrawings("pan", "es");
+    const enIngles = searchDrawings("pan", "en");
+    expect(enEspanol.length).toBeGreaterThan(0);
+    expect(enIngles.length).toBeGreaterThan(0);
+    // En espanol, el pan (la palabra exacta) abre; en ingles no tiene por que.
+    expect(enEspanol[0]?.key).toBe("pan");
+  });
+
+  it("en ingles el ingles va primero", () => {
+    const resultados = searchDrawings("apple", "en");
+    expect(resultados[0]?.key).toBe("manzana");
+  });
+
+  it("el nombre del dibujo vale en los dos niveles", () => {
+    // La clave es el nombre propio del dibujo y no esta traducida: cuenta en el
+    // nivel primario y en el de respaldo. "manzana apple" encuentra la manzana
+    // porque "manzana" es su nombre y "apple" su palabra inglesa.
+    expect(searchDrawings("manzana apple").map((entry) => entry.key)).toEqual(["manzana"]);
+    // Pero dos palabras de idiomas distintos que no son el nombre no casan en
+    // ningun nivel.
+    expect(searchDrawings("manzana dog")).toEqual([]);
+  });
+
+  it("sin resultados en ningun idioma, la lista vacia y no el catalogo", () => {
+    expect(searchDrawings("qqqqzzz")).toEqual([]);
+    expect(searchDrawings("qqqqzzz", "en")).toEqual([]);
+  });
+});
