@@ -14,6 +14,12 @@ import {
   limpiarParaElDom,
   type ResultadoDeContenido,
 } from '../src/modules/bookmarks/extract-content.js';
+import {
+  fusionarMetadata,
+  metadataDeYoutube,
+  sacarmetadata,
+  type PiezasDeMetadata,
+} from '../src/modules/bookmarks/extract-metadata.js';
 
 /**
  * La reduccion de un articulo al formato de las notas.
@@ -598,5 +604,185 @@ describe('los bordes', () => {
       ),
     );
     expect(corto.contenido.titulo).toBe('Un titulo');
+  }, TIMEOUT_DE_PAGINA_REAL);
+});
+
+/**
+ * La metadata de una pagina: titulo, sitio, descripcion e imagen.
+ *
+ * Estos tests no bajan nada: usan HTML escrito a mano o el fixture de la watch
+ * de YouTube, que ya esta en el arbol. La unica excepcion es el `oembed`, que
+ * es una llamada real y va en su propio `describe` marcado como tal.
+ */
+function piezasConTodo(url: string): PiezasDeMetadata {
+  return {
+    tituloDeReadability: 'El de Readability',
+    extracto: 'El extracto',
+    tituloDePagina: 'El de la pagina',
+    ogTitulo: 'El OG',
+    ogDescripcion: 'La de OG',
+    ogImagen: 'https://ejemplo.local/og.png',
+    ogSitio: 'El sitio OG',
+    twitterTitulo: 'El de Twitter',
+    twitterDescripcion: 'La de Twitter',
+    twitterImagen: 'https://ejemplo.local/twitter.png',
+    metaDescripcion: 'La meta',
+    imagenPrincipal: 'https://ejemplo.local/principal.png',
+    url,
+  };
+}
+
+describe('la metadata de una pagina', () => {
+  it('usa el titulo de la pagina antes que el de Open Graph si Readability no dio ninguno', () => {
+    // Sin cuerpo no hay articulo y Readability devuelve null: quedan `<title>`
+    // y `og:title`, y gana el de la pagina. Medido, no supuesto: Readability
+    // lee `og:title` por su cuenta, asi que con cuerpo su titulo y el OG suelen
+    // coincidir y este caso no se podria armar.
+    const html =
+      '<!doctype html><html><head><title>La pagina</title>' +
+      '<meta property="og:title" content="El marketing"></head><body></body></html>';
+    expect(sacarmetadata(html, 'https://ejemplo.local/nota').title).toBe('La pagina');
+  });
+
+  it('el titulo que la persona escribio no lo pisa nadie', () => {
+    // La implementacion vive en el servicio (Task 5): aca se deja escrito que la
+    // cadena lo pone primero, con todas las demas fuentes presentes.
+    const m = fusionarMetadata({
+      ...piezasConTodo('https://ejemplo.local/nota'),
+      tituloDePersona: 'Como yo lo llame',
+    });
+    expect(m.title).toBe('Como yo lo llame');
+  });
+
+  it('sin titulo de la persona, Readability va primero y el hostname es el ultimo', () => {
+    const base = piezasConTodo('https://ejemplo.local/nota');
+    expect(fusionarMetadata(base).title).toBe('El de Readability');
+    expect(fusionarMetadata({ ...base, tituloDeReadability: null }).title).toBe('El de la pagina');
+    expect(fusionarMetadata({ ...base, tituloDeReadability: null, tituloDePagina: null }).title).toBe(
+      'El OG',
+    );
+    expect(
+      fusionarMetadata({ ...base, tituloDeReadability: null, tituloDePagina: null, ogTitulo: null })
+        .title,
+    ).toBe('El de Twitter');
+    expect(
+      fusionarMetadata({
+        ...base,
+        tituloDeReadability: null,
+        tituloDePagina: null,
+        ogTitulo: null,
+        twitterTitulo: null,
+      }).title,
+    ).toBe('ejemplo.local');
+  });
+
+  it('la descripcion prefiere Open Graph y cae al extracto y a la meta', () => {
+    const base = piezasConTodo('https://ejemplo.local/nota');
+    expect(fusionarMetadata(base).description).toBe('La de OG');
+    expect(fusionarMetadata({ ...base, ogDescripcion: null }).description).toBe('La de Twitter');
+    expect(fusionarMetadata({ ...base, ogDescripcion: null, twitterDescripcion: null }).description).toBe(
+      'El extracto',
+    );
+    expect(
+      fusionarMetadata({ ...base, ogDescripcion: null, twitterDescripcion: null, extracto: null })
+        .description,
+    ).toBe('La meta');
+  });
+
+  it('el sitio prefiere og:site_name y cae al hostname sin www', () => {
+    const base = piezasConTodo('https://www.ejemplo.local/nota');
+    expect(fusionarMetadata(base).siteName).toBe('El sitio OG');
+    expect(fusionarMetadata({ ...base, ogSitio: null }).siteName).toBe('ejemplo.local');
+  });
+
+  it('trae la imagen de og:image cuando la hay', () => {
+    // Medido, no supuesto: en una watch Readability devuelve un stub de nueve
+    // palabras (el caso `metadata_only` de arriba, que el piso de palabras
+    // rechaza) y su titulo es el `og:title` que lee por su cuenta, sin el
+    // " - YouTube" del `<title>`. La metadata no tiene piso y lo conserva.
+    const m = sacarmetadata(fixture(VIDEO_YOUTUBE), URL_VIDEO);
+    expect(m.imageUrl).toBe('https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg');
+    expect(m.siteName).toBe('YouTube');
+    expect(m.title).toBe('Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)');
+    expect(m.description).toContain('official video');
+  });
+
+  it('Twitter cubre lo que Open Graph no trae', () => {
+    const html =
+      '<!doctype html><html><head>' +
+      '<meta name="twitter:title" content="La de Twitter">' +
+      '<meta name="twitter:description" content="Desc de Twitter">' +
+      '<meta name="twitter:image" content="https://cdn.ejemplo.local/t.png"></head><body></body></html>';
+    const m = sacarmetadata(html, 'https://ejemplo.local/nota');
+    expect(m.title).toBe('La de Twitter');
+    expect(m.description).toBe('Desc de Twitter');
+    expect(m.imageUrl).toBe('https://cdn.ejemplo.local/t.png');
+  });
+
+  it('un og:image a una IP interna queda en null', () => {
+    // El ataque que motivo la validacion: pasa el predicado de esquema y solo
+    // lo para el chequeo de rangos, importado de `ssrf.ts` y no copiado.
+    const html = (imagen: string): string =>
+      '<!doctype html><html><head><title>T</title>' +
+      `<meta property="og:image" content="${imagen}"></head><body></body></html>`;
+    const base = 'https://ejemplo.local/nota';
+    expect(sacarmetadata(html('http://169.254.169.254/x.png'), base).imageUrl).toBeNull();
+    expect(sacarmetadata(html('http://127.0.0.1:8080/x.png'), base).imageUrl).toBeNull();
+    expect(sacarmetadata(html('http://[::ffff:169.254.169.254]/x.png'), base).imageUrl).toBeNull();
+    expect(sacarmetadata(html('javascript:alert(1)'), base).imageUrl).toBeNull();
+    // Y lo legitimo sigue pasando: relativo contra la pagina, absoluto, y una IP
+    // publica, que el chequeo de rangos deja pasar.
+    expect(sacarmetadata(html('/img.png'), base).imageUrl).toBe('https://ejemplo.local/img.png');
+    expect(sacarmetadata(html('https://cdn.ejemplo.local/a.png'), base).imageUrl).toBe(
+      'https://cdn.ejemplo.local/a.png',
+    );
+    expect(sacarmetadata(html('https://8.8.8.8/a.png'), base).imageUrl).toBe('https://8.8.8.8/a.png');
+  });
+
+  it('no se rompe con una pagina que no tiene ninguno', () => {
+    // Cuerpo vacio: Readability devuelve null y no hay ni extracto. Sin
+    // fuentes solo quedan los fallbacks del hostname: el resto es null.
+    const m = sacarmetadata(
+      '<!doctype html><html><head></head><body></body></html>',
+      'https://www.ejemplo.local/nota',
+    );
+    // Sin fuentes solo quedan los fallbacks del hostname: el resto es null.
+    expect(m).toEqual({
+      title: 'www.ejemplo.local',
+      siteName: 'ejemplo.local',
+      description: null,
+      imageUrl: null,
+    });
+  });
+
+  it('nunca tira, ni con basura ni con una url que no es url', () => {
+    expect(sacarmetadata('', '')).toEqual({
+      title: null,
+      siteName: null,
+      description: null,
+      imageUrl: null,
+    });
+    expect(sacarmetadata('<p>sin cerrar', 'no-es-una-url').imageUrl).toBeNull();
+  });
+});
+
+describe('el oembed de YouTube', () => {
+  it('devuelve null si no es un video, haya red o no', async () => {
+    // Determinista en los dos mundos: con red YouTube contesta 404 y sin red
+    // falla el DNS. En los dos casos `traerHtmlSeguro` devuelve un motivo.
+    await expect(metadataDeYoutube('https://ejemplo.local/nota')).resolves.toBeNull();
+  }, TIMEOUT_DE_PAGINA_REAL);
+
+  it('trae titulo, sitio e imagen de un video real (necesita internet)', async (ctx) => {
+    const m = await metadataDeYoutube('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    // Sin red no hay nada que afirmar: el test se salta en vez de fallar.
+    if (m === null) {
+      ctx.skip();
+      return;
+    }
+    expect(m.title).toContain('Rick Astley');
+    expect(m.siteName).toBe('YouTube');
+    expect(m.description).toBeNull();
+    expect(m.imageUrl).toContain('https://i.ytimg.com/vi/dQw4w9WgXcQ/');
   }, TIMEOUT_DE_PAGINA_REAL);
 });
