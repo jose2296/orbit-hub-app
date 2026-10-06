@@ -30,6 +30,7 @@ import type {
 } from "@orbit-hub/contracts";
 
 import { StateDeleteSheet } from "@/components/lists/state-delete-sheet";
+import { StateColorStrip } from "@/components/lists/state-color-strip";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Button } from "@/components/ui/button";
 import { DRAG_HANDLE_WIDTH } from "@/components/ui/draggable-row";
@@ -46,8 +47,6 @@ import {
 } from "@/lib/lists/board";
 import { dropIndex, rowShift } from "@/lib/lists/drag-shift";
 import {
-  ICON_COLOR_KEYS,
-  ICON_COLOR_LABEL,
   iconColor,
 } from "@/lib/lists/item-icons";
 import { useTheme } from "@/theme";
@@ -139,10 +138,11 @@ export interface StateEditorSheetProps {
  * **Measured:** the row height, the twelve swatches and the panel's own layout, at
  * 1440 x 900 in light and dark, in `scripts/verify-state-editor.mjs`. **Not
  * measured:** native, and a phone-width panel — there the twelve swatches wrap onto
- * a second line, which is why `tira` wraps and no run here has looked at it. The
+ * a second line, which is why the strip wraps and no run here has looked at it. The
  * widths and target sizes are the ones `state-picker-sheet.tsx` already uses for the
  * rows next to them, and the swatch's reserved border is read out of
- * `icon-picker.tsx`'s, not measured — see the note on `muestra`.
+ * `icon-picker.tsx`'s, not measured — see `state-color-strip.tsx`, where the strip
+ * lives now.
  */
 export function StateEditorSheet({
   list: pedido,
@@ -593,7 +593,7 @@ export function StateEditorSheet({
             <AppText variant="caption" tone="subtle">
               {t("board.stateColor")}
             </AppText>
-            <TiraDeColores color={color} onChange={setColor} />
+            <StateColorStrip color={color} onChange={setColor} />
           </View>
 
           <Button
@@ -625,62 +625,6 @@ export function StateEditorSheet({
   );
 }
 
-/**
- * The twelve colours a column can be, **and it is the icon palette and not a second
- * list.**
- *
- * `ICON_COLOR_KEYS` *is* `ITEM_ICON_COLORS` (`item-icons.ts`, line 110), so a column and
- * an icon of the same key are the same colour on the same screen, and there is one
- * place to add a colour to. The labels come from `ICON_COLOR_LABEL` for the same
- * reason and with the same effect: a colour the app cannot name is a colour
- * somebody using a screen reader cannot choose.
- *
- * **The swatch is the one of `icon-picker.tsx` and not a new one**: thirty points
- * round, the chosen one ringed with the theme's own text colour. The one difference
- * is that the ring is **always drawn** and is transparent when the colour is not
- * chosen, which `icon-picker` does not do — and the reason is in `IconCell` of that
- * file, about its grid jumping when a drawing is picked: here the twelve sit on one
- * row, so a border that appears would push the other eleven along by six points on
- * every tap. **This is read out of that component and not measured**, and the
- * consequence of being wrong is a strip that shifts by six points when a colour is
- * chosen.
- */
-function TiraDeColores({
-  color,
-  onChange,
-}: {
-  color: ItemIconColor;
-  onChange: (color: ItemIconColor) => void;
-}) {
-  const theme = useTheme();
-  const t = useTranslation();
-
-  return (
-    <View style={[styles.tira, { gap: theme.spacing.xs }]}>
-      {ICON_COLOR_KEYS.map((opcion) => {
-        const activa = color === opcion;
-        return (
-          <Pressable
-            key={opcion}
-            testID={`state-editor-color-${opcion}`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: activa }}
-            accessibilityLabel={t(ICON_COLOR_LABEL[opcion])}
-            onPress={() => onChange(opcion)}
-            style={({ pressed }) => [
-              styles.muestra,
-              {
-                backgroundColor: iconColor(opcion),
-                borderColor: activa ? theme.colors.text : "transparent",
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}
-          />
-        );
-      })}
-    </View>
-  );
-}
 
 /**
  * One column of the board, in the editor: its handle, its dot, its name, how much
@@ -1259,24 +1203,6 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     alignItems: "center",
     justifyContent: "center",
-  },
-  /** The colours wrap, because a phone-width panel has room for six of the twelve. */
-  tira: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  /**
-   * Thirty points round, from `icon-picker.tsx`'s `swatch`, **and with the ring
-   * always drawn** — `borderWidth: 3` here, not the `activa ? 3 : 0` of that file.
-   * The ring sits on top of the colour rather than outside it, which is what keeps
-   * twelve swatches from being 360 points of colour plus 36 of border that only one
-   * of them has.
-   */
-  muestra: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 3,
   },
 });
 

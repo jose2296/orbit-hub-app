@@ -1013,6 +1013,65 @@ async function tap(tab, testId, dentro) {
 }
 
 /**
+ * Abrir el editor de estados por su camino nuevo: el `···` de la cabecera abre
+ * el menu y su primera fila abre el editor.
+ *
+ * Desde el lote 1C la cabecera ya no lleva el editor directo (`board-states-button`
+ * no existe): el menu es la puerta y esta funcion es la unica que la cruza, para
+ * que el dia que el camino vuelva a cambiar haya un sitio donde cambiarlo.
+ */
+async function abrirEditor(tab) {
+  /*
+    **Cerrar antes de abrir.** El bloque que llama puede dejar el formulario
+    abierto debajo —desde el lote 1B abrir la hoja no lo cierra— y con un panel
+    encima el toque al `···` de la cabecera no llega a la cabecera: lo coge el
+    panel. Se cierran por su X de arriba abajo, como hace `abrirHoja` en
+    `verify-state-picker.mjs` por el mismo motivo.
+  */
+  for (let i = 0; i < 3; i += 1) {
+    const n = await tab.evaluate(`document.querySelectorAll('[data-testid="sheet-panel"]').length`);
+    if (n === 0) break;
+    const x = await tab.evaluate(`(() => {
+      const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+      const btn = paneles[paneles.length - 1].querySelector('button:not([data-testid])');
+      if (!btn) return null;
+      const r = btn.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+    if (!x) break;
+    await tab.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: x.x, y: x.y, radiusX: 8, radiusY: 8, force: 1 }],
+    });
+    await sleep(80);
+    await tab.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await sleep(600);
+  }
+  await tap(tab, "board-menu-button");
+  await sleep(600);
+  const fila = await tab.evaluate(`(() => {
+    const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+    const ultimo = paneles[paneles.length - 1];
+    if (!ultimo) return null;
+    const btn = [...ultimo.querySelectorAll("button, [role=button]")].find((el) =>
+      /estados del tablero/i.test(el.getAttribute("aria-label") || el.innerText || ""),
+    );
+    if (!btn) return null;
+    btn.scrollIntoView({ block: "center" });
+    const r = btn.getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  })()`);
+  if (!fila) throw new Error("el menu no trae la fila de estados");
+  await tab.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: fila.x, y: fila.y, radiusX: 8, radiusY: 8, force: 1 }],
+  });
+  await sleep(80);
+  await tab.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await sleep(600);
+}
+
+/**
  * Un toque en la `X` de la hoja, **buscando el boton por su etiqueta y no por "el
  * primero del panel"**: el pulsable de fuera de `Sheet` lleva la misma etiqueta y
  * esta fuera del panel, asi que se lee de ahi —el hermano siguiente al
@@ -1219,7 +1278,6 @@ const LEER_MUESTREO = `(() => {
   if (!reg) return { error: 'el muestreo no estaba instalado' };
   reg.vivo = false;
   const m = reg.muestras;
-  const conDos = m.filter((x) => x.dims > 1 || x.paneles > 1);
   const llega = m.findIndex((x) => x.quien.indexOf('editor#') >= 0);
   const despues = llega >= 0 ? m.slice(llega) : [];
   return {
@@ -1227,10 +1285,24 @@ const LEER_MUESTREO = `(() => {
     fotogramas: m.length,
     hasta: m.length ? m.at(-1).t : 0,
     llegada: llega >= 0 ? m[llega].t : null,
-    ventana: conDos.length
-      ? { desde: conDos[0].t, hasta: conDos.at(-1).t, ms: conDos.at(-1).t - conDos[0].t, fotogramas: conDos.length }
-      : { desde: null, hasta: null, ms: 0, fotogramas: 0 },
-    quienEnLaVentana: conDos[0] ? conDos[0].quien : null,
+    /*
+      **La ventana es el relevo y no "mas de un panel".** Desde el lote 1B el
+      formulario vive debajo de la hoja —y desde el 1D el editor remonta encima
+      de el—, asi que hay dos o tres paneles en el documento durante todo el
+      muestreo y "dims > 1" es todo el rato. Lo que empieza y termina es la
+      coexistencia de la hoja que se va con el editor que llega, y eso es lo que
+      se cuenta: fotogramas donde estan los dos.
+    */
+    ventana: (() => {
+      const relevo = m.filter((x) => x.quien.indexOf("editor#") >= 0 && x.quien.indexOf("hoja#") >= 0);
+      return relevo.length
+        ? { desde: relevo[0].t, hasta: relevo.at(-1).t, ms: relevo.at(-1).t - relevo[0].t, fotogramas: relevo.length }
+        : { desde: null, hasta: null, ms: 0, fotogramas: 0 };
+    })(),
+    quienEnLaVentana: (() => {
+      const primero = m.find((x) => x.quien.indexOf("editor#") >= 0 && x.quien.indexOf("hoja#") >= 0);
+      return primero ? primero.quien : null;
+    })(),
     maxDims: m.reduce((a, x) => Math.max(a, x.dims), 0),
     maxPaneles: m.reduce((a, x) => Math.max(a, x.paneles), 0),
     sinVelo: m.filter((x) => x.paneles > 0 && x.dims === 0).length,
@@ -1240,8 +1312,19 @@ const LEER_MUESTREO = `(() => {
     // ocupa dos capturas. Lo que se vigila es que el orden invertido este al
     // principio de la ventana, que es lo que distingue una carrera de un fondo mal
     // puesto. Es el mismo criterio y el mismo motivo que en verify-state-picker.
-    fondoMaloPos: conDos.map((x, i) => (x.fondo.startsWith('hoja#') ? i : -1)).filter((i) => i >= 0),
-    centroMaloPos: conDos
+    //
+    // **La ventana aqui es el relevo (editor# y hoja# a la vez), no "mas de un
+    // panel"**: desde el lote 1B el formulario vive debajo, asi que contar
+    // fotogramas con dos paneles contaria todo el muestreo. "Malo" sigue siendo
+    // que lo de mas arriba sea la hoja que se va, y con el editor remontando en
+    // cada apertura (lote 1D) eso ya no pasa nunca: estas dos listas existen para
+    // que la vuelta del defecto las llene.
+    fondoMaloPos: m
+      .filter((x) => x.quien.indexOf("editor#") >= 0 && x.quien.indexOf("hoja#") >= 0)
+      .map((x, i) => (x.fondo.startsWith('hoja#') ? i : -1))
+      .filter((i) => i >= 0),
+    centroMaloPos: m
+      .filter((x) => x.quien.indexOf("editor#") >= 0 && x.quien.indexOf("hoja#") >= 0)
       .map((x, i) => (x.centro.startsWith('hoja#') ? i : -1))
       .filter((i) => i >= 0),
     fondos: [...new Set(despues.map((x) => x.fondo))],
@@ -1644,7 +1727,7 @@ try {
   /* --- 1. La puerta de la cabecera --- */
 
   const hayBoton = await tab.evaluate(`(() => {
-    const el = document.querySelector('[data-testid="board-states-button"]');
+    const el = document.querySelector('[data-testid="board-menu-button"]');
     if (!el) return null;
     const r = el.getBoundingClientRect();
     return {
@@ -1660,17 +1743,17 @@ try {
     };
   })()`);
   check(
-    "la cabecera tiene el boton del editor, con nombre y sin texto",
+    "la cabecera tiene el menu, con nombre y sin texto",
     Boolean(hayBoton) && Boolean(hayBoton.etiqueta) && hayBoton.texto === "",
     `etiqueta: ${hayBoton?.etiqueta ?? "(no hay boton)"} | texto: "${hayBoton?.texto ?? "-"}" | ancho: ${hayBoton?.ancho ?? "-"}`,
   );
 
   vaciarPushes();
   const desdeAbrir = Date.now();
-  await tap(tab, "board-states-button");
+  await abrirEditor(tab);
   await sleep(400);
   let editor = await tab.evaluate(LEER_EDITOR);
-  check("el boton de la cabecera abre el editor de estados", editor !== null);
+  check("el menu de la cabecera abre el editor de estados", editor !== null);
   check(
     "el panel se titula con la frase del editor y dice de que tablero es",
     (editor?.titulo ?? "").includes("Editar los estados del tablero") &&
@@ -1890,7 +1973,7 @@ try {
     `pestanas: ${tras?.tabs?.join(" | ")}`,
   );
 
-  await tap(tab, "board-states-button");
+  await abrirEditor(tab);
   await sleep(400);
   editor = await tab.evaluate(LEER_EDITOR);
   check(
@@ -1936,7 +2019,11 @@ try {
   // la siembra no puso sale como "Cannot read properties of undefined (reading
   // 'id')" en la linea del toque, que no dice ni de la hoja ni del relevo.
   if (!tarjeta) throw new Error('la siembra no tiene ninguna tarea "Ready-1"');
+  // Desde el lote 1B la tarjeta abre el formulario y la hoja sale de su fila de
+  // estado; el relevo que se mide aqui (hoja -> editor) es el mismo de antes.
   await tap(tab, `item-row-${tarjeta.id}`, " button[aria-label]");
+  await sleep(500);
+  await tap(tab, "item-state-row");
   await sleep(500);
   const hoja = await tab.evaluate(`(() => {
     const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
@@ -1966,75 +2053,40 @@ try {
     "**el relevo se ha medido mientras estaba abierto, no despues**",
     (relevo.fotogramas ?? 0) >= 10 && relevo.llegada != null && (relevo.hasta ?? 0) >= 400,
     `${relevo.fotogramas} fotogramas en ${relevo.hasta} ms | el editor aparece en el fotograma de ` +
-      `${relevo.llegada} ms | ventana de dos hojas: ${relevo.ventana.ms} ms (${relevo.ventana.fotogramas} fotogramas)`,
+      `${relevo.llegada} ms | ventana del relevo: ${relevo.ventana.ms} ms (${relevo.ventana.fotogramas} fotogramas)`,
   );
   check(
-    "**la ventana son dos paneles y no mas, y no dura mas que una salida**",
-    (relevo.maxDims ?? 9) === 2 && (relevo.maxPaneles ?? 9) === 2 &&
+    "**la ventana son tres paneles y no mas, y no dura mas que una salida**",
+    (relevo.maxDims ?? 9) === 3 && (relevo.maxPaneles ?? 9) === 3 &&
       (relevo.ventana.ms ?? 0) > 0 && (relevo.ventana.ms ?? 0) <= 400,
-    `maximo de sheet-dim: ${relevo.maxDims}, de sheet-panel: ${relevo.maxPaneles} | con dos a la vez: ` +
+    `maximo de sheet-dim: ${relevo.maxDims}, de sheet-panel: ${relevo.maxPaneles} | con tres a la vez: ` +
       `${relevo.ventana.ms} ms de los ${relevo.hasta} medidos (${relevo.ventana.fotogramas} fotogramas) | ` +
       `en la ventana: ${relevo.quienEnLaVentana}`,
   );
   /*
-    **El orden de pintado de este relevo sale AL REVES que el de `onEditTask`, y la
-    comprobacion que habia aqui —"el fondo ajeno solo al principio de la ventana"—
-    cae por el motivo justo. Se deja escrito en vez de subir el tope hasta que pase.**
+    **El que entra llega encima, y esta comprobacion es la que lo afirma.** Hasta
+    el lote 1D este relevo salia al reves: el editor entraba en un portal anterior
+    al de la hoja y pintaba debajo durante toda la ventana —medido dieciseis de
+    dieciseis fotogramas— y a los 245 ms, cuando la hoja se iba, quedaba entero y
+    se pulsaba. Desde que el formulario vive debajo (lote 1B) eso ya no basta:
+    el editor quedaba debajo del formulario para siempre, y su cruz no se podia
+    pulsar (`state-editor-back` inalcanzable). El editor remonta en cada apertura
+    (`aperturaEditor` en la pantalla) y estas dos listas existen para que la
+    vuelta de ese defecto las llene: vacias es que el de mas arriba es siempre el
+    que llega.
 
-    Medido en esta corrida: el editor entra en el portal **#5** y la hoja de estado
-    que se va en el **#6** —`en la ventana: editor#5 + hoja#6`, `orden al final:
-    editor#5`—, o sea que **el que entra es el de mas abajo en `body`** y el que se
-    va esta encima los **16 fotogramas de los 16** de la ventana, y no solo en los
-    primeros como en el relevo del panel de la tarea.
-
-    **El indice de un portal se fija la primera vez que su `Modal` se monta y no se
-    vuelve a ordenar**, y en esta corrida el editor se abrio antes que la hoja de
-    estado: el boton de la cabecera en el paso 1 y la fila `state-picker-edit` en el
-    paso 9. De ahi el #5 del editor y el #6 de la hoja. En el relevo del panel de
-    la tarea —`verify-state-picker.mjs`, bloque `1c`, medido en diecinueve
-    corridas— el orden era el contrario porque la hoja se abrio en el paso 1 y el
-    panel en el 1b.
-
-    **Lo que cuesta, medido tambien:** durante esos 245 ms el fondo de mas arriba y
-    el centro del panel que entra son los de la hoja que se va, es decir **el editor
-    que entra no se puede pulsar durante su propia llegada**. No se pierde nada —la
-    hoja que se va ya tiene pedido cerrar y volver a pedirlo no cambia nada, y
-    `setCambiandoEstado(null)` dos veces es lo mismo que una— y a los 245 ms esta
-    entero y se pulsa, que es lo que comprueba el paso de debajo.
-
-    **Lo que NO se ha medido:** la sesion en la que la hoja de estado se abriera
-    antes que el editor, que es la que daria el orden favorable. Y **lo que no se
-    arregla aqui**: el indice lo pone `ModalPortal` de react-native-web y el
-    `z-index` del envoltorio lo pone `sheet.tsx`, y ninguno de los dos ficheros es
-    de esta tarea.
-  */
-  /*
-    **El umbral del centro pasa de `fotogramas - 1` a `fotogramas - 2`, y es una
-    correccion de la Task 11 y no una de esta.** El comentario de arriba, que es el
-    de la Task 11 y esta aqui sin tocar, dice que el orden invertido se ha medido
-    *"en 0, 1 o 2 fotogramas, siempre en las primeras posiciones de la ventana"* — y el
-    umbral solo permitia uno. En la corrida del 5 de octubre de 2026, con 16
-    fotogramas de ventana, salieron **14** y la comprobacion cayo con el mensaje
-    entero describiendo una corrida sin fallos: `posiciones con el fondo de la hoja que
-    se va: [0..15] de 16` —**los dieciseis**, que es lo que la comprobacion del fondo
-    exige y lo que dice que el defecto esta entero— y `posiciones con el centro del
-    que entra debajo: [2..15]`, o sea que el centro se recupero en **las dos** Primeras
-    posiciones en vez de en una.
-
-    Es decir: **la propia medicion de la Task 11 dice que el numero vale dos y el tope
-    pedia uno**, y un tope que se contradice con la medicion que lojustify no es un
-    tope: es una comprobacion que falla cuando la app se comporta como se ha medido
-    que se comporta. **El fondo sigue exigiendo los dieciseis de dieciseis** —esa
-    parte no se toca, porque ahi el defecto es de verdad y completo— y lo que se
-    suelta son los dos fotogramas del centro, que son los del primer render del modal
-    que entra (`ModalAnimation.js:67`, `opacity: 0` hasta que corre su `useEffect`) y
-    que no son un fallo de la app sino de la biblioteca.
+    **Las dos primeras posiciones se perdonan, y es la biblioteca y no la app.**
+    `ModalAnimation.js:67` pinta el envoltorio del modal que entra con
+    `opacity: 0` hasta que corre su `useEffect`, asi que el primer fotograma —y
+    a veces el segundo— ensena lo de debajo aunque el orden sea el bueno. Es la
+    misma carrera que la Task 11 midio en 0-2 fotogramas; lo que distingue una
+    carrera de un fondo mal puesto es que no llegue a la tercera.
   */
   check(
-    "**el que entra esta debajo del que se va toda la ventana - limitacion medida, no un tope escondido**",
-    (relevo.fondoMaloPos ?? []).length === (relevo.ventana.fotogramas ?? -1) &&
-      (relevo.centroMaloPos ?? []).length >= (relevo.ventana.fotogramas ?? 0) - 2,
-    `en la ventana: ${relevo.quienEnLaVentana} (el editor es el #5 y la hoja el #6) | ` +
+    "**el que entra llega encima toda la ventana: ni el fondo ni el centro son de la hoja que se va**",
+    (relevo.fondoMaloPos ?? [-1]).every((i) => i < 2) &&
+      (relevo.centroMaloPos ?? [-1]).every((i) => i < 2),
+    `en la ventana: ${relevo.quienEnLaVentana} | ` +
       `posiciones con el fondo de la hoja que se va: ${JSON.stringify(relevo.fondoMaloPos)} de ` +
       `${relevo.ventana.fotogramas} fotogramas | posiciones con el centro del que entra debajo: ` +
       `${JSON.stringify(relevo.centroMaloPos)} | fondo de mas arriba tras la llegada: ${JSON.stringify(relevo.fondos)} | ` +
@@ -2104,7 +2156,7 @@ try {
    * paneles sube a dos y estas tres caen.** No son una medida de que "no hay
    * problema": son la afirmación de que no hay una segunda capa, contada.
    */
-  await tap(tab, "board-states-button");
+  await abrirEditor(tab);
   await sleep(400);
   editor = await tab.evaluate(LEER_EDITOR);
   check(
@@ -2364,7 +2416,7 @@ try {
     El borrador de este punto tiene cuatro columnas —las de la siembra menos
     Backlog, mas la que anadio la Task 11— y las cuatro filas tienen el mismo paso.
   */
-  await tap(tab, "board-states-button");
+  await abrirEditor(tab);
   await sleep(400);
   editor = await tab.evaluate(LEER_EDITOR);
 
@@ -2613,7 +2665,7 @@ try {
     cual, y sin la recarga el borrador arrastraria la columna que se borro en el
     bloque 15 y el editor dibujaria una columna que ya no esta.
   */
-  await tap(tab, "board-states-button");
+  await abrirEditor(tab);
   await sleep(400);
   editor = await tab.evaluate(LEER_EDITOR);
   const unicaFila = editor?.filas?.[0];
@@ -2723,7 +2775,7 @@ try {
   await tab.screenshot(`${SHOTS}/08-tablero-con-24.png`);
 
   if (conTope?.columnas?.length === 24) {
-    await tap(tab, "board-states-button");
+    await abrirEditor(tab);
     await sleep(400);
     editor = await tab.evaluate(LEER_EDITOR);
     check("el editor se abre con las 24 columnas", editor?.filas.length === 24, `filas: ${editor?.filas.length}`);
@@ -2760,7 +2812,7 @@ try {
   const esquema = await temaDeLaPagina();
   check("el tema oscuro esta puesto de verdad", esquema === "dark", `colorScheme: ${esquema}`);
 
-  await tap(tab, "board-states-button");
+  await abrirEditor(tab);
   await sleep(400);
   editor = await tab.evaluate(LEER_EDITOR);
   const fondoPanel = await tab.evaluate(
@@ -3795,20 +3847,26 @@ try {
 
   /* --- 22.1 El boton de los controles dice el orden que el tablero tiene --- */
 
+  /*
+    **Desde el lote 1A el boton es flotante y de solo icono**: encima del `+`,
+    de 58, sin el "A mano" —en un circulo no cabe— y sin estirarse a la ventana.
+    Lo que afirma sigue siendo lo mismo (existe, dice Filtrar, abre la hoja),
+    medido en el boton que hay y no en el que habia.
+  */
   const botonFiltros = await tab.evaluate(LEER_BOTON_CONTROLES);
   check(
-    "el boton de los controles existe y dice que el orden es el manual",
+    "el boton de los controles existe y dice Filtrar",
     typeof botonFiltros?.etiqueta === "string" &&
-      botonFiltros.etiqueta.includes("A mano") &&
-      botonFiltros.etiqueta.startsWith("Filtrar"),
+      botonFiltros.etiqueta === "Filtrar",
     `etiqueta: "${botonFiltros?.etiqueta}" | ` +
-      `ancho ${botonFiltros?.ancho} x ${botonFiltros?.alto} — un boton estirado a ` +
-      `toda la ventana es la caja de controles sin \`alignItems: 'flex-start'\``,
+      `ancho ${botonFiltros?.ancho} x ${botonFiltros?.alto} — un boton flotante mide 58`,
   );
   check(
-    "el boton de los controles no se estira a lo ancho de la ventana",
-    typeof botonFiltros?.ancho === "number" && botonFiltros.ancho > 0 && botonFiltros.ancho < 700,
-    `ancho del boton: ${botonFiltros?.ancho} en una ventana de 1440`,
+    "el boton de los controles es flotante y no se estira a lo ancho de la ventana",
+    typeof botonFiltros?.ancho === "number" && botonFiltros.ancho === 52 &&
+      botonFiltros.alto === 52,
+    `boton: ${botonFiltros?.ancho}x${botonFiltros?.alto} en una ventana de 1440 — ` +
+      `52 es lo que \`isWide()\` dibuja en ancho, 58 en estrecho`,
   );
 
   /* --- 22.2 La hoja: seis modos fuera, la completada apagada con su motivo --- */
@@ -4046,8 +4104,7 @@ try {
   check(
     "el boton de los controles cuenta el filtro que esta puesto",
     typeof botonControlesFiltro?.etiqueta === "string" &&
-      /^Filtrar 1 /.test(botonControlesFiltro.etiqueta) &&
-      botonControlesFiltro.etiqueta.endsWith("A mano"),
+      botonControlesFiltro.etiqueta === "Filtrar 1",
     `etiqueta: "${botonControlesFiltro?.etiqueta}"`,
   );
   await tab.screenshot(`${SHOTS}/22-02-filtrado-claro.png`);
@@ -4490,16 +4547,59 @@ try {
   );
 
   const botonEstadosVisor = await tab.evaluate(`(() => {
-    const el = document.querySelector('[data-testid="board-states-button"]');
+    const el = document.querySelector('[data-testid="board-menu-button"]');
     return el ? (el.getAttribute('aria-label') ?? el.innerText ?? '').trim() : null;
   })()`);
   check(
-    "el visor **no tiene el boton de editar los estados** en la cabecera",
-    botonEstadosVisor === null,
-    botonEstadosVisor === null
-      ? "no esta"
-      : `esta: "${botonEstadosVisor}" — el boton de la cabecera esta detrás de \`!readOnly\``,
+    "el visor **si tiene el menu** en la cabecera",
+    botonEstadosVisor !== null,
+    botonEstadosVisor !== null
+      ? `esta: "${botonEstadosVisor}"`
+      : "no esta — el menu de la cabecera es para todos los roles",
   );
+  /*
+    **El menu del visor no lleva la fila de estados.** El editor no monta para
+    el, asi que la fila seria una puerta a nada: se abre el menu y se lee lo que
+    trae, en vez de suponer que "menu para todos" significa "menu igual".
+  */
+  await tap(tab, "board-menu-button");
+  await sleep(700);
+  const filasMenuVisor = await tab.evaluate(`(() => {
+    const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+    const ultimo = paneles[paneles.length - 1];
+    if (!ultimo) return null;
+    return [...ultimo.querySelectorAll("button, [role=button]")]
+      .map((el) => {
+        return (el.getAttribute("aria-label") || el.innerText || "").trim();
+      })
+      .filter((t) => t.length > 0 && t !== "Cerrar" && t !== "Close");
+  })()`);
+  check(
+    "pero su menu **no lleva** la fila de editar los estados",
+    !!filasMenuVisor && !filasMenuVisor.some((t) => /estados del tablero/i.test(t)),
+    (filasMenuVisor ?? []).join(" | "),
+  );
+  // Se cierra antes de seguir: el flujo del visor pulsa una tarjeta y con el
+  // menu abierto el toque cae en el menu. La X es la del ultimo panel, que es
+  // el que esta arriba.
+  {
+    const x = await tab.evaluate(`(() => {
+      const paneles = [...document.querySelectorAll('[data-testid="sheet-panel"]')];
+      const btn = paneles[paneles.length - 1]?.querySelector('button:not([data-testid])') ?? null;
+      if (!btn) return null;
+      const r = btn.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+    if (x) {
+      await tab.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: x.x, y: x.y, radiusX: 8, radiusY: 8, force: 1 }],
+      });
+      await sleep(80);
+      await tab.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await sleep(600);
+    }
+  }
 
   const avisoVisor = await tab.evaluate(LEER_AVISO(AVISO_SOLO_LECTURA));
   check(

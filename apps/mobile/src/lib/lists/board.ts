@@ -45,8 +45,12 @@ import { nextOrderFromDrop } from "./drag";
  * title longer than this is **clipped** rather than refused: a clipped name is a
  * shorter name somebody can see, where a refused write is a rename that looks
  * like it never happened.
+ *
+ * Exported so the panels that ask for a name cap the field at the same number
+ * instead of writing their own forty: two forties are two numbers that stop
+ * agreeing the day the contract moves.
  */
-const MAX_STATE_TITLE = 40;
+export const MAX_STATE_TITLE = 40;
 
 /**
  * The id of the column a `stateId` points at, or `null` when the list has none.

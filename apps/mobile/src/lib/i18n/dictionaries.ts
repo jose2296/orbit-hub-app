@@ -1023,6 +1023,10 @@ const es = {
   "board.newStateName": "Nombre del estado",
   "board.stateLimit": "El máximo son {max} estados. Borra alguno para añadir otro.",
   "board.editStates": "Editar los estados del tablero",
+  "board.editState": "Editar estado",
+  "board.editOrder": "Editar orden",
+  "board.columnMenu": "Opciones de la columna",
+  "board.columnMenuHint": "Cambia el nombre, el color o el orden de esta columna",
   "board.stateHere": "está aquí",
 
   /*
@@ -2127,6 +2131,10 @@ const en: Record<TranslationKey, string> = {
   "board.newStateName": "State name",
   "board.stateLimit": "The maximum is {max} states. Delete one to add another.",
   "board.editStates": "Edit the board's states",
+  "board.editState": "Edit state",
+  "board.editOrder": "Edit order",
+  "board.columnMenu": "Column options",
+  "board.columnMenuHint": "Change this column's name, colour or order",
   "board.stateHere": "is here",
 
   /*

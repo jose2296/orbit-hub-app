@@ -20,6 +20,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
+import { ColumnMenuSheet } from "@/components/lists/column-menu-sheet";
+import { StateEditSheet } from "@/components/lists/state-edit-sheet";
+import { ReorderSheet } from "@/components/ui/reorder-sheet";
 import { StateEditorSheet } from "@/components/lists/state-editor-sheet";
 import { StatePickerSheet } from "@/components/lists/state-picker-sheet";
 import { Screen } from "@/components/ui/screen";
@@ -30,12 +33,13 @@ import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
-import type { BoardStates, ListItem } from "@orbit-hub/contracts";
+import type { BoardStates, ItemIconColor, ListItem } from "@orbit-hub/contracts";
 import {
   columnLayout,
   columnOffset,
   countInState,
   deleteStatePlan,
+  editState,
   newState,
   renumberWithinState,
   stateIdToWrite,
@@ -571,6 +575,9 @@ export default function BoardScreen() {
     alAbrirRef.current = states;
     borradorRef.current = states;
     setBorrador(states);
+    // A new opening and a new `key` (`aperturaEditor` above says why): the
+    // editor remounts last and paints on top of the task panel.
+    setAperturaEditor((n) => n + 1);
     setEditorAbierto(true);
   }
 
@@ -796,6 +803,43 @@ export default function BoardScreen() {
    * open; an id and a flag is one open state each.
    */
   const [eligiendoColumna, setEligiendoColumna] = useState(false);
+  /**
+   * Which column's `···` menu is open, **an id or nothing.**
+   *
+   * The menu hands over to one of two sheets — edit the column, order its tasks —
+   * and those are the two states below. Three ids and not one "sheet" enum
+   * because the three are never open at once and an enum would be a fourth value
+   * (`closed`) for what `null` already says three times.
+   */
+  const [menuColumna, setMenuColumna] = useState<string | null>(null);
+  /** Which column the single-state sheet is renaming and recolouring. */
+  const [editandoColumna, setEditandoColumna] = useState<string | null>(null);
+  /**
+   * How many times the full states editor has been opened, **and it is the
+   * editor's `key`.**
+   *
+   * Same portals, same reason as `aperturaHoja` above: the task panel unmounts
+   * when it closes and mounts again on the next tap, so its portal lands after
+   * the editor's — which never unmounts — and the panel paints over an editor
+   * that opened from the state sheet above it. A new `key` on every opening
+   * remounts the editor last, so it paints on top of the panel every time. The
+   * draft lives in this screen (`borrador`), not in the panel, so the remount
+   * loses nothing.
+   */
+  const [aperturaEditor, setAperturaEditor] = useState(0);
+  /** Which column's tasks the order sheet is arranging. */
+  const [ordenandoColumna, setOrdenandoColumna] = useState<string | null>(null);
+  /**
+   * The column the order sheet is arranging, **resolved out of the columns as
+   * drawn.**
+   *
+   * The rows are the column's own `tasks` — already in `tasksInState` order, the
+   * same array the column draws — so the sheet arranges what is on screen and
+   * not a second answer to the same question.
+   */
+  const columnaOrdenada = ordenandoColumna
+    ? (columnas.find((c) => c.state.id === ordenandoColumna) ?? null)
+    : null;
   const tareaEstado = useMemo(
     () =>
       cambiandoEstado
@@ -932,6 +976,41 @@ export default function BoardScreen() {
       return;
     }
     void crearEstadoYMover(titulo);
+  }
+
+  /**
+   * The single-state sheet saved a name and a colour, **and the screen writes
+   * the array.**
+   *
+   * `editState` trims, caps and refuses blanks — and answers with the very array
+   * it was given when there is nothing to change, so the identity check is the
+   * "did anything change" question and a save that changed nothing puts no
+   * operation in the outbox. Same rule as the full editor's `guardar`, one sheet
+   * apart.
+   */
+  async function guardarColumna(stateId: string, titulo: string, color: ItemIconColor) {
+    if (!list) return;
+    const siguientes = editState(states, stateId, { title: titulo, color });
+    if (siguientes === states) return;
+    await updateList(list, { states: siguientes });
+  }
+
+  /**
+   * A row was dropped in the order sheet, **and a displacement becomes a place
+   * here.**
+   *
+   * `ReorderSheet` hands over an id and a delta — what the list screen's own
+   * sheet does — and `reordenar` wants an id and an index, so the index is read
+   * out of the column as drawn. A delta past either end lands outside the rows
+   * and `nextOrderFromDrop` answers with the same array, which `reordenar`
+   * already reads as "write nothing".
+   */
+  function moverEnColumna(stateId: string, taskId: string, delta: number) {
+    const columna = columnas.find((c) => c.state.id === stateId);
+    if (!columna) return;
+    const indice = columna.tasks.findIndex((t) => t.id === taskId);
+    if (indice < 0) return;
+    void reordenar(stateId, taskId, indice + delta);
   }
 
   /* ------------------------------------------- reordenar dentro de un estado -- */
@@ -1878,6 +1957,20 @@ export default function BoardScreen() {
                               void reordenar(state.id, taskId, toIndex);
                             }
                       }
+                      /*
+                        **The header's two doors, and shut together for a viewer.**
+                        The name opens the order sheet and the `···` the column's
+                        menu — and a viewer gets neither, for the same reason the
+                        cards get no drag without `onReorder` above: the writes
+                        behind both would be refused, and a press that cannot write
+                        is a control wearing the shape of a sentence.
+                      */
+                      onOpenOrder={
+                        readOnly ? undefined : (id) => setOrdenandoColumna(id)
+                      }
+                      onOpenMenu={
+                        readOnly ? undefined : (id) => setMenuColumna(id)
+                      }
                     />
                   </View>
                 ))}
@@ -1960,7 +2053,7 @@ export default function BoardScreen() {
       */}
       {!readOnly ? (
         <StatePickerSheet
-          key={aperturaHoja}
+          key={`estados-${aperturaHoja}`}
           item={tareaEstado}
           states={states}
           counts={counts}
@@ -2015,6 +2108,7 @@ export default function BoardScreen() {
       */}
       {!readOnly ? (
         <StateEditorSheet
+          key={`editor-${aperturaEditor}`}
           list={editorAbierto ? list : null}
           states={borrador ?? states}
           counts={counts}
@@ -2049,6 +2143,62 @@ export default function BoardScreen() {
         onClose={() => setMenuAbierto(false)}
         onDeleted={() => router.back()}
         onEditStates={readOnly ? undefined : abrirEditorDeEstados}
+      />
+
+      {/*
+        The column's menu, **and it hands over to one of two sheets.**
+        `onEditState` opens the rename-and-colour panel below, `onEditOrder` the
+        order panel after it — each closes this menu on the way out, so the next
+        panel arrives behind the one leaving, which is the order every sheet-to-
+        sheet handover in this app uses.
+      */}
+      <ColumnMenuSheet
+        state={menuColumna ? (states.find((s) => s.id === menuColumna) ?? null) : null}
+        onEditState={() => {
+          if (menuColumna) setEditandoColumna(menuColumna);
+        }}
+        onEditOrder={() => {
+          if (menuColumna) setOrdenandoColumna(menuColumna);
+        }}
+        onClose={() => setMenuColumna(null)}
+      />
+
+      {/*
+        One column's name and colour, **written on save.**
+        The full editor batches into a draft because it edits the whole array;
+        this one edits two fields of one column, so the write goes straight out
+        through `guardarColumna` — which skips it when `editState` answers with
+        the same array, the same no-op rule.
+      */}
+      <StateEditSheet
+        state={editandoColumna ? (states.find((s) => s.id === editandoColumna) ?? null) : null}
+        onSave={(titulo, color) => {
+          if (editandoColumna) void guardarColumna(editandoColumna, titulo, color);
+        }}
+        onClose={() => setEditandoColumna(null)}
+      />
+
+      {/*
+        This column's tasks in order, **with the same sheet the lists order by.**
+        `ReorderSheet` is the one `list/[listId].tsx` mounts, with the same rows
+        shape and the same `(id, delta)` move — and `moverEnColumna` is what turns
+        that displacement into the column's index, because the board numbers
+        inside a column and not across the list. The title is the column's own
+        name, which is what is being arranged.
+      */}
+      <ReorderSheet
+        open={columnaOrdenada !== null}
+        onClose={() => setOrdenandoColumna(null)}
+        title={columnaOrdenada?.state.title ?? ""}
+        hint={t("order.reorderHint")}
+        onMove={(id, delta) => {
+          if (columnaOrdenada) moverEnColumna(columnaOrdenada.state.id, id, delta);
+        }}
+        rows={(columnaOrdenada?.tasks ?? []).map((item) => ({
+          id: item.id,
+          title: item.title,
+          subtitle: item.tags.length > 0 ? item.tags.join(" · ") : null,
+        }))}
       />
     </Screen>
   );

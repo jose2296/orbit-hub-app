@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
   interpolate,
@@ -14,6 +14,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import type { BoardState, ListItem, TagColors } from "@orbit-hub/contracts";
 
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { AppText } from "@/components/ui/text";
 import {
   FLOATING_BUTTON_MARGIN,
@@ -98,6 +99,23 @@ export interface BoardColumnProps {
    * board of one card end up with the same gesture: `sePuedeReordenar` below.
    */
   onReorder?: (taskId: string, toIndex: number) => void;
+  /**
+   * Open this column's order sheet, **and absent in read-only.**
+   *
+   * A viewer has no order to change — the write would be refused — so the name
+   * is not pressable for them, the way the cards are not draggable without
+   * `onReorder`. Same guard, same reason, one control apart.
+   */
+  onOpenOrder?: (stateId: string) => void;
+  /**
+   * Open this column's menu (edit state, edit order), **and absent in
+   * read-only.**
+   *
+   * The button is not drawn at all without it: a `···` that opened a menu of
+   * two edits a viewer cannot make would be two dead presses wearing the shape
+   * of a control.
+   */
+  onOpenMenu?: (stateId: string) => void;
 }
 
 /**
@@ -253,6 +271,8 @@ export function BoardColumn({
   onOpenTask,
   onOpenIcon,
   onReorder,
+  onOpenOrder,
+  onOpenMenu,
 }: BoardColumnProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -435,9 +455,31 @@ export function BoardColumn({
             },
           ]}
         />
-        <AppText variant="callout" style={styles.nombre} numberOfLines={1}>
-          {state.title}
-        </AppText>
+        {/*
+          The name opens the order, **and it is the name that does it and not an
+          icon beside it.** The task list opens its reorder sheet from its own
+          header, and a column's name is that header here: the widest target in
+          the row, saying what would be ordered. Without `onOpenOrder` — a viewer
+          — it is plain text, because a pressable that opened nothing would be a
+          control wearing the shape of a sentence.
+        */}
+        {onOpenOrder ? (
+          <Pressable
+            testID={`board-column-order-${state.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`${state.title}, ${t("board.editOrder")}`}
+            onPress={() => onOpenOrder(state.id)}
+            style={styles.nombreBoton}
+          >
+            <AppText variant="callout" style={styles.nombre} numberOfLines={1}>
+              {state.title}
+            </AppText>
+          </Pressable>
+        ) : (
+          <AppText variant="callout" style={styles.nombre} numberOfLines={1}>
+            {state.title}
+          </AppText>
+        )}
         {/* The number and not the phrase. The whole header has to fit in a
             230-point column, and "4 elementos" beside "Waiting for review" leaves
             the name two thirds of the column; the phrase is what the header is
@@ -445,6 +487,26 @@ export function BoardColumn({
         <AppText variant="caption" tone="muted" testID={`board-count-${state.id}`}>
           {tasks.length}
         </AppText>
+        {/*
+          The menu of the column, **after the count and not before the name.**
+          The name is what opens the order — it is the widest target in the
+          header — and the `···` is the narrow one beside it for everything else,
+          which is the same arrangement as the board's own header: the title says
+          where you are and the dots say what you can do there.
+        */}
+        {onOpenMenu ? (
+          <Button
+            testID={`board-column-menu-${state.id}`}
+            label={t("board.columnMenu")}
+            variant="ghost"
+            size="sm"
+            icon="ellipsis-horizontal"
+            iconOnly
+            accessibilityHint={t("board.columnMenuHint")}
+            fullWidth={false}
+            onPress={() => onOpenMenu(state.id)}
+          />
+        ) : null}
       </View>
 
       {/*
@@ -923,6 +985,16 @@ const styles = StyleSheet.create({
    * the column widening.
    */
   nombre: {
+    flex: 1,
+    minWidth: 0,
+  },
+  /*
+    The pressable around the name, **and it is the flex that the text had.**
+    Wrapping the name must not change what the row measures: the flex and the
+    shrink live on this pressable now, and the text inside keeps its style, so a
+    long name still gives way to the count and the menu the same points as before.
+  */
+  nombreBoton: {
     flex: 1,
     minWidth: 0,
   },
