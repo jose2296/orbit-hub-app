@@ -1,6 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { View } from "react-native";
 
 import type { List } from "@orbit-hub/contracts";
 
@@ -18,6 +17,7 @@ import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useLists } from "@/hooks/use-lists";
 import { useNotes } from "@/hooks/use-notes";
 import { useScreenSpace } from "@/hooks/use-screen-space";
+import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 
@@ -65,6 +65,34 @@ export default function FolderScreen() {
   useScreenTitle(folder?.name ?? t("folders.title"));
 
   /*
+   * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.
+   *
+   * No hay boton de compartir en la cabecera: compartir es una accion, y las
+   * acciones van en los tres puntitos. Esto no es un boton, es **una nota sobre lo
+   * que estas mirando** — y solo aparece cuando hay algo que decir. Dos iconos
+   * distintos porque son dos hechos distintos: te lo dieron, o tu lo diste.
+   */
+  useScreenShare({
+    node: folder ? { nodeType: "folder", id: folder.id } : null,
+    conmigo: folder?.shared === true,
+    // Esta pantalla no tiene `menuOpen`: su menu se abre con `menuFor`, que
+    // ademas dice **que** se esta mostrando. Un `setMenuOpen` aqui seria un
+    // boton de compartir que no abre el menu de compartir.
+    onShare: () =>
+      folder &&
+      setMenuFor({
+        kind: "folder",
+        folder: {
+          id: folder.id,
+          name: folder.name,
+          emoji: folder.emoji,
+          parentId: folder.parentId,
+          position: folder.position,
+        },
+      }),
+  });
+
+  /*
     The menu of **this** folder, from inside it.
 
     It used to be reachable only from the folder's row in its parent's list, which means
@@ -78,18 +106,7 @@ export default function FolderScreen() {
   useHeaderAction(
     () =>
       folder ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Button
-            testID="folder-share-button"
-            label={t("common.share")}
-            variant="ghost"
-            size="sm"
-            icon="people-outline"
-            iconOnly
-            fullWidth={false}
-            onPress={() => setCompartirCarpeta(true)}
-          />
-          <Button
+        <Button
           testID="folder-menu-button"
           label={t("folders.menu")}
           variant="ghost"
@@ -110,8 +127,7 @@ export default function FolderScreen() {
               },
             })
           }
-          />
-        </View>
+        />
       ) : null,
     [folder, t],
   );

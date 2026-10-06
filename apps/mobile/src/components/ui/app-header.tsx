@@ -6,6 +6,7 @@ import { BackButton } from '@/components/ui/breadcrumbs';
 import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
 import { FullTitle } from "@/components/media/full-title";
+import { CompartirBadge } from "@/components/shares/compartir-badge";
 import { SpaceWash } from '@/components/ui/wash';
 import {
   ALTO_LAVADO,
@@ -58,7 +59,23 @@ export interface AppHeaderProps {
     es justo lo que no es, y declararlo así es como una cabecera acaba pintando
     un objeto.
   */
-  options: { title?: string; espacio?: EspacioHeader | null; [key: string]: unknown };
+  options: {
+    title?: string;
+    espacio?: EspacioHeader | null;
+    /**
+     * Si esto esta compartido, y por quien.
+     *
+     * Va en `options` y no en un contexto porque **es de la pantalla**: un icono
+     * de "compartido" que se hereda de donde vino la navegacion acaba poniendose
+     * en pantallas donde no aplica.
+     */
+    compartido?: {
+      node?: { nodeType: 'workspace' | 'folder' | 'list' | 'note'; id: string } | null;
+      conmigo?: boolean;
+      onShare?: () => void;
+    };
+    [key: string]: unknown;
+  };
   /*
     `back` no se usa, y no por descuido. Aqui llega como un **descriptor** —el
     titulo y el href de donde se vuelve— y no como un boton, porque el boton de
@@ -74,6 +91,7 @@ export interface AppHeaderProps {
 
 export function AppHeader({ options, children }: AppHeaderProps) {
   const theme = useTheme();
+  const compartido = options.compartido ?? {};
 
   /*
     Los controles los pone esta cabecera y no llegan del navegador.
@@ -203,13 +221,25 @@ export function AppHeader({ options, children }: AppHeaderProps) {
               la abuela" is a third of a word here. The bar itself is not pressable,
               so this one needs no guard.
             */
-            <FullTitle
-              text={options.title}
-              numberOfLines={1}
-              variant="heading"
-              style={[styles.titulo, { color: theme.colors.text }]}
-              testID="titulo-cabecera"
-            />
+            <View style={styles.tituloYInsignia}>
+              <FullTitle
+                text={options.title}
+                numberOfLines={1}
+                variant="heading"
+                style={[styles.titulo, { color: theme.colors.text }]}
+                testID="titulo-cabecera"
+              />
+              {/* La insignia de "compartido", **debajo del titulo y no en un hueco de
+                  la barra**. Al lado del texto tendria que competir con el nombre
+                  por el ancho de una linea que ya es de las mas cortas que hay, y
+                  ademas no cabe en una columna de 96. Debajo se lee como lo que es:
+                  una nota sobre lo que estas mirando. */}
+              <CompartirBadge
+                node={compartido.node ?? null}
+                compartidoConmigo={compartido.conmigo ?? false}
+                onShare={compartido.onShare}
+              />
+            </View>
           ) : (
             children
           )}
@@ -345,6 +375,18 @@ const styles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /**
+   * El titulo y la insignia, **centrados los dos sobre la misma columna**.
+   *
+   * El titulo solo esta centrado si el bloque que lo contiene tambien lo esta, y
+   * por eso van juntos: si la insignia fuera hermana del `View` del centro, el
+   * titulo se centraria contra el ancho de la barra entera y bajaria medio punto
+   * cada vez que la insignia aparece o desaparece.
+   */
+  tituloYInsignia: {
+    alignItems: 'center',
+    maxWidth: '100%',
   },
   titulo: {
     fontWeight: '600',

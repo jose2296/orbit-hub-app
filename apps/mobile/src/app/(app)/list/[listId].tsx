@@ -37,6 +37,7 @@ import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { useScreenSpace } from "@/hooks/use-screen-space";
+import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import {
@@ -371,6 +372,20 @@ export default function ListScreen() {
   // The header carries the name of the list, so the screen only says what kind
   // of list it is and where it lives.
   useScreenTitle(list?.title ?? t("lists.notFound"));
+
+  /*
+   * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.
+   *
+   * No hay boton de compartir en la cabecera: compartir es una accion, y las
+   * acciones van en los tres puntitos. Esto no es un boton, es **una nota sobre lo
+   * que estas mirando** — y solo aparece cuando hay algo que decir. Dos iconos
+   * distintos porque son dos hechos distintos: te lo dieron, o tu lo diste.
+   */
+  useScreenShare({
+    node: list ? { nodeType: "list", id: list.id } : null,
+    conmigo: list?.shared === true,
+    onShare: () => setMenuOpen(true),
+  });
 
 
   /**

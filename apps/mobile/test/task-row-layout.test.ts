@@ -663,43 +663,80 @@ describe('la barra tiene los dos margenes', () => {
   });
 });
 
-describe('#11: compartir, en la cabecera y no solo dentro del menu', () => {
+describe('#11: lo compartido se dice con una insignia, no con un boton', () => {
   const leer = (p: string) =>
     readFileSync(join(import.meta.dirname, '..', p), 'utf8');
 
-  it('el espacio publica un boton de compartir en la cabecera', () => {
-    const ws = leer('src/app/(app)/workspace/[workspaceId].tsx');
-    expect(ws, 'el boton de compartir va en la cabecera').toContain(
-      'testID="workspace-share-button"',
-    );
-    expect(ws, 'y son dos botones, no uno que hace las dos cosas').toContain(
-      'testID="workspace-menu-button"',
+  const PANTALLAS = [
+    ['el espacio', 'src/app/(app)/workspace/[workspaceId].tsx'],
+    ['la carpeta', 'src/app/(app)/workspace/[workspaceId]/folder/[folderId].tsx'],
+    ['la lista', 'src/app/(app)/list/[listId].tsx'],
+    ['la nota', 'src/app/(app)/note/[noteId].tsx'],
+  ] as const;
+
+  it('no hay ningun boton de compartir en la cabecera', () => {
+    /*
+      Compartir es una **accion**, y las acciones van en los tres puntitos. Lo que
+      se puso al lado de los tres puntitos era un boton mas que hace lo que el menu
+      ya hacia, en una columna de 96 puntos que ya esta justa.
+    */
+    for (const [quien, ruta] of PANTALLAS) {
+      expect(leer(ruta), `${quien}: sin boton de compartir`).not.toMatch(
+        /testID="\w+-share-button"/,
+      );
+    }
+  });
+
+  it('las cuatro dicen si esta compartido, con el flag que ya viene', () => {
+    for (const [quien, ruta] of PANTALLAS) {
+      const s = leer(ruta);
+      expect(s, `${quien}: publica el nodo`).toContain('useScreenShare({');
+      // Y con `shared` de verdad, no con el `role`: un `viewer` en un espacio
+      // compartido y alguien invitado a un espacio propio tienen el mismo rol y
+      // son situaciones opuestas. El contrato lo dice, con el motivo.
+      expect(s, `${quien}: el "compartido conmigo" sale de shared`).toMatch(
+        /conmigo: \w+\?\.shared === true/,
+      );
+    }
+  });
+
+  it('la insignia es un icono al lado del titulo, y no un boton mas', () => {
+    const badge = leer('src/components/shares/compartir-badge.tsx');
+    const header = leer('src/components/ui/app-header.tsx');
+
+    expect(badge, 'pregunta a quien alcanza').toContain('/reach');
+    expect(header, 'y se pinta pegada al titulo').toContain('<CompartirBadge');
+
+    // Los dos hechos son dos iconos, no uno: "te lo dieron" y "tu lo diste" no
+    // son el mismo dato y quien mira quiere saber cosas distintas de cada uno.
+    expect(badge).toContain('compartido-conmigo');
+    expect(badge).toContain('compartido-por-mi');
+
+    // Y **ninguno** cuando no hay nada que pintar: un icono de compartir en todo
+    // es un icono que no dice nada, y ademas empuja el titulo.
+    expect(
+      badge,
+      'sin nada que decir no se pinta nada',
+    ).toMatch(/if \(!compartidoConmigo && !loCompartiYo\) return null;/);
+  });
+
+  it('"te lo compartieron" no se deduce del rol', () => {
+    // El `role` es el techo de lo que puedes hacer con el contenido. `shared` es
+    // de como lo conseguiste. Son preguntas distintas y confundirlas pone el
+    // simbolo en espacios que simplemente no estan compartidos.
+    const badge = leer('src/components/shares/compartir-badge.tsx');
+    expect(badge, 'el rol no decide si te lo compartieron').not.toMatch(
+      /compartidoConmigo.*role/,
     );
   });
 
-  it('la carpeta tambien, y su opcion de compartir deja de no hacer nada', () => {
+  it('la opcion de compartir de la carpeta abre la hoja, no cierra el menu', () => {
+    // Era `onPress: () => setMenuFor(null)`: cerraba la hoja y no abria nada.
+    // Un boton que dice "Compartir" y cierra el menu.
     const carpeta = leer('src/app/(app)/workspace/[workspaceId]/folder/[folderId].tsx');
-    expect(carpeta).toContain('testID="folder-share-button"');
-
-    // La opcion del menu cerraba la hoja y no abria nada: `onPress: () =>
-    // setMenuFor(null)`. Un "Compartir" que cierra el menu es un boton que dice
-    // una cosa y hace otra.
     const opcion = carpeta.match(/key: "share"[\s\S]*?onPress:[\s\S]*?\}/)?.[0] ?? '';
     expect(opcion, 'compartir tiene que abrir la hoja, no cerrar el menu').toContain(
       'setCompartirCarpeta(true)',
-    );
-  });
-
-  it('las dos hojas de compartir son la misma, no dos distintas', () => {
-    const hoja = leer('src/components/workspace/workspace-menu-sheet.tsx');
-    expect(hoja, 'el boton abre la hoja del menu en su pagina de compartir').toContain(
-      'initialPage?: Page',
-    );
-
-    // Y abrir la hoja para compartir y cerrar, y volver a abrir el menu, tiene que
-    // salir por el menu. Por eso la pagina inicial se lee una vez.
-    expect(hoja, 'la pagina inicial se lee una vez, no en cada render').toContain(
-      'useState<Page>(initialPage)',
     );
   });
 });

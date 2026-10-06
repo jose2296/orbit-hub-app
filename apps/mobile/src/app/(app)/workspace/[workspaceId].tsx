@@ -27,6 +27,7 @@ import { useNotes } from "@/hooks/use-notes";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { Button } from "@/components/ui/button";
 import { useScreenSpace } from "@/hooks/use-screen-space";
+import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 
@@ -63,7 +64,6 @@ export default function WorkspaceScreen() {
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [compartirDirecto, setCompartirDirecto] = useState(false);
   /*
     A note acted on from its row, and the template sheet it can lead to.
     Both live here rather than in the list because the list is drawn by three
@@ -88,6 +88,20 @@ export default function WorkspaceScreen() {
   // The second colour went with it because it is the person's own choice, and a
   // band that drops it paints a different pair from the one the picker shows.
   useScreenTitle(workspace?.name ?? t("workspaces.title"));
+
+  /*
+   * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.
+   *
+   * No hay boton de compartir en la cabecera: compartir es una accion, y las
+   * acciones van en los tres puntitos. Esto no es un boton, es **una nota sobre lo
+   * que estas mirando** — y solo aparece cuando hay algo que decir. Dos iconos
+   * distintos porque son dos hechos distintos: te lo dieron, o tu lo diste.
+   */
+  useScreenShare({
+    node: workspace ? { nodeType: "workspace", id: workspace.id } : null,
+    conmigo: workspace?.shared === true,
+    onShare: () => setMenuOpen(true),
+  });
 
   /** The folder a list lives in, for the menu to say where it is. */
   const folderOf = (list: List) =>
@@ -170,28 +184,16 @@ export default function WorkspaceScreen() {
   useHeaderAction(
     () =>
       workspace ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Button
-            testID="workspace-share-button"
-            label={t("workspaceMenu.share")}
-            variant="ghost"
-            size="sm"
-            icon="people-outline"
-            iconOnly
-            fullWidth={false}
-            onPress={() => setCompartirDirecto(true)}
-          />
-          <Button
-            testID="workspace-menu-button"
-            label={t("workspaceMenu.open")}
-            variant="ghost"
-            size="sm"
-            icon="ellipsis-horizontal"
-            iconOnly
-            fullWidth={false}
-            onPress={() => setMenuOpen(true)}
-          />
-        </View>
+        <Button
+          testID="workspace-menu-button"
+          label={t("workspaceMenu.open")}
+          variant="ghost"
+          size="sm"
+          icon="ellipsis-horizontal"
+          iconOnly
+          fullWidth={false}
+          onPress={() => setMenuOpen(true)}
+        />
       ) : null,
     [t, workspace],
   );
@@ -267,12 +269,8 @@ export default function WorkspaceScreen() {
         />
       </View>
       <WorkspaceMenuSheet
-        workspace={menuOpen || compartirDirecto ? workspace : null}
-        initialPage={compartirDirecto ? "share" : "options"}
-        onClose={() => {
-          setCompartirDirecto(false);
-          closeSheets();
-        }}
+        workspace={menuOpen ? workspace : null}
+        onClose={closeSheets}
         onDeleted={() => router.replace("/(app)/workspaces")}
       />
       <NoteMenuSheet
