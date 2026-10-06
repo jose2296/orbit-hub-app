@@ -400,6 +400,7 @@ const es = {
   "place.noSpaces":
     "Todavía no tienes ningún espacio propio, y sólo puedes guardar esto en uno que sea tuyo.",
   "place.createSpace": "Crear un espacio",
+  "place.whereNeeded": "Elige donde va",
   "place.saving": "Poniéndolo…",
   "place.chooseSpaceHint": "Elegir en qué espacio de los tuyos va a aparecer.",
   "share.subtitle": "Compartir «{name}»",
@@ -1430,7 +1431,8 @@ const en: Record<TranslationKey, string> = {
   "place.noSpaces":
     "You do not have a space of your own yet, and this can only be filed in one that is yours.",
   "place.createSpace": "Create a space",
-  "place.saving": "Putting it…",
+  "place.whereNeeded": "Choose where it goes",
+  "place.saving": "Poniéndolo…",
   "place.chooseSpaceHint": "Choose which of your spaces it shows up in.",
   "share.subtitle": 'Share "{name}"',
   /* With no noun on purpose: this sits under the share entry of a list, a note and a

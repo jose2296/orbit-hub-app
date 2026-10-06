@@ -1159,3 +1159,41 @@ describe('las hojas de creacion: el Guardar del pie y el color tambien', () => {
     );
   });
 });
+
+describe('colocar una invitation: el Guardar del pie', () => {
+  const hoja = sinComentarios(
+    readFileSync(
+      join(import.meta.dirname, '../src/components/shares/place-share-sheet.tsx'),
+      'utf8',
+    ),
+  );
+
+  it('confirma con el boton del pie y sin Cancelar propio', () => {
+    expect(hoja, 'delega en onSave').toContain('onSave={() => void confirmar()}');
+    // El Cancelar era la segunda puerta de salida, y la unica que no preguntaba
+    // antes de perder la eleccion de donde va.
+    expect(hoja, 'sin Cancelar').not.toMatch(
+      /<Button[\s\S]{0,200}t\("common\.cancel"\)/,
+    );
+  });
+
+  it('sin destino no se puede confirmar, y el boton DICE por que', () => {
+    expect(hoja, 'pasa el motivo').toMatch(
+      /saveDisabledReason=\{!workspaceId \? t\("place\.whereNeeded"\)/,
+    );
+  });
+
+  it('el flag de "enviando" se comprueba en la ACCION, no solo en el boton', () => {
+    /*
+      El boton apagado del pie ya impide el doble toque con el dedo, pero con
+      teclado o con un lector de pantalla no hay dedo que lo impida, y dos
+      invitations con el mismo enlace es una invitacion repetida.
+
+      Por eso `saving` sigue vivo aunque el boton ya no lo lea: se comprueba dentro
+      de `confirmar`, que es donde un segundo intento se puede parar sin haber
+      escrito nada.
+    */
+    const accion = hoja.match(/const confirmar = async \(\) => \{[\s\S]*?setSaving\(true\)/)?.[0] ?? '';
+    expect(accion, 'la accion comprueba el flag').toMatch(/if \(saving\) return;/);
+  });
+});
