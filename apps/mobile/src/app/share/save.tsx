@@ -1,28 +1,64 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
+import { ShareSaveSheet } from '@/components/bookmarks/share-save-sheet';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useSession } from '@/hooks/use-session';
+import type { SharedPayload } from '@/lib/bookmarks/share-intent';
+import { clearShare, takePendingShare } from '@/lib/bookmarks/share-intent';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 
 /**
- * Cascaron de la hoja de guardado.
+ * Donde aterriza un enlace compartido desde otra app.
  *
  * Fuera de `(app)` a proposito, como `invite/[token]`: quien comparte sin
  * sesion tiene que poder aterrizar aqui, entrar y volver al mismo sitio. Tres
  * estados, calcados de la invitacion: cargando, anonimo (manda a sign-in con
- * `next` para no perder el enlace) y vacio (la ruta abierta a mano, sin
- * payload). La hoja real llega en la Task 3 y la lectura en la Task 4.
+ * `next` para no perder el enlace) y, con sesion, la hoja de guardado.
+ *
+ * Un solo lector para los dos arranques: en frio `+native-intent` abre esta
+ * ruta y se lee al montar; en caliente la ruta ya montada vuelve a leer al
+ * enfocarse. Los dos caminos terminan en `takePendingShare()`.
+ *
+ * Leer y limpiar son dos momentos distintos: se lee aqui y se limpia despues
+ * de guardar (`onSaved` -> `clearShare`). Volver atras sin guardar (`onClose`)
+ * no limpia, asi el enlace sigue ahi al volver.
  */
 export default function ShareSaveScreen() {
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
   const { status } = useSession();
+
+  // Nulo hasta que haya sesion: leer el payload no lo consume, pero la hoja
+  // solo se pinta con alguien dentro.
+  const [payload, setPayload] = useState<SharedPayload | null>(null);
+
+  const leer = useCallback(() => {
+    setPayload(takePendingShare());
+  }, []);
+
+  // Al montar y al volver a enfocarse: el caso caliente.
+  useFocusEffect(leer);
+
+  const volver = useCallback(() => {
+    router.replace('/(app)');
+  }, [router]);
+
+  // Guardado: primero se limpia el payload nativo para que reabrir la ruta no
+  // re-guarde lo mismo, y despues se vuelve. El destino con highlight llega
+  // en la fase 4 (inbox "sin clasificar" y lista de bookmarks): esas rutas
+  // todavia no existen y no se inventan aqui.
+  // TODO(fase-4): navegar a la coleccion destino o a `bookmarks?highlight=<id>`.
+  const alGuardar = useCallback(() => {
+    clearShare();
+    router.replace('/(app)');
+  }, [router]);
 
   if (status === 'loading') {
     return (
@@ -54,23 +90,32 @@ export default function ShareSaveScreen() {
     );
   }
 
-  // Con sesion y sin nada que guardar: alguien abrio la ruta a mano. El texto
-  // va escrito aqui y no en el diccionario porque es un cascaron temporal: la
-  // Task 3 trae la copia final.
+  // Con sesion y sin nada que guardar: alguien abrio la ruta a mano.
+  if (!payload) {
+    return (
+      <Screen>
+        <Card variant="outlined" style={{ gap: theme.spacing.md }}>
+          <AppText variant="heading">{t('share.save.emptyTitle')}</AppText>
+          <AppText variant="body" tone="muted">
+            {t('share.save.emptyBody')}
+          </AppText>
+          <Button
+            label={t('common.back')}
+            variant="secondary"
+            fullWidth
+            onPress={volver}
+          />
+        </Card>
+      </Screen>
+    );
+  }
+
   return (
-    <Screen>
-      <Card variant="outlined" style={{ gap: theme.spacing.md }}>
-        <AppText variant="heading">No hay nada que guardar</AppText>
-        <AppText variant="body" tone="muted">
-          Comparte un enlace desde otra app y aparece aqui.
-        </AppText>
-        <Button
-          label={t('common.back')}
-          variant="secondary"
-          fullWidth
-          onPress={() => router.replace('/(app)')}
-        />
-      </Card>
-    </Screen>
+    <ShareSaveSheet
+      payload={payload}
+      visible
+      onClose={volver}
+      onSaved={alGuardar}
+    />
   );
 }

@@ -2,9 +2,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-// El modulo nativo no existe en Node: se suple la unica funcion que el
-// redirect importa (y no llama).
-vi.mock('expo-sharing', () => ({ getSharedPayloads: () => [] }));
+// El modulo nativo no existe en Node: se suple lo que `share-intent` lee (y
+// no llama) mas lo que limpia, para que el import estatico no toque nativo.
+vi.mock('expo-sharing', () => ({
+  getSharedPayloads: () => [],
+  clearSharedPayloads: () => {},
+}));
 
 import { redirectSystemPath } from '../src/app/+native-intent';
 import { sacarUrlDelTexto } from '../src/lib/bookmarks/share-intent';

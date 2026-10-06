@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// `share-intent` importa `expo-sharing` en estatico y el modulo nativo no
+// existe en Node: se suple entero.
+vi.mock('expo-sharing', () => ({
+  getSharedPayloads: () => [],
+  clearSharedPayloads: () => {},
+}));
+
 const crear = vi.fn();
 
 // El actions real toca expo-crypto y la cola offline: aqui solo importa con

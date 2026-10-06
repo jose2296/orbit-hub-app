@@ -1,3 +1,7 @@
+import { clearSharedPayloads, getSharedPayloads } from "expo-sharing";
+
+import { triggerExtract } from "@/lib/api/bookmarks";
+
 export type UrlCompartida = {
   url: string;
   resto: string;
@@ -41,11 +45,30 @@ export function resetShareGuard(): void {
   savedForPayload = null;
 }
 
-// La extraccion de la metadata (fase 2). La Task 4 lo conecta con el trabajo
-// real; aqui queda como stub documentado para que la llamada ya compile y el
-// gesto ya la dispare. Se llama con fire-and-forget y vale void o promesa.
-export function triggerExtract(_id: string): void {
-  // Sin cuerpo a proposito: lo rellena la Task 4.
+// Lo que llego de fuera y todavia no se guardo, o null si no hay nada.
+// Lee el primer payload del modulo nativo y saca la URL con
+// `sacarUrlDelTexto`: vale para el arranque en frio (la ruta recien montada)
+// y para el caliente (la ruta re-lee al enfocarse). Solo lee: limpiar es
+// trabajo de `clearShare` despues de guardar, nunca de aqui. Si se limpiara
+// al leer y el guardado fallara, el enlace se perderia para siempre.
+export function takePendingShare(): SharedPayload | null {
+  const [primero] = getSharedPayloads();
+  if (!primero) return null;
+  const parsed = sacarUrlDelTexto(primero.value);
+  if (!parsed) return null;
+  return {
+    url: parsed.url,
+    title: parsed.resto.length > 0 ? parsed.resto : null,
+    text: primero.value,
+  };
+}
+
+// Borra el payload nativo y deja el guard como nuevo. Se llama despues de
+// guardar (`onSaved`), nunca al montar: reabrir la ruta sin haber guardado
+// tiene que encontrar el enlace todavia ahi.
+export function clearShare(): void {
+  clearSharedPayloads();
+  resetShareGuard();
 }
 
 // Guarda el enlace compartido en el destino del picker.
