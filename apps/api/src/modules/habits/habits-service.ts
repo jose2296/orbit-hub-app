@@ -33,13 +33,14 @@ export interface CreateHabitInput {
 /**
  * Lo que `PATCH /habits/:habitId` acepta.
  *
- * Sin `timezone` a proposito: la zona se congela al crear y el historico no se
- * reinterpreta, asi que no hay parche que la cambie.
+ * Sin `timezone` ni `startDate` a proposito: la zona y el inicio se congelan
+ * al crear y el historico no se reinterpreta, asi que no hay parche que los
+ * cambie.
  */
 export type UpdateHabitPatch = Partial<
   Pick<
     CreateHabitInput,
-    'name' | 'description' | 'schedule' | 'weekStart' | 'startDate' | 'endDate' | 'targetValue' | 'position'
+    'name' | 'description' | 'schedule' | 'weekStart' | 'endDate' | 'targetValue' | 'position'
   >
 >;
 
@@ -196,9 +197,8 @@ export class HabitsService {
 
   async update(userId: string, habitId: string, patch: UpdateHabitPatch): Promise<Habit> {
     const actual = await this.requireHabit(userId, habitId);
-    const startDate = patch.startDate ?? actual.startDate;
     const endDate = patch.endDate ?? actual.endDate;
-    assertRango(startDate, endDate);
+    assertRango(actual.startDate, endDate);
     if (patch.schedule) assertScheduleUsable(patch.schedule, actual.timezone);
     const db = await this.db();
     const [row] = await db
@@ -208,7 +208,6 @@ export class HabitsService {
         ...(patch.description !== undefined ? { description: patch.description } : {}),
         ...(patch.schedule !== undefined ? { schedule: patch.schedule } : {}),
         ...(patch.weekStart !== undefined ? { weekStart: patch.weekStart } : {}),
-        ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
         ...(patch.endDate !== undefined ? { endDate: patch.endDate } : {}),
         ...(patch.targetValue !== undefined ? { targetValue: patch.targetValue } : {}),
         ...(patch.position !== undefined ? { position: patch.position } : {}),

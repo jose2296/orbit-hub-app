@@ -63,10 +63,11 @@ const createHabitBody = z.object({
 });
 
 /**
- * Sin `timezone` a proposito: la zona se congela al crear y el historico no
- * se reinterpreta, asi que no hay parche que la cambie.
+ * Sin `timezone` ni `startDate` a proposito: la zona y el inicio se congelan
+ * al crear y el historico no se reinterpreta, asi que no hay parche que los
+ * cambie.
  */
-const updateHabitBody = createHabitBody.omit({ timezone: true }).partial();
+const updateHabitBody = createHabitBody.omit({ timezone: true, startDate: true }).partial();
 
 const checkInBody = z.object({
   date: localDateSchema,

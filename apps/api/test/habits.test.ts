@@ -246,6 +246,25 @@ describe('habitos', () => {
     expect(entradas.body.data.items).toHaveLength(0);
   });
 
+  it('startDate se congela en el update, como timezone', async () => {
+    const yo = await createVerifiedUser(api);
+    const habito = await crearHabito(yo.accessToken);
+
+    // El esquema recorta lo desconocido en vez de rechazarlo: 200 con el
+    // valor intacto, igual que timezone.
+    const r = await api.patch(
+      `/habits/${habito.id}`,
+      { startDate: '2026-04-06', name: 'Leer mucho' },
+      yo.accessToken,
+    );
+    expect(r.status).toBe(200);
+    expect(r.body.data.startDate).toBe(LUNES);
+    expect(r.body.data.name).toBe('Leer mucho');
+
+    const lista = await api.get('/habits', yo.accessToken);
+    expect(lista.body.data.items[0].habit.startDate).toBe(LUNES);
+  });
+
   it('una zona que no existe es 422 al crear', async () => {
     const yo = await createVerifiedUser(api);
     const r = await api.post(
