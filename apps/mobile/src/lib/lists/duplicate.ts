@@ -22,7 +22,7 @@ export interface DuplicationSource {
   kind: ListKind;
   title: string;
   description: string | null;
-  emoji: string | null;
+  icon: IconRef | null;
   tags: string[];
   position: number;
   /** How the list is read, copied so the copy reads the same way. */
@@ -105,8 +105,9 @@ export function planDuplication(
     completed: item.completed,
     priority: item.priority,
     // The icon is one value, so a copy carries it whole: how it is drawn is
-    // part of how the row is, and a copy looks the same.
-    icon: item.icon,
+    // part of how the row is, and a copy looks the same. Spread, like the tags
+    // below: a later write to the copy must not touch the original.
+    icon: item.icon ? { ...item.icon } : null,
     // Copied by value: a later push to the copy must not touch the original.
     tags: [...item.tags],
     externalId: item.externalId,
@@ -130,7 +131,9 @@ export function planDuplication(
       kind: source.kind,
       title,
       description: source.description,
-      emoji: source.emoji,
+      // The icon is one value, so the copy carries it whole. Spread, like the
+      // tags below: a later write to the copy must not touch the original.
+      icon: source.icon ? { ...source.icon } : null,
         // Copied by value: a later push to the copy must not touch the original.
       tags: [...source.tags],
       position: source.position,

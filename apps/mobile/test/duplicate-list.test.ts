@@ -16,7 +16,7 @@ function source(overrides: Record<string, unknown> = {}) {
     kind: 'movies' as const,
     title: 'Películas 2026',
     description: 'Lo que quiero ver',
-    emoji: '🎬',
+    icon: { type: 'emoji', value: '🎬', color: 'auto' } as const,
     tags: ['pendiente'],
     position: 3,
     orderMode: 'manual' as const,
@@ -149,7 +149,19 @@ describe('planDuplication', () => {
     expect(plan.list.folderId).toBe('folder-1');
     expect(plan.list.position).toBe(3);
     expect(plan.list.kind).toBe('movies');
-    expect(plan.list.emoji).toBe('🎬');
+    expect(plan.list.icon).toEqual({ type: 'emoji', value: '🎬', color: 'auto' });
+  });
+
+  it('copies the icon by value, not by reference', () => {
+    const from = source();
+    const plan = planDuplication(from, items, {
+      newListId: 'list-2',
+      newItemId: () => 'new-1',
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    expect(plan.list.icon).toEqual({ type: 'emoji', value: '🎬', color: 'auto' });
+    expect(plan.list.icon).not.toBe(from.icon);
   });
 
   it('copies the tags by value, not by reference', () => {

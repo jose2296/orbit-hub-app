@@ -2,7 +2,6 @@ import { exportFilename, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
   ExportedAttachment,
   Folder,
-  IconRef,
   List,
   ListExport,
   ListItem,
@@ -57,16 +56,6 @@ export interface ExportFile {
  * lleva el suyo propio (la pertenencia al espacio) y `noteTemplateSchema` no
  * lleva ninguno: esas dos filas mapean directas.
  */
-/**
- * El `emoji` que el contrato sigue declarando, leido de la columna `icon`.
- *
- * Un puente, y lo dice: la columna es un `IconRef` y el cable es un string
- * hasta que el contrato cambie. Un icono de vector no tiene un emoji detras, asi
- * que sale como `null` y no como una clave que se dibujaria como la palabra.
- */
-function emojiOf(icon: IconRef | null): string | null {
-  return icon?.type === 'emoji' ? icon.value : null;
-}
 
 function toFolder(row: typeof folders.$inferSelect, role: MembershipRoleName): Folder {
   return {
@@ -74,7 +63,7 @@ function toFolder(row: typeof folders.$inferSelect, role: MembershipRoleName): F
     workspaceId: row.workspaceId,
     parentId: row.parentId,
     name: row.name,
-    emoji: emojiOf(row.icon),
+    icon: sanitiseIconRef(row.icon),
     position: row.position,
     role,
     shared: false,
@@ -97,7 +86,7 @@ function toList(
     kind: row.kind,
     title: row.title,
     description: row.description,
-    emoji: emojiOf(row.icon),
+    icon: sanitiseIconRef(row.icon),
     tags: row.tags ?? [],
     // Los colores de las etiquetas de la lista. `?? {}` y no `row.tagColors`: la
     // columna es `notNull` para todo lo que escribio esta build, pero una fila de
@@ -158,6 +147,7 @@ function toNote(row: typeof notes.$inferSelect, role: MembershipRoleName): Note 
     document: row.document,
     plainText: row.plainText,
     tags: row.tags ?? [],
+    icon: sanitiseIconRef(row.icon),
     position: row.position,
     // Columna desnormalizada: se mapea tal como esta guardada, no se recuenta.
     attachmentCount: row.attachmentCount,
@@ -336,7 +326,7 @@ export class ExportService {
       id: row.id,
       name: row.name,
       description: row.description,
-      emoji: emojiOf(row.icon),
+      icon: sanitiseIconRef(row.icon),
       color: row.color,
       colorTo: row.colorTo,
       wash: row.wash,

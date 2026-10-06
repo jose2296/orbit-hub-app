@@ -39,6 +39,7 @@ import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Badge } from "@/components/ui/badge";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { expandedProps, selectedProps } from "@/components/ui/a11y-state";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { SpaceDot } from "@/components/ui/wash";
 import { useListItems } from "@/hooks/use-lists";
@@ -877,7 +878,7 @@ function FolderBranch({
           />
 
           <AppText variant="body" numberOfLines={1} style={styles.flex}>
-            {folder.emoji ? `${folder.emoji} ` : ""}
+            {folder.icon ? <AppIcon icon={folder.icon} size={18} /> : null}
             {folder.name}
           </AppText>
         </Pressable>

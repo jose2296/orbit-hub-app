@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 
+import { IconPickerPanel } from "@/components/ui/icon-picker-sheet";
 import { ShareNodeForm } from "@/components/shares/share-node-sheet";
 import { ShareFormContexto, type ShareFormPublicado } from "@/components/shares/share-form-publicado";
 import { SharedBadge } from "@/components/shares/shared-badge";
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/sheet";
 import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { TextField } from "@/components/ui/text-field";
-import type { Note } from "@orbit-hub/contracts";
+import type { IconRef, Note } from "@orbit-hub/contracts";
 
 import { useTranslation } from "@/lib/i18n";
 import { saveNoteAction } from "@/lib/notes/actions";
@@ -39,7 +40,7 @@ export interface NoteMenuSheetProps {
   onChanged?: () => void;
 }
 
-type Step = "menu" | "rename" | "template" | "share";
+type Step = "menu" | "rename" | "icon" | "template" | "share";
 
 export function NoteMenuSheet({
   note: pedido,
@@ -175,6 +176,20 @@ export function NoteMenuSheet({
     }
   }, [busy, note, onClose, onDeleted]);
 
+  const pickIcon = useCallback(
+    async (icon: IconRef | null) => {
+      if (!note || busy) return;
+      setBusy(true);
+      try {
+        await saveNoteAction(note.id, { icon });
+        onChanged?.();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, note, onChanged],
+  );
+
   if (!note) return null;
 
   if (step === "rename") {
@@ -245,6 +260,12 @@ export function NoteMenuSheet({
       icon: "create-outline",
       onPress: () => setStep("rename"),
     },
+    {
+      key: "icon",
+      label: t("icons.title"),
+      icon: "image-outline",
+      onPress: () => setStep("icon"),
+    },
     /*
      * Sharing a note is the reason this menu was missing the option for so long: a
      * note is a page of writing, and sending a page of writing to somebody is the
@@ -300,6 +321,28 @@ export function NoteMenuSheet({
       onPress: () => void remove(),
     },
   ];
+
+  if (step === "icon") {
+    return (
+      <Sheet
+        visible={pedido !== null}
+        onClose={close}
+        onBack={volver}
+        title={t("icons.title")}
+        subtitle={note.title || t("note.untitled")}
+        scrollable
+      >
+        <View
+          style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
+        >
+          <IconPickerPanel
+            current={note.icon}
+            onSelect={(icon) => void pickIcon(icon)}
+          />
+        </View>
+      </Sheet>
+    );
+  }
 
   if (step === "share") {
     return (

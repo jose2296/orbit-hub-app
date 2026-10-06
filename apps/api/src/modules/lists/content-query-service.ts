@@ -1,6 +1,5 @@
 import { notePreviewBelowTitle, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
-  IconRef,
   List,
   ListItem,
   ListItemsResponse,
@@ -17,17 +16,6 @@ import { HttpError } from '../../lib/http-error.js';
 
 import type { ListKindName } from '../../db/constants';
 
-/**
- * The `emoji` the contract still declares, read out of the `icon` column.
- *
- * A bridge, and it says so: the column is an `IconRef` and the wire is a string
- * until the contract is changed. A vector icon has no emoji behind it, so it
- * comes out as `null` rather than as the key of a vector, which would be drawn
- * as the letters of the word.
- */
-function emojiOf(icon: IconRef | null): string | null {
-  return icon?.type === 'emoji' ? icon.value : null;
-}
 
 interface ListFilters {
   workspaceId?: string;
@@ -137,11 +125,9 @@ export class ContentQueryService {
       kind: row.kind,
       title: row.title,
       description: row.description,
-      // La columna es un `IconRef` y el contrato todavía dice `emoji`: aquí se
-      // traducen los dos. Un icono que no es un emoji sale como `null`, porque
-      // este campo sólo puede llevar un glifo y una clave ahí se dibujaría como
-      // texto.
-      emoji: emojiOf(row.icon),
+      // What this build cannot draw is no icon, not a broken list: a payload
+      // from a future build still opens the list.
+      icon: sanitiseIconRef(row.icon),
       tags: row.tags,
       tagColors: row.tagColors ?? {},
       position: row.position,
@@ -192,7 +178,7 @@ export class ContentQueryService {
       kind: row.kind,
       title: row.title,
       description: row.description,
-      emoji: emojiOf(row.icon),
+      icon: sanitiseIconRef(row.icon),
       tags: row.tags,
       tagColors: row.tagColors ?? {},
       position: row.position,

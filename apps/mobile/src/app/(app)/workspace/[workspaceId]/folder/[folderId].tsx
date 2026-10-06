@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 
-import type { List } from "@orbit-hub/contracts";
+import type { IconRef, List } from "@orbit-hub/contracts";
 
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
@@ -121,7 +121,7 @@ export default function FolderScreen() {
               folder: {
                 id: folder.id,
                 name: folder.name,
-                emoji: folder.emoji,
+                icon: folder.icon,
                 parentId: folder.parentId,
                 position: folder.position,
               },
@@ -360,7 +360,7 @@ export default function FolderScreen() {
 type CarpetaDeEsteNivel = {
   id: string;
   name: string;
-  emoji: string | null;
+  icon: IconRef | null;
   parentId: string | null;
   position: number;
 };

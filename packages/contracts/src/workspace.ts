@@ -173,15 +173,11 @@ export function isWorkspaceColorHex(value: unknown): value is string {
  */
 export const WORKSPACE_NAME_MAX = 80;
 export const WORKSPACE_DESCRIPTION_MAX = 500;
-export const WORKSPACE_EMOJI_MAX = 16;
 export const FOLDER_NAME_MAX = 120;
-export const FOLDER_EMOJI_MAX = 16;
 export const LIST_TITLE_MAX = 120;
 export const LIST_DESCRIPTION_MAX = 1000;
-export const LIST_EMOJI_MAX = 16;
 export const LIST_ITEM_TITLE_MAX = 300;
 export const LIST_ITEM_ANNOTATION_MAX = 2000;
-export const LIST_ITEM_ICON_MAX = 32;
 export const LIST_ITEM_EXTERNAL_ID_MAX = 120;
 /** Una etiqueta, no un título: corta a propósito y se ve corta. */
 export const TAG_MAX = 40;
@@ -190,7 +186,7 @@ export const NOTE_TITLE_MAX = 200;
 export const workspaceSchema = syncableEntitySchema.extend({
   name: z.string().trim().min(1).max(WORKSPACE_NAME_MAX),
   description: z.string().max(WORKSPACE_DESCRIPTION_MAX).nullable().default(null),
-  emoji: z.string().max(WORKSPACE_EMOJI_MAX).nullable().default(null),
+  icon: iconRefSchema.default(null),
   /**
    * The colour this space is painted with, out of the eight the app offers.
    *
@@ -275,7 +271,7 @@ export const folderSchema = syncableEntitySchema
     workspaceId: uuidSchema,
     parentId: uuidSchema.nullable().default(null),
     name: z.string().trim().min(1).max(FOLDER_NAME_MAX),
-    emoji: z.string().max(FOLDER_EMOJI_MAX).nullable().default(null),
+    icon: iconRefSchema.default(null),
     position: z.number().int().min(0),
   })
   .extend(nodeAccessSchema.shape);
@@ -408,7 +404,7 @@ export const listSchema = syncableEntitySchema
     kind: listKindSchema,
     title: z.string().trim().min(1).max(LIST_TITLE_MAX),
     description: z.string().max(LIST_DESCRIPTION_MAX).nullable().default(null),
-    emoji: z.string().max(LIST_EMOJI_MAX).nullable().default(null),
+    icon: iconRefSchema.default(null),
     tags: z.array(z.string().trim().min(1).max(TAG_MAX)).max(20).default([]),
     /**
      * The colours of the labels of this list, and only the ones somebody chose.
@@ -508,6 +504,7 @@ export const noteSchema = syncableEntitySchema
     document: noteDocumentSchema,
     plainText: z.string().default(""),
     tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    icon: iconRefSchema.default(null),
     attachmentCount: z.int().min(0).default(0),
     /**
      * Where this note sits among the things in its folder when somebody has put
@@ -677,7 +674,7 @@ export type Invitation = z.infer<typeof invitationSchema>;
 export const createWorkspaceRequestSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().max(500).optional(),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
 });
 export type CreateWorkspaceRequest = z.infer<
   typeof createWorkspaceRequestSchema
@@ -687,7 +684,7 @@ export const createFolderRequestSchema = z.object({
   workspaceId: uuidSchema,
   parentId: uuidSchema.nullable().default(null),
   name: z.string().trim().min(1).max(120),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
   position: z.number().int().min(0).default(0),
 });
 export type CreateFolderRequest = z.infer<typeof createFolderRequestSchema>;
@@ -698,7 +695,7 @@ export const createListRequestSchema = z.object({
   kind: listKindSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().max(1000).optional(),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
   position: z.number().int().min(0).default(0),
 });
 export type CreateListRequest = z.infer<typeof createListRequestSchema>;
@@ -797,7 +794,7 @@ export const previewInvitationResponseSchema = z.object({
   workspace: z.object({
     id: uuidSchema,
     name: z.string(),
-    emoji: z.string().nullable().default(null),
+    icon: iconRefSchema.default(null),
     color: workspaceColorSchema,
   }),
   role: membershipRoleSchema.exclude(["owner"]),

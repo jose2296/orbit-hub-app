@@ -1,14 +1,13 @@
 import type {
   DashboardLayout,
   Folder,
-  IconRef,
   ListFoldersResponse,
   ListWorkspaceMembersResponse,
   ListWorkspacesResponse,
   Workspace,
   WorkspaceMember,
 } from "@orbit-hub/contracts";
-import { dashboardLayoutSchema } from "@orbit-hub/contracts";
+import { dashboardLayoutSchema, sanitiseIconRef } from "@orbit-hub/contracts";
 import { and, asc, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 
 import { getDatabase } from "../../db/client.js";
@@ -23,17 +22,6 @@ import {
 import { HttpError } from "../../lib/http-error.js";
 
 type Role = Workspace["role"];
-
-/**
- * The `emoji` the contract still declares, read out of the `icon` column.
- *
- * A bridge, and it says so: the column is an `IconRef` and the wire is a string
- * until the contract changes. A vector icon has no emoji behind it, so it comes
- * out as `null` rather than as a key that would be drawn as the word.
- */
-function emojiOf(icon: IconRef | null): string | null {
-  return icon?.type === "emoji" ? icon.value : null;
-}
 
 /** Read side of the content API. Every write goes through the sync engine. */
 export class WorkspaceQueryService {
@@ -87,7 +75,7 @@ export class WorkspaceQueryService {
       id: row.id,
       name: row.name,
       description: row.description,
-      emoji: emojiOf(row.icon),
+      icon: sanitiseIconRef(row.icon),
       color: row.color,
       colorTo: row.colorTo,
       wash: row.wash,
@@ -157,7 +145,7 @@ export class WorkspaceQueryService {
       id: row.id,
       name: row.name,
       description: row.description,
-      emoji: emojiOf(row.icon),
+      icon: sanitiseIconRef(row.icon),
       color: row.color,
       colorTo: row.colorTo,
       wash: row.wash,
@@ -217,7 +205,7 @@ export class WorkspaceQueryService {
       workspaceId: row.workspaceId,
       parentId: row.parentId,
       name: row.name,
-      emoji: emojiOf(row.icon),
+      icon: sanitiseIconRef(row.icon),
       position: row.position,
       // Folders have no role of their own either: this is the role of the space
       // they are in, and `shared` is false because reaching this endpoint already

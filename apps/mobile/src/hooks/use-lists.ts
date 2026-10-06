@@ -106,7 +106,7 @@ export function useLists(filters: ListFilters = {}) {
       kind: ListKind;
       /** `null` is the space itself, which is the root folder. */
       folderId?: string | null;
-      emoji?: string;
+      icon?: IconRef | null;
     }) => {
       const store = await getLocalStoreReady();
       const id = Crypto.randomUUID();
@@ -131,7 +131,7 @@ export function useLists(filters: ListFilters = {}) {
             kind: input.kind,
             title: input.title,
             description: null,
-            emoji: input.emoji ?? null,
+            icon: input.icon ?? null,
             tags: [],
             position: 0,
             version: 0,
@@ -186,7 +186,7 @@ export function useLists(filters: ListFilters = {}) {
           kind: source.kind,
           title: source.title,
           description: source.description,
-          emoji: source.emoji,
+          icon: source.icon,
           tags: source.tags,
           position: source.position,
           // A copy of a list sorted by name that came out sorted by hand would
@@ -238,7 +238,7 @@ export function useLists(filters: ListFilters = {}) {
           title: plan.list.title,
           kind: plan.list.kind,
           ...(plan.list.folderId ? { folderId: plan.list.folderId } : {}),
-          ...(plan.list.emoji ? { emoji: plan.list.emoji } : {}),
+          ...(plan.list.icon ? { icon: plan.list.icon } : {}),
         },
       });
 
@@ -366,7 +366,7 @@ export function useLists(filters: ListFilters = {}) {
       changes: {
         title?: string;
         description?: string | null;
-        emoji?: string | null;
+        icon?: IconRef | null;
       },
     ) => {
       await localUpdate("list", list.id, changes);

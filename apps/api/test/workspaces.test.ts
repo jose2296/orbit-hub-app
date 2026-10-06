@@ -125,7 +125,7 @@ describe('GET /workspaces', () => {
     expect(workspaceSchema.safeParse(workspace).success).toBe(true);
     expect(workspace.role).toBe('owner');
     expect(workspace.memberCount).toBe(1);
-    expect(workspace.emoji).toBe('🏡');
+    expect(workspace.icon).toEqual({ type: 'emoji', value: '🏡', color: 'auto' });
     expect(workspace.deletedAt).toBeNull();
   });
 

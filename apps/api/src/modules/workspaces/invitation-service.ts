@@ -10,7 +10,7 @@ import type {
   PreviewInvitationResponse,
   Workspace,
 } from "@orbit-hub/contracts";
-import { membershipRoleRank } from "@orbit-hub/contracts";
+import { membershipRoleRank, sanitiseIconRef } from "@orbit-hub/contracts";
 import { and, desc, eq, gt, isNull, notExists, sql } from "drizzle-orm";
 
 import { getDatabase } from "../../db/client.js";
@@ -369,10 +369,7 @@ export class InvitationService {
       workspace: {
         id: row.workspaceId,
         name: row.workspaceName,
-        // Una invitación es lo primero que ve alguien que no ha entrado nunca, así
-        // que el emoji sale de la columna `icon` y no de una palabra: la columna
-        // es un `IconRef` y un icono de vector no tiene emoji detrás.
-        emoji: row.workspaceIcon?.type === 'emoji' ? row.workspaceIcon.value : null,
+        icon: sanitiseIconRef(row.workspaceIcon),
         color: row.workspaceColor,
       },
       role: row.role as "editor" | "viewer",

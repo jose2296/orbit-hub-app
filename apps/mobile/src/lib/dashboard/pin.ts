@@ -2,6 +2,8 @@ import type { DashboardWidget, Folder, List, Note } from "@orbit-hub/contracts";
 
 import { MIN_CARD_COLUMNS, MIN_CARD_ROWS, pageCount, pageForNewCard } from "./panel";
 
+import { iconEmoji } from "@/lib/icons/resolve-icon";
+
 /**
  * Pinning a thing to the dashboard.
  *
@@ -39,7 +41,7 @@ export function listWidget(list: List): DashboardWidget {
       listId: list.id,
       title: list.title,
       kind: list.kind,
-      emoji: list.emoji,
+      emoji: iconEmoji(list.icon),
     },
   };
 }
@@ -58,7 +60,7 @@ export function folderWidget(folder: Folder): DashboardWidget {
     settings: {
       folderId: folder.id,
       title: folder.name,
-      emoji: folder.emoji,
+      emoji: iconEmoji(folder.icon),
       workspaceId: folder.workspaceId,
     },
   };

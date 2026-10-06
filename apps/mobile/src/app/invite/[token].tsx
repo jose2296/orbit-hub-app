@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
+import { AppIcon } from "@/components/ui/app-icon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Screen } from "@/components/ui/screen";
@@ -156,7 +157,11 @@ export default function InvitationScreen() {
             { backgroundColor: colors.background, borderColor: colors.border },
           ]}
         >
-          <AppText variant="title">{preview.workspace.emoji ?? "•"}</AppText>
+          {preview.workspace.icon ? (
+            <AppIcon icon={preview.workspace.icon} size={28} />
+          ) : (
+            <AppText variant="title">•</AppText>
+          )}
           <AppText
             variant="title"
             numberOfLines={2}

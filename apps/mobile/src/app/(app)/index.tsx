@@ -47,6 +47,8 @@ import type { ListKind } from "@orbit-hub/contracts";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
+import { iconEmoji } from "@/lib/icons/resolve-icon";
+
 /**
  * The home screen: the panel, and nothing else.
  *
@@ -307,7 +309,7 @@ export default function HomeScreen() {
           subtitle: t(pluralKey("dashboard.listsInside", inside), {
             count: inside,
           }),
-          emoji: folder.emoji,
+          emoji: iconEmoji(folder.icon),
           href: `/(app)/workspace/${folder.workspaceId}/folder/${folder.id}`,
           mark: cardMark({ folder: true }),
         };
@@ -356,7 +358,7 @@ export default function HomeScreen() {
         subtitle: t(pluralKey("lists.itemCount", list.itemCount), {
           count: list.itemCount,
         }),
-        emoji: list.emoji,
+        emoji: iconEmoji(list.icon),
         href: `/(app)/list/${list.id}`,
         mark: cardMark({ kind: list.kind }),
       };

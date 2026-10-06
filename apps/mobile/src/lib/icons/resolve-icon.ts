@@ -16,6 +16,17 @@ export type ResolvedIcon =
   | { kind: "vector"; glyph: string; color: string };
 
 /**
+ * The emoji inside the icon, or null when there is none.
+ *
+ * Only for the dashboard widgets: their settings are persisted with an
+ * `emoji` field, and that shape does not change in this task. A vector icon
+ * has no emoji behind it, so it comes out as null rather than as a key that
+ * would be drawn as the word. Everything else reads the icon whole.
+ */
+export function iconEmoji(icon: IconRef | null | undefined): string | null {
+  return icon?.type === "emoji" ? icon.value : null;
+}
+/**
  * The drawing for the icon, or null when there is no drawing.
  *
  * Null and never a guess: an icon this build cannot draw is not having an
