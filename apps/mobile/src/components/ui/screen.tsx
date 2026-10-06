@@ -1,8 +1,6 @@
-import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import {
   KeyboardAvoidingView,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -13,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { READING_WIDTH } from "@/lib/layout/measure";
 import { useHeaderOwnsTopInset } from "@/components/ui/header-inset";
 import { SpaceBand, type SpaceBandProps } from "@/components/workspace/space-band";
-import { syncNow } from "@/lib/offline/sync-engine";
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { useTheme } from "@/theme";
 
 export interface ScreenProps {
@@ -125,15 +123,7 @@ export function Screen({
    * `finally`, porque una sincronizacion que falla —sin red, con el servidor caido—
    * tambien tiene que dejar de girar el indicador.
    */
-  const [recargando, setRecargando] = useState(false);
-  const alTirar = useCallback(async () => {
-    setRecargando(true);
-    try {
-      await syncNow();
-    } finally {
-      setRecargando(false);
-    }
-  }, []);
+  const { refreshControl } = usePullToRefresh();
 
   /**
    * Whether the bar above already spent the status bar's height.
@@ -192,13 +182,7 @@ export function Screen({
       contentContainerStyle={[styles.content, padding, column]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={recargando}
-          onRefresh={alTirar}
-          tintColor={theme.colors.textSubtle}
-        />
-      }
+      refreshControl={refreshControl}
     >
       {children}
     </ScrollView>

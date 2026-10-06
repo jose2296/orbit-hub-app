@@ -741,36 +741,51 @@ describe('#11: lo compartido se dice con una insignia, no con un boton', () => {
   });
 });
 
-describe('#9: tirar hacia abajo recarga', () => {
-  const screen = readFileSync(
-    join(import.meta.dirname, '../src/components/ui/screen.tsx'),
-    'utf8',
-  );
+describe('#9: tirar hacia abajo recarga, en TODAS las pantallas', () => {
+  const leer9 = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  const hook = leer9('src/hooks/use-pull-to-refresh.tsx');
+  const screen = leer9('src/components/ui/screen.tsx');
+  const lista = leer9('src/app/(app)/list/[listId].tsx');
 
-  it('toda pantalla con scroller tiene el gesto', () => {
-    // Ponerlo en un solo sitio —el que se Controlled bien— deja el resto de
-    // pantallas sin salida, y en la web es la unica que hay: no hay gesto del
-    // sistema a la que agarrarse.
-    expect(screen, 'el RefreshControl va en el ScrollView de Screen').toMatch(
-      /<ScrollView[\s\S]*?<RefreshControl/,
+  it('el gesto cuelga del scroller que esta REALMENTE en pantalla', () => {
+    /*
+      Este guard miraba `screen.tsx` y por eso daba por hecho que todas las
+      pantallas lo tenian. No lo tenian: **la pantalla de la lista no lo tenia**, y es
+      la que mas se mira.
+
+      La razon es concreta: la lista trae su propio `FlatList` porque compone una
+      cabecera y un pie que `Screen` no tiene, asi que su scroller no era el de
+      `Screen` y el `RefreshControl` de `Screen` no tenia donde colgarse. Por eso se
+      veia "dentro de carpetas" y no en la lista.
+    */
+    expect(lista, 'la lista tira de pantalla').toMatch(
+      /<FlatList[\s\S]*?refreshControl=\{refreshControl\}/,
+    );
+    expect(screen, 'y Screen tambien').toMatch(/refreshControl=\{refreshControl\}/);
+  });
+
+  it('la logica vive en un hook, no en un componente', () => {
+    // Un refresh dentro de `Screen` solo lo tienen las pantallas que dejan el
+    // scroller en manos de `Screen`. Un hook lo tienen todas.
+    expect(hook, 'el hook existe').toContain('export function usePullToRefresh');
+    expect(screen, 'y Screen lo consume').toContain('usePullToRefresh()');
+    expect(hook, 'y devuelve el elemento listo').toContain(
+      'refreshControl: React.ReactElement<RefreshControlProps>',
     );
   });
 
   it('tira del motor de sincronizacion y no de una segunda ruta', () => {
-    expect(screen, 'usa syncNow, que ya sabe lo que tiene').toContain(
-      'await syncNow()',
-    );
+    expect(hook, 'usa syncNow, que ya sabe lo que tiene').toContain('await syncNow()');
   });
 
   it('el indicador se apaga tambien cuando la sincronizacion falla', () => {
-    // Sin red —o con el servidor caido— un `await` sin `finally` deja el
-    // indicador girando para siempre, y eso se lee como "sincronizando" en
-    // pantalla con algo que no va a pasar nunca.
-    const accion = screen.match(/const alTirar = useCallback\(async \(\) => \{[\s\S]*?\}, \[\]\);/)?.[0] ?? '';
+    // Sin red —o con el servidor caido— un `await` sin `finally` deja el indicador
+    // girando para siempre, y eso se lee como "sincronizando" con algo que no va a
+    // pasar nunca.
+    const accion = hook.match(/const onRefresh = useCallback[\s\S]*?\}, \[\]\);/)?.[0] ?? '';
     expect(accion, 'apaga en finally').toContain('finally');
-    expect(accion, 'y apaga antes de termina, no despues').toContain(
-      'setRecargando(false)',
-    );
+    expect(accion, 'y apaga antes de terminar').toContain('setRefreshing(false)');
   });
 });
 
@@ -1195,5 +1210,111 @@ describe('colocar una invitation: el Guardar del pie', () => {
     */
     const accion = hoja.match(/const confirmar = async \(\) => \{[\s\S]*?setSaving\(true\)/)?.[0] ?? '';
     expect(accion, 'la accion comprueba el flag').toMatch(/if \(saving\) return;/);
+  });
+});
+
+describe('#5: el buscador de la lista, como loSilentaste', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  const sin = sinComentarios(leer('src/app/(app)/list/[listId].tsx'));
+
+  it('el campo va DENTRO de la pantalla, y no como hermano suyo', () => {
+    /*
+      Montado fuera del `Screen`, un hermano cae donde le toca en el flujo del
+      padre: se dibujaba **abajo**, debajo de todo, yendo al fondo del esqueleto. Es
+      el sitio del que mas se queja quien lo busca, y el unico que no se puede
+      deducir leyendo donde se pulsa el boton.
+    */
+    expect(sin.indexOf('styles.buscador'), 'el campo se construye')
+      .toBeGreaterThan(-1);
+    // Y se pinta dentro: el uso esta tras abrir el `Screen` y antes de cerrarlo.
+    /*
+      Y el orden es lo que lo demuestra, no la mera presencia: **dentro** del `Screen`
+      el campo va antes de la `FlatList` de la lista. Como hermano suyo —fuera— queda
+      despues, porque el `Screen` entero ya se ha cerrado.
+
+      Un guard que solo comprobara "aparece `{campoBusqueda}`" pasaria en los dos
+      casos, y ese es el fallo entero.
+    */
+    const uso = sin.lastIndexOf('{campoBusqueda}');
+    const lista = sin.indexOf('<FlatList');
+    expect(uso, 'el campo se pinta').toBeGreaterThan(-1);
+    expect(lista, 'la lista se pinta').toBeGreaterThan(-1);
+    expect(uso, 'dentro del Screen, o sea ANTES de la lista').toBeLessThan(lista);
+  });
+
+  it('el boton alterna: el mismo que abre, cierra', () => {
+    /*
+      Y no solo abre. Un campo que se cierra solo tiene que adivinar, y se cerraba
+      al vaciarse —o sea que **no se podia buscar a vacio**, que es justo cuando se
+      empieza a escribir.
+    */
+    expect(sin, 'el boto alterna').toMatch(
+      /setBuscando\(\(abierto\) => !abierto\)/,
+    );
+    expect(sin, 'y al cerrar limpia el texto').toMatch(
+      /if \(buscando\) setTextoBusqueda\(""\)/,
+    );
+  });
+
+  it('el campo ocupa todo el ancho util', () => {
+    /*
+      Con un boton largo al lado se quedaba en dos tercios — y el buscador, que es
+      un campo, pagaba el ancho. Un buscador estrecho es un buscador en el que se
+      escribe de menos.
+    */
+    expect(sin, 'el campo se estira').toMatch(/campoAncho: \{[\s\S]*?flex: 1/);
+    expect(sin, 'y el contenedor va de margen a margen').toMatch(
+      /left: theme\.spacing\.lg,[\s\S]*?right: theme\.spacing\.lg/,
+    );
+  });
+
+  it('el de crear es solo un +, y el campo NO va en el flujo', () => {
+    /*
+      Un campo en el flujo se queda donde el flujo lo pone —arriba de la pantalla—
+      mientras el teclado tapa el tercio de abajo, y los dos nunca se encuentran.
+      Quien escribe una busqueda no mira el campo: mira el teclado.
+    */
+    expect(sin, 'el campo es absoluto, en el flujo no').toMatch(
+      /buscador: \{[\s\S]*?position: "absolute"/,
+    );
+    expect(sin, 'y va anclado encima de la pila').toMatch(
+      /bottom: porTeclado \+ pila\.searchBottom \+ pila\.searchHeight/,
+    );
+    expect(sin, 'con margen a los lados').toMatch(/left: theme\.spacing\.lg/);
+  });
+
+  it('los tres botones de la esquina suben con el teclado', () => {
+    /*
+      En Android el teclado **mueve** la ventana —la app no declara
+      `android.windowSoftInputMode` y lo que hace Android por defecto es `adjustPan`,
+      que traslada el origen y no toca el alto—. Un hijo absoluto dentro de un
+      `KeyboardAvoidingView` con padding depende de que ese padding se aplique, y en
+      `adjustPan` la ventana se ha movido sin que el layout cambie: los botones se
+      quedan **debajo** del teclado.
+    */
+    expect(sin, 'el + sube').toMatch(/bottom: pila\.fabBottom \+ porTeclado/);
+    expect(sin, 'el buscador sube').toMatch(
+      /bottom: pila\.searchBottom \+ porTeclado/,
+    );
+    expect(sin, 'los filtros suben').toMatch(
+      /floatingBottom=\{pila\.controlsBottom \+ porTeclado\}/,
+    );
+    expect(sin, 'y porTeclado sale del teclado, a mano').toMatch(
+      /const porTeclado = teclado > 0 \? teclado \+ theme\.spacing\.md : 0;/,
+    );
+  });
+
+  it('el + de al lado abre el panel CON lo que se buscaba', () => {
+    /*
+      Abria el modal **en blanco**: teclear el nombre en el buscador, no encontrarlo,
+      y teclearlo otra vez en un formulario que ya te habia mostrado el texto.
+    */
+    expect(sin, 'pasa el texto al panel').toMatch(
+      /setEditing\(\{ itemId: "", page: "edit", tituloInicial: texto \}\)/,
+    );
+    expect(leer('src/app/(app)/list/[listId].tsx')).toContain(
+      'initialTitle={editing?.tituloInicial}',
+    );
   });
 });

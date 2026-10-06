@@ -29,6 +29,8 @@ import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { TagChip } from "@/components/lists/tag-chip";
 import { Screen } from "@/components/ui/screen";
+import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { TextField } from "@/components/ui/text-field";
 import { ReorderSheet } from "@/components/ui/reorder-sheet";
 import { useLongPressText } from "@/hooks/use-long-press-text";
@@ -302,8 +304,29 @@ export default function ListScreen() {
    * thirty-six: the filter button could not go above the `+` without landing on the
    * tray. See `bottomCluster` and `test/bottom-cluster.test.ts`.
    */
+  /*
+    El alto del teclado, leido **a mano** y no el relying en el
+    `KeyboardAvoidingView` de `Screen`.
+    reason: en Android el teclado **mueve** la ventana —la app no declara
+    `android.windowSoftInputMode`, y lo que hace Android por defecto es
+    `adjustPan`, que traslada el origen y no toca el alto—. Un hijo con
+    `position: absolute` dentro de un `KeyboardAvoidingView` con `padding` depende
+    de que ese padding se aplique, y en `adjustPan` la ventana se ha movido sin que
+    el layout cambie. Es justo el caso en el que los botones se quedan **debajo**
+    del teclado.
+
+    Leyendolo del evento y sumandolo a las medidas de la pila, los tres botones
+    suben por el mismo numero que sube el teclado, en las tres plataformas, y sin
+    depender de como el sistema decida mover la ventana.
+  */
+  const teclado = useKeyboardHeight();
+  const { refreshControl } = usePullToRefresh();
+
   const pila = bottomCluster(theme);
   const canDrag = canReorder(orderMode);
+
+  /** Cuanto sube **toda** la pila: lo que tapa el teclado. */
+  const porTeclado = teclado > 0 ? teclado + theme.spacing.md : 0;
 
   /*
    * El buscador de la lista, y lo que cambia con el.
@@ -654,11 +677,24 @@ export default function ListScreen() {
       accessibilityRole="button"
       accessibilityLabel={t("lists.searchItems")}
       {...pistaCreate.props}
-      onPress={() => setBuscando(true)}
+      /*
+        Alterna, y no solo abre.
+
+        Un boton que solo abre y un campo que se cierra solo son dos controles
+        para lo mismo, y el que se cierra solo tiene que adivinar: se cerraba al
+        vaciarse el campo, lo que significaba que **no se podia buscar a vacio** —
+        que es justo cuando uno empieza a escribir, antes de tener nada escrito.
+        Pulsar el mismo boton que lo abrio para cerrarlo es lo que se espera, y no
+        hace falta un segundo boton ni un gesto escondido.
+      */
+      onPress={() => {
+        setBuscando((abierto) => !abierto);
+        if (buscando) setTextoBusqueda("");
+      }}
       style={({ pressed }) => [
         styles.searchButton,
         {
-          bottom: pila.searchBottom,
+          bottom: pila.searchBottom + porTeclado,
           right: pila.fabBottom,
           borderRadius: theme.radius.pill,
           backgroundColor: theme.colors.surface,
@@ -680,8 +716,31 @@ export default function ListScreen() {
    * blanco, sino a abrirlo con la palabra ya escrita. Sin eso, escribir el nombre
    * es escribir dos veces lo mismo.
    */
+  /*
+   * El campo, y **dentro de la pantalla y no fuera**.
+   *
+   * Estaba montado como hermano del `<Screen>`, y un hermano cae donde le toca en
+   * el flujo del padre: se dibujaba **abajo**, debajo de todo, yendo al fondo del
+   * esqueleto de la pantalla. Es el sitio del que mas se queja quien lo busca, y el
+   * unico que no se puede deducir leyendo el sitio donde se pulsa.
+   *
+   * Y va arriba de todo, dentro del area que scrollea: se abre a hijo del boton que
+   * esta en la esquina de abajo, y un campo que aparece donde el ojo ya esta no es
+   * un campo que hay que encontrar.
+   */
   const campoBusqueda = buscando ? (
-    <View style={{ flexDirection: "row", gap: theme.spacing.sm, alignItems: "center" }}>
+    <View
+      style={[
+        styles.buscador,
+        {
+          gap: theme.spacing.sm,
+          // Justo encima de la pila, y la pila justa encima del teclado.
+          bottom: porTeclado + pila.searchBottom + pila.searchHeight + theme.spacing.sm,
+          left: theme.spacing.lg,
+          right: theme.spacing.lg,
+        },
+      ]}
+    >
       <TextField
         autoFocus
         value={textoBusqueda}
@@ -690,15 +749,28 @@ export default function ListScreen() {
         returnKeyType="search"
         autoCorrect={false}
         autoCapitalize="none"
-        containerStyle={{ flex: 1 }}
+        containerStyle={styles.campoAncho}
         testID="item-search-field"
       />
-      <Button
+      {/*
+        Y el de crear es **solo un `+`**.
+
+        Con el texto al lado el campo se quedaba en dos tercios del ancho y el
+        buscador —que es un campo, y un campo estrecho es un campo en el que se
+        escribe de menos— era la parte que pagaba el ancho. Ademas el boton largo
+        decia "Crear con ese nombre", que es una frase de confirmacion para una
+        accion de la que ya no hay duda: no estas creando otra cosa, estas creando
+        la que no encontraste.
+
+        El `+` de aqui abre **el mismo panel de crear que el de abajo**, con el
+        nombre ya escrito. Y no con el texto en blanco, que es como estaba: el
+        boton de al lado abria el modal y el campo venia vacio, o sea que habia que
+        teclear dos veces justo lo que ya se habia tecleado una.
+      */}
+      <Pressable
         testID="item-search-create"
-        label={t("lists.createFromSearch")}
-        icon="add"
-        size="sm"
-        fullWidth={false}
+        accessibilityRole="button"
+        accessibilityLabel={t("lists.createFromSearch")}
         disabled={termino.length === 0}
         onPress={() => {
           const texto = termino;
@@ -706,7 +778,17 @@ export default function ListScreen() {
           setTextoBusqueda("");
           setEditing({ itemId: "", page: "edit", tituloInicial: texto });
         }}
-      />
+        style={({ pressed }) => [
+          styles.botonMasBusqueda,
+          {
+            borderRadius: theme.radius.pill,
+            backgroundColor: theme.colors.accent,
+            opacity: termino.length === 0 ? 0.4 : pressed ? 0.7 : 1,
+          },
+        ]}
+      >
+        <Ionicons name="add" size={22} color={theme.colors.onAccent} />
+      </Pressable>
     </View>
   ) : null;
 
@@ -729,7 +811,7 @@ export default function ListScreen() {
         style={({ pressed }) => [
           styles.createButton,
           {
-            bottom: pila.fabBottom,
+            bottom: pila.fabBottom + porTeclado,
             right: pila.fabBottom,
             borderRadius: theme.radius.pill,
             backgroundColor: theme.colors.accent,
@@ -774,6 +856,7 @@ export default function ListScreen() {
         pantalla y no la cabecera, y por eso el alto de la barra no cambia.
       */
       wash={{ color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }}
+
       /*
         The controls, through `overlay` and not from the header — and this was the
         second attempt, because the first one was wrong in a way only the browser
@@ -802,7 +885,7 @@ export default function ListScreen() {
             onReorder={() => setReorderOpen(true)}
             testID="task-controls"
             placement="floating"
-            floatingBottom={pila.controlsBottom}
+            floatingBottom={pila.controlsBottom + porTeclado}
             floatingRight={pila.fabBottom}
           >
             <FiltersBody
@@ -828,6 +911,19 @@ export default function ListScreen() {
       }
     >
       {/*
+        El campo de buscar va **dentro de la pantalla**, y no como hermano suyo.
+
+        Estaba montado fuera, y un hermano cae donde le toca en el flujo del padre:
+        se dibujaba abajo, debajo de todo, yendo al fondo del esqueleto. Es el
+        sitio del que mas se queja quien lo busca, y el unico que no se puede
+        deducir leyendo donde se pulsa el boton.
+
+        Y va **antes que la lista**, no dentro de ella: se abre a hijo de un boton
+        que esta en la esquina de abajo, y un campo que aparece donde el ojo ya
+        esta no es un campo que hay que encontrar.
+      */}
+      {campoBusqueda}
+      {/*
         The list itself, **with nothing around it that expects a drag**.
 
         There was a `DraggableSort` wrapping the `FlatList` so the rows could
@@ -839,6 +935,19 @@ export default function ListScreen() {
           data={entries}
           keyExtractor={entryKey}
           renderItem={renderEntry}
+          /*
+            Tirar hacia abajo recarga, y **esta pantalla no lo tenia**.
+
+            Traia su propio `FlatList` porque la lista trae una cabecera y un pie que
+            `Screen` no compone, asi que el scroller no era el de `Screen` y el
+            `RefreshControl` de `Screen` no tenia donde colgarse. Por eso se veia
+            "dentro de carpetas" y no aqui, que es justo donde mas se mira.
+
+            El gesto va en el scroller que realmente esta en pantalla, no en el
+            contenedor: el mismo `usePullToRefresh`, el mismo motor, la misma
+            pregunta de siempre.
+          */
+          refreshControl={refreshControl}
           ListHeaderComponent={header}
           ListFooterComponent={footer}
           contentContainerStyle={[
@@ -885,11 +994,6 @@ export default function ListScreen() {
         arrive at a component that is not there, and the failure goes unpainted
         again — which is the whole thing it exists to stop.
       */}
-      {/*
-        El campo de buscar, arriba de todo y fuera del scroller.
-      */}
-      {campoBusqueda}
-
       <ListMenuSheet
         list={menuOpen && list ? list : null}
         folder={
@@ -961,6 +1065,15 @@ export default function ListScreen() {
         listId={listId}
         mode={editing && editing.itemId === "" ? "create" : "edit"}
         startOn={editing?.page ?? "edit"}
+        /*
+          Y el nombre que se estaba buscando.
+
+          Sin esto el boton de al lado abria el panel de crear **en blanco**, que
+          es la forma mas larga de crear la tarea que estabas buscando: teclear el
+          nombre en el buscador, no encontrarlo, y teclearlo otra vez en un
+          formulario que ya te habia mostrado el texto.
+        */
+        initialTitle={editing?.tituloInicial}
         tagColors={list?.tagColors ?? {}}
         onTagColor={(tag, color) =>
           /*
@@ -1321,6 +1434,44 @@ const styles = StyleSheet.create({
   },
   band: {
     width: "100%",
+  },
+  /**
+   * El campo de buscar, **a todo el ancho util**.
+   *
+   * `alignSelf: stretch` y no `alignItems: center`, porque en una columna centrada
+   * un hijo sin ancho se queda con el ancho de su contenido —o sea, con el ancho
+   * del texto que lleva escrito, y un buscador que se estrecha al escribir es un
+   * buscador en el que se escribe de menos.
+   */
+  /**
+   * El campo, **anclado a la esquina de abajo** y no en el flujo.
+   *
+   * Was the first child of the list and it was wrong in the way that matters most
+   * on Android: a field in the flow sits where the flow puts it —top of the
+   * screen— while the keyboard covers the bottom third, and the two of them never
+   * meet. Somebody typing a search does not watch the field; they watch the
+   * keyboard.
+   *
+   * So it is pinned to the bottom, above the cluster, and the cluster is pinned
+   * above the keyboard. The field is therefore **where the fingers are**, which is
+   * where the eyes are when you are typing.
+   */
+  buscador: {
+    position: "absolute",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  /** El campo ocupa lo que queda del ancho, y el `+` lo que necesita. */
+  campoAncho: {
+    flex: 1,
+    minWidth: 0,
+  },
+  /** El `+` de al lado, del tamaño del `+` de la esquina. */
+  botonMasBusqueda: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   /** El boton de buscar, y su tamano es el que cuenta `bottomCluster`. */
   searchButton: {
