@@ -9,6 +9,7 @@ import type {
 } from '@orbit-hub/contracts';
 import {
   NOTE_DOCUMENT_MAX_BYTES,
+  habitScheduleSchema,
   normalizaColor,
   noteDocumentSchema,
   noteDocumentToPlainText,
@@ -124,6 +125,8 @@ const STRING_LIMITS: Partial<Record<SyncEntityName, Record<string, number>>> = {
   list: { title: 120, description: 1000, emoji: 16 },
   list_item: { annotation: 2000 },
   note: { title: 200 },
+  habit: { name: 120, description: 1000 },
+  habit_entry: { note: 2000 },
 };
 
 /**
@@ -384,6 +387,62 @@ export function sanitisePayload(
       continue;
     }
 
+    if (key === 'schedule') {
+      // El horario del habito, tal cual lo valida el contrato. Solo se guarda
+      // si es un objeto: una cadena o un numero aqui es un cliente roto, y
+      // guardarlo seria una fila que ninguna lectura sabe leer.
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        clean[key] = value as Record<string, unknown>;
+      }
+      continue;
+    }
+
+    if (key === 'targetValue') {
+      // La meta en vasos o lo que sea, y null cuando el habito es binario.
+      // Un cero o un negativo no es una meta: se cae, no se guarda.
+      if (value === null) {
+        clean[key] = null;
+      } else {
+        const n = Math.trunc(Number(value));
+        if (Number.isFinite(n) && n >= 1) clean[key] = n;
+      }
+      continue;
+    }
+
+    if (key === 'status') {
+      // Hecho o saltado, nunca fallado a mano: el fallo lo calcula el motor.
+      // Lo que no sea una de las dos se cae, y el create lo rechaza con un
+      // mensaje en vez de inventar una marca que nadie hizo.
+      if (value === 'done' || value === 'skipped') clean[key] = value;
+      continue;
+    }
+
+    if (key === 'amount') {
+      // Cuanto se hizo hacia la meta, y null cuando el habito es binario.
+      if (value === null) {
+        clean[key] = null;
+      } else {
+        const n = Math.trunc(Number(value));
+        if (Number.isFinite(n) && n >= 0) clean[key] = n;
+      }
+      continue;
+    }
+
+    if (key === 'note') {
+      // La nota corta de una entrada, cortada al ancho de su columna
+      // (varchar(2000)), como el resto de textos libres de este archivo.
+      const limit = STRING_LIMITS[entity]?.note ?? 2000;
+      clean[key] = value === null ? null : String(value).slice(0, limit);
+      continue;
+    }
+
+    if (key === 'archivedAt') {
+      // Archivado y no borrado: la historia se sigue pudiendo leer. Null es
+      // "sigue activo" y una fecha es "se archivo entonces".
+      clean[key] = value === null ? null : String(value);
+      continue;
+    }
+
     if (key === 'metadata') {
       clean[key] =
         value && typeof value === 'object' && !Array.isArray(value)
@@ -559,6 +618,25 @@ export class SyncService {
     return (list['workspaceId'] as string | null) ?? null;
   }
 
+  /**
+   * La rama personal: un habito no tiene workspace, asi que no puede pasar
+   * por la comprobacion de pertenencia. El habito de otra persona es 404 y
+   * no 403, porque confirmar que existe ya dice que existe.
+   */
+  private assertOwnHabit(habit: StoredEntity, userId: string): void {
+    if ((habit['userId'] as string | null) !== userId) {
+      throw HttpError.notFound('Habit not found');
+    }
+  }
+
+  private async assertOwnHabitEntry(entry: StoredEntity, userId: string): Promise<void> {
+    const habitId = entry['habitId'] as string | null;
+    const habit = habitId ? await syncRepository.findEntity('habit', habitId) : null;
+    if (!habit || habit.deletedAt || (habit['userId'] as string | null) !== userId) {
+      throw HttpError.notFound('Habit not found');
+    }
+  }
+
   private async apply(operation: SyncOperation, userId: string): Promise<AppliedResult> {
     // Narrowed once: this build stores a subset of the entities in the contract.
     const entity = assertSupportedEntity(operation.entity);
@@ -723,6 +801,80 @@ export class SyncService {
           return { status: 'applied', version: row.version };
         }
 
+        case 'habit': {
+          // Personal y sin espacio: el dueno es quien lo crea, y no hay
+          // pertenencia que comprobar. Lo que la fila exige y el movil no
+          // puede cambiar en un update (zona, primer dia) viene en bruto,
+          // como el workspaceId de una carpeta.
+          const raw = operation.payload ?? {};
+          const timezone =
+            typeof raw['timezone'] === 'string' ? raw['timezone'].slice(0, 64) : '';
+          const startDate = typeof raw['startDate'] === 'string' ? raw['startDate'] : '';
+          if (timezone.length === 0) {
+            throw HttpError.validation('A habit needs a timezone');
+          }
+          if (startDate.length === 0) {
+            throw HttpError.validation('A habit needs a startDate');
+          }
+          const schedule = habitScheduleSchema.safeParse(payload['schedule']);
+          if (!schedule.success) {
+            throw HttpError.validation('A habit needs a schedule');
+          }
+
+          const row = await syncRepository.insertEntity('habit', {
+            ...payload,
+            id: operation.entityId,
+            userId,
+            name: (payload['name'] as string) ?? 'Habit',
+            schedule: schedule.data,
+            timezone,
+            startDate,
+            endDate: typeof raw['endDate'] === 'string' ? raw['endDate'] : null,
+            weekStart: raw['weekStart'] === 1 ? 1 : 0,
+            position: Math.max(0, Math.trunc(Number(raw['position']) || 0)),
+          });
+          return { status: 'applied', version: row.version };
+        }
+
+        case 'habit_entry': {
+          const raw = operation.payload ?? {};
+          const habitId = typeof raw['habitId'] === 'string' ? raw['habitId'] : '';
+          const date = typeof raw['date'] === 'string' ? raw['date'] : '';
+          if (habitId.length === 0) {
+            throw HttpError.validation('An entry needs a habitId');
+          }
+          if (date.length === 0) {
+            throw HttpError.validation('An entry needs a date');
+          }
+          const habit = await syncRepository.findEntity('habit', habitId);
+          if (!habit || habit.deletedAt || (habit['userId'] as string | null) !== userId) {
+            throw HttpError.notFound('Habit not found');
+          }
+          if (payload['status'] !== 'done' && payload['status'] !== 'skipped') {
+            throw HttpError.validation('An entry needs a status');
+          }
+          // Remarcar no acumula: el UNIQUE (habito, dia) es la regla y esto
+          // la aplica, asi que la segunda marca reescribe la primera en vez
+          // de sumar una fila.
+          const previous = await syncRepository.findHabitEntry(habitId, date);
+          if (previous) {
+            const row = await syncRepository.updateEntity('habit_entry', previous.id, {
+              ...payload,
+              status: payload['status'],
+            });
+            return { status: 'applied', version: row.version };
+          }
+
+          const row = await syncRepository.insertEntity('habit_entry', {
+            ...payload,
+            id: operation.entityId,
+            habitId,
+            date,
+            status: payload['status'],
+          });
+          return { status: 'applied', version: row.version };
+        }
+
         default:
           throw HttpError.validation(`The entity "${entity}" cannot be created`);
       }
@@ -771,6 +923,10 @@ export class SyncService {
         await this.assertCanDelete(await this.workspaceOfListItem(existing, userId), userId);
       } else if (entity === 'note') {
         await this.assertCanDelete(this.workspaceOfNote(existing), userId);
+      } else if (entity === 'habit') {
+        this.assertOwnHabit(existing, userId);
+      } else if (entity === 'habit_entry') {
+        await this.assertOwnHabitEntry(existing, userId);
       }
 
       const row = await syncRepository.updateEntity(entity, operation.entityId, {}, {
@@ -797,6 +953,10 @@ export class SyncService {
         nodeType: 'note',
         nodeId: operation.entityId,
       });
+    } else if (entity === 'habit') {
+      this.assertOwnHabit(existing, userId);
+    } else if (entity === 'habit_entry') {
+      await this.assertOwnHabitEntry(existing, userId);
     }
 
     if (operation.baseVersion === existing.version) {

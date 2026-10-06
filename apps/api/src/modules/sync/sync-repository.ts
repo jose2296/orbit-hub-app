@@ -7,6 +7,8 @@ import type { MembershipRoleName, SyncEntityName } from '../../db/constants.js';
 import {
   dashboardLayouts,
   folders,
+  habitEntries,
+  habits,
   listItems,
   lists,
   memberships,
@@ -113,7 +115,9 @@ export type SyncEntityTable =
   | typeof lists
   | typeof listItems
   | typeof notes
-  | typeof dashboardLayouts;
+  | typeof dashboardLayouts
+  | typeof habits
+  | typeof habitEntries;
 
 export interface StoredEntity {
   id: string;
@@ -142,6 +146,10 @@ export class SyncRepository {
         return notes;
       case 'dashboard':
         return dashboardLayouts;
+      case 'habit':
+        return habits;
+      case 'habit_entry':
+        return habitEntries;
       default:
         throw new Error(`Unsupported sync entity: ${entity}`);
     }
@@ -178,6 +186,23 @@ export class SyncRepository {
     const db = await this.db();
     const table = this.table(entity);
     const [row] = await db.select().from(table).where(eq(table.id, entityId)).limit(1);
+    return (row as StoredEntity | undefined) ?? null;
+  }
+
+  /**
+   * La entrada viva de un habito en un dia, o null.
+   *
+   * El sync la necesita por (habito, dia) y no por id: remarcar desde otro
+   * dispositivo trae otro id para el mismo dia, y el UNIQUE es la regla que
+   * dice que eso es una reescritura y no una fila nueva.
+   */
+  async findHabitEntry(habitId: string, date: string): Promise<StoredEntity | null> {
+    const db = await this.db();
+    const [row] = await db
+      .select()
+      .from(habitEntries)
+      .where(and(eq(habitEntries.habitId, habitId), eq(habitEntries.date, date)))
+      .limit(1);
     return (row as StoredEntity | undefined) ?? null;
   }
 
@@ -1122,6 +1147,45 @@ export class SyncRepository {
           },
         });
         remember(row.row.updatedAt);
+      }
+    }
+
+    // Habits, before the dashboard: personal rows, filtered by owner and not
+    // by space. A habit has no workspace, so the membership lists above say
+    // nothing about it; the only question is whose it is. Deliberately not
+    // gated on `hayAlgoQueTraer`: somebody with habits and no spaces has
+    // nothing in either list, and still has habits arriving.
+    if (changes.length < input.limit) {
+      const habitChanges = await db
+        .select()
+        .from(habits)
+        .where(and(eq(habits.userId, input.userId), gt(habits.updatedAt, after)))
+        .orderBy(asc(habits.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of habitChanges) {
+        changes.push({ entity: 'habit', record: row as Record<string, unknown> });
+        remember(row.updatedAt);
+      }
+    }
+
+    if (changes.length < input.limit) {
+      // The entries of those habits, through the habit and not through a
+      // space. An entry carries no owner of its own; its habit does.
+      const entryChanges = await db
+        .select({ entry: habitEntries })
+        .from(habitEntries)
+        .innerJoin(habits, eq(habitEntries.habitId, habits.id))
+        .where(and(eq(habits.userId, input.userId), gt(habitEntries.updatedAt, after)))
+        .orderBy(asc(habitEntries.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of entryChanges) {
+        changes.push({
+          entity: 'habit_entry',
+          record: row.entry as Record<string, unknown>,
+        });
+        remember(row.entry.updatedAt);
       }
     }
 
