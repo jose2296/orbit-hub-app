@@ -1541,3 +1541,59 @@ describe('los colores de etiqueta tambien esperan al Guardar', () => {
     expect(cierre, 'y cierra al final').toBeGreaterThan(colores);
   });
 });
+
+describe('compartir y plantillas: el Guardar del pie', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  const sin = (p: string) => sinComentarios(leer(p));
+
+  it('el formulario de compartir publica y la hoja pinta', () => {
+    /*
+      Un contexto no fluye hacia arriba: el estado del formulario vive dos niveles
+      por debajo de quien pinta el pie. Sin canal, el Guardar del panel no puede
+      existir sin reescribir el formulario por debajo — que es un rediseno, no una
+      adopcion.
+    */
+    const canal = sin('src/components/shares/share-form-publicado.ts');
+    expect(canal, 'el canal lleva publicar, no lo publicado').toContain(
+      'publicar: (publicado: ShareFormPublicado | null) => void;',
+    );
+    const form = sin('src/components/shares/share-node-sheet.tsx');
+    expect(form, 'el formulario publica').toContain('publicar({ enviar:');
+    expect(form, 'y limpia al desmontar').toContain('return () => publicar(null);');
+    expect(form, 'el sucio va directo a la hoja').toContain('setSucio(sucio)');
+    expect(form, 'sin botones propios').not.toMatch(/label=\{t\("share\.send"\)/);
+    expect(form, 'y sin Cancelar').not.toContain('t("common.cancel")');
+  });
+
+  it('guardar-plantilla no guarda desde una fila del menu', () => {
+    const hoja = sin('src/components/notes/save-template-sheet.tsx');
+    expect(hoja, 'delega en onSave').toContain('onSave={() => void save()}');
+    expect(hoja, 'y no tiene fila de guardar').not.toContain('key: "save"');
+    expect(hoja, 'el sucio es el nombre').toContain('setSucio(name.trim()');
+  });
+
+  it('renombrar nota y plantilla usan el pie, sin Volver que no pregunte', () => {
+    for (const [quien, ruta] of [
+      ['la nota', 'src/components/notes/note-menu-sheet.tsx'],
+      ['la plantilla', 'src/components/notes/template-menu-sheet.tsx'],
+    ] as const) {
+      const hoja = sin(ruta);
+      expect(hoja, `${quien}: delega en onSave`).toContain('onSave={() => void');
+      expect(hoja, `${quien}: sin guardar dentro`).not.toMatch(
+        /key: "save",\n(?:.*\n)*?.*onPress/,
+      );
+    }
+    // El Volver se fue con el guardar de dentro: la flecha de arriba hace lo
+    // mismo, y la de abajo era la salida que no preguntaba.
+    const plantilla = sin('src/components/notes/template-menu-sheet.tsx');
+    expect(plantilla, 'sin Volver propio').not.toContain('t("common.back")');
+  });
+
+  it('compartir dice por que no se puede enviar', () => {
+    // Una direccion sin escribir no es un error: es el estado en el que se abre.
+    // El motivo lo dice en vez de dejar un boton muerto.
+    const form = sin('src/components/shares/share-node-sheet.tsx');
+    expect(form, 'pasa el motivo').toContain('t("share.pickSomebody")');
+  });
+});
