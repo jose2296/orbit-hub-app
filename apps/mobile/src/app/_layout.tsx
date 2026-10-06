@@ -146,6 +146,10 @@ function Navigation() {
         {/* Outside the auth guard on purpose: the person who opens an
             invitation is the person who is not signed in yet. */}
         <Stack.Screen name="invite/[token]" options={{ title: t('invite.title') }} />
+        {/* Outside the auth guard on purpose: a shared link has to land here
+            with or without a session, and the screen itself sends whoever is
+            anonymous to sign in with a `next` back to this route. */}
+        <Stack.Screen name="share/save" options={{ title: 'Guardar enlace' }} />
         {/* The legal documents, for the same reason and for a stronger one: the
             URL in App Store Connect and in Play Console is opened by somebody
             deciding whether to install, who by definition has no session. Inside

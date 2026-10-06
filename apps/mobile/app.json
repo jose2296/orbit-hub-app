@@ -43,7 +43,16 @@
           "backgroundColor": "#0B1020"
         }
       ],
-      "expo-sharing"
+      [
+        "expo-sharing",
+        {
+          "android": { "enabled": true, "singleShareMimeTypes": ["text/plain"] },
+          "ios": {
+            "enabled": true,
+            "activationRule": { "supportsText": true, "supportsWebUrlWithMaxCount": 1 }
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

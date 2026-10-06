@@ -1,4 +1,4 @@
-import { Link, useRouter } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -21,6 +21,10 @@ export default function SignUpScreen() {
   const { locale, t } = useI18n();
   const router = useRouter();
   const { register } = useSession();
+  // A donde ir una vez dentro, como en sign-in: un enlace compartido manda
+  // aqui sin sesion, y caer en el panel tiraria el destino.
+  const { next } = useLocalSearchParams<{ next?: string }>();
+  const destination = typeof next === 'string' && next.startsWith('/') ? next : '/(app)';
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -57,7 +61,7 @@ export default function SignUpScreen() {
       });
 
       if (status === 'authenticated') {
-        router.replace('/(app)');
+        router.replace(destination);
         return;
       }
 
