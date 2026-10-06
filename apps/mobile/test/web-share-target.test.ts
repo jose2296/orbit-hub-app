@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -152,5 +152,133 @@ describe('el service worker del share', () => {
     const respuesta = (await promesa) as unknown as Response;
     expect(respuesta.status).toBe(303);
     expect(new URL(respuesta.headers.get('location')!).pathname).toBe('/share-target');
+  });
+});
+
+vi.mock('expo-sharing', () => ({
+  getSharedPayloads: () => [],
+  clearSharedPayloads: () => {},
+}));
+
+import {
+  borrarShareWeb,
+  guardarShareWeb,
+  hayQueryShare,
+  leerShareWeb,
+  parsearQueryShare,
+} from '../src/lib/bookmarks/web-share';
+
+// Almacen en memoria: el localStorage del navegador no existe en Node y la
+// pagina lo recibe inyectado, asi que aqui se suple con un Map.
+function almacenFalso() {
+  const datos = new Map<string, string>();
+  return {
+    getItem: (clave: string) => (datos.has(clave) ? datos.get(clave)! : null),
+    setItem: (clave: string, valor: string) => {
+      datos.set(clave, valor);
+    },
+    removeItem: (clave: string) => {
+      datos.delete(clave);
+    },
+  };
+}
+
+describe('la pagina share-target', () => {
+  it('?url= sola da payload con titulo null', () => {
+    expect(parsearQueryShare({ url: 'https://ejemplo.test/nota' })).toEqual({
+      url: 'https://ejemplo.test/nota',
+      title: null,
+      text: null,
+    });
+  });
+
+  it('?text= con URL adentro la extrae (reusa sacarUrlDelTexto)', () => {
+    expect(
+      parsearQueryShare({ text: 'mira esto https://ejemplo.test/nota que bueno' }),
+    ).toEqual({
+      url: 'https://ejemplo.test/nota',
+      title: 'mira esto que bueno',
+      text: 'mira esto https://ejemplo.test/nota que bueno',
+    });
+  });
+
+  it('?title= + ?url= respeta el titulo que mando el navegador', () => {
+    expect(
+      parsearQueryShare({ title: 'Mi titulo', url: 'https://ejemplo.test/nota' }),
+    ).toEqual({
+      url: 'https://ejemplo.test/nota',
+      title: 'Mi titulo',
+      text: null,
+    });
+  });
+
+  it('sin params da null y la pagina dice "nada que guardar"', () => {
+    expect(parsearQueryShare({})).toBeNull();
+    expect(hayQueryShare({})).toBe(false);
+    const fuente = readFileSync(join(appRoot, 'src', 'app', 'share-target.tsx'), 'utf8');
+    expect(fuente).toContain('share.save.emptyTitle');
+    expect(fuente).toContain('share.save.emptyBody');
+  });
+
+  it('tras leer, la URL queda limpia (replace sin query)', () => {
+    const fuente = readFileSync(join(appRoot, 'src', 'app', 'share-target.tsx'), 'utf8');
+    expect(fuente).toContain(`router.replace('/share-target')`);
+  });
+
+  it('el parseo no esta copiado: sale de lib/bookmarks/share-intent', () => {
+    const fuente = readFileSync(join(appRoot, 'src', 'lib', 'bookmarks', 'web-share.ts'), 'utf8');
+    expect(fuente).toContain('sacarUrlDelTexto');
+    expect(fuente).not.toContain('https?');
+  });
+
+  it('el anonimo vuelve con next a /share-target, como share/save', () => {
+    const fuente = readFileSync(join(appRoot, 'src', 'app', 'share-target.tsx'), 'utf8');
+    expect(fuente).toContain(`next: '/share-target'`);
+  });
+
+  it('la hoja es la misma de nativo, sin fork', () => {
+    const fuente = readFileSync(join(appRoot, 'src', 'app', 'share-target.tsx'), 'utf8');
+    expect(fuente).toContain(
+      `import { ShareSaveSheet } from '@/components/bookmarks/share-save-sheet'`,
+    );
+    expect(fuente).toContain('<ShareSaveSheet');
+  });
+
+  it('onSaved borra la clave y onClose sin guardar no borra', () => {
+    const fuente = readFileSync(join(appRoot, 'src', 'app', 'share-target.tsx'), 'utf8');
+    const guardar = fuente.indexOf('const alGuardar');
+    expect(guardar).toBeGreaterThan(-1);
+    expect(fuente.slice(guardar, guardar + 400)).toContain('borrarShareWeb()');
+    const volver = fuente.indexOf('const volver');
+    expect(volver).toBeGreaterThan(-1);
+    expect(fuente.slice(volver, volver + 200)).not.toContain('borrarShareWeb');
+  });
+});
+
+describe('el pendiente del share web en localStorage', () => {
+  it('guardar y leer devuelve el mismo payload', () => {
+    const almacen = almacenFalso();
+    const payload = { url: 'https://ejemplo.test/nota', title: 'Mi titulo', text: null };
+    guardarShareWeb(payload, almacen);
+    expect(leerShareWeb(almacen)).toEqual(payload);
+  });
+
+  it('borrar deja la lectura en null', () => {
+    const almacen = almacenFalso();
+    guardarShareWeb({ url: 'https://ejemplo.test/x', title: null, text: null }, almacen);
+    borrarShareWeb(almacen);
+    expect(leerShareWeb(almacen)).toBeNull();
+  });
+
+  it('un JSON roto se lee como null, no revienta', () => {
+    const almacen = almacenFalso();
+    almacen.setItem('orbithub:pending-share-web', '{roto');
+    expect(leerShareWeb(almacen)).toBeNull();
+  });
+
+  it('un JSON sin url valida se lee como null', () => {
+    const almacen = almacenFalso();
+    almacen.setItem('orbithub:pending-share-web', JSON.stringify({ title: 'sin enlace' }));
+    expect(leerShareWeb(almacen)).toBeNull();
   });
 });
