@@ -1,11 +1,12 @@
-import { createElement, useEffect, useState } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import type { StateColor } from "@orbit-hub/contracts";
 
 import { useTranslation } from "@/lib/i18n";
 import { ICON_COLOR_KEYS, ICON_COLOR_LABEL, iconColor } from "@/lib/lists/item-icons";
 import { useTheme } from "@/theme";
+import { ColorSquare } from "@/components/ui/color-square";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 
@@ -79,12 +80,6 @@ export function StateColorStrip({
     if (canonico !== null) onChange(canonico);
   }
 
-  /** From the well: already canonical, written straight away. */
-  function elegirHex(valor: string) {
-    setHex(valor);
-    onChange(valor);
-  }
-
   return (
     <View style={[styles.tira, { gap: theme.spacing.xs }]}>
       {ICON_COLOR_KEYS.map((opcion) => {
@@ -110,67 +105,34 @@ export function StateColorStrip({
       })}
       {/*
         A colour of one's own, **below the twelve and not among them.**
-        The twelve are one tap each; a free colour needs a field (six hex digits,
-        with or without the hash — the well below writes the canonical form) and,
-        on web only, the platform's own colour well. The well is web-only because
-        there is no colour well on native: `Platform.OS === "web"` guards a DOM
-        `input` that native would not know how to mount, and everywhere else the
-        hex field is the whole picker. That split is the documented exception for
-        one control, not a second picker: both write the same value.
+        The twelve are one tap each; a free colour gets the same square the
+        spaces use (`ColorSquare`: saturation square, hue strip) plus a field
+        for the exact six digits. The square reports every move live and the
+        field writes when it becomes a colour; both land in the same `onChange`,
+        and the parent stages — a sheet with a save button, an editor with its
+        draft — so neither writes anything by itself.
       */}
       <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.sm }}>
         <AppText variant="caption" tone="subtle">
           {t("board.stateCustom")}
         </AppText>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
-          {Platform.OS === "web" ? (
-            createElement("input", {
-              type: "color",
-              value: hexValido ?? iconColor(color),
-              "aria-label": t("board.stateCustom"),
-              onChange: (event: { target: { value: string } }) => {
-                elegirHex(event.target.value);
-              },
-              /*
-                **`data-testid` con guion y no `testID`.** Esto no pasa por
-                react-native-web: es un elemento del DOM tal cual, y React baja
-                los atributos desconocidos a minusculas —`testID` llegaria como
-                `testid` y ningun selector lo encontraria.
-              */
-              "data-testid": `${testIDPrefix}-well`,
-              style: {
-                width: 30,
-                height: 30,
-                padding: 0,
-                border: "none",
-                borderRadius: 15,
-                background: "none",
-                cursor: "pointer",
-              },
-            })
-          ) : null}
-          <View style={{ flex: 1 }}>
-            <TextField
-              testID={`${testIDPrefix}-hex`}
-              label={t("board.stateHex")}
-              value={hex}
-              onChangeText={escribirHex}
-              placeholder={t("board.stateHexPlaceholder")}
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={7}
-            />
-          </View>
-          <View
-            testID={`${testIDPrefix}-preview`}
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: theme.radius.pill,
-              backgroundColor: iconColor(hexValido ?? color),
-            }}
-          />
-        </View>
+        <ColorSquare
+          color={iconColor(color)}
+          onChange={onChange}
+          testIDPrefix={testIDPrefix}
+          squareLabel={t("board.stateCustom")}
+          hueLabel={t("board.stateHue")}
+        />
+        <TextField
+          testID={`${testIDPrefix}-hex`}
+          label={t("board.stateHex")}
+          value={hex}
+          onChangeText={escribirHex}
+          placeholder={t("board.stateHexPlaceholder")}
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={7}
+        />
         {!valido ? (
           <AppText variant="caption" tone="subtle">
             {t("board.stateHexInvalid")}

@@ -1031,6 +1031,7 @@ const es = {
   "board.stateHex": "Código hex",
   "board.stateHexPlaceholder": "a3e635",
   "board.stateHexInvalid": "Seis letras o números, como a3e635",
+  "board.stateHue": "Tono",
   "board.stateHere": "está aquí",
 
   /*
@@ -2143,6 +2144,7 @@ const en: Record<TranslationKey, string> = {
   "board.stateHex": "Hex code",
   "board.stateHexPlaceholder": "a3e635",
   "board.stateHexInvalid": "Six letters or digits, like a3e635",
+  "board.stateHue": "Hue",
   "board.stateHere": "is here",
 
   /*
