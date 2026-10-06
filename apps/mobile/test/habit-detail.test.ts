@@ -12,6 +12,8 @@ import {
 } from "@orbit-hub/habit-core";
 import type { HabitSchedule, LocalDate } from "@orbit-hub/contracts";
 
+import { dictionaries } from "@/lib/i18n/dictionaries";
+
 /**
  * El detalle del habito: rejilla de dias para `rrule`, contador para
  * `quota`, racha y mas larga, edicion de fin, archivar y borrar.
@@ -235,6 +237,59 @@ describe("el detalle del habito", () => {
       "unarchive()",
       "remove()",
       't("habits.endDate")',
+    ]) {
+      expect(codigo).toContain(pieza);
+    }
+  });
+
+  it("hay controles visibles para ir al periodo anterior y siguiente", () => {
+    // La pulsacion larga sigue existiendo como atajo, pero ya no es el
+    // unico camino: dos flechas visibles flanquean el selector.
+    const codigo = pantalla();
+    expect(codigo).toContain("habit-period-prev");
+    expect(codigo).toContain("habit-period-next");
+    expect(codigo).toContain("chevron-back");
+    expect(codigo).toContain("chevron-forward");
+    expect(codigo).toContain("iconOnly");
+  });
+
+  it("los controles tienen etiqueta accesible traducida", () => {
+    const codigo = pantalla();
+    // El dibujo solo no dice nada: `iconOnly` conserva el nombre en el
+    // arbol de accesibilidad, y el nombre sale del diccionario.
+    expect(codigo).toContain('t("habits.period.previous")');
+    expect(codigo).toContain('t("habits.period.next")');
+    // La clave existe en las dos lenguas, primero en es y despues en en.
+    expect(dictionaries.es["habits.period.previous"]).toBe(
+      "Período anterior",
+    );
+    expect(dictionaries.es["habits.period.next"]).toBe("Período siguiente");
+    expect(dictionaries.en["habits.period.previous"]).toBe(
+      "Previous period",
+    );
+    expect(dictionaries.en["habits.period.next"]).toBe("Next period");
+  });
+
+  it("pulsar anterior o siguiente cambia el periodo mostrado", () => {
+    const lunes = lunesActual();
+    const actual = periodBounds("week", lunes, 0, ZONA);
+    // Siete dias atras es otra semana entera: el ancla desplazada pinta
+    // otros dias y no los mismos.
+    const anterior = periodBounds("week", masDias(lunes, -7), 0, ZONA);
+    expect(anterior.end < actual.start).toBe(true);
+    const dias = scheduledDates(REGLA_LX, anterior.start, anterior.end, ZONA);
+    expect(dias).toHaveLength(2);
+    expect(dias[0]).toBe(masDias(lunes, -7));
+    // Y los botones mueven un desplazamiento que alimenta los limites: el
+    // anterior resta, el siguiente suma, y en el periodo en curso no hay
+    // siguiente que mostrar.
+    const codigo = pantalla();
+    for (const pieza of [
+      "setAnchorOffset",
+      "offset - 1",
+      "offset + 1",
+      "periodBounds(period, anchor",
+      "atPresent",
     ]) {
       expect(codigo).toContain(pieza);
     }

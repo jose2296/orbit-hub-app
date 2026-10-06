@@ -103,6 +103,53 @@ function statusColor(status: HabitStatus, theme: Theme): string {
   }
 }
 
+const DAY_MS = 86_400_000;
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function addDays(date: LocalDate, delta: number): LocalDate {
+  const base = new Date(
+    Date.UTC(
+      Number(date.slice(0, 4)),
+      Number(date.slice(5, 7)) - 1,
+      Number(date.slice(8, 10)),
+    ) + delta * DAY_MS,
+  );
+  return `${base.getUTCFullYear()}-${pad2(base.getUTCMonth() + 1)}-${pad2(base.getUTCDate())}` as LocalDate;
+}
+
+/** Ultimo dia del mes, con `month` en base 1. */
+function lastDayOfMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * Mueve el ancla N periodos desde `date`. La semana en pasos de 7 dias; el
+ * mes y el ano por componentes, con el dia recortado al mes destino: 31 de
+ * enero menos un mes es 28 de febrero, no 3 de marzo.
+ */
+function shiftAnchor(
+  date: LocalDate,
+  period: DetailPeriod,
+  delta: number,
+): LocalDate {
+  if (period === "week") return addDays(date, delta * 7);
+  let year = Number(date.slice(0, 4));
+  let month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  if (period === "month") {
+    month += delta;
+    year += Math.floor((month - 1) / 12);
+    month = ((((month - 1) % 12) + 12) % 12) + 1;
+  } else {
+    year += delta;
+  }
+  const clamped = Math.min(day, lastDayOfMonth(year, month));
+  return `${year}-${pad2(month)}-${pad2(clamped)}` as LocalDate;
+}
+
 export default function HabitDetailScreen() {
   const theme = useTheme();
   const t = useTranslation();
@@ -121,6 +168,9 @@ export default function HabitDetailScreen() {
     remove,
   } = useHabit(habitId ?? null);
   const [period, setPeriod] = useState<DetailPeriod>("week");
+  // Periodos hacia atras desde el actual: 0 es el periodo en curso, -1 el
+  // anterior. Solo hacia atras: mas alla del actual no hay nada que mirar.
+  const [anchorOffset, setAnchorOffset] = useState(0);
   // Texto del campo de fin, sin comprometer hasta guardar: null es "lo que
   // hay guardado" y el guardar vuelve a null para reengancharse.
   const [endText, setEndText] = useState<string | null>(null);
@@ -140,14 +190,31 @@ export default function HabitDetailScreen() {
   );
 
   /**
-   * Los dias que pintan filas: solo los programados del periodo en curso,
+   * El dia que ancla lo mostrado: hoy desplazado N periodos. Cambiar de
+   * periodo (semana/mes/ano) repone el desplazamiento a cero, porque un -2
+   * de meses no significa nada despues de venir de semanas.
+   */
+  const anchor = useMemo(
+    () => (today ? shiftAnchor(today, period, anchorOffset) : null),
+    [today, period, anchorOffset],
+  );
+
+  /** Si el ancla sigue en el periodo en curso: entonces no hay siguiente. */
+  const atPresent = useMemo(() => {
+    if (!habit || !today || !anchor) return true;
+    const current = periodBounds(period, anchor, habit.weekStart, habit.timezone);
+    return current.start <= today && today <= current.end;
+  }, [habit, today, anchor, period]);
+
+  /**
+   * Los dias que pintan filas: solo los programados del periodo del ancla,
    * recortados al rango activo del habito. Un dia que no toca no tiene fila
    * y por tanto no se puede pulsar: ni feedback, ni haptic, ni nada.
    */
   const days = useMemo<LocalDate[]>(() => {
-    if (!habit || !today) return [];
+    if (!habit || !anchor) return [];
     if (habit.schedule.kind !== "rrule") return [];
-    const bounds = periodBounds(period, today, habit.weekStart, habit.timezone);
+    const bounds = periodBounds(period, anchor, habit.weekStart, habit.timezone);
     const from = bounds.start < habit.startDate ? habit.startDate : bounds.start;
     const to =
       habit.endDate === null || habit.endDate > bounds.end
@@ -155,7 +222,7 @@ export default function HabitDetailScreen() {
         : habit.endDate;
     if (from > to) return [];
     return scheduledDates(habit.schedule, from, to, habit.timezone);
-  }, [habit, today, period]);
+  }, [habit, anchor, period]);
 
   const streak = useMemo(
     () => (record && today ? currentStreak(record, entries, today) : 0),
@@ -243,14 +310,55 @@ export default function HabitDetailScreen() {
             </View>
           </Card>
 
-          <Segmented<DetailPeriod>
-            value={period}
-            onChange={setPeriod}
-            options={PERIOD_ORDER.map((option) => ({
-              value: option,
-              label: t(`habits.${option}`),
-            }))}
-          />
+          {/*
+            El navegador de periodos: flechas visibles a los lados del
+            selector. La pulsacion larga en la fila sigue saltando el dia,
+            pero ya no es el unico camino: nadie descubre un gesto invisible.
+          */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: theme.spacing.sm,
+            }}
+          >
+            <Button
+              label={t("habits.period.previous")}
+              icon="chevron-back"
+              iconOnly
+              variant="secondary"
+              size="sm"
+              fullWidth={false}
+              onPress={() => setAnchorOffset((offset) => offset - 1)}
+              testID="habit-period-prev"
+            />
+            <View style={{ flex: 1 }}>
+              <Segmented<DetailPeriod>
+                value={period}
+                onChange={(next) => {
+                  setPeriod(next);
+                  setAnchorOffset(0);
+                }}
+                options={PERIOD_ORDER.map((option) => ({
+                  value: option,
+                  label: t(`habits.${option}`),
+                }))}
+              />
+            </View>
+            <Button
+              label={t("habits.period.next")}
+              icon="chevron-forward"
+              iconOnly
+              variant="secondary"
+              size="sm"
+              fullWidth={false}
+              // En el periodo en curso no hay siguiente que mostrar: solo
+              // se viaja hacia atras.
+              disabled={atPresent}
+              onPress={() => setAnchorOffset((offset) => offset + 1)}
+              testID="habit-period-next"
+            />
+          </View>
 
           {habit.schedule.kind === "quota" && quotaProgress ? (
             <Card>
