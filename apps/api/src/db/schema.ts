@@ -7,6 +7,7 @@
  */
 export * from './auth-schema';
 export * from './content-schema';
+export * from './habit-schema';
 
 import { auditLogs, authIdentities, emailTokens, sessions, users } from './auth-schema';
 import {
@@ -23,6 +24,7 @@ import {
   workspaceInvitations,
   workspaces,
 } from './content-schema';
+import { habitEntries, habits } from './habit-schema';
 
 export const schema = {
   // auth
@@ -45,4 +47,7 @@ export const schema = {
   syncOperations,
   syncConflicts,
   syncCursors,
+  // habits
+  habits,
+  habitEntries,
 };

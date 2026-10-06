@@ -22,7 +22,7 @@
     "api:start": "npm run start --workspace @orbit-hub/api",
     "api:build": "npm run build --workspace @orbit-hub/api",
     "api:test": "npm run test --workspace @orbit-hub/api",
-    "build:packages": "npm run build --workspace @orbit-hub/contracts && npm run build --workspace @orbit-hub/config",
+    "build:packages": "npm run build --workspace @orbit-hub/contracts && npm run build --workspace @orbit-hub/config && npm run build --workspace @orbit-hub/habit-core",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "test:scripts": "node --test scripts/*.test.mjs",
     "test": "npm run build:packages && npm run test --workspaces --if-present && npm run test:scripts",

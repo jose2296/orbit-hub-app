@@ -9,6 +9,7 @@ import { notesRouter } from "./notes.js";
 import { peopleRouter } from "./people.js";
 import { applyTemplateRouter, noteTemplatesRouter } from "./note-templates.js";
 import { attachmentBytesRouter, attachmentsRouter } from "./attachments.js";
+import { habitsRouter } from "./habits.js";
 
 import { syncRouter } from "./sync.js";
 import { listsRouter, searchRouter } from "./lists.js";
@@ -54,5 +55,6 @@ apiRouter.use("/notes", attachmentsRouter);
 apiRouter.use("/notes", notesRouter);
 apiRouter.use("/catalog", catalogRouter);
 apiRouter.use("/people", peopleRouter);
+apiRouter.use("/habits", habitsRouter);
 apiRouter.use("/shares", sharesRouter);
 apiRouter.use("/search", searchRouter);

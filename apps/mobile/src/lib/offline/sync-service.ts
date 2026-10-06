@@ -17,6 +17,7 @@ import { api, toApiError } from "@/lib/api";
 import { keyValueStore } from "@/lib/storage/key-value";
 
 import { applyDashboardChanges } from "./apply-panel";
+import { applyHabitEntryChanges } from "./habit-row";
 import { getLocalStoreReady } from "./local-store";
 import type {
   CachedEntity,
@@ -370,7 +371,8 @@ async function applyChanges(
   response: SyncPullResponse,
 ): Promise<void> {
   /*
-    The changes as cache rows, one shape for everything that is not the panel.
+    The changes as cache rows, one shape for everything that is not the panel
+    and not a habit entry.
 
     The panel is left out on purpose and goes through `apply-panel`, which cannot be
     this mapping: its row has to land on the identifier that keeps coming back
@@ -378,7 +380,9 @@ async function applyChanges(
     the count of screens. Doing it here —which is where it was— meant a panel of one
     piece, with the count dropped on the floor every single pull.
   */
-  const cambios = response.changes.filter((change) => change.entity !== "dashboard");
+  const cambios = response.changes.filter(
+    (change) => change.entity !== "dashboard" && change.entity !== "habit_entry",
+  );
   const rows: CachedEntity[] = cambios.map((change) => filaDe(change));
   const usable = rows.filter((row) => row.entityId.length > 0);
 
@@ -387,6 +391,25 @@ async function applyChanges(
   }
 
   await applyDashboardChanges(store, response.changes);
+
+  /*
+    Habit entries go through their own merge: done beats skipped beats
+    deleted, and it never opens a conflict. Where the local row won over a
+    live server row, the correction is enqueued so the server converges to
+    the same value instead of the two sides disagreeing forever.
+  */
+  const { corrections } = await applyHabitEntryChanges(store, response.changes);
+  for (const correction of corrections) {
+    const cached = await store.getCached("habit_entry", correction.entityId);
+    await enqueueOperation({
+      kind: "update",
+      entity: "habit_entry",
+      entityId: correction.entityId,
+      baseVersion: cached?.version ?? correction.baseVersion,
+      payload: correction.payload,
+      base: correction.base,
+    });
+  }
 }
 
 function filaDe(change: { entity: SyncEntity; record: unknown }): CachedEntity {

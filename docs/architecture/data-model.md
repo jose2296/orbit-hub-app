@@ -47,6 +47,35 @@ provider again.
 own: the name collision had led to a comment claiming notes had no table of their own, which
 Phase 4 makes false, because a note is a document and does not fit in a `varchar(2000)`.
 
+## Habitos
+
+Dos tablas, personales: cuelgan de `users`, no de `workspaces`. Un habito no es
+de un equipo y nunca se comparte, asi que meterlo en un espacio obligaria a
+decidir que pasa con el cuando alguien sale del espacio y a mantener permisos
+para algo que nadie comparte. Ver [ADR 0034](adr/0034-horario-en-union-y-disciplina-dura.md).
+
+| Tabla | Notas |
+| --- | --- |
+| `habits` | `user_id` con cascade a `users`; `schedule` jsonb (la union `rrule\|quota`); `timezone` IANA congelada al crear; `week_start` 0 lunes (ISO, defecto) o 1 domingo, en el habito y no en el usuario; `start_date` y `end_date` como `date`; `target_value` entero nullable (null = binario); `position`; `archived_at` en vez de borrado con historia |
+| `habit_entries` | `habit_id` con cascade; `date` como `date`, nunca instante; `status` `done\|skipped` (el fallo lo calcula el motor, no se registra a mano); `amount` y `note` para la meta y la nota corta |
+
+`date` es `date` y no `timestamptz` porque "el lunes" es un dia local de
+calendario: con un instante, viajar de zona cambiaria lo que fue ese dia. La
+fecha plana viaja con la persona, y no se puede corregir despues sin migrar.
+
+`UNIQUE (habit_id, date)` ES la regla "un dia cuenta una sola vez", a nivel de
+datos y no de interfaz: remarcar es un upsert que reescribe, nunca un segundo
+insert. Y revive: remarcar un dia borrado lo trae de vuelta con `deleted_at` a
+null.
+
+La zona se congela al crear y `PATCH` no la acepta: el historico es un hecho y
+no se reinterpreta si la persona muda de pais. Por la misma razon `start_date`
+tampoco viaja en un update.
+
+`archived_at` y no borrado: la racha de un habito que ya no se usa se sigue
+pudiendo leer. Borrar el habito con su historia seria perder datos que la
+persona todavia quiere ver.
+
 ## Sync support
 
 | Table | Purpose |

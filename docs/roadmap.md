@@ -277,7 +277,12 @@ Un solo editor en las tres plataformas, HTML como formato, en
 
 ## Fase 8 — Calendario
 
-- [ ] Eventos, recurrencia, recordatorios
+- [x] Recurrencia de habitos, fase 1 del spec `2026-10-05-habitos-design`: motor
+  `rrule` + `luxon` en `packages/habit-core`, horario como union `rrule|quota`,
+  registro solo en dia programado, tablas `habits` y `habit_entries`, y sync con
+  rama personal. Siguen pendientes la fase 2 (tarjetas en el panel) y la fase 3
+  (recordatorios push y email), disenadas pero no implementadas.
+- [ ] Eventos, recordatorios
 - [ ] Zonas horarias, importación/exportación ICS
 - [ ] Integración con la vista de planner
 

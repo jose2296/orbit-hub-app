@@ -65,6 +65,15 @@ export interface LocalStore {
     options?: { includeCompleted?: boolean; limit?: number },
   ): Promise<CachedEntity[]>;
   /**
+   * The entries of one habit, ordered by day, without loading every cached
+   * entry in the app. The same shape as `listCachedItems`: the cache key is
+   * `entity:entityId`, so the habit id is read out of the payload.
+   */
+  listCachedEntries(
+    habitId: string,
+    options?: { limit?: number },
+  ): Promise<CachedEntity[]>;
+  /**
    * How many items each list has, in one pass, for every list at once.
    *
    * One query rather than one per list: the drawer, the folder browser and the
@@ -150,6 +159,11 @@ CREATE INDEX IF NOT EXISTS cached_entities_updated_at ON cached_entities (update
 -- the app and parses all of them.
 CREATE INDEX IF NOT EXISTS cached_entities_list_id
   ON cached_entities (entity, json_extract(payload, '$.listId'));
+-- The entries of one habit, which is the query every habit row makes to draw
+-- its week. Same shape as the one above: the cache is generic, so the parent
+-- id is read out of the payload instead of living in its own column.
+CREATE INDEX IF NOT EXISTS cached_entities_habit_id
+  ON cached_entities (entity, json_extract(payload, '$.habitId'));
 
 CREATE TABLE IF NOT EXISTS app_state (
   key TEXT PRIMARY KEY NOT NULL,
@@ -354,6 +368,25 @@ class ExpoSqliteStore implements NativeStore {
       if (typeof row.listId === 'string' && row.listId) counts.set(row.listId, row.total);
     }
     return counts;
+  }
+
+  async listCachedEntries(
+    habitId: string,
+    options: { limit?: number } = {},
+  ): Promise<CachedEntity[]> {
+    // The order lives in the payload, so it is the day that has to be read
+    // from there. The index narrows to one habit; this sorts only that habit.
+    const limit = options.limit ? `LIMIT ${Math.max(1, Math.floor(options.limit))}` : '';
+    const rows = await this.db().getAllAsync<CachedEntityRow>(
+      `SELECT * FROM cached_entities
+       WHERE entity = 'habit_entry'
+         AND deleted_at IS NULL
+         AND json_extract(payload, '$.habitId') = ?
+       ORDER BY json_extract(payload, '$.date') ASC
+       ${limit}`,
+      habitId,
+    );
+    return rows.map(toCachedEntity);
   }
 
   async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {
@@ -692,6 +725,26 @@ class WebStorageStore implements LocalStore {
     }
 
     return counts;
+  }
+
+  async listCachedEntries(
+    habitId: string,
+    options: { limit?: number } = {},
+  ): Promise<CachedEntity[]> {
+    // Only the rows of this entity are considered, so a cache of every entity
+    // in the app is never walked in full.
+    const rows = Object.values(
+      readJson<Record<string, CachedEntity>>(webStorage(), WEB_KEYS.cache, {}),
+    )
+      .filter((item) => item.entity === 'habit_entry' && item.deletedAt === null)
+      .filter((item) => readCachedPayload<{ habitId?: string }>(item).habitId === habitId)
+      .sort((a, b) =>
+        readCachedPayload<{ date?: string }>(a).date?.localeCompare(
+          readCachedPayload<{ date?: string }>(b).date ?? '',
+        ) ?? 0,
+      );
+
+    return options.limit ? rows.slice(0, Math.max(1, options.limit)) : rows;
   }
 
   async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {

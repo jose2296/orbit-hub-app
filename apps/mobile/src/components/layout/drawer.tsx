@@ -87,6 +87,19 @@ const DESTINATIONS = [
     labelKey: "notes.title",
   },
   {
+    /*
+     * Habits, after notes and before search.
+     *
+     * It is a destination of its own for the same reason notes are: it is a
+     * full list that is not inside any space, and a screen with no row in
+     * this menu is a screen nobody can get to.
+     */
+    route: "/(app)/habits",
+    path: "/habits",
+    icon: "repeat-outline",
+    labelKey: "habits.title",
+  },
+  {
     route: "/(app)/search",
     path: "/search",
     icon: "search",

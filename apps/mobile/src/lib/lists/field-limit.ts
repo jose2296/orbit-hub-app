@@ -17,6 +17,7 @@
 import {
   ATTACHMENT_MAX_BYTES_DEFAULT,
   FOLDER_NAME_MAX,
+  HABIT_NAME_MAX,
   LIST_DESCRIPTION_MAX,
   LIST_ITEM_ANNOTATION_MAX,
   LIST_ITEM_TITLE_MAX,
@@ -37,6 +38,7 @@ export const FIELD_LIMITS = {
   'list_item.title': LIST_ITEM_TITLE_MAX,
   'list_item.annotation': LIST_ITEM_ANNOTATION_MAX,
   'note.title': NOTE_TITLE_MAX,
+  'habit.name': HABIT_NAME_MAX,
   'list_item.tag': TAG_MAX,
   'attachment.bytes': ATTACHMENT_MAX_BYTES_DEFAULT,
 } as const;

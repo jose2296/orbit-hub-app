@@ -42,6 +42,8 @@ export const SYNC_ENTITIES = [
   'list_item',
   'note',
   'dashboard',
+  'habit',
+  'habit_entry',
 ] as const;
 export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
 
@@ -147,6 +149,15 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    */
   note: ['title', 'document', 'folderId', 'tags', 'position'],
   dashboard: ['layout', 'pages'],
+  /**
+   * Un habito cuelga del usuario y no de un espacio, asi que lo que el movil
+   * puede cambiar es suyo: nombre, descripcion, horario, meta y archivado.
+   * `timezone` y `startDate` se congelan al crear y no viajan en un update,
+   * igual que `workspaceId` no viaja en el de una nota.
+   */
+  habit: ['name', 'description', 'schedule', 'targetValue', 'archivedAt'],
+  /** Lo que se registra un dia: hecho o saltado, cuanto y una nota corta. */
+  habit_entry: ['status', 'amount', 'note'],
 };
 
 export const AUDIT_EVENTS = [
