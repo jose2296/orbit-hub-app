@@ -210,7 +210,10 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
   }, [hexGuardado]);
 
   const colorDelCuadrado = hexDeHsv(hsv.h, hsv.s, hsv.v);
-  const sucio = colorDelCuadrado !== hexGuardado;
+  /*
+    `sucio` se fue con el boton: era la comparacion que lo apagaba cuando no habia
+    nada que escribir. Sin boton no hay nada que apagar.
+  */
 
   /**
    * **Whose colour this panel is choosing**, and every accessible name below ends
@@ -397,6 +400,29 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
     alMoverTiraRef.current(x);
   }, []);
 
+  /*
+    El commit, **al levantar el dedo y no en un boton**.
+
+    Igual que en el picker del espacio: el cuadrado y la tira mueven una
+    previsualizacion local mientras el dedo esta encima, y al soltar se escribe lo
+    que quedo. Un boton aparte para decir "usa esto" pedia confirmar dos veces lo
+    mismo —elegir el color y decir que lo elegiste.
+
+    Y un toque cuenta como un arrastre de un pixel: el gesto del cuadrado tiene
+    `minDistance(0)`, asi que tocarlo tambien pasa por `onBegin`/`onEnd` y tambien
+    escribe. Sin esto, quitar el boton dejaba al toque sin puerta.
+  */
+  const hsvRef = useRef(hsv);
+  hsvRef.current = hsv;
+  const alTerminar = useCallback(() => {
+    escribir(hexDeHsv(hsvRef.current.h, hsvRef.current.s, hsvRef.current.v));
+  }, [escribir]);
+  const alTerminarRef = useRef(alTerminar);
+  alTerminarRef.current = alTerminar;
+  const terminar = useCallback(() => {
+    alTerminarRef.current();
+  }, []);
+
   const gestoCuadrado = useMemo(
     () =>
       Gesture.Pan()
@@ -426,7 +452,13 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
           called**, which is the moment that matters.
         */
         .onBegin((e) => runOnJS(moverCuadrado)(e.x, e.y))
-        .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y)),
+        .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y))
+        /*
+          Solo al terminar con exito, y no en `onFinalize`: un gesto cancelado no
+          es una eleccion, y escribirlo guardaria el color donde el dedo iba de
+          paso. `onEnd` es el dedo levantado a proposito.
+        */
+        .onEnd(() => runOnJS(terminar)()),
     [],
   );
 
@@ -435,7 +467,8 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
       Gesture.Pan()
         .minDistance(0)
         .onBegin((e) => runOnJS(moverTira)(e.x))
-        .onUpdate((e) => runOnJS(moverTira)(e.x)),
+        .onUpdate((e) => runOnJS(moverTira)(e.x))
+        .onEnd(() => runOnJS(terminar)()),
     [],
   );
 
@@ -764,38 +797,14 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
           </View>
 
           {/*
-            It commits on press and not on every pixel of a drag, and it is
-            **dimmed rather than hidden** when there is nothing to change: hiding
-            it would move the layout under the finger of somebody about to drag the
-            square.
+            Y aqui **ya no hay boton de "usar este color"**.
 
-            **The accessible name carries the label and the visible one does not.**
-            A screen-reader user has no idea where they are on the panel, so
-            "Usar este colour" twice with nothing to tell them apart is the defect;
-            somebody looking at the screen has the caption two centimetres above it
-            saying whose colour it is, and a button that reads "Usar este color para
-            Mercadona" is a 44-point-high button with a sentence on it. The two
-            audiences get the two things each of them needs.
+            Era el que escribia lo que el cuadrado mostraba, y pedia confirmar dos
+            veces lo mismo: mover el dedo al color y pulsar que lo quieres. Ahora
+            escribe el dedo al levantarse —mismo commit, sin el segundo paso— y lo
+            unico que queda en esta columna es el cuadrado con su tira, que es lo
+            que esta columna siempre fue.
           */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("tags.colorUseOf", { name: nombreDe })}
-            accessibilityState={{ disabled: !sucio }}
-            disabled={!sucio}
-            onPress={() => escribir(colorDelCuadrado)}
-            style={({ pressed }) => [
-              styles.usar,
-              {
-                backgroundColor: theme.colors.accent,
-                borderRadius: theme.radius.md,
-                opacity: !sucio ? 0.35 : pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <AppText variant="callout" numberOfLines={1} style={{ color: theme.colors.onAccent }}>
-              {t("tags.colorUse")}
-            </AppText>
-          </Pressable>
         </View>
       </View>
 
@@ -958,11 +967,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     fontSize: 15,
   },
-  usar: {
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  /*
+    `usar` se fue con el boton de "usar este color": era su estilo y de nadie mas.
+  */
   recientes: {
     flexDirection: "row",
     flexWrap: "wrap",

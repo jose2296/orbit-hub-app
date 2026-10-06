@@ -265,7 +265,7 @@ const es = {
   "tags.colorCustom": "Un color tuyo, escrito como #RRGGBB",
   "tags.colorBad": "Un color se escribe con tres o seis cifras: #1F6FEB.",
   "tags.colorSquareValue": "Saturación {saturation}%, claridad {brightness}%",
-  "tags.colorUse": "Usar este color",
+  /* `tags.colorUse` se fue con el boton de "usar este color". */
   /*
    * Los nombres accesibles del selector, **todos con `{name}` al final**, y el motivo
    * es que en la pagina de etiquetas de la hoja hay dos selectores montados a la vez:
@@ -286,7 +286,7 @@ const es = {
   "tags.colorSquareOf": "Saturación y claridad del color de {name}",
   "tags.colorCustomOf": "Un color tuyo, escrito como #RRGGBB, para {name}",
   "tags.colorSaveOf": "Guardar el color de {name}",
-  "tags.colorUseOf": "Usar este color para {name}",
+  /* `tags.colorUseOf` se fue con el boton de "usar este color". */
   "tags.colorCloseOf": "Cerrar el selector de color de {name}",
   "tags.recentColors": "Los que has usado en etiquetas",
   "tags.recentColorOf": "Usar el color {color}",
@@ -514,7 +514,7 @@ const es = {
   "workspaces.colorBad": "Un color se escribe con seis cifras: #1F6FEB.",
   "workspaces.colorSquare": "Tono y claridad del color",
   "workspaces.colorHue": "Tono del color",
-  "workspaces.colorUse": "Usar este color",
+  /* `workspaces.colorUse` se fue con el boton de "usar este color". */
   "workspaces.washGroup": "Cómo se pinta el color del espacio",
   "workspaces.washSide.desde": "Empieza en",
   "workspaces.washSide.hasta": "Termina en",
@@ -1315,7 +1315,7 @@ const en: Record<TranslationKey, string> = {
   "tags.colorCustom": "One of yours, written as #RRGGBB",
   "tags.colorBad": "A colour is three or six digits: #1F6FEB.",
   "tags.colorSquareValue": "Saturation {saturation}%, brightness {brightness}%",
-  "tags.colorUse": "Use this colour",
+  /* `tags.colorUse` went with the "use this colour" button. */
   "tags.pendingLabel": "the new label",
   "tags.colorOf": "Colour of {name}",
   "tags.colorSwatchOf": "{color} for {name}",
@@ -1323,7 +1323,7 @@ const en: Record<TranslationKey, string> = {
   "tags.colorSquareOf": "Colour saturation and brightness of {name}",
   "tags.colorCustomOf": "One of yours, written as #RRGGBB, for {name}",
   "tags.colorSaveOf": "Save the colour of {name}",
-  "tags.colorUseOf": "Use this colour for {name}",
+  /* `tags.colorUseOf` went with the "use this colour" button. */
   "tags.colorCloseOf": "Close the colour picker of {name}",
   "tags.recentColors": "The ones you have used on labels",
   "tags.recentColorOf": "Use the colour {color}",
@@ -1539,7 +1539,7 @@ const en: Record<TranslationKey, string> = {
   "workspaces.colorBad": "A colour is six digits: #1F6FEB.",
   "workspaces.colorSquare": "Colour strength and brightness",
   "workspaces.colorHue": "Colour tone",
-  "workspaces.colorUse": "Use this colour",
+  /* `workspaces.colorUse` went with the "use this colour" button. */
   "workspaces.washGroup": "How the space colour is painted",
   "workspaces.washSide.desde": "Starts in",
   "workspaces.washSide.hasta": "Ends in",

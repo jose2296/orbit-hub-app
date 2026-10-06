@@ -1318,3 +1318,91 @@ describe('#5: el buscador de la lista, como loSilentaste', () => {
     );
   });
 });
+
+describe('"usar este color" fuera de los dos selectores', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  /*
+    **El fichero CRUDO, y no el sin comentarios**, y el motivo es concreto.
+
+    El boton que se quito estaba justo antes de un comentario de bloque. El helper
+    `sinComentarios` quita `/* ... *\/` de forma **no codiciosa**, asi que se
+    empareja con el `/*` que hay mas arriba y se lleva por delante todo lo que
+    trouve en medio —**incluido el codigo que se inserte ahi**.
+
+    Con eso, este guard era ciego justo en el sitio que vigila: reintroduje el
+    boton, el helper se lo comio y el test paso. Un guard que no puede ver el sitio
+    donde estaba el bug es peor que no tener guard, porque ademas da la impresion de
+    que el sitio esta vigilado.
+
+    Asi que para "no hay boton" se lee el fichero entero. `colorUse` es un nombre de
+    clave, y las tres claves se borraron del diccionario, asi que **cualquier uso
+    suyo en codigo es un error de typecheck**. Y en comentarios no aparece.
+  */
+  const espacioCrudo = leer('src/components/workspace/workspace-color-picker.tsx');
+  const etiquetaCrudo = leer('src/components/lists/tag-color-picker.tsx');
+  const espacio = sinComentarios(espacioCrudo);
+  const etiqueta = sinComentarios(etiquetaCrudo);
+
+  it('ninguno de los dos tiene el boton', () => {
+    for (const [quien, crudo] of [
+      ['el del espacio', espacioCrudo],
+      ['el de etiqueta', etiquetaCrudo],
+    ] as const) {
+      expect(crudo, `${quien}: sin boton`).not.toContain('colorUse');
+      expect(crudo, `${quien}: y sin su estilo`).not.toMatch(/\n  usar: \{/);
+    }
+  });
+
+  it('lo que hacia el boton lo hace el dedo, al levantar', () => {
+    /*
+      El boton escribia lo que el cuadrado mostraba. Quitandolo, el commit tiene que
+      mudarse al gesto o el color deja de poder aplicarse — que es lo que mas miedo
+      me da de este cambio: **un selector de color sin puerta de salida**.
+
+      Asi que el commit es `onEnd` del gesto, y no `onFinalize`: un gesto cancelado
+      —el dedo se sale, el sistema lo interrumpe— no es una eleccion, y escribirlo
+      guardaria el color donde el dedo iba de paso.
+    */
+    for (const [quien, s] of [
+      ['el del espacio', espacio],
+      ['el de etiqueta', etiqueta],
+    ] as const) {
+      expect(s, `${quien}: el cuadrado escribe al terminar`).toContain(
+        '.onEnd(() => runOnJS(terminar)())',
+      );
+      // Los dos gestos del fichero —cuadrado y tira— escriben al terminar. Uno solo
+      // dejaria la tira como un adorno que mueve el marcador sin guardar nada.
+      const fines = s.match(/\.onEnd\(\(\) => runOnJS\(terminar\)\(\)\)/g) ?? [];
+      expect(fines.length, `${quien}: cuadrado y tira escriben`).toBe(2);
+      expect(s, `${quien}: nunca en onFinalize`).not.toContain('onFinalize');
+    }
+  });
+
+  it('un toque tambien escribe, porque el gesto no tiene umbral', () => {
+    // `minDistance(0)`: tocar el cuadrado pasa por `onBegin`/`onEnd` igual que un
+    // arrastre. Sin esto, quitar el boton dejaba **al toque sin puerta** — se
+    // moveria el marcador y no se guardaria nada.
+    for (const [quien, s] of [
+      ['el del espacio', espacio],
+      ['el de etiqueta', etiqueta],
+    ] as const) {
+      expect(s, `${quien}: el gesto empieza en el primer pixel`).toContain(
+        '.minDistance(0)',
+      );
+    }
+  });
+
+  it('las traducciones muertas tambien se van', () => {
+    // Una clave escrita y sin usar es la clase de fallo que no da ningun error: el
+    // typecheck pasa, la app arranca y no se ve. Las tres eran las del boton.
+    const diccionario = leer('src/lib/i18n/dictionaries.ts');
+    for (const clave of [
+      'tags.colorUse',
+      'tags.colorUseOf',
+      'workspaces.colorUse',
+    ]) {
+      expect(diccionario, `${clave} fuera`).not.toContain(`"${clave}":`);
+    }
+  });
+});

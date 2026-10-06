@@ -386,15 +386,21 @@ describe("los dos selectores de la hoja no se confunden de nombre", () => {
   );
 
   /**
-   * Las ocho claves del panel, y la razon de que sean **ocho y no una**: cada control
-   * necesita la suya porque cada control se nombra por separado y "de quien" se
-   * primero. Una clave con un parametro y un nombre generico no sirve: el nombre
-   * generico es justo lo que hay que quitar.
+   * Las siete claves del panel, y la razon de que sean **siete y no una**: cada
+   * control necesita la suya porque cada control se nombra por separado y "de
+   * quien" se primero. Una clave con un parametro y un nombre generico no sirve:
+   * el nombre generico es justo lo que hay que quitar.
    *
    * **`tags.recentColorOf` no esta y no es un olvido**: la fila de recientes solo se
    * pinta cuando tiene algo, y en una instancia que se cierra al escribir no tiene
    * nunca nada —la cabecera del componente lo dice—, asi que solo hay una que la
    * nombra. Si alguna vez dejara de cerrarse, esta lista tiene que crecer.
+   *
+   * **Y `tags.colorUseOf` tampoco esta, y tampoco es un olvido**: era el nombre del
+   * boton de "usar este color", y el boton se fue —ahora escribe el dedo al
+   * levantarse. Una clave en esta lista que ya no esta en el componente rompe el
+   * test de abajo, que es exactamente lo que tiene que pasar cuando un control
+   * muere: la lista lo entierra con el.
    */
   const CALIFICADAS = [
     "tags.colorOf",
@@ -403,7 +409,6 @@ describe("los dos selectores de la hoja no se confunden de nombre", () => {
     "tags.colorSquareOf",
     "tags.colorCustomOf",
     "tags.colorSaveOf",
-    "tags.colorUseOf",
     "tags.colorCloseOf",
   ] as const satisfies readonly TranslationKey[];
 
@@ -424,7 +429,7 @@ describe("los dos selectores de la hoja no se confunden de nombre", () => {
     // Y **la lista entera, no la lista menos las excusas**: asi una excepcion que
     // desaparece del componente tambien sale, en vez de volverse un hueco silencioso.
     expect(sinNomear).toEqual(SIN_NOMBRE_POR_RAZON);
-    // Y las ocho estan de verdad en el componente: una lista de ocho aqui y seis en
+    // Y las siete estan de verdad en el componente: una lista de siete aqui y cinco en
     // el fichero pasaria este test sin decir nada.
     for (const clave of CALIFICADAS) {
       expect(fuente).toContain(`t("${clave}"`);
