@@ -1,5 +1,5 @@
 import { DRAWINGS } from "@/lib/icons/vector-drawings";
-import { buildIconGrid, firstRowWhere } from "@/lib/icons/icon-grid";
+import { buildIconGrid, firstRowWhere, initialTab } from "@/lib/icons/icon-grid";
 import { vectorGlyph } from "@orbit-hub/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -80,5 +80,23 @@ describe("encontrar el icono que ya esta elegido", () => {
   it("con una busqueda puesta encuentra el que sigue estando en la lista", () => {
     const grid = buildIconGrid({ kind: "vector", query: "carpeta", columns: 8 });
     expect(firstRowWhere(grid.rows, (celda) => celda.id === vectorGlyph("carpeta", "outline"))).not.toBeNull();
+  });
+});
+
+describe("en que pestana se abre el selector", () => {
+  it("abre en la del icono elegido, si es un dibujo", () => {
+    // Volver a cambiar el color de un icono que ya es un vectorial no deberia
+    // obligar a pasar por cuatro mil emojis de sistema.
+    expect(initialTab({ type: "vector", value: "carpeta", library: "ionicons", style: "outline", color: "teal" })).toBe("vector");
+    expect(initialTab({ type: "vector", value: "carpeta", library: "ionicons", style: "fill", color: "auto" })).toBe("vector");
+  });
+
+  it("abre en emojis si el icono elegido es un emoji", () => {
+    expect(initialTab({ type: "emoji", value: "📖", color: "auto" })).toBe("emoji");
+  });
+
+  it("abre en emojis cuando no hay icono, que es lo que se busca por defecto", () => {
+    expect(initialTab(null)).toBe("emoji");
+    expect(initialTab(undefined)).toBe("emoji");
   });
 });

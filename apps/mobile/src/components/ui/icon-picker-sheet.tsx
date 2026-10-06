@@ -23,6 +23,7 @@ import {
   buildIconGrid,
   categoryAtOffset,
   firstRowWhere,
+  initialTab,
   layoutOfRow,
   totalHeight,
 } from "@/lib/icons/icon-grid";
@@ -109,7 +110,8 @@ function IconPickerBody({
   const t = useTranslation();
   const { height } = useWindowDimensions();
 
-  const [tab, setTab] = useState<"emoji" | "vector">("emoji");
+  // On the tab the chosen icon is on, not always emojis: see `initialTab`.
+  const [tab, setTab] = useState<"emoji" | "vector">(() => initialTab(current));
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [drawing, setDrawing] = useState<"outline" | "fill">(

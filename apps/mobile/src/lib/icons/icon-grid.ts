@@ -1,3 +1,4 @@
+import type { IconRef } from "@orbit-hub/contracts";
 import { VECTOR_ICON_CATEGORIES } from "@orbit-hub/contracts";
 
 import { EMOJI_CATALOG, EMOJI_GROUPS } from "@/lib/icons/emoji-catalog.generated";
@@ -251,6 +252,21 @@ export function firstRowWhere(
     if (row?.type === "cells" && row.cells.some(match)) return i;
   }
   return null;
+}
+
+/**
+ * Which tab the picker opens on.
+ *
+ * On the one the chosen icon is on. Somebody who put a drawing there and comes
+ * back to change its colour opens the picker to find that drawing — landing on the
+ * emoji tab means scrolling past four thousand system drawings to reach the
+ * forty they are editing, every single time.
+ *
+ * Null, or an emoji, opens on emojis: that is the tab that is wanted by default
+ * and the one worth showing first.
+ */
+export function initialTab(current: IconRef | null | undefined): "emoji" | "vector" {
+  return current?.type === "vector" ? "vector" : "emoji";
 }
 
 /** The emoji catalogue size, for the tests that compare the grid against it. */
