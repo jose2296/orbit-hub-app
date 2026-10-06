@@ -10,7 +10,7 @@ import { normaliseToCompare } from "@/lib/lists/done-match";
  * ordering and filtering never has to ask what it is holding.
  */
 export type ContentRow = {
-  kind: "folder" | "list" | "note";
+  kind: "folder" | "list" | "note" | "collection" | "bookmark";
   id: string;
   /** The name, and what every sort and every search reads. */
   name: string;
@@ -187,7 +187,7 @@ export function moveRow(
 /** The filter, as a value somebody can compare and a chip can be built from. */
 export interface ContentFilter {
   /** `null` is "everything", which is the default and is not a choice. */
-  kind: "all" | "folder" | "list" | "note";
+  kind: "all" | "folder" | "list" | "note" | "collection" | "bookmark";
   /** A list's kind, and ignored when `kind` is not `list`. */
   listKind?: string;
   /** A folder id, and ignored when it is null. */
