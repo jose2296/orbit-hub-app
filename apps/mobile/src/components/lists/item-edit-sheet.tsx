@@ -86,6 +86,21 @@ export interface ItemEditSheetProps {
   onDeleted?: () => void;
 }
 
+/**
+ * Whether two sets of labels are the same, **and not whether they are in the same
+ * order**.
+ *
+ * The order tags were added in is not part of what somebody meant to say. Somebody
+ * who adds "urgente" after "casa" and somebody who adds "casa" after "urgente"
+ * wrote the same task, and a panel that said "you have unsaved changes" for that
+ * is teaching people to ignore the warning.
+ */
+function sameLabels(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const m = new Set(b);
+  return a.every((tag) => m.has(tag));
+}
+
 /** What a row being written looks like before it exists. */
 interface Draft {
   title: string;
@@ -95,6 +110,8 @@ interface Draft {
   iconStyle: ListItem["iconStyle"];
   iconColor: ListItem["iconColor"];
   tags: string[];
+  /** Whether it is done, which also lives here and **not** on the row. */
+  completed: boolean;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -105,6 +122,7 @@ const EMPTY_DRAFT: Draft = {
   iconStyle: "outline",
   iconColor: "neutral",
   tags: [],
+  completed: false,
 };
 
 /**
@@ -269,6 +287,7 @@ export function ItemEditSheet({
         title: item?.title ?? "",
         annotation: item?.annotation ?? null,
         priority: item?.priority ?? "none",
+        completed: item?.completed ?? false,
         icon: item?.icon ?? null,
         iconStyle: item?.iconStyle ?? "outline",
         iconColor: item?.iconColor ?? "neutral",
@@ -314,30 +333,58 @@ export function ItemEditSheet({
    */
   const colorOf = (tag: string): string => tagColors[tag] ?? derivedTagColor(tag);
 
-  if (!isNew && !item) return null;
-
   const { setSucio } = useSheetSucio();
 
   /*
-    "Sucio" son **los dos campos de texto, y nada mas**.
+    "Sucio" es **todo el panel**, cada campo con su valor de partida.
 
-    Es deliberado. La prioridad, el icono, las etiquetas y lo hecho se guardan al
-    pulsar, porque son **pulsaciones**: alguien eligio una de cuatro y guardarla
-    solo es lo que hace que la eleccion se vea. Escribir un nombre no es una
-    pulsacion, es media frase a medio camino, y guardar eso sin que nadie haya
-    pulsado nada es lo que hace que un formulario no sea un formulario.
+    Se comparaba solo con el nombre y la nota, y la justificacion era que elegir
+    prioridad o tocar un icono son **pulsaciones** y por tanto se guardan solas.
+    Esa distincion la invente yo y no la habia pedido nadie: lo pedido era que
+    **nada** se guardara hasta pulsar Guardar.
 
-    Asi que el panel tiene dos velocidades, y por qué se distinguen es lo unico que
-    hay que saber para usarlo: eliges de golpe, y se guarda; escribes, y se guarda
-    cuando tu lo digas.
+    Y el argumento, ademas, era falso en la practica: un panel que se guarda a
+    medias es un panel del que no se fia uno. Marcas "urgente", cambias el icono,
+    escribes dos lineas de nota y pulsas atras, y resulta que la nota no estaba,
+    porque "eso era solo texto". Que parte se guarda depende de que campo tocaste,
+    y eso no se aprende: se endurece en la cabeza y se acaboicky pulsando Guardar
+    siempre, que es el mismo trabajo con dos pasos.
+
+    Asi que ahora todo va al borrador y sale por un unico `updateItem` al Guardar.
+    Las etiquetas se comparan **como conjunto y no como lista**, porque el orden en
+    que se anotaron no es parte de lo que alguien quiso decir.
   */
-  const sucioTexto =
-    title.trim() !== (isNew ? "" : (item?.title ?? "").trim()) ||
-    annotation.trim() !== (isNew ? "" : (item?.annotation ?? "").trim());
+  const sucio = useMemo(() => {
+    const base = isNew ? EMPTY_DRAFT : item;
+    if (!base) return false;
+    return (
+      title.trim() !== (isNew ? "" : base.title.trim()) ||
+      annotation.trim() !== (isNew ? "" : (base.annotation ?? "").trim()) ||
+      draft.priority !== (isNew ? "none" : base.priority) ||
+      draft.icon !== (isNew ? null : base.icon) ||
+      draft.iconStyle !== (isNew ? "outline" : base.iconStyle) ||
+      draft.iconColor !== (isNew ? "neutral" : base.iconColor) ||
+      draft.completed !== (isNew ? false : base.completed) ||
+      !sameLabels(draft.tags, isNew ? [] : base.tags)
+    );
+  }, [isNew, item, title, annotation, draft]);
 
+  /*
+    Los hooks van **antes** del `return null` de mas abajo, y no por estetica.
+
+    Un hook que depende de donde estas en el cuerpo del componente es un hook
+    condicional: el dia que la fila tarda un poco mas en llegar, se cambia el
+    numero de hooks que se ejecutan y React dice "se cambio el orden de los hooks".
+    No es un fallo raro, es el primero que aparece al abrir la hoja por segunda
+    vez, que es justo el camino que acabamos de arreglar para que la segunda vez
+    funcione.
+  */
   useEffect(() => {
-    setSucio(sucioTexto);
-  }, [sucioTexto, setSucio]);
+    setSucio(sucio);
+  }, [sucio, setSucio]);
+
+  if (!isNew && !item) return null;
+
 
   /**
    * Un nombre vacio no es un nombre.
@@ -349,39 +396,50 @@ export function ItemEditSheet({
    */
   const sinNombre = title.trim().length === 0;
 
-  /** Un solo commit: el Guardar. El nombre y la nota, en ese orden. */
+  /**
+   * El unico commit de toda la app para esta fila, y **es una sola escritura**.
+   *
+   * Todo lo que se haya tocado —el nombre, la nota, la prioridad, el icono, las
+   * etiquetas, lo hecho— sale por aqui en un `updateItem` con el borrador entero.
+   * Antes eran siete escrituras repartidas por el panel, y por eso perder la nota
+   * al cambiar el icono no era un descuido: era la forma normal de funcionar.
+   */
   const confirmar = () => {
-    saveTitle();
-    saveNotes();
+    if (isNew) {
+      void create();
+      return;
+    }
+    void updateItem(item!, {
+      // Los dos textos se leen **vivos**, no del borrador: el `setState` de un
+      // campo no ha llegado al borrador en este mismo frame, asi que leer el
+      // borrador aqui guardaria el nombre de hace un instante.
+      title: title.trim(),
+      annotation: annotation.trim() || null,
+      priority: draft.priority,
+      icon: draft.icon,
+      iconStyle: draft.iconStyle,
+      iconColor: draft.iconColor,
+      tags: draft.tags,
+      completed: draft.completed,
+    });
     onClose();
   };
 
-  const save = (changes: Parameters<typeof updateItem>[1]) => {
-    if (isNew) {
-      setDraft((current) => ({ ...current, ...changes }));
-      return;
-    }
-    void updateItem(item!, changes);
-  };
-
-  const saveTitle = () => {
-    const trimmed = title.trim();
-    // An empty name is not a name: the row would be a blank line in the list
-    // with nothing in it to find again.
-    if (isNew) {
-      if (trimmed) setDraft((current) => ({ ...current, title: trimmed }));
-      return;
-    }
-    if (trimmed && trimmed !== item!.title) save({ title: trimmed });
-  };
-
-  const saveNotes = () => {
-    const trimmed = annotation.trim();
-    if (isNew) {
-      setDraft((current) => ({ ...current, annotation: trimmed || null }));
-      return;
-    }
-    if (trimmed !== (item!.annotation ?? "")) save({ annotation: trimmed || null });
+  /**
+   * Cambia el borrador. **Y no escribe nada.**
+   *
+   * Antes esta funcion escribia en la fila cuando la tarea ya existia, y por eso
+   * el panel tenia dos velocidades: elegias prioridad y se guardaba al instante,
+   * escribias el nombre y se guardaba al salir del campo. Esa distincion la
+   * invente yo, y no la habia pedido nadie: lo pedido era que **nada** se guardara
+   * hasta pulsar Guardar.
+   *
+   * Asi que ahora **todas** las puertas del panel pasan por aqui y todas se quedan
+   * en el borrador. Prioridad, icono, etiquetas y lo hechoincluded: tocarlos cambia
+   * el panel, no la tarea.
+   */
+  const save = (changes: Partial<Draft>) => {
+    setDraft((current) => ({ ...current, ...changes }));
   };
 
   /**
@@ -559,7 +617,7 @@ export function ItemEditSheet({
         donde se busca y en el que no se mira, y el de dentro se va con el
         contenido en una hoja larga.
       */
-      onSave={isNew ? () => void create() : confirmar}
+      onSave={confirmar}
       saveLabel={isNew ? t("itemCreate.create") : t("rename.save")}
       saveDisabledReason={sinNombre ? t("itemEdit.nameNeeded") : undefined}
     >
@@ -751,7 +809,7 @@ export function ItemEditSheet({
                   {...pistaMarkDone.props}
                   onPress={() => {
                     onClose();
-                    void toggleCompleted(item!);
+                    save({ completed: !shown.completed });
                   }}
                   style={({ pressed }) => [
                     styles.link,
@@ -768,7 +826,7 @@ export function ItemEditSheet({
                     checked={item!.completed}
                     onToggle={() => {
                       onClose();
-                      void toggleCompleted(item!);
+                      save({ completed: !shown.completed });
                     }}
                     label=""
                   />

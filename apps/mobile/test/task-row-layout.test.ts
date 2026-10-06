@@ -972,28 +972,76 @@ describe('el panel de un elemento: dos velocidades de guardado', () => {
     expect(panel, 'la nota tampoco').not.toMatch(/onBlur=\{saveNotes\}/);
   });
 
-  it('las pulsaciones SI se guardan al instante, y es a proposito', () => {
+  it('NADA se guarda al pulsar: las pulsaciones tambien van al borrador', () => {
     /*
-      Prioridad, icono, etiquetas y lo hecho son **elecciones entre opciones**, y
-      guardarlas al pulsar es lo que hace que se vea cual elegiste. Escribir un
-      nombre no es una eleccion, es media frase a medio camino.
+      Esto cambio, y no por una idea nueva: porque lo pedido era que **nada** se
+      guardara hasta pulsar Guardar, y antes solo el nombre y la nota esperaban.
 
-      Asi que el panel tiene dos velocidades y distinguirlas es lo unico que hay que
-      saber para usarlo: eliges de golpe y se guarda; escribes y se guarda cuando
-      tu lo digas.
+      La justificacion que yo habia puesto —"elegir prioridad es una pulsacion, y
+      guardarla al elegir es lo que hace que se vea cual elegiste"— era ademas
+      falsa en la practica: un panel que se guarda a medias es un panel del que no
+      se fia uno. Que parte se guarda dependia de que campo habias tocado, y eso no
+      se aprende, se endurece en la cabeza y se acaba pulsando Guardar siempre, que
+      es el mismo trabajo con dos pasos.
     */
-    expect(panel, 'la prioridad se guarda al pulsar').toContain('save({ priority: option })');
-    expect(panel, 'y las etiquetas tambien').toMatch(/save\(\{\s*tags: \[\.\.\./);
+    // El borrador, no la fila: `save` ya no escribe.
+    expect(panel, 'la prioridad va al borrador').toMatch(/save\(\{ priority: option \}\)/);
+    expect(panel, 'las etiquetas tambien').toMatch(/save\(\{\s*tags: \[\.\.\./);
+    expect(panel, 'y lo hecho tambien').toMatch(/save\(\{ completed: !shown\.completed \}\)/);
+
+    // Y la prueba de que `save` NO escribe: no hay `updateItem` dentro.
+    const save = panel.match(/const save = \(changes:[\s\S]*?\};/)?.[0] ?? '';
+    expect(save, 'save es solo setDraft').toContain('setDraft');
+    expect(save, 'y no escribe en la fila').not.toContain('updateItem');
   });
 
-  it('"sucio" son los dos textos, no el resto', () => {
-    expect(panel, 'compara el nombre').toMatch(/title\.trim\(\) !== /);
-    expect(panel, 'y la nota tambien').toMatch(/annotation\.trim\(\) !== /);
-    expect(panel, 'y lo dice').toContain('setSucio(sucioTexto)');
+  it('todo sale por un unico updateItem, con los siete campos', () => {
+    // Antes eran siete escrituras repartidas por el panel, y por eso perder la nota
+    // al cambiar el icono no era un descuido: era la forma normal de funcionar.
+    const confirmar = panel.match(/const confirmar = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    for (const campo of ['title', 'annotation', 'priority', 'icon', 'tags', 'completed']) {
+      expect(confirmar, `${campo} sale en el commit`).toContain(`${campo}:`);
+    }
+    expect(confirmar, 'y es una sola escritura').toContain('updateItem(item!, {');
+  });
+
+  it('los dos textos se leen vivos, no del borrador', () => {
+    // El `setState` de un campo no ha llegado al borrador en este mismo frame, asi
+    // que leer el borrador aqui guardaria el nombre de hace un instante.
+    const confirmar = panel.match(/const confirmar = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    expect(confirmar, 'el nombre se lee del campo').toContain('title: title.trim()');
+    expect(confirmar, 'la nota tambien').toContain('annotation: annotation.trim()');
+  });
+
+  it('"sucio" es TODO el panel, cada campo con su partida', () => {
+    for (const campo of ['draft.priority', 'draft.icon', 'draft.completed', 'sameLabels(draft.tags']) {
+      expect(panel, `${campo} cuenta como cambio`).toContain(campo);
+    }
+    expect(panel, 'y lo dice').toContain('setSucio(sucio)');
+    // Y con las etiquetas como conjunto: el orden en que se anotaron no es parte
+    // de lo que alguien quiso decir, y decir "tienes cambios" por eso enseña a
+    // ignorar el aviso.
+    expect(panel, 'las etiquetas como conjunto').toContain(
+      'function sameLabels(a: string[], b: string[])',
+    );
+    expect(panel, 'que compara longitudes y contenido').toMatch(
+      /if \(a\.length !== b\.length\) return false;/,
+    );
+  });
+
+  it('los hooks del "sucio" van ANTES del return null', () => {
+    // Un hook que depende de donde estas en el cuerpo es un hook condicional: el
+    // dia que la fila tarda mas en llegar se cambia el numero de hooks y React dice
+    // "se cambio el orden de los hooks". Y no es raro: es lo primero que pasa al
+    // abrir la hoja por segunda vez, que es justo el camino que se acaba de arreglar.
+    const nulo = panel.indexOf('if (!isNew && !item) return null;');
+    const useMemoSucio = panel.indexOf('const sucio = useMemo');
+    expect(nulo, 'el return null existe').toBeGreaterThan(-1);
+    expect(useMemoSucio, 'el useMemo va antes del return').toBeLessThan(nulo);
   });
 
   it('un solo boton de guardar: el del pie, y no otro aqui dentro', () => {
-    expect(panel, 'delega en onSave').toContain('onSave={isNew ?');
+    expect(panel, 'delega en onSave').toContain('onSave={confirmar}');
     expect(panel, 'y no pinta un boton de guardar propio').not.toMatch(
       /<Button[\s\S]{0,200}label=\{t\("(itemCreate\.save|rename\.save)"\)\}/,
     );
