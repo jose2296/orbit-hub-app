@@ -19,8 +19,14 @@ import {
 
 import { useTranslation } from "@/lib/i18n";
 import { EMOJI_GROUP_LABELS, emojiGroupLabel } from "@/lib/icons/emoji-group-labels";
-import { buildIconGrid, cellForIndex } from "@/lib/icons/icon-grid";
-import type { GridCell } from "@/lib/icons/icon-grid";
+import {
+  buildIconGrid,
+  categoryAtOffset,
+  firstRowWhere,
+  layoutOfRow,
+  totalHeight,
+} from "@/lib/icons/icon-grid";
+import type { GridCell, GridRow } from "@/lib/icons/icon-grid";
 import {
   RECENT_EMOJIS_KEY,
   parseRecentEmojis,
@@ -51,6 +57,26 @@ export interface IconPickerSheetProps {
   onSelect: (icon: IconRef | null) => void;
 }
 
+/** Columns for both grids, so a vector cell is the size of an emoji cell. */
+const COLUMNS = 8;
+/** The gap between cells, which sits outside the cell so cells stay square. */
+const GAP = 4;
+/** A category title row's height. Part of the scroll arithmetic, not a guess. */
+const TITLE_HEIGHT = 30;
+
+/**
+ * Where the cell lands inside its slot.
+ *
+ * Eight columns on a 430pt phone is a 49pt cell. Below that the emoji stops being
+ * readable, so the count drops instead of the cell shrinking: a grid of cells too
+ * small to tell apart is a grid you cannot choose from.
+ */
+function columnsFor(width: number): number {
+  if (width <= 0) return COLUMNS;
+  const porTamano = Math.floor((width + GAP) / (44 + GAP));
+  return Math.max(4, Math.min(COLUMNS, porTamano));
+}
+
 /**
  * The picker without its sheet around it, for panels that already are one.
  *
@@ -67,30 +93,12 @@ export function IconPickerPanel({
 export function IconPickerSheet({ visible, onClose, current, onSelect }: IconPickerSheetProps) {
   const t = useTranslation();
   return (
-    // Not scrollable: the grid scrolls itself, and a panel that scrolls too
-    // means two scroll views fighting over the same gesture.
+    // Not scrollable: the grid scrolls itself, and a panel that scrolls too means
+    // two scroll views fighting over the same gesture.
     <Sheet visible={visible} onClose={onClose} title={t("icons.title")} scrollable={false}>
       <IconPickerBody current={current} onSelect={onSelect} />
     </Sheet>
   );
-}
-
-/** Columns for both grids, so a vector cell is the size of an emoji cell. */
-const COLUMNS = 8;
-/** The gap between cells, which is outside the cell so cells stay square. */
-const GAP = 4;
-/**
- * Where the cell lands inside its slot.
- *
- * Two columns of eight on a 430pt phone is a 44pt cell. Below that the emoji stops
- * being readable and the vector stops being recognisable, so the count drops
- * instead of the cell shrinking: a grid of cells too small to tell apart is a grid
- * you cannot choose from.
- */
-function columnsFor(width: number): number {
-  if (width <= 0) return COLUMNS;
-  const porTamano = Math.floor((width + GAP) / (44 + GAP));
-  return Math.max(4, Math.min(COLUMNS, porTamano));
 }
 
 function IconPickerBody({
@@ -114,7 +122,7 @@ function IconPickerBody({
   const [listWidth, setListWidth] = useState(0);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  const lista = useRef<FlatList<GridCell>>(null);
+  const lista = useRef<FlatList<GridRow>>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(query), 250);
@@ -122,10 +130,7 @@ function IconPickerBody({
   }, [query]);
 
   const columns = columnsFor(listWidth);
-  const cell = Math.max(
-    24,
-    Math.floor((listWidth - GAP * (columns + 1)) / columns),
-  );
+  const cell = Math.max(24, Math.floor((listWidth - GAP * (columns + 1)) / columns));
   const rowHeight = cell + GAP;
 
   const pickEmoji = useCallback(
@@ -147,105 +152,136 @@ function IconPickerBody({
     [drawing, onSelect, tint],
   );
 
+  /* Titles only while browsing: nineteen results do not need nine headings. */
+  const conTitulos = debounced.trim().length === 0;
   const grid = useMemo(
     () =>
-      buildIconGrid({
-        kind: tab,
-        query: debounced,
-        columns,
-        onPickEmoji: pickEmoji,
-        onPickVector: pickVector,
-      }),
-    [columns, debounced, pickEmoji, pickVector, tab],
+      buildIconGrid(
+        { kind: tab, query: debounced, columns, onPickEmoji: pickEmoji, onPickVector: pickVector },
+        conTitulos ? "on" : "off",
+      ),
+    [columns, conTitulos, debounced, pickEmoji, pickVector, tab],
   );
 
-  /** The category the reader is looking at, from where the list is scrolled to. */
-  const categoriaDeOffset = useCallback(
-    (offsetY: number): string | null => {
-      const indice = Math.floor(offsetY / rowHeight);
-      const celda = grid.cells[indice];
-      if (!celda || celda.placeholder) return null;
-      return celda.category;
-    },
-    [grid.cells, rowHeight],
+  /*
+    What the grid calls the chosen icon, which is **not** what the row stored.
+    A cell's id is always the outline glyph, and a row can hold any of the words
+    that draw it — `azucar`, `sal` and `pimienta` all live on the cell
+    `contenedor`. So the row's key is resolved to the cell's id before anything
+    looks for it; without that, an icon somebody chose shows up unmarked and the
+    panel opens at the top instead of on it.
+  */
+  const elegidoId =
+    current?.type === "emoji"
+      ? current.value
+      : current?.type === "vector"
+        ? vectorGlyph(current.value, "outline")
+        : null;
+
+  const elegidaRow = useMemo(
+    () => (elegidoId === null ? null : firstRowWhere(grid.rows, (c) => c.id === elegidoId)),
+    [elegidoId, grid.rows],
   );
 
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const categoria = categoriaDeOffset(event.nativeEvent.contentOffset.y);
+      const categoria = categoryAtOffset(
+        grid.rows,
+        event.nativeEvent.contentOffset.y,
+        rowHeight,
+        TITLE_HEIGHT,
+      );
       // Only when it changes: `onScroll` fires per frame and a state update per
-      // frame re-renders the whole grid behind it.
+      // frame re-renders the list behind it.
       setActiveCategory((actual) => (actual === categoria ? actual : categoria));
     },
-    [categoriaDeOffset],
+    [grid.rows, rowHeight],
   );
 
   const irA = useCallback(
     (category: string) => {
       const section = grid.sections.find((entry) => entry.category === category);
       if (!section) return;
-      lista.current?.scrollToOffset({
-        offset: cellForIndex(section.firstIndex, columns, rowHeight),
-        animated: true,
-      });
+      const { offset } = layoutOfRow(grid.rows, section.firstRow, rowHeight, TITLE_HEIGHT);
+      lista.current?.scrollToOffset({ offset, animated: true });
       setActiveCategory(category);
     },
-    [columns, grid.sections, rowHeight],
+    [grid.rows, grid.sections, rowHeight],
   );
 
-  /* A new tab or a new search starts at the top, and so does its bar. */
+  /*
+    Where the list opens: on the icon that is already chosen, or at the top.
+    *
+    * Opening at the top when somebody comes back to change one thing means finding
+    * it among 1914 again. `scrollToIndex` is exact because every row's height is
+    * known before it is rendered. With nothing chosen, or chosen in the other tab,
+    * it starts at the top.
+    */
   useEffect(() => {
+    if (elegidaRow !== null && elegidaRow > 0) {
+      lista.current?.scrollToIndex({ index: elegidaRow, animated: false, viewPosition: 0.15 });
+      const fila = grid.rows[elegidaRow];
+      if (fila) setActiveCategory(fila.category);
+      return;
+    }
     lista.current?.scrollToOffset({ offset: 0, animated: false });
     setActiveCategory(grid.sections[0]?.category ?? null);
-  }, [grid.sections, tab]);
+  }, [elegidaRow, grid.rows, grid.sections, tab]);
 
-  const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<GridCell>) => {
-      if (item.placeholder) {
-        return <View style={{ width: cell, height: cell, margin: GAP / 2 }} />;
-      }
-      const elegido =
-        current?.type === tab &&
-        (tab === "emoji" ? current.value === item.value : current.value === item.value);
-
-      return (
-        <Pressable
-          testID={`${tab === "emoji" ? "emoji-cell" : "icon-cell"}-${item.value}`}
-          accessibilityRole="button"
-          accessibilityState={{ selected: Boolean(elegido) }}
-          accessibilityLabel={item.label}
-          disabled={!item.onPick}
-          onPress={item.onPick}
-          style={({ pressed }) => [
-            styles.cell,
-            {
-              width: cell,
-              height: cell,
-              margin: GAP / 2,
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.colors.surfaceMuted,
-              borderColor: elegido ? theme.colors.text : "transparent",
-              borderWidth: elegido ? 2 : 0,
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          {tab === "emoji" ? (
-            <AppText style={{ fontSize: Math.round(cell * 0.58) }}>{item.id}</AppText>
-          ) : (
-            <Ionicons
-              name={vectorGlyph(item.value!, drawing) as keyof typeof Ionicons.glyphMap}
-              size={Math.round(cell * 0.56)}
-              color={theme.colors.icon[tint]}
-            />
-          )}
-        </Pressable>
-      );
-    },
-    [cell, current, drawing, tab, theme.colors.icon, theme.colors.surfaceMuted, theme.colors.text, theme.radius.md, tint],
+  /**
+   * Every row's height, known before anything is rendered.
+   *
+   * This is the whole scroll. With `numColumns` the web measured the rows as they
+   * mounted, so the content height only ever described what was on screen: the bar
+   * lied, the end of the list was unreachable, and the list grew while you read
+   * it. Chunking the rows here makes the total height arithmetic.
+   */
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<GridRow> | null | undefined, index: number) => ({
+      ...layoutOfRow(grid.rows, index, rowHeight, TITLE_HEIGHT),
+      index,
+    }),
+    [grid.rows, rowHeight],
   );
 
-  const vacio = grid.cells.every((celda) => celda.placeholder);
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<GridRow>) => {
+      if (item.type === "header") {
+        return (
+          <View
+            testID={`icon-title-${item.category}`}
+            style={[styles.titleRow, { height: TITLE_HEIGHT }]}
+          >
+            <AppText variant="caption" tone="muted">
+              {categoryLabel(item.category)}
+            </AppText>
+          </View>
+        );
+      }
+
+      return (
+        <View style={[styles.cellRow, { height: rowHeight, paddingHorizontal: GAP / 2 }]}>
+          {item.cells.map((celda) => (
+            <Cell
+              key={celda.id}
+              cell={celda}
+              size={cell}
+              drawing={drawing}
+              tint={tint}
+              elegido={celda.id === elegidoId}
+            />
+          ))}
+        </View>
+      );
+    },
+    [cell, drawing, elegidoId, rowHeight, tint],
+  );
+
+  const vacio = grid.cells.length === 0;
+  const alto = Math.max(
+    140,
+    Math.min(totalHeight(grid.rows, rowHeight, TITLE_HEIGHT), Math.round(height * 0.46)),
+  );
 
   return (
     <View style={{ gap: theme.spacing.sm }}>
@@ -280,12 +316,9 @@ function IconPickerBody({
         })}
       </View>
 
-      {/*
-        Only on vectors. A system emoji is painted by the operating system in the
-        colours it picks, so a colour row above them is a promise nothing can keep,
-        and "filled or outline" is a question about a line drawing that an emoji
-        does not answer.
-      */}
+      {/* Only on vectors. A system emoji is painted by the operating system in the
+          colours it picks, so a colour row above them is a promise nothing can keep,
+          and "filled or outline" is a question about a line drawing. */}
       {tab === "vector" ? (
         <View style={{ gap: theme.spacing.sm }}>
           <View style={{ gap: theme.spacing.xs }}>
@@ -345,8 +378,7 @@ function IconPickerBody({
         returnKeyType="search"
       />
 
-      {/* Recents, above the bar and outside the grid: they are a shortcut, and a
-          shortcut that is a category filter stops being a shortcut. */}
+      {/* Recents: a shortcut, above the bar and outside the grid. */}
       {tab === "emoji" && recents.length > 0 ? (
         <ScrollView
           horizontal
@@ -378,12 +410,8 @@ function IconPickerBody({
         </ScrollView>
       ) : null}
 
-      {/*
-        The category bar. It navigates, it does not filter: everything is already
-        in the list below, and the lit one says which stretch is on screen. Before
-        it filtered, which meant the list was empty until you chose, and the list
-        you got was never the whole catalogue.
-      */}
+      {/* The category bar. It navigates, it does not filter: everything is already
+          in the list below, and the lit one says which stretch is on screen. */}
       {grid.sections.length > 0 ? (
         <ScrollView
           horizontal
@@ -407,32 +435,23 @@ function IconPickerBody({
           {t("icons.noneFound", { query: debounced })}
         </AppText>
       ) : (
-        <View
-          onLayout={(event) => setListWidth(event.nativeEvent.layout.width)}
-          style={{ height: Math.max(160, Math.round(height * 0.42)) }}
-        >
+        <View onLayout={(event) => setListWidth(event.nativeEvent.layout.width)} style={{ height: alto }}>
           <FlatList
             ref={lista}
             testID={`icon-grid-${tab}`}
-            data={grid.cells}
+            data={grid.rows}
             key={`${tab}-${columns}`}
-            keyExtractor={(item) => item.id}
-            numColumns={columns}
+            keyExtractor={(row, index) =>
+              row.type === "header" ? `t:${row.category}` : `c:${row.category}:${index}`
+            }
+            getItemLayout={getItemLayout}
             renderItem={renderItem}
             onScroll={onScroll}
             scrollEventThrottle={32}
-            showsVerticalScrollIndicator={false}
-            initialNumToRender={columns * 8}
-            maxToRenderPerBatch={columns * 8}
-            windowSize={9}
-            /*
-              No `removeClippedSubviews`. It is a native-only saving and on the web
-              it detaches the nodes outside the window without giving them back:
-              the list stops growing, `scrollHeight` describes only what happens to
-              be mounted, and the whole point of virtualising 1914 emojis is gone.
-              Measured, not guessed — with it on, the emoji grid reported 2544px of
-              content for 12720px of cells and simply would not scroll.
-            */
+            showsVerticalScrollIndicator
+            initialNumToRender={14}
+            maxToRenderPerBatch={12}
+            windowSize={11}
           />
         </View>
       )}
@@ -453,18 +472,67 @@ function IconPickerBody({
   );
 }
 
+function Cell({
+  cell,
+  size,
+  drawing,
+  tint,
+  elegido,
+}: {
+  cell: GridCell;
+  size: number;
+  drawing: "outline" | "fill";
+  tint: IconColor;
+  /** Whether this cell is the icon the row already carries. */
+  elegido: boolean;
+}) {
+  const theme = useTheme();
+  if (cell.placeholder) return <View style={{ width: size, height: size }} />;
+
+  const esVector = cell.category in VECTOR_ICON_CATEGORY_LABEL;
+  return (
+    <Pressable
+      testID={`${esVector ? "icon-cell" : "emoji-cell"}-${cell.value}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected: elegido }}
+      accessibilityLabel={cell.label}
+      disabled={!cell.onPick}
+      onPress={cell.onPick}
+      style={({ pressed }) => [
+        styles.cell,
+        {
+          width: size,
+          height: size,
+          borderRadius: theme.radius.md,
+          backgroundColor: theme.colors.surfaceMuted,
+          // A border and not the colour: the colour is what was chosen for the
+          // icon, and marking with it spends it.
+          borderColor: elegido ? theme.colors.text : "transparent",
+          borderWidth: elegido ? 2 : 0,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      {esVector ? (
+        <Ionicons
+          name={vectorGlyph(cell.value!, drawing) as keyof typeof Ionicons.glyphMap}
+          size={Math.round(size * 0.56)}
+          color={theme.colors.icon[tint]}
+        />
+      ) : (
+        <AppText style={{ fontSize: Math.round(size * 0.58) }}>{cell.id}</AppText>
+      )}
+    </Pressable>
+  );
+}
+
 /**
  * The name of a category, in the language of the app.
  *
  * The two sets come from different places and neither one is the dictionary. The
- * vector categories are the contract's own and it labels all seven — a `Record`
+ * vector categories are the contract's own and it labels all eleven — a `Record`
  * over the union, so a new one without a name is a compile error. The emoji groups
  * are Unicode's, in English, and carry a Spanish name beside them.
- *
- * Asking the dictionary for these was the wrong road: its `icons.group.*` keys
- * belong to the ten categories the picker had before the catalogue, so five of
- * the seven came back in the raw key — "trabajo", "hogar" — in the middle of a
- * bar whose other two said "Salud" and "Comida".
  */
 function categoryLabel(category: string): string {
   if (category in VECTOR_ICON_CATEGORY_LABEL) {
@@ -502,7 +570,10 @@ function Chip({
         },
       ]}
     >
-      <AppText variant="caption" style={{ color: active ? theme.colors.onAccent : theme.colors.textMuted }}>
+      <AppText
+        variant="caption"
+        style={{ color: active ? theme.colors.onAccent : theme.colors.textMuted }}
+      >
         {label}
       </AppText>
     </Pressable>
@@ -515,4 +586,6 @@ const styles = StyleSheet.create({
   pill: { paddingHorizontal: 14, paddingVertical: 8 },
   swatch: { width: 32, height: 32, borderRadius: 16 },
   cell: { justifyContent: "center", alignItems: "center", overflow: "hidden" },
+  cellRow: { flexDirection: "row" },
+  titleRow: { justifyContent: "flex-end", paddingBottom: 6 },
 });

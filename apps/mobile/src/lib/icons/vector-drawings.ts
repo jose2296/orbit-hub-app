@@ -1,6 +1,7 @@
 import {
   VECTOR_ICON_CATALOG,
   VECTOR_ICON_CATEGORIES,
+  VECTOR_ICON_KEYWORDS,
   labelOf,
   vectorGlyph,
 } from "@orbit-hub/contracts";
@@ -55,14 +56,24 @@ function normalise(word: string): string {
     .replace(/_/g, " ");
 }
 
-/** Every word that reaches a drawing: its aliases and the name it is shown with. */
-function wordsOf(aliases: readonly string[], label: string): string[] {
+/**
+ * Every word that reaches a drawing: its aliases, its name, and its extra words.
+ *
+ * The aliases are what the drawing **is**. The extra words are what somebody
+ * reaches for instead: "wifi" for the radio button, "cobertura" for the signal
+ * bars. Without them the search is a dictionary of names, and a person who wants
+ * the wifi icon has to guess that it is called "radio".
+ */
+function wordsOf(aliases: readonly string[], label: string, extra: readonly string[] = []): string[] {
   const words = new Set<string>();
-  for (const alias of aliases) {
-    words.add(normalise(alias));
-    for (const part of normalise(alias).split(/\s+/)) words.add(part);
-  }
-  for (const part of normalise(label).split(/\s+/)) words.add(part);
+  const add = (raw: string) => {
+    for (const part of normalise(raw).split(/\s+/)) {
+      if (part) words.add(part);
+    }
+  };
+  for (const alias of aliases) add(alias);
+  add(label);
+  for (const word of extra) add(word);
   return [...words];
 }
 
@@ -105,7 +116,13 @@ function groupByDrawing(): VectorDrawing[] {
         glyph,
         category,
         label,
-        words: wordsOf(aliases, label),
+        // A drawing collects the extra words of **every** key that draws it: five
+        // people can call the same picture and all five have to find it.
+        words: wordsOf(
+          aliases,
+          label,
+          aliases.flatMap((alias) => VECTOR_ICON_KEYWORDS[alias] ?? []),
+        ),
       });
     }
   }

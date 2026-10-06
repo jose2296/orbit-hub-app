@@ -317,6 +317,11 @@ export type ListKind = z.infer<typeof listKindSchema>;
  * neither of them can be a step behind the other.
  */
 export {
+  EXTRA_BY_CATEGORY,
+  EXTRA_KEYWORDS,
+  EXTRA_LABELS,
+} from "./icons-catalogo-ampliado.js";
+export {
   ITEM_ICON_COLORS,
   ITEM_ICONS,
   iconColorSchema,
@@ -331,6 +336,7 @@ export {
   VECTOR_ICON_CATEGORIES,
   VECTOR_ICON_CATEGORY_LABEL,
   VECTOR_ICON_GLYPHS,
+  VECTOR_ICON_KEYWORDS,
 } from "./icons.js";
 export type { IconRef, IconColor, ItemIconColor, VectorIconCategory } from "./icons.js";
 

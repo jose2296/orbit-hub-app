@@ -6,8 +6,9 @@ import {
   DRAWING_COUNT,
   EMOJI_COUNT,
   buildIconGrid,
-  cellForIndex,
-  rowForIndex,
+  categoryAtOffset,
+  layoutOfRow,
+  totalHeight,
 } from "@/lib/icons/icon-grid";
 import { describe, expect, it } from "vitest";
 
@@ -44,11 +45,17 @@ describe("el grid de emojis", () => {
 
   it("rellena la última fila, y por eso todas las filas tienen el mismo ancho", () => {
     const grid = buildIconGrid({ kind: "emoji", query: QUERY, columns: 8 });
-    // Divisible por las columnas es lo que hace que ninguna celda crezca.
-    expect(grid.cells.length % 8).toBe(0);
-    expect(grid.padding).toBe(grid.cells.filter((cell) => cell.placeholder).length);
+    // Toda fila de celdas lleva el numero de columnas, y por eso ninguna celda
+    // crece: una fila que no se llena reparte su ancho entre menos celdas.
+    for (const row of grid.rows) {
+      if (row.type === "cells") expect(row.cells, row.category).toHaveLength(8);
+    }
+    const relleno = grid.rows
+      .flatMap((row) => row.cells)
+      .filter((cell) => cell.placeholder).length;
+    expect(grid.padding).toBe(relleno);
     expect(grid.padding).toBeLessThan(8);
-  })
+  });
 
   it("las celdas de relleno no se pueden tocar", () => {
     const grid = buildIconGrid({ kind: "emoji", query: QUERY, columns: 7 });
@@ -78,12 +85,12 @@ describe("el grid de emojis", () => {
     expect(tramos.size).toBe(grid.sections.length);
   });
 
-  it("cada categoría apunta a la celda que la abre", () => {
+  it("cada categoría apunta a la fila que la abre", () => {
     const grid = buildIconGrid({ kind: "emoji", query: QUERY, columns: 8 });
     for (const section of grid.sections) {
-      const celda = grid.cells[section.firstIndex]!;
-      expect(celda.category, section.category).toBe(section.category);
-      expect(celda.placeholder).toBeFalsy();
+      const fila = grid.rows[section.firstRow]!;
+      expect(fila.category, section.category).toBe(section.category);
+      expect(fila.type, section.category).toBe("header");
     }
   });
 
@@ -148,33 +155,102 @@ describe("el grid de vectoriales", () => {
       (categoria, i, todas) => todas.indexOf(categoria) === i,
     );
     expect(grid.sections.map((section) => section.category)).toEqual(enElCatalogo);
-    expect(grid.sections[0]?.category).toBe("trabajo");
+    // "general" primero a proposito: ahi caen las acciones de la interfaz
+    // (agregar, cerrar, buscar, guardar), que es lo que se busca mas a menudo.
+    expect(grid.sections[0]?.category).toBe("general");
   });
 });
 
-describe("a qué píxel está una celda", () => {
-  it("la fila es el índice partido por las columnas", () => {
-    expect(rowForIndex(0, 8)).toBe(0);
-    expect(rowForIndex(7, 8)).toBe(0);
-    expect(rowForIndex(8, 8)).toBe(1);
-    expect(rowForIndex(17, 8)).toBe(2);
+describe("la geometria del scroll", () => {
+  const CELL = 53;
+  const TITULO = 28;
+
+  it("la altura total se sabe antes de montar nada", () => {
+    // El fallo que se va a arreglar: con `numColumns` la web mide las filas al
+    // montarlas, asi que el contenido solo describia lo montado y la barra de
+    // scroll mentia. Aqui la suma es aritmetica.
+    const grid = buildIconGrid({ kind: "emoji", query: "", columns: 8 });
+    const alto = totalHeight(grid.rows, CELL, TITULO);
+    expect(alto).toBeGreaterThan(10000);
+    // Toda fila es celdas y ningun grupo se repite: 240 filas + 9 titulos.
+    const filas = grid.rows.filter((row) => row.type === "cells").length;
+    const titulos = grid.rows.filter((row) => row.type === "header").length;
+    expect(titulos).toBe(grid.sections.length);
+    expect(alto).toBe(filas * CELL + titulos * TITULO);
   });
 
-  it("el desplazamiento es la fila por la altura de la celda", () => {
-    // Con celdas de 44 y 8 por fila, la celda 20 está en la tercera fila.
-    expect(cellForIndex(20, 8, 44)).toBe(2 * 44);
-    expect(cellForIndex(0, 8, 44)).toBe(0);
+  it("cada fila tiene un alto y una posicion, sin medir", () => {
+    const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
+    const primera = layoutOfRow(grid.rows, 0, CELL, TITULO);
+    expect(primera).toEqual({ offset: 0, length: TITULO });
+    expect(layoutOfRow(grid.rows, 1, CELL, TITULO)).toEqual({ offset: TITULO, length: CELL });
+    expect(layoutOfRow(grid.rows, 2, CELL, TITULO)).toEqual({ offset: TITULO + CELL, length: CELL });
   });
 
-  it("las columnas de más o de menos cambian el salto, no lo rompen", () => {
-    expect(cellForIndex(20, 4, 44)).toBe(5 * 44);
-    expect(cellForIndex(20, 10, 30)).toBe(2 * 30);
+  it("una fila fuera del listado no da un desplazamiento negativo", () => {
+    const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
+    const la = layoutOfRow(grid.rows, 0, CELL, TITULO);
+    expect(la.offset).toBe(0);
+    // Mas alla del final: el alto, que es donde puede saltar.
+    expect(layoutOfRow(grid.rows, grid.rows.length + 50, CELL, TITULO).offset).toBe(
+      totalHeight(grid.rows, CELL, TITULO),
+    );
   });
 
-  it("una celda fuera del listado va al final, no a un número negativo", () => {
-    // Un `scrollToOffset` con offset negativo deja la lista en un estado que no
-    // se puede recuperar, y con más índice del que hay no se sabe a dónde ir.
-    expect(cellForIndex(-1, 8, 44)).toBe(0);
-    expect(rowForIndex(-5, 8)).toBe(0);
+  it("la categoria es la del ultimo titulo que ya se ha pasado", () => {
+    const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
+    const secciones = grid.sections;
+    expect(secciones.length).toBeGreaterThan(1);
+
+    // Justo en un titulo: en el offset cero ya se esta en la primera categoria.
+    expect(categoryAtOffset(grid.rows, 0, CELL, TITULO)).toBe(secciones[0]?.category);
+
+    // El titulo de la siguiente categoria, y la celda justo debajo: mismo sitio,
+    // misma categoria. Y una fila mas abajo tambien, porque una categoria son
+    // muchas filas y no una.
+    const segunda = secciones[1]!;
+    const enSuTitulo = layoutOfRow(grid.rows, segunda.firstRow, CELL, TITULO).offset;
+    expect(categoryAtOffset(grid.rows, enSuTitulo, CELL, TITULO)).toBe(segunda.category);
+    expect(categoryAtOffset(grid.rows, enSuTitulo + CELL, CELL, TITULO)).toBe(segunda.category);
+    expect(categoryAtOffset(grid.rows, enSuTitulo + CELL * 4, CELL, TITULO)).toBe(segunda.category);
+
+    // Y justo antes de su titulo se sigue en la anterior.
+    expect(categoryAtOffset(grid.rows, enSuTitulo - 1, CELL, TITULO)).toBe(secciones[0]?.category);
+  });
+
+  it("la categoria no se adelanta al grupo que todavia no ha entrado", () => {
+    const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
+    const ultima = grid.sections[grid.sections.length - 1]!;
+    const antes = layoutOfRow(grid.rows, ultima.firstRow, CELL, TITULO).offset;
+    expect(categoryAtOffset(grid.rows, antes - 1, CELL, TITULO)).not.toBe(ultima.category);
+    expect(categoryAtOffset(grid.rows, antes, CELL, TITULO)).toBe(ultima.category);
+  });
+
+  it("saltar a una categoria cae en su titulo, no en una celda cualquiera", () => {
+    const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
+    for (const section of grid.sections) {
+      const fila = grid.rows[section.firstRow];
+      expect(fila?.type, section.category).toBe("header");
+      expect(fila?.category, section.category).toBe(section.category);
+    }
+  });
+
+  it("con una busqueda puesta no hay titulos, y no hay scroll que saltarse", () => {
+    // Diecinueve resultados no necesitan una barra de categorias, y un titulo
+    // repetido por cada grupo parcial seria ruido.
+    const grid = buildIconGrid({ kind: "vector", query: "cafe", columns: 8 }, "off");
+    expect(grid.rows.every((row) => row.type === "cells")).toBe(true);
+    expect(grid.sections).toEqual([]);
+  });
+
+  it("sin busqueda, cada grupo abre con su titulo y las celdas van debajo", () => {
+    const grid = buildIconGrid({ kind: "emoji", query: "", columns: 8 });
+    const titulos = grid.rows.filter((row) => row.type === "header");
+    expect(titulos.length).toBeGreaterThan(1);
+    for (const titulo of titulos) {
+      const indice = grid.rows.indexOf(titulo);
+      // Lo que va despues del titulo es celdas de su misma categoria.
+      expect(grid.rows[indice + 1]?.category, titulo.category).toBe(titulo.category);
+    }
   });
 });

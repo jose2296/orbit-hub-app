@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { EXTRA_BY_CATEGORY, EXTRA_KEYWORDS, EXTRA_LABELS } from "./icons-catalogo-ampliado.js";
+
 
 /**
  * The colour an icon is drawn in.
@@ -81,13 +83,17 @@ export type IconRef = z.infer<typeof iconSchema>;
 export const iconRefSchema = iconSchema.nullable();
 
 export const VECTOR_ICON_CATEGORIES = [
+  "general",
   "trabajo",
+  "tecnologia",
+  "comunicacion",
+  "comida",
   "hogar",
   "salud",
-  "comida",
+  "deporte",
   "viajes",
   "naturaleza",
-  "social"
+  "social",
 ] as const;
 export type VectorIconCategory = (typeof VECTOR_ICON_CATEGORIES)[number];
 
@@ -597,7 +603,11 @@ export const VECTOR_ICON_GLYPHS: Record<string, string> = {
   campeon: "trophy",
 };
 
-const KEYS_BY_CATEGORY: Record<VectorIconCategory, readonly string[]> = {
+const KEYS_BY_CATEGORY: Record<VectorIconCategory, string[]> = {
+  general: [],
+  tecnologia: [],
+  comunicacion: [],
+  deporte: [],
   trabajo: [
     "cuaderno", "libro", "boligrafo", "lapiz", "goma", "carpeta",
     "calculadora", "rotulador", "tijeras", "usb", "auriculares", "teclado",
@@ -716,8 +726,27 @@ export function labelOf(key: string): string {
   );
 }
 
-/** The words of the seven groups, in the language the app is in. */
+/**
+ * The words that find a drawing they are not called, pipe separated.
+ *
+ * The name is the word somebody types most of the time; these are the others they
+ * reach for. A drawing with none of these is found by its name alone, and that is
+ * the normal case.
+ */
+export const VECTOR_ICON_KEYWORDS: Readonly<Record<string, readonly string[]>> =
+  Object.fromEntries(
+    Object.entries(EXTRA_KEYWORDS).map(([key, words]) => [
+      key,
+      words.split("|").filter(Boolean),
+    ]),
+  );
+
+/** The name of each group, in the language the app is in. */
 export const VECTOR_ICON_CATEGORY_LABEL: Record<VectorIconCategory, string> = {
+  general: "General",
+  tecnologia: "Tecnología",
+  comunicacion: "Comunicación",
+  deporte: "Deporte",
   trabajo: "Trabajo",
   hogar: "Casa y objetos",
   salud: "Salud y deporte",
@@ -734,6 +763,43 @@ export const VECTOR_ICON_CATEGORY_LABEL: Record<VectorIconCategory, string> = {
  * a key it does not know, and the app cannot draw one it does not have, and
  * neither of them can be a step behind the other.
  */
+/*
+ * The 240 glyphs Ionicons had and nobody had named, folded in.
+ *
+ * `EXTRA_BY_CATEGORY` is `clave glifo`, and both halves are merged into the two
+ * tables above rather than kept beside them: a second list of categories is a
+ * second list that is a step behind the first, and the category bar reads
+ * `KEYS_BY_CATEGORY` while the server validates `VECTOR_ICON_GLYPHS`. Five keys
+ * already existed pointing at a different glyph — `alarma` at `warning`,
+ * `compartir` at `share-social` — and are re-pointed at the one that is actually
+ * named after them; the glyphs they leave behind go back into the free list.
+ */
+const REGLIFO: Record<string, string> = {
+  alarma: "alarm",
+  bolsa: "bag",
+  compartir: "share",
+  conversacion: "chatbox",
+  mencion: "at",
+};
+
+for (const [category, entries] of Object.entries(EXTRA_BY_CATEGORY)) {
+  const claves = KEYS_BY_CATEGORY[category as VectorIconCategory];
+  if (!claves) continue;
+  for (const entry of entries) {
+    const [key, glyph] = entry.split(" ");
+    if (!key || !glyph) continue;
+    (claves as string[]).push(key);
+    VECTOR_ICON_GLYPHS[key] = glyph;
+  }
+}
+
+for (const [key, glyph] of Object.entries(REGLIFO)) {
+  VECTOR_ICON_GLYPHS[key] = glyph;
+}
+
+Object.assign(LABEL_DICTIONARY, EXTRA_LABELS);
+
+
 export const VECTOR_ICON_CATALOG: ReadonlyArray<{
   key: string;
   glyph: string;
