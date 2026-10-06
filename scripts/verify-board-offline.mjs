@@ -381,7 +381,7 @@ const TABLERO = `(() => {
         // lleva el nombre al lado y trocear el innerText daria "Done3".
         contador: cuenta ? Number(cuenta.innerText) : null,
         // El numero de la pastilla, y **null** cuando no hay ninguno. Antes salia de
-        // Number((tab.innerText || '').replace(\D+/g, "")) y Number("") es **0**: una
+        // Number((tab.innerText || '').replace(\\D+/g, "")) y Number("") es **0**: una
         // pastilla sin numero leia como una columna vacia. Ese 0 no es una columna
         // vacia, es un numero que nadie ha mirado, y en un ok se lee como medido.
         // Con match sale null, y null sale en FALLA.

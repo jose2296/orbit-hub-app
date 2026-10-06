@@ -598,7 +598,16 @@ const seccionIncompleto = SIN_ESCRIBIR.length
     ]
   : [];
 
-if (SIN_ESCRIBIR.length) fallos += 1;
+/*
+  Los que faltan **no** entran en `fallos`, y con esto el codigo y el comentario de
+  arriba por fin dicen lo mismo. `fallos` es el contador de los pasos que se escribieron y
+  salieron en FALLA, y es el que sale al lado del "x/y pasos sin fallo" de mas abajo:
+  sumarlos ahi hacia que un recorrido con 3 pasos escritos en verde y 10 previstos sin
+  escribir dijera "0/3", que se lee como tres fallos de la app y no como diez huecos.
+  Lo que si se llevan es el codigo de salida 1 —la ultima linea del fichero—, que es lo
+  unico que el bloque de "SIN ESCRIBIR" promete, y lo unico que impide el verde.
+*/
+const incompletos = SIN_ESCRIBIR.length;
 
 writeFileSync(
   INFORME,
@@ -621,4 +630,4 @@ for (const r of resultados) console.log(`  ${linea(r)}`);
 console.log(seccionIncompleto.join("\n"));
 console.log(`\n${resultados.length - fallos}/${resultados.length} pasos sin fallo`);
 console.log(`capturas e informe: ${SHOTS}\n`);
-process.exit(fallos > 0 ? 1 : 0);
+process.exit(fallos > 0 || incompletos > 0 ? 1 : 0);

@@ -131,11 +131,12 @@ tablero abre en la primera columna y de ahi no se llega al estado en el que el b
 
 **2. El punto de color de la pestaña y el filo de la tarjeta, en ningún tema.** El punto de la
 pestaña lo pinta `board-tabs.tsx:323` (`iconColor(state.color)`) sobre el fondo del tema que escribe
-la pastilla elegida (`:398`). **Ningún guion lee ese color**, ni en claro ni en oscuro: de una pestaña
-solo se lee el número (`verify-state-editor.mjs:712`) y el `aria-selected`
+la pastilla elegida (`:371-373`; el `:398` es el color del **texto** de esa pastilla, que es el del
+fondo del tema, no el del relleno). **Ningún guion lee ese color**, ni en claro ni en oscuro: de una
+pestaña solo se lee el número (`verify-state-editor.mjs:712`) y el `aria-selected`
 (`verify-board-offline.mjs:372`), y el `aria-selected` es el estado, no el color.
 
-El filo es el otro de los dos que el brief nombra, y tampoco lo lee nadie: `board-column.tsx:801` pasa
+El filo es el otro de los dos que el brief nombra, y tampoco lo lee nadie: `board-column.tsx:803` pasa
 `edgeColor={iconColor(state.color)}` y `task-row.tsx:150-151` lo pinta como `borderLeftColor`, y
 `borderLeftColor` **no aparece en ningún fichero de `scripts/`** —comprobado con grep sobre todo el
 directorio—. Lo que se mide de la tarjeta en oscuro es la **elevación**
@@ -145,7 +146,7 @@ Es el detalle que el brief señalaba como el que más cambia en oscuro, y son lo
 mirado.
 
 **3. El punto 1 en oscuro.** Que la primera pestaña esté activa y que los contadores cuadren con las
-tarjetas de debajo está afirmado en `verify-board-offline.mjs:719-756`, **en claro** (`:711` afirma
+tarjetas de debajo está afirmado en `verify-board-offline.mjs:719-756`, **en claro** (`:709` afirma
 `colorScheme: light` antes de aceptar nada). Lo que sí se repite en oscuro, con el tema afirmado, es
 la **elevación** de la tarjeta (`verify-state-editor.mjs:3649-3656`, los fotogramas con
 `shadow.floating`; **el filo de color no**, y por eso va en el punto 2 de arriba), el editor entero y
