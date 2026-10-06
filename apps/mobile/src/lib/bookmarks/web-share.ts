@@ -13,6 +13,7 @@ export interface QueryShareWeb {
   title?: string | string[] | null;
   text?: string | string[] | null;
   url?: string | string[] | null;
+  error?: string | string[] | null;
 }
 
 function primero(valor: string | string[] | null | undefined): string {
@@ -22,11 +23,14 @@ function primero(valor: string | string[] | null | undefined): string {
 
 // Dice si la URL trae query de share que consumir. La pagina lo usa para
 // elegir: con query se parsea y se guarda; sin ella se lee el almacen.
+// Un error del SW (cuerpo ilegible) tambien es query que consumir: asi la
+// pagina borra el pendiente viejo en vez de mostrarlo.
 export function hayQueryShare(query: QueryShareWeb): boolean {
   return (
     primero(query.title).length > 0 ||
     primero(query.text).length > 0 ||
-    primero(query.url).length > 0
+    primero(query.url).length > 0 ||
+    primero(query.error).length > 0
   );
 }
 
@@ -35,6 +39,8 @@ export function hayQueryShare(query: QueryShareWeb): boolean {
 // y no copiada: dos copias de "donde esta la URL en este texto" divergen en
 // silencio. El titulo que mando el navegador manda sobre el resto del texto.
 export function parsearQueryShare(query: QueryShareWeb): SharedPayload | null {
+  // Cuerpo ilegible: no hay nada que guardar y la pagina borra el pendiente.
+  if (primero(query.error).length > 0) return null;
   const titulo = primero(query.title);
   const texto = primero(query.text);
   const url = primero(query.url);

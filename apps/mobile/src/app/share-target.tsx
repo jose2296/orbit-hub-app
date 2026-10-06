@@ -44,7 +44,7 @@ export default function ShareTargetScreen() {
   const t = useTranslation();
   const router = useRouter();
   const { status } = useSession();
-  const params = useLocalSearchParams<{ title?: string; text?: string; url?: string }>();
+  const params = useLocalSearchParams<{ title?: string; text?: string; url?: string; error?: string }>();
 
   const [payload, setPayload] = useState<SharedPayload | null>(null);
 

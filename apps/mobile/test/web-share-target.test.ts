@@ -47,14 +47,14 @@ function cargarSw() {
   const oyentes = new Map<string, (event: any) => void>();
   const selfMock = {
     location: { origin: 'https://app.test' },
-    skipWaiting: () => {},
-    clients: { claim: () => Promise.resolve() },
+    skipWaiting: vi.fn(),
+    clients: { claim: vi.fn(() => Promise.resolve()) },
     addEventListener: (tipo: string, fn: (event: any) => void) => {
       oyentes.set(tipo, fn);
     },
   };
   new Function('self', codigo)(selfMock);
-  return oyentes;
+  return { oyentes, selfMock };
 }
 
 function peticionShare({
@@ -93,7 +93,7 @@ async function lanzarFetch(oyentes: Map<string, (event: any) => void>, request: 
 
 describe('el service worker del share', () => {
   it('un POST a /share-target con url redirige a la pagina con query', async () => {
-    const oyentes = cargarSw();
+    const { oyentes } = cargarSw();
     const promesa = await lanzarFetch(
       oyentes,
       peticionShare({ campos: { title: 'Mi titulo', text: 'nota', url: 'https://ejemplo.test/nota' } }),
@@ -108,7 +108,7 @@ describe('el service worker del share', () => {
   });
 
   it('un texto de 100 KB se trunca al techo y no rompe el redirect', async () => {
-    const oyentes = cargarSw();
+    const { oyentes } = cargarSw();
     const largo = 'x'.repeat(100 * 1024);
     const promesa = await lanzarFetch(
       oyentes,
@@ -122,13 +122,13 @@ describe('el service worker del share', () => {
   });
 
   it('un GET a /share-target pasa (no lo intercepta)', async () => {
-    const oyentes = cargarSw();
+    const { oyentes } = cargarSw();
     const promesa = await lanzarFetch(oyentes, peticionShare({ method: 'GET' }));
     expect(promesa).toBeNull();
   });
 
   it('un POST a otra ruta pasa', async () => {
-    const oyentes = cargarSw();
+    const { oyentes } = cargarSw();
     const promesa = await lanzarFetch(
       oyentes,
       peticionShare({ ruta: '/otra-ruta', campos: { url: 'https://ejemplo.test/x' } }),
@@ -137,7 +137,7 @@ describe('el service worker del share', () => {
   });
 
   it('sin url en el form, redirige igual con lo que haya', async () => {
-    const oyentes = cargarSw();
+    const { oyentes } = cargarSw();
     const promesa = await lanzarFetch(oyentes, peticionShare({ campos: { text: 'solo texto' } }));
     const respuesta = (await promesa) as unknown as Response;
     expect(respuesta.status).toBe(303);
@@ -146,12 +146,39 @@ describe('el service worker del share', () => {
     expect(destino.searchParams.get('url')).toBeNull();
   });
 
-  it('con el form ilegible, redirige igual y la pagina dira "nada que guardar"', async () => {
-    const oyentes = cargarSw();
+  it('con el form ilegible, redirige con flag error y no resucita el pendiente', async () => {
+    const { oyentes } = cargarSw();
     const promesa = await lanzarFetch(oyentes, peticionShare({ formRoto: true }));
     const respuesta = (await promesa) as unknown as Response;
     expect(respuesta.status).toBe(303);
-    expect(new URL(respuesta.headers.get('location')!).pathname).toBe('/share-target');
+    const destino = new URL(respuesta.headers.get('location')!);
+    expect(destino.pathname).toBe('/share-target');
+    // Sin el flag la pagina cae en "sin query" y muestra el pendiente viejo.
+    expect(destino.searchParams.get('error')).toBe('unreadable');
+    // La pagina lo ve como query, lo parsea a null y borra el pendiente.
+    const params = Object.fromEntries(destino.searchParams);
+    expect(hayQueryShare(params)).toBe(true);
+    expect(parsearQueryShare(params)).toBeNull();
+    const almacen = almacenFalso();
+    guardarShareWeb({ url: 'https://ejemplo.test/viejo', title: null, text: null }, almacen);
+    const parsed = parsearQueryShare(params);
+    if (parsed) guardarShareWeb(parsed, almacen);
+    else borrarShareWeb(almacen);
+    expect(leerShareWeb(almacen)).toBeNull();
+  });
+
+  it('install activa de inmediato y activate reclama los clientes', async () => {
+    const { oyentes, selfMock } = cargarSw();
+    oyentes.get('install')!({});
+    expect(selfMock.skipWaiting).toHaveBeenCalled();
+    let espera: Promise<unknown> | null = null;
+    oyentes.get('activate')!({
+      waitUntil: (p: Promise<unknown>) => {
+        espera = p;
+      },
+    });
+    await espera;
+    expect(selfMock.clients.claim).toHaveBeenCalled();
   });
 });
 

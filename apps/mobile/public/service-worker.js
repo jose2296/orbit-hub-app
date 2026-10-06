@@ -17,6 +17,7 @@ self.addEventListener('fetch', function (event) {
       var title = '';
       var text = '';
       var link = '';
+      var ilegible = false;
       try {
         var form = await event.request.formData();
         title = String(form.get('title') || '').slice(0, TECHO_TEXTO);
@@ -25,14 +26,18 @@ self.addEventListener('fetch', function (event) {
         // el link romperia el guardado.
         link = String(form.get('url') || '');
       } catch (e) {
-        // Form ilegible: se redirige igual y la pagina dice "nada que
-        // guardar". Un cuerpo roto no es un crash del share.
+        // Form ilegible: se avisa con flag para que la pagina borre el
+        // pendiente viejo en vez de mostrarlo como si fuera este share.
+        ilegible = true;
       }
       // Por que query y no IndexedDB: el SW no tiene localStorage e
       // IndexedDB a mano son ~20 lineas de promesas para tres strings.
       // La redireccion es interna (no toca servidor), asi que no hay 414:
       // el limite lo pone el navegador y con el techo no se acerca.
       var destino = new URL('/share-target', self.location.origin);
+      // Flag de cuerpo ilegible: sin esto la pagina cae en "sin query" y
+      // muestra el pendiente viejo guardado como si fuera este share.
+      if (ilegible) destino.searchParams.set('error', 'unreadable');
       if (title) destino.searchParams.set('title', title);
       if (text) destino.searchParams.set('text', text);
       if (link) destino.searchParams.set('url', link);
