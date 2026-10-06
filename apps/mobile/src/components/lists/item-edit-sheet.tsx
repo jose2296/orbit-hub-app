@@ -1044,53 +1044,82 @@ export function ItemEditSheet({
               </View>
             ) : null}
 
-            <TextField
-              label={t("tags.newLabel")}
-              value={newTag}
-              onChangeText={setNewTag}
-              placeholder={t("tags.newPlaceholder")}
-              autoCapitalize="words"
-              returnKeyType="done"
-              onSubmitEditing={() => void addTag()}
-            />
-
             {/*
-              **The same picker, always open, for a label that does not exist yet.**
-              Not behind a button, and that is the whole difference between the two
-              mounts: a label that is already on the task has a button to press and
-              something to show the colour in, and this one has neither — there is
-              nothing on the task to paint and no pill to open a picker from, so a
-              colour for it would be unreachable if it waited for a button that only
-              exists once the label is there.
+              **El bloque entero de "nueva etiqueta" desaparece mientras se esta
+              editando el color de una que ya existe, y no solo su selector.**
 
-              So this one writes **nothing**: `value` is `pendiente`, local state of
-              this panel, and the colour only reaches the map through `addTag`, on
-              the same press that creates the name. Editing the colour of
-              "Mercadona" and choosing the colour of "Alcampo" are then done in
-              front of the same control, and what differs between the two is only
-              *when* it writes.
+              Estaba siempre montado —`TextField`, selector y boton, sin ninguna
+              condicion alrededor— porque la idea era que el color de una etiqueta
+              que aun no existe se elige **sin** tener que escribir antes el nombre.
+              Esa idea sigue siendo buena y no se toca. Lo que estaba mal es que
+              conviviera con el otro selector: al pulsar "editar" en "Mercadona" se
+              veian **los dos formularios enteros a la vez** —dos tiras de tono, dos
+              cuadrados, dos campos de hex y dos botones de guardar— y no hay forma
+              de saber cual de los dos estas tocando. Son dos controles que se
+              parecen en todo y se distinguen solo por un nombre que hay que leer.
 
-              **`tag` is the typed name, trimmed, and it can be `undefined`.** It is
-              what the twelve swatches and the "back to derived" option derive their
-              colours from, and with no name typed there is nothing to derive from:
-              the picker falls back to the neutral of its own function, which is
-              where "nobody has decided yet" is drawn. Type a name and the panel
-              follows it, so the colour being picked is judged against the colour
-              that label would get.
+              Asi que **uno de los dos, nunca los dos**, y el que se aparta es el de
+              la nueva: estas eligiendo el color de algo que ya existe, y el campo
+              en blanco con su selector abajo no es informacion, es ruido. Cuando
+              cierras el selector de edicion el bloque vuelve con lo que habias
+              escrito y el color que habias pendiente —`pendiente` no se toca, asi
+              que no se pierde nada—.
+
+              Y esto quita de en medio una segunda cosa: los dos selectores comparten
+              el nombre accesible base, `tags.colorOf` con `{name}`, asi que con los
+              dos montados dos lectores de pantalla anuncian el mismo control dos
+              veces. Con uno, no.
             */}
-            <TagColorPicker
-              tag={nombreNuevo || undefined}
-              value={pendiente}
-              onChange={setPendiente}
-            />
+            {colorDe === null ? (
+              <>
+                <TextField
+                  label={t("tags.newLabel")}
+                  value={newTag}
+                  onChangeText={setNewTag}
+                  placeholder={t("tags.newPlaceholder")}
+                  autoCapitalize="words"
+                  returnKeyType="done"
+                  onSubmitEditing={() => void addTag()}
+                />
 
-            <Button
-              label={t("tags.addNew")}
-              icon="add"
-              variant="secondary"
-              disabled={newTag.trim().length === 0}
-              onPress={() => void addTag()}
-            />
+                {/*
+                  **El mismo selector, siempre abierto, para una etiqueta que aun no
+                  existe.** No detras de un boton, y esa es toda la diferencia con
+                  las otras dos monturas: una etiqueta que ya esta en la tarea tiene
+                  un boton que pulsar y algo donde enseñar el color, y esta no tiene
+                  ni lo uno ni lo otro —no hay nada que pintar y ninguna pastilla de
+                  la que abrir un selector—, asi que un color suyo seria inalcanzable
+                  si esperase a un boton que solo existe cuando la etiqueta ya esta.
+
+                  Asi que este **no escribe nada**: `value` es `pendiente`, estado
+                  local de este panel, y el color solo llega al mapa por `addTag`, en
+                  la misma pulsacion que crea el nombre. Editar el color de
+                  "Mercadona" y elegir el de "Alcampo" se hacen pues ante el mismo
+                  control, y lo que cambia entre los dos es solo *cuando* escribe.
+
+                  **`tag` es el nombre escrito, recortado, y puede ser `undefined`.**
+                  Es de donde los doce botones y la opcion de "volver al deducido"
+                  derivan sus colores, y sin nombre escrito no hay nada de donde
+                  derivar: el selector cae al neutro de su propia funcion, que es
+                  donde se dibuja "aun nadie ha decidido". Escribe un nombre y el
+                  panel lo sigue, para que el color que se elige se juzgue contra
+                  el color que tendria esa etiqueta.
+                */}
+                <TagColorPicker
+                  tag={nombreNuevo || undefined}
+                  value={pendiente}
+                  onChange={setPendiente}
+                />
+
+                <Button
+                  label={t("tags.addNew")}
+                  icon="add"
+                  variant="secondary"
+                  disabled={newTag.trim().length === 0}
+                  onPress={() => void addTag()}
+                />
+              </>
+            ) : null}
 
             {/* The hidden node every colour button on this page points at. One,
                 because the hint is the same for all of them. */}

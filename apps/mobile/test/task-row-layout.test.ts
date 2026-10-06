@@ -573,6 +573,66 @@ describe('los cuatro botones de prioridad se ven distintos entre si', () => {
   });
 });
 
+describe('la pagina de etiquetas monta un solo selector a la vez', () => {
+  /*
+   * **Este pin es de un fallo que se vio en pantalla y que ningun test de ahi
+   * cubria.** El selector de la etiqueta nueva estaba montado **sin condicion
+   * alrededor** —`TextField`, selector y boton, siempre—, porque la idea era elegir
+   * el color de una etiqueta que aun no existe sin escribir antes el nombre. La idea
+   * es buena; lo que faltaba era que **no conviviera con el otro selector**: al
+   * pulsar "editar" en una etiqueta que ya existe se veian los dos formularios
+   * enteros a la vez, con dos tiras de tono, dos cuadrados, dos campos de hex y dos
+   * botones de guardar, y nada mas que un nombre para saber cual estabas tocando.
+   *
+   * El pin va sobre la **condicion del selector pendiente**, no sobre un recuento de
+   * `<TagColorPicker>`: un recuento pasa con tres mounts si uno esta bien condicionado,
+   * y lo que importa es que los de edicion y el de la nueva **no puedan coexistir**.
+   */
+  it('el bloque de la etiqueta nueva solo se pinta si no se esta editando una', () => {
+    const limpio = sinComentarios(itemEditSheet);
+    // El selector pendiente va dentro de un `{colorDe === null ? ... : null}`, y lo
+    // que se afirma es que la condicion existe y rodea al bloque entero.
+    const bloque = limpio.match(
+      /colorDe === null \?[\s\S]{0,4000}?<TagColorPicker[\s\S]{0,200}?tag=\{nombreNuevo/,
+    );
+    expect(
+      bloque,
+      'el selector de la etiqueta nueva tiene que estar dentro de una condicion que lo apague al editar',
+    ).not.toBeNull();
+    // Y que la condicion sea de verdad una condicion del render, no un comentario o
+    // un nombre: el `?` tiene que ir detras de `colorDe === null`.
+    expect(limpio).toMatch(/\{colorDe === null \? \(/);
+  });
+
+  it('y al editar una etiqueta, lo que se aparta es el bloque de la nueva, entero', () => {
+    // Solo el selector, o el campo en blanco tambien. Con el campo a la vista y el
+    // selector no, el panel sigue teniendo dos "elige un color" y el que se aparta
+    // tiene que ser el bloque entero, campo incluido.
+    const limpio = sinComentarios(itemEditSheet);
+    const desde = limpio.indexOf('colorDe === null ?');
+    const hasta = limpio.indexOf('nombreNuevo || undefined');
+    const trozo = limpio.slice(desde, hasta);
+    expect(trozo).toMatch(/<TextField/);
+    expect(trozo.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Y que la condicion sea la que ya existe, no una nueva: **`colorDe` es el estado
+   * del selector de edicion**, y el bloque nuevo tiene que mirar el mismo. Si
+   * alguien añade un segundo sitio que abra un selector de edicion y no lo cierra,
+   * esto se pone rojo.
+   */
+  it('la condicion es el mismo estado que abren los lapices', () => {
+    const limpio = sinComentarios(itemEditSheet);
+    // Los dos lapices abren y cierran `colorDe` con la misma ternaria.
+    const abre = [...limpio.matchAll(/setColorDe\(colorDe === tag \? null : tag\)/g)];
+    expect(abre).toHaveLength(2);
+    // Y el estado es `string | null`: con un objeto dentro habria que comparar el tag
+    // y la fila, y este es el mismo para las dos filas porque son disjuntas.
+    expect(limpio).toMatch(/useState<string \| null>\(null\)/);
+  });
+});
+
 describe('anadir y quitar son botones distintos, y el + solo anade', () => {
   /*
    * **El `+` que tambien quitaba es lo que se vino a quitar**, y el pin va sobre el
