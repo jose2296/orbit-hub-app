@@ -546,3 +546,87 @@ export function anchorableColumns(
 export function parallaxPage(step: number, stripWidth: number): number {
   return Math.max(step, stripWidth);
 }
+
+/**
+ * How far off the resting place may be while still meaning "where it was".
+ *
+ * **Twelve points, and the size is the argument.** A scroller that settles lands
+ * on its snap point or on the target of the `scrollTo` that put it there, both
+ * exact to a point or two of subpixel rounding — so anything under twelve is the
+ * same place, and anything real is a page away: the narrowest column this board
+ * draws is `BOARD_COLUMN_MIN_WIDTH` (230) wide, and two snap points are never
+ * closer than that. Twelve is six times the wobble and a twentieth of the
+ * smallest move that means anything, which is what a margin is for.
+ */
+export const BOARD_SCROLL_REST_SLACK = 12;
+
+/**
+ * Which column the board is on when the scroller comes to rest, **or `null` for
+ * "the tab already says it".**
+ *
+ * The swipe gesture settles through `settle`/`asentarEn`, which move the tab with
+ * the board — but a scroll the gesture did not drive (the wheel, a trackpad, a
+ * drag the finger started too diagonally for the gesture to claim) moves the
+ * scroller with nobody moving the tab, and the strip goes on naming a column the
+ * board is no longer showing. This is the way back: read where the scroller
+ * stopped and name that column instead.
+ *
+ * **It answers `null` far more often than a column, and that is the function.**
+ * A rest within `BOARD_SCROLL_REST_SLACK` of where the current tab says the board
+ * should be is not a move — it is the snap landing a point off, or the tail of a
+ * programmatic scroll — and answering a column there would fight every `scrollTo`
+ * the screen itself asked for. `null` is also the answer when the nearest column
+ * is the current one: same tab, no write, no render.
+ *
+ * Past the end, the tab keeps what the scroller cannot show. A tab tap can select
+ * a column whose offset is past `maxScroll` — the scroller sits at its maximum
+ * and the tab names a column further along — and a rest at that maximum is that
+ * column, not the last anchorable one: `esperado` is clipped with the same
+ * `Math.min` the scroller is clipped with, so staying at the end keeps the tab
+ * and only leaving it moves it. Without the clip, every rest at the end would
+ * drag the tab back to the last column the scroller can anchor, correcting a
+ * choice the user made on a scroll that moved nowhere.
+ *
+ * It is a pure function and not a line in `onScroll` for the reason everything
+ * in this file is: the wide-board clip above is the kind of arithmetic that gets
+ * "simplified" by whoever touches it next, and a threshold nobody can reach is
+ * not a threshold.
+ */
+export function columnForScrollEnd(
+  x: number,
+  offsets: number[],
+  maxScroll: number,
+  current: number,
+): number | null {
+  const sitio = Number.isFinite(x) ? x : 0;
+  const tope = Math.max(0, maxScroll);
+  const propio = offsets[current];
+  // A current no column points at is not a tab to keep: re-anchor to whatever
+  // the scroller is showing, which is the only honest answer left.
+  if (propio === undefined) return nearestColumn(sitio, offsets);
+  const esperado = Math.min(propio, tope);
+  if (Math.abs(sitio - esperado) <= BOARD_SCROLL_REST_SLACK) return null;
+  const cerca = nearestColumn(sitio, offsets);
+  return cerca === current ? null : cerca;
+}
+
+/**
+ * The index of the offset nearest to a scroller position, **clamped to the
+ * columns there are.**
+ *
+ * Empty offsets have no columns, so there is nothing to name: 0 is the only
+ * index that cannot point past the end of an empty array, and the caller treats
+ * it the way it treats every other answer.
+ */
+function nearestColumn(x: number, offsets: number[]): number {
+  let mejor = 0;
+  let distancia = Infinity;
+  offsets.forEach((offset, index) => {
+    const d = Math.abs(offset - x);
+    if (d < distancia) {
+      distancia = d;
+      mejor = index;
+    }
+  });
+  return mejor;
+}

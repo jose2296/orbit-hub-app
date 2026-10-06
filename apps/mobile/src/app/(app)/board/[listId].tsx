@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
+import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { StateEditorSheet } from "@/components/lists/state-editor-sheet";
 import { StatePickerSheet } from "@/components/lists/state-picker-sheet";
 import { Screen } from "@/components/ui/screen";
@@ -45,6 +46,7 @@ import { filterItems, tagsByFrequency } from "@/lib/lists/item-presentation";
 import { isManualOrderOnly } from "@/lib/lists/kind";
 import {
   anchorableColumns,
+  columnForScrollEnd,
   maxTrackScroll,
   nextPageFor,
   parallaxPage,
@@ -327,6 +329,35 @@ export default function BoardScreen() {
   /** Which column the board is anchored on, by index — the tabs' and the track's. */
   const [actual, setActual] = useState(0);
   const pista = useRef<ScrollView>(null);
+  /**
+   * What the scroll-end reconciliation reads, **and it is a ref because a timer
+   * reads it.**
+   *
+   * The timeout below fires 180 ms after the last scroll event, by which time the
+   * render that scheduled it is gone: its `actual`, `offsets` and `maxScroll`
+   * are the ones the board had when the finger was still moving. A tab tap in
+   * between — which is exactly when the values matter — would decide against
+   * stale ones. The ref is written every render, so the timeout always reads the
+   * board as it is, not as it was.
+   */
+  const datosScroll = useRef({ actual: 0, offsets: [] as number[], maxScroll: 0 });
+  /**
+   * The timer that says the scroller has stopped, **one per screen and cleared
+   * on the way out.**
+   *
+   * Every scroll event pushes it 180 ms forward; only the quiet after the last
+   * one runs the reconciliation. 180 is past the momentum of a flick
+   * (events keep coming) and short enough that the tab follows the board instead
+   * of arriving after the person has looked away — and it is cleared on unmount
+   * because a timeout that fires on an unmounted screen sets state nobody reads.
+   */
+  const finScroll = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (finScroll.current) clearTimeout(finScroll.current);
+    },
+    [],
+  );
 
   /**
    * How wide a column is, and **the arithmetic is not here.**
@@ -411,6 +442,10 @@ export default function BoardScreen() {
     maxScroll,
     pasoColumna,
   );
+
+  // The ref the scroll-end timeout reads (declared next to `pista`): fresh
+  // values every render, so the reconciliation never decides against stale ones.
+  datosScroll.current = { actual, offsets, maxScroll };
 
   /**
    * The travel that is a whole page of parallax, **and `anchoPista` is the strip's
@@ -627,42 +662,37 @@ export default function BoardScreen() {
   }
 
   /*
-    The editor, **in the header, and it is created here rather than added to
-    something.** `list/[listId].tsx` mounts its `ListMenuSheet` behind a ghost
-    `iconOnly` button at `useHeaderAction`, and this is the same call with the same
-    `testID` convention so a walkthrough has something stable to press. This screen
-    had no header action at all —only `useScreenTitle`— so the button is new, and it
-    is new for the reason the list screen's is: the columns of a board are edited
-    from anywhere on the board, not from inside a card.
+    The menu, **behind a `···` like every other list screen, and not a button
+    straight to the states editor.**
 
-    **Two doors, and both of them are real.** This one, and the row
-    `state-picker-edit` inside the state sheet of a task. The second is not an
-    alternative: a board at `MAX_BOARD_STATES` cannot add a column from the picker
-    at all, so the door to rearranging them has to exist somewhere else, and a
-    person who has a card open is a person who is already looking for "which state
-    is this".
+    `list/[listId].tsx` mounts its `ListMenuSheet` behind a ghost `iconOnly`
+    button at `useHeaderAction` — same call, same icon, same `testID` convention
+    (`board-menu-button` for this screen's one) — so the board's menu is the same
+    menu: rename, pin, duplicate, share, export, delete, and **the board's states
+    editor as its first row** (`onEditStates`). A menu that reads differently
+    here than there is two menus to learn, and this screen had a button straight
+    to the editor because when it was drawn there was no menu to hang it from.
 
-    **`states.length > 0` is in the condition and not by accident.** This screen
-    returns `board.noStates` for a board with no columns, *before* the tree that
-    mounts the panel, so a button drawn there would open nothing: a dead press, which
-    is the exact defect this task exists to remove from `state-picker-edit`.
+    The states button it replaces stays reachable twice over: this row, and the
+    row inside the state sheet of a task.
   */
+  const [menuAbierto, setMenuAbierto] = useState(false);
   useHeaderAction(
     () =>
-      list && !readOnly && states.length > 0 ? (
+      list ? (
         <Button
-          testID="board-states-button"
-          label={t("board.editStates")}
+          testID="board-menu-button"
+          label={t("lists.menu")}
           variant="ghost"
           size="sm"
-          icon="options-outline"
+          icon="ellipsis-horizontal"
           iconOnly
-          accessibilityHint={t("board.editStatesHint")}
+          accessibilityHint={t("lists.menuHint")}
           fullWidth={false}
-          onPress={abrirEditorDeEstados}
+          onPress={() => setMenuAbierto(true)}
         />
       ) : null,
-    [list, readOnly, states.length, t],
+    [list, t],
   );
 
   const [editing, setEditing] = useState<{
@@ -1689,7 +1719,33 @@ export default function BoardScreen() {
                   setAltoPista(event.nativeEvent.layout.height);
                 }}
                 onScroll={(event) => {
-                  scrollPrevio.value = event.nativeEvent.contentOffset.x;
+                  const x = event.nativeEvent.contentOffset.x;
+                  scrollPrevio.value = x;
+                  /*
+                    **The tab follows a scroll the gesture did not drive, and only
+                    when it stops.**
+
+                    The swipe settles through `settle`/`asentarEn`, which move the
+                    tab with the board — but the wheel, a trackpad, or a drag the
+                    finger started too diagonally for the gesture to claim move the
+                    scroller with nobody moving the tab, and the strip goes on
+                    naming a column the board is no longer showing. So when the
+                    events stop coming, the resting place is read and the tab is
+                    moved to it — `columnForScrollEnd`, which answers `null` when
+                    the tab already says it, so a rest where it was writes nothing
+                    and fights no `scrollTo` the screen itself asked for.
+                  */
+                  if (finScroll.current) clearTimeout(finScroll.current);
+                  finScroll.current = setTimeout(() => {
+                    const datos = datosScroll.current;
+                    const columna = columnForScrollEnd(
+                      x,
+                      datos.offsets,
+                      datos.maxScroll,
+                      datos.actual,
+                    );
+                    if (columna !== null) setActual(columna);
+                  }, 180);
                 }}
                 scrollEventThrottle={16}
                 horizontal
@@ -1968,6 +2024,32 @@ export default function BoardScreen() {
           onClose={cerrarEditorDeEstados}
         />
       ) : null}
+
+      {/*
+        The menu of the list, **and it is the same menu every other list screen
+        opens.**
+
+        `list/[listId].tsx` mounts it behind its own `···` with the list and the
+        folder; here it is the same call, with the board's states editor as one
+        more row (`onEditStates`). `folder` is `null` and not the list's folder
+        because this screen does not read folders at all, and the only thing the
+        panel uses it for is the second half of its subtitle — the board's menu
+        says the kind without saying where it lives, which is honest about what
+        this screen knows.
+
+        It mounts for viewers too (`readOnly` does not gate it): the panel draws
+        itself read-only from the list's role, and a viewer who cannot open the
+        menu cannot see what can be done with the board either. What a viewer does
+        not get is the states row — the editor behind it is not mounted for them,
+        so the row would be a press that closes the menu and opens nothing.
+      */}
+      <ListMenuSheet
+        list={menuAbierto && list ? list : null}
+        folder={null}
+        onClose={() => setMenuAbierto(false)}
+        onDeleted={() => router.back()}
+        onEditStates={readOnly ? undefined : abrirEditorDeEstados}
+      />
     </Screen>
   );
 }

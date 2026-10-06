@@ -15,23 +15,22 @@
  *
  * ---
  *
- * **Y el hallazgo que hace que este guion exista: desde el tablero no se puede
- * exportar nada.** El punto 8 del brief pide "exporta a CSV" como el ultimo paso de
- * un recorrido que empieza en el tablero, y el tablero **no monta ningun menu**.
- * `ListMenuSheet` —que es donde vive el boton de exportar— esta montado en tres
- * sitios: `list/[listId].tsx`, `workspace/[workspaceId].tsx` y
- * `media-list-screen.tsx`. El cuarto, `board/[listId].tsx`, no lo monta, y su unica
- * accion de cabecera es `board-states-button` (`useHeaderAction`, una sola llamada en
- * todo el fichero).
+ * **Y el hallazgo que hace que este guion exista: el tablero exporta desde su
+ * menu.** El punto 8 del brief pide "exporta a CSV" como el ultimo paso de
+ * un recorrido que empieza en el tablero, y el tablero **monta su menu desde el
+ * lote 1C**. `ListMenuSheet` —que es donde vive el boton de exportar— esta montado
+ * en cuatro sitios: `list/[listId].tsx`, `workspace/[workspaceId].tsx`,
+ * `media-list-screen.tsx` y `board/[listId].tsx`, cuya accion de cabecera es
+ * `board-menu-button` (`useHeaderAction`, una sola llamada en todo el fichero).
  *
- * O sea que la puerta de salida de un tablero esta en la pantalla de **espacios**,
- * en la fila del tablero, y no en el tablero. Se llega, pero hay que saber que esta
- * ahi. Este guion comprueba las dos mitades por separado, porque son dos hechos
- * distintos y uno no sustituye al otro:
+ * O sea que la puerta de salida de un tablero esta en su propio menu `···`, y
+ * tambien en la pantalla de **espacios**, en la fila del tablero. Este guion
+ * comprueba las dos mitades por separado, porque son dos hechos distintos y uno
+ * no sustituye al otro:
  *
- *   1. **que el tablero no tenga puerta de exportacion**, contando los controles de
- *      su cabecera y sus hojas — y no por leer el codigo, que es lo que un recorrido
- *      no puede hacer;
+ *   1. **que el tablero lleve la puerta de exportacion en su menu `···`**,
+ *      contando los controles de su cabecera y leyendo sus hojas — y no por leer
+ *      el codigo, que es lo que un recorrido no puede hacer;
  *   2. **que el CSV que sale por la puerta que si hay lleve `estado` y no
  *      `completado`**, con el fichero abierto de verdad.
  *
@@ -562,7 +561,17 @@ try {
 
   await seedSession(tab, session, APP);
   await PONER_TEMA("light");
-  await tab.goto(`${APP}/board/${boardId}`);
+  for (let intento = 1; intento <= 3; intento += 1) {
+    try {
+      await tab.goto(`${APP}/board/${boardId}`);
+      break;
+    } catch (e) {
+      // `cdp.mjs` pierde la respuesta de la navegacion una de cada dos veces: se
+      // reintenta aqui y no alli, que lo comparten cinco guiones mas.
+      if (intento === 3) throw e;
+      await sleep(2000);
+    }
+  }
 
   const listo = Date.now() + 45000;
   let abierto = null;
@@ -608,28 +617,55 @@ try {
   /*
     **Se busca la palabra "export" en la etiqueta, en los dos idiomas.**
 
-    **Este check esta INVERTIDO y es una trampa para quien lo arregle: pone en verde
-    porque la puerta NO existe.** Es el defecto de §6.1, declarado y no arreglado por
-    decision —el plan no lo pide en ninguna de sus quince tareas—, asi que mientras la
-    puerta no exista el check es correcto y describe el defecto. **El dia que se monte
-    un `ListMenuSheet` en `board/[listId].tsx`, este check pasa a rojo**: eso no sera un
-    fallo del guion, sera el defecto arreglado, y habra que cambiarlo por el otro
-    (`>= 1` puerta de exportacion). Por eso lleva `TODO(bug)` al lado y la nota de
-    abajo: para que nadie lo lea como "el tablero no tiene puerta, y eso es lo
-    correcto".
+    **Este check estuvo INVERTIDO hasta el lote 1C, y traia la fecha de su vuelta.**
+    El tablero monta `ListMenuSheet` desde entonces, asi que la puerta existe y
+    vive dentro del menu `···`: se abre el menu y se busca la palabra "export"
+    entre sus filas, en los dos idiomas. Sigue sin haber un boton de exportar en
+    la cabecera —la puerta es una fila del menu, no un control visible—, y eso es
+    lo que este recorrido afirma ahora.
   */
   const pareceExportar = visibles.filter((b) => /export|csv|descarg|download/i.test(b.etiqueta));
   check(
-    "**el tablero no tiene ninguna puerta de exportar** (ni por `testID`, ni por etiqueta, en ningun idioma)  // TODO(bug): este check se pone ROJO cuando se arregle, y hay que invertirlo",
+    "**el tablero no lleva la exportacion en la cabecera** (la puerta vive dentro del menu)",
     pareceExportar.length === 0,
     pareceExportar.length
       ? `parecen puertas: ${JSON.stringify(pareceExportar)}`
-      : `${visibles.length} controles visibles, ninguno de exportacion; el unico de cabecera es board-states-button`,
+      : `${visibles.length} controles visibles, ninguno de exportacion`,
   );
-  if (pareceExportar.length === 0) {
-    note("ATENCION, este ok es un DEFECTO de producto, no una buena noticia: el tablero no tiene forma de exportar.");
-    note("TODO(bug): montar `ListMenuSheet` en board/[listId].tsx. Cuando exista, este check sale en rojo y hay que invertirlo.");
-    note('Defecto registrado en docs/verificacion-en-navegador.md, fila "Una pantalla nueva sin ListMenuSheet".');
+  const centroMenu = await tab.evaluate(`(() => {
+    const el = document.querySelector('[data-testid="board-menu-button"]');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0) return null;
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`);
+  check("el menu del tablero existe y se puede pulsar", !!centroMenu, centroMenu ? `en ${centroMenu.x},${centroMenu.y}` : "sin board-menu-button");
+  if (centroMenu) {
+    await tab.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: centroMenu.x, y: centroMenu.y, radiusX: 8, radiusY: 8, force: 1 }],
+    });
+    await sleep(80);
+    await tab.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await sleep(900);
+    const filasMenu = await tab.evaluate(`(() =>
+      [...document.querySelectorAll('[data-testid="sheet-panel"]')]
+        .flatMap((p) => [...p.querySelectorAll("button, [role=button]")])
+        .map((el) => (el.getAttribute("aria-label") || el.innerText || "").replace(/[-]/g, "").trim().slice(0, 60))
+        .filter((t) => t.length > 0)
+    )()`);
+    note(`filas del menu del tablero: ${filasMenu.join(" | ")}`);
+    check(
+      "**el menu del tablero lleva la puerta de exportar**",
+      filasMenu.some((t) => /export|csv|descarg|download/i.test(t)),
+      `${filasMenu.length} filas`,
+    );
+    check(
+      "y lleva la fila de editar los estados",
+      filasMenu.some((t) => /estados del tablero/i.test(t)),
+      filasMenu.slice(0, 8).join(" | "),
+    );
+    await tab.screenshot(`${SHOTS}/02-menu-del-tablero.png`);
   }
   /*
     **El nombre dice lo que la condicion mide, y lo medido va ahi al lado.**
@@ -652,11 +688,11 @@ try {
     esconderse detras de un nombre que no lo afirmaba.
   */
   check(
-    "y el boton de cabecera del tablero es el editor de estados (medido por `testID`: el nombre no afirma que sea el unico de la barra)",
-    visibles.filter((b) => b.testId === "board-states-button").length === 1,
-    `botones con testID board-states-button: ${visibles.filter((b) => b.testId === "board-states-button").length}` +
+    "y el boton de cabecera del tablero es el menu (medido por `testID`: el nombre no afirma que sea el unico de la barra)",
+    visibles.filter((b) => b.testId === "board-menu-button").length === 1,
+    `botones con testID board-menu-button: ${visibles.filter((b) => b.testId === "board-menu-button").length}` +
       ` | los demas controles CON testID: ${
-        visibles.filter((b) => b.testId && b.testId !== "board-states-button").map((b) => b.testId).join(", ") || "(ninguno)"
+        visibles.filter((b) => b.testId && b.testId !== "board-menu-button").map((b) => b.testId).join(", ") || "(ninguno)"
       }`,
   );
 
@@ -665,7 +701,15 @@ try {
   note("");
   note("=== 3. La puerta que si existe: la fila del tablero, en la pantalla del espacio ===");
 
-  await tab.goto(`${APP}/workspace/${ws}`);
+  for (let intento = 1; intento <= 3; intento += 1) {
+    try {
+      await tab.goto(`${APP}/workspace/${ws}`);
+      break;
+    } catch (e) {
+      if (intento === 3) throw e;
+      await sleep(2000);
+    }
+  }
 
   /*
     **El cajon se cierra antes de buscar la fila, y es un paso de verdad.**

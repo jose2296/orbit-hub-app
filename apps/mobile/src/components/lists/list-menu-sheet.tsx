@@ -31,6 +31,15 @@ export interface ListMenuSheetProps {
   folder: Folder | null;
   onClose: () => void;
   onDeleted?: () => void;
+  /**
+   * Open the board's states editor, **and only a board passes it.**
+   *
+   * This panel is the menu of every list in the app, and the columns are the one
+   * thing only a board has — so the row is drawn when this is passed and never
+   * otherwise, and no other screen can get a states row by accident. It is first
+   * and not last because on a board the columns are the thing being looked at.
+   */
+  onEditStates?: () => void;
 }
 
 /**
@@ -63,6 +72,7 @@ export function ListMenuSheet({
   folder,
   onClose,
   onDeleted,
+  onEditStates,
 }: ListMenuSheetProps) {
   /*
     `list` is **the last one, and not the one the caller is holding** — and that
@@ -200,6 +210,20 @@ export function ListMenuSheet({
   const options: SheetOption[] = useMemo(() => {
     if (!list) return [];
     return [
+      ...(onEditStates
+        ? [
+            {
+              key: "states",
+              label: t("board.editStates"),
+              icon: "options-outline" as const,
+              description: t("board.editStatesHint"),
+              onPress: () => {
+                onClose();
+                onEditStates();
+              },
+            },
+          ]
+        : []),
       {
         key: "rename",
         label: t("common.rename"),
@@ -292,7 +316,7 @@ export function ListMenuSheet({
         onPress: () => setPage("delete"),
       },
     ];
-  }, [list, pinned, layout, t, onClose, duplicateList, save]);
+  }, [list, pinned, layout, t, onClose, onEditStates, duplicateList, save]);
 
   if (!list) return null;
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BOARD_SCROLL_REST_SLACK,
   BOARD_SWIPE_DISTANCE,
   BOARD_SWIPE_VELOCITY,
   anchorableColumns,
+  columnForScrollEnd,
   maxTrackScroll,
   nextPageFor,
   parallaxPage,
@@ -711,5 +713,60 @@ describe('donde acaba el scroller, que no es donde pedia la columna', () => {
     // 283 - 283 = 0, que es lo que el scroller se va a mover de verdad.
     const adelantado = scrollTargetFor(1132, 1132, 283);
     expect(scrollTargetFor(283, adelantado, 283) - adelantado).toBe(0);
+  });
+});
+
+/**
+ * Que columna dice la pestana cuando el scroller se para solo.
+ *
+ * El gesto mueve la pestana con el tablero (`settle`/`asentarEn`), pero un scroll
+ * que el gesto no condujo —la rueda, un arrastre que empezo en diagonal— mueve el
+ * scroller sin mover la pestana. Esta funcion es el camino de vuelta, y estos
+ * tests son los que impiden que "simplifique" el recorte del final: sin el, cada
+ * parada en el maximo arrastraria la pestana a la ultima columna anclable,
+ * corrigiendo una eleccion que la persona hizo con un toque que no movio nada.
+ */
+describe('la columna donde se para el scroller', () => {
+  // Estrecho: una columna por pagina, offsets [0, 398, 796], maximo 796.
+  const offsets = [0, 398, 796];
+  const maximo = 796;
+
+  it('quedarse donde se estaba no mueve la pestana', () => {
+    expect(columnForScrollEnd(0, offsets, maximo, 0)).toBeNull();
+    expect(columnForScrollEnd(398, offsets, maximo, 1)).toBeNull();
+    // Y el punto de snap vale como el mismo sitio: un punto arriba o abajo es
+    // redondeo, no un viaje.
+    expect(columnForScrollEnd(BOARD_SCROLL_REST_SLACK, offsets, maximo, 0)).toBeNull();
+    expect(columnForScrollEnd(398 - BOARD_SCROLL_REST_SLACK, offsets, maximo, 1)).toBeNull();
+  });
+
+  it('parar en otra pagina mueve la pestana a esa columna', () => {
+    expect(columnForScrollEnd(398, offsets, maximo, 0)).toBe(1);
+    expect(columnForScrollEnd(796, offsets, maximo, 0)).toBe(2);
+    expect(columnForScrollEnd(0, offsets, maximo, 2)).toBe(0);
+    // A medio camino entre dos, la mas cercana: el snap ya decidio por nosotros
+    // y aqui solo se lee donde quedo.
+    expect(columnForScrollEnd(600, offsets, maximo, 0)).toBe(2);
+  });
+
+  it('al final, la pestana se queda en la columna que el scroller no alcanza', () => {
+    // Ancho: cinco columnas con offsets [0, 283, 566, 849, 1132] y maximo 283.
+    // La pestana en la quinta (indice 4) con el scroller en su maximo es una
+    // eleccion por toque, y parar ahi no la mueve.
+    const anchos = [0, 283, 566, 849, 1132];
+    expect(columnForScrollEnd(283, anchos, 283, 4)).toBeNull();
+    // Irse de verdad si: el scroller en 0 ya no ensena la quinta.
+    expect(columnForScrollEnd(0, anchos, 283, 4)).toBe(0);
+    // Y volver al maximo desde la primera nombra la ultima anclable, que es lo
+    // que el scroller puede ensenar.
+    expect(columnForScrollEnd(283, anchos, 283, 0)).toBe(1);
+  });
+
+  it('sin columnas o sin pestana valida se re-ancla a lo que se ve', () => {
+    expect(columnForScrollEnd(398, offsets, maximo, 9)).toBe(1);
+    expect(columnForScrollEnd(0, [], 0, 0)).toBe(0);
+    // Un scroller que informa basura no mueve la pestana a la basura: NaN se lee
+    // como cero, que es donde el scroller esta cuando nadie lo ha movido.
+    expect(columnForScrollEnd(Number.NaN, offsets, maximo, 0)).toBeNull();
   });
 });
