@@ -42,16 +42,17 @@ describe('createListPlan', () => {
     expect(plan.payload.folderId).toBeNull();
   });
 
-  it('una lista creada en una carpeta la conserva aunque no lleve emoji', () => {
+  it('una lista creada en una carpeta la conserva aunque no lleve icono', () => {
     const plan = createListPlan({ ...BASE, folderId: FOLDER });
 
     expect(plan.payload.folderId).toBe(FOLDER);
-    expect('emoji' in plan.payload).toBe(false);
+    expect('icon' in plan.payload).toBe(false);
   });
 
-  it('el emoji viaja cuando hay uno', () => {
-    const plan = createListPlan({ ...BASE, emoji: '🛒' });
+  it('el icono viaja cuando hay uno', () => {
+    const icon = { type: 'emoji', value: '🛒', color: 'auto' } as const;
+    const plan = createListPlan({ ...BASE, icon });
 
-    expect(plan.payload.emoji).toBe('🛒');
+    expect(plan.payload.icon).toEqual(icon);
   });
 });

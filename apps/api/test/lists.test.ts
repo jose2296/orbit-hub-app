@@ -107,6 +107,249 @@ describe('lists through sync', () => {
     }
   });
 
+  it('reads the states of a board back as they were sent', async () => {
+    // The server seeds nothing: the client mints the states and sends them, so
+    // what is checked here is the round trip, not a seeding that does not exist.
+    const states = [
+      { id: 's1', title: 'Backlog', color: 'neutral' },
+      { id: 's2', title: 'Ready', color: 'blue' },
+    ];
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+
+    const response = await api.get(`/lists/${listId}`, user.accessToken);
+    expect(response.body.data.states).toEqual(states);
+
+    // The kind is the other half of the round trip, and it is the one that can go
+    // without anybody noticing: `'board'` is not in the enum on the row, it is
+    // `LIST_KINDS` deciding whether to keep it, and if that list ever loses it the
+    // sanitiser degrades the kind to `'tasks'` — silently, because an unknown kind
+    // is a fallback and not a rejection — while `states` comes back exactly the
+    // same. The suite would stay green with every board in it turned into a list
+    // of tasks.
+    expect(response.body.data.kind).toBe('board');
+  });
+
+  it('stores a hex state colour the person chose', async () => {
+    // Since the free picker, a column colour is a palette key or `#rrggbb`: the
+    // server takes the hex the contract takes, and the pull hands it back as it
+    // came.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Hex');
+    const states = [{ id: 's1', title: 'Backlog', color: '#a3e635' }];
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+
+    const pull = await api.post('/sync/pull', { cursor: null, limit: 100 }, user.accessToken);
+    const row = (pull.body.data.changes as { entity: string; record: { id: string; states: unknown } }[])
+      .find((change) => change.entity === 'list' && change.record.id === listId);
+    expect(row?.record.states).toEqual(states);
+  });
+
+  it('stores an empty state id as no state at all', async () => {
+    // The floor the contract asks for and a ceiling alone does not give:
+    // `boardStateSchema.id` is `min(1).max(36)` so that an empty string is a
+    // rejected id rather than one that matches no state. An empty string is a
+    // perfectly legal `varchar`, so without the floor it was stored as it came,
+    // and the two disagreed on exactly the value they exist to catch.
+    //
+    // It reads back as null — which is the answer the contract gives it, and the
+    // one "the first column" — and not as the empty string it was sent as.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Sin columna');
+    const states = [{ id: 's1', title: 'Backlog', color: 'neutral' }];
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+    const itemId = await createItem(user, listId, { title: 'Huerfana', stateId: '' });
+
+    const response = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const item = response.body.data.items.find((row: { id: string }) => row.id === itemId);
+
+    expect(item.stateId).toBeNull();
+    expect(listItemsResponseSchema.safeParse(response.body.data).success).toBe(true);
+  });
+
+  it('rejects a task pointing at a column its list does not have', async () => {
+    // The server cannot leave a task in a limbo no screen knows how to draw, and
+    // the refusal has to be a refusal: not an `applied` that changed nothing,
+    // which is the scar `SYNC_WRITABLE_FIELDS` leaves behind. Reading the row back
+    // afterwards is what proves the guard ran *before* the insert rather than
+    // rejecting an operation that had already written the row.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [{ id: 's1', title: 'Backlog', color: 'neutral' }],
+    });
+    const itemId = randomUUID();
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'create',
+        entityId: itemId,
+        payload: { listId, title: 'Huerfana', stateId: 'no-existe' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('rejected');
+    expect(response.body.data.results[0].error).toContain('An item needs a state its list has');
+    const items = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(items.body.data.items.map((row: { id: string }) => row.id)).not.toContain(itemId);
+  });
+
+  it('rejects moving a task to a column its list does not have', async () => {
+    // The other half of the invariant, on the path that is easy to leave out:
+    // the create is refused where the row does not exist yet, and the update is
+    // where an id the list never had would arrive from a device that had it.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [{ id: 's1', title: 'Backlog', color: 'neutral' }],
+    });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    const before = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const version = before.body.data.items.find((row: { id: string }) => row.id === itemId).version;
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: version,
+        base: { stateId: 's1' },
+        payload: { stateId: 's2' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('rejected');
+    expect(response.body.data.results[0].error).toContain('An item needs a state its list has');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(after.body.data.items.find((row: { id: string }) => row.id === itemId).stateId).toBe('s1');
+  });
+
+  it('moves a task from one column to another', async () => {
+    // Nothing else in this file says the move is allowed: both refusal tests pass
+    // just as well against a guard that refuses every column there is, because
+    // they never try one that exists.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [
+        { id: 's1', title: 'Backlog', color: 'neutral' },
+        { id: 's2', title: 'Ready', color: 'blue' },
+      ],
+    });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    const before = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const version = before.body.data.items.find((row: { id: string }) => row.id === itemId).version;
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: version,
+        base: { stateId: 's1' },
+        payload: { stateId: 's2' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(after.body.data.items.find((row: { id: string }) => row.id === itemId).stateId).toBe('s2');
+  });
+
+  it('reads an empty state on an update as no state at all', async () => {
+    // The guard has to read the payload that gets written and not the one that
+    // arrived: `sanitisePayload` turns `''` into the null that `isKnownStateId`
+    // accepts, and the raw string matches no column, so the same update is
+    // refused or applied depending on where it is read.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [{ id: 's1', title: 'Backlog', color: 'neutral' }],
+    });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    const before = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const version = before.body.data.items.find((row: { id: string }) => row.id === itemId).version;
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: version,
+        base: { stateId: 's1' },
+        payload: { stateId: '' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    expect(after.body.data.items.find((row: { id: string }) => row.id === itemId).stateId).toBeNull();
+  });
+
+  it('renames a task whose column is gone without touching the column', async () => {
+    // The guard only reads the state when the payload carries one, and this is the
+    // test that says so. A task can be left pointing at a column another device
+    // deleted, and from then on every edit to it — the title, an icon, its
+    // position — is an edit that does not mention the column. Checking the stored
+    // column unconditionally would make such a task uneditable: the only way out
+    // would be the exact write being refused, and nobody could retitle a card.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Tablero');
+    const states = [{ id: 's1', title: 'Backlog', color: 'neutral' }];
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+    const itemId = await createItem(user, listId, { title: 'Tarjeta', stateId: 's1' });
+
+    // The column disappears from another device: the task keeps pointing at it.
+    const before = await api.get(`/lists/${listId}`, user.accessToken);
+    await sync(user, [
+      {
+        entity: 'list',
+        kind: 'update',
+        entityId: listId,
+        baseVersion: before.body.data.version,
+        base: { states },
+        payload: { states: [] },
+      },
+    ]);
+
+    const items = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const stored = items.body.data.items.find((row: { id: string }) => row.id === itemId);
+    expect(stored.stateId).toBe('s1');
+
+    const response = await sync(user, [
+      {
+        entity: 'list_item',
+        kind: 'update',
+        entityId: itemId,
+        baseVersion: stored.version,
+        base: { title: 'Tarjeta' },
+        payload: { title: 'Tarjeta renombrada' },
+      },
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+
+    const after = await api.get(`/lists/${listId}/items`, user.accessToken);
+    const renamed = after.body.data.items.find((row: { id: string }) => row.id === itemId);
+    expect(renamed.title).toBe('Tarjeta renombrada');
+    // Untouched, and still a column the list does not have: the guard reads the
+    // payload and not the row, so the orphan survives until a client that knows
+    // about the column writes one.
+    expect(renamed.stateId).toBe('s1');
+  });
+
   it('rejects a list without a workspace', async () => {
     const user = await createVerifiedUser(api);
     const response = await sync(user, [
@@ -353,6 +596,62 @@ describe('GET /search', () => {
 
     const byPlayas = await api.get('/search?q=playas', user.accessToken);
     expect(byPlayas.body.data.items[0].title).toBe('Playas 2026');
+  });
+
+  it('brings the icon of every hit, and null where there is none', async () => {
+    // The results are recognised by their picture: a search that cannot show it
+    // is a list you have to open one by one.
+    const user = await createVerifiedUser(api);
+    const workspaceId = randomUUID();
+    const folderId = randomUUID();
+
+    await sync(user, [
+      {
+        entity: 'workspace',
+        kind: 'create',
+        entityId: workspaceId,
+        payload: {
+          name: 'Iconos',
+          icon: { type: 'emoji', value: '🏠', color: 'auto' },
+        },
+      },
+      {
+        entity: 'folder',
+        kind: 'create',
+        entityId: folderId,
+        payload: {
+          workspaceId,
+          name: 'Iconos carpeta',
+          icon: { type: 'vector', value: 'carpeta', library: 'ionicons', style: 'fill', color: 'blue' },
+        },
+      },
+    ]);
+
+    await createList(user, workspaceId, {
+      title: 'Iconos lista',
+      icon: { type: 'emoji', value: '🛒', color: 'auto' },
+    });
+
+    const response = await api.get('/search?q=iconos', user.accessToken);
+    expect(response.status).toBe(200);
+    const hits = response.body.data.items as { scope: string; icon: unknown }[];
+    expect(hits.find((row) => row.scope === 'workspace')?.icon).toEqual({
+      type: 'emoji',
+      value: '🏠',
+      color: 'auto',
+    });
+    expect(hits.find((row) => row.scope === 'folder')?.icon).toEqual({
+      type: 'vector',
+      value: 'carpeta',
+      library: 'ionicons',
+      style: 'fill',
+      color: 'blue',
+    });
+    expect(hits.find((row) => row.scope === 'list')?.icon).toEqual({
+      type: 'emoji',
+      value: '🛒',
+      color: 'auto',
+    });
   });
 
   it('searches items and points at their list', async () => {

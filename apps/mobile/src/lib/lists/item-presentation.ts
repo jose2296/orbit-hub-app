@@ -1,16 +1,6 @@
-import { ITEM_ICONS } from "@orbit-hub/contracts";
-import type { ItemIcon, ListItem, ListOrderMode } from "@orbit-hub/contracts";
+import type { ListItem, ListOrderMode, Priority } from "@orbit-hub/contracts";
 
-
-/** Whether a value is an icon the app knows how to draw. */
-export function isItemIcon(
-  value: string | null | undefined,
-): value is ItemIcon {
-  return (
-    typeof value === "string" &&
-    (ITEM_ICONS as readonly string[]).includes(value)
-  );
-}
+import type { BadgeTone } from "@/components/ui/badge";
 
 /**
  * How a list is read.
@@ -72,6 +62,28 @@ export function orderItems(items: ListItem[], mode: ListOrderMode): ListItem[] {
 }
 
 const PRIORITY_RANK = { none: 0, low: 1, medium: 2, high: 3 } as const;
+
+/**
+ * The tone each urgency wears, and **one map for the whole app**.
+ *
+ * **Estaba dentro de `[listId].tsx`, que es donde se ve que sobra.** El boton que
+ * elige la prioridad en la hoja de la tarea lo dibujaba con `accent` para los cuatro
+ * valores, asi que los cuatro botones salian del mismo color y no habia forma de
+ * saber cual estaba elegido antes de pulsarlo: se elegia a ciegas y se confirmaba al
+ * salir. Ademas el `tone` de la insignia de la fila lo tenia el otro fichero, asi que
+ * **el mismo dato tenia dos Copies**: cambiar el color de una prioridad era cambiarlo
+ * en dos sitios y acordarse de los dos.
+ *
+ * Los cuatro tonos son los que ya tenia la insignia de la fila, y por eso el boton de
+ * la hoja **pinta lo mismo que va a verse despues** en la lista. Ese es el punto: elegir
+ * aqui y ver ahi tiene que ser la misma cosa, o la eleccion se hace a ciegas.
+ */
+export const PRIORITY_TONE: Record<Priority, BadgeTone> = {
+  none: "neutral",
+  low: "info",
+  medium: "warning",
+  high: "danger",
+};
 
 /**
  * When a thing came out, as a number, or **`null` when nobody said**.

@@ -1,39 +1,31 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
-import type {
-  ListItem,
-  ListOrderMode,
-  Priority,
-  TagColors,
-} from "@orbit-hub/contracts";
+import type { ListItem, ListOrderMode } from "@orbit-hub/contracts";
 
 import { releaseSharedCover } from "@/lib/media/shared-cover";
 import { bottomCluster } from "@/lib/layout/bottom-cluster";
 import { normaliseToCompare } from "@/lib/lists/done-match";
 import { Badge } from "@/components/ui/badge";
-import type { IconName } from "@/components/ui/button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ItemIcon } from "@/components/lists/icon-picker";
 import { MediaListScreen } from "@/components/media/media-list-screen";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { FiltersBody } from "@/components/lists/item-picker";
 import { ListControls } from "@/components/lists/list-controls";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
-import { TagChip } from "@/components/lists/tag-chip";
+import { TaskRow } from "@/components/lists/task-row";
 import { Screen } from "@/components/ui/screen";
 import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { TextField } from "@/components/ui/text-field";
 import { ReorderSheet } from "@/components/ui/reorder-sheet";
-import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useListItems, useLists } from "@/hooks/use-lists";
@@ -49,6 +41,7 @@ import {
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
+import { routeForList } from "@/lib/lists/route";
 import { providerRefOf } from "@/lib/lists/provider-ref";
 import { useTheme } from "@/theme";
 
@@ -62,31 +55,6 @@ const ORDER_MODES: ListOrderMode[] = [
   "updated_desc",
   "priority",
 ];
-
-const PRIORITY_TONE = {
-  none: "neutral",
-  low: "info",
-  medium: "warning",
-  high: "danger",
-} as const;
-
-/**
- * The glyph each urgency carries in a row, next to the colour.
- *
- * Three shapes that escalate rather than three that are merely different: a ring,
- * a ring with a bang, and a triangle. At ten points the colour is doing half the
- * work — a badge on its own line under a title is small, and two reds at ten
- * points are one red — so the shape is what still says *how* urgent when the
- * colours are not being compared side by side.
- *
- * No `none`: a task with no urgency draws no badge at all, so there is nothing to
- * put a glyph on.
- */
-const PRIORITY_ICON: Record<Exclude<Priority, "none">, IconName> = {
-  low: "remove-circle-outline",
-  medium: "alert-circle-outline",
-  high: "warning",
-};
 
 export default function ListScreen() {
 
@@ -119,6 +87,32 @@ export default function ListScreen() {
     () => lists.find((item) => item.id === listId) ?? null,
     [lists, listId],
   );
+
+  /**
+   * A board does not open here, and this is the link that closes the chain.
+   *
+   * `routeForList` sends boards to `/board/:id`, and it is called from three places
+   * that do not have the kind of the list to hand —search, the content of a space
+   * and the catalogue all write `list?.kind ?? 'tasks'`— so the fallback puts all
+   * three on `/list/:id`. This screen resolves the list out of the **same**
+   * `useLists({})` cache those callers read, which is re-read on every notification
+   * of the local store, so the moment the list arrives this runs and sends the
+   * person to the board.
+   *
+   * **Both links are needed and neither one is enough.** Without this one, those
+   * three callers land on the task screen of a board and nothing fails: it is close
+   * enough to the board not to look broken, and no test of a rendered screen would
+   * notice — this suite paints nothing. Without the other one, a link written by
+   * hand does the same. If this redirect is ever removed, **those three callers
+   * change at the same time**, not one of them.
+   *
+   * `replace` and not `push`, because a push would leave this screen in the stack
+   * under the board, and pressing back would come back here, which would send the
+   * person to the board again: a back button that appears to do nothing.
+   */
+  useEffect(() => {
+    if (list?.kind === "board") router.replace(routeForList(list));
+  }, [list, router]);
   const { workspaces } = useWorkspaces();
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === list?.workspaceId) ?? null,
@@ -394,7 +388,7 @@ export default function ListScreen() {
 
   // The header carries the name of the list, so the screen only says what kind
   // of list it is and where it lives.
-  useScreenTitle(list?.title ?? t("lists.notFound"));
+  useScreenTitle(list?.title ?? t("lists.notFound"), list?.icon ?? null);
 
   /*
    * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.
@@ -500,6 +494,15 @@ export default function ListScreen() {
     }
     ir();
   }
+
+  /*
+    While the redirect travels. Nothing of this screen's own, because a list of
+    tasks flashing for a frame before the board arrives is a flash of the wrong
+    screen — and this branch is below every hook on purpose, which is the way this
+    app has already been bitten: "Rendered more hooks than during the previous
+    render" is a crash the typecheck accepts.
+  */
+  if (list?.kind === "board") return null;
 
   if (!listId) {
     return (
@@ -1077,16 +1080,17 @@ export default function ListScreen() {
         tagColors={list?.tagColors ?? {}}
         onTagColor={(tag, color) =>
           /*
-           * `setTagColor` plans from **this** `list`, and not from the cache it
-           * has just written, so two colour writes before the next render would
-           * both plan from the same map and the second one would quietly eat the
-           * first. The sheet keeps a second tap from arriving while a write is in
-           * flight, so a tap is one write of one label; the promise comes **back**
-           * rather than being dropped with a `void`, because the sheet waits for it
-           * before taking the picker down — a picker unmounted on the tap has
-           * nothing left on screen to show the colour that was just chosen.
+           * `setTagColor` plans from the cache it is about to write, not from
+           * **this** `list`, so two colour writes before the next render plan
+           * from two different maps and the second keeps the first. That is what
+           * lets the sheet keep its picker open while colours are chosen: a tap
+           * is still one write of one label, and the promise comes **back**
+           * rather than being dropped with a `void` — but nothing waits for it
+           * to take the picker down any more. The picker stays, the pill follows
+           * every tap through the sheet's optimistic map, and closing is the
+           * person's own press (the pencil, or "close"), not the write's.
            */
-          list ? setTagColor(list, tag, color) : undefined
+          list ? setTagColor(list.id, tag, color) : undefined
         }
         onClose={() => setEditing(null)}
       />
@@ -1102,330 +1106,6 @@ const COMPLETED_HEADING_KEY = "completed-heading";
 
 function entryKey(entry: ListEntry): string {
   return entry.kind === "row" ? entry.item.id : COMPLETED_HEADING_KEY;
-}
-
-/** One task row, shared by the pending and the completed sections. */
-function TaskRow({
-  item,
-  tagColors,
-  onToggle,
-  onEdit,
-  onIcon,
-}: {
-  item: import("@orbit-hub/contracts").ListItem;
-  /**
-   * The colours of **this** list, handed down from the screen's `list`.
-   *
-   * A prop and not a lookup: "Mercadona" is a word any list can use, and two
-   * lists in the same app can hold it in two colours. A row that went and found
-   * the colour itself — from a module map, from the item, from a hook — would
-   * paint both of them the same one, and the only way to know which list a row
-   * belongs to is to be told.
-   */
-  tagColors: TagColors;
-  onToggle: () => void;
-  onEdit: () => void;
-  onIcon: () => void;
-}) {
-  const theme = useTheme();
-  const t = useTranslation();
-
-  /**
-   * The whole of a name the user wrote, **on this row's own press**.
-   *
-   * A `Pressable` around the name would take the gesture away from the row on a
-   * phone and the row would stop opening the item — a bug the web cannot show,
-   * because a click bubbles there and both fire. See `useLongPressText`.
-   */
-  const nombreLargo = useLongPressText(item.title);
-
-  const pistaNombre = useA11yHint(t("itemEdit.subtitle"));
-
-  return (
-    <View
-      testID={`item-row-${item.id}`}
-      style={[
-        styles.item,
-        {
-          gap: theme.spacing.md,
-          padding: theme.spacing.lg,
-// Sin `paddingRight` para el asa de arrastrar: **el asa ya no esta.**
-          // Reserve 28 pt a la derecha durante semanas para algo que no se dibuja,
-          // y con el icono en la linea del titulo ese hueco era ademas lo que
-          // empujaba el nombre hacia el borde. Lo que cede ahora cuando el nombre
-          // es largo es el `flexShrink: 1` de `styles.nombre`.
-        },
-      ]}
-    >
-      {/*
-        The column, and it has two children that take part in layout: the line of
-        the title and the line of the labels.
-
-        The `gap` is the distance between those two lines, and **it is
-        `spacing.md`, 12 points, where it was 2 until now.** Two points was a
-        typographic leading, not a separation: the line of the labels sat almost
-        touching the title above it and read as part of the same paragraph, which
-        is the one thing a second line of metadata must not do. At 12 it is the
-        row's own `spacing.md`, so the distance from the title to its labels is
-        the same distance the row uses everywhere else, and a row with labels is
-        two lines that read as two lines.
-
-        Two children are still not counted by it and never were: `nombreLargo.sheet`
-        and `pistaNombre.node`. The sheet is a `Modal`, which on web is a portal
-        out of this box entirely, and the hint is `position: absolute`, and a child
-        in either of those is not a flex item for `gap` to put anything between.
-
-        **The checkbox used to be out here, a sibling of this column.** It was
-        centred by `styles.item`'s `alignItems: "center"` against the *whole row*,
-        and on a task with a badge or labels that put it below the line of the title
-        — measured at 12 points, because it was being centred on two lines while the
-        title was on one. Two rows that looked alike had the checkbox at two
-        heights, and the thing you tick was not next to the thing you are reading.
-        It is now inside the line of the title, and `styles.titulo`'s own
-        `alignItems: "center"` centres the checkbox, the icon and the title on
-        **that** line, and a title that wraps to two lines takes the checkbox with
-        it instead of leaving it at the top.
-
-        Which is why the line of the labels below is indented: see `styles.meta`. */}
-      <View style={[styles.flex, { gap: theme.spacing.md }]}>
-        {/*
-          The icon and the name, **on one line**, and that line is the whole fix.
-
-          The icon used to be a **sibling of this column**, and `styles.item` has
-          `alignItems: "center"`, so it centred against *the title plus whatever is
-          under it*: on a task with a badge or labels the icon sat below the title
-          and on a task with neither it sat centred, and two rows that look alike
-          had their icon at two heights with no reason for it. Inside the line of
-          the title it is centred on **that** line, and the badge and the labels go
-          to a line of their own, so nothing under the title can move it again.
-
-          The icon is still to the right of the checkbox and not on the far edge
-          of the row: out there it read as a picture of the list instead of the
-          icon of **this** row, and with the checkbox beside it you can tell at a
-          glance what you are going to tick and what you have ticked.
-
-          And with no icon **nothing is drawn**: no glyph and no reserved space. The
-          `+` that used to sit here when there was no icon is gone — it said "add an
-          icon" on almost every task of every list, and it said it in the place
-          where the name should be. What replaced it is nothing, and an empty gap
-          is not nothing either: the name would start glued to the checkbox and the
-          row would fill with air, which is a larger empty space. So the titles of
-          the rows with an icon start a few points further right than the ones
-          without, which has been asked for twice.
-
-          And that is why this is not even an empty `View`: an invisible target the
-          width of a finger next to every name without an icon would open the icon
-          picker on a tap that looked like it was on the name.
-
-          The `gap` is the row's own `spacing.md` and it is not a new number: the
-          icon has not moved, it has moved its parent.
-
-          Y el `testID` es para poder distinguir esta línea de la columna en una
-          medición, que es lo único para lo que está: `nombre.parentElement` vale
-          para las dos —en el árbol de antes esta línea **era** la columna— y medir
-          contra lo que resulta por casualidad mide lo que se quiera. */}
-        <View
-          testID={`item-title-line-${item.id}`}
-          style={[styles.titulo, { gap: theme.spacing.md }]}
-        >
-          {/*
-            The tick, and it is **here and not beside the column** — see the
-            comment on the column for what it cost to have it out there. It is
-            first, and the icon after it: the order is tick, picture, name, which
-            is the order they are read in.
-            It is the only part of the line that is not the icon or the name, and
-            it keeps `label=""`, which is not the same as having no label: the
-            label is drawn even when empty, it just has `flex: 1`, and an empty
-            one took the whole row once. See `styles.label` in `checkbox.tsx`. */}
-          <Checkbox checked={item.completed} onToggle={onToggle} label="" />
-          {/* The icon is its own target: it is a picture of what to buy, and
-              pressing it opens the pictures rather than the row. */}
-          {item.icon ? (
-            <Pressable
-              testID={`item-icon-${item.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={t("icons.ofItem", { name: item.title })}
-              hitSlop={8}
-              onPress={onIcon}
-              style={styles.iconSlot}
-            >
-              <ItemIcon
-                icon={item.icon}
-                style={item.iconStyle}
-                color={item.iconColor}
-              />
-            </Pressable>
-          ) : null}
-
-          {/* The name opens the row. It used to be wired to the delete: one tap
-              and the thing you were reading was gone, with nothing said and
-              nothing to undo.
-
-              It is the press and not the row behind it, so this one box carries both
-              gestures: a tap opens the item, a long one opens the whole name. */}
-          <Pressable
-            onPress={onEdit}
-            onLongPress={nombreLargo.onLongPress}
-            accessibilityRole="button"
-            accessibilityLabel={item.title}
-            {...pistaNombre.props}
-            style={styles.nombre}
-          >
-            <AppText
-              variant="body"
-              tone={item.completed ? "subtle" : "default"}
-              style={item.completed ? styles.strike : undefined}
-              numberOfLines={2}
-            >
-              {item.title}
-            </AppText>
-          </Pressable>
-        </View>
-        {nombreLargo.sheet}
-        {pistaNombre.node}
-
-        {/* The urgency and the labels, **on the same line**, and **that is the
-            second line of the column** — drawn only when there is a badge or at
-            least one label, so a task with neither is a single line. It is a line
-            of its own, and not part of the line of the title, because the icon
-            shares the line of the title and nothing that is under it may move it:
-            while the two were one column centred together, the icon went down with
-            the labels.
-
-            The urgency used to be on the right edge of the row, in the same column
-            as the drag handle, where it read as part of the row's trailing
-            furniture — and a column that lines the priorities of several rows up
-            into is a column that means nothing. It is a property of the task, so
-            it goes with the task.
-
-            One line and not one each: a row with a priority *and* two labels was
-            three lines tall, and the middle one held a single word in a pill. A
-            task list is read by scanning down the names, and three lines per row is
-            a list where only six names fit on a phone. The badge goes first — it
-            is the coarser of the two, and the labels are what you are looking for
-            when you are looking for a shop.
-
-            The badge opens the sheet, like the name above, **and it does not change
-            the urgency from here.** Those are two different things and the row is on
-            the second one: changing the urgency writes a value, and a value written
-            in two places is a value the two places can disagree about — so it
-            belongs to the sheet alone, which is the only place it can be set and
-            shows it as four things you can see. Opening the task writes nothing at
-            all, so there is nothing to disagree about: it is the same `onEdit` the
-            name has, and a row whose two halves open two different things is a row
-            you have to read before touching.
-
-            And it is compact, with a glyph: at this size the colour alone is not
-            enough to sort a list by. */}
-        {item.priority !== "none" || item.tags.length > 0 ? (
-          <View
-            style={[
-              styles.meta,
-              {
-                gap: theme.spacing.xs,
-                /*
-                 * The indent, and it is the price of the checkbox having moved
-                 * into the line of the title: this line is a child of the column,
-                 * and the column now starts **at the checkbox**, so without this
-                 * the badges would start 22 points and a gap to the left of where
-                 * they have always started, hanging out under the tick.
-                 *
-                 * The box plus **one** gap, not two, and that is not an oversight:
-                 * it lines this line up with the name on a task with no icon, and
-                 * with the icon on one that has it — which is where it already
-                 * was, because the column used to begin after the checkbox. So
-                 * this keeps the alignment that was measured rather than picking
-                 * a new one, and a task with an icon and a task without still line
-                 * their labels up the same way they always have.
-                 */
-                paddingLeft: CHECKBOX_BOX_SIZE + theme.spacing.md,
-              },
-            ]}
-          >
-            {item.priority !== "none" ? (
-              <Badge
-                label={t(`items.priority.${item.priority}` as never)}
-                tone={PRIORITY_TONE[item.priority]}
-                icon={PRIORITY_ICON[item.priority]}
-                size="compact"
-                onPress={onEdit}
-                hintProps={pistaNombre.props}
-              />
-            ) : null}
-
-            {/* The labels, one pill each, and only the ones there are. A row used
-                to say "+ Label" under every name, which is a second place to add
-                the same thing the item panel already does, in a row with no room
-                to say it in.
-
-                It used to be one string — "Mercadona · Panadería", joined, in the
-                accent colour — and a string has nowhere to put a colour that
-                belongs to one of its words. A label is a per-list thing with a
-                per-list colour, so it has to be a box: the pill is the same one
-                the task sheet draws, in the same colour, for the same reason.
-
-                And the pill opens the sheet too, with the same `onEdit`: the label
-                is the other half of what this row is about, and a row where the
-                name opens the task and the labels are decoration is a row you tap
-                the wrong part of. Same reason as the badge, same limit: it opens the
-                task and it does not change anything.
-
-                **The two carry `hintProps={pistaNombre.props}` — the name's own hint,
-                handed over, not a sentence of their own.** Every control of this row
-                opens the same sheet, so the sentence that says so is written **once**,
-                as the node `pistaNombre.node` already renders next to the name, y
-                todos apuntan a ese nodo. Medido en una fila con insignia y dos
-                pastillas: **cuatro** `<button>` con `role="button"`, **un** nodo
-                `pista-10` y cuatro `aria-describedby` apuntando a él. Varias copias
-                de «Toca para cambiarlo» serían las mismas palabras varias veces en un
-                lector de pantalla, y que varios referencien un id es justo para eso.
-
-                **Y como prop y no como un spread `{...pistaNombre.props}`.** Eso
-                soltaría `aria-describedby` en lo alto de `<Badge>` y de `<TagChip>`,
-                que no aceptan props sueltos: se lo comen y no llega a nada. Medido:
-                con el spread, un solo elemento de la fila quedaba apuntado a la
-                pista —el nombre— y las pastillas seguían sin decir qué hacen.
-
-                **And the text is never `theme.colors.text`, and there is no case in
-                which it is.** The fill is the label's own colour mixed into the
-                surface, and the text is derived from the label's own colour until it
-                can be read on that fill: it darkens, or it lightens, and it does not
-                fall back to a colour of the theme's. Which means **the colour you
-                recognise as the label's is the fill, not the writing on it** — the
-                text is the closest tone to that colour that still reads, and that is
-                a different tone. The arithmetic is in `@/lib/lists/tag-colors`, and
-                **the twelve hexes it produces are pinned in
-                `apps/mobile/test/tag-colors.test.ts`**, in
-                `los doce colores de la paleta salen exactamente en estos hex` — that
-                is the table to look at, and the one `tag-colors.ts` names itself.
-
-                Y se reparten en varias lineas en vez de cortarse, que es lo que hace
-                el `flexWrap` de `styles.meta`: una pastilla cortada por la mitad es
-                peor que una linea mas, porque el color va en la pastilla y una
-                pastilla a medio camino tiene el color a medio camino y se lee como
-                otro color. La geometria de como se reparten esta medida y escrita en
-                `docs/roadmap.md`.
-
-                Y lo unico que esta fila decide **de como se mide** una pastilla es
-                `styles.metaTag`: el color, el relleno y el texto los pone el
-                componente, y el toque lo pone la fila igual que en el nombre. Su
-                comentario dice para que es. */}
-            {item.tags.map((tag) => (
-              <TagChip
-                key={tag}
-                tag={tag}
-                colors={tagColors}
-                size="compact"
-                style={styles.metaTag}
-                onPress={onEdit}
-                hintProps={pistaNombre.props}
-              />
-            ))}
-          </View>
-        ) : null}
-      </View>
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({
@@ -1499,102 +1179,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
   },
-  /*
-   * **Un solo hijo flex: la columna.** Por eso aqui no hay `alignItems`, y antes de
-   * que `main` moviera la casilla dentro de la linea del titulo (`81beddc`) habia
-   * dos — la casilla y la columna — y `alignItems: "center"` centraba la casilla
-   * contra la fila entera en vez de contra la linea del titulo.
-   *
-   * Por lo tanto: #20 lo arreglo `main`, no esta rama. Aqui solo queda el `flexDirection`.
-   */
-  item: {
-    flexDirection: "row",
-  },
-  /**
-   * La linea del icono y del nombre, y **`alignItems: "center"` aqui es el arreglo**.
-   *
-   * El icono es hijo de esta linea, no hermano de la columna: asi se centra contra
-   * la linea del titulo y no contra el titulo mas lo que haya debajo. Antes lo
-   * centraba el `alignItems: "center"` de `styles.item` contra las dos lineas
-   * juntas, y por eso una fila con insignia lo tenia mas abajo que otra que no la
-   * tenia.
-   *
-   * Y el `flexShrink` va en el nombre y no aqui, y porque **esta linea es ahora una
-   * fila y antes no lo era**: `react-native-web@0.21.2` pone `flexShrink: 0` en
-   * todas sus `View` (`node_modules/react-native-web/dist/exports/View/index.js`,
-   * `view$raw`), y en una columna la caja del nombre se estiraba al ancho de la
-   * columna mientras que en una fila con `flexShrink: 0` se queda con su ancho de
-   * contenido y empuja el resto hacia la derecha. El `minWidth: 0` de `styles.flex`
-   * sigue haciendo lo que hacia —que la columna pueda encogerse— y el
-   * `numberOfLines={2}` del nombre sigue poniendo el tope de dos lineas. El
-   * comentario de `styles.nombre` lo cuenta entero, porque es su historia.
-   */
-  titulo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  /**
-   * La segunda linea de la columna: la insignia de urgencia y las etiquetas, bajo
-   * el nombre.
-   *
-   * Y no lleva `flexGrow`, y la razon es mas corta de lo que parece: **una caja
-   * hermana no puede comerse el `gap` de su columna.** El `gap` va entre hijos, y
-   * los dos hijos de aqui —esta linea y la del nombre— tienen su alto por su cuenta,
-   * de modo que un nombre de dos lineas no se come nada: la separacion es la que
-   * lleva la columna —`spacing.md`, puesto en la linea de arriba y no en un estilo—
-   * y las pastillas van eso mismo mas abajo, ni un punto mas ni uno menos.
-   *
-   * Lo que si haria un `flexGrow` es repartir el alto sobrante entre las dos lineas
-   * en vez de dejar el hueco al final de la columna, y repartir en una columna con
-   * hueco al final es exactamente la disposicion que se pidio quitar. Asi que
-   * la decision es "no", y no hace falta mas historia que esa.
-   */
-  meta: {
-    flexDirection: "row",
-    /*
-     * Kept, and **none of the credit for it is the pill's.**
-     *
-     * `TagChip` and `Badge` both carry `alignSelf: "flex-start"`, and a child's
-     * `align-self` wins over the row's `alignItems` — the rule
-     * `workspace-color-picker.tsx` verified in a browser, on its `columnaPreview`,
-     * where changing the row changed nothing. Those two are the only children this
-     * style has, so today `alignItems` here governs **nothing**: neither the pill
-     * nor the badge is centred by it, and neither is stopped from stretching by it
-     * either. Each of them says that about itself.
-     *
-     * So it stays for the next child that arrives without an `alignSelf` of its
-     * own, which is centred instead of stretched down the whole line; and because
-     * it is the same `alignItems: "center"` as `styles.row` in the task sheet, so
-     * the two lines of pills in this feature are built the same way.
-     */
-    alignItems: "center",
-    /*
-     * So the pills go under each other instead of being made narrower. They wrap,
-     * they are never cut: with `flexWrap` the row measures every pill at its own
-     * width and moves the ones that do not fit onto the next line, which is the
-     * only arrangement in which a pill is still the colour it was chosen to be.
-     */
-    flexWrap: "wrap",
-  },
-  /**
-   * And one label can still be wider than the whole line.
-   *
-   * The `flexWrap` above is already what saves the badge: a row with twenty labels
-   * puts them on further lines rather than pushing the badge off the right edge.
-   * So this is not what keeps the badge whole, and it should not be described as
-   * such. It is the one label with no other line to go to — there is nowhere for
-   * it to wrap to — and without a `flexShrink` it would hang off the edge and be
-   * cut in half. With it the pill narrows to the row and the label wraps *inside*
-   * the pill, which is the whole pill and its whole colour.
-   *
-   * On the pill and not on a box around it: a wrapper that shrinks while the pill
-   * inside it does not is an overflow waiting to happen. `TagChip` takes a `style`
-   * for exactly this, and the badge is left alone — it is the one thing on that
-   * line that must not be squeezed, because it is what the row is sorted by.
-   */
-  metaTag: {
-    flexShrink: 1,
-  },
   createButton: {
     position: "absolute",
     width: 56,
@@ -1609,10 +1193,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
   },
-  iconSlot: {
-    width: 24,
-    alignItems: "center",
-  },
   reorder: {
     flexDirection: "row",
     alignItems: "center",
@@ -1621,58 +1201,19 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   /**
-* The pressable that wraps the title. It is **not** a flex child that divides
-   * the row, and the reason is not the one this comment used to give.
+   * The one box on this screen that grows, and it grows for **the header**: the
+   * `kindLabel` under the name of the list takes what `headerTop` has left.
    *
-   * Symptom this was written for: on Android the row showed its checkbox, its
-   * icon and the badge — every one of them styled — and **no title at all**, and
-   * an empty `{}` here was the fix that was believed to have done it. It did not
-   * fix it: `{}` is not a style, it changes nothing, and the title kept vanishing.
-   *
-   * **The cause was next door, not here.** The `Checkbox` to the left is given
-   * `label=""`, and it drew that empty label as an `AppText` with `flex: 1`. In
-   * Yoga the grow resolves against the space available to the whole checkbox,
-   * which is the rest of this row, so the checkbox grew to the row's full width —
-   * measured at 755 of the row's 754 points — and `styles.flex`, the title column
-   * sharing that row, got zero. Nothing to paint, and the badge crushed beside it.
-   * An empty element measures zero in a browser however it is styled, which is why
-   * the web was right and the phone was not.
-   *
-* So the fix is in `checkbox.tsx`, which no longer draws a label it was not
-   * given, and nothing here had to change for it to work. What is left here is
-   * a note not to "tidy" this into a `flex: 1`: the title is as long as it is,
-   * and a box told how to divide a space is a box that decides the title's width
-   * for it.
-   *
-   * **`flexShrink` below is a different bug and arrived separately.** The
-   * checkbox was starving the *column*; this is the name overflowing its own
-   * line, and it only became possible when the icon moved into that line. Before
-   * that the name was a child of a **column**, where the cross axis stretched it
-   * to the column's width and its own width never came into it. It is now a child
-   * of a **row** — the line of the title, beside the icon — and in a row the
-   * width is exactly what the box decides. `react-native-web@0.21.2` writes
-   * `flexShrink: 0` on every `View` it makes (`view$raw`, in
-   * `node_modules/react-native-web/dist/exports/View/index.js`), so without it the
-   * name kept its full text width, ignored the `numberOfLines={2}` above it and
-   * pushed the right edge of the row past the edge of the screen.
-   *
-   * So the number below is **not** a `flex: 1` — which is the thing that made
-   * Android's flexbox give this box a width of zero, and which the checkbox was
-   * the real cause of anyway — but a **shrink**, the other half of the same
-   * property. `minWidth: 0` on `styles.flex` still does its own job: it is the
-   * *column* that has to be able to give up room.
+   * The row has a `flex` of its own now, in `components/lists/task-row.tsx`, where
+   * it is the title column — and the comment on that one says what its
+   * `minWidth: 0` is for. They are a copy of each other on purpose: a shared
+   * `StyleSheet` between a route and a component means a component importing a
+   * route, which is the coupling that moving the row was for. Same two numbers
+   * here, because they were measured and changing one of them changes what this
+   * box does.
    */
-  nombre: {
-    flexShrink: 1,
-  },
   flex: {
     flex: 1,
-    // A child of a `flex` does not go below its content by default, so the
-    // title column would have stayed as wide as the longest word in it and
-    // pushed the two actions off the right edge instead of making room.
     minWidth: 0,
-  },
-  strike: {
-    textDecorationLine: "line-through",
   },
 });

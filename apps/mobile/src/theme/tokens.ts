@@ -1,5 +1,6 @@
-import type { Accent } from "@orbit-hub/contracts";
+import type { Accent, IconColor } from "@orbit-hub/contracts";
 import type { TextStyle, ViewStyle } from "react-native";
+import type { TranslationKey } from "@/lib/i18n";
 
 export type ColorSchemeName = "light" | "dark";
 
@@ -364,6 +365,69 @@ export const ICON_SCALE = Object.fromEntries(
   Object.entries(TYPE_SCALE).map(([nombre, t]) => [nombre, Math.round(t.fontSize * ICON_LEAD)]),
 ) as Record<keyof typeof TYPE_SCALE, number>;
 
+/**
+ * The colours an icon is drawn in, one pair per name.
+ *
+ * They used to be twelve hexes in `lib/lists/item-icons.ts`, outside the theme
+ * and with no dark mode. The light hex is the one that was there; the dark one
+ * is the same hue lifted until it reads on a dark surface. `auto` is not a
+ * colour at all: it is "whatever this icon is on", so it points at the theme's
+ * own subtle text in each scheme.
+ */
+export const ICON_COLORS: Record<IconColor, { light: string; dark: string }> = {
+  auto: { light: NEUTRALS.light.textSubtle, dark: NEUTRALS.dark.textMuted },
+  neutral: { light: "#8A93A8", dark: "#9AA3B8" },
+  accent: { light: "#6366F1", dark: "#8B8DF8" },
+  green: { light: "#16A34A", dark: "#34C759" },
+  olive: { light: "#4D7C0F", dark: "#84CC16" },
+  amber: { light: "#D97706", dark: "#FBBF24" },
+  orange: { light: "#EA580C", dark: "#FB923C" },
+  red: { light: "#DC2626", dark: "#F87171" },
+  rose: { light: "#E11D48", dark: "#FB7185" },
+  purple: { light: "#9333EA", dark: "#C084FC" },
+  blue: { light: "#2563EB", dark: "#60A5FA" },
+  teal: { light: "#0D9488", dark: "#2DD4BF" },
+  brown: { light: "#92400E", dark: "#B45309" },
+};
+
+/**
+ * The name of each icon colour, in the language of the app.
+ *
+ * Typed against the keys the dictionaries declare, on purpose: a colour added
+ * to the contract and not here is a compile error and not a swatch with no
+ * name on it.
+ */
+export const ICON_COLOR_LABEL: Record<IconColor, TranslationKey> = {
+  auto: "icons.colors.auto",
+  neutral: "icons.colors.neutral",
+  accent: "icons.colors.accent",
+  green: "icons.colors.green",
+  olive: "icons.colors.olive",
+  amber: "icons.colors.amber",
+  orange: "icons.colors.orange",
+  red: "icons.colors.red",
+  rose: "icons.colors.rose",
+  purple: "icons.colors.purple",
+  blue: "icons.colors.blue",
+  teal: "icons.colors.teal",
+  brown: "icons.colors.brown",
+};
+
+/**
+ * The hex for the name in the scheme that is on.
+ *
+ * The gate is here and not in the caller: this is a plain object, so
+ * `ICON_COLORS["toString"]` is a function and not a colour. A name from a
+ * future build, or a text somebody edited by hand, still comes out — in the
+ * neutral one, which is a state the row already has.
+ */
+export function iconColorHex(key: string | null | undefined, scheme: ColorSchemeName): string {
+  const entry = Object.prototype.hasOwnProperty.call(ICON_COLORS, String(key))
+    ? ICON_COLORS[String(key) as IconColor]
+    : undefined;
+  return (entry ?? ICON_COLORS.neutral)[scheme];
+}
+
 export type ThemeColors = NeutralColors &
   (typeof STATUS)["light"] & {
     /** Filled accent surface: primary buttons, active tabs, focus rings. */
@@ -378,6 +442,8 @@ export type ThemeColors = NeutralColors &
     accentBorder: string;
     onSurface: string;
     headerBackground: string;
+    /** The icon colours, resolved for the scheme that is on. */
+    icon: Record<IconColor, string>;
   };
 
 export interface Theme {
@@ -413,6 +479,9 @@ export function createTheme(scheme: ColorSchemeName, accent: Accent): Theme {
       accentBorder: accentColors.border,
       onSurface: neutral.text,
       headerBackground: neutral.background,
+      icon: Object.fromEntries(
+        (Object.keys(ICON_COLORS) as IconColor[]).map((key) => [key, ICON_COLORS[key][scheme]]),
+      ) as Record<IconColor, string>,
     },
     spacing: SPACING,
     radius: RADIUS,

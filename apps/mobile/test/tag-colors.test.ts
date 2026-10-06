@@ -11,7 +11,10 @@ import {
 } from "@orbit-hub/contracts";
 import { describe, expect, it } from "vitest";
 
-import { iconColor } from "@/lib/lists/item-icons";
+import { iconColorHex } from "@/theme/tokens";
+
+/** What `iconColor` used to answer, and still does: the light hex. */
+const iconColor = (key: string | null | undefined): string => iconColorHex(key, "light");
 import {
   contrastRatio,
   labelPillColors,
@@ -563,14 +566,23 @@ describe("el mapa que sale saneado lo acepta el contrato", () => {
  * La regla de la pastilla. El primero de los tests de aqui es el que explica por
  * que este archivo no tiene una puerta de contraste.
  *
- * **El 4.5 va escrito a mano en todos ellos y no se lee de
+ * **El 3 va escrito a mano en todos ellos y no se lee de
  * `MIN_LABEL_CONTRAST`, y es a proposito**: el comentario de la constante —en
  * `tag-colors.ts`— dice que el test la escribe para que bajarla produzca un test
  * rojo, y leerla haria que las dos cosas bajaran a la vez y el suite entero
- * siguiera en verde. Aqui es donde vive ese 4.5 a mano —los tests que lo tenian en
+ * siguiera en verde. Aqui es donde vive ese 3 a mano —los tests que lo tenian en
  * `tag-color-plan.test.ts` se fueron con la puerta que mediaban—, asi que si
  * alguna vez se afloja el umbral, que sea este bloque el que se ponga rojo y no una
  * pantalla.
+ *
+ * **Bajo de 4.5 a 3 con la decision a la vista, y el 3.0 de aqui es el de las
+ * insignias, no un numero saluido de la cuenta.** Los cuatro tonos de prioridad dan
+ * 3.00 (`success`), 3.25 (`warning`), 4.15 (`danger`) y 4.44 (`info`) sobre su
+ * lavado, y el mas flojo de los cuatro es 3.00. Una pastilla que se parece a una
+ * insignia no puede traer un liston que las insignias no tienen. **Lo que se acepta
+ * a cambio:** el texto de una pastilla queda entre 3 y 4.5, y en el peor tono se
+ * queda en 3.01. Es el mismo margen que arrastra `success` desde antes de que
+ * existiera este fichero.
  */
 describe("la pastilla deriva relleno y texto", () => {
   it("el relleno es el color mezclado con la superficie", () => {
@@ -578,7 +590,7 @@ describe("la pastilla deriva relleno y texto", () => {
     // redondeo del ultimo canal es lo unico que haria fallar un numero fijo, y eso
     // no es lo que este test comprueba.
     expect(labelPillColors("#16A34A", "#FFFFFF", "light").fill).toBe(
-      mixHex("#16A34A", "#FFFFFF", 0.14),
+      mixHex("#16A34A", "#FFFFFF", 0.06),
     );
   });
 
@@ -617,7 +629,7 @@ describe("la pastilla deriva relleno y texto", () => {
     }
   });
 
-  it("el texto llega a 4.5:1 contra su propio relleno", () => {
+  it("el texto llega a 3:1 contra su propio relleno", () => {
     // Los hex son de `ICON_COLORS`, la paleta de doce. **No** son los del tema:
     // `success` es #0E9F6E y `green` de la paleta es #16A34A, y con el valor
     // equivocado la pastilla se dibujaria de un color y se guardaria otro.
@@ -625,7 +637,7 @@ describe("la pastilla deriva relleno y texto", () => {
       for (const scheme of ["light", "dark"] as const) {
         const surface = scheme === "light" ? "#FFFFFF" : "#111827";
         const { fill, text } = labelPillColors(color, surface, scheme);
-        expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(3);
       }
     }
   });
@@ -635,14 +647,14 @@ describe("la pastilla deriva relleno y texto", () => {
     // sale casi igual que ella. El texto tiene que leerse contra ESE relleno.
     const surface = "#F0F2F8";
     const { fill, text } = labelPillColors("#EFF1F7", surface, "light");
-    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(3);
   });
 
   it("lee con un blanco puro y con un negro puro", () => {
     expect(contrastRatio(labelPillColors("#FFFFFF", "#FFFFFF", "light").text, labelPillColors("#FFFFFF", "#FFFFFF", "light").fill))
-      .toBeGreaterThanOrEqual(4.5);
+      .toBeGreaterThanOrEqual(3);
     expect(contrastRatio(labelPillColors("#000000", "#111827", "dark").text, labelPillColors("#000000", "#111827", "dark").fill))
-      .toBeGreaterThanOrEqual(4.5);
+      .toBeGreaterThanOrEqual(3);
   });
 
   it("el texto de la pastilla no sale nunca en el color del tema", () => {
@@ -683,7 +695,7 @@ describe("la pastilla deriva relleno y texto", () => {
 
   it("los doce colores de la paleta salen exactamente en estos hex", () => {
     // **La tabla entera, no el umbral.** La rejilla de abajo comprueba que todo
-    // llega a 4.5:1, pero eso lo cumpliria tambien una cuenta que landing en otro
+    // llega a 3:1, pero eso lo cumpliria tambien una cuenta que landing en otro
     // sitio; lo que esta tabla fija es **que color sale**, y es lo que hace que los
     // numeros que hay escritos en los comentarios de `tag-colors.ts` sean
     // comprobables: si el paso, el porcentaje de mezcla o el corte del extremo se
@@ -692,19 +704,32 @@ describe("la pastilla deriva relleno y texto", () => {
     // Superficies **las del tema**, `#F0F2F8` y `#1B2231`, y no las del brief
     // (`#FFFFFF` y `#111827`), que son de otro tema. Nombre, texto de claro, relleno
     // de claro, contraste, texto de oscuro, relleno de oscuro, contraste.
+    //
+    // **Estos valores se miden, no se escriben: se sacan de `labelPillColors` con
+    // las dos constantes ya puestas y se pegan aqui.** El contraste se pega con dos
+    // decimales, que es lo que la funcion promete y lo que hace que el `toBeCloseTo`
+    // de abajo sea una comprobacion y no un adorno.
+    //
+    // **Lo que ahora se ve, y no se ve antes:** con el relleno al 6% y liston 3,
+    // **ninguno de los doce sale por debajo de luminancia 0.036** —no hay ningun
+    // texto que sea indistinguible de negro— y ninguno se va al extremo blanco. Al
+    // 14% con liston 4.5 once de los doce caian por debajo de 0.036 y `teal` en
+    // oscuro salia en `#FDFFFF`. Los textos de esta tabla son oscuros, pero son
+    // **del tono elegido**: `#0B5225` es verde, `#06403A` es verde azulado, `#3A0A65`
+    // es violeta.
     const esperado = [
-      ["neutral", "#303540", "#98A0B3", 4.69, "#16181D", "#7A8397", 4.67],
-      ["accent", "#0A0C6A", "#777AF2", 4.59, "#EFF0FE", "#595CD6", 4.73],
-      ["green", "#073719", "#35AE62", 4.7, "#031309", "#179147", 4.7],
-      ["olive", "#0F1803", "#648D30", 4.68, "#C2F085", "#466F14", 4.54],
-      ["amber", "#4E2B02", "#DC8828", 4.55, "#1C1001", "#BE6B0C", 4.71],
-      ["orange", "#451A04", "#EB6E2D", 4.85, "#0B0401", "#CD5011", 4.6],
-      ["red", "#260606", "#DF4343", 4.52, "#FADEDE", "#C12528", 4.65],
-      ["rose", "#23050B", "#E33B61", 4.61, "#FBE3E8", "#C51E45", 4.73],
-      ["purple", "#10031B", "#A04EEC", 4.56, "#EBD9FB", "#8231D0", 4.8],
-      ["blue", "#04102C", "#4177ED", 4.56, "#D7E2FB", "#245AD1", 4.67],
-      ["teal", "#042D29", "#2DA198", 4.72, "#FDFFFF", "#0F847C", 4.54],
-      ["brown", "#FCEBE0", "#9F592F", 4.59, "#F4B48C", "#813C13", 4.54],
+      ["neutral", "#414858", "#9099AD", 3.2, "#F3F4F6", "#838CA1", 3.06],
+      ["accent", "#0F12A2", "#6B6EF1", 3.15, "#CACBFA", "#5F62E5", 3.08],
+      ["green", "#0B5225", "#23A854", 3.03, "#C1F7D5", "#169B49", 3.01],
+      ["olive", "#203306", "#57831D", 3.04, "#8BE01B", "#4A7711", 3.24],
+      ["amber", "#6C3B03", "#DA7E15", 3.08, "#FEF0E0", "#CE7209", 3.11],
+      ["orange", "#6C2906", "#EA611A", 3.18, "#FDDFD0", "#DE550E", 3.08],
+      ["red", "#5A0F0F", "#DD3233", 3.03, "#F4BBBB", "#D02627", 3.18],
+      ["rose", "#590C1D", "#E22A53", 3.14, "#F6B6C4", "#D51D47", 3.03],
+      ["purple", "#3A0A65", "#993EEB", 3.01, "#D3ABF6", "#8C32DF", 3.0],
+      ["blue", "#092564", "#316CEC", 3.07, "#A8C1F7", "#245FE0", 3.07],
+      ["teal", "#06403A", "#1B9A8F", 3.37, "#70F2E7", "#0E8D83", 3.01],
+      ["brown", "#190B02", "#984B1C", 3.08, "#EF8F55", "#8B3E10", 3.12],
     ] as const;
 
     for (const [nombre, textoClaro, rellenoClaro, contrasteClaro, textoOscuro, rellenoOscuro, contrasteOscuro] of esperado) {
@@ -756,20 +781,31 @@ describe("la pastilla deriva relleno y texto", () => {
   });
 
   it("la pastilla se da la vuelta cuando aclarar no basta", () => {
-    // El caso que hace falta la segunda vuelta, y no es un color raro: es ambar
-    // de la paleta, sobre su propio tinte en la superficie oscura.
-    const { fill, text } = labelPillColors("#D97706", "#111827", "dark");
+    // **El caso que hace falta la segunda vuelta: un negro puesto a mano en tema
+    // claro.** No es un color de la paleta —los doce nunca lo necesitan al 6%— es el
+    // primero que escribe cualquiera en el selector de hex, y por eso lo afirma un
+    // test y no un comentario.
     //
-    // Lo primero es el **motivo** de la vuelta, y por eso se afirma en vez de
-    // quedar solo en un comentario: el blanco no llega a 4.5:1 sobre ese relleno,
-    // que sale ya tan oscuro que no hay ningun aclarado que lo salve. Si algun dia
-    // cambia el tinte y el blanco si llega, este test se pone rojo y avisa de que
-    // la justificacion de la segunda vuelta ya no es la de antes.
-    expect(contrastRatio("#FFFFFF", fill)).toBeLessThan(4.5);
-    // Y lo segundo es lo que se hace con eso: oscurecer. 4.65:1 sobre el mismo
-    // relleno, y un texto del lado del relleno y no del lado del blanco.
-    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(4.5);
-    expect(text).not.toBe("#FFFFFF");
+    // Y el numero que lo hace pasar por aqui es **la mezcla**: `mixHex(hex, surface,
+    // t)` interpola de `hex` hacia `surface`, asi que `t = 0.06` deja el relleno pegado
+    // al color elegido. Con `#000000` sobre la superficie clara del tema, el relleno
+    // al 14% era `#222223` y al **6% es `#0E0F0F`** —mas negro todavia—. El negro
+    // sobre eso da **1.09:1**, que no pasa ni de lejos, y el blanco da 19.20:1.
+    // Sin la vuelta ese texto se dibuja ilegible en un color que **parece** el que
+    // eligio la persona, que es peor que el gris de antes.
+    const { fill, text } = labelPillColors("#000000", "#F0F2F8", "light");
+    //
+    // Lo primero es el **motivo** de la vuelta, afirmado y no en un comentario: el
+    // negro no llega al liston sobre ese relleno. Si algun dia cambia la mezcla y el
+    // negro si llega, este test se pone rojo y avisa de que la justificacion de la
+    // segunda vuelta ya no es la de antes.
+    expect(contrastRatio("#000000", fill)).toBeLessThan(3);
+    // Y lo segundo es lo que se hace con eso: aclarar. 19.20:1 sobre el mismo
+    // relleno, y un texto del lado del blanco y no del lado del negro. Se mira el
+    // color y no solo la cifra, porque un texto que llegara a 3:1 siendo negro seria un
+    // fallo aqui —el negro es justamente el que no pasa—.
+    expect(contrastRatio(text, fill)).toBeGreaterThanOrEqual(3);
+    expect(text).not.toBe("#000000");
   });
 
   it("ningun color se queda sin leer, ni claro ni al reves", () => {
@@ -792,7 +828,7 @@ describe("la pastilla deriva relleno y texto", () => {
             const surface = scheme === "light" ? "#FFFFFF" : "#111827";
             const { fill, text } = labelPillColors(hex, surface, scheme);
             expect(contrastRatio(text, fill), `${hex} sobre ${surface}`).toBeGreaterThanOrEqual(
-              4.5,
+              3,
             );
           }
         }

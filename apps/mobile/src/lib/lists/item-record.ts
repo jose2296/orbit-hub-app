@@ -1,5 +1,5 @@
-import { ITEM_ICON_COLORS, isItemIcon, sanitiseTagColors } from "@orbit-hub/contracts";
-import type { List, ListItem } from "@orbit-hub/contracts";
+import { sanitiseIconRef, sanitiseTagColors } from "@orbit-hub/contracts";
+import type { IconRef, List, ListItem } from "@orbit-hub/contracts";
 
 /**
  * Building and reading a row of a list.
@@ -12,19 +12,6 @@ import type { List, ListItem } from "@orbit-hub/contracts";
  * place, where a missing field gets the value the contract gives it.
  */
 
-/**
- * The colour an icon is drawn in, or the app's own.
- *
- * The column is free text and a future build can write a colour this one does
- * not have, so a row with a colour nobody can draw comes out in the neutral one
- * instead of not coming out.
- */
-function iconColorOf(value: unknown): ListItem["iconColor"] {
-  return (ITEM_ICON_COLORS as readonly string[]).includes(String(value))
-    ? (value as ListItem["iconColor"])
-    : "neutral";
-}
-
 export interface NewListItemInput {
   id: string;
   listId: string;
@@ -33,14 +20,19 @@ export interface NewListItemInput {
   createdAt?: string;
   updatedAt?: string;
   priority?: ListItem["priority"];
-  icon?: string | null;
-  /** Filled or outline, and which of the app's colours. */
-  iconStyle?: "outline" | "fill";
-  iconColor?: string;
+  icon?: IconRef | null;
   tags?: string[];
   externalId?: string | null;
   metadata?: Record<string, unknown> | null;
   annotation?: string | null;
+  /**
+   * The board column to create the row in.
+   *
+   * Optional now because no screen passes it yet — a board still creates its
+   * tasks in the first column — and here because adding it later is going back
+   * to the fifteen places that build a row by hand.
+   */
+  stateId?: string | null;
 }
 
 /**
@@ -60,6 +52,10 @@ export function newListItem(input: NewListItemInput): ListItem {
     title: input.title,
     position: input.position,
     completed: false,
+    // `null` and not the first state: a row with no column of its own is drawn in
+    // the first one, which is what lets creating a task on a board be the same
+    // code that creates a task on any other list.
+    stateId: input.stateId ?? null,
     priority: input.priority ?? "none",
     // A fresh array and not a shared constant: one row's labels must not appear
     // on every other row the moment somebody types one.
@@ -67,9 +63,7 @@ export function newListItem(input: NewListItemInput): ListItem {
     // An icon the app cannot draw is no icon, and not a broken row: what
     // somebody typed by hand, or what a future build wrote, arrives here and the
     // row still opens.
-    icon: isItemIcon(input.icon) ? input.icon : null,
-    iconStyle: input.iconStyle ?? "outline",
-    iconColor: iconColorOf(input.iconColor),
+    icon: sanitiseIconRef(input.icon),
     externalId: input.externalId ?? null,
     metadata: input.metadata ?? null,
     annotation: input.annotation ?? null,
@@ -107,6 +101,11 @@ export function withListItemDefaults(value: unknown): ListItem {
     title: typeof record.title === "string" ? record.title : "",
     position: typeof record.position === "number" ? record.position : 0,
     completed: record.completed === true,
+    // Any string is kept, and the shape is all that is checked: which columns a
+    // list has is not knowable from a row alone, and a column this build does not
+    // recognise is drawn in the first one rather than not at all. What is refused
+    // is a payload that is not a string, which is what `null` is for.
+    stateId: typeof record.stateId === "string" ? record.stateId : null,
     priority:
       record.priority === "low" ||
       record.priority === "medium" ||
@@ -120,9 +119,7 @@ export function withListItemDefaults(value: unknown): ListItem {
     // Same here as on the way in: a key this build cannot draw is no icon, and
     // the row around it still reads. A cache from a future build, or a payload
     // somebody edited by hand, does not take a whole list down with it.
-    icon: isItemIcon(record.icon) ? record.icon : null,
-    iconStyle: record.iconStyle === "fill" ? "fill" : "outline",
-    iconColor: iconColorOf(record.iconColor),
+    icon: sanitiseIconRef(record.icon),
     externalId:
       typeof record.externalId === "string" ? record.externalId : null,
     metadata:
@@ -144,8 +141,7 @@ export function withListItemDefaults(value: unknown): ListItem {
 }
 
 /**
- * A list read from the cache or from the server, with the colours of its labels
- * filled in.
+ * A list read from the cache or from the server, with what is missing filled in.
  *
  * The same reason as `withListItemDefaults`, and the same hazard with a sharper
  * edge: `readRecord` in `use-lists.ts` is a cast, not a parse, so a list that
@@ -153,14 +149,15 @@ export function withListItemDefaults(value: unknown): ListItem {
  * with an empty map. Every colour lookup would then be reading `undefined`, and
  * the failure would show up as a row that paints no labels.
  *
- * **Only `tagColors`, and that is a real difference from the function above.**
- * That one names every field, so a required field added to `listItemSchema`
- * without being added here is a compile error. This one is a spread: it copies
- * whatever the row has and fills in nothing else, so it carries every field the
- * list has today and **will not notice the next required one** — it will just
- * ship it missing. The spread is still the right shape, because a hand-written
- * copy of a list's fields is a second place to forget one, and the failure here
- * is the kind that only shows up in somebody's own cache.
+ * **Only `tagColors` and `states`, and that is a real difference from the
+ * function above.** That one names every field, so a required field added to
+ * `listItemSchema` without being added here is a compile error. This one is a
+ * spread: it copies whatever the row has and fills in only these two, so it
+ * carries every field the list has today and **will not notice the next required
+ * one** — it will just ship it missing. The spread is still the right shape,
+ * because a hand-written copy of a list's fields is a second place to forget
+ * one, and the failure here is the kind that only shows up in somebody's own
+ * cache.
  */
 export function withListDefaults(value: unknown): List {
   const record = (value ?? {}) as Record<string, unknown>;
@@ -168,5 +165,10 @@ export function withListDefaults(value: unknown): List {
   return {
     ...(record as unknown as List),
     tagColors: sanitiseTagColors(record.tagColors),
+    // The same hazard as the colours, one step further: an array here is not a
+    // decoration, it is what a board screen walks to draw its columns, so a
+    // payload that is not an array comes out as the empty one — the state of a
+    // list that is not a board — instead of something that cannot be measured.
+    states: Array.isArray(record.states) ? (record.states as List["states"]) : [],
   };
 }

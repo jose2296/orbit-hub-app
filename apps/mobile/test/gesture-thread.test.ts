@@ -97,7 +97,9 @@ const CON_GESTOS = [
   'components/ui/draggable-row.tsx',
   'components/dashboard/panel-grid.tsx',
   'components/dashboard/panel-card.tsx',
-  'components/workspace/workspace-color-picker.tsx',
+  // El selector del espacio ya no dibuja gestos propios: usa el cuadrado compartido con
+  // los estados, y es ese el fichero que tiene los dos gestos.
+  'components/ui/color-square.tsx',
   /*
     `tag-color-picker.tsx` entra en la lista porque **tenia el mismo bug que
     `workspace-color-picker.tsx` y no estaba en la lista**: la lista se escribio
@@ -270,7 +272,7 @@ describe('el selector de color', () => {
   it('los dos gestos dicen el nombre de lo que llaman', () => {
     // Los dos callbacks que estaban sin envuelto, uno por gesto: el cuadrado y la
     // tira. Se cuentan para que anadir un tercero sin envuelto salga en el fallo.
-    const fuente = leer('components/workspace/workspace-color-picker.tsx');
+    const fuente = leer('components/ui/color-square.tsx');
     const gestures = [
       ...fuente.matchAll(/Gesture\.Pan\(\)/g),
       ...fuente.matchAll(/Gesture\.Tap\(\)/g),
@@ -293,8 +295,8 @@ describe('el selector de color', () => {
     expect(CON_GESTOS, 'tag-color-picker.tsx no se comprueba: puede nacer con el bug puesto').toContain(
       'components/lists/tag-color-picker.tsx',
     );
-    expect(CON_GESTOS, 'workspace-color-picker.tsx no se comprueba').toContain(
-      'components/workspace/workspace-color-picker.tsx',
+    expect(CON_GESTOS, 'color-square.tsx (el del espacio) no se comprueba').toContain(
+      'components/ui/color-square.tsx',
     );
   });
 });

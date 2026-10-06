@@ -7,7 +7,7 @@ import type {
   Workspace,
   WorkspaceMember,
 } from "@orbit-hub/contracts";
-import { dashboardLayoutSchema } from "@orbit-hub/contracts";
+import { dashboardLayoutSchema, sanitiseIconRef } from "@orbit-hub/contracts";
 import { and, asc, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 
 import { getDatabase } from "../../db/client.js";
@@ -51,7 +51,7 @@ export class WorkspaceQueryService {
         id: workspaces.id,
         name: workspaces.name,
         description: workspaces.description,
-        emoji: workspaces.emoji,
+        icon: workspaces.icon,
         color: workspaces.color,
         colorTo: workspaces.colorTo,
         wash: workspaces.wash,
@@ -75,7 +75,7 @@ export class WorkspaceQueryService {
       id: row.id,
       name: row.name,
       description: row.description,
-      emoji: row.emoji,
+      icon: sanitiseIconRef(row.icon),
       color: row.color,
       colorTo: row.colorTo,
       wash: row.wash,
@@ -112,7 +112,7 @@ export class WorkspaceQueryService {
         id: workspaces.id,
         name: workspaces.name,
         description: workspaces.description,
-        emoji: workspaces.emoji,
+        icon: workspaces.icon,
         color: workspaces.color,
         colorTo: workspaces.colorTo,
         wash: workspaces.wash,
@@ -145,7 +145,7 @@ export class WorkspaceQueryService {
       id: row.id,
       name: row.name,
       description: row.description,
-      emoji: row.emoji,
+      icon: sanitiseIconRef(row.icon),
       color: row.color,
       colorTo: row.colorTo,
       wash: row.wash,
@@ -205,7 +205,7 @@ export class WorkspaceQueryService {
       workspaceId: row.workspaceId,
       parentId: row.parentId,
       name: row.name,
-      emoji: row.emoji,
+      icon: sanitiseIconRef(row.icon),
       position: row.position,
       // Folders have no role of their own either: this is the role of the space
       // they are in, and `shared` is false because reaching this endpoint already

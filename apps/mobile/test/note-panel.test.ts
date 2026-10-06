@@ -16,6 +16,7 @@ function noteFor(over: Partial<Note> & { id: string }): Note {
     document: "<p>x</p>",
     plainText: "x",
     tags: [],
+    icon: null,
     attachmentCount: 0,
     position: 0,
     role: "editor",

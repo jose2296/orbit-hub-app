@@ -1,5 +1,5 @@
-import type { Note } from "@orbit-hub/contracts";
-import { noteDocumentToPlainText, notePreviewBelowTitle } from "@orbit-hub/contracts";
+import type { IconRef, Note } from "@orbit-hub/contracts";
+import { noteDocumentToPlainText, notePreviewBelowTitle, sanitiseIconRef } from "@orbit-hub/contracts";
 
 /**
  * Building and reading a note.
@@ -19,6 +19,7 @@ export interface NewNoteInput {
   title: string;
   document?: string;
   tags?: string[];
+  icon?: IconRef | null;
   /** Where it sits in its folder's hand-made order. Absent means the end. */
   position?: number;
   createdAt?: string;
@@ -45,6 +46,10 @@ export function newNote(input: NewNoteInput): Note {
     // A fresh array, not a shared constant: one note's labels must not appear on
     // every other note the moment somebody types one.
     tags: input.tags ? [...input.tags] : [],
+    // A note born from a panel has the icon the panel was given, and a note from
+    // anywhere else has none: what this build cannot draw is no icon, not a
+    // note that does not open.
+    icon: sanitiseIconRef(input.icon),
     attachmentCount: 0,
     /*
       Yours and editable, and that is not a guess: you can only get here from the
@@ -92,6 +97,9 @@ export function withNoteDefaults(value: unknown): Note {
     // An array and not just present: a payload carrying a string where the
     // contract says a list is a note that cannot be filtered or counted.
     tags: Array.isArray(record.tags) ? (record.tags as string[]) : [],
+    // Same here as on the way in: a key this build cannot draw is no icon, and
+    // the note around it still opens.
+    icon: sanitiseIconRef(record.icon),
     attachmentCount:
       typeof record.attachmentCount === "number" ? record.attachmentCount : 0,
     // Cero y no "sin valor": una nota guardada antes de que existiera el orden

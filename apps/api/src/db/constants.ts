@@ -52,7 +52,9 @@ export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
  * Fields the client may write, per entity. Anything else is ignored.
  *
  * The kinds match the contract exactly: a list is one of these for good, and
- * never two at once.
+ * never two at once. `board` is one of them and not a flag on top of `tasks`,
+ * because the difference between them is what a task carries — a state or a
+ * checkbox — and a list that is both is a list whose rows nobody can draw.
  */
 export const LIST_KINDS = [
   'tasks',
@@ -60,6 +62,7 @@ export const LIST_KINDS = [
   'series',
   'movies_and_series',
   'books',
+  'board',
 ] as const;
 export type ListKindName = (typeof LIST_KINDS)[number];
 
@@ -70,8 +73,7 @@ export type ListKindName = (typeof LIST_KINDS)[number];
  * colour it does not know, the app cannot draw one that is not here, and two
  * lists are two lists that are a step behind each other.
  */
-export { ITEM_ICON_COLORS, WORKSPACE_COLORS, WORKSPACE_WASHES, isItemIcon } from '@orbit-hub/contracts';
-export type { ItemIconColor as ItemIconColorName } from '@orbit-hub/contracts';
+export { ITEM_ICON_COLORS, WORKSPACE_COLORS, WORKSPACE_WASHES } from '@orbit-hub/contracts';
 export type { WorkspaceColor as WorkspaceColorName } from '@orbit-hub/contracts';
 export type { WorkspaceWash as WorkspaceWashName } from '@orbit-hub/contracts';
 
@@ -95,9 +97,6 @@ export type ListOrderModeName = ListOrderMode;
 export { listOrderModeSchema } from '@orbit-hub/contracts';
 export type { ListOrderMode } from '@orbit-hub/contracts';
 
-export { ITEM_ICONS } from '@orbit-hub/contracts';
-export type { ItemIcon } from '@orbit-hub/contracts';
-
 export const ITEM_PRIORITIES = ['none', 'low', 'medium', 'high'] as const;
 export type ItemPriority = (typeof ITEM_PRIORITIES)[number];
 
@@ -113,18 +112,23 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   // version, so it looks like it worked and nothing changed. That is worse than a
   // rejection, because a rejection at least tells the person their choice did not
   // save, and this one looked like it saved for four whole rebuilds.
-  workspace: ['name', 'description', 'emoji', 'color', 'colorTo', 'wash'],
-  folder: ['parentId', 'name', 'emoji', 'position'],
+  workspace: ['name', 'description', 'icon', 'color', 'colorTo', 'wash'],
+  folder: ['parentId', 'name', 'icon', 'position'],
+  // `states` and `stateId` below are the board's two, and being on this list is
+  // **half** of writing them: a key allowed here still needs its branch in
+  // `sanitisePayload`, and the test that catches the missing half pushes a board
+  // and reads its states back (`lists.test.ts`).
   list: [
     'folderId',
     'title',
     'description',
-    'emoji',
+    'icon',
     'tags',
     'tagColors',
     'position',
     'kind',
     'orderMode',
+    'states',
   ],
   list_item: [
     'title',
@@ -132,12 +136,11 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'completed',
     'priority',
     'icon',
-    'iconStyle',
-    'iconColor',
     'tags',
     'externalId',
     'metadata',
     'annotation',
+    'stateId',
   ],
   /**
    * `document` is on this list and the client is expected to send it, but the
@@ -145,7 +148,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    * just validated, so a client cannot write a body and a search string that
    * disagree. `plainText` and `attachmentCount` are absent on purpose.
    */
-  note: ['title', 'document', 'folderId', 'tags', 'position'],
+  note: ['title', 'document', 'folderId', 'tags', 'position', 'icon'],
   dashboard: ['layout', 'pages'],
 };
 

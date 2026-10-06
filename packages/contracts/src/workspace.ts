@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-import { ITEM_ICON_COLORS, ITEM_ICONS } from "./item-icons.js";
+import { iconRefSchema } from "./icons.js";
 import { normalizaColor, tagColorSchema } from "./tag-colors.js";
+import { boardStatesSchema } from "./board.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
 import { userSchema } from "./auth";
@@ -173,15 +174,11 @@ export function isWorkspaceColorHex(value: unknown): value is string {
  */
 export const WORKSPACE_NAME_MAX = 80;
 export const WORKSPACE_DESCRIPTION_MAX = 500;
-export const WORKSPACE_EMOJI_MAX = 16;
 export const FOLDER_NAME_MAX = 120;
-export const FOLDER_EMOJI_MAX = 16;
 export const LIST_TITLE_MAX = 120;
 export const LIST_DESCRIPTION_MAX = 1000;
-export const LIST_EMOJI_MAX = 16;
 export const LIST_ITEM_TITLE_MAX = 300;
 export const LIST_ITEM_ANNOTATION_MAX = 2000;
-export const LIST_ITEM_ICON_MAX = 32;
 export const LIST_ITEM_EXTERNAL_ID_MAX = 120;
 /** Una etiqueta, no un título: corta a propósito y se ve corta. */
 export const TAG_MAX = 40;
@@ -190,7 +187,7 @@ export const NOTE_TITLE_MAX = 200;
 export const workspaceSchema = syncableEntitySchema.extend({
   name: z.string().trim().min(1).max(WORKSPACE_NAME_MAX),
   description: z.string().max(WORKSPACE_DESCRIPTION_MAX).nullable().default(null),
-  emoji: z.string().max(WORKSPACE_EMOJI_MAX).nullable().default(null),
+  icon: iconRefSchema.default(null),
   /**
    * The colour this space is painted with, out of the eight the app offers.
    *
@@ -275,7 +272,7 @@ export const folderSchema = syncableEntitySchema
     workspaceId: uuidSchema,
     parentId: uuidSchema.nullable().default(null),
     name: z.string().trim().min(1).max(FOLDER_NAME_MAX),
-    emoji: z.string().max(FOLDER_EMOJI_MAX).nullable().default(null),
+    icon: iconRefSchema.default(null),
     position: z.number().int().min(0),
   })
   .extend(nodeAccessSchema.shape);
@@ -298,6 +295,7 @@ export const listKindSchema = z.enum([
   "series",
   "movies_and_series",
   "books",
+  "board",
 ]);
 export const listKindLabelKey = {
   tasks: "lists.kind.tasks",
@@ -305,6 +303,7 @@ export const listKindLabelKey = {
   series: "lists.kind.series",
   movies_and_series: "lists.kind.moviesAndSeries",
   books: "lists.kind.books",
+  board: "lists.kind.board",
 } as const satisfies Record<z.infer<typeof listKindSchema>, string>;
 export type ListKind = z.infer<typeof listKindSchema>;
 
@@ -321,13 +320,38 @@ export type ListKind = z.infer<typeof listKindSchema>;
  * neither of them can be a step behind the other.
  */
 export {
-  ITEM_ICONS,
-  ITEM_ICON_CATEGORIES,
-  ITEM_ICON_GROUP,
+  EXTRA_BY_CATEGORY,
+  EXTRA_KEYWORDS,
+  EXTRA_LABELS,
+} from "./icons-catalogo-ampliado.js";
+export {
+  MATERIAL_BY_CATEGORY,
+  MATERIAL_FILL_ONLY,
+  MATERIAL_KEYWORDS,
+  MATERIAL_LABELS,
+} from "./icons-material.js";
+export {
   ITEM_ICON_COLORS,
-  isItemIcon,
-} from "./item-icons.js";
-export type { ItemIcon, ItemIconCategory, ItemIconColor } from "./item-icons.js";
+  ITEM_ICONS,
+  canDrawVector,
+  iconColorSchema,
+  iconLibrarySchema,
+  iconRefSchema,
+  iconSchema,
+  isVectorIcon,
+  labelOf,
+  materialIconsOf,
+  sanitiseIconRef,
+  vectorGlyph,
+  vectorIconsOf,
+  MATERIAL_ICON_GLYPHS,
+  VECTOR_ICON_CATALOG,
+  VECTOR_ICON_CATEGORIES,
+  VECTOR_ICON_CATEGORY_LABEL,
+  VECTOR_ICON_GLYPHS,
+  VECTOR_ICON_KEYWORDS,
+} from "./icons.js";
+export type { IconLibrary, IconRef, IconColor, ItemIconColor, VectorIconCategory } from "./icons.js";
 
 export {
   TAG_HEX,
@@ -383,7 +407,7 @@ export const listSchema = syncableEntitySchema
     kind: listKindSchema,
     title: z.string().trim().min(1).max(LIST_TITLE_MAX),
     description: z.string().max(LIST_DESCRIPTION_MAX).nullable().default(null),
-    emoji: z.string().max(LIST_EMOJI_MAX).nullable().default(null),
+    icon: iconRefSchema.default(null),
     tags: z.array(z.string().trim().min(1).max(TAG_MAX)).max(20).default([]),
     /**
      * The colours of the labels of this list, and only the ones somebody chose.
@@ -416,6 +440,19 @@ export const listSchema = syncableEntitySchema
      * alphabetical order lands somewhere the order did not ask for.
      */
     orderMode: listOrderModeSchema.default("manual"),
+    /**
+     * The columns of a board, and only a `board` list has any.
+     *
+     * They are a property of the **list** and not of the task, so everybody
+     * looking at a shared board sees the same columns — the only way a board
+     * somebody else arranged still means something to you.
+     *
+     * `[]` is the default so a row written before boards existed, or by a client
+     * that does not know about them, parses into the shape the screens read
+     * without a backfill: the same `.default()` that `tags` and `tagColors`
+     * already lean on. A list of films carries `[]` and never looks at it.
+     */
+    states: boardStatesSchema.default([]),
   })
   .extend(nodeAccessSchema.shape);
 export type List = z.infer<typeof listSchema>;
@@ -432,37 +469,38 @@ export const listItemSchema = syncableEntitySchema
   position: z.number().int().min(0),
   completed: z.boolean().default(false),
   /**
+   * The column this task is in, on a `board` list, and null on every other kind.
+   *
+   * It stands in for `completed` there and leaves `completed` alone everywhere
+   * else: a task on a board is never completed, and a task on a shopping list has
+   * no column to be in.
+   *
+   * Nullable with no default of an id because **null means the first state**, and
+   * that is what lets creating a task on a board be the very same code that
+   * creates a task on any other list: the new row lands in the first column
+   * instead of in a limbo that no screen knows how to paint.
+   *
+   * `.nullable().default(null)` is then what lets an old row, or one written by a
+   * client that has never heard of states, parse without a branch and without a
+   * migration: the same pattern `annotation` and `metadata` already use.
+   */
+  stateId: z.string().min(1).max(36).nullable().default(null),
+  /**
    * How urgent the row is, in words and not in a number: a number is something
    * to sort by and nothing to read, and "alta" on a shopping list says why you
    * are looking at it.
    */
   priority: z.enum(["none", "low", "medium", "high"]).default("none"),
   /**
-   * An icon out of the ones the app offers, for the things a list of tasks is
-   * also used for: what to buy, what to pack, what to fix.
+   * The icon, as one value.
    *
-   * It is a key and not an emoji on purpose. An emoji looks different on every
-   * device and means a different thing to every person, while a key is the same
-   * shape everywhere and the app can draw it with the same care it draws a
-   * button.
+   * It was three fields — `icon` as a key out of the ones the app offers,
+   * `iconStyle` and `iconColor` — and three fields can disagree with each
+   * other. As one value they cannot: a system emoji or one of the app's line
+   * drawings, with the colour it was given. Null is "nobody chose an icon",
+   * which the app knows how to draw.
    */
-  icon: z.enum(ITEM_ICONS).nullable().default(null),
-  /**
-   * Filled or outline.
-   *
-   * Two drawings of the same thing and not a decoration: a row of twelve things
-   * drawn con trazo is una lista de palabras, y rellenar los que importan dice
-   * cuales sin tener que leer ninguno.
-   */
-  iconStyle: z.enum(["outline", "fill"]).default("outline"),
-  /**
-   * Which of the app's icon colours it is drawn in.
-   *
-   * A key and not a colour value, for the reason the space colour is a key: the
-   * app draws the ones it offers, so there is no colour nobody can read and no
-   * picker of fifty shades on a phone.
-   */
-  iconColor: z.enum(ITEM_ICON_COLORS).default("neutral"),
+  icon: iconRefSchema.default(null),
   /**
    * Free labels, so "Mercadona" and "Carrefour" are values and not folders:
    * the same thing to buy in two shops is one item to buy.
@@ -499,6 +537,7 @@ export const noteSchema = syncableEntitySchema
     document: noteDocumentSchema,
     plainText: z.string().default(""),
     tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    icon: iconRefSchema.default(null),
     attachmentCount: z.int().min(0).default(0),
     /**
      * Where this note sits among the things in its folder when somebody has put
@@ -668,7 +707,7 @@ export type Invitation = z.infer<typeof invitationSchema>;
 export const createWorkspaceRequestSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().max(500).optional(),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
 });
 export type CreateWorkspaceRequest = z.infer<
   typeof createWorkspaceRequestSchema
@@ -678,7 +717,7 @@ export const createFolderRequestSchema = z.object({
   workspaceId: uuidSchema,
   parentId: uuidSchema.nullable().default(null),
   name: z.string().trim().min(1).max(120),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
   position: z.number().int().min(0).default(0),
 });
 export type CreateFolderRequest = z.infer<typeof createFolderRequestSchema>;
@@ -689,7 +728,7 @@ export const createListRequestSchema = z.object({
   kind: listKindSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().max(1000).optional(),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
   position: z.number().int().min(0).default(0),
 });
 export type CreateListRequest = z.infer<typeof createListRequestSchema>;
@@ -788,7 +827,7 @@ export const previewInvitationResponseSchema = z.object({
   workspace: z.object({
     id: uuidSchema,
     name: z.string(),
-    emoji: z.string().nullable().default(null),
+    icon: iconRefSchema.default(null),
     color: workspaceColorSchema,
   }),
   role: membershipRoleSchema.exclude(["owner"]),
@@ -1020,6 +1059,15 @@ export const searchResultSchema = z.object({
    * to leave and come back from.
    */
   completed: z.boolean().nullable().default(null),
+  /**
+   * The icon somebody chose for the hit, or null.
+   *
+   * It travels here for the same reason `completed` does: the point of finding
+   * something is recognising it, and a list of results that cannot show the
+   * picture is a list you have to open one by one. Nullable like the column,
+   * because most rows have no icon and that is a state, not a gap.
+   */
+  icon: iconRefSchema.default(null),
   updatedAt: isoDateTimeSchema,
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;

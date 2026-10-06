@@ -28,6 +28,7 @@ const FULL: Note = {
   document: '<p>Seis tomates</p>',
   plainText: 'Seis tomates',
   tags: ['cocina'],
+  icon: null,
   attachmentCount: 2,
   position: 4,
   role: 'owner',
@@ -60,6 +61,7 @@ describe('newNote', () => {
   role: 'editor',
   shared: false,
         tags: [],
+      icon: null,
       attachmentCount: 0,
       // Cero, y no "sin valor": una nota nueva no está colocada a mano en el
       // orden de su carpeta y el navegador pone las de valor cero al final.

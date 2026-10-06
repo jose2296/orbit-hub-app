@@ -7,6 +7,7 @@ import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
 import { FullTitle } from "@/components/media/full-title";
 import { CompartirBadge } from "@/components/shares/compartir-badge";
+import { AppIcon } from "@/components/ui/app-icon";
 import { SpaceWash } from '@/components/ui/wash';
 import {
   ALTO_LAVADO,
@@ -22,6 +23,14 @@ export interface EspacioHeader {
   colorTo?: string | null;
   wash?: WashVariant | null;
 }
+
+/**
+ * What a screen publishes about its own icon, read from the header options.
+ *
+ * Next to the title and not in it: the title is a string the navigator owns,
+ * and an icon inside it would be text pretending to be a drawing.
+ */
+export type IconoHeader = import("@orbit-hub/contracts").IconRef | null;
 
 /**
  * The app's own header, because the navigator's only takes one flat colour.
@@ -74,6 +83,7 @@ export interface AppHeaderProps {
       conmigo?: boolean;
       onShare?: () => void;
     };
+    icono?: IconoHeader;
     [key: string]: unknown;
   };
   /*
@@ -210,7 +220,10 @@ export function AppHeader({ options, children }: AppHeaderProps) {
           long list name needs, and the box itself is as transparent to touches as
           it was.
         */}
-        <View style={styles.centro} pointerEvents="box-none">
+        <View style={[styles.centro, styles.filaTitulo]} pointerEvents="box-none">
+          {options.icono ? (
+            <AppIcon icon={options.icono} size={20} testID="icono-cabecera" />
+          ) : null}
           {typeof options.title === 'string' && options.title.length > 0 ? (
             /*
               The name in the bar, **and the whole of it on a long press**.
@@ -309,6 +322,11 @@ const LADO = 96;
 
 
 const styles = StyleSheet.create({
+  /*
+    The title next to its icon, and nothing else changes: the centring the bar
+    already had stays, and the row only exists so the two sit side by side.
+  */
+  filaTitulo: { flexDirection: "row", alignItems: "center", gap: 8 },
   caja: {
     /*
       **Alto fijo, y el mismo en todas las pantallas.** Antes esta caja media la

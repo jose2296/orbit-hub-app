@@ -1,9 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { runOnJS } from "react-native-reanimated";
 
 import { normalizaColor } from "@orbit-hub/contracts";
 
@@ -14,7 +11,6 @@ import {
   isWorkspaceColor,
   spacePaint,
 } from "@/lib/workspace/color";
-import { HUE_STRIP, hexToHsv, hsvToHex, puntoAHsv, puntoAHue } from "@/lib/workspace/picker";
 import { recentColors, rememberColor } from "@/lib/workspace/recent-colors";
 import {
   DEFAULT_WASH,
@@ -26,6 +22,7 @@ import { useTheme } from "@/theme";
 
 import { selectedProps } from "@/components/ui/a11y-state";
 import { SpaceWash } from "../ui/wash";
+import { ColorSquare } from "../ui/color-square";
 import { AppText } from "../ui/text";
 
 export interface WorkspaceColorPickerProps {
@@ -80,7 +77,7 @@ function hexDe(valor: string | null | undefined): string {
  * you had; the field is the only way to say it exactly, and there is a
  * difference between the two that matters when the colour is a brand.
  *
- * **Nothing is written until you press the check.** A picker that fires on every
+ * **Nothing is written until the finger lifts.** A picker that fires on every
  * pixel of a drag would put a hundred undoable writes in the sync queue and
  * make the space flicker between eleven colours while you are trying to look at
  * one.
@@ -167,8 +164,8 @@ export function WorkspaceColorPicker({
   /** The active end's saved colour, when it is one of the twelve. */
   const actualDelLado = isWorkspaceColor(valorDelLado) ? valorDelLado : null;
 
-  /** What the square and the strip are showing, which may not be saved yet. */
-  const [hsv, setHsv] = useState(() => hexToHsv(hexDe(valorDelLado)));
+  /** What the square is showing, which may not be saved yet. */
+  const [vista, setVista] = useState(() => hexDe(valorDelLado));
   /** The style, resolved: a space with none has the one it always had. */
   const estiloActual: WashVariant = isWashVariant(wash) ? wash : DEFAULT_WASH;
 
@@ -182,13 +179,7 @@ export function WorkspaceColorPicker({
   const guardadoDesde = propioDesde ?? colorOf(value);
   const guardadoHasta = valueTo ? (propioHasta ?? colorOf(valueTo)) : null;
 
-  const colorActual = hsvToHex(hsv);
-  /*
-    `sucio` y `colorGuardada` se fueron con el boton: eran la comparacion que lo
-    apagaba cuando no habia nada que escribir. Sin boton no hay nada que apagar.
-  */
-
-  /**
+/**
    * The end the square is **not** on, so the preview and the two little
    * pictures can show both ends while this one moves.
    *
@@ -210,181 +201,9 @@ export function WorkspaceColorPicker({
    * them and you would be looking at a picture that never gets saved.
    */
   const par = lado === "desde"
-    ? { desde: colorActual, hasta: elOtro }
-    : { desde: elOtro, hasta: colorActual };
+    ? { desde: vista, hasta: elOtro }
+    : { desde: elOtro, hasta: vista };
 
-  /**
-   * How big the square is, and why it is not the width of the panel.
-   *
-   * It was `width: '100%'` with `aspectRatio: 1`, which on a 430-point phone is
-   * a 398-point square: the picker took the whole panel, and the preview of the
-   * result — the one thing that answers "is this the colour I meant?" — was below
-   * the fold. Fixed and small, so the square and the preview sit **side by side**
-   * and both are on screen without scrolling. A square wider than it is tall
-   * would make a drag across it cover more colour than one down it, and the
-   * marker would drift away from the finger, so it is square on purpose.
-   */
-  const TAMANO = 132;
-
-  /**
-   * The measured sizes, in state and not in a ref.
-   *
-   * The marker is painted from these, and a ref does not repaint: the first
-   * version held the measured width in a ref and drew the marker with the
-   * *assumed* `lado`, so on a real phone the marker sat about a third of the way
-   * across a box twice as wide, and the thing under your finger was never the
-   * thing you got. `onLayout` is the only thing that knows the real number and
-   * it runs after the first paint, so the two differ exactly when it matters.
-   */
-  const [caja, setCaja] = useState({ width: TAMANO, height: TAMANO });
-  const [anchoTira, setAnchoTira] = useState(0);
-
-  const alMoverCuadrado = useCallback(
-    (x: number, y: number) =>
-      setHsv((actual) => puntoAHsv(x, y, caja.width, caja.height, actual.h)),
-    [caja.width, caja.height],
-  );
-
-  const alMoverTira = useCallback(
-    (x: number) => setHsv((actual) => ({ ...actual, h: puntoAHue(x, anchoTira) })),
-    [anchoTira],
-  );
-
-  /*
-   * The two drags, as gestures and not as `PanResponder`.
-   *
-   * A `PanResponder` claims the touch through the responder system, and on the web
-   * the browser decides first: unless something tells it not to, it keeps the
-   * finger to scroll or to drag the document, and the responder is never called.
-   * `touchAction: "none"` in the style does not fix it, because react-native-web
-   * drops the property before it reaches CSS — measured, `touch-action` stayed
-   * `auto` with it in the style.
-   *
-   * So the two symptoms were the same line. A drag across the square left the
-   * colour exactly as it was, and the browser's own drag of the page is what the
-   * report described as "arrastrar en el picker cierra el modal": the app was
-   * never dismissing anything, the document was being dragged and the sheet went
-   * with it. `Gesture.Pan` sets `touch-action: none` on the view itself, which is
-   * the one thing that makes the browser hand the gesture over.
-   *
-   * The latest callback is read from a ref because a gesture must not be rebuilt
-   * while a finger is on it: `alMoverCuadrado` closes over the measured box, so
-   * closing over it directly would rebuild the gesture on every frame of a drag.
-   */
-  const alMoverCuadradoRef = useRef(alMoverCuadrado);
-  alMoverCuadradoRef.current = alMoverCuadrado;
-  const alMoverTiraRef = useRef(alMoverTira);
-  alMoverTiraRef.current = alMoverTira;
-
-  /*
-    Las dos flechas del hilo de JS. Se crean **una vez** y leen el ref cada vez que
-    se las llama, que es lo unico que hace falta para que el gesto no se reconstruya
-    con un dedo encima sin quedarse con el ancho del primer render.
-  */
-  const moverCuadrado = useCallback((x: number, y: number) => {
-    alMoverCuadradoRef.current(x, y);
-  }, []);
-  const moverTira = useCallback((x: number) => {
-    alMoverTiraRef.current(x);
-  }, []);
-
-  /*
-    El commit, **al levantar el dedo y no en un boton**.
-
-    El cuadrado y la tira mueven una previsualizacion local mientras el dedo esta
-    encima, y al soltar se escribe lo que quedo. Es el mismo "commitea al pulsar y
-    no en cada pixel del arrastre" de antes, solo que el pulsar ahora es soltar:
-    un boton aparte para decir "usa esto" pedia confirmar dos veces lo mismo —
-    elegir el color y decir que lo elegiste.
-
-    Y un toque cuenta como un arrastre de un pixel: el gesto tiene `minDistance(0)`,
-    asi que tocar el cuadrado tambien pasa por `onBegin`/`onEnd` y tambien escribe.
-    Sin esto, quitar el boton dejaba al toque sin puerta.
-  */
-  const hsvRef = useRef(hsv);
-  hsvRef.current = hsv;
-  const alTerminar = useCallback(() => {
-    escribir(hsvToHex(hsvRef.current));
-  }, [escribir]);
-  const alTerminarRef = useRef(alTerminar);
-  alTerminarRef.current = alTerminar;
-  const terminar = useCallback(() => {
-    alTerminarRef.current();
-  }, []);
-
-  const gestoCuadrado = useMemo(
-    () =>
-      Gesture.Pan()
-        // From the first pixel: tapping the square is a choice, and waiting for a
-        // threshold would mean a tap lands nowhere.
-        .minDistance(0)
-        /*
-          `runOnJS`, y no porque quede más correcto si no porque **sin él no
-          funciona**.
-
-          Un callback de gesto corre en el hilo de la interfaz. `alMoverCuadradoRef.current`
-          es una función normal de JavaScript que vive en el hilo de JS, y llamarla
-          desde ahí no la ejecuta: la llamada se queda en el hilo que no puede
-          ejecutarla. En la web la arquitectura antigua lo perdona; en un teléfono,
-          donde el puente va por la arquitectura nueva, arrastrar el cuadrado y la tira
-          no actualizan nada.
-
-          Y no se rompe al compilar ni al arrancar: el gesto se registra, la app abre,
-          el dedo se mueve sobre el cuadrado y el color no cambia. Es de los fallos que
-          solo existen mientras alguien arrastra.
-
-          Los otros cuatro ficheros con gestos de esta app ya lo envuelven —`sheet.tsx`,
-          `panel-grid.tsx`, `panel-card.tsx` y `draggable-row.tsx`— y aquí era el único
-          que no. `test/gesture-thread.test.ts` lo vigila para los cinco.
-        */
-        /*
-          **El `runOnJS` envuelve una flecha, y no el callback.**
-
-          Estaba asi:
-
-              .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y))
-
-          que parece leer el ref en cada movimiento y no lo hace: `runOnJS(fn)`
-          devuelve una funcion nueva, y esa llamada se evalua **al construir el
-          gesto**. El `useMemo` de arriba tiene `[]`, asi que corre una vez al
-          montar y se queda con el `alMoverCuadrado` de ese momento —que captura
-          `caja` con el ancho supuesto de 132, porque `onLayout` corre despues del
-          primer pintado—.
-
-          O sea que toda la indireccion por ref de este fichero no estaba
-          haciendo nada, y justo en el punto que pretendia: el gesto se construia
-          con el ancho del primer render y se quedaba con el para siempre.
-
-          Por eso en la web parecia funcionar —ahi el cuadrado mide 132 y el
-          supuesto coincide por casualidad— y en un movil no: el ancho medido es
-          otro, el color sale mal, y **la tira entera no hacia nada** porque con
-          `anchoTira` a 0 `puntoAHue` devuelve 0 siempre.
-
-          Ahora la flecha se crea una vez —para no reconstruir el gesto con un dedo
-          encima— y **lee el ref cuando se la llama**, que es cuando importa.
-        */
-        .onBegin((e) => runOnJS(moverCuadrado)(e.x, e.y))
-        .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y))
-        /*
-          Solo al terminar con exito, y no en `onFinalize`.
-
-          Un gesto cancelado —el dedo se sale, el sistema lo interrumpe— no es una
-          eleccion: escribirlo guardaria el color donde el dedo iba de paso. `onEnd`
-          es el dedo levantado a proposito; `onFinalize` es tambien el que no.
-        */
-        .onEnd(() => runOnJS(terminar)()),
-    [],
-  );
-
-  const gestoTira = useMemo(
-    () =>
-      Gesture.Pan()
-        .minDistance(0)
-        .onBegin((e) => runOnJS(moverTira)(e.x))
-        .onUpdate((e) => runOnJS(moverTira)(e.x))
-        .onEnd(() => runOnJS(terminar)()),
-    [],
-  );
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -415,7 +234,7 @@ export function WorkspaceColorPicker({
                 // The square opens on the end it is about to edit, or the marker
                 // sits on the other colour's hue and the first thing you drag
                 // jumps somewhere unrelated.
-                setHsv(hexToHsv(hexDe(extremo === "desde" ? value : valueTo)));
+                setVista(hexDe(extremo === "desde" ? value : valueTo));
               }}
               style={({ pressed }) => [
                 styles.extremo,
@@ -526,7 +345,7 @@ export function WorkspaceColorPicker({
               accessibilityLabel={t(`workspaces.color.${color.key}` as never)}
               {...selectedProps(selected)}
               onPress={() => {
-                setHsv(hexToHsv(colorOf(color.key)));
+                setVista(hexDe(color.key));
                 escribir(color.key);
               }}
               style={({ pressed }) => [
@@ -570,90 +389,27 @@ export function WorkspaceColorPicker({
         screen, the square and its result are both on it.
       */}
       <View style={[styles.fila, { gap: theme.spacing.md }]}>
-        {/* The square and the strip, stacked, as one column. */}
-        <View style={{ gap: theme.spacing.sm }}>
-          {/* Saturation across, brightness down. Two gradients laid on top of
-              each other: white to the hue, and then transparent to black. */}
-          <GestureDetector gesture={gestoCuadrado}>
-            <View
-              onLayout={(e) =>
-                setCaja({
-                  width: e.nativeEvent.layout.width,
-                  height: e.nativeEvent.layout.height,
-                })
-              }
-              accessibilityRole="adjustable"
-              accessibilityLabel={t("workspaces.colorSquare")}
-              style={[styles.cuadrado, { borderRadius: theme.radius.md }]}
-            >
-            <LinearGradient
-              colors={["#FFFFFF", hsvToHex({ ...hsv, s: 1 })]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <LinearGradient
-              colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View
-              pointerEvents="none"
-              style={[
-                styles.marcador,
-                {
-                  left: hsv.s * caja.width - 10,
-                  top: (1 - hsv.v) * caja.height - 10,
-                  // A ring that shows on both a white and a black background, and
-                  // not a white ring that vanishes on the pale corner.
-                  borderColor:
-                    hsv.v > 0.55 && hsv.s < 0.6 ? "#0B1120" : "#FFFFFF",
-                },
-              ]}
-            />
-            </View>
-          </GestureDetector>
-
-          {/* The hue, under the square, the way every other picker has it. */}
-          <GestureDetector gesture={gestoTira}>
-            <View
-              onLayout={(e) => setAnchoTira(e.nativeEvent.layout.width)}
-              accessibilityRole="adjustable"
-              accessibilityLabel={t("workspaces.colorHue")}
-              style={[styles.tira, { borderRadius: 8 }]}
-            >
-            <LinearGradient
-              colors={[...HUE_STRIP]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View
-              pointerEvents="none"
-              style={[
-                styles.marcadorTira,
-                { left: (hsv.h / 360) * anchoTira - 9 },
-              ]}
-            />
-            </View>
-          </GestureDetector>
-        </View>
+        {/*
+          The square, shared with the states: the same saturation square and hue
+          strip `ColorSquare` draws, with this end's colour on it. What moves
+          reports live into the preview (`setVista`) and writes only when the finger
+          lifts, so a drag never enqueues anything.
+        */}
+        <ColorSquare
+          color={hexDe(valorDelLado)}
+          onChange={setVista}
+          onCommit={escribir}
+          squareLabel={t("workspaces.colorSquare")}
+          hueLabel={t("workspaces.colorHue")}
+        />
 
         {/*
-          The preview, and the button that writes it.
+          The preview.
 
           **It shows both ends**, whichever one the square is on. A preview of one
           colour when there are two is a picture of half the thing, and the half
           you are not editing is exactly the half you need to see while you edit
           this one.
-
-          It commits on press and not on every pixel of a drag: a picker that fired
-          on drag would put a hundred writes in the sync queue and make the space
-          flicker between eleven colours while you are trying to look at one. So it
-          is a button, and it is **dimmed rather than hidden** when there is nothing
-          to change — hiding it would move the layout under the finger of somebody
-          about to drag the square.
 
           Its height is **not** left to the text inside it. `flex: 1` on a centred
           row collapses the column to the height of a line of text, which is not a
@@ -673,7 +429,7 @@ export function WorkspaceColorPicker({
             </AppText>
           </SpaceWash>
 
-          {/*
+{/*
             Y aqui **ya no hay boton de "usar este color"**.
 
             Era el que escribia lo que el cuadrado mostraba, y pedia confirmar dos
@@ -716,7 +472,7 @@ export function WorkspaceColorPicker({
                 accessibilityLabel={t("workspaces.recentColorOf", { color: hex })}
                 hitSlop={6}
                 onPress={() => {
-                  setHsv(hexToHsv(hex));
+                  setVista(hexDe(hex));
                   escribir(hex);
                 }}
                 style={({ pressed }) => [
@@ -800,53 +556,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 19,
   },
-  cuadrado: {
-    // Fixed, and next to the preview rather than above it. See `lado` for why
-    // this is not the width of the panel.
-    width: 132,
-    height: 132,
-    // The same reason as the strip, and it would bite here too the moment
-    // something above it in the column changed height.
-    flexShrink: 0,
-    overflow: "hidden",
-    /*
-     * `touch-action: none`, and it is what makes the drag work at all on the web.
-     *
-     * A `PanResponder` goes through the responder system, and on the web the
-     * browser decides first: unless the element says `touch-action: none`, the
-     * browser keeps the finger to scroll or to drag the page, the responder never
-     * activates, and the handler is never called. Measured in the browser before
-     * this line: a touch drag across the whole square left the colour exactly as
-     * it was.
-     *
-     * It is also the thing the report was about, and the two are the same line.
-     * The browser's idea of a drag inside a panel it is scrolling is what moved
-     * the panel out from under the finger and closed the sheet — the app was
-     * never dismissing anything, the browser was dragging the document, and the
-     * sheet went with it. Saying "this is not a scroll, it is a colour" takes the
-     * gesture away from the browser and gives it to the square, which is the only
-     * thing that should be moving.
-     *
-     * The same fix the list drag needed, and for the same reason; see the note in
-     * `docs/roadmap.md` about `GestureHandlerRootView`.
-     */
-    touchAction: "none",
-  },
-  tira: {
-    // **No `flex: 1`**, and it is worth saying why because it looks right.
-    //
-    // `flex: 1` is `flex: 1 1 0%`, and in a column `flex-basis` is the *height*.
-    // So it overwrites the 24 below with zero, and since the column has no free
-    // space to hand out, `flex-grow` has nothing to grow: the strip measured
-    // 132x0, it was not on the screen, and a view of no height gets no touch
-    // either. Measured in the browser, and the marker landed 48 px off.
-    height: 24,
-    flexShrink: 0,
-    overflow: "hidden",
-    // And the same `touch-action` as the square, for the same reason: this is a
-    // `PanResponder` too, and a hue strip is even more tempting for the browser
-    // to treat as something to scroll past.
-    touchAction: "none",
+  fila: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   recientes: {
     flexDirection: "row",
@@ -857,30 +569,6 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderWidth: 1,
-  },
-  marcador: {
-    position: "absolute",
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-  },
-  marcadorTira: {
-    position: "absolute",
-    top: 3,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000000",
-    shadowOpacity: 0.4,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-  },
-  fila: {
-    flexDirection: "row",
-    alignItems: "center",
   },
   campo: {
     flex: 1,

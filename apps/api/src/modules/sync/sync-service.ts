@@ -1,4 +1,5 @@
 import type {
+  BoardStates,
   ShareNodeType,
   SyncConflict,
   SyncOperation,
@@ -8,19 +9,21 @@ import type {
   SyncPushResponse,
 } from '@orbit-hub/contracts';
 import {
+  MAX_BOARD_STATES,
   NOTE_DOCUMENT_MAX_BYTES,
+  isKnownStateId,
   normalizaColor,
   noteDocumentSchema,
   noteDocumentToPlainText,
+  sanitiseIconRef,
   sanitiseTagColors,
   syncOperationSchema,
 } from '@orbit-hub/contracts';
+import type { IconRef } from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import {
-  ITEM_ICON_COLORS,
-  isItemIcon,
   LIST_KINDS,
   LIST_ORDER_MODES,
   WORKSPACE_COLORS,
@@ -119,9 +122,11 @@ function noteFieldsForWrite(
  * without a test going red.
  */
 const STRING_LIMITS: Partial<Record<SyncEntityName, Record<string, number>>> = {
-  workspace: { name: 80, description: 500, emoji: 16 },
-  folder: { name: 120, emoji: 16 },
-  list: { title: 120, description: 1000, emoji: 16 },
+  // No `icon` entry and no `emoji` one either: the icon is a jsonb object whose
+  // shape the contract fixes, so there is no width here to keep in step with.
+  workspace: { name: 80, description: 500 },
+  folder: { name: 120 },
+  list: { title: 120, description: 1000 },
   list_item: { annotation: 2000 },
   note: { title: 200 },
 };
@@ -178,11 +183,11 @@ export function sanitisePayload(
   for (const [key, value] of Object.entries(payload ?? {})) {
     if (!allowed.has(key) || value === undefined) continue;
 
-    if (key === 'name' || key === 'description' || key === 'emoji') {
+    if (key === 'name' || key === 'description') {
       // Keyed by entity, not by field name. `name` is varchar(80) on a workspace
-      // and varchar(120) on a folder, and `emoji` is varchar(16) everywhere: a
-      // single number per field name let a write past the column, and that is a
-      // 500 from Postgres on ordinary input rather than a rejected operation
+      // and varchar(120) on a folder: a single number per field name let a write
+      // past the column, and that is a 500 from Postgres on ordinary input
+      // rather than a rejected operation
       // with a message. The widths live in `content-schema.ts`; a test in
       // `sync-limits.test.ts` holds the two together.
       const limit = STRING_LIMITS[entity]?.[key];
@@ -311,25 +316,9 @@ export function sanitisePayload(
     }
 
     if (key === 'icon') {
-      // A key out of the icons the app offers, never free text: the same shape
-      // on every device and something the app can draw.
-      const icon = String(value);
-      clean[key] = isItemIcon(icon) ? icon : null;
-      continue;
-    }
-
-    if (key === 'iconStyle') {
-      // Outline or filled. Anything else is the outline, which is what a row
-      // with no style has always been drawn as.
-      clean[key] = value === 'fill' ? 'fill' : 'outline';
-      continue;
-    }
-
-    if (key === 'iconColor') {
-      // One of the colours the app offers, and not a colour value: a row with a
-      // colour nobody can draw is a row with no colour.
-      const color = String(value);
-      clean[key] = (ITEM_ICON_COLORS as readonly string[]).includes(color) ? color : 'neutral';
+      // Un objeto, y no una clave suelta: la forma la fija el contrato y una forma
+      // que no se puede dibujar es no tener icono, no una fila que no abre.
+      clean[key] = sanitiseIconRef(value);
       continue;
     }
 
@@ -366,6 +355,42 @@ export function sanitisePayload(
       // that no longer exists is worse than no rule, because the allow-list says
       // the field is writable and this says otherwise.
       clean[key] = value === null ? null : String(value).slice(0, 2000);
+      continue;
+    }
+
+    if (key === 'stateId') {
+      // The column of the board this task is drawn in. Null is a real value and
+      // not a failure: it means "wherever the first column is", which is where a
+      // task created on any other kind of list lands. Cut to the width of the
+      // `varchar(36)` behind it, so an id too long for the column is refused by
+      // postgres as a value and not stored as a truncated one that matches no
+      // state and silently swallows the task.
+      //
+      // And **the floor the contract already asks for**, which a ceiling alone
+      // does not give: `boardStateSchema.id` is `min(1).max(36)` precisely so an
+      // empty string becomes a rejected id instead of an id that matches no state
+      // and swallows every task that claims it. An empty string here is stored
+      // happily — it is a legal `varchar` — and the two disagree on exactly the
+      // edge this comment exists to cover, so the empty one becomes null: the
+      // same answer the contract gives it, and the one the invariant check reads.
+      const id = value === null ? null : String(value);
+      clean[key] = id !== null && id.length > 0 ? id.slice(0, 36) : null;
+      continue;
+    }
+
+    if (key === 'states') {
+      // The columns of a board, as one array and not field by field: reordering,
+      // renaming and adding all travel in a single write, and a merge per column
+      // would be a merge nobody could resolve anyway.
+      //
+      // What lands here is only checked for being an array, and the shapes inside
+      // are the contract's business: the client is the only thing that builds
+      // them, and a board whose states are nonsense is drawn as a board with the
+      // columns it could read. Cutting to the contract's own cap keeps a payload
+      // from carrying more columns than a board is allowed to have.
+      clean[key] = Array.isArray(value)
+        ? (value as unknown[]).slice(0, MAX_BOARD_STATES)
+        : [];
       continue;
     }
 
@@ -547,7 +572,8 @@ export class SyncService {
     return (note['workspaceId'] as string | null) ?? null;
   }
 
-  private async workspaceOfListItem(item: StoredEntity, userId: string): Promise<string | null> {
+  /** The list a row belongs to. `null` when the row does not say which one. */
+  private async listOfItem(item: StoredEntity): Promise<StoredEntity | null> {
     const listId = item['listId'] as string | null;
     if (!listId) return null;
 
@@ -555,6 +581,13 @@ export class SyncService {
     if (!list) {
       throw HttpError.notFound('List not found');
     }
+    return list;
+  }
+
+  /** The space a row belongs to, read off the list it already looked up. */
+  private async workspaceOfListItem(item: StoredEntity, userId: string): Promise<string | null> {
+    const list = await this.listOfItem(item);
+    if (list === null) return null;
     void userId;
     return (list['workspaceId'] as string | null) ?? null;
   }
@@ -610,6 +643,10 @@ export class SyncService {
             ...payload,
             id: operation.entityId,
             name: (payload['name'] as string) ?? 'Workspace',
+            // Named by hand even though the payload is spread above: the spread
+            // carries `icon` whatever the sanitiser made of it, and an explicit
+            // `null` is the state the column is nullable for.
+            icon: (payload['icon'] as IconRef | null) ?? null,
           });
           // The creator owns what they create.
           await syncRepository.addMembership(row.id, userId, 'owner');
@@ -630,7 +667,7 @@ export class SyncService {
             workspaceId,
             parentId: (payload['parentId'] as string | null) ?? null,
             name: (payload['name'] as string) ?? 'Folder',
-            emoji: (payload['emoji'] as string) ?? null,
+            icon: (payload['icon'] as IconRef | null) ?? null,
             position: (payload['position'] as number) ?? 0,
           });
           return { status: 'applied', version: row.version };
@@ -679,6 +716,17 @@ export class SyncService {
             nodeId: operation.entityId,
           });
 
+          // The column the item claims is checked against the columns the list
+          // has, from the row just read. A task pointing at a state no screen can
+          // draw is refused rather than stored: an unknown field is dropped in
+          // silence and the push still answers `applied`, and this is the other
+          // half of that rule — being writable is not being valid.
+          const states = (owner['states'] as BoardStates) ?? [];
+          const stateId = (payload['stateId'] as string | null) ?? null;
+          if (!isKnownStateId(states, stateId)) {
+            throw HttpError.validation('An item needs a state its list has');
+          }
+
           const row = await syncRepository.insertEntity('list_item', {
             ...payload,
             id: operation.entityId,
@@ -719,6 +767,9 @@ export class SyncService {
             // the text that search matches on cannot drift apart.
             plainText: noteDocumentToPlainText(document),
             tags: Array.isArray(payload['tags']) ? (payload['tags'] as string[]) : [],
+            // Named by hand because this `create` does not spread: it is the same
+            // one that dropped the icon of a list item once.
+            icon: (payload['icon'] as IconRef | null) ?? null,
           });
           return { status: 'applied', version: row.version };
         }
@@ -788,10 +839,28 @@ export class SyncService {
         nodeId: operation.entityId,
       });
     } else if (entity === 'list_item') {
-      await this.assertCanWrite(await this.workspaceOfListItem(existing, userId), userId, {
+      const list = await this.listOfItem(existing);
+      await this.assertCanWrite((list?.['workspaceId'] as string | null) ?? null, userId, {
         nodeType: 'list_item',
         nodeId: operation.entityId,
       });
+
+      // The state is read from the sanitised payload and not from the raw one,
+      // because the raw one carries keys that are never written and this has to
+      // look at the same keys that are. Sanitising twice is also how the two
+      // answers to "what does this payload say" drift apart.
+      const limpio = sanitisePayload('list_item', operation.payload);
+      // And only when the payload carries a state at all. An item can be left
+      // pointing at a column another device deleted, and from then on every edit
+      // to it — a title, an icon, its position — is one that does not mention the
+      // column. Checking the stored value would make such an item uneditable, and
+      // the only write that could rescue it is the write being refused.
+      if ('stateId' in limpio) {
+        const states = (list?.['states'] as BoardStates) ?? [];
+        if (!isKnownStateId(states, (limpio['stateId'] as string | null) ?? null)) {
+          throw HttpError.validation('An item needs a state its list has');
+        }
+      }
     } else if (entity === 'note') {
       await this.assertCanWrite(this.workspaceOfNote(existing), userId, {
         nodeType: 'note',

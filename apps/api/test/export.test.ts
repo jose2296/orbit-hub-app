@@ -1,5 +1,6 @@
 import {
   accountExportSchema,
+  BOARD_EXPORT_CSV_COLUMNS,
   LIST_EXPORT_CSV_COLUMNS,
   listExportSchema,
 } from '@orbit-hub/contracts';
@@ -586,6 +587,36 @@ describe('GET /lists/:id/export', () => {
     expect(fila).toBeDefined();
     // year es la columna 9 (indice 8) de LIST_EXPORT_CSV_COLUMNS.
     expect(celdas(fila as string)[8]).toBe('2000');
+  });
+
+  it('el CSV de un tablero dice el titulo de la columna, no su id', async () => {
+    // This test is here because the builder one cannot see any of the way the
+    // columns travel: a `List` full of states only exists because `toList` read
+    // them out of Postgres, and dropping that one line would leave every board
+    // CSV with an empty cell in every row and no test anywhere saying so.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await espacioPropio(api, user, 'Casa');
+    const listId = await createList(user, workspaceId, {
+      kind: 'board',
+      states: [
+        { id: 's1', title: 'Por hacer', color: 'neutral' },
+        { id: 's2', title: 'Hecho', color: 'green' },
+      ],
+    });
+    await createItem(user, listId, { title: 'Tarea', stateId: 's2' });
+
+    const descarga = await bajar(api, `/lists/${listId}/export?format=csv`, user.accessToken);
+
+    expect(descarga.status).toBe(200);
+    const lineas = descarga.text.replace(/^\uFEFF/, '').split('\r\n');
+    expect(lineas[0]).toBe(BOARD_EXPORT_CSV_COLUMNS.join(';'));
+    expect(descarga.text).not.toContain('completado');
+
+    const fila = lineas.find((linea) => linea.includes('Tarea'));
+    expect(fila).toBeDefined();
+    // estado es la columna 4 (indice 3), la que ocupaba completado.
+    expect(celdas(fila as string)[3]).toBe('Hecho');
+    expect(descarga.text).not.toContain('"s2"');
   });
 
   it('el CSV se llama por el titulo de la lista, no por su id', async () => {

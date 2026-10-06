@@ -2,7 +2,7 @@ import { useTheme } from "@/theme";
 import type { TagColors } from "@orbit-hub/contracts";
 import { derivedTagColor } from "@orbit-hub/contracts";
 import { Pressable, StyleSheet, View } from "react-native";
-import type { ViewStyle } from "react-native";
+import type { StyleProp, ViewStyle } from "react-native";
 import type { ReactNode } from "react";
 
 import { labelPillColors, tagColorHex } from "@/lib/lists/tag-colors";
@@ -45,12 +45,23 @@ export function TagChip({
   size = "regular",
   children,
   style,
+  testID,
   onPress,
   hintProps,
 }: {
   tag: string;
   colors: TagColors | undefined;
   size?: "regular" | "compact";
+  /**
+   * Where this pill can be pointed at, and **why it is not the tag's name.**
+   *
+   * Two pills of the same label exist at once —the row's and the sheet's— and they
+   * are the same pill in two places, so a selector by label finds both and a
+   * selector that means "the pill near that swatch" has to be told about the
+   * swatches. What is pointed at here is the pill, which is the only thing that
+   * carries the label's tint.
+   */
+  testID?: string;
   /**
    * What the pill carries inside it, and **the colour to draw it in.**
    *
@@ -73,7 +84,13 @@ export function TagChip({
    * inside it does not is an overflow waiting to happen. Nothing here sets it, so
    * a caller that passes nothing gets exactly the pill this file describes.
    */
-  style?: ViewStyle;
+  /*
+   * `StyleProp` y no `ViewStyle`, para que quien la usa pueda sumar su estilo al
+   * del componente sin aplastarlo: la fila de la lista añade su
+   * `paddingHorizontal` encima del de la pastilla, y con un `ViewStyle` a secas
+   * tendría que reescribir el `flexShrink` de `styles.metaTag` en el mismo objeto.
+   */
+  style?: StyleProp<ViewStyle>;
   /**
    * A press on the pill, **and nothing at all without it.**
    *
@@ -141,9 +158,27 @@ export function TagChip({
     style,
   ];
 
+  /*
+   * **`fontWeight: "600"` y no un token, y el motivo es que `caption` es de 12 px.**
+   * Una pastilla se lee como el texto de color de una insignia de prioridad, y esas
+   * escriben en el mismo `caption` con un peso mas fuerte que el de la escala —que en
+   * 12 px es 500—. Con el 600 el texto de una pastilla tiene la misma presencia que
+   * el de una insignia, que es lo que se quiso al parecérselas; y como el color
+   * elegido esta a 3:1 sobre su propio relleno —el liston de las insignias—, el peso
+   * es lo que sostiene la lectura de esos 12 px.
+   *
+   * **El bold no cambia el liston.** WCAG llama "texto grande" a 18 px, o a 14 px en
+   * negrita, y a 12 px le toca 4.5:1 aunque sea negrita: el peso cambia como se ve,
+   * no cual es el minimo. Por eso `MIN_LABEL_CONTRAST` esta en 3 por decision propia y
+   * no por este peso —ver el comentario de la constante en `tag-colors.ts`—, que es
+   * un punto en el que los dos cambios se apoyan el uno en el otro y conviene no
+   * confundirlos.
+   */
+  const estiloDelTexto = { color: text, fontWeight: "600" as const };
+
   const dentro = (
     <>
-      <AppText variant="caption" style={{ color: text }}>
+      <AppText variant="caption" style={estiloDelTexto}>
         {tag}
       </AppText>
       {typeof children === "function" ? children(text) : children}
@@ -151,7 +186,7 @@ export function TagChip({
   );
 
   if (!onPress) {
-    return <View style={estilo}>{dentro}</View>;
+    return <View testID={testID} style={estilo}>{dentro}</View>;
   }
 
   // Sin `accessibilityLabel`: el nombre accesible de la pastilla es el de la
@@ -159,6 +194,7 @@ export function TagChip({
   // que esto es un `<button>` y no un `<div>`; está en la prop de arriba.
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       {...hintProps}
       onPress={onPress}

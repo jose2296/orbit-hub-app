@@ -39,6 +39,7 @@ import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Badge } from "@/components/ui/badge";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { expandedProps, selectedProps } from "@/components/ui/a11y-state";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { SpaceDot } from "@/components/ui/wash";
 import { useListItems } from "@/hooks/use-lists";
@@ -48,6 +49,7 @@ import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { drawerWidth } from "@/lib/layout/measure";
+import { routeForList } from "@/lib/lists/route";
 import { useTheme } from "@/theme";
 
 import type { SpacesTree } from "@/hooks/use-spaces-tree";
@@ -870,14 +872,24 @@ function FolderBranch({
             },
           ]}
         >
-          <Ionicons
-            name={open ? "folder-open-outline" : "folder-outline"}
-            size={theme.iconSize.body}
-            color={theme.colors.textSubtle}
-          />
+          {/*
+            One icon, not two. The row used to draw the open/closed folder glyph
+            and then the folder's own icon inside the name: two drawings for one
+            thing, and the chosen one crammed where the label goes. With an icon
+            of its own the row shows it; without one it keeps the open/closed
+            glyph it always had.
+          */}
+          {folder.icon ? (
+            <AppIcon icon={folder.icon} size={theme.iconSize.body} />
+          ) : (
+            <Ionicons
+              name={open ? "folder-open-outline" : "folder-outline"}
+              size={theme.iconSize.body}
+              color={theme.colors.textSubtle}
+            />
+          )}
 
           <AppText variant="body" numberOfLines={1} style={styles.flex}>
-            {folder.emoji ? `${folder.emoji} ` : ""}
             {folder.name}
           </AppText>
         </Pressable>
@@ -960,7 +972,7 @@ function ListBranch({
           accessibilityLabel={list.title}
           {...pista.props}
           onLongPress={nombreLargo.onLongPress}
-          onPress={() => onOpen(`/(app)/list/${list.id}`)}
+          onPress={() => onOpen(routeForList(list))}
           style={({ pressed }) => [
             styles.item,
             styles.flex,
@@ -974,10 +986,11 @@ function ListBranch({
             },
           ]}
         >
-          <Ionicons
-            name={LIST_ICON[list.kind] ?? "list-outline"}
+          <AppIcon
+            icon={list.icon}
             size={theme.iconSize.body}
-            color={theme.colors.textSubtle}
+            inheritColor={theme.colors.textSubtle}
+            fallback={LIST_ICON[list.kind] ?? "list-outline"}
           />
 
           <AppText variant="body" numberOfLines={1} style={styles.flex}>

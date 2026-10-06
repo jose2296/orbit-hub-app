@@ -13,21 +13,37 @@ import { Card } from "@/components/ui/card";
 import { Divider } from "@/components/ui/divider";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Screen } from "@/components/ui/screen";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useLists } from "@/hooks/use-lists";
 import { useWorkspaces } from "@/hooks/use-workspaces";
-import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
+import { LIST_KIND_ICON, LIST_KIND_LABEL, LIST_KIND_ORDER } from "@/lib/lists/kind";
 import { listPlacement, needsSpaceChoice } from "@/lib/lists/placement";
+import { routeForList } from "@/lib/lists/route";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 import type { TranslationKey } from "@/lib/i18n";
 
+/**
+ * The icon and the label of each kind, **built from `LIST_KIND_ORDER` and not
+ * from the keys of `LIST_KIND_ICON`.**
+ *
+ * The two maps are both `Record<ListKind, …>` and both are complete, so either one
+ * would do — and that is exactly the problem this replaces. The three pickers of a
+ * list kind in the app read their options from different sources: this one from the
+ * keys of `LIST_KIND_ICON` and the two folder sheets from `LIST_KIND_ORDER`. A kind
+ * that was added to one and not to the other **appeared in the main form and
+ * disappeared from the two sheets**, with the typecheck green and nothing failing:
+ * `LIST_KIND_ORDER` is a `ListKind[]` and does not complain about a missing entry.
+ * One source, and a test that says so — `test/list-kinds.test.ts`, which reads this
+ * file and the two sheets to check it.
+ */
 const KIND_META: Record<
   ListKind,
   { icon: keyof typeof Ionicons.glyphMap; labelKey: TranslationKey }
 > = Object.fromEntries(
-  (Object.keys(LIST_KIND_ICON) as ListKind[]).map((kind) => [
+  LIST_KIND_ORDER.map((kind) => [
     kind,
     { icon: LIST_KIND_ICON[kind], labelKey: LIST_KIND_LABEL[kind] },
   ]),
@@ -95,7 +111,10 @@ export default function ListsScreen() {
         kind: newKind,
       });
       setTitle("");
-      router.push(`/(app)/list/${id}`);
+      // The kind the list was created with is the one the form chose, and it is
+      // the only thing here that says whether the new list is a board: `createList`
+      // hands back an id and nothing else.
+      router.push(routeForList({ id, kind: newKind }));
     } finally {
       setCreating(false);
     }
@@ -138,11 +157,9 @@ export default function ListsScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={list.title}
                 onLongPress={() =>
-                  nombreLargo.onLongPress(
-                    `${list.emoji ? `${list.emoji} ` : ""}${list.title}`,
-                  )
+                  nombreLargo.onLongPress(list.title)
                 }
-                onPress={() => router.push(`/(app)/list/${list.id}`)}
+                onPress={() => router.push(routeForList(list))}
                 style={({ pressed }) => [
                   styles.row,
                   {
@@ -170,7 +187,7 @@ export default function ListsScreen() {
 
                 <View style={styles.flex}>
                                     <AppText variant="bodyStrong">
-                    {list.emoji ? `${list.emoji} ` : ""}
+                    <AppIcon icon={list.icon} size={18} />
                     {list.title}
                   </AppText>
                   <View style={[styles.meta, { gap: theme.spacing.sm }]}>
@@ -226,7 +243,11 @@ export default function ListsScreen() {
             label={t("lists.kindLabel")}
             value={newKind}
             onChange={setNewKind}
-            options={(Object.keys(KIND_META) as ListKind[]).map((kind) => ({
+            // `LIST_KIND_ORDER` and not the keys of `KIND_META`: the order the
+            // kinds are offered in is the one that is written down, and going
+            // through the map would offer them in whatever order the icons happen
+            // to be declared in.
+            options={LIST_KIND_ORDER.map((kind) => ({
               value: kind,
               label: t(KIND_META[kind].labelKey),
             }))}
