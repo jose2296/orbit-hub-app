@@ -1,26 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
-import { FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import type { ListRenderItemInfo, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 
 import type { IconColor, IconRef, VectorIconCategory } from "@orbit-hub/contracts";
 import {
   ITEM_ICON_COLORS,
-  VECTOR_ICON_CATEGORIES,
   VECTOR_ICON_CATEGORY_LABEL,
   vectorGlyph,
 } from "@orbit-hub/contracts";
 
 import { useTranslation } from "@/lib/i18n";
-import { EMOJI_GROUPS } from "@/lib/icons/emoji-catalog.generated";import {
+import { EMOJI_GROUP_LABELS, emojiGroupLabel } from "@/lib/icons/emoji-group-labels";
+import { buildIconGrid, cellForIndex } from "@/lib/icons/icon-grid";
+import type { GridCell } from "@/lib/icons/icon-grid";
+import {
   RECENT_EMOJIS_KEY,
   parseRecentEmojis,
   withRecentEmoji,
 } from "@/lib/icons/recent-emojis";
-import { searchEmojis } from "@/lib/icons/search-emoji";
 import { keyValueStore } from "@/lib/storage/key-value";
-import { searchVectors } from "@/lib/icons/search-vectors";
 import { useTheme } from "@/theme";
-import { resolveAppIcon } from "@/lib/icons/resolve-icon";
 
 import { AppText } from "./text";
 import { Sheet } from "./sheet";
@@ -29,9 +36,9 @@ import { TextField } from "./text-field";
 /**
  * What tapping a control in the picker changes, and the diff between two icons.
  *
- * Re-exported here so a screen opens one module for the panel and the merge.
- * The function lives in `lib/icons/icon-change`: no test in this repo renders
- * a component, so the testable part lives where it can be asked.
+ * Re-exported here so a screen opens one module for the panel and the merge. The
+ * function lives in `lib/icons/icon-change`: no test in this repo renders a
+ * component, so the testable part lives where it can be asked.
  */
 export { iconChange } from "@/lib/icons/icon-change";
 export type { IconChange } from "@/lib/icons/icon-change";
@@ -57,24 +64,33 @@ export function IconPickerPanel({
   return <IconPickerBody current={current} onSelect={onSelect} />;
 }
 
-/**
- * The icon somebody chose, emojis and line drawings in one place.
- *
- * Two tabs because they are two different catalogues searched two different
- * ways: emojis by what they mean, drawings by the word somebody would type.
- * The style and the colour sit above both, because they apply to whatever is
- * picked next and not to the cell that happens to be looked at.
- *
- * The chosen cell is marked with a border and not with the colour: the colour
- * is what was chosen for the icon, and marking with it spent it.
- */
 export function IconPickerSheet({ visible, onClose, current, onSelect }: IconPickerSheetProps) {
   const t = useTranslation();
   return (
-    <Sheet visible={visible} onClose={onClose} title={t("icons.title")} scrollable>
+    // Not scrollable: the grid scrolls itself, and a panel that scrolls too
+    // means two scroll views fighting over the same gesture.
+    <Sheet visible={visible} onClose={onClose} title={t("icons.title")} scrollable={false}>
       <IconPickerBody current={current} onSelect={onSelect} />
     </Sheet>
   );
+}
+
+/** Columns for both grids, so a vector cell is the size of an emoji cell. */
+const COLUMNS = 8;
+/** The gap between cells, which is outside the cell so cells stay square. */
+const GAP = 4;
+/**
+ * Where the cell lands inside its slot.
+ *
+ * Two columns of eight on a 430pt phone is a 44pt cell. Below that the emoji stops
+ * being readable and the vector stops being recognisable, so the count drops
+ * instead of the cell shrinking: a grid of cells too small to tell apart is a grid
+ * you cannot choose from.
+ */
+function columnsFor(width: number): number {
+  if (width <= 0) return COLUMNS;
+  const porTamano = Math.floor((width + GAP) / (44 + GAP));
+  return Math.max(4, Math.min(COLUMNS, porTamano));
 }
 
 function IconPickerBody({
@@ -83,12 +99,11 @@ function IconPickerBody({
 }: Pick<IconPickerSheetProps, "current" | "onSelect">) {
   const theme = useTheme();
   const t = useTranslation();
+  const { height } = useWindowDimensions();
+
   const [tab, setTab] = useState<"emoji" | "vector">("emoji");
-  const [emojiQuery, setEmojiQuery] = useState("");
-  const [emojiQueryDebounced, setEmojiQueryDebounced] = useState("");
-  const [emojiGroup, setEmojiGroup] = useState<string | null>(null);
-  const [vectorQuery, setVectorQuery] = useState("");
-  const [vectorGroup, setVectorGroup] = useState<VectorIconCategory | null>(null);
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
   const [drawing, setDrawing] = useState<"outline" | "fill">(
     current?.type === "vector" ? current.style : "outline",
   );
@@ -96,297 +111,384 @@ function IconPickerBody({
   const [recents, setRecents] = useState<string[]>(() =>
     parseRecentEmojis(keyValueStore.getJson(RECENT_EMOJIS_KEY)),
   );
+  const [listWidth, setListWidth] = useState(0);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  const lista = useRef<FlatList<GridCell>>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setEmojiQueryDebounced(emojiQuery), 250);
+    const timer = setTimeout(() => setDebounced(query), 250);
     return () => clearTimeout(timer);
-  }, [emojiQuery]);
+  }, [query]);
 
-  const emojis = useMemo(
-    () => searchEmojis(emojiQueryDebounced, { group: emojiGroup ?? undefined, limit: 240 }),
-    [emojiQueryDebounced, emojiGroup],
+  const columns = columnsFor(listWidth);
+  const cell = Math.max(
+    24,
+    Math.floor((listWidth - GAP * (columns + 1)) / columns),
+  );
+  const rowHeight = cell + GAP;
+
+  const pickEmoji = useCallback(
+    (value: string) => {
+      const siguiente = withRecentEmoji(recents, value);
+      setRecents(siguiente);
+      keyValueStore.set(RECENT_EMOJIS_KEY, JSON.stringify(siguiente));
+      // `auto` and nothing else: an emoji is drawn by the operating system with
+      // the colours it decides, and there is no picker that could change that.
+      onSelect({ type: "emoji", value, color: "auto" });
+    },
+    [onSelect, recents],
   );
 
-  const vectors = useMemo(
-    () => searchVectors(vectorQuery, { category: vectorGroup, limit: 240 }),
-    [vectorQuery, vectorGroup],
+  const pickVector = useCallback(
+    (key: string) => {
+      onSelect({ type: "vector", value: key, library: "ionicons", style: drawing, color: tint });
+    },
+    [drawing, onSelect, tint],
   );
 
-  const pickEmoji = (value: string) => {
-    const next = withRecentEmoji(recents, value);
-    setRecents(next);
-    keyValueStore.set(RECENT_EMOJIS_KEY, JSON.stringify(next));
-    onSelect({ type: "emoji", value, color: tint });
-  };
+  const grid = useMemo(
+    () =>
+      buildIconGrid({
+        kind: tab,
+        query: debounced,
+        columns,
+        onPickEmoji: pickEmoji,
+        onPickVector: pickVector,
+      }),
+    [columns, debounced, pickEmoji, pickVector, tab],
+  );
 
-  const pickVector = (key: string) => {
-    onSelect({ type: "vector", value: key, library: "ionicons", style: drawing, color: tint });
-  };
+  /** The category the reader is looking at, from where the list is scrolled to. */
+  const categoriaDeOffset = useCallback(
+    (offsetY: number): string | null => {
+      const indice = Math.floor(offsetY / rowHeight);
+      const celda = grid.cells[indice];
+      if (!celda || celda.placeholder) return null;
+      return celda.category;
+    },
+    [grid.cells, rowHeight],
+  );
+
+  const onScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const categoria = categoriaDeOffset(event.nativeEvent.contentOffset.y);
+      // Only when it changes: `onScroll` fires per frame and a state update per
+      // frame re-renders the whole grid behind it.
+      setActiveCategory((actual) => (actual === categoria ? actual : categoria));
+    },
+    [categoriaDeOffset],
+  );
+
+  const irA = useCallback(
+    (category: string) => {
+      const section = grid.sections.find((entry) => entry.category === category);
+      if (!section) return;
+      lista.current?.scrollToOffset({
+        offset: cellForIndex(section.firstIndex, columns, rowHeight),
+        animated: true,
+      });
+      setActiveCategory(category);
+    },
+    [columns, grid.sections, rowHeight],
+  );
+
+  /* A new tab or a new search starts at the top, and so does its bar. */
+  useEffect(() => {
+    lista.current?.scrollToOffset({ offset: 0, animated: false });
+    setActiveCategory(grid.sections[0]?.category ?? null);
+  }, [grid.sections, tab]);
+
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<GridCell>) => {
+      if (item.placeholder) {
+        return <View style={{ width: cell, height: cell, margin: GAP / 2 }} />;
+      }
+      const elegido =
+        current?.type === tab &&
+        (tab === "emoji" ? current.value === item.value : current.value === item.value);
+
+      return (
+        <Pressable
+          testID={`${tab === "emoji" ? "emoji-cell" : "icon-cell"}-${item.value}`}
+          accessibilityRole="button"
+          accessibilityState={{ selected: Boolean(elegido) }}
+          accessibilityLabel={item.label}
+          disabled={!item.onPick}
+          onPress={item.onPick}
+          style={({ pressed }) => [
+            styles.cell,
+            {
+              width: cell,
+              height: cell,
+              margin: GAP / 2,
+              borderRadius: theme.radius.md,
+              backgroundColor: theme.colors.surfaceMuted,
+              borderColor: elegido ? theme.colors.text : "transparent",
+              borderWidth: elegido ? 2 : 0,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          {tab === "emoji" ? (
+            <AppText style={{ fontSize: Math.round(cell * 0.58) }}>{item.id}</AppText>
+          ) : (
+            <Ionicons
+              name={vectorGlyph(item.value!, drawing) as keyof typeof Ionicons.glyphMap}
+              size={Math.round(cell * 0.56)}
+              color={theme.colors.icon[tint]}
+            />
+          )}
+        </Pressable>
+      );
+    },
+    [cell, current, drawing, tab, theme.colors.icon, theme.colors.surfaceMuted, theme.colors.text, theme.radius.md, tint],
+  );
+
+  const vacio = grid.cells.every((celda) => celda.placeholder);
 
   return (
-      <View style={{ gap: theme.spacing.md }}>
-        <View style={[styles.row, { gap: theme.spacing.xs }]}>
-          {(["emoji", "vector"] as const).map((option) => {
-            const active = tab === option;
-            return (
-              <Pressable
-                key={option}
-                testID={`icon-tab-${option}`}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => setTab(option)}
-                style={({ pressed }) => [
-                  styles.tab,
-                  {
-                    borderRadius: theme.radius.pill,
-                    backgroundColor: active ? theme.colors.accent : theme.colors.surfaceMuted,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
+    <View style={{ gap: theme.spacing.sm }}>
+      {/* Tabs. Emojis first, because that is what somebody comes for. */}
+      <View style={[styles.row, { gap: theme.spacing.xs }]}>
+        {(["emoji", "vector"] as const).map((option) => {
+          const active = tab === option;
+          return (
+            <Pressable
+              key={option}
+              testID={`icon-tab-${option}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => setTab(option)}
+              style={({ pressed }) => [
+                styles.tab,
+                {
+                  borderRadius: theme.radius.pill,
+                  backgroundColor: active ? theme.colors.accent : theme.colors.surfaceMuted,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <AppText
+                variant="caption"
+                style={{ color: active ? theme.colors.onAccent : theme.colors.textMuted }}
               >
-                <AppText
-                  variant="caption"
-                  style={{ color: active ? theme.colors.onAccent : theme.colors.textMuted }}
-                >
-                  {t(option === "emoji" ? "icons.tabEmoji" : "icons.tabVector")}
-                </AppText>
-              </Pressable>
-            );
-          })}
-        </View>
+                {t(option === "emoji" ? "icons.tabEmoji" : "icons.tabVector")}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </View>
 
-        <View style={{ gap: theme.spacing.xs }}>
-          <AppText variant="caption" tone="subtle">
-            {t("icons.drawing")}
-          </AppText>
-          <View style={[styles.row, { gap: theme.spacing.xs }]}>
-            {(["outline", "fill"] as const).map((option) => {
-              const active = drawing === option;
-              return (
-                <Pressable
+      {/*
+        Only on vectors. A system emoji is painted by the operating system in the
+        colours it picks, so a colour row above them is a promise nothing can keep,
+        and "filled or outline" is a question about a line drawing that an emoji
+        does not answer.
+      */}
+      {tab === "vector" ? (
+        <View style={{ gap: theme.spacing.sm }}>
+          <View style={{ gap: theme.spacing.xs }}>
+            <AppText variant="caption" tone="subtle">
+              {t("icons.drawing")}
+            </AppText>
+            <View style={[styles.row, { gap: theme.spacing.xs }]}>
+              {(["outline", "fill"] as const).map((option) => (
+                <Chip
                   key={option}
                   testID={`icon-style-${option}`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={t(option === "outline" ? "icons.style.outline" : "icons.style.fill")}
+                  label={t(option === "outline" ? "icons.style.outline" : "icons.style.fill")}
+                  active={drawing === option}
                   onPress={() => setDrawing(option)}
-                  style={({ pressed }) => [
-                    styles.pill,
-                    {
-                      borderRadius: theme.radius.pill,
-                      backgroundColor: active ? theme.colors.accent : theme.colors.surfaceMuted,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <AppText
-                    variant="caption"
-                    style={{ color: active ? theme.colors.onAccent : theme.colors.textMuted }}
-                  >
-                    {t(option === "outline" ? "icons.style.outline" : "icons.style.fill")}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={{ gap: theme.spacing.xs }}>
-          <AppText variant="caption" tone="subtle">
-            {t("icons.color")}
-          </AppText>
-          <View style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}>
-            {(["auto", ...ITEM_ICON_COLORS] as const).map((option) => {
-              const active = tint === option;
-              return (
-                <Pressable
-                  key={option}
-                  testID={`icon-color-${option}`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => setTint(option)}
-                  style={({ pressed }) => [
-                    styles.swatch,
-                    {
-                      backgroundColor: theme.colors.icon[option],
-                      borderColor: active ? theme.colors.text : "transparent",
-                      borderWidth: active ? 3 : 0,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                />
-              );
-            })}
-          </View>
-        </View>
-
-        {tab === "emoji" ? (
-          <View style={{ gap: theme.spacing.sm }}>
-            <TextField
-              testID="emoji-search"
-              label={t("icons.search")}
-              value={emojiQuery}
-              onChangeText={setEmojiQuery}
-              placeholder={t("icons.searchPlaceholder")}
-              returnKeyType="search"
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={[styles.row, { gap: theme.spacing.xs, paddingVertical: 2 }]}
-            >
-              {recents.length > 0 && (
-                <GroupChip
-                  label={t("icons.recent")}
-                  active={emojiGroup === null && emojiQueryDebounced === ""}
-                  onPress={() => {
-                    setEmojiGroup(null);
-                    setEmojiQuery("");
-                  }}
-                />
-              )}
-              {EMOJI_GROUPS.map((group) => (
-                <GroupChip
-                  key={group}
-                  label={group}
-                  active={emojiGroup === group}
-                  onPress={() => setEmojiGroup(emojiGroup === group ? null : group)}
                 />
               ))}
-            </ScrollView>
-            {emojis.length === 0 ? (
-              <AppText variant="body" tone="muted" style={{ paddingVertical: theme.spacing.lg }}>
-                {t("icons.noneFound", { query: emojiQueryDebounced })}
-              </AppText>
-            ) : (
-              <FlatList
-                data={emojis}
-                key="emoji-grid"
-                keyExtractor={(entry) => entry.emoji}
-                numColumns={8}
-                scrollEnabled={false}
-                renderItem={({ item: entry }) => {
-                  const selected = current?.type === "emoji" && current.value === entry.emoji;
-                  return (
-                    <Pressable
-                      testID={`emoji-cell-${entry.emoji}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={entry.name}
-                      onPress={() => pickEmoji(entry.emoji)}
-                      style={({ pressed }) => [
-                        styles.cell,
-                        {
-                          backgroundColor: theme.colors.surfaceMuted,
-                          borderRadius: theme.radius.md,
-                          borderColor: selected ? theme.colors.text : "transparent",
-                          borderWidth: selected ? 2 : 0,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                    >
-                      <AppText style={{ fontSize: 26 }}>{entry.emoji}</AppText>
-                    </Pressable>
-                  );
-                }}
-              />
-            )}
+            </View>
           </View>
-        ) : (
-          <View style={{ gap: theme.spacing.sm }}>
-            <TextField
-              testID="icon-search"
-              label={t("icons.search")}
-              value={vectorQuery}
-              onChangeText={setVectorQuery}
-              placeholder={t("icons.searchPlaceholder")}
-              returnKeyType="search"
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={[styles.row, { gap: theme.spacing.xs, paddingVertical: 2 }]}
-            >
-              <GroupChip
-                label={t("icons.groupAll")}
-                active={vectorGroup === null}
-                onPress={() => setVectorGroup(null)}
-              />
-              {VECTOR_ICON_CATEGORIES.map((category) => (
-                <GroupChip
-                  key={category}
-                  label={VECTOR_ICON_CATEGORY_LABEL[category]}
-                  active={vectorGroup === category}
-                  onPress={() => setVectorGroup(vectorGroup === category ? null : category)}
-                />
-              ))}
-            </ScrollView>
-            {vectors.length === 0 ? (
-              <AppText variant="body" tone="muted" style={{ paddingVertical: theme.spacing.lg }}>
-                {t("icons.noneFound", { query: vectorQuery })}
-              </AppText>
-            ) : (
-              <FlatList
-                data={vectors}
-                key="vector-grid"
-                keyExtractor={(key) => key}
-                numColumns={4}
-                scrollEnabled={false}
-                renderItem={({ item: key }) => {
-                  const glyph = vectorGlyph(key, drawing);
-                  const selected = current?.type === "vector" && current.value === key;
-                  const resolved = resolveAppIcon(
-                    { type: "vector", value: key, library: "ionicons", style: drawing, color: tint },
-                    theme.scheme,
-                  );
-                  return (
-                    <Pressable
-                      testID={`icon-cell-${key}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      onPress={() => pickVector(key)}
-                      style={({ pressed }) => [
-                        styles.vectorCell,
-                        {
-                          backgroundColor: theme.colors.surfaceMuted,
-                          borderRadius: theme.radius.md,
-                          borderColor: selected ? theme.colors.text : "transparent",
-                          borderWidth: selected ? 2 : 0,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                    >
-                      {glyph && resolved?.kind === "vector" ? (
-                        <Ionicons name={glyph as keyof typeof Ionicons.glyphMap} size={24} color={resolved.color} />
-                      ) : null}
-                    </Pressable>
-                  );
-                }}
-              />
-            )}
-          </View>
-        )}
-
-        {current ? (
-          <Pressable
-            testID="icon-cell-none"
-            accessibilityRole="button"
-            onPress={() => onSelect(null)}
-            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, paddingVertical: theme.spacing.sm }]}
-          >
-            <AppText variant="body" tone="muted">
-              {t("icons.none")}
+          <View style={{ gap: theme.spacing.xs }}>
+            <AppText variant="caption" tone="subtle">
+              {t("icons.color")}
             </AppText>
-          </Pressable>
-        ) : null}
-      </View>
+            <View style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}>
+              {(["auto", ...ITEM_ICON_COLORS] as const).map((option) => {
+                const active = tint === option;
+                return (
+                  <Pressable
+                    key={option}
+                    testID={`icon-color-${option}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={t(`icons.colors.${option}`)}
+                    onPress={() => setTint(option)}
+                    style={({ pressed }) => [
+                      styles.swatch,
+                      {
+                        backgroundColor: theme.colors.icon[option],
+                        borderColor: active ? theme.colors.text : "transparent",
+                        borderWidth: active ? 3 : 0,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      <TextField
+        testID={tab === "emoji" ? "emoji-search" : "icon-search"}
+        label={t("icons.search")}
+        value={query}
+        onChangeText={setQuery}
+        placeholder={t("icons.searchPlaceholder")}
+        returnKeyType="search"
+      />
+
+      {/* Recents, above the bar and outside the grid: they are a shortcut, and a
+          shortcut that is a category filter stops being a shortcut. */}
+      {tab === "emoji" && recents.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.row, { gap: theme.spacing.xs }]}
+        >
+          {recents.map((emoji) => (
+            <Pressable
+              key={emoji}
+              testID={`emoji-recent-${emoji}`}
+              accessibilityRole="button"
+              accessibilityLabel={emoji}
+              onPress={() => pickEmoji(emoji)}
+              style={({ pressed }) => [
+                styles.cell,
+                {
+                  width: cell,
+                  height: cell,
+                  margin: 0,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.colors.surfaceMuted,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <AppText style={{ fontSize: Math.round(cell * 0.58) }}>{emoji}</AppText>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+
+      {/*
+        The category bar. It navigates, it does not filter: everything is already
+        in the list below, and the lit one says which stretch is on screen. Before
+        it filtered, which meant the list was empty until you chose, and the list
+        you got was never the whole catalogue.
+      */}
+      {grid.sections.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.row, { gap: theme.spacing.xs }]}
+        >
+          {grid.sections.map((section) => (
+            <Chip
+              key={section.category}
+              testID={`icon-group-${section.category}`}
+              label={categoryLabel(section.category)}
+              active={activeCategory === section.category}
+              onPress={() => irA(section.category)}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+
+      {vacio ? (
+        <AppText variant="body" tone="muted" style={{ paddingVertical: theme.spacing.lg }}>
+          {t("icons.noneFound", { query: debounced })}
+        </AppText>
+      ) : (
+        <View
+          onLayout={(event) => setListWidth(event.nativeEvent.layout.width)}
+          style={{ height: Math.max(160, Math.round(height * 0.42)) }}
+        >
+          <FlatList
+            ref={lista}
+            testID={`icon-grid-${tab}`}
+            data={grid.cells}
+            key={`${tab}-${columns}`}
+            keyExtractor={(item) => item.id}
+            numColumns={columns}
+            renderItem={renderItem}
+            onScroll={onScroll}
+            scrollEventThrottle={32}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={columns * 8}
+            maxToRenderPerBatch={columns * 8}
+            windowSize={9}
+            /*
+              No `removeClippedSubviews`. It is a native-only saving and on the web
+              it detaches the nodes outside the window without giving them back:
+              the list stops growing, `scrollHeight` describes only what happens to
+              be mounted, and the whole point of virtualising 1914 emojis is gone.
+              Measured, not guessed — with it on, the emoji grid reported 2544px of
+              content for 12720px of cells and simply would not scroll.
+            */
+          />
+        </View>
+      )}
+
+      {current ? (
+        <Pressable
+          testID="icon-cell-none"
+          accessibilityRole="button"
+          onPress={() => onSelect(null)}
+          style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+        >
+          <AppText variant="body" tone="muted">
+            {t("icons.none")}
+          </AppText>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
-function GroupChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+/**
+ * The name of a category, in the language of the app.
+ *
+ * The two sets come from different places and neither one is the dictionary. The
+ * vector categories are the contract's own and it labels all seven — a `Record`
+ * over the union, so a new one without a name is a compile error. The emoji groups
+ * are Unicode's, in English, and carry a Spanish name beside them.
+ *
+ * Asking the dictionary for these was the wrong road: its `icons.group.*` keys
+ * belong to the ten categories the picker had before the catalogue, so five of
+ * the seven came back in the raw key — "trabajo", "hogar" — in the middle of a
+ * bar whose other two said "Salud" and "Comida".
+ */
+function categoryLabel(category: string): string {
+  if (category in VECTOR_ICON_CATEGORY_LABEL) {
+    return VECTOR_ICON_CATEGORY_LABEL[category as VectorIconCategory];
+  }
+  if (category in EMOJI_GROUP_LABELS) return emojiGroupLabel(category);
+  return category;
+}
+
+function Chip({
+  label,
+  active,
+  onPress,
+  testID,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  testID?: string;
+}) {
   const theme = useTheme();
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       accessibilityLabel={label}
@@ -412,6 +514,5 @@ const styles = StyleSheet.create({
   tab: { flex: 1, paddingVertical: 10, alignItems: "center" },
   pill: { paddingHorizontal: 14, paddingVertical: 8 },
   swatch: { width: 32, height: 32, borderRadius: 16 },
-  cell: { flex: 1, aspectRatio: 1, justifyContent: "center", alignItems: "center", margin: 3 },
-  vectorCell: { flex: 1, aspectRatio: 1, justifyContent: "center", alignItems: "center", margin: 4 },
+  cell: { justifyContent: "center", alignItems: "center", overflow: "hidden" },
 });

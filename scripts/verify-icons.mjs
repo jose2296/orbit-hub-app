@@ -327,18 +327,23 @@ try {
   if ((await pressTestId("icon-tab-vector")) !== true) throw new Error("no se abrio la pestana de dibujos");
   await sleep(500);
   await shot("03b-pestana-vector");
-  const escritoVector = await typeInto("Buscar un icono", "pan");
+  // "carpeta" y no "pan" a proposito: el grid muestra **un dibujo por celda**, y
+  // el del pan lo comparten doce palabras, asi que la celda guarda la clave
+  // canonica de ese dibujo y no la palabra escrita. "carpeta" tiene una sola
+  // palabra, asi que su celda se llama como su celda y el arnes no depende de
+  // cual de las doce salio primera.
+  const escritoVector = await typeInto("Buscar un icono", "carpeta");
   if (!escritoVector.escrito) throw new Error("no se pudo escribir en el buscador de dibujos");
-  await sleep(800);
+  await sleep(1200);
   if ((await pressTestId("icon-style-fill")) !== true) throw new Error("no se pudo elegir relleno");
   if ((await pressTestId("icon-color-rose")) !== true) throw new Error("no se pudo elegir rosa");
-  if ((await pressTestId("icon-cell-pan")) !== true) throw new Error("no se pudo tocar el pan");
+  if ((await pressTestId("icon-cell-carpeta")) !== true) throw new Error("no se pudo tocar la carpeta");
   const iconoVector = await waitForServerIcon(
     lista,
     tareaVector,
     (icon) =>
       icon?.type === "vector" &&
-      icon?.value === "pan" &&
+      icon?.value === "carpeta" &&
       icon?.style === "fill" &&
       icon?.color === "rose",
   );
@@ -347,7 +352,7 @@ try {
   check(
     "el dibujo se guardo con su estilo y su color",
     iconoVector?.type === "vector" &&
-      iconoVector?.value === "pan" &&
+      iconoVector?.value === "carpeta" &&
       iconoVector?.style === "fill" &&
       iconoVector?.color === "rose",
     JSON.stringify(iconoVector),
@@ -356,16 +361,16 @@ try {
   /* ---------------- 4. Cambiar el color no borra el icono ---------------- */
   section("4. Elegir color despues no borra el icono");
   if ((await pressTestId("icon-color-teal")) !== true) throw new Error("no se pudo elegir verde azulado");
-  if ((await pressTestId("icon-cell-pan")) !== true) throw new Error("no se pudo retocar el pan");
+  if ((await pressTestId("icon-cell-carpeta")) !== true) throw new Error("no se pudo retocar la carpeta");
   const iconoColor = await waitForServerIcon(
     lista,
     tareaVector,
-    (icon) => icon?.type === "vector" && icon?.value === "pan" && icon?.color === "teal",
+    (icon) => icon?.type === "vector" && icon?.value === "carpeta" && icon?.color === "teal",
   );
   check(
-    "el icono sigue siendo el pan, ahora en verde azulado",
+    "el icono sigue siendo el mismo dibujo, ahora en verde azulado",
     iconoColor?.type === "vector" &&
-      iconoColor?.value === "pan" &&
+      iconoColor?.value === "carpeta" &&
       iconoColor?.color === "teal",
     JSON.stringify(iconoColor),
   );
