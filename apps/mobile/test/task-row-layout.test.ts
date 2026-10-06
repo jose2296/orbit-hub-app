@@ -1656,23 +1656,17 @@ describe('#7: la hoja cambia de alto persiguiendo al contenido', () => {
     expect(ramaFija, 'la rama fija mide por onLayout').not.toContain('onLayout');
   });
 
-  it('la animacion es mas lenta que la entrada y no se pasa', () => {
-    // Abrir es la accion de otro —ha pulsado algo—; cambiar de alto es la accion
-    // propia de alguien que esta mirando. El segundo quiere que se le siga, no que
-    // se anuncie. Y un spring **se pasa**, y el excesso se ve como contenido
-    // cortado abajo un frame.
-    expect(hoja, 'con una duracion propia').toMatch(
-      /const ALTO_CUERPO = \d+;/,
+  it('el alto sigue al contenido con un spring que no se pasa', () => {
+    // Antes era una duracion, porque un spring **se pasa** y el exceso se ve como
+    // contenido cortado abajo un frame. Ahora es un spring —el mismo idioma que el
+    // morph de apertura— con `overshootClamping`: llega, pero no se pasa. Eso
+    // quita el motivo de la duracion sin perder el seguimiento suave.
+    expect(hoja, 'el alto se anima con un spring').toMatch(
+      /altoCuerpo\.value = withSpring\(alto, ALTO_SPRING\)/,
     );
-    expect(hoja, 'y con timing, no con spring').toMatch(
-      /altoCuerpo\.value = withTiming\(alto,[\s\S]*?duration: ALTO_CUERPO/,
+    expect(hoja, 'que no se pasa').toMatch(
+      /const ALTO_SPRING = \{[^}]*overshootClamping: true[^}]*\}/,
     );
-    expect(hoja, 'que es mas lenta que la entrada').toMatch(
-      /const ALTO_CUERPO = (\d+);/,
-    );
-    const duracion = Number(hoja.match(/const DURACION = (\d+);/)?.[1]);
-    const cuerpo = Number(hoja.match(/const ALTO_CUERPO = (\d+);/)?.[1]);
-    expect(cuerpo, 'el cuerpo tarda mas que la entrada').toBeGreaterThan(duracion);
   });
 });
 

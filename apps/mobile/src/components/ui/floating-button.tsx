@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet } from "react-native";
+import { useRef } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { isWide } from "@/components/ui/sheet";
+import type { SheetOrigin } from "@/components/ui/sheet";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -42,19 +44,30 @@ export function FloatingButton({
    */
   label,
 }: {
-  onPress: () => void;
+  /** Gets the button's own rectangle, so a sheet can grow out of it. */
+  onPress: (origin: SheetOrigin | null) => void;
   label?: string;
 }) {
   const theme = useTheme();
   const t = useTranslation();
   const wide = isWide();
   const size = wide ? 52 : 58;
+  const ref = useRef<View>(null);
+
+  function press() {
+    const node = ref.current;
+    if (!node) return onPress(null);
+    node.measureInWindow((x, y, width, height) =>
+      onPress(width > 0 && height > 0 ? { x, y, width, height } : null),
+    );
+  }
 
   return (
     <Pressable
+      ref={ref}
       accessibilityRole="button"
       accessibilityLabel={label ?? t("create.title")}
-      onPress={onPress}
+      onPress={press}
       style={({ pressed }) => [
         styles.fab,
         {

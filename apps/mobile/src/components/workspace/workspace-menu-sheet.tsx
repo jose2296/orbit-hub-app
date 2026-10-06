@@ -189,6 +189,7 @@ export function WorkspaceMenuSheet({
 
   return (
     <Sheet
+      step={page}
       visible={pedido !== null}
       onClose={onClose}
       title={workspace.name}

@@ -461,6 +461,7 @@ export function ListMenuSheet({
     */
     <>
       <Sheet
+        step={page}
         visible={pedido !== null}
         onClose={onClose}
         title={list.title}

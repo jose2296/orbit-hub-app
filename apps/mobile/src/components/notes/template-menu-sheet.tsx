@@ -186,6 +186,7 @@ export function TemplateMenuSheet({
   if (step === "rename") {
     return (
       <Sheet
+        step="rename"
         visible={pedido !== null}
         onClose={close}
         title={t("note.template.rename")}
@@ -330,7 +331,7 @@ export function TemplateMenuSheet({
   ];
 
   return (
-    <Sheet visible={pedido !== null} onClose={close} title={template.name} scrollable={false}>
+    <Sheet step="menu" visible={pedido !== null} onClose={close} title={template.name} scrollable={false}>
       <SheetOptions options={opciones} />
       {canEditTemplate(template, user?.id) ? null : (
         /*
@@ -394,6 +395,7 @@ function ShareStep({
 
   return (
     <Sheet
+      step="share"
       visible
       onClose={onCloseSheet}
       onBack={onBack}
