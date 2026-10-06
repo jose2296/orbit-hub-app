@@ -37,4 +37,31 @@ describe('describeSchedule', () => {
       describeSchedule({ kind: 'rrule', rule: 'FREQ=MONTHLY;BYMONTHDAY=15' }),
     ).toEqual({ key: 'weeklyDays', days: [] });
   });
+  it('intervalDays con INTERVAL=3', () => {
+    expect(
+      describeSchedule({ kind: 'rrule', rule: 'FREQ=DAILY;INTERVAL=3' }),
+    ).toEqual({ key: 'intervalDays', interval: 3 });
+  });
+  it('monthlyOrdinal con BYDAY=1MO', () => {
+    expect(
+      describeSchedule({ kind: 'rrule', rule: 'FREQ=MONTHLY;BYDAY=1MO' }),
+    ).toEqual({ key: 'monthlyOrdinal', ordinal: 1, weekday: 'mon' });
+  });
+  it('monthlyOrdinal generaliza a cualquier ordinal y dia', () => {
+    expect(
+      describeSchedule({ kind: 'rrule', rule: 'FREQ=MONTHLY;BYDAY=3FR' }),
+    ).toEqual({ key: 'monthlyOrdinal', ordinal: 3, weekday: 'fri' });
+  });
+  it('un ordinal en frecuencia semanal cae en weeklyDays vacio', () => {
+    expect(
+      describeSchedule({ kind: 'rrule', rule: 'FREQ=WEEKLY;BYDAY=1MO' }),
+    ).toEqual({ key: 'weeklyDays', days: [] });
+  });
+  it('el generico no se comparte por referencia', () => {
+    const first = describeSchedule({ kind: 'rrule', rule: 'FREQ=YEARLY' });
+    const second = describeSchedule({ kind: 'rrule', rule: 'FREQ=YEARLY' });
+    expect(first).toEqual({ key: 'weeklyDays', days: [] });
+    expect(second).toEqual({ key: 'weeklyDays', days: [] });
+    expect(first).not.toBe(second);
+  });
 });
