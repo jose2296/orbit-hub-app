@@ -740,7 +740,7 @@ Expected: PASS en los dos archivos.
 - [ ] **Step 12: El typecheck, que es el que encuentra los `case` que faltan**
 
 Run: `npm run typecheck`
-Expected: PASS. `SYNC_ENTITIES` y `SYNC_WRITABLE_FIELDS` estan tipados como `Record<SyncEntityName, ...>`, asi que anadir dos entidades **rompe el typecheck** en cada `switch` exhaustivo que las switch sobre `SyncEntityName`. Es el和网络 de seguridad de los doce lugares: cualquier sitio olvidado sale con un error de compilacion en vez de en silencio.
+Expected: PASS. `SYNC_ENTITIES` y `SYNC_WRITABLE_FIELDS` estan tipados como `Record<SyncEntityName, ...>`, asi que anadir dos entidades **rompe el typecheck** en cada `switch` exhaustivo que las switch sobre `SyncEntityName`. Es la red de seguridad de los doce lugares: cualquier sitio olvidado sale con un error de compilacion en vez de en silencio.
 
 - [ ] **Step 13: Commit**
 
