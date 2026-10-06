@@ -47,6 +47,9 @@ navegador: cualquier script nuevo importa de ahí en vez de copiar el código.
 | Un clic a unas coordenadas fuera de la ventana no hace nada | La tercera tarjeta de un carrusel está siempre fuera | `scrollIntoView` con `inline: center` antes de medir |
 | Dos controles con el mismo nombre en pantalla | El clic va al de detrás, o al backdrop del panel, y cierra lo que había abierto | `find` prueba los candidatos en orden y se queda con el primero que sea realmente el de arriba en su centro |
 | Si el servidor se reinicia, Chrome se queda con la página de error | Todo `localStorage` posterior lanza `SecurityError` y parece un bug de la app | `go` espera a que cargue la app y no a un tiempo fijo |
+| La petición lleva `authorization` y `content-type`, así que el navegador manda un `OPTIONS` antes | Un `204` del preflight cuenta como "el servidor recibió el cambio" | Se filtra por **método**, no por URL. Un `204` de un preflight y un `204` de un push aplicado se leen igual en `Network.responseReceived`, y sólo uno de los dos significa que el servidor tiene el cambio |
+| `lsof` no arranca cuando la máquina no tiene procesos para forkear | `execSync` lanza, un `catch` lo traga, la ruta del log sale vacía y `readLog` devuelve `""`: el guion acaba diciendo que la API no mandó el correo de verificación | `logOfTheApi()` reintenta y, si no hay ruta, **lo dice y para**. Y `readLog` no tiene `catch` que lo degrade a `""` |
+| `Network.emulateNetworkConditions offline: true` también corta el bundle de la web | Cerrar y abrir la app deja la página en `chrome-error://chromewebdata/`, con el cartel de Chrome | Son **dos capas**: emulación para lo que pasa con la app abierta, y `Network.setBlockedURLs` sobre la API para cerrar y abrir. Se dice en la salida cuál es cuál en cada línea |
 
 ## Los bugs que encontró
 
@@ -64,6 +67,7 @@ navegador: cualquier script nuevo importa de ahí en vez de copiar el código.
 | Hooks detrás de un `return` temprano | "Rendered more hooks than during the previous render" | El typecheck lo acepta |
 | El menú de una lista solo con pulsación larga | En web no hay forma de abrirlo | — |
 | El icono de una fila y la fila con el mismo nombre | Dos controles iguales; el clic iba al equivocado | — |
+| Una pantalla nueva sin `ListMenuSheet` | Un tablero no tenía **ninguna** puerta de exportar: 18 controles visibles y ninguno de exportación. El CSV era correcto y había que salir del tablero a pedirlo | La puerta de una acción vive en el componente que la monta, y el tablero no lo montaba. `list/[listId].tsx` redirige los tableros a `/board/:id`, así que en `/list/:id` el menú nunca se ve para uno |
 
 ## Lo que un script NO puede mirar
 
@@ -73,3 +77,32 @@ navegador: cualquier script nuevo importa de ahí en vez de copiar el código.
 - Dos personas editando la misma fila a la vez en dos navegadores.
 - Un móvil de verdad. Todo se verifica a 430×932 en web, y el typecheck cubre nativo, pero
   nadie ha ejecutado un `expo run:ios` todavía.
+
+Y dos cosas más que esta tarea se encontró, porque un guion se los Saltó por completo:
+
+- **Que el almacenamiento local sobreviva a cerrar la app de verdad.** En web "cerrar y abrir" es
+  recargar la página y el almacenamiento es `localStorage`; en nativo es SQLite. Un recorrido que
+  comprueba "el cambio sobrevive a recargar" no ha comprobado lo mismo que uno que lo comprueba en
+  un teléfono.
+- **Lo que un `204` significa.** Ni un empujón sin conexión ni una escritura aplicada se distinguen
+  por el código, y sólo una de las dos significa que el servidor tiene el cambio. Un guion que
+  cuente respuestas sin mirar el método se puede pasar por alto un preflight de CORS.
+
+## Y lo que un guion NO puede decir de Android
+
+Cualquier recorrido nativo que se escriba para una pantalla nueva deja estos huecos, y **conviene
+escribirlos en el propio guion y en su salida**, porque un verde sin ellos insinúa más de lo que
+mide:
+
+- **El asa de selección nativa.** La tarjeta se levanta también en la web —es el `shadow` del tema—,
+  así que una elevación medida en un navegador no dice nada del asa.
+- **El teclado del sistema.** `adb input text` escribe sin que el teclado aparezca nunca, y no mide
+  ni el `returnKeyType` ni el autofill ni que el teclado tape un botón con el panel abierto.
+- **La mitad del pulgar de un gesto.** `input swipe` teletransporta el puntero con un número fijo de
+  puntos y una duración fija: mueve de A a B y nada más.
+- **El tirón para cerrar una hoja.** Lo anima el sistema operativo, no la app.
+- **El outbox en SQLite**, que no es `localStorage` y que un recorrido offline en web no mide.
+
+`scripts/verify-android-board.mjs` es un ejemplo de cómo dejarlo escrito: sale con **código 2** si
+no hay dispositivo, con el texto de que no se ha ejecutado, y con la lista de lo que mediría y de lo
+que no.
