@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Animated, {
   cancelAnimation,
@@ -26,6 +26,9 @@ import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
+import { Button } from "./button";
+import { ConfirmDialog } from "./confirm-dialog";
+import { SheetSucioContexto } from "./sheet-sucio";
 import { AppText } from "./text";
 
 export interface SheetProps {
@@ -67,6 +70,21 @@ export interface SheetProps {
   scrollable?: boolean;
   /** Caps the height on a tall screen so a long list does not run off it. */
   maxHeightRatio?: number;
+
+  /**
+   * Commits the draft, and **its presence is what puts a Guardar in the sheet**.
+   *
+   * A sheet with nothing to commit does not get a disabled button that does
+   * nothing: it gets no button, because there is nothing to commit. A Guardar
+   * greyed out on a menu with six options to read teaches people that Guardar is
+   * decoration.
+   *
+   * So this is the switch, and it is one switch: no second `showSave` that can
+   * disagree with it, and no `saving` the caller has to remember to flip.
+   */
+  onSave?: () => void | Promise<void>;
+  /** The confirming button, for a screen reader. */
+  saveLabel?: string;
 }
 
 /**
@@ -91,6 +109,8 @@ export function Sheet({
   backLabel,
   scrollable = true,
   maxHeightRatio = 0.85,
+  onSave,
+  saveLabel,
 }: SheetProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -100,6 +120,103 @@ export function Sheet({
   const { height: altoVentana } = useWindowDimensions();
 
   const Body = scrollable ? ScrollView : View;
+
+
+  /**
+   * Whether there is anything uncommitted, and who says so.
+   *
+   * The flag lives here and not in the screen that drew the panel, and that is
+   * the fix for the family of bugs where opening one sheet leaves the next one
+   * holding the first one's draft. It also **resets on open**, so there is no
+   * path by which a sheet arrives dirty.
+   */
+  const [sucio, setSucio] = useState(false);
+  /** The "¿sales sin guardar?" question, and nothing else. */
+  const [preguntando, setPreguntando] = useState(false);
+  /** Saving, so the button cannot be pressed twice and the words can change. */
+  const [guardando, setGuardando] = useState(false);
+
+  /*
+    Clean on open, and **before** anything else.
+
+    Resetting in an effect that runs after paint would leave one frame where the
+    sheet is already visible and still dirty, and the guard would be armed for a
+    panel nobody has typed in yet. So the same effect that mounts the panel
+    disarms the question.
+  */
+  useEffect(() => {
+    if (!visible) return;
+    setSucio(false);
+    setPreguntando(false);
+    setGuardando(false);
+  }, [visible]);
+
+  /*
+    The one way out, and **every exit goes through it**.
+
+    A sheet leaves five ways: the dimmed background, the ✕, a drag downwards, the
+    hardware back button on Android, and the screen itself setting something to
+    null. Guarding "the close button" guards one of the five, and the other four
+    keep throwing the work away — which is how a guard that is there still loses
+    the edits. So they all arrive at `pedirCierre`, and `onClose` is only ever
+    called from inside it.
+
+    The drag is the subtle one: it has already committed to closing, animated the
+    panel away and needs to leave immediately, and a question cannot be asked
+    after the panel is gone. So the drag asks *before* it commits — see the
+    gesture, which calls `puedeCerrar` first and only starts the exit if the
+    answer was yes.
+  */
+  const puedeCerrar = useCallback((): boolean => {
+    if (!sucio) return true;
+    setPreguntando(true);
+    return false;
+  }, [sucio]);
+
+  /** The committing button, and the only thing that clears "dirty". */
+  const guardar = useCallback(async () => {
+    if (!onSave) return;
+    setGuardando(true);
+    try {
+      await onSave();
+      /*
+        And only once the promise is settled. Clearing before would mean a save
+        that fails leaves the sheet looking clean with the text gone from the
+        screen and never having reached the server — the worst of both, because
+        the one signal that says "this is not saved" is the signal that said it
+        was dirty.
+      */
+      setSucio(false);
+    } finally {
+      setGuardando(false);
+    }
+  }, [onSave]);
+
+  /** The exit itself, and the only caller of the screen's `onClose`. */
+  const salir = useCallback(() => {
+    setPreguntando(false);
+    onClose();
+  }, [onClose]);
+
+  /** For the three exits that are a plain press: ask, and if allowed, go. */
+  const pedirCierre = useCallback(() => {
+    if (puedeCerrar()) salir();
+  }, [puedeCerrar, salir]);
+
+  /**
+   * The same question, **for the gesture**, which runs on the UI thread.
+   *
+   * `runOnJS` sends it to the JS thread and brings the answer back, so this is the
+   * same `sucio` and the same dialog as the ✕. A second name and not a second
+   * rule, on purpose: a drag that discarded the work while the ✕ asked is exactly
+   * the bug this exists to prevent.
+   *
+   * The cast through `unknown` is because `runOnJS` is declared as returning
+   * `void` whatever it is handed, and it does not: it returns whatever the
+   * function returned. Asserted once, in the one place that needs the value back,
+   * instead of `as any` sprinkled over the gesture.
+   */
+  const preguntarCierre = useCallback((): boolean => puedeCerrar(), [puedeCerrar]);
 
   /*
     The content, **arriving a beat after the panel**.
@@ -330,6 +447,21 @@ export function Sheet({
     .onEnd((event) => {
       const linea = Math.max(90, altoPanel.value * 0.2);
       if (event.translationY > linea || event.velocityY > 700) {
+        /*
+          Se pregunta **antes** de comprometerse, y no despues.
+
+          El gesto que cierra ya ha animado el panel hacia abajo y tiene que salir
+          en el mismo instante: no hay forma de preguntar nada con el panel fuera
+          de la pantalla. Preguntar despues significaria que tirar hacia abajo
+          guarda lo que habia sin preguntar, que es justo lo que el resto de las
+          cinco salidas evita. Asi que el gesto pide permiso primero y solo empieza
+          la salida si le dicen que si — y si no, el panel vuelve a su sitio con
+          el mismo rebote de siempre, que es lo que hace un gesto que se arrepiente.
+        */
+        if (!(runOnJS(preguntarCierre)() as unknown as boolean)) {
+          volver();
+          return;
+        }
         cerrando.value = true;
         // It leaves downwards as the modal fades, so on the web — where the modal
         // has no animation of its own — the sheet is seen to go and not to blink.
@@ -346,11 +478,18 @@ export function Sheet({
     });
 
   return (
+    <SheetSucioContexto.Provider value={{ sucio, setSucio }}>
     <Modal
       visible={montada}
       transparent
       animationType="none"
-      onRequestClose={onClose}
+      /*
+        El boton atras de Android, que llega aqui sin pasar por ningun control. Sin
+        esto es la quinta salida — y la que nadie toca en una prueba manual, porque
+        probar el guardado pulsando el atras fisico del movil es la forma mas
+        rapida de perder el trabajo de un dia.
+      */
+      onRequestClose={pedirCierre}
       statusBarTranslucent
     >
       {/*
@@ -437,7 +576,7 @@ export function Sheet({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("common.close")}
-          onPress={onClose}
+          onPress={pedirCierre}
           style={styles.backdrop}
         />
 
@@ -586,7 +725,7 @@ export function Sheet({
               accessibilityRole="button"
               accessibilityLabel={t("common.close")}
               hitSlop={10}
-              onPress={onClose}
+              onPress={pedirCierre}
               style={({ pressed }) => [
                 styles.close,
                 {
@@ -634,6 +773,46 @@ export function Sheet({
           >
             <Animated.View style={estiloContenido}>{children}</Animated.View>
           </Body>
+
+          {/*
+            El boton de Guardar, **al pie y no en la cabecera**.
+
+            La cabecera es donde estan las acciones de la pantalla —volver, cerrar—
+            y quien esta escribiendo necesita el boton de confirmar en el sitio donde
+            llega el pulgar al terminar. Ademas cabe en un sitio en todas las
+            plataformas: abajo siempre hay espacio para el pulgar, y en un dialogo
+            centrado no lo hay en ningun sitio.
+
+            Y **solo aparece si hay algo que confirmar**. Una hoja que abre a
+            escribir el nombre de una lista tiene Guardar; una hoja de seis
+            opciones para leer, no. Un Guardar gris en un menu enseña que el boton
+            es decoracion, y a partir de ahi nadie fia de ningun Guardar.
+          */}
+          {onSave ? (
+            <View
+              style={[
+                styles.pieGuardar,
+                {
+                  borderTopColor: theme.colors.border,
+                  paddingHorizontal: MARGEN,
+                  paddingTop: theme.spacing.md,
+                  // El teclado se come el borde inferior, y un boton debajo del
+                  // teclado es un boton que no se puede pulsar. Mismo relleno que
+                  // el panel, por el mismo motivo y con la misma cuenta.
+                  paddingBottom:
+                    teclado + (wide ? theme.spacing.lg : theme.spacing.lg),
+                },
+              ]}
+            >
+              <Button
+                testID="sheet-save"
+                label={guardando ? t("common.saving") : (saveLabel ?? t("common.save"))}
+                onPress={() => void guardar()}
+                disabled={guardando}
+                fullWidth
+              />
+            </View>
+          ) : null}
         </Animated.View>
       </View>
       {/*
@@ -664,6 +843,27 @@ export function Sheet({
       */}
       </GestureHandlerRootView>
     </Modal>
+
+    {/*
+      La pregunta va **fuera** del `Modal` del panel y no dentro.
+
+      Un `Modal` de Android es una ventana del sistema, y dos ventanas del sistema
+      apiladas en el mismo sitio no se ordenan: la de arriba tiene que ser la
+      pregunta, y dentro del panel del sheet lo que se dibujaria encima seria el
+      panel, que es justo lo que esta haciendo el gesto del pull. Aparte y por
+      encima, que es lo que hace un dialogo.
+    */}
+    <ConfirmDialog
+      visible={preguntando}
+      title={t("sheet.unsavedTitle")}
+      body={t("sheet.unsavedBody")}
+      confirmLabel={t("sheet.unsavedLeave")}
+      cancelLabel={t("sheet.unsavedStay")}
+      destructive
+      onConfirm={salir}
+      onCancel={() => setPreguntando(false)}
+    />
+    </SheetSucioContexto.Provider>
   );
 }
 
@@ -1000,6 +1200,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
+  },
+  /**
+   * The foot with the Save button, **outside the area that scrolls**.
+   *
+   * A sibling of `Body` and not inside it: a Save inside the scroll goes away with
+   * the contents on a long sheet, and the confirming button disappears exactly
+   * when it is most needed, which is when the contents are long.
+   */
+  pieGuardar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,

@@ -799,3 +799,102 @@ describe('el texto de los dos extremos del lavado se lee en los dos', () => {
     ).not.toMatch(/color: elegido \? theme\.colors\.accent : undefined/);
   });
 });
+
+describe('el contrato de guardar, igual en todas las hojas', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  const sheet = leer('src/components/ui/sheet.tsx');
+
+  it('las CINCO salidas pasan por la misma pregunta, no por cinco', () => {
+    /*
+      Una hoja sale de cinco maneras: el fondo, la ✕, tirar hacia abajo, el boton
+      atras de Android, y la pantalla que pone algo a null. Guardar "el boton de
+      cerrar" guardaba **una de cinco**, y las otras cuatro seguian echando el
+      trabajo. Un guard que esta y no protege es peor que no guard, porque ademas
+      crea la sensacion de que estas a salvo.
+    */
+    const pregunta = (sheet.match(/puedeCerrar/g) ?? []).length;
+    expect(pregunta, 'la pregunta existe y se usa desde mas de un sitio')
+      .toBeGreaterThan(3);
+
+    // Y `onClose` **solo** se llama desde dentro de `salir`. Si alguien llama a
+    // `onClose` suelto, esa salida no pasa por la pregunta.
+    const sueltas = (sheet.match(/onClose\(\)/g) ?? []).length;
+    expect(sueltas, 'onClose solo se llama desde salir()').toBe(1);
+  });
+
+  it('el boton atras de Android tambien pregunta', () => {
+    // Es la salida que nadie toca en una prueba manual, porque probar el guardado
+    // con el atras fisico es la forma mas rapida de perder el trabajo de un dia.
+    expect(sheet, 'onRequestClose pasa por la pregunta').toMatch(
+      /onRequestClose=\{pedirCierre\}/,
+    );
+    expect(sheet, 'y no se llama directo a onClose').not.toMatch(
+      /onRequestClose=\{onClose\}/,
+    );
+  });
+
+  it('tirar hacia abajo PREGUNTA antes de comprometerse a cerrar', () => {
+    /*
+      El gesto ya habia animado el panel hacia abajo y tiene que salir en el mismo
+      instante: no hay forma de preguntar con el panel fuera de la pantalla. Preguntar
+      despues significaria que tirar hacia abajo guarda lo que habia sin preguntar.
+    */
+    const gesto = sheet.match(/\.onEnd\(\(event\) => \{[\s\S]*?volver\(\);\n    \}\)/)?.[0] ?? '';
+    expect(gesto, 'el gesto pregunta').toContain('preguntarCierre');
+    const pregunta = gesto.indexOf('preguntarCierre');
+    const commit = gesto.indexOf('cerrando.value = true');
+    expect(
+      pregunta,
+      'pregunta antes de marcarse como cerrando, no despues',
+    ).toBeLessThan(commit);
+  });
+
+  it('una hoja nunca llega sucia', () => {
+    // Si el reset viviera en un efecto que corre despues del paint, hay un frame
+    // con la hoja visible y todavia sucia, y el guard Armed para un panel donde
+    // nadie ha escrito nada.
+    expect(sheet, 'al abrir, limpio').toMatch(
+      /if \(!visible\) return;\s*\n\s*setSucio\(false\)/,
+    );
+  });
+
+  it('el Guardar solo aparece si hay algo que confirmar', () => {
+    // Un Guardar gris en un menu de seis opciones para leer enseña que el boton es
+    // decoracion, y a partir de ahi nadie fia de ningun Guardar.
+    expect(sheet, 'el boton depende de onSave').toMatch(
+      /\{onSave \? \([\s\S]*?<Button[\s\S]*?sheet-save[\s\S]*?\/\> : null\}/,
+    );
+  });
+
+  it('el Guardar no se apaga hasta que la promesa acaba', () => {
+    // Limpiar antes de tiempo deja una hoja que parece limpia con el texto fuera
+    // de la pantalla y sin haber llegado al servidor: la unica senal de "esto no
+    // esta guardado" es la misma que decia que estaba sucio.
+    const accion = sheet.match(/const guardar = useCallback[\s\S]*?\}, \[onSave\]\);/)?.[0] ?? '';
+    expect(accion, 'limpia despues del await').toMatch(
+      /await onSave\(\);[\s\S]*?setSucio\(false\)/,
+    );
+  });
+
+  it('la pregunta la hace este proyecto y no Alert', () => {
+    /*
+      `Alert.alert` son tres dialogos distintos con el mismo nombre: en Android una
+      ventana del sistema, en iOS la hoja del sistema, y **en la web no existe** en
+      `react-native-web`. Las dos confirmaciones que tenia la app eran confirmacion
+      en un movil y nada en un navegador.
+    */
+    const dialogo = leer('src/components/ui/confirm-dialog.tsx');
+    expect(dialogo, 'es un Modal de este proyecto').toContain('<Modal');
+    expect(sheet, 'la hoja lo usa').toContain('<ConfirmDialog');
+    expect(sheet, 'y no Alert').not.toContain('Alert.alert');
+  });
+
+  it('el boton va fuera del scroll y no dentro', () => {
+    // Un Guardar dentro del area que scrollea se va con el contenido en una hoja
+    // larga: el boton de confirmar desaparece justo cuando mas lo necesitas.
+    const pie = sheet.indexOf('styles.pieGuardar');
+    const fin = sheet.indexOf('</Body>');
+    expect(pie, 'el pie va despues del Body, no dentro').toBeGreaterThan(fin);
+  });
+});
