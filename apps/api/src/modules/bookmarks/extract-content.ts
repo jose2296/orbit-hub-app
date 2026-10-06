@@ -65,6 +65,7 @@ interface Nodo {
   getAttribute(nombre: string): string | null;
   setAttribute(nombre: string, valor: string): void;
   querySelectorAll(selector: string): Iterable<Nodo>;
+  closest(selector: string): Nodo | null;
 }
 
 interface Documento {
@@ -281,9 +282,10 @@ function enteroDeImagen(valor: string | null): string | null {
 /**
  * Estado de la recursion, para saber si el ultimo hijo admite mas texto.
  *
- * El texto suelto se fusiona con el parrafo abierto: 862 celdas de navbox que se
- * convierten en 862 parrafos son un documento que el movil no puede mostrar
- * comodo, y el spike midio como un algoritmo sin fusionar iba de 93 `<p>` a 418.
+ * El texto suelto se fusiona con el parrafo abierto: las 61 celdas de las 5
+ * tablas de Quicksort se convierten en 61 parrafos cortos, que es un documento
+ * que el movil no puede mostrar comodo, y el spike midio como un algoritmo sin
+ * fusionar iba de 93 `<p>` a 418.
  */
 interface Estado {
   /** El `<p>` que se abrio para texto suelto y que todavia admite mas texto. */
@@ -354,6 +356,11 @@ function aplanarTabla(
   base: string,
 ): void {
   for (const fila of [...tabla.querySelectorAll('tr')]) {
+    // Solo las filas propias: `querySelectorAll` baja a las tablas anidadas, y
+    // sin este filtro sus filas saldrian dos veces —una por el bucle de la
+    // tabla de afuera y otra cuando `copiarHijos` llega a la tabla de adentro
+    // y la aplana de nuevo—. La tabla de adentro ya se aplana sola al copiar.
+    if (fila.closest('table') !== tabla) continue;
     const celdas = [...fila.childNodes].filter(
       (nodo) =>
         nodo.nodeType === NODO_ELEMENTO &&
@@ -477,13 +484,17 @@ function reducir(
 /**
  * Colapsa los `<p>` que quedaron dentro de otros `<p>`.
  *
+ * Se exporta suelta porque ningun fixture la alcanza: el parser cierra el
+ * `<p>` antes de un bloque, asi que `<p><p>` no llega al DOM. El test la arma
+ * a mano, que es la unica forma de mirarla.
+ *
  * Aplanar tablas y desarrollar pueden dejar un bloque dentro de un parrafo, y el
  * formato no lo admite. Se sube el contenido del hijo al padre con un espacio de
  * por medio —**con** espacio, porque dos parrafos de una celda pegados sin el
  * quedan "celdaunacelda" y se pierden dos palabras— y se sigue bajando, porque el
  * hijo subido puede traer otro `<p>` adentro.
  */
-function colapsarParrafos(raiz: Nodo, documento: Documento): void {
+export function colapsarParrafos(raiz: Nodo, documento: Documento): void {
   for (const parrafo of [...raiz.querySelectorAll('p')]) {
     let hijo = parrafo.firstChild;
     while (hijo !== null) {

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import * as jsdom from 'jsdom';
 
 import {
+  colapsarParrafos,
   extraerContenido,
   limpiarParaElDom,
   type ResultadoDeContenido,
@@ -69,8 +70,9 @@ const { JSDOM } = jsdom as unknown as {
  * **Y el detalle que hace que el numero sea el del spike**: un tag en linea se
  * borra sin dejar nada, no dejando un espacio. `<i>foo</i><i>bar</i>` son dos
  * nodos de texto contiguos y rinden la palabra "foobar", no dos. Poner un espacio
- * en cada frontera de nodo infla la referencia —la pagina de Wikipedia tiene 891
- * `<span>`— y el spike midio con esa version generosa entre 92 y 99 % en vez de
+ * en cada frontera de nodo infla la referencia —el `content` de Readability de
+ * `article-wiki-topic.html` trae 817 `<span>`, medidos con las versiones
+ * fijadas— y el spike midio con esa version generosa entre 92 y 99 % en vez de
  * 101,3 %. Un numero de supervivencia que depende de como se conto no prueba nada.
  *
  * Lo que no cuenta como prosa, y por que: `script`, `style`, `noscript` y `svg`
@@ -117,7 +119,7 @@ function textoDeReadability(html: string, url: string): string | null {
 }
 
 const ARTICULO_LARGO = 'article-long.html';
-const ARTICULO_WIKIPEDIA = 'article-wiki-readability.html';
+const ARTICULO_WIKIPEDIA = 'article-wiki-topic.html';
 const ARTICULO_GUARDIAN = 'article-guardian.html';
 const VIDEO_YOUTUBE = 'video-youtube.html';
 const CORTO = 'too-short.html';
@@ -177,7 +179,9 @@ function contenidoDe(nombre: string, url: string): Promise<ResultadoDeContenido>
   const clave = `${nombre}::${url}`;
   let pendiente = cacheDeContenido.get(clave);
   if (pendiente === undefined) {
-    pendiente = extraerContenido(fixture(nombre), url);
+    // Congelado: el memo devuelve el mismo objeto a todos los que lo piden, y
+    // sin esto un test que lo toque cambia la respuesta de los demas.
+    pendiente = extraerContenido(fixture(nombre), url).then((r) => Object.freeze(r));
     cacheDeContenido.set(clave, pendiente);
   }
   return pendiente;
@@ -323,6 +327,31 @@ describe('desarrollar, no descartar', () => {
     expect(() => noteDocumentSchema.parse(r.contenido.document)).not.toThrow();
   });
 
+  it('una tabla anidada se aplana una vez, no dos', async () => {
+    // `querySelectorAll('tr')` baja a las tablas anidadas: sin el filtro de
+    // filas propias, las filas de adentro salian por el bucle de la tabla de
+    // afuera y otra vez al aplanar la tabla de adentro. Readability conserva
+    // las tablas anidadas, asi que el caso llega de paginas reales.
+    const r = ok(
+      await extraerContenido(
+        `<article><h1>Titulo</h1><p>${'palabra '.repeat(60)}</p>` +
+          '<table><tbody>' +
+          '<tr><td>Afuera uno</td><td><table><tbody>' +
+          '<tr><td>Adentro uno</td><td>Adentro dos</td></tr>' +
+          '<tr><td>Adentro tres</td><td>Adentro cuatro</td></tr>' +
+          '</tbody></table></td></tr>' +
+          '<tr><td>Afuera dos</td><td>Afuera tres</td></tr>' +
+          '</tbody></table></article>',
+        'https://ejemplo.local/x',
+      ),
+    );
+    expect(r.contenido.document).not.toMatch(/<table|<td|<tr/);
+    for (const celda of ['Adentro uno', 'Adentro dos', 'Adentro tres', 'Adentro cuatro']) {
+      expect(r.contenido.plainText.match(new RegExp(celda, 'g'))?.length ?? 0).toBe(1);
+    }
+    expect(() => noteDocumentSchema.parse(r.contenido.document)).not.toThrow();
+  });
+
   it('el navbox de Wikipedia sigue ahi, y son 215 palabras', async () => {
     // El navbox es una tabla, y es donde el algoritmo que desarrolla tiende a perder
     // cosas: sin el aplanado de tablas, cada celda seria un parrafo de una
@@ -339,6 +368,32 @@ describe('desarrollar, no descartar', () => {
     expect(r.contenido.plainText).not.toContain('<pre');
     expect(r.contenido.plainText).toContain('quicksort(A, lo, hi)');
   }, TIMEOUT_DE_PAGINA_REAL);
+});
+
+describe('colapsarParrafos', () => {
+  it('un <p> dentro de un <p> sube su contenido con un espacio', () => {
+    // El parser cierra el `<p>` antes de un bloque, asi que `<p><p>` no llega
+    // al DOM por parsing: se arma a mano con `appendChild`, que si lo admite.
+    // Es el caso que deja una celda de tabla con un `<p>` adentro.
+    const ventana = new JSDOM('<div></div>').window;
+    const documento = ventana.document as unknown as {
+      createElement(etiqueta: string): {
+        appendChild(hijo: unknown): void;
+        readonly innerHTML: string;
+      };
+      createTextNode(datos: string): unknown;
+    };
+    const raiz = documento.createElement('div');
+    const externo = documento.createElement('p');
+    externo.appendChild(documento.createTextNode('celda'));
+    const interno = documento.createElement('p');
+    interno.appendChild(documento.createTextNode('una'));
+    externo.appendChild(interno);
+    raiz.appendChild(externo);
+    colapsarParrafos(raiz as never, documento as never);
+    expect(raiz.innerHTML).toBe('<p>celda una</p>');
+    ventana.close();
+  });
 });
 
 describe('los scripts', () => {
@@ -359,7 +414,7 @@ describe('los scripts', () => {
     const crudo = fixture(VIDEO_YOUTUBE);
     const limpio = limpiarParaElDom(crudo);
     expect(limpio).not.toMatch(/<script|<link|\sstyle="/i);
-    // De 1,4 MB quedan 26 KB: el 98 % del HTML de esa pagina son scripts.
+    // De 1,4 MB quedan 23 KB: el 98 % del HTML de esa pagina son scripts.
     expect(limpio.length).toBeLessThan(crudo.length * 0.05);
   });
 });
