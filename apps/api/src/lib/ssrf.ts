@@ -49,7 +49,7 @@ export type ResultadoDeBusqueda =
   | { ok: true; html: string; finalUrl: string; bytes: number }
   | { ok: false; motivo: string };
 
-/** Donde termina un salto: una IP ya validada y el nombre que hay que anunciarle. */
+/** Donde termina un salto: una IP ya validada, su familia y el nombre que hay que anunciarle. */
 interface DestinoResuelto {
   url: URL;
   ip: string;
@@ -256,6 +256,55 @@ export function hayDestinoProhibido(
 // ---------------------------------------------------------------------------
 
 /**
+ * Gana el que llega primero: el resolver, o el reloj de quien llama.
+ *
+ * `dns.lookup` es `getaddrinfo(3)` en el threadpool de libuv: **no acepta un
+ * signal y Node no le puede poner timeout**. Contra un dominio cuyo nameserver
+ * no contesta, la promesa no se resuelve en un tiempo que esta funcion pueda
+ * acotar, y cada salto repite la espera.
+ *
+ * Eso no es una molestia, es un agujero: el pool de libuv tiene cuatro hilos por
+ * defecto, asi que cuatro URLs hostiles concurrentes lo agotan y los lookups de
+ * los demas modulos del proceso --la base de datos incluida-- empiezan a
+ * encolar.
+ *
+ * **Perder la carrera no cancela el lookup.** El hilo se libera cuando el
+ * sistema operativo se aburre con ese nameserver, que no es inmediato, y no hay
+ * forma de pedirle que se aburra antes. Lo que se recupera es el control del
+ * caller, que es lo que `timeoutMs` promete: el teto que el endpoint necesita no
+ * necesita que los hilos del threadpool cooperen.
+ *
+ * `dns.Resolver` (c-ares) resolveria el problema en la raiz, y por eso esta
+ * descartado: cambia la semantica de `lookup` respecto a `/etc/hosts` y a los
+ * dominios de busqueda del sistema. Eso es un cambio de comportamiento, no un
+ * arreglo.
+ */
+function esperarAlResolver(
+  pendiente: Promise<LookupAddress[]>,
+  signal: AbortSignal,
+): Promise<LookupAddress[]> {
+  return new Promise<LookupAddress[]>((resolve, reject) => {
+    const alAbortar = (): void => reject(new Error('dns lookup abandoned'));
+
+    if (signal.aborted) alAbortar();
+    else signal.addEventListener('abort', alAbortar, { once: true });
+
+    // Siempre con manejador, incluso cuando el reloj ya gano: si el lookup
+    // rechaza despues, ese rechazo no puede quedar sin tocar.
+    pendiente.then(
+      (valor) => {
+        signal.removeEventListener('abort', alAbortar);
+        resolve(valor);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', alAbortar);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
  * Valida una URL y devuelve **a que IP se conecta**, no solo si se puede.
  *
  * Devolver la IP es el punto: el nombre se resuelve una vez, se mira todas las
@@ -263,10 +312,18 @@ export function hayDestinoProhibido(
  * nombre vuelve a cambiar entre este chequeo y el `connect`, el cambio no
  * importa porque el nombre ya no participa.
  *
+ * `signal` es obligatorio a proposito. El resolver no se puede abortar, asi que
+ * la unica forma de acotar cuanto se espera es que el que llama ponga el reloj
+ * y esta funcion se deje ganar: un timeout opcional es exactamente como vuelve
+ * el tiempo sin acotar.
+ *
  * Se exporta porque el bucle de redirects la vuelve a usar en cada salto, y
  * porque es la unica forma de que un test la ejercite sin abrir un puerto.
  */
-export async function comprobarDestinoSeguro(rawUrl: string): Promise<ResultadoDeDestino> {
+export async function comprobarDestinoSeguro(
+  rawUrl: string,
+  signal: AbortSignal,
+): Promise<ResultadoDeDestino> {
   if (!esUrlQueSePuedePedir(rawUrl)) {
     return { ok: false, motivo: 'only http and https urls can be requested' };
   }
@@ -288,7 +345,10 @@ export async function comprobarDestinoSeguro(rawUrl: string): Promise<ResultadoD
     // `order: 'verbatim'` y no `verbatim: true`, que Node ya deprecado. El orden
     // no decide seguridad -- abajo se miran todas --, solo cual de las IPs
     // publicas se fija.
-    direcciones = await lookup(host, { all: true, order: 'verbatim' });
+    direcciones = await esperarAlResolver(
+      lookup(host, { all: true, order: 'verbatim' }),
+      signal,
+    );
   } catch {
     return { ok: false, motivo: 'the host does not resolve' };
   }
@@ -400,7 +460,7 @@ function puertoDe(url: URL): number {
  * `html` seria gzip crudo y el extractor leeria basura sin decir por que.
  */
 function pedirUnSalto(destino: DestinoResuelto, signal: AbortSignal): Promise<IncomingMessage> {
-  const { url, ip } = destino;
+  const { url, ip, familia } = destino;
   const usarHttps = esHttps(url);
 
   return new Promise<IncomingMessage>((resolve, reject) => {
@@ -408,6 +468,11 @@ function pedirUnSalto(destino: DestinoResuelto, signal: AbortSignal): Promise<In
       {
         method: 'GET',
         host: ip,
+        // La familia va explicita aunque `host` sea un literal y `net.connect`
+        // la deduzca sola. Es defensa en profundidad: si alguien vuelve a poner
+        // un nombre en `host`, la restriccion de familia sigue vigente en vez de
+        // desaparecer con el nombre.
+        family: familia,
         ...(usarHttps ? { servername: url.hostname.replace(/^\[/, '').replace(/\]$/, '') } : {}),
         port: puertoDe(url),
         path: `${url.pathname}${url.search}`,
@@ -453,8 +518,11 @@ function opcionesInvalidas(opciones: OpcionesDeBusqueda): boolean {
  * `comprobarDestinoSeguro` entero, y un `Location` a `169.254.169.254` se cae en
  * el primer `continue`.
  *
- * El timeout es **por request**: con 3 redirects son hasta 24 s. El techo
- * global es del endpoint (Task 4), no de esta funcion.
+ * El timeout es **por salto**, y un salto es resolver + connect + TLS + cuerpo.
+ * El reloj arranca **antes** del resolver porque `dns.lookup` no se puede
+ * abortar, y si arrancara despues el tiempo de espera contra un nameserver que
+ * no contesta no lo acota nadie. Con 3 redirects son hasta 4 x 8 s = 32 s: ese
+ * total lo acota el endpoint (Task 4), no esta funcion.
  *
  * Nunca tira. `traerHtmlSeguro` devuelve siempre un resultado, porque el motivo
  * va derecho a `extractionError` y lo lee una persona.
@@ -473,13 +541,13 @@ export async function traerHtmlSeguro(
   let actual = rawUrl;
 
   for (let salto = 0; ; salto += 1) {
-    const chequeo = await comprobarDestinoSeguro(actual);
-    if (!chequeo.ok) return { ok: false, motivo: chequeo.motivo };
-    const destino = chequeo.destino;
-
-    // El timer vive todo el salto, cabeceras y cuerpo. Si se limpiara al
-    // recibir las cabeceras, un servidor que manda una y despues se calla
-    // tendria el socket abierto para siempre.
+    // **Un solo controlador por salto, y arranca antes del resolver.** Esa es
+    // la parte que faltaba: `dns.lookup` no se puede abortar, asi que si el
+    // reloj empieza despues de await el lookup, contra un nameserver que no
+    // contesta el caller se queda esperando lo que tarde el resolver del
+    // sistema y `timeoutMs` no acota nada. El `try` arranca con el reloj por el
+    // mismo motivo: si empezara despues, el `finally` que lo limpia no
+    // alcanzaria a cubrir la fase de resolver.
     const controller = new AbortController();
     let seAgotoElTiempo = false;
     const reloj = setTimeout(() => {
@@ -488,6 +556,17 @@ export async function traerHtmlSeguro(
     }, timeoutMs);
 
     try {
+      const chequeo = await comprobarDestinoSeguro(actual, controller.signal);
+      // Si el reloj gano la carrera contra el resolver, el motivo honesto es el
+      // del reloj y no "no resuelve": son dos fallas distintas para quien lee.
+      if (!chequeo.ok) {
+        return {
+          ok: false,
+          motivo: seAgotoElTiempo ? 'the request timed out' : chequeo.motivo,
+        };
+      }
+      const destino = chequeo.destino;
+
       let respuesta: IncomingMessage;
       try {
         respuesta = await pedirUnSalto(destino, controller.signal);

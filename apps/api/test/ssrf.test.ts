@@ -23,6 +23,14 @@ import {
  */
 const CON_RED = true;
 
+/**
+ * `comprobarDestinoSeguro` no se pone reloj sola: `dns.lookup` no se puede
+ * abortar y la unica forma de acotar la espera es que el que llama ponga el
+ * timer. Asi que estos tests que la llaman directo tambien son los que deciden
+ * cuando dejarla de esperar.
+ */
+const relojDePrueba = (): AbortSignal => AbortSignal.timeout(8_000);
+
 describe('el guard de SSRF', () => {
   it('rechaza los esquemas que no son http ni https, sin hacer el request', async () => {
     for (const url of [
@@ -157,7 +165,7 @@ describe('un nombre, no una IP literal', () => {
       // `localtest.me` resuelve a 127.0.0.1 para todo el mundo. Importa que sea
       // un NOMBRE: si el guard rechaza `http://127.0.0.1/` pero acepta un
       // nombre que apunta ahi, el guard no existe.
-      const r = await comprobarDestinoSeguro('http://localtest.me/');
+      const r = await comprobarDestinoSeguro('http://localtest.me/', relojDePrueba());
       expect(r).toMatchObject({ ok: false, motivo: 'dns resolves to a private address' });
     },
   );
@@ -187,7 +195,7 @@ describe('un nombre, no una IP literal', () => {
       // `localhost` devuelve mas de una. El caso de la lista mezclada esta
       // arriba, con `hayDestinoProhibido`, porque no hay un nombre publico y
       // estable que devuelva una A publica junto a una AAAA privada.
-      const r = await comprobarDestinoSeguro('http://localhost/');
+      const r = await comprobarDestinoSeguro('http://localhost/', relojDePrueba());
       expect(r).toMatchObject({ ok: false, motivo: 'dns resolves to a private address' });
     },
   );
@@ -199,7 +207,7 @@ describe('un nombre, no una IP literal', () => {
       // El nombre queda para el SNI y para el `Host`. Si el socket se abriera
       // contra `url.hostname`, el DNS se resolveria una segunda vez y este `ip`
       // no tendria para que estar: la property de "validar una vez" se pierde.
-      const r = await comprobarDestinoSeguro('https://example.com/');
+      const r = await comprobarDestinoSeguro('https://example.com/', relojDePrueba());
       expect(r.ok).toBe(true);
       if (!r.ok) return;
 
@@ -218,7 +226,10 @@ describe('un nombre, no una IP literal', () => {
 
   it('lee el host despues de parsear la URL, no antes', async () => {    // El userinfo es la forma de esconder el host verdadero detras de algo que
     // parece un nombre. `URL` lo resuelve solo, asi que alcanza con mirarlo.
-    const r = await comprobarDestinoSeguro('http://example.com@169.254.169.254/');
+    const r = await comprobarDestinoSeguro(
+      'http://example.com@169.254.169.254/',
+      relojDePrueba(),
+    );
     expect(r).toMatchObject({ ok: false, motivo: 'dns resolves to a private address' });
   });
 
@@ -234,7 +245,7 @@ describe('un nombre, no una IP literal', () => {
       'http://0x7f.0.0.1/', // hexadecimal
       'http://127.1/', // forma corta
     ]) {
-      const r = await comprobarDestinoSeguro(url);
+      const r = await comprobarDestinoSeguro(url, relojDePrueba());
       expect(r, url).toMatchObject({
         ok: false,
         motivo: 'dns resolves to a private address',
@@ -270,7 +281,7 @@ describe('los redirects se revalidan en cada salto', () => {
     const salto = resolverSalto('gopher://127.0.0.1:11211/', new URL('https://example.com/'));
     expect(salto).toEqual({ ok: true, url: 'gopher://127.0.0.1:11211/' });
     return expect(
-      comprobarDestinoSeguro(salto.ok ? salto.url : ''),
+      comprobarDestinoSeguro(salto.ok ? salto.url : '', relojDePrueba()),
     ).resolves.toMatchObject({ ok: false });
   });
 
@@ -298,29 +309,13 @@ describe('los redirects se revalidan en cada salto', () => {
     },
   );
 
-  it(
-    'no pide el destino de un redirect si ese destino esta prohibido',
-    { skip: !CON_RED },
-    async () => {
-      // El error clasico, de punta a punta. httpbin.org devuelve un 302 real
-      // hacia 169.254.169.254: con `redirect: 'follow'` --o con cualquier atajo
-      // que revalide solo la primera URL-- el segundo request sale igual y se
-      // lleva los credenciales de la maquina. Aca no sale, y el motivo dice por
-      // que.
-      //
-      // DEPENDENCIA DE UN TERCERO: si httpbin.org se cae o el entorno lo
-      // bloquea, este es el test que falla, y el motivo va a ser la red y no el
-      // guard. Es el precio de probar el bucle entero sin abrir un puerto
-      // local, que el guard rechazaria por ser loopback.
-      const r = await traerHtmlSeguro(
-        'https://httpbin.org/redirect-to?url=http%3A%2F%2F169.254.169.254%2F',
-      );
-      expect(r).toMatchObject({
-        ok: false,
-        motivo: 'dns resolves to a private address',
-      });
-    },
-  );
+  // El caso del redirect a un destino prohibido --el error clasico-- NO esta
+  // aca. Antes vivia contra `httpbin.org`, un tercero intermitente que CI corre
+  // en cada push, y un test que depende de eso es un test que falla por la red.
+  // Ahora esta en `ssrf-aislado.test.ts`, con `node:dns/promises` y `node:https`
+  // mockeados: es offline, determinista, y mas estricto, porque puede afirmar
+  // que `request` se llamo **una sola vez**. Inferirlo del motivo devuelto era
+  // mas debil.
 });
 
 describe('el tope de bytes corta mientras se lee', () => {
