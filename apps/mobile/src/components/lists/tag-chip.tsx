@@ -45,12 +45,23 @@ export function TagChip({
   size = "regular",
   children,
   style,
+  testID,
   onPress,
   hintProps,
 }: {
   tag: string;
   colors: TagColors | undefined;
   size?: "regular" | "compact";
+  /**
+   * Where this pill can be pointed at, and **why it is not the tag's name.**
+   *
+   * Two pills of the same label exist at once —the row's and the sheet's— and they
+   * are the same pill in two places, so a selector by label finds both and a
+   * selector that means "the pill near that swatch" has to be told about the
+   * swatches. What is pointed at here is the pill, which is the only thing that
+   * carries the label's tint.
+   */
+  testID?: string;
   /**
    * What the pill carries inside it, and **the colour to draw it in.**
    *
@@ -169,7 +180,7 @@ export function TagChip({
   );
 
   if (!onPress) {
-    return <View style={estilo}>{dentro}</View>;
+    return <View testID={testID} style={estilo}>{dentro}</View>;
   }
 
   // Sin `accessibilityLabel`: el nombre accesible de la pastilla es el de la
@@ -177,6 +188,7 @@ export function TagChip({
   // que esto es un `<button>` y no un `<div>`; está en la prop de arriba.
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       {...hintProps}
       onPress={onPress}

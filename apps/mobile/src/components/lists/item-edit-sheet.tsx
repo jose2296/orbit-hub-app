@@ -160,6 +160,41 @@ export function ItemEditSheet({
    */
   const [colorDe, setColorDe] = useState<string | null>(null);
   /*
+   * **The colour just chosen, before the store has said it back, and why the
+   * pill repaints on the tap and not on the round trip.**
+   *
+   * `pickColor` writes through `onTagColor`, which plans from the parent's
+   * captured `list` and only lands in `tagColors` once `load()` has read the
+   * cache back. Without this, the pill keeps the old colour for the whole write
+   * —and the picker, which derives its own square from the same `value`, shows
+   * the old colour too— so choosing a colour feels like nothing happened until
+   * the panel repaints a moment later. Setting the override here is synchronous,
+   * so the same commit that starts the write already paints the new colour.
+   *
+   * It is keyed by label and never cleared: once the store answers, `tagColors`
+   * carries the same value and the override agrees with it, so there is nothing
+   * to reconcile. A `null` choice ("back to derived") is stored as `null`, not
+   * by removing the key: `tagColors` still holds the old colour until the store
+   * answers, so removing the key would fall back to that old colour instead of
+   * to the derived one.
+   */
+  const [coloresVistos, setColoresVistos] = useState<Record<string, string | null>>({});
+  /*
+   * **What the pills are painted with: the map with the overrides applied.**
+   *
+   * Both `TagChip` mounts below read this and not `tagColors` directly —that
+   * was the actual bug behind "the colour does not show in real time": the
+   * override reached the pencil button (`colorOf`) and the picker's `value`,
+   * but the pill's fill comes from `TagChip`, which kept reading the stale map.
+   * A `null` override deletes the key, which is the shape "no colour chosen",
+   * so the pill falls back to the derived colour at once.
+   */
+  const colores: TagColors = { ...tagColors };
+  for (const [etiqueta, visto] of Object.entries(coloresVistos)) {
+    if (visto === null) delete colores[etiqueta];
+    else colores[etiqueta] = visto;
+  }
+  /*
    * Whether a colour is being written right now, and **one write at a time**.
    *
    * It exists because the picker waits for the write it started (see
@@ -302,7 +337,7 @@ export function ItemEditSheet({
    * `TagChip`. It is here because the button that opens the picker has to *say*
    * the colour out loud, in the words the dictionary has for it.
    */
-  const colorOf = (tag: string): string => tagColors[tag] ?? derivedTagColor(tag);
+  const colorOf = (tag: string): string => colores[tag] ?? derivedTagColor(tag);
 
   if (!isNew && !item) return null;
 
@@ -490,6 +525,12 @@ export function ItemEditSheet({
    */
   const pickColor = async (tag: string, option: string | null) => {
     if (guardando) return;
+    // Paint it now: the store answers later, and the pill should not wait.
+    // `option` is already normalised by the picker's single door (`escribir`),
+    // so what goes in the override is exactly what the write carries —including
+    // `null`, which is stored and not removed, because `tagColors` still holds
+    // the old colour until the store answers (see `coloresVistos` above).
+    setColoresVistos((previos) => (previos[tag] === option ? previos : { ...previos, [tag]: option }));
     setGuardando(true);
     try {
       await onTagColor(tag, option);
@@ -882,7 +923,7 @@ export function ItemEditSheet({
             >
               {shown.tags.map((tag) => (
                 <Fragment key={tag}>
-                  <TagChip tag={tag} colors={tagColors}>
+                  <TagChip tag={tag} colors={colores} testID={`tag-pill-hoja-${tag}`}>
                     {(ink) => (
                       <>
                         {/*
@@ -926,7 +967,7 @@ export function ItemEditSheet({
                     <View style={styles.anchoCompleto}>
                       <TagColorPicker
                         tag={tag}
-                        value={tagColors[tag] ?? null}
+                        value={colores[tag] ?? null}
                         onChange={(hex) => void pickColor(tag, hex)}
                         onClose={() => setColorDe(null)}
                       />
@@ -960,7 +1001,7 @@ export function ItemEditSheet({
                     const laTiene = shown.tags.includes(tag);
                     return (
                       <Fragment key={tag}>
-                        <TagChip tag={tag} colors={tagColors}>
+                        <TagChip tag={tag} colors={colores} testID={`tag-pill-hoja-${tag}`}>
                           {(ink) => (
                             <>
                               {/* `TagChip` writes the name, so the count is what is
@@ -1031,7 +1072,7 @@ export function ItemEditSheet({
                         <View style={styles.anchoCompleto}>
                           <TagColorPicker
                             tag={tag}
-                            value={tagColors[tag] ?? null}
+                            value={colores[tag] ?? null}
                             onChange={(hex) => void pickColor(tag, hex)}
                             onClose={() => setColorDe(null)}
                           />

@@ -249,14 +249,38 @@ describe("los dos montajes del selector en la hoja", () => {
   });
 
   it("el de una etiqueta que ya existe lee del mapa y escribe al momento", () => {
-    // `?? null` y no el valor a secas: `tagColors[tag]` es `string | undefined`, y
+    // `?? null` y no el valor a secas: `colores[tag]` es `string | undefined`, y
     // `undefined` para `value: string | null` seria "sin color" por la puerta de
     // atras en lugar de por la de adelante.
-    const deLaPastilla = montajes.filter((m) => m.includes("value={tagColors[tag] ?? null}"));
+    //
+    // **`colores` y no `tagColors`, que es donde estaba el fallo del repintado.**
+    // `colores` es el mapa con el optimista aplicado (`coloresVistos`): el color
+    // que `pickColor` pone en el mismo commit que empieza la escritura, para que
+    // la pastilla se repinte en el toque y no en el viaje de vuelta del store.
+    // La primera version del optimista solo llegaba al `value` del selector y al
+    // boton del lapiz (`colorOf`), pero el relleno de la pastilla lo pone
+    // `TagChip` y seguia leyendo el mapa sin mezclar —asi que nada se movia—.
+    // Un `null` en el optimista ("volver al deducido") se guarda y no se borra,
+    // porque el mapa aun trae el color viejo hasta que el store contesta.
+    const deLaPastilla = montajes.filter((m) =>
+      m.includes("value={colores[tag] ?? null}"),
+    );
     expect(deLaPastilla).toHaveLength(2);
     for (const montaje of deLaPastilla) {
       expect(montaje).toContain("onChange={(hex) => void pickColor(tag, hex)}");
       expect(montaje).toContain("onClose={() => setColorDe(null)}");
+    }
+  });
+
+  it("las dos pastillas de la hoja se pintan con el mapa mezclado y no con el mapa", () => {
+    // Este es el pin del fallo real: las dos `TagChip` de la hoja leian
+    // `colors={tagColors}` y el optimista no les llegaba por ningun camino.
+    // Si alguien las vuelve al mapa sin mezclar, el repintado en vivo se rompe
+    // aunque el selector y el lapiz sigan yendo al momento.
+    const pastillas = [...hoja.matchAll(/<TagChip tag=\{tag\} colors=\{[^}]+\}/g)].map((m) => m[0]);
+    expect(pastillas).toHaveLength(2);
+    for (const pastilla of pastillas) {
+      expect(pastilla).toContain("colors={colores}");
     }
   });
 
