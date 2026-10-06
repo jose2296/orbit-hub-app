@@ -15,7 +15,10 @@ import type { BoardState, ListItem, TagColors } from "@orbit-hub/contracts";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppText } from "@/components/ui/text";
-import { FLOATING_BUTTON_INSET } from "@/components/ui/floating-button";
+import {
+  FLOATING_BUTTON_MARGIN,
+  FLOATING_BUTTON_STACK_INSET,
+} from "@/components/ui/floating-button";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { dropIndex, rowShift } from "@/lib/lists/drag-shift";
 import { iconColor } from "@/lib/lists/item-icons";
@@ -360,6 +363,43 @@ export function BoardColumn({
           backgroundColor: theme.colors.surfaceMuted,
           borderColor: theme.colors.border,
           borderRadius: theme.radius.md,
+          /*
+            **The room below the panel, and it is the floating button's own margin
+            and not a number of its own.**
+            Without it the panel is exactly as tall as the box it is given: measured
+            in the browser with 16 cards in a column, the panel ended at 932 in a
+            window of 932, at 900 in a window of 900 and at 480 in a window of 480 —
+            **always flush with the last pixel row**, eight viewports and both
+            themes, because `Screen` runs with `edgeToEdge` and that is what
+            `edgeToEdge` does: `paddingBottom: 0`. So the bottom border was drawn
+            *on* the edge of the window, with no background under the rounded
+            corner to be a rounded corner against — measured, the last row of
+            pixels at x=30 is the border colour and the row above is the panel's
+            own fill, and below the panel there was nothing at all.
+
+            Which is the complaint this margin answers, and the brief's own account
+            of it — the `ScrollView` reserving `FLOATING_BUTTON_INSET` and the box
+            "exceeding the track height" — **is not what the browser does**: the
+            box was already capped, at 698 of client height against a track of 756
+            in that same 430 x 932 measurement, `flex: 1 1 0%` and `min-height: 0`
+            computed, with 416 points of content scrolling inside it. The box was
+            never the thing that ran past the screen; the panel was, because nothing
+            below it was reserved. See the report for the rest.
+
+            **`FLOATING_BUTTON_MARGIN` and not `FLOATING_BUTTON_STACK_INSET`**, and
+            the difference is deliberate: the corner has to be *seen*, so the gap
+            under it has to beat the panel's own `radius.md`, which is 12. The
+            buttons' full height would also clear it, but it would take 152 points
+            off the height of every column of every board — measured at 430 x 932,
+            a column goes from 756 to 604 and at 430 x 420 from 244 to 92 — and a
+            column 92 points tall is a column with one card and a half in it. 24
+            is the margin the `+` is drawn with, it is the smallest number here that
+            is bigger than the radius, and it is the one the button already owns.
+            **Not measured on a device**: no simulator or phone is attached to this
+            machine, and a phone's own bottom inset is not something the browser can
+            show.
+          */
+          marginBottom: FLOATING_BUTTON_MARGIN,
         },
       ]}
     >
@@ -424,14 +464,26 @@ export function BoardColumn({
           {
             gap: theme.spacing.sm,
             /*
-              The room for the board's `+`, **and the button's own number.**
+              The room for the board's floating buttons, **and the buttons' own
+              number.**
+
               Without it the last card of a column that happens to be the one under
-              the corner button has half of itself behind it: the button is drawn
+              the corner button has half of itself behind it: the buttons are drawn
               over the content and the column ends where the window ends, so the
-              card cannot be scrolled clear of anything. `FLOATING_BUTTON_INSET` is
-              the button's `bottom` plus its larger size, and the column asks the
-              button rather than writing a number that would be the second copy of a
-              decision somebody else already made.
+              card cannot be scrolled clear of anything. The column asks
+              `floating-button.tsx` rather than writing a number, because a `82` here
+              would be the second copy of a decision that file already made — and the
+              copy would be *wrong* the moment a second button appeared above the
+              `+`, which is what a board now has.
+
+              **It is `FLOATING_BUTTON_STACK_INSET` and not `FLOATING_BUTTON_INSET`,
+              and that is the whole of what the second button costs.** The stack is
+              the `+`'s room plus a gap plus a second button's size, and the filter
+              is the one that covers the cards *higher up* than the `+` does: a
+              column that reserved room for the `+` alone finished its scroll with
+              its last card sitting under the funnel. Measured on the board with 16
+              cards in one column at 430 x 932, **152** — see the constant for the
+              numbers and for what was not measured.
 
               It is not `Screen`'s `bottomInset`, and that is not an oversight:
               `screen.tsx` drops `bottomInset` when `edgeToEdge` is set, because the
@@ -441,7 +493,7 @@ export function BoardColumn({
               which is where it is needed and where a column narrower than the
               button still gets it.
             */
-            paddingBottom: FLOATING_BUTTON_INSET,
+            paddingBottom: FLOATING_BUTTON_STACK_INSET,
           },
         ]}
       >
@@ -831,6 +883,19 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     borderWidth: StyleSheet.hairlineWidth,
+    /*
+      **And it clips, because a rounded corner is only a rounded corner while
+      nothing is painted over it.**
+      Without `overflow: hidden` the radius on this panel rounds the *background*
+      and the cards underneath go on past it in squares: a column whose last card
+      was not scrolled clear of the bottom would have a square card in the corner
+      the radius was supposed to describe. `overflow: hidden` reads on both
+      targets — react-native-web writes it as `overflow: hidden` and React Native
+      clips there too — so it is one rule and not a web one with a native guess
+      beside it, the same argument `styles.recorte` on the board screen makes for
+      the box that clips the track.
+    */
+    overflow: "hidden",
   },
   cabecera: {
     flexDirection: "row",
@@ -861,8 +926,27 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  /**
+   * The box of cards, and **it is capped at the height it is given rather than at
+   * the height of what is in it.**
+   *
+   * `flex: 1` is the cap: measured in the browser it computes to `flex: 1 1 0%` with
+   * `min-height: 0` on a column of sixteen cards, which is a box of **698** points
+   * with **1114** of content inside it — the content scrolls and the box does not
+   * grow. The `min-height: 0` is the half that is easy to leave out, and it is the
+   * half that is load-bearing: a flex item whose `min-height` is `auto` refuses to
+   * shrink below its content, which is how a column of cards comes to be taller than
+   * the track and takes the panel's rounded bottom corners off the screen with it.
+   * react-native-web writes that zero on its own and React Native's Yoga does not
+   * owe it to anybody, so it is written here rather than trusted.
+   *
+   * `overflow: "hidden"` is on the panel above and not here, and the two are one
+   * thing: this box is the thing that scrolls, and a scroller that is taller than
+   * its box draws its content over whatever is around it.
+   */
   cajas: {
     flex: 1,
+    minHeight: 0,
   },
   /** The empty state of a column, in the middle of it rather than at the top. */
   centrado: {

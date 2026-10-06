@@ -1351,57 +1351,27 @@ export default function BoardScreen() {
         wash: workspace?.wash,
       }}
       overlay={
-        <FloatingButton
-          testID="item-create-button"
-          label={t("itemCreate.title")}
-          hint={t("itemCreate.titleHint")}
-          onPress={() => setEditing({ itemId: "", page: "edit" })}
-        />
-      }
-    >
-      {/*
-        The box whose `onLayout` measures the board, and it is the **content box of
-        the screen** and not the window: the screen's own padding comes off first,
-        so a phone of 430 is 398 here and the arithmetic is about the space the
-        columns really have.
-
-        **And it renders whatever the measurement says.** It was behind a
-        `return null` while `anchoColumna` was zero — the box that measures the
-        width inside the branch that needs the width — and the board never painted
-        anything at all: an empty screen with the title of the board in the header
-        and no way to tell a broken screen from an empty one. Measured in the
-        browser, at 1440 points, with no error anywhere.
-      */}
-      <View
-        testID="board-track-area"
-        style={[styles.medido, { gap: theme.spacing.lg }]}
-        onLayout={(event) => setAncho(event.nativeEvent.layout.width)}
-      >
-        {/*
-          **Los controles y el aviso de solo lectura, en una caja encima de las
-          pestanas.** El mismo `ListControls` que montan la pantalla de listas, la de
-          peliculas y la de carpetas: una boton con el nombre de lo que hay puesto, y
-          una hoja con los filtros dentro. Es el mismo control en cuatro sitios, y un
-          control que es el mismo en cuatro sitios es una cosa que aprender y no cuatro.
-
-          Y esta caja **es una columna y no una fila** porque lo que lleva debajo no
-          es un boton: es una frase. En una fila, con el boton a la izquierda y el
-          aviso a la derecha de una ventana de 1440, la frase queda a cuatrocientos
-          puntos del boton que la ha hecho aparecer; apilada, la una explica a la otra.
-        */}
-        <View style={[styles.controles, { gap: theme.spacing.sm }]}>
+        <>
           {/*
-            **El boton sale con tareas y no sin ellas**, igual que en la pantalla de
-            listas (`!media && !isLoading && items.length > 0`). Un filtro sobre un
-            tablero vacio no tiene nada que esconder, y el boton seria un numero —el
-            de los filtros que no hay— sobre una hoja vacia.
+            **El filtro, encima del `+`, y es el mismo `ListControls` que montan las
+            otras tres pantallas — con su hoja y sus filtros dentro, no una copia.**
+            Va aqui y no en `styles.controles` porque lo que pedia la persona es un
+            boton flotante de solo icono encima del `+`, y un `+` con algo encima es
+            la misma cosa que el `+` de las demas pantallas: dos objetos redondos en
+            la esquina de la que el pulgar ya esta, en el orden en que se usan.
 
-            **`canReorder` y `onReorder` no se pasan**, y no es que el tablero no se
-            pueda reordenar: se reordena arrastrando, que es lo que hacen las
-            tarjetas de una columna. Lo que no existe es **la hoja con un asa por
-            fila** que `canReorder` abre —una tercera pantalla para lo que aqui es un
-            gesto dentro de la columna— y un boton que abriera una hoja de reordenado
-            en un tablero es un boton que no tiene a donde ir.
+            **El orden es filtro encima y `+` debajo, y no al reves**: el `+` es lo
+            que se pulsa sin mirar —crear algo— y lo que esta encima es lo que se
+            pulsa mirando. `stacked` sube el de arriba lo justo para no solaparse con
+            el de abajo, y el hueco es el numero de `floating-button.tsx`, no uno
+            escrito aqui.
+
+            **`on={filtrando > 0}` es lo que hace que el icono baste.** Un boton
+            flotante no tiene donde decir "Filtrar 1", asi que lo dice el color: en
+            `accent` con un embudo relleno cuando hay un filtro puesto y en `surface`
+            con el pelo del tema cuando no. Y el `label` que le pasa `ListControls` se
+            queda en el `accessibilityLabel`, que es donde de verdad hace falta: el
+            dibujo no lo lee nadie que no vea.
           */}
           {items.length > 0 ? (
             <ListControls
@@ -1432,7 +1402,17 @@ export default function BoardScreen() {
                 etiqueta que puede no describir lo que hay en pantalla.
               */
               orders={isManualOrderOnly(list.kind) ? [] : undefined}
-              testID="board-controls"
+              trigger={({ open, label }) => (
+                <FloatingButton
+                  testID="board-controls"
+                  label={label}
+                  hint={t("board.filterHint")}
+                  icon={activeFilterCount > 0 ? "funnel" : "funnel-outline"}
+                  stacked
+                  on={activeFilterCount > 0}
+                  onPress={open}
+                />
+              )}
             >
               <FiltersBody
                 tags={labels}
@@ -1461,6 +1441,51 @@ export default function BoardScreen() {
             </ListControls>
           ) : null}
 
+          <FloatingButton
+            testID="item-create-button"
+            label={t("itemCreate.title")}
+            hint={t("itemCreate.titleHint")}
+            onPress={() => setEditing({ itemId: "", page: "edit" })}
+          />
+        </>
+      }
+    >
+      {/*
+        The box whose `onLayout` measures the board, and it is the **content box of
+        the screen** and not the window: the screen's own padding comes off first,
+        so a phone of 430 is 398 here and the arithmetic is about the space the
+        columns really have.
+
+        **And it renders whatever the measurement says.** It was behind a
+        `return null` while `anchoColumna` was zero — the box that measures the
+        width inside the branch that needs the width — and the board never painted
+        anything at all: an empty screen with the title of the board in the header
+        and no way to tell a broken screen from an empty one. Measured in the
+        browser, at 1440 points, with no error anywhere.
+      */}
+      <View
+        testID="board-track-area"
+        style={[styles.medido, { gap: theme.spacing.lg }]}
+        onLayout={(event) => setAncho(event.nativeEvent.layout.width)}
+      >
+        {/*
+          **El aviso de solo lectura, en una caja encima de las pestanas.**
+
+          Antes esta caja llevaba tambien el boton de filtros, y el boton esta ahora
+          en la esquina con el `+`. **Lo que queda aqui es solo la frase**, asi que
+          la caja ya no necesita ser una columna por el motivo de antes —que el
+          boton y la frase no se pueden sentar uno al lado del otro en una ventana de
+          1440— y sigue siendo `flex-start` por el mismo estilo: en una columna el
+          valor por defecto de React Native es `stretch` y una frase de una linea que
+          se estira a mil puntos no es una frase, es una linea. El `gap` se queda
+          porque es lo que separa el aviso de las pestanas cuando el aviso sale, que
+          es la mitad de las veces.
+
+          **El filtro no se ha movido de sitio sin motivo, y el motivo esta escrito
+          en el `overlay` de mas arriba**: es el mismo `ListControls`, con la misma
+          hoja y los mismos filtros dentro; lo unico que cambio es donde se pulsa.
+        */}
+        <View style={[styles.controles, { gap: theme.spacing.sm }]}>
           {/*
             **El aviso de solo lectura, y es el mismo texto que la pantalla de
             listas ya tiene** —`order.readOnlyHint`—, no una frase nueva para el
@@ -1839,12 +1864,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   /**
-   * La caja de los controles y del aviso, **y `alignItems: 'flex-start'` porque es
-   * lo unico que impide que el boton de filtros se estire a todo el ancho de una
-   * ventana de 1440.** En una columna, el valor por defecto de React Native es
-   * `stretch`, y el `Button` de `ListControls` lleva `fullWidth={false}` para no
-   * ocupar la pantalla —una caja que se estira por debajo lo deshace en cuanto su
-   * padre es una columna—.
+   * La caja del aviso de solo lectura, **y `alignItems: 'flex-start'` porque es lo
+   * unico que impide que el texto se estire a todo el ancho de una ventana de 1440.**
+   * En una columna, el valor por defecto de React Native es `stretch`.
+   *
+   * **El nombre y el comentario son los que eran cuando esta caja llevaba tambien el
+   * boton de filtros**, y el boton esta ahora en la esquina con el `+`. El
+   * `alignItems` sigue siendo lo mismo por el mismo motivo y con el mismo
+   * `testID` al lado, `board-controls`, que ahora es el del boton flotante: un guion
+   * que lo buscaba por ahi sigue encontrandolo.
    */
   controles: {
     alignItems: "flex-start",

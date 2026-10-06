@@ -1052,6 +1052,19 @@ const es = {
   "board.editStatesHint": "Abre el editor de los estados del tablero",
   "board.addState": "Añadir estado",
   "board.stateColor": "Color del estado",
+  /*
+    El boton de filtro del tablero, **y es una frase y no un nombre porque el boton
+    es un icono y no tiene donde imprimir un nombre.**
+
+    Va por `useA11yHint` y no por `accessibilityLabel`, que es lo que ya lleva:
+    el nombre dice *que* es ("Filtrar", o "Filtrar 1" con uno puesto) y esto dice
+    *que pasa al pulsarlo*, que es lo que el nombre no dice. Sin esto, un boton
+    redondo con un embudo no dice nada a quien no lo ve, y en una pantalla donde el
+    filtro se abria con una pastilla que decia "Filtrar · A mano" eso era justo lo
+    que se perdia al moverlo.
+  */
+  "board.filterHint":
+    "Abre los filtros del tablero: qué tareas se ven y qué se busca en ellas",
 
   /*
     El borrado de un estado, y sus seis frases.
@@ -2137,6 +2150,15 @@ const en: Record<TranslationKey, string> = {
   "board.editStatesHint": "Opens the board's states editor",
   "board.addState": "Add state",
   "board.stateColor": "State colour",
+  /*
+    The board's filter button, and it is a sentence and not a name because the button
+    is an icon and has nowhere to print a name. It goes through `useA11yHint` rather
+    than `accessibilityLabel`, which already carries the name: that says *what* it is
+    ("Filter", or "Filter 1" with one on) and this says *what happens on press*,
+    which the name does not. The Spanish note above says the same at more length.
+  */
+  "board.filterHint":
+    "Opens the board's filters: which tasks are shown and what is searched in them",
 
   /*
     Deleting a state, and its six phrases. `board.deleteState` carries the column's
