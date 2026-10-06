@@ -1,6 +1,11 @@
 /**
- * La esquina inferior derecha de una lista: el botón de filtrar, el `+` y la
- * bandeja de lo hecho.
+ * La esquina inferior derecha de una lista: el buscador, el botón de filtrar, el
+ * `+` y la bandeja de lo hecho.
+ *
+ * El buscador se cuenta **encima** del de filtros y no aparte, porque los dos son
+ * el mismo tipo de boton —36, el mismo— y la pila se lee de abajo arriba: `+`,
+ * filtrar, buscar. Si el buscador viviera en otro sitio, uno de los dos acabaria
+ * tocando el borde o solapado con el `+`, que es como se empezó.
  *
  * Los tres números estaban escritos a mano en la pantalla y ninguno comprobaba
  * nada del otro. El resultado medido era un hueco de **28 puntos** entre el `+` y
@@ -19,6 +24,10 @@ export interface BottomCluster {
   fabSize: number;
   /** The filter button, from the bottom edge, sitting above the `+`. */
   controlsBottom: number;
+  /** The search button, above the filter one and under the `+`. */
+  searchBottom: number;
+  /** How tall the search button is. Same as the filter one: both are 36. */
+  searchHeight: number;
   /** How tall the filter button is. `Button` at `sm`. */
   controlsHeight: number;
   /** The tray of finished items, from the bottom edge, under both. */
@@ -43,7 +52,9 @@ export function bottomCluster(
     fabSize,
     controlsBottom: margin + fabSize + gap,
     controlsHeight,
-    trayBottom: margin + fabSize + gap + controlsHeight + gap,
+    searchBottom: margin + fabSize + gap + controlsHeight + gap,
+    searchHeight: controlsHeight,
+    trayBottom: margin + fabSize + gap + controlsHeight + gap + controlsHeight + gap,
     gap,
     margin,
   };

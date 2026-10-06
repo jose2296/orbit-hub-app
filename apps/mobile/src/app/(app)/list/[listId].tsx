@@ -12,6 +12,7 @@ import type {
 
 import { releaseSharedCover } from "@/lib/media/shared-cover";
 import { bottomCluster } from "@/lib/layout/bottom-cluster";
+import { normaliseToCompare } from "@/lib/lists/done-match";
 import { Badge } from "@/components/ui/badge";
 import type { IconName } from "@/components/ui/button";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,6 @@ import { Card } from "@/components/ui/card";
 import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
-import { DoneTray } from "@/components/lists/done-tray";
 import { ItemIcon } from "@/components/lists/icon-picker";
 import { MediaListScreen } from "@/components/media/media-list-screen";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
@@ -29,6 +29,7 @@ import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { TagChip } from "@/components/lists/tag-chip";
 import { Screen } from "@/components/ui/screen";
+import { TextField } from "@/components/ui/text-field";
 import { ReorderSheet } from "@/components/ui/reorder-sheet";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
@@ -207,6 +208,8 @@ export default function ListScreen() {
     /** Empty when the panel is creating a row rather than editing one. */
     itemId: string;
     page: "edit" | "icon" | "tags";
+    /** Lo que se estaba buscando, para no escribirlo dos veces. */
+    tituloInicial?: string;
   } | null>(null);
   const editingItem = editing
     ? (items.find((row) => row.id === editing.itemId) ?? null)
@@ -236,6 +239,23 @@ export default function ListScreen() {
    * re-sort puts it back where it was.
    */
   const orderMode = list?.orderMode ?? "manual";
+  /*
+   * El buscador de la lista.
+   *
+   * Busca **por los dos lados**: completados y pendientes. Antes los completados
+   * vivian en una bandeja aparte, y un sitio aparte no se busca —una bandeja se
+   * recorre con el pulgar, no se consulta con una palabra—. Quien quiere
+   * encontrar algo que ya dio por hecho usa el buscador, no baja a mirar una fila
+   * de las que ya tachaste.
+   *
+   * El texto se compara con `normaliseToCompare`, el mismo que usa el buscador de
+   * carpetas, listas y notas, y por el motivo de entonces: acentos y mayusculas no
+   * pueden decidir si algo aparece.
+   */
+  const [buscando, setBuscando] = useState(false);
+  const [textoBusqueda, setTextoBusqueda] = useState("");
+  const terminoBusqueda = textoBusqueda.trim();
+
   const sorted = useMemo(
     () => orderItems(items, orderMode),
     [items, orderMode],
@@ -250,13 +270,26 @@ export default function ListScreen() {
   );
   const labels = useMemo(() => tagsByFrequency(items), [items]);
 
+  /*
+   * El buscador entra **despues** de los filtros y del orden, y sobre lo visible.
+   * Al reves —filtrar la lista entera antes de ordenar— lo que se busca seria
+   * "lo que hay", que es distinto de "lo que estas viendo", y con la bandeja
+   * fuera esa distincion se nota: no hay otro sitio donde mirar.
+   */
+  const visibles = useMemo(() => {
+    if (!terminoBusqueda) return visible;
+    const normalizado = normaliseToCompare(terminoBusqueda);
+    return visible.filter((item) => normaliseToCompare(item.title).includes(normalizado));
+  }, [visible, terminoBusqueda]);
+
   const pending = useMemo(
-    () => visible.filter((item) => !item.completed),
-    [visible],
+    () => visibles.filter((item) => !item.completed),
+    [visibles],
   );
+
   const completed = useMemo(
-    () => visible.filter((item) => item.completed),
-    [visible],
+    () => visibles.filter((item) => item.completed),
+    [visibles],
   );
   const activeFilterCount =
     selectedTags.length + (filterState === "all" ? 0 : 1);
@@ -270,6 +303,22 @@ export default function ListScreen() {
    */
   const pila = bottomCluster(theme);
   const canDrag = canReorder(orderMode);
+
+  /*
+   * El buscador de la lista, y lo que cambia con el.
+   *
+   * Busca **por los dos lados**: completados y pendientes. Antes los completados
+   * vivian en una bandeja aparte, que es un sitio donde no se busca: una bandeja
+   * se recorre con el pulgar, no se consulta con una palabra. Y quien quiere
+   * encontrar algo que ya dio por hecho usa el buscador, no baja a mirar una fila
+   * de las que ya tachaste.
+   *
+   * El texto se compara con `normaliseToCompare`, el mismo que usa el buscador
+   * de carpetas, listas y notas — y por el motivo que esa vez: acentos y mayusculas
+   * no pueden decidir si aparece algo.
+   */
+  const termino = textoBusqueda.trim();
+
 
   /**
    * One flat array for the list, with the heading of the completed section as an
@@ -292,14 +341,21 @@ export default function ListScreen() {
       item,
       index,
     }));
-    if (completed.length > 0) {
-      rows.push({ kind: "completedHeading" });
-      if (showCompleted) {
-        completed.forEach((item, index) =>
-          rows.push({ kind: "row", item, index }),
-        );
-      }
-    }
+    /*
+      Y los completados van **en la misma lista**, sin su seccion encima.
+
+      Con la bandeja fuera y el buscador trayendolos por los dos lados, una
+      cabecera de "completados" que separa la lista en dos mitades es justo lo que
+      se estaba quitando: hace que "cuantas cosas llevo" se lea como dos numeros
+      en vez de uno. El filtro de la cabecera sigue estando para quien quiera ver
+      solo unas.
+    */
+    const completadosVisibles = showCompleted
+      ? visibles.filter((item) => item.completed)
+      : [];
+    completadosVisibles.forEach((item, index) =>
+      rows.push({ kind: "row", item, index }),
+    );
     return rows;
   }, [pending, completed, showCompleted, media]);
 
@@ -570,6 +626,75 @@ export default function ListScreen() {
    * takes you. Two copies of a button means the one that gets the margin fixed is
    * the one somebody was looking at.
    */
+  /*
+   * El boton de buscar, encima del de filtros, y el `+` debajo de los dos.
+   *
+   * Va en la pila y no en la cabecera porque comparte sitio con el `+`: tres
+   * botones de la misma forma, alineados al mismo borde, y la pila se cuenta una
+   * vez en `bottomCluster` para que no se solapen.
+   */
+  const botonBuscar = (
+    <Pressable
+      testID="item-search-button"
+      accessibilityRole="button"
+      accessibilityLabel={t("lists.searchItems")}
+      {...pistaCreate.props}
+      onPress={() => setBuscando(true)}
+      style={({ pressed }) => [
+        styles.searchButton,
+        {
+          bottom: pila.searchBottom,
+          right: pila.fabBottom,
+          borderRadius: theme.radius.pill,
+          backgroundColor: theme.colors.surface,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <Ionicons name="search" size={18} color={theme.colors.text} />
+    </Pressable>
+  );
+
+  /*
+   * El campo de busqueda, **arriba de todo** y no encima de la lista: se abre a
+   *hijo del boton, asi que tiene que aparecer donde el ojo ya esta, no donde este
+   * el item que se busca.
+   *
+   * Y al lado, un boton que crea el item con **lo que se estaba buscando dentro**.
+   * Es la accion obvia de quien no encuentra algo: no a abrir un formulario en
+   * blanco, sino a abrirlo con la palabra ya escrita. Sin eso, escribir el nombre
+   * es escribir dos veces lo mismo.
+   */
+  const campoBusqueda = buscando ? (
+    <View style={{ flexDirection: "row", gap: theme.spacing.sm, alignItems: "center" }}>
+      <TextField
+        autoFocus
+        value={textoBusqueda}
+        onChangeText={setTextoBusqueda}
+        placeholder={t("lists.searchItems")}
+        returnKeyType="search"
+        autoCorrect={false}
+        autoCapitalize="none"
+        containerStyle={{ flex: 1 }}
+        testID="item-search-field"
+      />
+      <Button
+        testID="item-search-create"
+        label={t("lists.createFromSearch")}
+        icon="add"
+        size="sm"
+        fullWidth={false}
+        disabled={termino.length === 0}
+        onPress={() => {
+          const texto = termino;
+          setBuscando(false);
+          setTextoBusqueda("");
+          setEditing({ itemId: "", page: "edit", tituloInicial: texto });
+        }}
+      />
+    </View>
+  ) : null;
+
   const crear = (
     <>
       <Pressable
@@ -745,6 +870,11 @@ export default function ListScreen() {
         arrive at a component that is not there, and the failure goes unpainted
         again — which is the whole thing it exists to stop.
       */}
+      {/*
+        El campo de buscar, arriba de todo y fuera del scroller.
+      */}
+      {campoBusqueda}
+
       <ListMenuSheet
         list={menuOpen && list ? list : null}
         folder={
@@ -796,13 +926,18 @@ export default function ListScreen() {
           The catalog needs the network, so on a plane this one does not work.
           It says so when it is pressed, rather than opening a search that cannot
           answer. */}
-      <DoneTray
-        items={completed}
-        bottomInset={pila.trayBottom}
-        onToggle={(item) => void toggleCompleted(item)}
-        onOpen={(item) => setEditing({ itemId: item.id, page: "edit" })}
-      />
+      {/*
+        La bandeja de completados **no esta**.
 
+        Era un sitio donde lo hecho vivia aparte, y un sitio aparte no se busca:
+        una bandeja se recorre con el pulgar, no se consulta con una palabra. Y
+        quien quiere encontrar algo que ya dio por hecho usa el buscador, no baja
+        a mirar una fila de las que ya tachaste. El buscador de arriba busca por los
+        dos lados, y con eso la bandeja no anade nada que no tuviera ya — solo un
+        sitio mas donde lo de arriba no esta.
+      */}
+
+      {botonBuscar}
       {crear}
 
 
@@ -1171,6 +1306,14 @@ const styles = StyleSheet.create({
   },
   band: {
     width: "100%",
+  },
+  /** El boton de buscar, y su tamano es el que cuenta `bottomCluster`. */
+  searchButton: {
+    position: "absolute",
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
   },
   header: {},
   headerActions: {

@@ -126,19 +126,42 @@ describe('la pila no se solapa', () => {
     expect(bordeInferiorDelBoton).toBeGreaterThan(bordeSuperiorDelMas);
   });
 
-  it('la bandeja empieza donde termina el botón', () => {
+  it('cada boton de la pila empieza donde termina el de abajo', () => {
+    /*
+     * La pila se lee de abajo arriba —`+`, filtrar, buscar, bandeja— y el fallo
+     * que se corrigio aqui era un hueco de 28 puntos para un boton de 36, que
+     * solo se veia en la pantalla y no en ningun fallo. Por eso se comprueba la
+     * cadena entera y no una pareja suelta: el buscador y el filtro son el mismo
+     * tamano y solo caben los dos si los dos estan contados.
+     */
     const pila = bottomCluster(TEMA);
-    const bordeInferiorDelBoton = pila.controlsBottom + pila.controlsHeight;
 
-    expect(pila.trayBottom).toBeGreaterThanOrEqual(bordeInferiorDelBoton);
-    expect(pila.trayBottom - bordeInferiorDelBoton).toBe(pila.gap);
+    const encimaDelMas = pila.fabBottom + pila.fabSize;
+    expect(pila.controlsBottom).toBe(encimaDelMas + pila.gap);
+
+    const encimaDelFiltro = pila.controlsBottom + pila.controlsHeight;
+    expect(pila.searchBottom).toBe(encimaDelFiltro + pila.gap);
+
+    const encimaDelBuscador = pila.searchBottom + pila.searchHeight;
+    expect(pila.trayBottom).toBe(encimaDelBuscador + pila.gap);
+
+    // Y que la pila entera quepa con el hueco de verdad: el fallo original era un
+    // hueco de 28 para un boton de 36, o sea que **el hueco no era el problema**,
+    // era que los numeros estaban escritos a mano y no se comprobaban.
+    expect(
+      pila.trayBottom,
+      'la pila completa tiene que caber sin que un boton pise al siguiente',
+    ).toBeLessThan(300);
+
   });
 
   it('la cuenta sale de los margenes del tema, no de numeros sueltos', () => {
     const conOtroTema = bottomCluster({ spacing: { lg: 24, sm: 12 } });
 
     expect(conOtroTema.fabBottom).toBe(24);
-    expect(conOtroTema.trayBottom).toBe(24 + 56 + 12 + 36 + 12);
+    expect(conOtroTema.controlsBottom).toBe(24 + 56 + 12);
+    expect(conOtroTema.searchBottom).toBe(24 + 56 + 12 + 36 + 12);
+    expect(conOtroTema.trayBottom).toBe(24 + 56 + 12 + 36 + 12 + 36 + 12);
   });
 
   it('el hueco que había antes era de 28 para un botón de 36', () => {
@@ -154,9 +177,25 @@ describe('la pila no se solapa', () => {
 });
 
 describe('la pila se usa, y no unos números escritos a mano', () => {
-  it('la bandeja recibe la cuenta y no una suma suelta', () => {
+  it('la pantalla cuenta la pila y no unos numeros escritos a mano', () => {
     expect(LISTA).toContain('bottomCluster(');
-    expect(LISTA).toMatch(/bottomInset=\{[^}]*trayBottom/);
+
+    // Lo que se comprueba ahora: **el boton de buscar usa la cuenta**. Antes esto
+    // miraba que la bandeja cogiera `trayBottom`, y la bandeja ya no esta — se
+    // sustituyo por el buscador, que se mide igual de lejos del borde y por el
+    // mismo motivo. Un guard que sigue mirando la pieza que se quito no protege
+    // la que se puso.
+    expect(LISTA, 'el boton de buscar sale de la pila, no de un numero suelto')
+      .toMatch(/bottom: pila\.searchBottom/);
+  });
+
+  it('la bandeja de completados no vuelve a la esquina', () => {
+    // Se quito porque es un sitio donde lo hecho vive aparte, y un sitio aparte
+    // no se busca: una bandeja se recorre con el pulgar, no se consulta con una
+    // palabra. Y con el buscador trayendo los dos lados, no anade nada que no
+    // tuviera ya — solo un sitio mas donde lo de arriba no esta.
+    expect(LISTA, 'la bandeja no se vuelve a montar').not.toContain('<DoneTray');
+    expect(LISTA, 'ni a importar').not.toContain('done-tray');
   });
 
   it('el inset antiguo, con su 12 a mano, no vuelve', () => {

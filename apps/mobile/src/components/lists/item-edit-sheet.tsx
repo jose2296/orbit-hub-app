@@ -45,6 +45,16 @@ export interface ItemEditSheetProps {
    * what a row can have.
    */
   mode?: "edit" | "create";
+  /**
+   * El titulo con el que arranca la hoja cuando esta creando.
+   *
+   * Viene de "crea esto con lo que estaba buscando". Escribir el nombre dos
+   * veces —una en el buscador y otra en el formulario— es la accion que hace que
+   * alguien que no encuentra algo no llegue a crear el.
+   *
+   * Solo cuando `mode` es `create`: en editar manda el item.
+   */
+  initialTitle?: string;
   /** The page to open on, so a tap on the icon goes straight to the icons. */
   startOn?: Page;
   /** This list's chosen label colours, and the only ones there are. */
@@ -119,6 +129,7 @@ export function ItemEditSheet({
   item,
   listId,
   mode = "edit",
+  initialTitle = "",
   startOn = "edit",
   tagColors,
   onTagColor,
@@ -241,13 +252,14 @@ export function ItemEditSheet({
       setTitle("");
       setAnnotation("");
       setNewTag("");
+      setTitle(initialTitle);
       // `setNewTag("")` on a field that is already empty changes nothing, so React
       // drops it and the effect on `nombreNuevo` never fires. That is why the
       // pending colour is cleared here as well and not only there.
       setPendiente(null);
       setDraft(EMPTY_DRAFT);
     }
-  }, [isNew]);
+  }, [isNew, initialTitle]);
 
   /** What the panel is showing, whether the row exists yet or not. */
   const shown: Draft = isNew
