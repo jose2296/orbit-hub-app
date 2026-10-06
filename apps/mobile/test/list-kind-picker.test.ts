@@ -28,7 +28,7 @@ const sinComentarios = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '');
 
 const HOJA = sinComentarios(src('components/folders/create-sheet.tsx'));
 
-describe('los cinco tipos se eligen en una página', () => {
+describe('los tipos se eligen en una página', () => {
   it('la hoja no usa `Segmented` para el tipo', () => {
     expect(HOJA).not.toContain('Segmented');
     expect(HOJA).not.toContain('import { Segmented }');
@@ -38,7 +38,15 @@ describe('los cinco tipos se eligen en una página', () => {
     // El orden importa: cine y serie juntos van juntos, y un selector que los separa
     // hace creer que son la misma lista partida en dos.
     expect(HOJA).toContain('LIST_KIND_ORDER');
-    expect(LIST_KIND_ORDER).toEqual(['tasks', 'movies', 'series', 'movies_and_series', 'books']);
+    // `board` va justo detrás de `tasks`: es la misma clase de cosa, con otra forma.
+    expect(LIST_KIND_ORDER).toEqual([
+      'tasks',
+      'board',
+      'movies',
+      'series',
+      'movies_and_series',
+      'books',
+    ]);
   });
 
   it('cada opción lleva icono y descripción, y no solo el nombre', () => {
@@ -52,7 +60,7 @@ describe('los cinco tipos se eligen en una página', () => {
 });
 
 describe('todos los tipos tienen icono, nombre y descripción', () => {
-  it('y los tres mapas cubren los mismos cinco', () => {
+  it('y los tres mapas cubren los mismos tipos', () => {
     const orden = [...LIST_KIND_ORDER].sort();
     const icono = Object.keys(LIST_KIND_ICON).sort();
     const pista = Object.keys(LIST_KIND_HINT).sort();

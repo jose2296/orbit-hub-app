@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { Folder, List, ListOrderMode, Note } from "@orbit-hub/contracts";
 
 import { ContentToolbar } from "@/components/content/content-toolbar";
+import { AppIcon } from "@/components/ui/app-icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
@@ -22,6 +23,7 @@ import {
   type ContentRow,
 } from "@/lib/content-order";
 import { saveContentOrder } from "@/lib/content-order-save";
+import { routeForList } from "@/lib/lists/route";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -149,7 +151,10 @@ export function ContentList({
         return;
       }
       if (row.kind === "list") {
-        router.push(`/(app)/list/${row.id}`);
+        // `toRow.list` always copies the list's kind, and `tasks` is only here for
+        // a row assembled by hand: it is where a list used to open, so a row that
+        // arrives without a kind still goes to the screen it always went to.
+        router.push(routeForList({ id: row.id, kind: row.listKind ?? "tasks" }));
         return;
       }
       router.push(`/(app)/note/${row.id}`);
@@ -293,13 +298,19 @@ function ContentRowView({
   */
   const nombre = useLongPressText(row.name);
 
-  const icon =
+  /*
+    The row's own icon, or the one for its kind when it has none. Before, every
+    row drew the kind's glyph and a chosen icon never showed up here at all —
+    which is why putting an icon on a list or a folder seemed to do nothing
+    outside the spaces screen.
+  */
+  const respaldo =
     row.kind === "folder"
-      ? "folder-outline"
+      ? ("folder-outline" as const)
       : row.kind === "note"
-        ? "document-text-outline"
-        : LIST_KIND_ICON[(row.listKind ?? "tasks") as keyof typeof LIST_KIND_ICON] ??
-          "list-outline";
+        ? ("document-text-outline" as const)
+        : ((LIST_KIND_ICON[(row.listKind ?? "tasks") as keyof typeof LIST_KIND_ICON] ??
+            "list-outline") as keyof typeof Ionicons.glyphMap);
 
   return (
     <View style={styles.caja}>
@@ -331,7 +342,7 @@ function ContentRowView({
         <View
           style={[styles.icono, { borderRadius: theme.radius.md, backgroundColor: iconTint }]}
         >
-          <Ionicons name={icon as never} size={16} color={foreground} />
+          <AppIcon icon={row.icon} size={16} inheritColor={foreground} fallback={respaldo} />
         </View>
         <View style={[styles.crece, { gap: 2 }]}>
           <AppText variant="bodyStrong" numberOfLines={1}>

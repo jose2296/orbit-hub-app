@@ -1,6 +1,7 @@
 export * from './api';
 export * from './auth';
 export * from './bookmarks';
+export * from './board';
 export * from './catalog';
 export * from './common';
 export * from './export';

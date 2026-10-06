@@ -5,7 +5,7 @@ import type {
   Note,
   UpdateNoteRequest,
 } from '@orbit-hub/contracts';
-import { noteDocumentSchema, noteDocumentToPlainText } from '@orbit-hub/contracts';
+import { noteDocumentSchema, noteDocumentToPlainText, sanitiseIconRef } from '@orbit-hub/contracts';
 import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
@@ -36,6 +36,7 @@ function toNote(row: typeof notes.$inferSelect, role: MembershipRoleName): Note 
     document: row.document,
     plainText: row.plainText,
     tags: row.tags ?? [],
+    icon: sanitiseIconRef(row.icon),
     // Zero means "not placed", and the browser sorts those last: a note written
     // before there was an order has no place in somebody's hand-made one.
     position: row.position,

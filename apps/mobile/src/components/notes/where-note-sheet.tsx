@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 
 import { Sheet } from "@/components/ui/sheet";
-import { Pick, PlacePicker } from "@/components/workspace/place-picker";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
+import { PlacePicker } from "@/components/workspace/place-picker";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -23,19 +24,47 @@ export interface WhereNoteSheetProps {
  * honest answer for somebody with five.
  *
  * La decision vive en `PlacePicker` y esto es solo el cromo: el `Sheet`, el
- * titulo y el boton de confirmar. Sin colecciones, que aqui no existen.
+ * titulo y el Guardar del pie. Sin colecciones, que aqui no existen.
  */
 export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
   const tree = useSpacesTree();
+  const { setSucio } = useSheetSucio();
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [folderId, setFolderId] = useState<string | null>(null);
 
-  if (!visible) return null;
+  /*
+    Limpio al abrir, y **aunque antes recordaba**.
 
-  const spaces = tree.spaces();
+    Una hoja nunca llega sucia: abrir, no tocar nada y salir no debe preguntar
+    "lo pierdes" por una eleccion de la vez anterior.
+  */
+  useEffect(() => {
+    if (visible) {
+      setWorkspaceId(null);
+      setFolderId(null);
+    }
+  }, [visible]);
+
+  const spaces = useMemo(() => tree.spaces(), [tree]);
+
+  /*
+    Sucio es **haber elegido sitio**, y nada mas.
+
+    Moverse por espacios y carpetas es mirar, no elegir: solo el destino cuenta.
+    Y sin destino no hay nada que perder, que es justo el estado en el que se abre.
+
+    The one space is used without asking: with a single space the destination is
+    already decided, so Guardar is enabled whenever there is a space at all.
+  */
+  const destino = workspaceId ?? spaces[0]?.id ?? null;
+  useEffect(() => {
+    setSucio(workspaceId !== null || folderId !== null);
+  }, [workspaceId, folderId, setSucio]);
+
+  if (!visible) return null;
 
   return (
     <Sheet
@@ -43,6 +72,15 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
       onClose={onClose}
       title={t("note.where.title")}
       scrollable={false}
+      /*
+        El Guardar es el del pie, y elige el destino: el mismo en todas las hojas
+        y fuera del area que scrollea.
+      */
+      onSave={() => {
+        if (!destino) return;
+        onPick({ workspaceId: destino, folderId });
+      }}
+      saveDisabledReason={!destino ? t("note.where.chooseSpace") : undefined}
     >
       <View
         style={{
@@ -59,25 +97,6 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
           onChange={(place) => {
             setWorkspaceId(place.workspaceId);
             setFolderId(place.folderId);
-          }}
-        />
-
-        {/*
-          The one space is used without asking, and that is what the button being
-          enabled means here. It was written as "disabled unless a space was
-          picked", which greys out the only case where there is nothing to pick:
-          somebody with a single space got a sheet asking them a question they had
-          already answered, and then a button that would not do anything about it.
-        */}
-        <Pick
-          icon="checkmark"
-          label={t("note.where.create")}
-          selected={false}
-          disabled={spaces.length === 0}
-          onPress={() => {
-            const target = workspaceId ?? spaces[0]?.id ?? null;
-            if (!target) return;
-            onPick({ workspaceId: target, folderId });
           }}
         />
       </View>

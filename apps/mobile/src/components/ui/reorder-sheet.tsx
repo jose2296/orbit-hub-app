@@ -1,9 +1,26 @@
 import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { FullTitle } from "@/components/media/full-title";
 import { DRAG_HANDLE_WIDTH, DraggableRow, DraggableSort } from "@/components/ui/draggable-row";
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
+
+/**
+ * Dice si el orden cambio, y vive **dentro** de la hoja a proposito.
+ *
+ * `ReorderSheet` pinta el `Sheet` y esta por encima de el, asi que `useSheetSucio`
+ * ahi daria el valor por defecto —que es "nada cambio"—. Este componente no pinta
+ * nada: esta dentro del arbol del `Sheet` para que el que si pinta sepa.
+ */
+function OrdenSucio({ sucio }: { sucio: boolean }) {
+  const { setSucio } = useSheetSucio();
+  useEffect(() => {
+    setSucio(sucio);
+  }, [sucio, setSucio]);
+  return null;
+}
 import { useTheme } from "@/theme";
 
 export interface ReorderSheetRow {
@@ -37,10 +54,15 @@ export interface ReorderSheetProps {
    * step is the one place in the app where "how far did it move" is a guess:
    * dropping the first row on the third moved it three places instead of two.
    *
+   * It may be async, and the sheet **awaits one move before starting the next**.
+   * Each move plans from the store as it is at that moment, so two moves at once
+   * would plan from the same snapshot and the second would land somewhere the
+   * finger never pointed at.
+   *
    * So the subtraction happens here, **where both numbers are known**: the index it
    * was dropped at and the index it was in.
    */
-  onMove: (id: string, delta: number) => void;
+  onMove: (id: string, delta: number) => void | Promise<void>;
   onClose: () => void;
   title: string;
   /** One line under the title, and it is the title's `subtitle`. */
@@ -76,6 +98,62 @@ export function ReorderSheet({
   const theme = useTheme();
 
   /*
+    The order being arranged, and **it lives here until Guardar**.
+
+    Every drop used to call `onMove` straight away, so dragging a row wrote to the
+    store on the way past — and closing without Guardar kept an order nobody
+    confirmed. Now drops reorder this copy and only Guardar replays the difference,
+    move by move, against the order that is still live underneath.
+  */
+  const [orden, setOrden] = useState<ReorderSheetRow[]>(rows);
+  useEffect(() => {
+    /*
+      On open and not on every render: `rows` is a new array on every render of
+      the parent, so depending on it would throw the arrangement away with every
+      keystroke anywhere else. The arrangement belongs to this opening.
+    */
+    if (open) setOrden(rows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open ]);
+
+  const sucio = useMemo(() => {
+    const a = orden.map((row) => row.id).join("|");
+    const b = rows.map((row) => row.id).join("|");
+    return a !== b;
+  }, [orden, rows]);
+
+  /**
+   * Replays the arrangement against the live order, **one move at a time**.
+   *
+   * Rows that appeared or vanished while the sheet was open are not the sheet's
+   * business: the ones that vanished are dropped from the replay, and the ones
+   * that appeared keep the place the list gave them. Forcing either into the
+   * arrangement would be the sheet deciding about rows it never showed.
+   *
+   * And each move is awaited before the next starts, because every move plans
+   * from the store as it finds it: two at once plan from the same snapshot and
+   * the second lands where the finger never pointed.
+   */
+  const guardar = useCallback(async () => {
+    const vivos = rows.map((row) => row.id);
+    const enVivos = new Set(vivos);
+    const objetivo = orden.map((row) => row.id).filter((id) => enVivos.has(id));
+    for (const id of vivos) {
+      if (!objetivo.includes(id)) objetivo.push(id);
+    }
+    const trabajo = [...vivos];
+    for (let i = 0; i < objetivo.length; i++) {
+      const id = objetivo[i] as string;
+      const j = trabajo.indexOf(id);
+      if (j === i) continue;
+      trabajo.splice(j, 1);
+      trabajo.splice(i, 0, id);
+      await onMove(id, i - j);
+    }
+    onClose();
+  }, [orden, rows, onMove, onClose]);
+
+  /*
     The space between rows, **written down once**.
    *
     It goes in the layout that draws them and in the `DraggableSort` that has to
@@ -85,16 +163,50 @@ export function ReorderSheet({
   const hueco = theme.spacing.xs;
 
   return (
-    <Sheet visible={open} onClose={onClose} title={title} subtitle={hint}>
+    <Sheet
+      visible={open}
+      onClose={onClose}
+      title={title}
+      subtitle={hint}
+      /*
+        El Guardar es el del pie, y reordena de verdad al pulsarlo. Sin nada
+        cambiado no hay nada que escribir, asi que el boton dice que no hay nada:
+        un Guardar que reordena lo mismo que ya habia es una operacion en la cola
+        por nada.
+      */
+      onSave={() => void guardar()}
+    >
+      <OrdenSucio sucio={sucio} />
       <DraggableSort gap={hueco}>
         <View style={{ gap: hueco }}>
-          {rows.map((row, index) => (
+          {orden.map((row, index) => (
             <DraggableRow
               key={row.id}
               id={row.id}
               index={index}
-              total={rows.length}
-              onReorder={(movedId, toIndex) => onMove(movedId, toIndex - index)}
+              total={orden.length}
+              /*
+                La suelta reordena **la copia**, y no llama a `onMove`.
+
+                Cada suelta llamaba a escribir en el store de paso, y cerrar sin
+                Guardar dejaba un orden que nadie confirmo. Ahora la suelta solo
+                mueve en la copia, y los movimientos de verdad salen al Guardar,
+                de uno en uno y contra el orden que sigue vivo debajo.
+              */
+              onReorder={(movedId, toIndex) =>
+                setOrden((previas) => {
+                  const actual = previas.findIndex((fila) => fila.id === movedId);
+                  if (actual < 0) return previas;
+                  const movida = previas[actual] as ReorderSheetRow;
+                  const siguientes = previas.filter((fila) => fila.id !== movedId);
+                  siguientes.splice(
+                    Math.max(0, Math.min(toIndex, siguientes.length)),
+                    0,
+                    movida,
+                  );
+                  return siguientes;
+                })
+              }
             >
               <View
                 style={[

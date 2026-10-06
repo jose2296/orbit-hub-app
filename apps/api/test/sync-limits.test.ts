@@ -37,20 +37,21 @@ describe('sanitisePayload', () => {
     expect(out.name).toHaveLength(80);
   });
 
-  it('corta un emoji al ancho de su columna, no al de un nombre', () => {
-    // workspaces.emoji, folders.emoji and lists.emoji are all varchar(16).
-    // The sanitiser used to allow 500 for anything that was not `name`.
+  it('no corta un icono como si fuera un texto: lo sanea como objeto', () => {
+    // El icono dejo de ser un varchar(16): es un jsonb con la forma que fija el
+    // contrato, asi que no hay ancho al que cortar. Lo que no se puede dibujar
+    // es no tener icono, no una fila que no abre.
     for (const entity of ['workspace', 'folder', 'list'] as const) {
-      const out = sanitisePayload(entity, { emoji: 'a'.repeat(40) });
+      const out = sanitisePayload(entity, { icon: 'a'.repeat(40) });
 
-      expect(out.emoji, `${entity}.emoji`).toHaveLength(16);
+      expect(out.icon, `${entity}.icon`).toBeNull();
     }
   });
 
-  it('deja intacto un emoji corto, porque 16 es un límite y no un objetivo', () => {
-    const out = sanitisePayload('workspace', { emoji: '🏠' });
+  it('deja intacto un emoji corto, porque el icono es un objeto y no un ancho', () => {
+    const out = sanitisePayload('workspace', { icon: { type: 'emoji', value: '🏠' } });
 
-    expect(out.emoji).toBe('🏠');
+    expect(out.icon).toEqual({ type: 'emoji', value: '🏠', color: 'auto' });
   });
 
   it('sigue admitiendo un nombre de 80 caracteres entero', () => {
@@ -71,10 +72,10 @@ describe('sanitisePayload', () => {
   });
 
   it('deja pasar un null, porque null es una decisión y no una ausencia', () => {
-    const out = sanitisePayload('workspace', { name: null, emoji: null });
+    const out = sanitisePayload('workspace', { name: null, icon: null });
 
     expect(out.name).toBeNull();
-    expect(out.emoji).toBeNull();
+    expect(out.icon).toBeNull();
   });
 
   it('sigue sin tocar un título de item, que es más largo a propósito', () => {
@@ -178,7 +179,7 @@ describe('sanitisePayload', () => {
       [bookmarks, 'bookmark'],
     ];
 
-    const FREE_TEXT = ['name', 'title', 'description', 'emoji', 'annotation'];
+    const FREE_TEXT = ['name', 'title', 'description', 'annotation'];
 
     for (const [table, entity] of columns) {
       for (const field of FREE_TEXT) {

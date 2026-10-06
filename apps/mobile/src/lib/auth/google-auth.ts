@@ -3,7 +3,7 @@ import * as AuthSession from 'expo-auth-session';
 import { useAuthRequest as useGoogleProviderRequest } from 'expo-auth-session/providers/google';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AppState, Linking, Platform } from 'react-native';
 
 import { authClient } from './auth-client';
@@ -249,7 +249,34 @@ export function useGoogleAuthRequest(): GoogleAuthRequest {
      * a `never`, que es como se rompe la llamada a `remove()`.
      */
     const ref: { sub?: ReturnType<typeof Linking.addEventListener> } = {};
-    const espira = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /*
+     * **El temporizador va en un objeto y no en un `useRef`, y no es una preferencia de
+     * estilo: un hook aqui rompe el login en nativo.**
+     *
+     * `promptNativo` es una funcion `async` que se llama desde el `onPress` del boton
+     * a traves de `promptAsync`. Ya no estamos en el cuerpo de un componente, asi que
+     * React no tiene dispatcher de render al que llamar y `useRef` revienta con:
+     *
+     *     Invalid hook call. Hooks can only be called inside of the body of a
+     *     function component.
+     *
+     * O sea: **fallaba antes de abrir el navegador**, en cada intento, en Android y en
+     * iOS. En la web nunca se ve porque `promptAsync` salta `promptNativo` entero con
+     * su `if (platform !== 'web')` y usa `prompt()`.
+     *
+     * Entro en 60a3dd9, el commit que cambio el margen de 1500 ms por el de 120 s que
+     * hace falta para no tirar el codigo, y de ahi viene el reporte: el login llevaba
+     * tiempo dado por bueno y en nativo no lo estaba. Lo que ese commit queria decir
+     * —que el reloj de 120 s es el unico que se pone— sigue siendo verdad; lo que no
+     * puede ser es un hook dentro de una funcion async.
+     *
+     * **Y no hace falta ningun hook para esto**: el temporizador solo tiene que
+     * sobrevivir desde que se crea hasta que `soltar()` lo cancela, y las dos cosas
+     * ocurren dentro de esta misma llamada. No hay render de por medio, asi que no hay
+     * nada que un hook conserve entre renders. Es estado de una llamada, y el sitio de
+     * un estado de una llamada es una variable.
+     */
+    const espira: { id?: ReturnType<typeof setTimeout> } = {};
     const refEstado: { sub?: ReturnType<typeof AppState.addEventListener> } = {};
 
     const redirect = new Promise<string>((resolve) => {
@@ -273,13 +300,13 @@ export function useGoogleAuthRequest(): GoogleAuthRequest {
      */
     const espera = new Promise<null>((resolve) => {
       refEstado.sub = AppState.addEventListener('change', () => {});
-      espira.current = setTimeout(() => resolve(null), 120_000);
+      espira.id = setTimeout(() => resolve(null), 120_000);
     });
 
     const soltar = () => {
       ref.sub?.remove();
       refEstado.sub?.remove();
-      if (espira.current) clearTimeout(espira.current);
+      if (espira.id) clearTimeout(espira.id);
     };
 
     try {

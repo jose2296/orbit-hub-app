@@ -57,6 +57,16 @@ describe('el predicado de la fuente de iconos', () => {
       'cualquier fuente cargada no dice nada sobre los iconos',
     );
   });
+
+  it('busca las dos familias, porque hay dos fuentes que esperar', () => {
+    // Con una sola familia en el predicado, el arnes da por buena una pagina con
+    // la mitad de los iconos en blanco — que parecen un bug de layout y son una
+    // fuente que todavia no habia llegado.
+    assert.ok(
+      ICON_FONT_LOADED.includes('material-community'),
+      'esperar solo a ionicons deja pasar capturas con los dibujos de Material en blanco',
+    );
+  });
 });
 
 describe('la espera en cdp.mjs', () => {

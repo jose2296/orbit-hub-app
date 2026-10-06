@@ -1,5 +1,5 @@
 {
-  "id": "f5475286-bce4-4f61-bc6b-0b6b1684a7be",
+  "id": "8f1c9a72-4e0b-4d6a-9c31-6b5d20a7e441",
   "prevId": "ccf688db-62b8-4525-b91b-d7b41382c118",
   "version": "7",
   "dialect": "postgresql",
@@ -785,169 +785,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.collections": {
-      "name": "collections",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "folder_id": {
-          "name": "folder_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(120)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "varchar(500)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "emoji": {
-          "name": "emoji",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "collections_workspace_updated_at_idx": {
-          "name": "collections_workspace_updated_at_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "collections_folder_idx": {
-          "name": "collections_folder_idx",
-          "columns": [
-            {
-              "expression": "folder_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "collections_deleted_at_idx": {
-          "name": "collections_deleted_at_idx",
-          "columns": [
-            {
-              "expression": "deleted_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "collections_workspace_id_workspaces_id_fk": {
-          "name": "collections_workspace_id_workspaces_id_fk",
-          "tableFrom": "collections",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "collections_folder_id_folders_id_fk": {
-          "name": "collections_folder_id_folders_id_fk",
-          "tableFrom": "collections",
-          "tableTo": "folders",
-          "columnsFrom": [
-            "folder_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.dashboard_layouts": {
       "name": "dashboard_layouts",
       "schema": "",
@@ -1068,9 +905,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "emoji": {
-          "name": "emoji",
-          "type": "varchar(16)",
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -1235,23 +1072,9 @@
         },
         "icon": {
           "name": "icon",
-          "type": "varchar(32)",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "icon_style": {
-          "name": "icon_style",
-          "type": "varchar(8)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'outline'"
-        },
-        "icon_color": {
-          "name": "icon_color",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'neutral'"
         },
         "tags": {
           "name": "tags",
@@ -1427,9 +1250,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "emoji": {
-          "name": "emoji",
-          "type": "varchar(16)",
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -1944,6 +1767,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "position": {
           "name": "position",
@@ -3083,9 +2912,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "emoji": {
-          "name": "emoji",
-          "type": "varchar(16)",
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

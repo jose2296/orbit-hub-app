@@ -9,6 +9,7 @@ import {
   isListWidget,
   isPinned,
   listWidget,
+  widgetIcon,
   withPinnedFolder,
   withPinnedList,
   withoutPinnedFolder,
@@ -41,9 +42,10 @@ function list(partial: Partial<List> = {}): List {
     shared: false,
     title: "Compra",
     description: null,
-    emoji: null,
+    icon: null,
     tags: [],
     tagColors: {},
+    states: [],
     position: 0,
     itemCount: 0,
     orderMode: "manual",
@@ -180,7 +182,7 @@ describe("withPinnedFolder", () => {
     workspaceId: "w1",
     parentId: null,
     name: "Viajes",
-    emoji: "✈️",
+    icon: { type: "emoji", value: "✈️", color: "auto" },
     position: 0,
     version: 1,
     createdAt: "",
@@ -241,5 +243,33 @@ describe("withPinnedFolder", () => {
     expect(isListWidget(folderWidget(folder()))).toBe(false);
     expect(isListWidget(listWidget(list()))).toBe(true);
     expect(isFolderWidget(listWidget(list()))).toBe(false);
+  });
+});
+
+describe("widgetIcon", () => {
+  it("lee el icono entero que guardo el pin", () => {
+    const icono = { type: "vector", value: "carpeta", library: "ionicons", style: "fill", color: "blue" } as const;
+    expect(widgetIcon({ icon: { ...icono } })).toEqual({ ...icono });
+  });
+
+  it("lee el emoji suelto de los pines de antes", () => {
+    // Los pines de antes de que hubiera iconos guardaban el emoji como texto.
+    // Un panel ordenado hace meses no es algo que una build nueva pueda olvidar.
+    expect(widgetIcon({ emoji: "🏠" })).toEqual({ type: "emoji", value: "🏠", color: "auto" });
+  });
+
+  it("prefiere el icono al emoji cuando hay los dos", () => {
+    expect(
+      widgetIcon({
+        icon: { type: "emoji", value: "🛒", color: "auto" },
+        emoji: "🏠",
+      }),
+    ).toEqual({ type: "emoji", value: "🛒", color: "auto" });
+  });
+
+  it("sin nada es sin icono, no un error", () => {
+    expect(widgetIcon({})).toBeNull();
+    expect(widgetIcon({ emoji: "" })).toBeNull();
+    expect(widgetIcon({ icon: { type: "vector", value: "no-existe", library: "ionicons" } })).toBeNull();
   });
 });

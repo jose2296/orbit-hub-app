@@ -1,5 +1,6 @@
 import * as Crypto from "expo-crypto";
 
+import type { IconRef } from "@orbit-hub/contracts";
 import { noteDocumentToPlainText } from "@orbit-hub/contracts";
 
 import { newNote } from "./note-record";
@@ -56,6 +57,7 @@ export interface NoteChanges {
   document?: string;
   folderId?: string | null;
   tags?: string[];
+  icon?: IconRef | null;
 }
 
 /**

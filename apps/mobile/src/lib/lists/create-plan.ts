@@ -1,4 +1,4 @@
-import type { ListKind } from '@orbit-hub/contracts';
+import type { IconRef, ListKind } from '@orbit-hub/contracts';
 
 export interface CreateListInput {
   id: string;
@@ -7,7 +7,7 @@ export interface CreateListInput {
   folderId?: string | null;
   kind: ListKind;
   title: string;
-  emoji?: string;
+  icon?: IconRef | null;
 }
 
 export interface CreateListPlan {
@@ -27,7 +27,7 @@ export interface CreateListPlan {
     folderId: string | null;
     kind: ListKind;
     title: string;
-    emoji?: string;
+    icon?: IconRef | null;
   };
 }
 
@@ -49,7 +49,7 @@ export function createListPlan(input: CreateListInput): CreateListPlan {
       folderId,
       kind: input.kind,
       title: input.title,
-      ...(input.emoji ? { emoji: input.emoji } : {}),
+      ...(input.icon ? { icon: input.icon } : {}),
     },
   };
 }

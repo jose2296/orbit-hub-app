@@ -37,7 +37,13 @@ async function createWorkspace(user: TestUser, name: string, emoji?: string, col
           kind: 'create',
           entityId: id,
           baseVersion: 0,
-          payload: { name, ...(emoji ? { emoji } : {}), ...(color ? { color } : {}) },
+          payload: {
+            name,
+            // The column is an `IconRef` now: an emoji travels as one, and the
+            // read side bridges it back to the `emoji` the contract declares.
+            ...(emoji ? { icon: { type: 'emoji', value: emoji } } : {}),
+            ...(color ? { color } : {}),
+          },
           base: null,
           clientTimestamp: new Date().toISOString(),
         },
@@ -119,7 +125,7 @@ describe('GET /workspaces', () => {
     expect(workspaceSchema.safeParse(workspace).success).toBe(true);
     expect(workspace.role).toBe('owner');
     expect(workspace.memberCount).toBe(1);
-    expect(workspace.emoji).toBe('🏡');
+    expect(workspace.icon).toEqual({ type: 'emoji', value: '🏡', color: 'auto' });
     expect(workspace.deletedAt).toBeNull();
   });
 

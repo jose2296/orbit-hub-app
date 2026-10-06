@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Card } from '@/components/ui/card';
+import { AppIcon } from '@/components/ui/app-icon';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Screen } from '@/components/ui/screen';
@@ -12,6 +13,7 @@ import { TextField } from '@/components/ui/text-field';
 import { useListItems, useLocalSearch } from '@/hooks/use-lists';
 import type { BookmarkSearchResult } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
+import { routeForList } from '@/lib/lists/route';
 import { useTheme } from '@/theme';
 import type { SearchResult } from '@orbit-hub/contracts';
 
@@ -40,7 +42,10 @@ export function rutaResultado(result: SearchResult | BookmarkSearchResult): stri
     return `/(app)/workspace/${result.id}`;
   }
   if (result.scope === 'list' || result.scope === 'list_item') {
-    return `/(app)/list/${result.listId ?? result.id}`;
+    // The hit carries the kind of the list it lives in, so a board opens as a
+    // board. It is null only for a row whose list is not in the local cache, and
+    // `tasks` is the screen that link opened before.
+    return routeForList({ id: result.listId ?? result.id, kind: result.kind ?? 'tasks' });
   }
   if (result.scope === 'note') {
     // Directo a la nota. Un hit que no se puede abrir es una busqueda que
@@ -151,10 +156,11 @@ export default function SearchScreen() {
                           },
                         ]}
                       >
-                        <Ionicons
-                          name={SCOPE_ICON[result.scope]}
+                        <AppIcon
+                          icon={result.icon}
                           size={18}
-                          color={theme.colors.accentSoftText}
+                          inheritColor={theme.colors.accentSoftText}
+                          fallback={SCOPE_ICON[result.scope]}
                         />
                         <View style={styles.flex}>
                           <AppText

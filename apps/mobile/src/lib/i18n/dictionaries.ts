@@ -229,7 +229,6 @@ const es = {
   "filters.active": "{count} filtros activos",
   "filters.none": "Sin filtros",
   "filters.searchLabel": "Buscar en la lista",
-  "filters.searchPlaceholder": "Pan, tomate, Mercadona…",
   "filters.searchPlaceholderMedia": "Matrix, Amélie, Dune…",
   "filters.artwork": "Carátula",
   "filters.withArtwork": "Con carátula",
@@ -242,6 +241,8 @@ const es = {
   "filters.show.all": "Todo",
   "filters.show.pending": "Solo lo que queda",
   "filters.show.done": "Solo lo hecho",
+  "filters.completedOff":
+    "Aquí lo hecho es una columna, no una casilla.",
   "filters.labels": "Etiquetas",
   "filters.reset": "Quitar los filtros",
   "filters.titleOn": "Filtrar ({count})",
@@ -266,7 +267,7 @@ const es = {
   "tags.colorCustom": "Un color tuyo, escrito como #RRGGBB",
   "tags.colorBad": "Un color se escribe con tres o seis cifras: #1F6FEB.",
   "tags.colorSquareValue": "Saturación {saturation}%, claridad {brightness}%",
-  "tags.colorUse": "Usar este color",
+  /* `tags.colorUse` se fue con el boton de "usar este color". */
   /*
    * Los nombres accesibles del selector, **todos con `{name}` al final**, y el motivo
    * es que en la pagina de etiquetas de la hoja hay dos selectores montados a la vez:
@@ -287,12 +288,15 @@ const es = {
   "tags.colorSquareOf": "Saturación y claridad del color de {name}",
   "tags.colorCustomOf": "Un color tuyo, escrito como #RRGGBB, para {name}",
   "tags.colorSaveOf": "Guardar el color de {name}",
-  "tags.colorUseOf": "Usar este color para {name}",
+  /* `tags.colorUseOf` se fue con el boton de "usar este color". */
   "tags.colorCloseOf": "Cerrar el selector de color de {name}",
   "tags.recentColors": "Los que has usado en etiquetas",
-  "tags.recentColorOf": "Usar el color {color}",
+  "tags.recentColorOf": "Usar el color {color} para {name}",
   "icons.title": "Icono",
   "icons.none": "Sin icono",
+  "icons.tabEmoji": "Emojis",
+  "icons.tabVector": "Iconos",
+  "icons.recent": "Recientes",
   "icons.search": "Buscar un icono",
   "icons.searchPlaceholder": "pan, pilas, ibuprofeno…",
   "icons.drawing": "Dibujo",
@@ -311,6 +315,7 @@ const es = {
   "icons.group.mascotas": "Mascotas",
   "icons.group.estudio": "Estudio y trabajo",
   "icons.group.deporte": "Deporte",
+  "icons.colors.auto": "Automático",
   "icons.colors.neutral": "Neutro",
   "icons.colors.accent": "Acento",
   "icons.colors.green": "Verde",
@@ -401,6 +406,7 @@ const es = {
   "place.noSpaces":
     "Todavía no tienes ningún espacio propio, y sólo puedes guardar esto en uno que sea tuyo.",
   "place.createSpace": "Crear un espacio",
+  "place.whereNeeded": "Elige donde va",
   "place.saving": "Poniéndolo…",
   "place.chooseSpaceHint": "Elegir en qué espacio de los tuyos va a aparecer.",
   "share.subtitle": "Compartir «{name}»",
@@ -462,6 +468,7 @@ const es = {
   "share.roleViewerHint": "Puede mirarla, pero no tocarla.",
   "share.send": "Compartir",
   "share.sending": "Compartiendo…",
+  "share.pickSomebody": "Elige a quién",
   "share.sent": "Ya está compartido",
   "share.sentBody":
     "Le llega un correo y aparece en su bandeja hasta que decide dónde ponerlo. Tú decides quién lo ve en cualquier momento: deja de compartir y desaparece de su móvil.",
@@ -488,8 +495,18 @@ const es = {
   "content.kind.tasks": "Tareas",
   "content.kind.movies": "Películas",
   "content.kind.series": "Series",
+  /* Esta la compone `content-list.tsx` con el mismo `listKind` y el mismo
+     `as never` que la de un tablero, asi que el typechecker no avisa cuando
+     falta. Una lista de pelis y series se leia como
+     "12 · content.kind.movies_and_series" en vez de "12 · Peliculas y series". */
+  "content.kind.movies_and_series": "Películas y series",
   "content.kind.books": "Libros",
   "content.kind.notes": "Notas",
+  /* La clave de un tablero la compone `content-list.tsx` con el `listKind` de la
+     fila, y ahi va con un `as never` porque el tipo no puede saber que valores
+     son. Sin esta entrada el tablero se leia como "12 · content.kind.board" en
+     vez de "12 · Tablero", y el typechecker no lo nota. */
+  "content.kind.board": "Tablero",
   "content.clear": "Quitar filtros",
   "content.hidden": "{hidden} de {total} cosas ocultas",
   "content.emptyFiltered": "Nada de esto sale con el filtro de ahora.",
@@ -514,7 +531,7 @@ const es = {
   "workspaces.colorBad": "Un color se escribe con seis cifras: #1F6FEB.",
   "workspaces.colorSquare": "Tono y claridad del color",
   "workspaces.colorHue": "Tono del color",
-  "workspaces.colorUse": "Usar este color",
+  /* `workspaces.colorUse` se fue con el boton de "usar este color". */
   "workspaces.washGroup": "Cómo se pinta el color del espacio",
   "workspaces.washSide.desde": "Empieza en",
   "workspaces.washSide.hasta": "Termina en",
@@ -707,12 +724,17 @@ const es = {
   "itemEdit.tagsSubtitle.one": "1 etiqueta",
   "itemEdit.tagsSubtitle.other": "{count} etiquetas",
   "itemEdit.name": "Nombre",
+  "itemEdit.nameNeeded": "Ponle un nombre",
+  "itemCreate.create": "Crear",
   "itemEdit.description": "Descripción",
   "itemEdit.descriptionPlaceholder": "Un detalle, una marca, un tamaño...",
   "itemEdit.priority": "Urgencia",
   "itemEdit.icon": "Icono",
   "itemEdit.iconHint": "Elige el icono de este elemento",
   "itemEdit.iconChosen": "puesto",
+  "itemEdit.state": "Estado",
+  "itemEdit.stateHint": "Elige la columna de este elemento en el tablero",
+  "itemEdit.stateNone": "Sin columna",
   "itemEdit.tags": "Etiquetas",
   "itemEdit.tagsHint": "Las etiquetas de este elemento",
   "itemEdit.usedInList.one": "Ya usada en {count} elemento de esta lista",
@@ -730,8 +752,11 @@ const es = {
   "itemEdit.done": "Ya está hecho",
   "itemEdit.changePriority": "Cambiar la urgencia, ahora {name}",
   "itemEdit.delete": "Eliminar este elemento",
-  "tags.remove": "Quitar la etiqueta {name}",
   "tags.put": "Poner la etiqueta {name}",
+  "tags.remove": "Quitar la etiqueta {name} de esta tarea",
+  "tags.removeConfirm": "Quitar \"{name}\"",
+  "tags.removeConfirmBody":
+    "Se la quita a esta tarea. Las demas tareas de la lista se quedan con ella.",
   "create.title": "Crear",
   "create.listHint": "Tareas, películas, series o libros.",
   "create.folderHint": "Para agrupar listas y carpetas.",
@@ -1006,6 +1031,7 @@ const es = {
   "lists.filter.all": "Todas",
   "lists.kindLabel": "Tipo de lista",
   "lists.kind.tasks": "Tareas",
+  "lists.kind.board": "Tablero",
   "lists.kind.movies": "Películas",
   "lists.kind.books": "Libros",
   "lists.kind.series": "Series",
@@ -1015,6 +1041,7 @@ const es = {
   "lists.kind.seriesHint": "Capítulos, temporadas y temporadas vistas.",
   "lists.kind.moviesAndSeriesHint": "Cine y series en la misma lista, cada cosa con su carátula.",
   "lists.kind.booksHint": "Libros, con autor y año.",
+  "lists.kind.boardHint": "Tareas en columnas por estado, para moverlas de una a otra.",
   "lists.itemCount.one": "{count} elemento",
   "lists.itemCount.other": "{count} elementos",
   "lists.pendingCount.one": "{count} pendiente",
@@ -1028,10 +1055,155 @@ const es = {
   "lists.showCompleted": "Mostrar los ya completados",
   "lists.notFound": "Esta lista ya no existe",
 
+  /*
+    La columna vacia, y **son cuatro frases y no una** porque una columna sin
+    tareas y una columna a la que un filtro le ha vaciado son dos hechos
+    distintos, y escritos igual se leen como el mismo.
+
+    **El primero es el que miente si se usa para los dos casos.** Con un filtro
+    puesto, la pestaña de arriba cuenta lo que la columna tiene —"En curso 2"— y
+    la columna enseña cero tarjetas debajo de su "En curso 0", y un "Sin tareas"
+    ahi es una columna que ha perdido dos tareas sin que nadie haya perdido nada.
+    Asi que el titulo **nombra el filtro** y ademas **lleva la cuenta que esta
+    escondida**, que es el numero de la pestaña de arriba: los dos numeros de la
+    pantalla pasan a contarse el uno al otro y nobody tiene que deducirlo.
+
+    **La pista habla de la columna y no de las tareas** a proposito: "Quita el
+    filtro para verlas" tiene que decir "verla" con una tarea y "verlas" con dos,
+    y un enunciado con un sustantivo de masa —"la columna entera"— no tiene nada
+    que concertar.
+  */
+  "board.emptyColumn": "Sin tareas",
+  "board.emptyColumnFiltered.one": "El filtro oculta {count} tarea",
+  "board.emptyColumnFiltered.other": "El filtro oculta {count} tareas",
+  "board.emptyColumnFilteredHint": "Quita el filtro para ver la columna entera.",
+  /*
+    Y la segunda frase del tablero, que **no promete ningun boton que no este ahi**:
+    un tablero sin estados es legal en el contrato y el cliente siembra cuatro al
+    crearlo, asi que esto se llega desde un tablero importado o editado a mano — y
+    decir lo que es vale mas que ofrecer anadir un estado desde una pantalla que
+    todavia no puede.
+  */
+  "board.noStates":
+    "Este tablero no tiene estados, así que no puede enseñar tareas.",
+
+  /*
+    La hoja de estado, y sus siete frases.
+
+    **`board.move` es un subtítulo y no un título**: el título de la hoja es el
+    nombre de la tarea, que es lo que dice de qué hoja es, y la línea de debajo dice
+    qué se hace en ella. Poner "Mover a otro estado" como título taparía el nombre
+    con una frase que no dice de qué tarea se trata.
+
+    **`board.stateLimit` lleva el `{max}` del contrato y no un 24 escrito ahí.**
+    El tope vive en `MAX_BOARD_STATES` y una segunda copia de un límite es una
+    segunda cosa que hay que recordar cuando el límite se mueva.
+
+    **`board.stateHere` no es un adorno para el tick**: en web
+    `react-native-web@0.21.2` no escribe `aria-selected` de `accessibilityState`
+    para un botón —un botón no es una opción—, así que la marca de la columna
+    actual le llega a un lector de pantalla como un dibujo. La frase es lo único que
+    se puede leer, y por eso está en el `accessibilityLabel` de la fila.
+  */
+  "board.move": "Mover a otro estado",
+  "board.newState": "+ Nuevo estado…",
+  "board.newStateName": "Nombre del estado",
+  "board.stateLimit": "El máximo son {max} estados. Borra alguno para añadir otro.",
+  "board.editStates": "Editar los estados del tablero",
+  "board.editState": "Editar estado",
+  "board.editOrder": "Editar orden",
+  "board.columnMenu": "Opciones de la columna",
+  "board.columnMenuHint": "Cambia el nombre, el color o el orden de esta columna",
+  "board.stateCustom": "Tu color",
+  "board.stateHex": "Código hex",
+  "board.stateHexPlaceholder": "a3e635",
+  "board.stateHexInvalid": "Seis letras o números, como a3e635",
+  "board.stateHue": "Tono",
+  "board.stateHere": "está aquí",
+
+  /*
+    El editor de estados, y sus tres frases.
+
+    **`board.editStatesHint` es la pista de un boton que solo tiene un icono**: el
+    boton de la cabecera es `iconOnly` —dos botones con etiqueta en la cabecera de
+    una pantalla se comieron 307 de los 398 puntos del contenido, medido en
+    `button.tsx`—, y un icono sin nombre no es un boton que nadie pueda usar.
+
+    **`board.addState` es la etiqueta de un campo y no la de un boton**: en la hoja
+    de estado el alta aparece al pulsar una fila, asi que "+ Nuevo estado…" a secas
+    es un boton. Aqui el campo esta siempre, porque este panel es un formulario y
+    no una lista de opciones, y su etiqueta tiene que decir que se anade una
+    columna.
+
+    **`board.stateColor` nombra el color de la columna y no el de un icono**: es la
+    misma paleta de doce —`ICON_COLOR_KEYS` es `ITEM_ICON_COLORS`— pero lo que se
+    colorea es el estado, y un "Color" sobre una tira de doce puntos al lado de un
+    campo que dice "Nombre del estado" no dice de que es el color.
+  */
+  "board.editStatesHint": "Abre el editor de los estados del tablero",
+  "board.addState": "Añadir estado",
+  "board.stateColor": "Color del estado",
+  /*
+    El boton de filtro del tablero, **y es una frase y no un nombre porque el boton
+    es un icono y no tiene donde imprimir un nombre.**
+
+    Va por `useA11yHint` y no por `accessibilityLabel`, que es lo que ya lleva:
+    el nombre dice *que* es ("Filtrar", o "Filtrar 1" con uno puesto) y esto dice
+    *que pasa al pulsarlo*, que es lo que el nombre no dice. Sin esto, un boton
+    redondo con un embudo no dice nada a quien no lo ve, y en una pantalla donde el
+    filtro se abria con una pastilla que decia "Filtrar · A mano" eso era justo lo
+    que se perdia al moverlo.
+  */
+  "board.filterHint":
+    "Abre los filtros del tablero: qué tareas se ven y qué se busca en ellas",
+
+  /*
+    El borrado de un estado, y sus seis frases.
+
+    **`board.deleteState` lleva el nombre de la columna porque es lo unico que
+    distingue una papelera de otra**: en la fila del editor esta al lado del nombre
+    que ya esta a la vista, y en el titulo de la hoja de borrado es lo unico que
+    dice *que* se va a borrar. Sin el nombre, un tablero de cuatro columnas tiene
+    cuatro "Eliminar" y ninguno dice cual.
+
+    **`board.cannotDeleteLastState` es un boton apagado dicho en palabras, y no un
+    boton escondido**: una papelera que no esta es una papelera que nadie puede
+    explicar, y la regla que se adivinaria —"este tablero no se puede editar"— es la
+    equivocada. La frase es la del spec: *"el ultimo estado no se puede borrar"*.
+
+    **`board.deleteStateTasks` tiene las dos formas porque el numero decide el
+    verbo**: "1 tarea" y "3 tareas" son frases distintas y la que sale mal se lee
+    como una traduccion.
+
+    **`board.deleteStateWarning` dice lo que pasa y no lo que se pierde**: "se
+    mueven, no se borran" es la frase que separa "Eliminar" de "a donde van estas
+    siete tareas", y es la unica que puede decirse sin contar otra vez.
+
+    **`board.deleteStateConfirm` y `board.deleteState` son la misma accion con dos
+    niveles de detalle**: el boton va con el numero porque es el que se pulsa, y la
+    etiqueta accesible de la papelera va con el nombre porque es la que se oye sin
+    ver la fila.
+  */
+  "board.deleteState": "Eliminar la columna «{name}»",
+  "board.deleteStateSubtitle": "Elige dónde van sus tareas",
+  "board.deleteStateTasks.one": "Esta columna tiene {count} tarea.",
+  "board.deleteStateTasks.other": "Esta columna tiene {count} tareas.",
+  "board.deleteStateConfirm": "Borrar «{name}» y mover {count} tareas",
+  "board.deleteStateWarning":
+    "Las tareas se mueven a la columna que elijas. No se borra ninguna.",
+  "board.cannotDeleteLastState":
+    "No se puede borrar el último estado: es la única columna del tablero.",
+
   "items.empty.title": "Nada por aquí",
   "items.empty.body": "Añade el primer elemento a esta lista.",
   "items.titleLabel": "Nuevo elemento",
   "items.titlePlaceholder": "Comprar pan, Ver Dune, Leer…",
+  "lists.searchItems": "Buscar en la lista",
+  "lists.createFromSearch": "Crear con ese nombre",
+  "sheet.unsavedTitle": "Tienes cambios sin guardar",
+  "sheet.unsavedBody": "Si sales ahora se pierden. Guarda antes de cerrar.",
+  "sheet.unsavedLeave": "Salir igualmente",
+  "sheet.unsavedStay": "Cancelar",
   "items.add": "Añadir",
   "items.remove": "Quitar",
   "items.createHint": "Se guarda en el dispositivo y se sincroniza al momento.",
@@ -1307,7 +1479,6 @@ const en: Record<TranslationKey, string> = {
   "filters.active": "{count} filters on",
   "filters.none": "No filters",
   "filters.searchLabel": "Search in the list",
-  "filters.searchPlaceholder": "Bread, tomato, Mercadona…",
   "filters.searchPlaceholderMedia": "Matrix, Amélie, Dune…",
   "filters.withoutArtwork": "Without artwork",
   "filters.added": "Added",
@@ -1320,6 +1491,8 @@ const en: Record<TranslationKey, string> = {
   "filters.show.all": "Everything",
   "filters.show.pending": "Only what is left",
   "filters.show.done": "Only what is done",
+  "filters.completedOff":
+    "Here, done is a column and not a checkbox.",
   "filters.labels": "Labels",
   "filters.reset": "Clear the filters",
   "filters.titleOn": "Filter ({count})",
@@ -1344,7 +1517,7 @@ const en: Record<TranslationKey, string> = {
   "tags.colorCustom": "One of yours, written as #RRGGBB",
   "tags.colorBad": "A colour is three or six digits: #1F6FEB.",
   "tags.colorSquareValue": "Saturation {saturation}%, brightness {brightness}%",
-  "tags.colorUse": "Use this colour",
+  /* `tags.colorUse` went with the "use this colour" button. */
   "tags.pendingLabel": "the new label",
   "tags.colorOf": "Colour of {name}",
   "tags.colorSwatchOf": "{color} for {name}",
@@ -1352,12 +1525,15 @@ const en: Record<TranslationKey, string> = {
   "tags.colorSquareOf": "Colour saturation and brightness of {name}",
   "tags.colorCustomOf": "One of yours, written as #RRGGBB, for {name}",
   "tags.colorSaveOf": "Save the colour of {name}",
-  "tags.colorUseOf": "Use this colour for {name}",
+  /* `tags.colorUseOf` went with the "use this colour" button. */
   "tags.colorCloseOf": "Close the colour picker of {name}",
   "tags.recentColors": "The ones you have used on labels",
-  "tags.recentColorOf": "Use the colour {color}",
+  "tags.recentColorOf": "Use the colour {color} for {name}",
   "icons.title": "Icon",
   "icons.none": "No icon",
+  "icons.tabEmoji": "Emojis",
+  "icons.tabVector": "Icons",
+  "icons.recent": "Recent",
   "icons.search": "Find an icon",
   "icons.searchPlaceholder": "bread, batteries, ibuprofen…",
   "icons.drawing": "Drawing",
@@ -1376,6 +1552,7 @@ const en: Record<TranslationKey, string> = {
   "icons.group.mascotas": "Pets",
   "icons.group.estudio": "Study and work",
   "icons.group.deporte": "Sport",
+  "icons.colors.auto": "Automatic",
   "icons.colors.neutral": "Neutral",
   "icons.colors.accent": "Accent",
   "icons.colors.green": "Green",
@@ -1460,7 +1637,8 @@ const en: Record<TranslationKey, string> = {
   "place.noSpaces":
     "You do not have a space of your own yet, and this can only be filed in one that is yours.",
   "place.createSpace": "Create a space",
-  "place.saving": "Putting it…",
+  "place.whereNeeded": "Choose where it goes",
+  "place.saving": "Poniéndolo…",
   "place.chooseSpaceHint": "Choose which of your spaces it shows up in.",
   "share.subtitle": 'Share "{name}"',
   /* With no noun on purpose: this sits under the share entry of a list, a note and a
@@ -1517,6 +1695,7 @@ const en: Record<TranslationKey, string> = {
   "share.roleViewerHint": "They can look, but not touch it.",
   "share.send": "Share",
   "share.sending": "Sharing…",
+  "share.pickSomebody": "Pick somebody",
   "share.sent": "Shared",
   "share.sentBody":
     "They get an email and it shows up in their inbox until they decide where to put it. You decide who sees it at any time: stop sharing and it leaves their phone.",
@@ -1541,8 +1720,16 @@ const en: Record<TranslationKey, string> = {
   "content.kind.tasks": "Tasks",
   "content.kind.movies": "Movies",
   "content.kind.series": "Series",
+  /* Composed in `content-list.tsx` out of the same `listKind` behind the same
+     `as never` as the board one, so a missing entry is not a type error: it is a
+     movies-and-series row reading "12 · content.kind.movies_and_series". */
+  "content.kind.movies_and_series": "Films and series",
   "content.kind.books": "Books",
   "content.kind.notes": "Notes",
+  /* See the Spanish block. This key is composed in `content-list.tsx` out of the
+     row's `listKind` behind an `as never`, so a missing entry is not a type
+     error: it is a board row reading "12 · content.kind.board". */
+  "content.kind.board": "Board",
   "content.clear": "Clear filters",
   "content.hidden": "{hidden} of {total} things hidden",
   "content.emptyFiltered": "None of this comes out with the current filter.",
@@ -1567,7 +1754,7 @@ const en: Record<TranslationKey, string> = {
   "workspaces.colorBad": "A colour is six digits: #1F6FEB.",
   "workspaces.colorSquare": "Colour strength and brightness",
   "workspaces.colorHue": "Colour tone",
-  "workspaces.colorUse": "Use this colour",
+  /* `workspaces.colorUse` went with the "use this colour" button. */
   "workspaces.washGroup": "How the space colour is painted",
   "workspaces.washSide.desde": "Starts in",
   "workspaces.washSide.hasta": "Ends in",
@@ -1759,12 +1946,17 @@ const en: Record<TranslationKey, string> = {
   "itemEdit.tagsSubtitle.one": "1 label",
   "itemEdit.tagsSubtitle.other": "{count} labels",
   "itemEdit.name": "Name",
+  "itemEdit.nameNeeded": "Give it a name",
+  "itemCreate.create": "Create",
   "itemEdit.description": "Description",
   "itemEdit.descriptionPlaceholder": "A detail, a brand, a size...",
   "itemEdit.priority": "How urgent",
   "itemEdit.icon": "Icon",
   "itemEdit.iconHint": "Choose this item's icon",
   "itemEdit.iconChosen": "set",
+  "itemEdit.state": "State",
+  "itemEdit.stateHint": "Choose this item's column on the board",
+  "itemEdit.stateNone": "No column",
   "itemEdit.tags": "Labels",
   "itemEdit.tagsHint": "The labels on this item",
   "itemEdit.usedInList.one": "Already used on {count} item in this list",
@@ -1782,8 +1974,11 @@ const en: Record<TranslationKey, string> = {
   "itemEdit.done": "Already done",
   "itemEdit.changePriority": "Change how urgent it is, now {name}",
   "itemEdit.delete": "Delete this item",
-  "tags.remove": "Take the label {name} off",
   "tags.put": "Put the label {name} on",
+  "tags.remove": "Take the label {name} off this task",
+  "tags.removeConfirm": "Take off \"{name}\"",
+  "tags.removeConfirmBody":
+    "It comes off this task only. The other tasks in the list keep it.",
   "create.title": "Create",
   "create.listHint": "Tasks, films, series or books.",
   "create.folderHint": "To group lists and folders.",
@@ -2036,6 +2231,7 @@ const en: Record<TranslationKey, string> = {
   "lists.filter.all": "All",
   "lists.kindLabel": "List type",
   "lists.kind.tasks": "Tasks",
+  "lists.kind.board": "Board",
   "lists.kind.movies": "Movies",
   "lists.kind.books": "Books",
   "lists.kind.series": "Series",
@@ -2045,6 +2241,7 @@ const en: Record<TranslationKey, string> = {
   "lists.kind.seriesHint": "Episodes, seasons and the seasons you have watched.",
   "lists.kind.moviesAndSeriesHint": "Films and series in one list, each with its own poster.",
   "lists.kind.booksHint": "Books, with author and year.",
+  "lists.kind.boardHint": "Tasks in columns by state, to move from one to the next.",
   "lists.itemCount.one": "{count} item",
   "lists.itemCount.other": "{count} items",
   "lists.pendingCount.one": "{count} pending",
@@ -2058,10 +2255,113 @@ const en: Record<TranslationKey, string> = {
   "lists.showCompleted": "Show completed items",
   "lists.notFound": "This list no longer exists",
 
+  /*
+    The empty column, and **it is four phrases and not one** because a column with
+    no tasks and a column a filter emptied are two different facts, and written the
+    same way they read as the same one.
+
+    **The first of them lies if it is used for both cases.** With a filter on, the
+    tab above counts what the column holds — "En curso 2" — and the column draws no
+    cards under its "En curso 0", and a "No tasks" there is a column that has lost
+    two tasks while nobody has lost anything. So the title **names the filter** and
+    also **carries the count that is being hidden**, which is the number of the tab
+    above: the two numbers on screen now count each other and nobody has to work it
+    out.
+
+    The hint talks about **the column** and not about the tasks on purpose:
+    "remove the filter to see them" has to say "it" with one task and "them" with
+    two, and a statement about the whole column has nothing to agree with. The note
+    in Spanish above says the same and longer.
+  */
+  "board.emptyColumn": "No tasks",
+  "board.emptyColumnFiltered.one": "The filter hides {count} task",
+  "board.emptyColumnFiltered.other": "The filter hides {count} tasks",
+  "board.emptyColumnFilteredHint": "Remove the filter to see the whole column.",
+  /*
+    The board's second phrase, which **promises no button that is not there**: a
+    board with no states is legal in the contract and the client seeds four on
+    creation, so this is reached from a board imported or edited by hand, and
+    saying what it is beats offering to add a state from a screen that cannot yet.
+  */
+  "board.noStates": "This board has no states, so it cannot show any tasks.",
+
+  /*
+    The sheet of a state, and its six phrases. The title of the sheet is the task's
+    name and the line under it is what this one does; the limit carries the
+    contract's number instead of a twenty-four written beside it, and the words for
+    the current column are in the row's label because the tick is a drawing a screen
+    reader is never told about.
+  */
+  "board.move": "Move to another state",
+  "board.newState": "+ New state…",
+  "board.newStateName": "State name",
+  "board.stateLimit": "The maximum is {max} states. Delete one to add another.",
+  "board.editStates": "Edit the board's states",
+  "board.editState": "Edit state",
+  "board.editOrder": "Edit order",
+  "board.columnMenu": "Column options",
+  "board.columnMenuHint": "Change this column's name, colour or order",
+  "board.stateCustom": "Your colour",
+  "board.stateHex": "Hex code",
+  "board.stateHexPlaceholder": "a3e635",
+  "board.stateHexInvalid": "Six letters or digits, like a3e635",
+  "board.stateHue": "Hue",
+  "board.stateHere": "is here",
+
+  /*
+    The states editor, and its three phrases. `board.editStatesHint` is the hint of an
+    icon-only button, whose drawing has no name of its own; `board.addState` labels a
+    field rather than a button, because here the field is always there — this panel
+    is a form, not a list of options — and "+ New state…" on its own would be a
+    button; and `board.stateColor` names the colour of a column rather than of an
+    icon, which is the same palette of twelve under a name that says what it paints.
+    The Spanish note above says the same at more length.
+  */
+  "board.editStatesHint": "Opens the board's states editor",
+  "board.addState": "Add state",
+  "board.stateColor": "State colour",
+  /*
+    The board's filter button, and it is a sentence and not a name because the button
+    is an icon and has nowhere to print a name. It goes through `useA11yHint` rather
+    than `accessibilityLabel`, which already carries the name: that says *what* it is
+    ("Filter", or "Filter 1" with one on) and this says *what happens on press*,
+    which the name does not. The Spanish note above says the same at more length.
+  */
+  "board.filterHint":
+    "Opens the board's filters: which tasks are shown and what is searched in them",
+
+  /*
+    Deleting a state, and its six phrases. `board.deleteState` carries the column's
+    name because that is the only thing that tells one bin from another: in the
+    editor's row it sits beside a name already on screen, and in the delete sheet's
+    title it is the only thing that says *what* is going. `board.cannotDeleteLastState`
+    is a disabled control said in words rather than a hidden one — a bin that is not
+    there is a bin nobody can explain, and the rule somebody would guess is the wrong
+    one. `board.deleteStateTasks` has both forms because the number picks the noun.
+    `board.deleteStateWarning` says what happens and not what is lost: "they move,
+    they are not deleted" is the phrase that separates "Delete" from "where do these
+    seven tasks go". The Spanish note above says the same at more length.
+  */
+  "board.deleteState": "Delete the «{name}» column",
+  "board.deleteStateSubtitle": "Choose where its tasks go",
+  "board.deleteStateTasks.one": "This column has {count} task.",
+  "board.deleteStateTasks.other": "This column has {count} tasks.",
+  "board.deleteStateConfirm": "Delete «{name}» and move {count} tasks",
+  "board.deleteStateWarning":
+    "The tasks are moved to the column you choose. None is deleted.",
+  "board.cannotDeleteLastState":
+    "The last state cannot be deleted: it is the board's only column.",
+
   "items.empty.title": "Nothing here yet",
   "items.empty.body": "Add the first item to this list.",
   "items.titleLabel": "New item",
   "items.titlePlaceholder": "Buy bread, watch Dune, read…",
+  "lists.searchItems": "Search the list",
+  "lists.createFromSearch": "Create with that name",
+  "sheet.unsavedTitle": "You have unsaved changes",
+  "sheet.unsavedBody": "Leaving now loses them. Save before closing.",
+  "sheet.unsavedLeave": "Leave anyway",
+  "sheet.unsavedStay": "Cancel",
   "items.add": "Add",
   "items.remove": "Remove",
   "items.createHint": "Stored on the device and synced right away.",

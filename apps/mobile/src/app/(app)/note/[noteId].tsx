@@ -42,6 +42,7 @@ import {
 import { hasReachedServer } from "@/lib/notes/placement";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { SpaceBand } from "@/components/workspace/space-band";
+import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useTheme } from "@/theme";
 
@@ -135,6 +136,18 @@ export default function NoteScreen() {
   const { workspaces } = useWorkspaces();
   const espacio = workspaces.find((item) => item.id === note?.workspaceId) ?? null;
   useScreenSpace(espacio);
+
+  /*
+   * La insignia de compartido, **debajo del titulo**. Sin boton de compartir en la
+   * cabecera: compartir es una accion y las acciones van en los tres puntitos.
+   * Esto solo aparece cuando hay algo que decir, y son dos iconos porque son dos
+   * hechos: te lo dieron, o tu lo diste.
+   */
+  useScreenShare({
+    node: note ? { nodeType: "note", id: note.id } : null,
+    conmigo: note?.shared === true,
+    onShare: () => setMenuOpen(true),
+  });
 
   const editorRef = useRef<EnrichedTextInputInstance | null>(null);
   const [title, setTitle] = useState("");

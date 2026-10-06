@@ -1,6 +1,7 @@
 import {
   EXPORT_FORMAT_VERSION,
-  LIST_EXPORT_CSV_COLUMNS,
+  exportCsvColumnsFor,
+  stateOf,
   type AccountExport,
   type ExportedAttachment,
   type Folder,
@@ -119,11 +120,40 @@ export function metadataCell(
 }
 
 /**
- * CSV de una lista: cabecera fija, celdas siempre entre comillas, filas separadas
- * por CRLF y todo el fichero empieza con BOM para que Excel no rompa las tildes.
+ * The state cell of a board row: the title of the state the task is in.
+ *
+ * It asks the contract's own `stateOf` instead of finding the state here,
+ * because that is the function the board screen draws with: a task with no state
+ * of its own, and a task whose state another device deleted, both land in the
+ * first column on screen, and a CSV that put them anywhere else would be a
+ * second answer to a question the app has already answered once.
+ *
+ * The title and not the id, because the id is the one thing in a column that
+ * nobody ever reads and the whole point of a column is that it has a name. A
+ * list with no states — which is what a list that is not a board yet carries —
+ * has nothing to name, and writes an empty cell rather than an id that means
+ * nothing to whoever opens the file.
+ */
+export function csvStateCell(list: List, item: ListItem): string {
+  return stateOf(list.states, item.stateId)?.title ?? '';
+}
+
+/**
+ * CSV of a list: cells always quoted, rows separated by CRLF, and the whole file
+ * starts with a BOM so Excel does not break the accents.
+ *
+ * The header is not a fixed one: there are two fixed headers and the kind of the
+ * list picks which, because a board has no `completado` column and a list of any
+ * other kind has no `estado` one. What `exportCsvColumnsFor` returns for the
+ * header and `csvStateCell` returns for the cell under index 3 come from the same
+ * decision, which is what keeps a cell from being written under a header that
+ * names something else.
+ *
+ * The BOM and the CRLF are the same either way: they are what keeps Excel from
+ * breaking the accents, and nothing about a board changes that.
  */
 export function itemsToCsv(args: { list: List; items: ListItem[] }): string {
-  const header = LIST_EXPORT_CSV_COLUMNS.join(';');
+  const header = exportCsvColumnsFor(args.list.kind).join(';');
   const rows = args.items.map((item) => itemToCsvRow(args.list, item));
 
   return '\uFEFF' + [header, ...rows].join('\r\n') + '\r\n';
@@ -142,7 +172,11 @@ function itemToCsvRow(list: List, item: ListItem): string {
     item.id,
     item.title,
     list.kind,
-    String(item.completed),
+    // The one cell that changes with the kind of list. `completed` stays in
+    // place for every other kind because a board has no checkbox: what index 3
+    // holds is decided by `exportCsvColumnsFor`, and the cell under it has to be
+    // the value that header names.
+    list.kind === 'board' ? csvStateCell(list, item) : String(item.completed),
     item.priority,
     item.tags.join('|'),
     String(item.position),

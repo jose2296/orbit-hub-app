@@ -169,6 +169,13 @@ function AppNavigation() {
       />
       <Stack.Screen name="lists" options={{ title: t("lists.title") }} />
       <Stack.Screen name="list/[listId]" options={{ title: "" }} />
+      {/*
+        The board is a screen of its own and not a mode of the list screen, so it
+        is declared here like the rest. A route that this layout says nothing
+        about keeps the header with no title in it, which is how a screen with a
+        name nobody can read is found.
+      */}
+      <Stack.Screen name="board/[listId]" options={{ title: "" }} />
       <Stack.Screen name="sync" options={{ title: t("sync.title") }} />
       <Stack.Screen name="devices" options={{ title: t("settings.devices") }} />
       <Stack.Screen name="catalog" options={{ title: t("catalog.title") }} />

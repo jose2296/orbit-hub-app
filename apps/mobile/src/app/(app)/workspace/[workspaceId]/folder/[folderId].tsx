@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 
-import type { List } from "@orbit-hub/contracts";
+import type { IconRef, List } from "@orbit-hub/contracts";
 
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { CreateSheet } from "@/components/folders/create-sheet";
+import { ShareNodeSheet } from "@/components/shares/share-node-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
 import { ContentList } from "@/components/content/content-list";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
@@ -16,6 +17,7 @@ import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useLists } from "@/hooks/use-lists";
 import { useNotes } from "@/hooks/use-notes";
 import { useScreenSpace } from "@/hooks/use-screen-space";
+import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 
@@ -46,6 +48,7 @@ export default function FolderScreen() {
     | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [compartirCarpeta, setCompartirCarpeta] = useState(false);
   const [createStep, setCreateStep] = useState<"what" | "kind" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
@@ -59,7 +62,35 @@ export default function FolderScreen() {
     [folders, folderId],
   );
 
-  useScreenTitle(folder?.name ?? t("folders.title"));
+  useScreenTitle(folder?.name ?? t("folders.title"), folder?.icon ?? null);
+
+  /*
+   * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.
+   *
+   * No hay boton de compartir en la cabecera: compartir es una accion, y las
+   * acciones van en los tres puntitos. Esto no es un boton, es **una nota sobre lo
+   * que estas mirando** — y solo aparece cuando hay algo que decir. Dos iconos
+   * distintos porque son dos hechos distintos: te lo dieron, o tu lo diste.
+   */
+  useScreenShare({
+    node: folder ? { nodeType: "folder", id: folder.id } : null,
+    conmigo: folder?.shared === true,
+    // Esta pantalla no tiene `menuOpen`: su menu se abre con `menuFor`, que
+    // ademas dice **que** se esta mostrando. Un `setMenuOpen` aqui seria un
+    // boton de compartir que no abre el menu de compartir.
+    onShare: () =>
+      folder &&
+      setMenuFor({
+        kind: "folder",
+        folder: {
+          id: folder.id,
+          name: folder.name,
+          icon: folder.icon,
+          parentId: folder.parentId,
+          position: folder.position,
+        },
+      }),
+  });
 
   /*
     The menu of **this** folder, from inside it.
@@ -90,7 +121,7 @@ export default function FolderScreen() {
               folder: {
                 id: folder.id,
                 name: folder.name,
-                emoji: folder.emoji,
+                icon: folder.icon,
                 parentId: folder.parentId,
                 position: folder.position,
               },
@@ -167,7 +198,10 @@ export default function FolderScreen() {
           label: t("common.share"),
           icon: "people-outline",
           description: t("lists.shareHint"),
-          onPress: () => setMenuFor(null),
+          onPress: () => {
+            setMenuFor(null);
+            setCompartirCarpeta(true);
+          },
         },
         {
           key: "pin",
@@ -289,6 +323,14 @@ export default function FolderScreen() {
       >
         <SheetOptions options={menuOptions} />
       </Sheet>
+      <ShareNodeSheet
+        target={
+          compartirCarpeta && folder
+            ? { nodeType: "folder", nodeId: folder.id, title: folder.name }
+            : null
+        }
+        onClose={() => setCompartirCarpeta(false)}
+      />
       <CreateSheet
         open={createOpen}
         onClose={closeSheets}
@@ -310,7 +352,6 @@ export default function FolderScreen() {
             params: { workspaceId },
           });
         }}
-        creating={false}
       />
     </Screen>
   );
@@ -319,7 +360,7 @@ export default function FolderScreen() {
 type CarpetaDeEsteNivel = {
   id: string;
   name: string;
-  emoji: string | null;
+  icon: IconRef | null;
   parentId: string | null;
   position: number;
 };

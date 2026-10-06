@@ -27,7 +27,7 @@ import { collections } from '../src/db/content-schema.js';
  * con ENOENT y el test se cae, en vez de leer cualquier cosa y pasar de casualidad.
  */
 const here = dirname(fileURLToPath(import.meta.url));
-const migrationPath = resolve(here, '..', 'drizzle', '0021_collections.sql');
+const migrationPath = resolve(here, '..', 'drizzle', '0023_collections.sql');
 
 /** Una sentencia del archivo, sin los `--> statement-breakpoint` de al lado. */
 function statement(sql: string, needle: string): string | undefined {

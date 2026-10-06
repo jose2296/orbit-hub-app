@@ -27,7 +27,7 @@ import { bookmarks } from '../src/db/content-schema.js';
  * con ENOENT y el test se cae, en vez de leer cualquier cosa y pasar de casualidad.
  */
 const here = dirname(fileURLToPath(import.meta.url));
-const migrationPath = resolve(here, '..', 'drizzle', '0022_bookmarks.sql');
+const migrationPath = resolve(here, '..', 'drizzle', '0024_bookmarks.sql');
 
 /** Una sentencia del archivo, sin los `--> statement-breakpoint` de al lado. */
 function statement(sql: string, needle: string): string | undefined {

@@ -169,7 +169,7 @@ export function SharePanel({
               value={email}
               onChangeText={setEmail}
               label={t("share.emailLabel")}
-              placeholder={t("share.searchPlaceholder")}
+              placeholder={t("share.emailPlaceholder")}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"

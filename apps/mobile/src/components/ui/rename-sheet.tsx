@@ -3,6 +3,7 @@ import { View } from "react-native";
 
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
@@ -39,14 +40,36 @@ export function RenameSheet({
   const theme = useTheme();
   const t = useTranslation();
   const [name, setName] = useState(value);
+  const { setSucio } = useSheetSucio();
 
+  /*
+    El borrador empieza con el nombre actual, y **vuelve a el cada vez que se abre**.
+    No porque sea un descuido del effect, sino porque es lo que hace que una hoja no
+    llegue sucia: si alguien abrio, escribio y salio sin guardar, la siguiente vez
+    que abra empieza donde estaba y no donde lo dejo a medias.
+  */
   useEffect(() => {
     if (visible) setName(value);
   }, [visible, value]);
 
+  /*
+    "Sucio" es **el texto, no el teclado**.
+
+    Se compara con el nombre que habia al abrir y no con "ha escrito algo": volver a
+    borrar lo que habia te deja con el panel exactamente como estaba, y preguntar
+    "¿sales sin guardar?" a alguien que no ha cambiado nada es la forma de
+    enseñarle que el aviso no significa nada.
+  */
+  const cambiado = name.trim() !== value.trim();
+  useEffect(() => {
+    setSucio(cambiado);
+  }, [cambiado, setSucio]);
+
   const submit = () => {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    // Un nombre vacio no es un nombre: la fila seria una linea en blanco en la que
+    // no hay nada que volver a encontrar.
+    if (!trimmed || !cambiado) return;
     onRename(trimmed);
     onClose();
   };
@@ -57,6 +80,15 @@ export function RenameSheet({
       onClose={onClose}
       title={t("rename.title", { what: title })}
       scrollable={false}
+      /*
+        El Guardar es **el del pie del panel**, no el que estaba aqui dentro.
+
+        Dos botones de guardar en la misma pantalla es el mismo boton en el sitio
+        donde alguien lo busca y en el sitio donde no lo mira, y el de dentro se
+        va con el contenido. El de `Sheet` es el unico que hay, esta en todas las
+        hojas, y no lo trae quien se acuerte de añadirlo: lo trae `onSave`.
+      */
+      onSave={submit}
     >
       <View
         style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
@@ -70,20 +102,11 @@ export function RenameSheet({
           returnKeyType="done"
           onSubmitEditing={submit}
         />
-        <View style={{ gap: theme.spacing.sm }}>
-          <Button
-            label={t("rename.save")}
-            onPress={submit}
-            disabled={name.trim().length === 0}
-            fullWidth
-          />
-          <Button
-            label={t("common.cancel")}
-            variant="ghost"
-            onPress={onClose}
-            fullWidth
-          />
-        </View>
+        {/*
+          Y **no hay Cancelar aqui**: la ✕ de arriba y el fondo ya cierran, y ya
+          preguntan. Un boton mas que cerraba lo mismo era una tercera forma de
+          hacer lo mismo, y la unica que no hacia la pregunta.
+        */}
       </View>
     </Sheet>
   );

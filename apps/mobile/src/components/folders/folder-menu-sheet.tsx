@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 
-import type { ListKind } from "@orbit-hub/contracts";
+import type { IconRef, ListKind } from "@orbit-hub/contracts";
 
+import { IconPickerSheet } from "@/components/ui/icon-picker-sheet";
 import { ShareNodeForm } from "@/components/shares/share-node-sheet";
 import { SharedBadge } from "@/components/shares/shared-badge";
 import { useFolders } from "@/hooks/use-workspaces";
@@ -20,7 +21,7 @@ export interface FolderMenuSheetProps {
     name: string;
     parentId: string | null;
     version: number;
-    emoji?: string | null;
+    icon?: IconRef | null;
     role: "owner" | "editor" | "viewer";
     shared: boolean;
   } | null;
@@ -105,8 +106,9 @@ export function FolderMenuSheet({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [creatingKind, setCreatingKind] = useState<ListKind | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [pickingIcon, setPickingIcon] = useState(false);
 
-  const inside = renaming || confirmDelete || creatingKind !== null || sharing;
+  const inside = renaming || confirmDelete || creatingKind !== null || sharing || pickingIcon;
 
   const createOptions: SheetOption[] = useMemo(
     () =>
@@ -155,6 +157,12 @@ export function FolderMenuSheet({
         label: t("common.rename"),
         icon: "create-outline",
         onPress: () => setRenaming(true),
+      },
+      {
+        key: "icon",
+        label: t("icons.title"),
+        icon: "image-outline",
+        onPress: () => setPickingIcon(true),
       },
       // Only the owner of the space may hand it on. See `canShare` in
       // `apps/api/src/modules/shares/access.ts`: an editor of the space can write
@@ -265,6 +273,13 @@ export function FolderMenuSheet({
           onClose();
         }}
         onRename={(name) => void updateFolder(folder, { name })}
+      />
+
+      <IconPickerSheet
+        visible={pickingIcon}
+        onClose={() => setPickingIcon(false)}
+        current={folder.icon ?? null}
+        onSelect={(icon) => void updateFolder(folder, { icon })}
       />
 
       <ConfirmSheet

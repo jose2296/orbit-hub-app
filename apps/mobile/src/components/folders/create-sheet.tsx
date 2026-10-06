@@ -1,11 +1,11 @@
 import type { ListKind } from "@orbit-hub/contracts";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import { Button } from "@/components/ui/button";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
@@ -21,6 +21,15 @@ import { useTheme } from "@/theme";
 /** What a person can make inside a folder. */
 export type CreateKind = ListKind | "folder" | "note";
 
+/*
+  `title` y `onTitle` vienen de la **pantalla padre**, y eso conviene decirlo.
+
+  Es un borrador que vive mas alla de la hoja, y por lo mismo es el que puede
+  sobrevivirla: si la pantalla no lo limpia al cerrar, la siguiente vez que se abre
+  esta hoja aparece con las palabras de la anterior. Lo que el contrato de `Sheet`
+  resuelve es la *pregunta* —si hay cambios y hay que avisar—, no el almacenamiento:
+  mover el borrador aqui dentro es trabajo de cada pantalla que la use, y son varias.
+*/
 export interface CreateSheetProps {
   open: boolean;
   onClose: () => void;
@@ -42,7 +51,6 @@ export interface CreateSheetProps {
   title: string;
   onTitle: (value: string) => void;
   onCreate: () => void;
-  creating: boolean;
   /**
    * Opens the templates, which is the other way to start a note.
    *
@@ -78,7 +86,6 @@ export function CreateSheet({
   onTitle,
   onCreate,
   onFromTemplate,
-  creating,
 }: CreateSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -169,10 +176,30 @@ export function CreateSheet({
     [onKind, onStep, t],
   );
 
+  const { setSucio } = useSheetSucio();
+
+  /*
+    Sucio **cuando hay un nombre escrito**, y no "cuando el nombre ha cambiado".
+
+    Esta hoja tiene una sola partida —una hoja nueva no tiene nada de antes—, asi
+    que cualquier nombre es un cambio. Y con el nombre vacio no hay nada que
+    perder, que es justo el estado en el que se abre.
+  */
+  useEffect(() => {
+    setSucio(title.trim().length > 0);
+  }, [title, setSucio]);
+
   return (
     <Sheet
       visible={open}
       onClose={onClose}
+      /*
+        El Guardar es **el del pie del panel**. El boton de crear que estaba aqui
+        abajo se ha ido, y con el una fila de cuarenta puntos de algo que el pie ya
+        hace en las veinticuatro hojas.
+      */
+      onSave={onCreate}
+      saveDisabledReason={title.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined}
       title={
         step === "what"
           ? t("create.title")
@@ -280,22 +307,17 @@ export function CreateSheet({
             onSubmitEditing={onCreate}
           />
 
-          <View style={{ gap: theme.spacing.sm }}>
-            <Button
-              label={creating ? t("common.saving") : t("common.create")}
-              icon="checkmark"
-              loading={creating}
-              disabled={title.trim().length === 0}
-              onPress={onCreate}
-            />
-            {/*
-              This one **was** labelled "Volver" and did go back, so unlike the
-              others it was not lying — it was just in the wrong place: a full-width
-              ghost row under the create button, forty points of a phone spent on
-              something the header arrow now does from thirty. It goes, and the arrow
-              is the way back.
-            */}
-          </View>
+          {/*
+            Y aqui ya no hay boton de crear.
+
+            Estaba este, y ahora esta el del pie: el mismo en las veinticuatro hojas
+            y **fuera del area que scrollea**, que es donde importa en una hoja
+            larga. Este se iba con el contenido.
+
+            Y el "Volver" que hubo debajo tambien se fue — hacia atras de verdad,
+            asi que no era mentira, solo que estaba en el sitio equivocado: cuarenta
+            puntos de un movil para lo que la flecha de arriba ya hace desde treinta.
+          */}
         </View>
       )}
     </Sheet>

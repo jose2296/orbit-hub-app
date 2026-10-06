@@ -106,6 +106,13 @@ vi.mock("@/components/ui/checkbox", async () => {
   };
 });
 
+vi.mock("@/components/ui/app-icon", async () => {
+  const React = await import("react");
+  return {
+    AppIcon: () => React.createElement("i", null),
+  };
+});
+
 vi.mock("@/components/ui/empty-state", async () => {
   const React = await import("react");
   return {
@@ -216,6 +223,7 @@ describe("rutaResultado lleva cada hit a su pantalla", () => {
       workspaceId: "w1",
       listId: null,
       kind: null,
+      icon: null,
       title: "Salsa brava",
       subtitle: "ejemplo.test",
       completed: null,
@@ -227,10 +235,14 @@ describe("rutaResultado lleva cada hit a su pantalla", () => {
 
   it("el resto de alcances no se mueve", () => {
     expect(rutaResultado(baseHit({ scope: "workspace", id: "w1" }))).toBe("/(app)/workspace/w1");
-    expect(rutaResultado(baseHit({ scope: "list", id: "l1", listId: "l1" }))).toBe("/(app)/list/l1");
+    expect(rutaResultado(baseHit({ scope: "list", id: "l1", listId: "l1" }))).toBe("/list/l1");
     expect(
       rutaResultado(baseHit({ scope: "list_item", id: "i1", listId: "l1" })),
-    ).toBe("/(app)/list/l1");
+    ).toBe("/list/l1");
+    // Un tablero abre como tablero: el hit trae el tipo de la lista.
+    expect(
+      rutaResultado(baseHit({ scope: "list_item", id: "i1", listId: "b1", kind: "board" })),
+    ).toBe("/board/b1");
     expect(rutaResultado(baseHit({ scope: "note", id: "n1" }))).toBe("/(app)/note/n1");
   });
 

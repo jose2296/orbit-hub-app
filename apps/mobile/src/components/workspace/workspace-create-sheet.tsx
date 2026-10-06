@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 
 import { WorkspaceColorPicker } from "@/components/workspace/workspace-color-picker";
-import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { TextField } from "@/components/ui/text-field";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
@@ -59,7 +59,28 @@ export function WorkspaceCreateSheet({
   // is almost always the space you are standing in, and a new space that arrives
   // painted like its neighbour is a new space you cannot find. `slate` is the
   // colour that says "nothing chosen yet" without being empty.
-  const canSave = name.trim().length > 0 && !saving;
+  const { setSucio } = useSheetSucio();
+
+  /*
+    "Sucio" son **el nombre y los dos extremos del color**, no el nombre solo.
+
+    El color es la razon de mirar: en una hoja donde el nombre ya esta escrito,
+    cambiar el lavado y salir con la ✕ es perder media hora de buscar el tono, y el
+    nombre —que se ve en la barra— no es lo que delata que se ha perdido algo.
+
+    Y se compara con los valores de partida, no con "ha escrito algo": volver a
+    elegir el color que ya tenia es no haber cambiado nada, y preguntar por eso
+    enseña a ignorar el aviso.
+  */
+  const sucio =
+    name.trim() !== "" ||
+    color !== DEFAULT_WORKSPACE_COLOR ||
+    colorTo !== null ||
+    wash !== DEFAULT_WASH;
+
+  useEffect(() => {
+    setSucio(sucio);
+  }, [sucio, setSucio]);
 
   function reset() {
     setName("");
@@ -100,6 +121,13 @@ export function WorkspaceCreateSheet({
       title={t("workspaces.create")}
       subtitle={t("workspaces.createBody")}
       scrollable
+      /*
+        El Guardar es **el del pie del panel**, y no el boton que estaba aqui
+        dentro. El mismo en las veinticuatro hojas, y fuera del area que scrollea:
+        un boton dentro se va con el contenido cuando la hoja es larga.
+      */
+      onSave={() => void save()}
+      saveDisabledReason={name.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined}
     >
       <View
         style={{
@@ -111,6 +139,7 @@ export function WorkspaceCreateSheet({
         <TextField
           value={name}
           onChangeText={setName}
+          autoFocus
           label={t("workspaces.nameLabel")}
           placeholder={t("workspaces.namePlaceholder")}
           autoCapitalize="sentences"
@@ -132,26 +161,14 @@ export function WorkspaceCreateSheet({
           onPickWash={setWash}
         />
 
-        <View style={{ gap: theme.spacing.sm }}>
-          <Button
-            label={t("workspaces.create")}
-            disabled={!canSave}
-            fullWidth
-            loading={saving}
-            onPress={() => {
-              void save();
-            }}
-          />
-          <Button
-            label={t("common.cancel")}
-            variant="ghost"
-            fullWidth
-            onPress={() => {
-              reset();
-              onClose();
-            }}
-          />
-        </View>
+        {/*
+          Y aqui **no hay ningun boton**: ni el de crear, ni un Cancelar.
+
+          El de crear esta en el pie. El Cancelar era una segunda forma de cerrar
+          que, ademas, **no hacia la pregunta** — y era la unica puerta por la que
+          se perdian el nombre y el color sin que nadie preguntara. La ✕ y el fondo
+          ya cierran, y ya preguntan.
+        */}
       </View>
     </Sheet>
   );

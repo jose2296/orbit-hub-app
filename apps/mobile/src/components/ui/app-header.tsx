@@ -6,6 +6,8 @@ import { BackButton } from '@/components/ui/breadcrumbs';
 import { DrawerButton } from '@/components/layout/drawer';
 import { useHeaderActionSlot } from '@/components/ui/header-action';
 import { FullTitle } from "@/components/media/full-title";
+import { CompartirBadge } from "@/components/shares/compartir-badge";
+import { AppIcon } from "@/components/ui/app-icon";
 import { SpaceWash } from '@/components/ui/wash';
 import {
   ALTO_LAVADO,
@@ -21,6 +23,14 @@ export interface EspacioHeader {
   colorTo?: string | null;
   wash?: WashVariant | null;
 }
+
+/**
+ * What a screen publishes about its own icon, read from the header options.
+ *
+ * Next to the title and not in it: the title is a string the navigator owns,
+ * and an icon inside it would be text pretending to be a drawing.
+ */
+export type IconoHeader = import("@orbit-hub/contracts").IconRef | null;
 
 /**
  * The app's own header, because the navigator's only takes one flat colour.
@@ -58,7 +68,24 @@ export interface AppHeaderProps {
     es justo lo que no es, y declararlo así es como una cabecera acaba pintando
     un objeto.
   */
-  options: { title?: string; espacio?: EspacioHeader | null; [key: string]: unknown };
+  options: {
+    title?: string;
+    espacio?: EspacioHeader | null;
+    /**
+     * Si esto esta compartido, y por quien.
+     *
+     * Va en `options` y no en un contexto porque **es de la pantalla**: un icono
+     * de "compartido" que se hereda de donde vino la navegacion acaba poniendose
+     * en pantallas donde no aplica.
+     */
+    compartido?: {
+      node?: { nodeType: 'workspace' | 'folder' | 'list' | 'note'; id: string } | null;
+      conmigo?: boolean;
+      onShare?: () => void;
+    };
+    icono?: IconoHeader;
+    [key: string]: unknown;
+  };
   /*
     `back` no se usa, y no por descuido. Aqui llega como un **descriptor** —el
     titulo y el href de donde se vuelve— y no como un boton, porque el boton de
@@ -74,6 +101,7 @@ export interface AppHeaderProps {
 
 export function AppHeader({ options, children }: AppHeaderProps) {
   const theme = useTheme();
+  const compartido = options.compartido ?? {};
 
   /*
     Los controles los pone esta cabecera y no llegan del navegador.
@@ -170,7 +198,7 @@ export function AppHeader({ options, children }: AppHeaderProps) {
       ) : null}
 
       <View style={styles.fila}>
-        <View style={[styles.lado, { paddingLeft: theme.spacing.xs + theme.spacing.lg }]}>
+        <View style={[styles.lado, { paddingLeft: theme.spacing.xs + theme.spacing.lg, width: LADO }]}>
           <DrawerButton />
           <BackButton />
         </View>
@@ -192,7 +220,10 @@ export function AppHeader({ options, children }: AppHeaderProps) {
           long list name needs, and the box itself is as transparent to touches as
           it was.
         */}
-        <View style={styles.centro} pointerEvents="box-none">
+        <View style={[styles.centro, styles.filaTitulo]} pointerEvents="box-none">
+          {options.icono ? (
+            <AppIcon icon={options.icono} size={20} testID="icono-cabecera" />
+          ) : null}
           {typeof options.title === 'string' && options.title.length > 0 ? (
             /*
               The name in the bar, **and the whole of it on a long press**.
@@ -203,13 +234,25 @@ export function AppHeader({ options, children }: AppHeaderProps) {
               la abuela" is a third of a word here. The bar itself is not pressable,
               so this one needs no guard.
             */
-            <FullTitle
-              text={options.title}
-              numberOfLines={1}
-              variant="heading"
-              style={[styles.titulo, { color: theme.colors.text }]}
-              testID="titulo-cabecera"
-            />
+            <View style={styles.tituloYInsignia}>
+              <FullTitle
+                text={options.title}
+                numberOfLines={1}
+                variant="heading"
+                style={[styles.titulo, { color: theme.colors.text }]}
+                testID="titulo-cabecera"
+              />
+              {/* La insignia de "compartido", **debajo del titulo y no en un hueco de
+                  la barra**. Al lado del texto tendria que competir con el nombre
+                  por el ancho de una linea que ya es de las mas cortas que hay, y
+                  ademas no cabe en una columna de 96. Debajo se lee como lo que es:
+                  una nota sobre lo que estas mirando. */}
+              <CompartirBadge
+                node={compartido.node ?? null}
+                compartidoConmigo={compartido.conmigo ?? false}
+                onShare={compartido.onShare}
+              />
+            </View>
           ) : (
             children
           )}
@@ -222,7 +265,26 @@ export function AppHeader({ options, children }: AppHeaderProps) {
           above the line of the title. The height is here, not in the button,
           because the button does not know how tall the bar is.
         */}
-        <View style={styles.derecha}>{slotAccion()}</View>
+        {/*
+          El mismo margen que el lado izquierdo, y no ninguno.
+
+          La fila de la izquierda lleva `paddingLeft: xs + lg` y la de la derecha
+          no llevaba nada: los tres puntitos se pegaban al borde de la pantalla
+          mientras el menu de hamburguesa estaba a una unidad del. Los dos son
+          botones de 32 en una barra de 56, y que uno llegue al borde y el otro
+          no es lo que hace una barra.
+
+          Y el mismo, y no uno cualquiera: **el del lado que tiene un boton menos**
+          es el que hay que igualar, porque es el que iguala los centros.
+        */}
+        <View
+          style={[
+            styles.derecha,
+            { paddingRight: theme.spacing.xs + theme.spacing.lg, width: LADO },
+          ]}
+        >
+          {slotAccion()}
+        </View>
       </View>
     </View>
   );
@@ -231,8 +293,40 @@ export function AppHeader({ options, children }: AppHeaderProps) {
 /** The height of the bar, and the height its controls are centred within. */
 const ALTO = 56;
 
+/**
+ * El ancho de **los dos** lados de la barra, y el mismo a los dos.
+ *
+ * El titulo vivia en un `flex: 1` con `alignItems: center`, o sea centrado en el
+ * **espacio que sobra**. Ese espacio no estaba centrado porque el lado izquierdo
+ * tiene dos botones —el menu y el atras— y el derecho uno: los tres puntitos. Con
+ * dos botones a un lado y uno al otro, el sobrante se reparte en 104 y 72, y el
+ * titulo se va 16 puntos hacia el lado corto. En el panel, sin atras, se centraba.
+ * Ese "a veces" es lo que hace que parezca que el titulo baila.
+ *
+ * Igualar los margenes no lo arregla, porque lo que estaba descentrado era el
+ * **ancho**, no el margen. Lo que lo arregla es que los dos lados ocupen lo
+ * mismo, y con eso el sobrante queda centrado **por construccion** y no por
+ * suerte.
+ *
+ * Y la justificacion va espejada —el izquierdo al principio, el derecho al
+ * final— para que los botones **no se muevan**: cada uno se queda donde estaba y
+ * lo que cambia es el ancho de su columna. Un titulo centrado a costa de mover
+ * los botones es un intercambio, no una correccion.
+ *
+ * El ancho sale de lo que el lado izquierdo necesita de verdad: su margen
+ * exterior (`xs + lg` = 20), el menu, que son 40 con `marginLeft: -8` —o sea 32—
+ * y el atras, 40. Son 92, y se redondea a 96 para que el mas largo de los dos
+ * quepan sin recortar.
+ */
+const LADO = 96;
+
 
 const styles = StyleSheet.create({
+  /*
+    The title next to its icon, and nothing else changes: the centring the bar
+    already had stays, and the row only exists so the two sit side by side.
+  */
+  filaTitulo: { flexDirection: "row", alignItems: "center", gap: 8 },
   caja: {
     /*
       **Alto fijo, y el mismo en todas las pantallas.** Antes esta caja media la
@@ -286,16 +380,31 @@ const styles = StyleSheet.create({
   lado: {
     /* En fila y no en columna: el boton de atras va **al lado** del menu, y con
        una columna se caia debajo. Es la disposicion que el layout tenia antes y
-       que se ha traido aqui tal cual, con el mismo orden: menu y despues atras. */
+       que se ha traido aqui tal cual, con el mismo orden: menu y despues atras.
+       Y `flex-start`, no `center`: la columna tiene ancho fijo para que las dos
+       midan igual, y centrar aqui moveria el menu hacia dentro. Cada boton se
+       queda en su lado. */
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   centro: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /**
+   * El titulo y la insignia, **centrados los dos sobre la misma columna**.
+   *
+   * El titulo solo esta centrado si el bloque que lo contiene tambien lo esta, y
+   * por eso van juntos: si la insignia fuera hermana del `View` del centro, el
+   * titulo se centraria contra el ancho de la barra entera y bajaria medio punto
+   * cada vez que la insignia aparece o desaparece.
+   */
+  tituloYInsignia: {
+    alignItems: 'center',
+    maxWidth: '100%',
   },
   titulo: {
     fontWeight: '600',

@@ -291,6 +291,9 @@ export class NoteTemplateService {
       document: row.document,
       plainText: row.plainText,
       tags: row.tags ?? [],
+      // A note born from a template starts with no icon of its own: the
+      // template's glyph is the type's, not something somebody chose.
+      icon: null,
       position: row.position,
       attachmentCount: row.attachmentCount,
       // Yours and editable, and it is not a guess: `assertCanWrite` a few lines

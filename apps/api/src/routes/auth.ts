@@ -67,6 +67,15 @@ const perAccountLimiter = createRateLimiter({
   windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
   max: env.AUTH_ACCOUNT_RATE_LIMIT_MAX,
   keyFn: perAccount,
+  /*
+    Solo los fallos gastan este presupuesto, y los aciertos lo devuelven.
+    Los cinco por ventana que hay aquí son para que nadie pruebe contraseñas
+    contra **esta** cuenta, y un acierto no es un intento fallido. Contando
+    ambos, la cuenta quedaba cerrada a su proprio dueño tras cinco entradas en
+    un cuarto de hora —con un `rate_limited` que se lee como un—atack— y lo
+    primero que hace esa persona es cambiar la contrasena por nada.
+  */
+  countOnlyClientErrors: true,
 });
 
 authRouter.post('/register', perIp, perAccountLimiter, async (req, res) => {
