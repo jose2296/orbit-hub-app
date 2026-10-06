@@ -1,8 +1,6 @@
 import { notePreviewBelowTitle, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
   IconRef,
-  ItemIcon,
-  ItemIconColor,
   List,
   ListItem,
   ListItemsResponse,
@@ -29,34 +27,6 @@ import type { ListKindName } from '../../db/constants';
  */
 function emojiOf(icon: IconRef | null): string | null {
   return icon?.type === 'emoji' ? icon.value : null;
-}
-
-/**
- * The three icon fields the contract still declares, out of the one column.
- *
- * Also a bridge. `icon` is the key and `iconStyle`/`iconColor` the two decisions
- * that went with it, so a vector gives all three and an emoji gives none of them
- * — the wire has nowhere to put an emoji on a row, which is exactly why the
- * column had to stop being a string. The defaults are the ones the columns
- * carried, so a row with no icon reads the way it always did.
- */
-function legacyItemIcon(icon: IconRef | null): {
-  icon: ItemIcon | null;
-  iconStyle: 'outline' | 'fill';
-  iconColor: ItemIconColor;
-} {
-  const saneado = sanitiseIconRef(icon);
-  if (saneado === null || saneado.type !== 'vector') {
-    return { icon: null, iconStyle: 'outline', iconColor: 'neutral' };
-  }
-  // `auto` is "the colour of whatever it is on", which the wire has no word for,
-  // and `neutral` is the colour that meant exactly that.
-  const color = saneado.color === 'auto' ? 'neutral' : saneado.color;
-  return {
-    icon: saneado.value as ItemIcon,
-    iconStyle: saneado.style,
-    iconColor: color as ItemIconColor,
-  };
 }
 
 interface ListFilters {
@@ -272,10 +242,8 @@ export class ContentQueryService {
       completed: row.completed,
       priority: row.priority,
       // An icon this build cannot draw is no icon, and not a broken row: a
-      // payload from a future build still opens the row. Three fields come out of
-      // one value because the wire still has three; a vector that is not one
-      // becomes no icon, and an emoji has no key to offer here.
-      ...legacyItemIcon(row.icon),
+      // payload from a future build still opens the row.
+      icon: sanitiseIconRef(row.icon),
       tags: row.tags ?? [],
       externalId: row.externalId,
       metadata: row.metadata,

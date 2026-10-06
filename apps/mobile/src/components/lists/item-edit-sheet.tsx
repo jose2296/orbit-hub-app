@@ -2,13 +2,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 
-import type { ListItem, Priority, TagColors } from "@orbit-hub/contracts";
-import { derivedTagColor } from "@orbit-hub/contracts";
+import type { IconRef, ListItem, Priority, TagColors } from "@orbit-hub/contracts";
+import { derivedTagColor, labelOf } from "@orbit-hub/contracts";
 
+import { AppIcon } from "@/components/ui/app-icon";
 import { Badge, tonesFor } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
+import { IconPickerPanel } from "@/components/ui/icon-picker-sheet";
 import { Sheet } from "@/components/ui/sheet";
 import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
@@ -23,16 +25,11 @@ import {
 } from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
 
-import { ItemIcon, IconPickerPanel } from "./icon-picker";
+import { completedMatch } from "@/lib/lists/done-match";
+import { ICON_COLOR_KEYS, ICON_COLOR_LABEL } from "@/lib/lists/item-icons";
+import type { IconColorKey } from "@/lib/lists/item-icons";
 import { TagChip } from "./tag-chip";
 import { TagColorPicker } from "./tag-color-picker";
-import { completedMatch } from "@/lib/lists/done-match";
-import {
-  ICON_COLOR_KEYS,
-  ICON_COLOR_LABEL,
-  iconLabel,
-} from "@/lib/lists/item-icons";
-import type { IconColorKey } from "@/lib/lists/item-icons";
 
 type Page = "edit" | "icon" | "tags";
 
@@ -126,9 +123,7 @@ interface Draft {
   title: string;
   annotation: string | null;
   priority: Priority;
-  icon: ListItem["icon"];
-  iconStyle: ListItem["iconStyle"];
-  iconColor: ListItem["iconColor"];
+  icon: IconRef | null;
   tags: string[];
   /** Whether it is done, which also lives here and **not** on the row. */
   completed: boolean;
@@ -139,8 +134,6 @@ const EMPTY_DRAFT: Draft = {
   annotation: null,
   priority: "none",
   icon: null,
-  iconStyle: "outline",
-  iconColor: "neutral",
   tags: [],
   completed: false,
 };
@@ -313,8 +306,6 @@ export function ItemEditSheet({
         priority: item?.priority ?? "none",
         completed: item?.completed ?? false,
         icon: item?.icon ?? null,
-        iconStyle: item?.iconStyle ?? "outline",
-        iconColor: item?.iconColor ?? "neutral",
         tags: item?.tags ?? [],
       };
 
@@ -681,8 +672,6 @@ export function ItemEditSheet({
       annotation: annotation.trim() || null,
       priority: draft.priority,
       icon: draft.icon,
-      iconStyle: draft.iconStyle,
-      iconColor: draft.iconColor,
       tags: draft.tags,
     });
     // Y los colores de las etiquetas que se crearon aqui: sin esto, crear una
@@ -881,14 +870,11 @@ export function ItemEditSheet({
               {/* The row's own icon, in its own colour and its own drawing: what
                   you chose has to be on this row before you go back, or picking
                   a colour is picking a colour blind. */}
-              <ItemIcon
-                icon={shown.icon}
-                style={shown.iconStyle}
-                color={shown.iconColor}
-                size={20}
-              />
+              <AppIcon icon={shown.icon} size={20} />
               <AppText variant="body" style={styles.flex}>
-                {shown.icon ? iconLabel(shown.icon) : t("itemEdit.icon")}
+                {shown.icon && shown.icon.type === "vector"
+                  ? labelOf(shown.icon.value)
+                  : t("itemEdit.icon")}
               </AppText>
               <Ionicons
                 name="chevron-forward"
@@ -1047,13 +1033,11 @@ export function ItemEditSheet({
 
         {page === "icon" ? (
           <IconPickerPanel
-            value={shown.icon}
-            style={shown.iconStyle}
-            color={shown.iconColor}
-            onPick={(choice) => {
-              // The colour and the drawing travel with the icon, so a tap on a
-              // red outline is one write and not three that could half-land.
-              save(choice);
+            current={shown.icon}
+            onSelect={(next) => {
+              // One write with the whole icon, and not three that could
+              // half-land: the colour and the drawing travel inside it.
+              save({ icon: next });
             }}
           />
         ) : null}

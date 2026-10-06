@@ -664,9 +664,7 @@ describe('POST /sync/pull', () => {
 
     const items = await api.get(`/lists/${listId}/items`, user.accessToken);
     const row = items.body.data.items.find((entry: { id: string }) => entry.id === itemId);
-    expect(row.icon).toBe('pan');
-    expect(row.iconStyle).toBe('outline');
-    expect(row.iconColor).toBe('rose');
+    expect(row.icon).toEqual({ type: 'vector', value: 'pan', library: 'ionicons', style: 'outline', color: 'rose' });
     expect(row.tags).toEqual(['Mercadona', 'urgente']);
 
     const list = await api.get(`/lists/${listId}`, user.accessToken);

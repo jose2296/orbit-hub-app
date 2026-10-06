@@ -45,6 +45,19 @@ export interface IconPickerSheetProps {
 }
 
 /**
+ * The picker without its sheet around it, for panels that already are one.
+ *
+ * The item editor opens its icon page inside its own sheet: a sheet on top of
+ * a sheet is two backdrops over one screen.
+ */
+export function IconPickerPanel({
+  current,
+  onSelect,
+}: Pick<IconPickerSheetProps, "current" | "onSelect">) {
+  return <IconPickerBody current={current} onSelect={onSelect} />;
+}
+
+/**
  * The icon somebody chose, emojis and line drawings in one place.
  *
  * Two tabs because they are two different catalogues searched two different
@@ -56,6 +69,18 @@ export interface IconPickerSheetProps {
  * is what was chosen for the icon, and marking with it spent it.
  */
 export function IconPickerSheet({ visible, onClose, current, onSelect }: IconPickerSheetProps) {
+  const t = useTranslation();
+  return (
+    <Sheet visible={visible} onClose={onClose} title={t("icons.title")} scrollable>
+      <IconPickerBody current={current} onSelect={onSelect} />
+    </Sheet>
+  );
+}
+
+function IconPickerBody({
+  current,
+  onSelect,
+}: Pick<IconPickerSheetProps, "current" | "onSelect">) {
   const theme = useTheme();
   const t = useTranslation();
   const [tab, setTab] = useState<"emoji" | "vector">("emoji");
@@ -99,7 +124,6 @@ export function IconPickerSheet({ visible, onClose, current, onSelect }: IconPic
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title={t("icons.title")} scrollable>
       <View style={{ gap: theme.spacing.md }}>
         <View style={[styles.row, { gap: theme.spacing.xs }]}>
           {(["emoji", "vector"] as const).map((option) => {
@@ -354,7 +378,6 @@ export function IconPickerSheet({ visible, onClose, current, onSelect }: IconPic
           </Pressable>
         ) : null}
       </View>
-    </Sheet>
   );
 }
 

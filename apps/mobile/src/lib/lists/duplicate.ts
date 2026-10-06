@@ -1,4 +1,5 @@
 import type {
+  IconRef,
   ListItem,
   ListKind,
   ListOrderMode,
@@ -37,9 +38,7 @@ export interface DuplicableItem {
   position: number;
   completed: boolean;
   priority: ListItemPriority;
-  icon: ListItem["icon"];
-  iconStyle: ListItem["iconStyle"];
-  iconColor: ListItem["iconColor"];
+  icon: IconRef | null;
   tags: string[];
   externalId: string | null;
   metadata: Record<string, unknown> | null;
@@ -105,10 +104,9 @@ export function planDuplication(
     position: index,
     completed: item.completed,
     priority: item.priority,
+    // The icon is one value, so a copy carries it whole: how it is drawn is
+    // part of how the row is, and a copy looks the same.
     icon: item.icon,
-    // How it is drawn is part of how the row is, so a copy looks the same.
-    iconStyle: item.iconStyle,
-    iconColor: item.iconColor,
     // Copied by value: a later push to the copy must not touch the original.
     tags: [...item.tags],
     externalId: item.externalId,

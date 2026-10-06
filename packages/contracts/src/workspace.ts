@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ITEM_ICON_COLORS, ITEM_ICONS } from "./item-icons.js";
+import { iconRefSchema } from "./icons.js";
 import { normalizaColor, tagColorSchema } from "./tag-colors.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
@@ -463,31 +463,15 @@ export const listItemSchema = syncableEntitySchema
    */
   priority: z.enum(["none", "low", "medium", "high"]).default("none"),
   /**
-   * An icon out of the ones the app offers, for the things a list of tasks is
-   * also used for: what to buy, what to pack, what to fix.
+   * The icon, as one value.
    *
-   * It is a key and not an emoji on purpose. An emoji looks different on every
-   * device and means a different thing to every person, while a key is the same
-   * shape everywhere and the app can draw it with the same care it draws a
-   * button.
+   * It was three fields — `icon` as a key out of the ones the app offers,
+   * `iconStyle` and `iconColor` — and three fields can disagree with each
+   * other. As one value they cannot: a system emoji or one of the app's line
+   * drawings, with the colour it was given. Null is "nobody chose an icon",
+   * which the app knows how to draw.
    */
-  icon: z.enum(ITEM_ICONS).nullable().default(null),
-  /**
-   * Filled or outline.
-   *
-   * Two drawings of the same thing and not a decoration: a row of twelve things
-   * drawn con trazo is una lista de palabras, y rellenar los que importan dice
-   * cuales sin tener que leer ninguno.
-   */
-  iconStyle: z.enum(["outline", "fill"]).default("outline"),
-  /**
-   * Which of the app's icon colours it is drawn in.
-   *
-   * A key and not a colour value, for the reason the space colour is a key: the
-   * app draws the ones it offers, so there is no colour nobody can read and no
-   * picker of fifty shades on a phone.
-   */
-  iconColor: z.enum(ITEM_ICON_COLORS).default("neutral"),
+  icon: iconRefSchema.default(null),
   /**
    * Free labels, so "Mercadona" and "Carrefour" are values and not folders:
    * the same thing to buy in two shops is one item to buy.

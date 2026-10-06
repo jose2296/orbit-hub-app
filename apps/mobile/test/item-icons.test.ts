@@ -2,6 +2,7 @@ import glyphMap from "@expo/vector-icons/build/vendor/react-native-vector-icons/
 import { ITEM_ICON_CATEGORIES, ITEM_ICON_GROUP, ITEM_ICONS } from "@orbit-hub/contracts";
 import { describe, expect, it } from "vitest";
 
+import { iconColorHex } from "@/theme/tokens";
 import { ITEM_GLYPHS, outlineOf } from "@/lib/lists/item-glyphs";
 import {
   ICON_COLOR_KEYS,
@@ -64,7 +65,8 @@ describe("the icons the app can draw", () => {
 
   it("paints each icon colour differently", () => {
     // Two colours that come out the same are one colour with two names, and the
-    // picker offers both as if they were a choice.
+    // picker offers both as if they were a choice. The hexes come from the
+    // theme now, so this is the test that says the theme kept them apart.
     const painted = ICON_COLOR_KEYS.map(iconColor);
     expect(new Set(painted).size).toBe(ICON_COLOR_KEYS.length);
   });
@@ -75,6 +77,13 @@ describe("the icons the app can draw", () => {
     expect(iconColor("chartreuse")).toBe(iconColor("neutral"));
     expect(iconColor(null)).toBe(iconColor("neutral"));
     expect(iconColor(undefined)).toBe(iconColor("neutral"));
+  });
+
+  it("reads the theme and not a second copy", () => {
+    // There used to be twelve hexes here and twelve in the theme. Two copies
+    // drift apart; one copy cannot.
+    expect(iconColor("rose")).toBe(iconColorHex("rose", "light"));
+    expect(iconColor("teal")).toBe(iconColorHex("teal", "light"));
   });
 });
 

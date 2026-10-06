@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
-import type { ItemIcon, ItemIconCategory, ListItem } from "@orbit-hub/contracts";
+import type { IconColorKey } from "@/lib/lists/item-icons";
+import type { ItemIcon, ItemIconCategory } from "@orbit-hub/contracts";
 import { ITEM_ICON_CATEGORIES } from "@orbit-hub/contracts";
 
 import { TextField } from "@/components/ui/text-field";
@@ -39,15 +40,15 @@ const ICON_STYLE_LABEL: Record<"outline" | "fill", TranslationKey> = {
  * sends only a drawing, and the icon changes when an icon is tapped.
  */
 export interface IconChange {
-  icon?: ListItem["icon"];
-  iconStyle?: ListItem["iconStyle"];
-  iconColor?: ListItem["iconColor"];
+  icon?: ItemIcon | null;
+  iconStyle?: "outline" | "fill";
+  iconColor?: IconColorKey;
 }
 
 export interface IconPickerPanelProps {
-  value: ListItem["icon"];
-  style?: ListItem["iconStyle"];
-  color?: ListItem["iconColor"];
+  value: ItemIcon | null;
+  style?: "outline" | "fill";
+  color?: IconColorKey;
   /** Called with just what changed. */
   onPick: (change: IconChange) => void;
 }
@@ -78,8 +79,8 @@ export function IconPickerPanel({
   const t = useTranslation();
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState<ItemIconCategory | null>(null);
-  const [drawing, setDrawing] = useState<ListItem["iconStyle"]>(style);
-  const [tint, setTint] = useState<ListItem["iconColor"]>(color);
+  const [drawing, setDrawing] = useState<"outline" | "fill">(style);
+  const [tint, setTint] = useState<IconColorKey>(color);
 
   const found = useMemo(
     () => searchIcons(query, { category: group }),
@@ -284,8 +285,8 @@ function IconCell({
   onPress,
 }: {
   icon?: ItemIcon;
-  style?: ListItem["iconStyle"];
-  color?: ListItem["iconColor"];
+  style?: "outline" | "fill";
+  color?: IconColorKey;
   glyph?: Ionicon;
   label: string;
   selected: boolean;
@@ -343,9 +344,9 @@ export function ItemIcon({
   color = "neutral",
   size = 18,
 }: {
-  icon: ListItem["icon"];
-  style?: ListItem["iconStyle"];
-  color?: ListItem["iconColor"];
+  icon: ItemIcon | null;
+  style?: "outline" | "fill";
+  color?: IconColorKey;
   size?: number;
 }) {
   if (!isItemIcon(icon)) return null;

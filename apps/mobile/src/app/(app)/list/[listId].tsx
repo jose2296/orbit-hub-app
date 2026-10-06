@@ -20,7 +20,8 @@ import { Card } from "@/components/ui/card";
 import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ItemIcon } from "@/components/lists/icon-picker";
+import { DoneTray } from "@/components/lists/done-tray";
+import { AppIcon } from "@/components/ui/app-icon";
 import { MediaListScreen } from "@/components/media/media-list-screen";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { FiltersBody } from "@/components/lists/item-picker";
@@ -1244,11 +1245,7 @@ function TaskRow({
               onPress={onIcon}
               style={styles.iconSlot}
             >
-              <ItemIcon
-                icon={item.icon}
-                style={item.iconStyle}
-                color={item.iconColor}
-              />
+              <AppIcon icon={item.icon} size={18} />
             </Pressable>
           ) : null}
 

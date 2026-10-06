@@ -1,4 +1,5 @@
 import type {
+  IconRef,
   List,
   ListItem,
   ListKind,
@@ -528,9 +529,7 @@ export function useListItems(listId: string | undefined) {
       metadata?: Record<string, unknown> | null;
       /** The rest of what the item panel offers, when it created the row. */
       annotation?: string | null;
-      icon?: ListItem["icon"];
-      iconStyle?: ListItem["iconStyle"];
-      iconColor?: ListItem["iconColor"];
+      icon?: IconRef | null;
       tags?: string[];
     }): Promise<{ added: boolean; itemId: string | null }> => {
       if (!listId) return { added: false, itemId: null };
@@ -562,8 +561,6 @@ export function useListItems(listId: string | undefined) {
         priority: input.priority,
         annotation: input.annotation ?? null,
         icon: input.icon ?? null,
-        iconStyle: input.iconStyle,
-        iconColor: input.iconColor,
         tags: input.tags,
         externalId: input.externalId ?? null,
         metadata: input.metadata ?? null,
@@ -592,8 +589,6 @@ export function useListItems(listId: string | undefined) {
           position: nextPosition(existing),
           ...(input.priority ? { priority: input.priority } : {}),
           ...(input.icon ? { icon: input.icon } : {}),
-          ...(input.iconStyle ? { iconStyle: input.iconStyle } : {}),
-          ...(input.iconColor ? { iconColor: input.iconColor } : {}),
           ...(input.annotation ? { annotation: input.annotation } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
           // The provider id travels with the item so the same title is
@@ -699,10 +694,7 @@ export function useListItems(listId: string | undefined) {
     async (
       item: ListItem,
       changes: {
-        icon?: ListItem["icon"];
-        /** Filled or outline, and which of the colours the app offers. */
-        iconStyle?: ListItem["iconStyle"];
-        iconColor?: ListItem["iconColor"];
+        icon?: IconRef | null;
         tags?: string[];
         /** The name, the description and how urgent it is. */
         title?: string;

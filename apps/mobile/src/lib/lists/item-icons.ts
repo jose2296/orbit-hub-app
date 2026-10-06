@@ -1,5 +1,6 @@
 import { ITEM_ICON_COLORS, ITEM_ICON_GROUP, ITEM_ICONS, isItemIcon } from "@orbit-hub/contracts";
 
+import { iconColorHex } from "@/theme/tokens";
 import type { TranslationKey } from "@/lib/i18n";
 
 import { ITEM_GLYPHS, outlineOf } from "./item-glyphs";
@@ -117,43 +118,20 @@ export type IconColorKey = (typeof ITEM_ICON_COLORS)[number];
  * the app draws the ones it offers, so there is no colour nobody can read on a
  * small shape and no picker of fifty shades on a phone.
  *
- * **Exported because a label draws out of it too.** `tagColorHex`, en
- * `./tag-colors`, saca de aqui los doce a traves de `iconColor`, y el plan que
- * pidio esa funcion decia que esta tabla ya se exportaba —no se exportaba—. Lo que
- * **no** hace falta para eso es el `export`: `iconColor` ya resuelve tanto el
- * nombre conocido como la reserva, asi que hoy no lo consume nadie. Se deja porque
- * es **la unica tabla de los doce del movil**, y porque el motivo por el que existe
- * —que no haya una segunda copia escrita a mano— hace valiosa tambien que se pueda
- * leer. Si un dia nadie la importa, quitarla es borrar una palabra.
- *
- * **Y el que lo importa tiene que preguntar antes, porque esto es un objeto
- * literal.** `ICON_COLORS["toString"]` y `ICON_COLORS["__proto__"]` no son colores:
- * son una funcion y el prototipo. Por eso hay una puerta —`ICON_COLOR_KEYS.includes`
- * — y por eso la hay **en quien llama**: `iconColor` de abajo no la tiene y por eso
- * sigue teniendo ese agujero. `tagColorHex` lo cierra antes de mirar aqui, y el
- * que escriba el siguiente reader deberia hacer lo mismo.
+ * This table and `iconColor` below read the theme now, and they read the light
+ * scheme: the tag colours stored as hexes are the light ones, and
+ * `tag-color-picker.tsx` compares against these values. One source instead of
+ * two copies that could drift apart.
  */
-export const ICON_COLORS: Record<IconColorKey, string> = {
-  neutral: "#8A93A8",
-  accent: "#6366F1",
-  green: "#16A34A",
-  olive: "#4D7C0F",
-  amber: "#D97706",
-  orange: "#EA580C",
-  red: "#DC2626",
-  rose: "#E11D48",
-  purple: "#9333EA",
-  blue: "#2563EB",
-  teal: "#0D9488",
-  brown: "#92400E",
-};
+export const ICON_COLORS: Record<IconColorKey, string> = Object.fromEntries(
+  ITEM_ICON_COLORS.map((key) => [key, iconColorHex(key, "light")]),
+) as Record<IconColorKey, string>;
 
 /** The colour an icon is drawn in, or the app's own if the key is unknown. */
 export function iconColor(key: string | null | undefined): string {
   // The column is free text, so a row from a future build can name a colour this
   // one does not have. It comes out in the neutral one instead of not coming out.
-  const found = ICON_COLORS[String(key) as IconColorKey];
-  return found ?? ICON_COLORS.neutral;
+  return iconColorHex(key, "light");
 }
 
 /** The glyph of an icon, filled or outline. */

@@ -3,8 +3,6 @@ import type {
   ExportedAttachment,
   Folder,
   IconRef,
-  ItemIcon,
-  ItemIconColor,
   List,
   ListExport,
   ListItem,
@@ -70,30 +68,6 @@ function emojiOf(icon: IconRef | null): string | null {
   return icon?.type === 'emoji' ? icon.value : null;
 }
 
-/**
- * Los tres campos de icono que el contrato sigue declarando, desde una columna.
- *
- * Tambien un puente. `icon` es la clave y `iconStyle`/`iconColor` las dos
- * decisiones que la acompanaban, asi que un vector da los tres; `auto` es "el
- * color de lo que tenga debajo", que el cable no tiene forma de decir, y
- * `neutral` es el color que significaba exactamente eso.
- */
-function legacyItemIcon(icon: IconRef | null): {
-  icon: ItemIcon | null;
-  iconStyle: 'outline' | 'fill';
-  iconColor: ItemIconColor;
-} {
-  const saneado = sanitiseIconRef(icon);
-  if (saneado === null || saneado.type !== 'vector') {
-    return { icon: null, iconStyle: 'outline', iconColor: 'neutral' };
-  }
-  return {
-    icon: saneado.value as ItemIcon,
-    iconStyle: saneado.style,
-    iconColor: (saneado.color === 'auto' ? 'neutral' : saneado.color) as ItemIconColor,
-  };
-}
-
 function toFolder(row: typeof folders.$inferSelect, role: MembershipRoleName): Folder {
   return {
     id: row.id,
@@ -157,7 +131,7 @@ function toItem(row: typeof listItems.$inferSelect, role: MembershipRoleName): L
     // dibujar sale como `null` en vez de como una forma inventada: una copia a
     // la que le falta un icono es peor que una copia con un icono que el que la
     // lee no sabe dibujar.
-    ...legacyItemIcon(row.icon),
+    icon: sanitiseIconRef(row.icon),
     tags: row.tags ?? [],
     externalId: row.externalId,
     // Identidad: sin parsear, sin serializar y sin seleccionar claves. Lo que

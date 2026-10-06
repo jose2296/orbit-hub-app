@@ -98,8 +98,6 @@ function item(over: Partial<ListItem> = {}): ListItem {
     completed: false,
     priority: 'none',
     icon: null,
-    iconStyle: 'outline',
-    iconColor: 'neutral',
     tags: [],
     externalId: null,
     metadata: null,
