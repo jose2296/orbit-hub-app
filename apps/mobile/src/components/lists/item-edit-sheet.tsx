@@ -195,6 +195,27 @@ export function ItemEditSheet({
     else colores[etiqueta] = visto;
   }
   /*
+   * **The colour under the finger, not yet chosen, and why the pill follows the
+   * drag.**
+   *
+   * A swatch press commits at once, but dragging the square or the hue strip
+   * only moves the picker's local state until "use this colour" is pressed — so
+   * without this the pill keeps its old colour while a new one is already on
+   * screen. The picker reports its square through `onPreviewChange` and it lands
+   * here, synchronously, in the same commit as the drag.
+   *
+   * One `{tag, hex}` and not a map, because only one picker is ever open
+   * (`colorDe`): a second one cannot start previewing without closing the first.
+   * It applies only while its picker is the open one — after closing, the tag no
+   * longer matches and the pill falls back to what was committed, which is also
+   * what "closing without choosing keeps nothing" means. And it paints the pills
+   * only, never the picker's `value`: feeding the draft back in would make the
+   * picker's own sync effect snap the square back mid-drag.
+   */
+  const [vistaPrevia, setVistaPrevia] = useState<{ tag: string; hex: string } | null>(null);
+  const coloresPintados: TagColors = { ...colores };
+  if (vistaPrevia && vistaPrevia.tag === colorDe) coloresPintados[vistaPrevia.tag] = vistaPrevia.hex;
+  /*
    * Whether a colour is being written right now, and **one write at a time**.
    *
    * It exists because the picker waits for the write it started (see
@@ -337,7 +358,7 @@ export function ItemEditSheet({
    * `TagChip`. It is here because the button that opens the picker has to *say*
    * the colour out loud, in the words the dictionary has for it.
    */
-  const colorOf = (tag: string): string => colores[tag] ?? derivedTagColor(tag);
+  const colorOf = (tag: string): string => coloresPintados[tag] ?? derivedTagColor(tag);
 
   if (!isNew && !item) return null;
 
@@ -923,7 +944,7 @@ export function ItemEditSheet({
             >
               {shown.tags.map((tag) => (
                 <Fragment key={tag}>
-                  <TagChip tag={tag} colors={colores} testID={`tag-pill-hoja-${tag}`}>
+                  <TagChip tag={tag} colors={coloresPintados} testID={`tag-pill-hoja-${tag}`}>
                     {(ink) => (
                       <>
                         {/*
@@ -969,6 +990,11 @@ export function ItemEditSheet({
                         tag={tag}
                         value={colores[tag] ?? null}
                         onChange={(hex) => void pickColor(tag, hex)}
+                        onPreviewChange={(hex) =>
+                          setVistaPrevia((previa) =>
+                            previa?.tag === tag && previa?.hex === hex ? previa : { tag, hex },
+                          )
+                        }
                         onClose={() => setColorDe(null)}
                       />
                     </View>
@@ -1001,7 +1027,7 @@ export function ItemEditSheet({
                     const laTiene = shown.tags.includes(tag);
                     return (
                       <Fragment key={tag}>
-                        <TagChip tag={tag} colors={colores} testID={`tag-pill-hoja-${tag}`}>
+                        <TagChip tag={tag} colors={coloresPintados} testID={`tag-pill-hoja-${tag}`}>
                           {(ink) => (
                             <>
                               {/* `TagChip` writes the name, so the count is what is
@@ -1074,6 +1100,11 @@ export function ItemEditSheet({
                             tag={tag}
                             value={colores[tag] ?? null}
                             onChange={(hex) => void pickColor(tag, hex)}
+                            onPreviewChange={(hex) =>
+                              setVistaPrevia((previa) =>
+                                previa?.tag === tag && previa?.hex === hex ? previa : { tag, hex },
+                              )
+                            }
                             onClose={() => setColorDe(null)}
                           />
                         </View>

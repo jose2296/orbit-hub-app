@@ -272,16 +272,36 @@ describe("los dos montajes del selector en la hoja", () => {
     }
   });
 
-  it("las dos pastillas de la hoja se pintan con el mapa mezclado y no con el mapa", () => {
+  it("las dos pastillas de la hoja se pintan con el mapa mas el arrastre y no con el mapa", () => {
     // Este es el pin del fallo real: las dos `TagChip` de la hoja leian
-    // `colors={tagColors}` y el optimista no les llegaba por ningun camino.
-    // Si alguien las vuelve al mapa sin mezclar, el repintado en vivo se rompe
-    // aunque el selector y el lapiz sigan yendo al momento.
+    // `colors={tagColors}` y ni el optimista ni el arrastre les llegaban por
+    // ningun camino. Si alguien las vuelve al mapa sin mezclar, el repintado en
+    // vivo se rompe aunque el selector y el lapiz sigan yendo al momento.
     const pastillas = [...hoja.matchAll(/<TagChip tag=\{tag\} colors=\{[^}]+\}/g)].map((m) => m[0]);
     expect(pastillas).toHaveLength(2);
     for (const pastilla of pastillas) {
-      expect(pastilla).toContain("colors={colores}");
+      expect(pastilla).toContain("colors={coloresPintados}");
     }
+  });
+
+  it("los dos selectores de pastilla avisan del arrastre y el de la etiqueta nueva no", () => {
+    // Arrastrar el cuadrado o la tira solo mueve el estado local del selector
+    // hasta que algo se pulsa: sin este aviso la pastilla mantiene el color viejo
+    // mientras el color nuevo ya esta en pantalla bajo el dedo. Los dos
+    // selectores de pastilla lo pasan (`vistaPrevia`, que la hoja mezcla al
+    // pintar pero nunca al `value` —devolver el borrador al `value` haria que el
+    // efecto del selector llevase el cuadrado de vuelta en mitad del arrastre—)
+    // y el de la etiqueta nueva no, porque no hay pastilla que pintar.
+    const deLaPastilla = montajes.filter((m) =>
+      m.includes("onChange={(hex) => void pickColor(tag, hex)}"),
+    );
+    expect(deLaPastilla).toHaveLength(2);
+    for (const montaje of deLaPastilla) {
+      expect(montaje).toContain("onPreviewChange=");
+    }
+    const deLaEtiquetaNueva = montajes.filter((m) => m.includes("value={pendiente}"));
+    expect(deLaEtiquetaNueva).toHaveLength(1);
+    expect(deLaEtiquetaNueva[0]).not.toContain("onPreviewChange");
   });
 
   it("el de la etiqueta nueva escribe en estado local y no escribe nada todavia", () => {

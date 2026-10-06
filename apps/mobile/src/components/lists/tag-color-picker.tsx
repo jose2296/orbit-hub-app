@@ -90,6 +90,19 @@ export interface TagColorPickerProps {
   onClose?: () => void;
   /** The label name, used for the accessibility labels. */
   tag?: string;
+  /**
+   * Called whenever the square's colour changes, committed or not.
+   *
+   * Dragging the square or the hue strip only touches this panel's local state
+   * until something is pressed, so without this the label keeps its old colour
+   * while a new one is already on screen under the finger. The sheet paints the
+   * pill with it, so choosing is judging against the real pill and not against a
+   * square. It also fires when the colour arrives from outside (mount, "back to
+   * derived"), with the same value everything already shows, so those calls
+   * change nothing. Omitted where there is no pill to paint — the new-label
+   * instance.
+   */
+  onPreviewChange?: (hex: string) => void;
 }
 
 /**
@@ -178,7 +191,7 @@ function esDeLaPaleta(hex: string): boolean {
  * here and there, and a write per colour crossed is a queue full of operations and
  * a label flickering between colours while somebody is trying to look at one.
  */
-export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPickerProps) {
+export function TagColorPicker({ value, onChange, onClose, tag, onPreviewChange }: TagColorPickerProps) {
   const theme = useTheme();
   const t = useTranslation();
 
@@ -210,6 +223,23 @@ export function TagColorPicker({ value, onChange, onClose, tag }: TagColorPicker
 
   const colorDelCuadrado = hexDeHsv(hsv.h, hsv.s, hsv.v);
   const sucio = colorDelCuadrado !== hexGuardado;
+
+  /*
+   * The square's colour, reported up while it is still a draft.
+   *
+   * The latest callback comes from a ref — the sheet passes an inline arrow, so
+   * it is a new function every render, and the gestures above already say why a
+   * callback that changes underfoot does not go in a dep list. The colour is
+   * what matters, so it is the only dep. And the draft never flows back into
+   * `value`: that prop is the committed colour, and feeding the draft into it
+   * would make the sync effect above snap the square back under the finger
+   * mid-drag.
+   */
+  const vistaPreviaRef = useRef(onPreviewChange);
+  vistaPreviaRef.current = onPreviewChange;
+  useEffect(() => {
+    vistaPreviaRef.current?.(colorDelCuadrado);
+  }, [colorDelCuadrado]);
 
   /**
    * **Whose colour this panel is choosing**, and every accessible name below ends
