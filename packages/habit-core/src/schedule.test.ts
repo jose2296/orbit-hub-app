@@ -85,13 +85,15 @@ it('una regla patologica lanza en vez de colgar', () => {
   ).toThrow(/FREQ=MINUTELY.*100000.*2020-01-01.*2030-01-01.*patologica/s);
 });
 
-// La otra cara del tope: FREQ=HOURLY en 10 anos son unas 87 mil iteraciones,
-// por debajo del tope, asi que no lanza y da los mismos 3654 dias.
+// La otra cara del tope: FREQ=HOURLY en 30 dias son 720 ocurrencias, muy por
+// debajo del tope, asi que no lanza y da los 30 dias. La ventana es corta a
+// proposito: con 10 anos serian unas 87 mil ocurrencias (~4 s solo este test,
+// al borde del testTimeout de vitest) para demostrar lo mismo.
 it('una frecuencia alta legitima no roza el tope', () => {
-  const dates = scheduledDates({ kind: 'rrule', rule: 'FREQ=HOURLY' }, '2020-01-01', '2030-01-01', 'UTC');
-  expect(dates).toHaveLength(3654);
-  expect(dates[0]).toBe('2020-01-01');
-  expect(dates[dates.length - 1]).toBe('2030-01-01');
+  const dates = scheduledDates({ kind: 'rrule', rule: 'FREQ=HOURLY' }, '2026-03-01', '2026-03-30', 'UTC');
+  expect(dates).toHaveLength(30);
+  expect(dates[0]).toBe('2026-03-01');
+  expect(dates[dates.length - 1]).toBe('2026-03-30');
 });
 
 // COUNT limita desde el dtstart fijo (el dia `from`), no desde cuando se invento la regla.
