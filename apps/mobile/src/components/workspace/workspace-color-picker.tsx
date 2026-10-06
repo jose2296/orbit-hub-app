@@ -406,7 +406,23 @@ export function WorkspaceColorPicker({
               <AppText
                 variant="callout"
                 numberOfLines={1}
-                style={{ color: elegido ? theme.colors.accent : undefined }}
+                /*
+                  El color del extremo **elegido**, y el de verdad para el otro.
+
+                  Era `elegido ? accent : undefined`, y `undefined` no es "sin color":
+                  es "usa el que traiga el `AppText`". En oscuro ese color por
+                  defecto sale casi negro sobre el fondo oscuro, y "Empieza en" se
+                  hacia ilegible justo en la pestana que **no** has elegido — que es
+                  donde mas hace falta leerla para saber cual de las dos estas
+                  cambiando.
+
+                  Y solo en Android se veia, porque en la web el color por defecto
+                  de `AppText` cae en otro sitio. Un fallo que solo se reproduce en
+                  una de las tres plataformas no se puede cazar en la otra.
+                */
+                style={{
+                  color: elegido ? theme.colors.accent : theme.colors.textMuted,
+                }}
               >
                 {t(`workspaces.washSide.${extremo}` as never)}
               </AppText>

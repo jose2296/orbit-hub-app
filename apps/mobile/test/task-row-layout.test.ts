@@ -736,3 +736,29 @@ describe('#9: tirar hacia abajo recarga', () => {
     );
   });
 });
+
+describe('el texto de los dos extremos del lavado se lee en los dos', () => {
+  const picker = readFileSync(
+    join(import.meta.dirname, '../src/components/workspace/workspace-color-picker.tsx'),
+    'utf8',
+  );
+
+  it('el extremo que NO has elegido tiene un color propio, no el que venga', () => {
+    // Era `elegido ? accent : undefined`, y `undefined` no es "sin color": es "usa
+    // el del AppText", que en oscuro sale casi negro. Se hacia ilegible justo la
+    // pestana que no has elegido, que es donde mas hace falta leerla.
+    //
+    // Y **solo se veia en Android**: en la web el color por defecto de `AppText`
+    // cae en otro sitio. Un fallo de una sola plataforma no se caza en otra.
+    const texto = picker.match(/workspaces\.washSide\.\$\{extremo\}/)?.[0] ?? '';
+    expect(texto, 'se llega al texto del extremo').not.toBe('');
+
+    expect(picker, 'el no elegido lleva un color explicito').toMatch(
+      /color: elegido \? theme\.colors\.accent : theme\.colors\.textMuted/,
+    );
+    expect(
+      picker,
+      'y no puede quedar en undefined: undefined no es "sin color", es "el que venga"',
+    ).not.toMatch(/color: elegido \? theme\.colors\.accent : undefined/);
+  });
+});
