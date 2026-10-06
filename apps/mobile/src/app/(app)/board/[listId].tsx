@@ -33,7 +33,7 @@ import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
-import type { BoardStates, ItemIconColor, ListItem } from "@orbit-hub/contracts";
+import type { BoardStates, ListItem, StateColor } from "@orbit-hub/contracts";
 import {
   columnLayout,
   columnOffset,
@@ -988,7 +988,7 @@ export default function BoardScreen() {
    * operation in the outbox. Same rule as the full editor's `guardar`, one sheet
    * apart.
    */
-  async function guardarColumna(stateId: string, titulo: string, color: ItemIconColor) {
+  async function guardarColumna(stateId: string, titulo: string, color: StateColor) {
     if (!list) return;
     const siguientes = editState(states, stateId, { title: titulo, color });
     if (siguientes === states) return;
@@ -1826,6 +1826,27 @@ export default function BoardScreen() {
                     if (columna !== null) setActual(columna);
                   }, 180);
                 }}
+                /*
+                  **The same reconciliation at the momentum's end, and not instead
+                  of the timer above.**
+                  The timer reads the last event it saw, and a platform that
+                  coalesces trailing scroll events hands it a position the
+                  scroller has already left; the momentum event carries the final
+                  offset, so it decides from the truth. A programmatic `scrollTo`
+                  fires no momentum — those rests are the timer's. Both call the
+                  same pure function, which answers `null` when there is nothing
+                  to move, so the second one to run is a no-op by construction.
+                */
+                onMomentumScrollEnd={(event) => {
+                  const datos = datosScroll.current;
+                  const columna = columnForScrollEnd(
+                    event.nativeEvent.contentOffset.x,
+                    datos.offsets,
+                    datos.maxScroll,
+                    datos.actual,
+                  );
+                  if (columna !== null) setActual(columna);
+                }}
                 scrollEventThrottle={16}
                 horizontal
                 pagingEnabled
@@ -1867,7 +1888,6 @@ export default function BoardScreen() {
                       tasks={tasks}
                       totalTasks={counts.get(state.id) ?? 0}
                       tagColors={list.tagColors ?? {}}
-                      readOnly={readOnly}
                       /*
                         **El numero de la cabecera cuenta lo que se dibuja, y el de
                         la pestana de arriba cuenta todo**, y los dos estan en
@@ -1936,34 +1956,13 @@ export default function BoardScreen() {
                         setEditing({ itemId: item.id, page: "icon" })
                       }
                       /*
-                        **El reordenado dentro de la columna, y la puerta se cierra
-                        entera para un tablero en solo lectura.** `onReorder` es lo que
-                        la columna necesita para que exista el gesto —`sePuedeReordenar`
-                        en `board-column.tsx` lo pregunta—, asi que no pasarlo aqui es
-                        lo que hace que un visor no pueda levantar una tarjeta: no un
-                        gesto que se levanta y no puede soltar, ni una tarjeta que
-                        vuelve con un rechazo del servidor dentro de un push que
-                        contesta 200 y nadie ve.
-
-                        Y la funcion que recibe el id de su columna, porque el escritor
-                        es esta pantalla y `renumberWithinState` pide **tres**
-                        argumentos: la columna sobre la que se reordena va aqui y no
-                        dentro de la columna, que no escribe nada.
-                      */
-                      onReorder={
-                        readOnly
-                          ? undefined
-                          : (taskId, toIndex) => {
-                              void reordenar(state.id, taskId, toIndex);
-                            }
-                      }
-                      /*
                         **The header's two doors, and shut together for a viewer.**
                         The name opens the order sheet and the `···` the column's
-                        menu — and a viewer gets neither, for the same reason the
-                        cards get no drag without `onReorder` above: the writes
-                        behind both would be refused, and a press that cannot write
-                        is a control wearing the shape of a sentence.
+                        menu — and a viewer gets neither: the writes behind both
+                        would be refused, and a press that cannot write is a
+                        control wearing the shape of a sentence. Ordering lives
+                        only here now — the cards' own drag is gone — and
+                        `reordenar` below is what both doors write through.
                       */
                       onOpenOrder={
                         readOnly ? undefined : (id) => setOrdenandoColumna(id)
