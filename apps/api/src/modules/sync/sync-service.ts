@@ -12,15 +12,15 @@ import {
   normalizaColor,
   noteDocumentSchema,
   noteDocumentToPlainText,
+  sanitiseIconRef,
   sanitiseTagColors,
   syncOperationSchema,
 } from '@orbit-hub/contracts';
+import type { IconRef } from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import {
-  ITEM_ICON_COLORS,
-  isItemIcon,
   LIST_KINDS,
   LIST_ORDER_MODES,
   WORKSPACE_COLORS,
@@ -119,9 +119,11 @@ function noteFieldsForWrite(
  * without a test going red.
  */
 const STRING_LIMITS: Partial<Record<SyncEntityName, Record<string, number>>> = {
-  workspace: { name: 80, description: 500, emoji: 16 },
-  folder: { name: 120, emoji: 16 },
-  list: { title: 120, description: 1000, emoji: 16 },
+  // No `icon` entry and no `emoji` one either: the icon is a jsonb object whose
+  // shape the contract fixes, so there is no width here to keep in step with.
+  workspace: { name: 80, description: 500 },
+  folder: { name: 120 },
+  list: { title: 120, description: 1000 },
   list_item: { annotation: 2000 },
   note: { title: 200 },
 };
@@ -178,11 +180,11 @@ export function sanitisePayload(
   for (const [key, value] of Object.entries(payload ?? {})) {
     if (!allowed.has(key) || value === undefined) continue;
 
-    if (key === 'name' || key === 'description' || key === 'emoji') {
+    if (key === 'name' || key === 'description') {
       // Keyed by entity, not by field name. `name` is varchar(80) on a workspace
-      // and varchar(120) on a folder, and `emoji` is varchar(16) everywhere: a
-      // single number per field name let a write past the column, and that is a
-      // 500 from Postgres on ordinary input rather than a rejected operation
+      // and varchar(120) on a folder: a single number per field name let a write
+      // past the column, and that is a 500 from Postgres on ordinary input
+      // rather than a rejected operation
       // with a message. The widths live in `content-schema.ts`; a test in
       // `sync-limits.test.ts` holds the two together.
       const limit = STRING_LIMITS[entity]?.[key];
@@ -311,25 +313,9 @@ export function sanitisePayload(
     }
 
     if (key === 'icon') {
-      // A key out of the icons the app offers, never free text: the same shape
-      // on every device and something the app can draw.
-      const icon = String(value);
-      clean[key] = isItemIcon(icon) ? icon : null;
-      continue;
-    }
-
-    if (key === 'iconStyle') {
-      // Outline or filled. Anything else is the outline, which is what a row
-      // with no style has always been drawn as.
-      clean[key] = value === 'fill' ? 'fill' : 'outline';
-      continue;
-    }
-
-    if (key === 'iconColor') {
-      // One of the colours the app offers, and not a colour value: a row with a
-      // colour nobody can draw is a row with no colour.
-      const color = String(value);
-      clean[key] = (ITEM_ICON_COLORS as readonly string[]).includes(color) ? color : 'neutral';
+      // Un objeto, y no una clave suelta: la forma la fija el contrato y una forma
+      // que no se puede dibujar es no tener icono, no una fila que no abre.
+      clean[key] = sanitiseIconRef(value);
       continue;
     }
 
@@ -610,6 +596,10 @@ export class SyncService {
             ...payload,
             id: operation.entityId,
             name: (payload['name'] as string) ?? 'Workspace',
+            // Named by hand even though the payload is spread above: the spread
+            // carries `icon` whatever the sanitiser made of it, and an explicit
+            // `null` is the state the column is nullable for.
+            icon: (payload['icon'] as IconRef | null) ?? null,
           });
           // The creator owns what they create.
           await syncRepository.addMembership(row.id, userId, 'owner');
@@ -630,7 +620,7 @@ export class SyncService {
             workspaceId,
             parentId: (payload['parentId'] as string | null) ?? null,
             name: (payload['name'] as string) ?? 'Folder',
-            emoji: (payload['emoji'] as string) ?? null,
+            icon: (payload['icon'] as IconRef | null) ?? null,
             position: (payload['position'] as number) ?? 0,
           });
           return { status: 'applied', version: row.version };
@@ -719,6 +709,9 @@ export class SyncService {
             // the text that search matches on cannot drift apart.
             plainText: noteDocumentToPlainText(document),
             tags: Array.isArray(payload['tags']) ? (payload['tags'] as string[]) : [],
+            // Named by hand because this `create` does not spread: it is the same
+            // one that dropped the icon of a list item once.
+            icon: (payload['icon'] as IconRef | null) ?? null,
           });
           return { status: 'applied', version: row.version };
         }

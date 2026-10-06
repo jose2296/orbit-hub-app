@@ -1,8 +1,10 @@
-import { exportFilename } from '@orbit-hub/contracts';
+import { exportFilename, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
   ExportedAttachment,
   Folder,
+  IconRef,
   ItemIcon,
+  ItemIconColor,
   List,
   ListExport,
   ListItem,
@@ -57,13 +59,48 @@ export interface ExportFile {
  * lleva el suyo propio (la pertenencia al espacio) y `noteTemplateSchema` no
  * lleva ninguno: esas dos filas mapean directas.
  */
+/**
+ * El `emoji` que el contrato sigue declarando, leido de la columna `icon`.
+ *
+ * Un puente, y lo dice: la columna es un `IconRef` y el cable es un string
+ * hasta que el contrato cambie. Un icono de vector no tiene un emoji detras, asi
+ * que sale como `null` y no como una clave que se dibujaria como la palabra.
+ */
+function emojiOf(icon: IconRef | null): string | null {
+  return icon?.type === 'emoji' ? icon.value : null;
+}
+
+/**
+ * Los tres campos de icono que el contrato sigue declarando, desde una columna.
+ *
+ * Tambien un puente. `icon` es la clave y `iconStyle`/`iconColor` las dos
+ * decisiones que la acompanaban, asi que un vector da los tres; `auto` es "el
+ * color de lo que tenga debajo", que el cable no tiene forma de decir, y
+ * `neutral` es el color que significaba exactamente eso.
+ */
+function legacyItemIcon(icon: IconRef | null): {
+  icon: ItemIcon | null;
+  iconStyle: 'outline' | 'fill';
+  iconColor: ItemIconColor;
+} {
+  const saneado = sanitiseIconRef(icon);
+  if (saneado === null || saneado.type !== 'vector') {
+    return { icon: null, iconStyle: 'outline', iconColor: 'neutral' };
+  }
+  return {
+    icon: saneado.value as ItemIcon,
+    iconStyle: saneado.style,
+    iconColor: (saneado.color === 'auto' ? 'neutral' : saneado.color) as ItemIconColor,
+  };
+}
+
 function toFolder(row: typeof folders.$inferSelect, role: MembershipRoleName): Folder {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     parentId: row.parentId,
     name: row.name,
-    emoji: row.emoji,
+    emoji: emojiOf(row.icon),
     position: row.position,
     role,
     shared: false,
@@ -86,7 +123,7 @@ function toList(
     kind: row.kind,
     title: row.title,
     description: row.description,
-    emoji: row.emoji,
+    emoji: emojiOf(row.icon),
     tags: row.tags ?? [],
     // Los colores de las etiquetas de la lista. `?? {}` y no `row.tagColors`: la
     // columna es `notNull` para todo lo que escribio esta build, pero una fila de
@@ -116,21 +153,11 @@ function toItem(row: typeof listItems.$inferSelect, role: MembershipRoleName): L
     position: row.position,
     completed: row.completed,
     priority: row.priority,
-    // Tal cual esta almacenado, sin guarda, y **el cast es el precio de esa
-    // decision**. La columna es texto libre; `listItemSchema` describe el
-    // conjunto que este build conoce, y una copia no tiene por que ajustarse al
-    // vocabulario de la version que la exporta. Reescribirlo a `null` — lo que
-    // hacia antes — es decidir en el export que ese dato no existe, y una copia a
-    // la que le falta un icono es peor que una copia con un icono que este build
-    // no sabe dibujar.
-    //
-    // Y si alguna vez se quiere una guarda de verdad, tiene que caer igual sobre
-    // los cuatro enums cerrados de esta fila —`icon`, `iconStyle`, `iconColor` y
-    // `priority`—, porque los cuatro se guardan igual: la que protege `icon` y
-    // deja pasar los otros tres no protege nada y solo descarta datos.
-    icon: row.icon as ItemIcon | null,
-    iconStyle: row.iconStyle,
-    iconColor: row.iconColor,
+    // Los tres campos salen de la columna `icon`. Lo que esta build no puede
+    // dibujar sale como `null` en vez de como una forma inventada: una copia a
+    // la que le falta un icono es peor que una copia con un icono que el que la
+    // lee no sabe dibujar.
+    ...legacyItemIcon(row.icon),
     tags: row.tags ?? [],
     externalId: row.externalId,
     // Identidad: sin parsear, sin serializar y sin seleccionar claves. Lo que
@@ -313,7 +340,7 @@ export class ExportService {
         id: workspaces.id,
         name: workspaces.name,
         description: workspaces.description,
-        emoji: workspaces.emoji,
+        icon: workspaces.icon,
         color: workspaces.color,
         colorTo: workspaces.colorTo,
         wash: workspaces.wash,
@@ -335,7 +362,7 @@ export class ExportService {
       id: row.id,
       name: row.name,
       description: row.description,
-      emoji: row.emoji,
+      emoji: emojiOf(row.icon),
       color: row.color,
       colorTo: row.colorTo,
       wash: row.wash,

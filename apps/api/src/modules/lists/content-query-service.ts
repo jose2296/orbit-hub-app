@@ -1,5 +1,8 @@
-import { isItemIcon, notePreviewBelowTitle } from '@orbit-hub/contracts';
+import { notePreviewBelowTitle, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
+  IconRef,
+  ItemIcon,
+  ItemIconColor,
   List,
   ListItem,
   ListItemsResponse,
@@ -15,6 +18,46 @@ import { folders, listItems, lists, memberships, notes, workspaces } from '../..
 import { HttpError } from '../../lib/http-error.js';
 
 import type { ListKindName } from '../../db/constants';
+
+/**
+ * The `emoji` the contract still declares, read out of the `icon` column.
+ *
+ * A bridge, and it says so: the column is an `IconRef` and the wire is a string
+ * until the contract is changed. A vector icon has no emoji behind it, so it
+ * comes out as `null` rather than as the key of a vector, which would be drawn
+ * as the letters of the word.
+ */
+function emojiOf(icon: IconRef | null): string | null {
+  return icon?.type === 'emoji' ? icon.value : null;
+}
+
+/**
+ * The three icon fields the contract still declares, out of the one column.
+ *
+ * Also a bridge. `icon` is the key and `iconStyle`/`iconColor` the two decisions
+ * that went with it, so a vector gives all three and an emoji gives none of them
+ * — the wire has nowhere to put an emoji on a row, which is exactly why the
+ * column had to stop being a string. The defaults are the ones the columns
+ * carried, so a row with no icon reads the way it always did.
+ */
+function legacyItemIcon(icon: IconRef | null): {
+  icon: ItemIcon | null;
+  iconStyle: 'outline' | 'fill';
+  iconColor: ItemIconColor;
+} {
+  const saneado = sanitiseIconRef(icon);
+  if (saneado === null || saneado.type !== 'vector') {
+    return { icon: null, iconStyle: 'outline', iconColor: 'neutral' };
+  }
+  // `auto` is "the colour of whatever it is on", which the wire has no word for,
+  // and `neutral` is the colour that meant exactly that.
+  const color = saneado.color === 'auto' ? 'neutral' : saneado.color;
+  return {
+    icon: saneado.value as ItemIcon,
+    iconStyle: saneado.style,
+    iconColor: color as ItemIconColor,
+  };
+}
 
 interface ListFilters {
   workspaceId?: string;
@@ -124,7 +167,11 @@ export class ContentQueryService {
       kind: row.kind,
       title: row.title,
       description: row.description,
-      emoji: row.emoji,
+      // La columna es un `IconRef` y el contrato todavía dice `emoji`: aquí se
+      // traducen los dos. Un icono que no es un emoji sale como `null`, porque
+      // este campo sólo puede llevar un glifo y una clave ahí se dibujaría como
+      // texto.
+      emoji: emojiOf(row.icon),
       tags: row.tags,
       tagColors: row.tagColors ?? {},
       position: row.position,
@@ -175,7 +222,7 @@ export class ContentQueryService {
       kind: row.kind,
       title: row.title,
       description: row.description,
-      emoji: row.emoji,
+      emoji: emojiOf(row.icon),
       tags: row.tags,
       tagColors: row.tagColors ?? {},
       position: row.position,
@@ -224,13 +271,11 @@ export class ContentQueryService {
       position: row.position,
       completed: row.completed,
       priority: row.priority,
-      // An icon this build does not know is no icon, and not a broken row: the
-      // column is free text and a future build can write a key this one has
-      // never heard of. Showing nothing in the picture's place is a missing
-      // detail; refusing to answer is a list that does not open.
-      icon: isItemIcon(row.icon) ? row.icon : null,
-      iconStyle: row.iconStyle,
-      iconColor: row.iconColor,
+      // An icon this build cannot draw is no icon, and not a broken row: a
+      // payload from a future build still opens the row. Three fields come out of
+      // one value because the wire still has three; a vector that is not one
+      // becomes no icon, and an emoji has no key to offer here.
+      ...legacyItemIcon(row.icon),
       tags: row.tags ?? [],
       externalId: row.externalId,
       metadata: row.metadata,

@@ -37,7 +37,13 @@ async function createWorkspace(user: TestUser, name: string, emoji?: string, col
           kind: 'create',
           entityId: id,
           baseVersion: 0,
-          payload: { name, ...(emoji ? { emoji } : {}), ...(color ? { color } : {}) },
+          payload: {
+            name,
+            // The column is an `IconRef` now: an emoji travels as one, and the
+            // read side bridges it back to the `emoji` the contract declares.
+            ...(emoji ? { icon: { type: 'emoji', value: emoji } } : {}),
+            ...(color ? { color } : {}),
+          },
           base: null,
           clientTimestamp: new Date().toISOString(),
         },

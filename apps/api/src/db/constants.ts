@@ -113,13 +113,16 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   // version, so it looks like it worked and nothing changed. That is worse than a
   // rejection, because a rejection at least tells the person their choice did not
   // save, and this one looked like it saved for four whole rebuilds.
-  workspace: ['name', 'description', 'emoji', 'color', 'colorTo', 'wash'],
-  folder: ['parentId', 'name', 'emoji', 'position'],
+  // `icon` replaced `emoji` here, and it is not a rename: the column is a jsonb
+  // object now, so a value this build cannot draw is stored as `null` rather than
+  // as a key nobody has. See `sanitisePayload`.
+  workspace: ['name', 'description', 'icon', 'color', 'colorTo', 'wash'],
+  folder: ['parentId', 'name', 'icon', 'position'],
   list: [
     'folderId',
     'title',
     'description',
-    'emoji',
+    'icon',
     'tags',
     'tagColors',
     'position',
@@ -132,8 +135,6 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'completed',
     'priority',
     'icon',
-    'iconStyle',
-    'iconColor',
     'tags',
     'externalId',
     'metadata',
@@ -145,7 +146,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    * just validated, so a client cannot write a body and a search string that
    * disagree. `plainText` and `attachmentCount` are absent on purpose.
    */
-  note: ['title', 'document', 'folderId', 'tags', 'position'],
+  note: ['title', 'document', 'folderId', 'tags', 'position', 'icon'],
   dashboard: ['layout', 'pages'],
 };
 

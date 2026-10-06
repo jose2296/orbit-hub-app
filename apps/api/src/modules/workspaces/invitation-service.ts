@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import type {
   AcceptInvitationResponse,
+  IconRef,
   Invitation,
   InvitationStatus,
   ListInvitationsResponse,
@@ -28,7 +29,8 @@ interface InvitationRow {
   id: string;
   workspaceId: string;
   workspaceName: string;
-  workspaceEmoji: string | null;
+  /** The whole `IconRef`, not only its emoji: the wire is the one that narrows. */
+  workspaceIcon: IconRef | null;
   workspaceColor: Workspace["color"];
   role: "editor" | "viewer";
   status: "pending" | "accepted" | "declined" | "revoked";
@@ -367,7 +369,10 @@ export class InvitationService {
       workspace: {
         id: row.workspaceId,
         name: row.workspaceName,
-        emoji: row.workspaceEmoji,
+        // Una invitación es lo primero que ve alguien que no ha entrado nunca, así
+        // que el emoji sale de la columna `icon` y no de una palabra: la columna
+        // es un `IconRef` y un icono de vector no tiene emoji detrás.
+        emoji: row.workspaceIcon?.type === 'emoji' ? row.workspaceIcon.value : null,
         color: row.workspaceColor,
       },
       role: row.role as "editor" | "viewer",
@@ -539,7 +544,7 @@ export class InvitationService {
         invitedEmail: workspaceInvitations.invitedEmail,
         expiresAt: workspaceInvitations.expiresAt,
         workspaceName: workspaces.name,
-        workspaceEmoji: workspaces.emoji,
+        workspaceIcon: workspaces.icon,
         workspaceColor: workspaces.color,
         workspaceDeletedAt: workspaces.deletedAt,
         inviterName: users.displayName,
