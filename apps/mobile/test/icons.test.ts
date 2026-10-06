@@ -1,5 +1,6 @@
 import {
   ITEM_ICONS,
+  MATERIAL_FILL_ONLY,
   VECTOR_ICON_CATALOG,
   VECTOR_ICON_CATEGORIES,
   iconColorSchema,
@@ -62,7 +63,35 @@ describe("IconRef", () => {
       style: "outline",
       color: "auto",
     });
-    expect(iconSchema.safeParse({ type: "vector", value: "pan" }).success).toBe(false);
+    // Sin `library` tambien vale: es como los iconos guardados antes de que
+    // hubiera dos librerias, y todos eran de Ionicons.
+    expect(iconSchema.parse({ type: "vector", value: "pan" })).toEqual({
+      type: "vector",
+      value: "pan",
+      library: "ionicons",
+      style: "outline",
+      color: "auto",
+    });
+    // Y una libreria que no existe no tira el icono: cae a la conocida.
+    expect(iconSchema.parse({ type: "vector", value: "pan", library: "uniconos" })).toEqual({
+      type: "vector",
+      value: "pan",
+      library: "ionicons",
+      style: "outline",
+      color: "auto",
+    });
+  });
+
+  it("acepta la libreria material y la guarda tal cual", () => {
+    expect(
+      iconSchema.parse({ type: "vector", value: "manzana", library: "material" }),
+    ).toEqual({
+      type: "vector",
+      value: "manzana",
+      library: "material",
+      style: "outline",
+      color: "auto",
+    });
   });
 
   it("refuses a hex as a colour", () => {
@@ -111,7 +140,38 @@ describe("sanitiseIconRef", () => {
     expect(sanitiseIconRef(42)).toBeNull();
     expect(sanitiseIconRef({})).toBeNull();
     expect(sanitiseIconRef({ type: "vector", value: "no-existe", library: "ionicons" })).toBeNull();
-    expect(sanitiseIconRef({ type: "vector", value: "pan" })).toBeNull();
+    // Sin `library` es de Ionicons, como todos los que se guardaron antes de que
+    // hubiera dos: `pan` sin libreria es el pan de siempre.
+    expect(sanitiseIconRef({ type: "vector", value: "pan" })).toEqual({
+      type: "vector",
+      value: "pan",
+      library: "ionicons",
+      style: "outline",
+      color: "auto",
+    });
+    expect(
+      sanitiseIconRef({ type: "vector", value: "manzana", library: "material" }),
+    ).toEqual({
+      type: "vector",
+      value: "manzana",
+      library: "material",
+      style: "outline",
+      color: "auto",
+    });
+    // Una libreria desconocida con una clave conocida no tira el icono: el
+    // esquema la rescata a la conocida y la fila sigue abriendo.
+    expect(
+      sanitiseIconRef({ type: "vector", value: "pan", library: "uniconos" }),
+    ).toEqual({
+      type: "vector",
+      value: "pan",
+      library: "ionicons",
+      style: "outline",
+      color: "auto",
+    });
+    expect(
+      sanitiseIconRef({ type: "vector", value: "no-existe", library: "uniconos" }),
+    ).toBeNull();
   });
 
   it("falls back to auto for a colour it does not know", () => {
@@ -201,8 +261,15 @@ describe("vectorGlyph", () => {
 
   it("draws a glyph that exists for every key in the catalogue", () => {
     for (const entry of VECTOR_ICON_CATALOG) {
-      expect(vectorGlyph(entry.key, "fill"), entry.key).toBe(entry.glyph);
-      expect(vectorGlyph(entry.key, "outline"), entry.key).toBe(`${entry.glyph}-outline`);
+      expect(vectorGlyph(entry.key, "fill", entry.library), entry.key).toBe(entry.glyph);
+      const contorno = vectorGlyph(entry.key, "outline", entry.library);
+      if (entry.library === "material" && MATERIAL_FILL_ONLY.has(entry.key)) {
+        // Sin variante propia: el mismo dibujo en los dos estilos en vez de un
+        // hueco en la pestana de contorno.
+        expect(contorno, entry.key).toBe(entry.glyph);
+      } else {
+        expect(contorno, entry.key).toBe(`${entry.glyph}-outline`);
+      }
     }
   });
 });
@@ -218,15 +285,29 @@ describe("vectorGlyph", () => {
  */
 describe("every key is a glyph Ionicons really has", () => {
   it("has the filled drawing and the outline drawing for all of them", async () => {
-    const { default: glyphMap } = await import(
+    const { default: ionicons } = await import(
       "@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json"
     );
-    const glyphs = glyphMap as Record<string, unknown>;
+    const { default: material } = await import(
+      "@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/MaterialCommunityIcons.json"
+    );
+    const mapas = {
+      ionicons: ionicons as Record<string, unknown>,
+      material: material as Record<string, unknown>,
+    };
     const missing: string[] = [];
 
     for (const entry of VECTOR_ICON_CATALOG) {
+      const glyphs = mapas[entry.library];
       if (!glyphs[entry.glyph]) missing.push(`${entry.key}: no "${entry.glyph}"`);
-      if (!glyphs[`${entry.glyph}-outline`]) missing.push(`${entry.key}: no "${entry.glyph}-outline"`);
+      // Sin variante propia no es un error: dibuja lo mismo en los dos estilos
+      // en vez de un hueco, y eso lo dice MATERIAL_FILL_ONLY.
+      if (
+        !glyphs[`${entry.glyph}-outline`] &&
+        !(entry.library === "material" && MATERIAL_FILL_ONLY.has(entry.key))
+      ) {
+        missing.push(`${entry.key}: no "${entry.glyph}-outline"`);
+      }
     }
 
     expect(missing).toEqual([]);

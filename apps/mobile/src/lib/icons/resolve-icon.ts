@@ -1,4 +1,4 @@
-import type { IconRef } from "@orbit-hub/contracts";
+import type { IconLibrary, IconRef } from "@orbit-hub/contracts";
 import { iconColorHex, type ColorSchemeName } from "@/theme/tokens";
 import { vectorGlyph } from "@orbit-hub/contracts";
 
@@ -13,7 +13,7 @@ import { vectorGlyph } from "@orbit-hub/contracts";
  */
 export type ResolvedIcon =
   | { kind: "emoji"; text: string; color: string }
-  | { kind: "vector"; glyph: string; color: string };
+  | { kind: "vector"; glyph: string; color: string; library: IconLibrary };
 
 /**
  * The emoji inside the icon, or null when there is none.
@@ -48,7 +48,8 @@ export function resolveAppIcon(
     return { kind: "emoji", text: icon.value, color };
   }
 
-  const glyph = vectorGlyph(icon.value, icon.style);
+  const library = icon.library ?? "ionicons";
+  const glyph = vectorGlyph(icon.value, icon.style, library);
   if (!glyph) return null;
-  return { kind: "vector", glyph, color };
+  return { kind: "vector", glyph, color, library };
 }

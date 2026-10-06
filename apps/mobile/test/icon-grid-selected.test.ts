@@ -30,16 +30,16 @@ describe("encontrar el icono que ya esta elegido", () => {
     // `azucar` es una palabra del dibujo del cubo, pero la celda guarda
     // `contenedor`. Buscando por palabra no hay celda que responder.
     expect(firstRowWhere(grid.rows, (celda) => celda.value === "azucar")).toBeNull();
-    expect(firstRowWhere(grid.rows, (celda) => celda.id === "cube-outline")).not.toBeNull();
+    expect(firstRowWhere(grid.rows, (celda) => celda.id === "ionicons:cube-outline")).not.toBeNull();
   });
 
   it("encuentra el dibujo aunque lo que se guardara fuera una palabra suelta", () => {
     // Todas las palabras de un dibujo encuentran la misma celda, que es justo lo
     // que hizo la deduplicacion.
-    const celda = DRAWINGS.find((drawing) => drawing.glyph === "cube-outline")!;
+    const celda = DRAWINGS.find((drawing) => drawing.id === "ionicons:cube-outline")!;
     const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
     for (const palabra of celda.aliases) {
-      const glifo = vectorGlyph(palabra, "outline");
+      const glifo = `ionicons:${vectorGlyph(palabra, "outline", "ionicons")}`;
       expect(firstRowWhere(grid.rows, (c) => c.id === glifo), palabra).not.toBeNull();
     }
   });
@@ -49,16 +49,27 @@ describe("encontrar el icono que ya esta elegido", () => {
     // cambiar el estilo de dibujo. Un icono guardado en "relleno" sigue estando en
     // la misma celda, y matching por el glifo de relleno no lo encontraria.
     const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
-    expect(DRAWINGS.every((drawing) => drawing.glyph.endsWith("-outline"))).toBe(true);
-    const enRelleno = vectorGlyph("carpeta", "fill");
-    expect(firstRowWhere(grid.rows, (celda) => celda.id === enRelleno)).toBeNull();
-    expect(firstRowWhere(grid.rows, (celda) => celda.id === vectorGlyph("carpeta", "outline"))).not.toBeNull();
+    expect(
+      DRAWINGS.every((drawing) =>
+        drawing.library === "ionicons"
+          ? drawing.glyph.endsWith("-outline")
+          : true,
+      ),
+    ).toBe(true);
+    // La celda se nombra por su glifo de contorno en su libreria: el relleno no
+    // tiene celda propia.
+    expect(
+      firstRowWhere(grid.rows, (celda) => celda.id === `ionicons:${vectorGlyph("carpeta", "fill", "ionicons")}`),
+    ).toBeNull();
+    expect(
+      firstRowWhere(grid.rows, (celda) => celda.id === `ionicons:${vectorGlyph("carpeta", "outline", "ionicons")}`),
+    ).not.toBeNull();
   });
 
   it("encuentra todos los dibujos menos los que no se pueden dibujar", () => {
     const grid = buildIconGrid({ kind: "vector", query: "", columns: 8 });
     const encontrados = DRAWINGS.filter(
-      (drawing) => firstRowWhere(grid.rows, (celda) => celda.id === drawing.glyph) !== null,
+      (drawing) => firstRowWhere(grid.rows, (celda) => celda.id === drawing.id) !== null,
     );
     expect(encontrados.length).toBe(DRAWINGS.length);
   });
@@ -79,7 +90,9 @@ describe("encontrar el icono que ya esta elegido", () => {
 
   it("con una busqueda puesta encuentra el que sigue estando en la lista", () => {
     const grid = buildIconGrid({ kind: "vector", query: "carpeta", columns: 8 });
-    expect(firstRowWhere(grid.rows, (celda) => celda.id === vectorGlyph("carpeta", "outline"))).not.toBeNull();
+    expect(
+      firstRowWhere(grid.rows, (celda) => celda.id === `ionicons:${vectorGlyph("carpeta", "outline", "ionicons")}`),
+    ).not.toBeNull();
   });
 });
 

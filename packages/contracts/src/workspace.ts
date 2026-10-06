@@ -322,23 +322,33 @@ export {
   EXTRA_LABELS,
 } from "./icons-catalogo-ampliado.js";
 export {
+  MATERIAL_BY_CATEGORY,
+  MATERIAL_FILL_ONLY,
+  MATERIAL_KEYWORDS,
+  MATERIAL_LABELS,
+} from "./icons-material.js";
+export {
   ITEM_ICON_COLORS,
   ITEM_ICONS,
+  canDrawVector,
   iconColorSchema,
+  iconLibrarySchema,
   iconRefSchema,
   iconSchema,
   isVectorIcon,
   labelOf,
+  materialIconsOf,
   sanitiseIconRef,
   vectorGlyph,
   vectorIconsOf,
+  MATERIAL_ICON_GLYPHS,
   VECTOR_ICON_CATALOG,
   VECTOR_ICON_CATEGORIES,
   VECTOR_ICON_CATEGORY_LABEL,
   VECTOR_ICON_GLYPHS,
   VECTOR_ICON_KEYWORDS,
 } from "./icons.js";
-export type { IconRef, IconColor, ItemIconColor, VectorIconCategory } from "./icons.js";
+export type { IconLibrary, IconRef, IconColor, ItemIconColor, VectorIconCategory } from "./icons.js";
 
 export {
   TAG_HEX,

@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+import {
+  MATERIAL_BY_CATEGORY,
+  MATERIAL_FILL_ONLY,
+  MATERIAL_KEYWORDS,
+  MATERIAL_LABELS,
+} from "./icons-material.js";
+
 import { EXTRA_BY_CATEGORY, EXTRA_KEYWORDS, EXTRA_LABELS } from "./icons-catalogo-ampliado.js";
 
 
@@ -52,6 +59,16 @@ const emojiIconSchema = z.object({
   color: iconColorSchema.default("auto"),
 });
 
+/**
+ * Where the drawing comes from.
+ *
+ * Two fonts in the same package, so adding the second one changed no dependency
+ * and no font loading plumbing beyond naming it at the root. An emoji carries no
+ * library because the operating system draws it.
+ */
+export const iconLibrarySchema = z.enum(["ionicons", "material"]);
+export type IconLibrary = z.infer<typeof iconLibrarySchema>;
+
 const vectorIconSchema = z.object({
   type: z.literal("vector"),
   /**
@@ -60,7 +77,14 @@ const vectorIconSchema = z.object({
    * translate it into another language.
    */
   value: z.string().min(1).max(48),
-  library: z.literal("ionicons"),
+  /*
+    Unknown libraries fall back to `ionicons` instead of dropping the icon. A row
+    from a build that knows a third library still opens here: the key may even
+    resolve, and if it does not, `sanitiseIconRef` below turns it into no icon
+    rather than a broken row. Losing the whole picture over one word nobody
+    understands is the worse failure.
+  */
+  library: iconLibrarySchema.default("ionicons").catch("ionicons"),
   style: z.enum(["outline", "fill"]).default("outline"),
   color: iconColorSchema.default("auto"),
 });
@@ -733,13 +757,9 @@ export function labelOf(key: string): string {
  * reach for. A drawing with none of these is found by its name alone, and that is
  * the normal case.
  */
-export const VECTOR_ICON_KEYWORDS: Readonly<Record<string, readonly string[]>> =
-  Object.fromEntries(
-    Object.entries(EXTRA_KEYWORDS).map(([key, words]) => [
-      key,
-      words.split("|").filter(Boolean),
-    ]),
-  );
+export const VECTOR_ICON_KEYWORDS: Record<string, readonly string[]> = Object.fromEntries(
+  Object.entries(EXTRA_KEYWORDS).map(([key, words]) => [key, words.split("|").filter(Boolean)]),
+);
 
 /** The name of each group, in the language the app is in. */
 export const VECTOR_ICON_CATEGORY_LABEL: Record<VectorIconCategory, string> = {
@@ -797,7 +817,12 @@ for (const [key, glyph] of Object.entries(REGLIFO)) {
   VECTOR_ICON_GLYPHS[key] = glyph;
 }
 
-Object.assign(LABEL_DICTIONARY, EXTRA_LABELS);
+Object.assign(LABEL_DICTIONARY, EXTRA_LABELS, MATERIAL_LABELS);
+
+for (const [key, words] of Object.entries(MATERIAL_KEYWORDS)) {
+  const current = VECTOR_ICON_KEYWORDS[key] ?? [];
+  VECTOR_ICON_KEYWORDS[key] = [...current, ...words.split("|").filter(Boolean)];
+}
 
 
 export const VECTOR_ICON_CATALOG: ReadonlyArray<{
@@ -805,14 +830,26 @@ export const VECTOR_ICON_CATALOG: ReadonlyArray<{
   glyph: string;
   category: VectorIconCategory;
   label: string;
-}> = VECTOR_ICON_CATEGORIES.flatMap((category) =>
-  KEYS_BY_CATEGORY[category].map((key) => ({
+  library: IconLibrary;
+}> = VECTOR_ICON_CATEGORIES.flatMap((category) => [
+  ...KEYS_BY_CATEGORY[category].map((key) => ({
     key,
     glyph: VECTOR_ICON_GLYPHS[key] as string,
     category,
     label: labelOf(key),
+    library: "ionicons" as IconLibrary,
   })),
-);
+  ...(MATERIAL_BY_CATEGORY[category] ?? []).map((entry) => {
+    const [key, glyph] = entry.split(" ");
+    return {
+      key: key as string,
+      glyph: glyph as string,
+      category,
+      label: labelOf(key as string),
+      library: "material" as IconLibrary,
+    };
+  }),
+]);
 
 
 /**
@@ -970,16 +1007,66 @@ export function vectorIconsOf(category: VectorIconCategory): string[] {
 }
 
 /**
+ * key -> the MaterialCommunityIcons name it is drawn with.
+ *
+ * Same shape as `VECTOR_ICON_GLYPHS` and for the same reason: the key is the
+ * Spanish word and the glyph is the English drawing name. Kept apart from the
+ * Ionicons map because the resolution differs — see `vectorGlyph` — and one map
+ * keyed by word with two behaviours inside is a lookup that lies about half its
+ * entries.
+ */
+export const MATERIAL_ICON_GLYPHS: Record<string, string> = (() => {
+  const mapa: Record<string, string> = {};
+  for (const entries of Object.values(MATERIAL_BY_CATEGORY)) {
+    for (const entry of entries) {
+      const [key, glyph] = entry.split(" ");
+      if (key && glyph) mapa[key] = glyph;
+    }
+  }
+  return mapa;
+})();
+
+/** The material keys of one group, in catalogue order. */
+export function materialIconsOf(category: VectorIconCategory): string[] {
+  return (MATERIAL_BY_CATEGORY[category] ?? []).map((entry) => entry.split(" ")[0] as string);
+}
+
+/**
  * The name of the drawing, or null when there is no drawing.
  *
  * Null and not a made-up name: a key with `-outline` stuck on it is a glyph that
- * does not exist, and an Ionicons asked for a glyph it does not have renders an
- * empty Text and says nothing about it.
+ * does not exist, and an icon component asked for a glyph it does not have renders
+ * an empty Text and says nothing about it.
+ *
+ * The two libraries resolve differently, which is why this takes the library
+ * instead of guessing it from the key. Ionicons derives the outline from the fill
+ * by convention; Material names its outline versions as separate glyphs, and most
+ * simply have none — those draw the same picture in both styles (see
+ * `MATERIAL_FILL_ONLY`) rather than hiding an icon that can be chosen.
  */
-export function vectorGlyph(key: string, style: "outline" | "fill"): string | null {
+export function vectorGlyph(
+  key: string,
+  style: "outline" | "fill",
+  library: IconLibrary = "ionicons",
+): string | null {
+  if (library === "material") {
+    const glyph = MATERIAL_ICON_GLYPHS[key];
+    if (!glyph) return null;
+    if (style === "fill" || MATERIAL_FILL_ONLY.has(key)) return glyph;
+    return `${glyph}-outline`;
+  }
   const glyph = VECTOR_ICON_GLYPHS[key];
   if (!glyph) return null;
   return style === "fill" ? glyph : `${glyph}-outline`;
+}
+
+/** Whether a key resolves to a drawing in this library and style. */
+export function canDrawVector(
+  key: string,
+  style: "outline" | "fill",
+  library: IconLibrary = "ionicons",
+): boolean {
+  return vectorGlyph(key, style, library) !== null;
 }
 
 /**
@@ -1011,18 +1098,18 @@ export function sanitiseIconRef(value: unknown): IconRef | null {
   }
 
   if (row["type"] === "vector" && typeof row["value"] === "string" && row["value"].length > 0) {
-    // `library` is not rescued, because it is the one field that says WHICH
-    // drawings this key means. A vector without it is not a vector with a
-    // default: it is a shape that never existed, and the caller is told so
-    // instead of being handed a guess about which set of glyphs to draw.
-    if (row["library"] !== "ionicons") return null;
+    // An absent library is the Ionicons one: every icon stored before there were
+    // two libraries has none. An unknown one is not rescued into either, because it
+    // is the one field that says WHICH drawings the key means.
+    const library = row["library"] === undefined ? "ionicons" : row["library"];
+    if (library !== "ionicons" && library !== "material") return null;
     if (!isVectorIcon(row["value"])) return null;
     const colour = iconColorSchema.safeParse(row["color"] ?? "auto");
     const style = row["style"] === "fill" ? "fill" : "outline";
     return {
       type: "vector",
       value: row["value"],
-      library: "ionicons",
+      library,
       style,
       color: colour.success ? colour.data : "auto",
     };

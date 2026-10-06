@@ -5,24 +5,24 @@ import {
   labelOf,
   vectorGlyph,
 } from "@orbit-hub/contracts";
-import type { VectorIconCategory } from "@orbit-hub/contracts";
+import type { IconLibrary, VectorIconCategory } from "@orbit-hub/contracts";
 
 /**
  * One cell per drawing, with every word that finds it.
  *
- * `VECTOR_ICON_CATALOG` has 487 keys and **181 distinct drawings**: 80 glyphs are
- * shared by several keys and the worst puts eleven words on one trail sign. In a
- * grid that is eleven cells drawing the same picture, and it reads as a catalogue
- * full of mistakes rather than as one word having several synonyms.
+ * The Ionicons half of the catalogue maps hundreds of keys onto far fewer
+ * drawings — eleven words on one trail sign — and a grid with eleven cells
+ * drawing the same picture reads as a catalogue full of mistakes. The Material
+ * half names each glyph once, so it barely collapses at all.
  *
  * What collapses is the **view**, not the data. Every key stays in the contract
  * — `ITEM_ICONS` is the net that stops anybody removing an icon somebody already
  * chose — and every key is still searchable, because a drawing indexes all the
  * words that draw it. Typing `azucar`, `sal` or `caja` lands on the same cell.
  *
- * Deduping by the outline glyph covers both styles: `vectorGlyph` derives the
- * fill from the outline on all 487 keys with no exception, so a picture is one
- * picture in outline and in fill. `test/vector-drawings.test.ts` checks it rather
+ * The identity of a drawing is the library **and** the outline glyph: two fonts
+ * can draw alike, and `ionicons:cube` is not the same cell as `material:cube`
+ * even if they rhymed. `test/vector-drawings.test.ts` checks the dedup rather
  * than assuming it.
  */
 
@@ -31,8 +31,15 @@ export interface VectorDrawing {
   key: string;
   /** Every catalogue key that draws this same picture. */
   aliases: readonly string[];
-  /** The outline glyph, which identifies the drawing. */
+  /**
+   * What identifies the drawing, and what the cell is matched on: the library
+   * and the outline glyph together. A row can hold any of the words that draw
+   * it, so the key alone never identifies a cell.
+   */
+  id: string;
+  /** The outline glyph, which is what the cell draws in outline style. */
   glyph: string;
+  library: IconLibrary;
   category: VectorIconCategory;
   /** What the cell is called when a screen reads it out. */
   label: string;
@@ -85,25 +92,27 @@ function wordsOf(aliases: readonly string[], label: string, extra: readonly stri
  * were written. Reordering here would change it for no reason.
  */
 function groupByDrawing(): VectorDrawing[] {
-  const porGlifo = new Map<string, string[]>();
+  const porDibujo = new Map<string, string[]>();
 
   for (const entry of VECTOR_ICON_CATALOG) {
-    const glyph = vectorGlyph(entry.key, "outline");
+    const glyph = vectorGlyph(entry.key, "outline", entry.library);
     // A key this build cannot draw is not a cell. It stays in the catalogue and
     // in every search over it, but there is no picture to show.
     if (!glyph) continue;
-    const aliases = porGlifo.get(glyph);
+    const id = `${entry.library}:${glyph}`;
+    const aliases = porDibujo.get(id);
     if (aliases) aliases.push(entry.key);
-    else porGlifo.set(glyph, [entry.key]);
+    else porDibujo.set(id, [entry.key]);
   }
 
   const drawings: VectorDrawing[] = [];
   for (const category of VECTOR_ICON_CATEGORIES) {
     for (const entry of VECTOR_ICON_CATALOG) {
       if (entry.category !== category) continue;
-      const glyph = vectorGlyph(entry.key, "outline");
+      const glyph = vectorGlyph(entry.key, "outline", entry.library);
       if (!glyph) continue;
-      const aliases = porGlifo.get(glyph);
+      const id = `${entry.library}:${glyph}`;
+      const aliases = porDibujo.get(id);
       if (!aliases) continue;
       // Only the first key of a drawing creates it; the rest just joined the
       // list above. That is what makes `key` deterministic.
@@ -113,7 +122,9 @@ function groupByDrawing(): VectorDrawing[] {
       drawings.push({
         key: entry.key,
         aliases: [...aliases],
+        id,
         glyph,
+        library: entry.library,
         category,
         label,
         // A drawing collects the extra words of **every** key that draws it: five

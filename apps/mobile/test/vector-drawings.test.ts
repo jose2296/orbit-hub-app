@@ -22,23 +22,27 @@ import { DRAWINGS, searchDrawings } from "@/lib/icons/vector-drawings";
  */
 
 describe("un dibujo por celda", () => {
-  it("no hay dos celdas con el mismo glifo", () => {
-    const glifos = DRAWINGS.map((entry) => entry.glyph);
-    expect(new Set(glifos).size).toBe(DRAWINGS.length);
+  it("no hay dos celdas con el mismo dibujo", () => {
+    // La identidad es libreria mas glifo: dos fuentes pueden dibujar parecido y
+    // `ionicons:cube` no es la misma celda que `material:cube` aunque rimaran.
+    const ids = DRAWINGS.map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(DRAWINGS.length);
   });
 
-  it("no hay dos celdas con el mismo glifo de relleno tampoco", () => {
-    // El relleno se deriva del contorno en las 487 sin una excepción, pero esto
-    // lo comprueba en vez de suponerlo: si algún día deja de derivarse, dos
-    // celdas podrían ser distintas en un estilo y la misma en el otro.
-    const rellenos = DRAWINGS.map((entry) => `${vectorGlyph(entry.key, "fill")}`);
+  it("no hay dos celdas con el mismo dibujo de relleno tampoco", () => {
+    // Si algun dia el relleno deja de derivarse del contorno, dos celdas podrian
+    // ser distintas en un estilo y la misma en el otro. Esto lo comprueba en vez
+    // de suponerlo.
+    const rellenos = DRAWINGS.map(
+      (entry) => `${entry.library}:${vectorGlyph(entry.key, "fill", entry.library)}`,
+    );
     expect(new Set(rellenos).size).toBe(DRAWINGS.length);
   });
 
   it("toda celda tiene un glifo que esta build puede dibujar", () => {
     for (const entry of DRAWINGS) {
-      expect(vectorGlyph(entry.key, "outline"), entry.key).toBe(entry.glyph);
-      expect(vectorGlyph(entry.key, "fill"), entry.key).not.toBeNull();
+      expect(vectorGlyph(entry.key, "outline", entry.library), entry.key).toBe(entry.glyph);
+      expect(vectorGlyph(entry.key, "fill", entry.library), entry.key).not.toBeNull();
     }
   });
 
@@ -72,7 +76,7 @@ describe("las palabras que llevan a un dibujo", () => {
   it("junta todas las claves que dibujan lo mismo", () => {
     // Once palabras son un dibujo. Todas lo encuentran, y las once llevan al
     // mismo sitio, que es lo contrario de lo que pasaba.
-    const sendero = DRAWINGS.find((entry) => entry.glyph === "trail-sign-outline");
+    const sendero = DRAWINGS.find((entry) => entry.id === "ionicons:trail-sign-outline");
     expect(sendero).toBeDefined();
     expect(sendero!.aliases).toContain("senderismo");
     expect(sendero!.aliases).toContain("montana");
@@ -94,7 +98,7 @@ describe("las palabras que llevan a un dibujo", () => {
     // Once drawings collapse, every one of their words still finds them. Before,
     // only the word that happened to be first did, and the other ten were
     // separate cells with the same picture in them.
-    const cubo = DRAWINGS.find((entry) => entry.glyph === "cube-outline")!;
+    const cubo = DRAWINGS.find((entry) => entry.id === "ionicons:cube-outline")!;
     for (const palabra of cubo.aliases.map((alias) => alias.replace(/_/g, " "))) {
       expect(searchDrawings(palabra), palabra).toContain(cubo);
     }
@@ -106,7 +110,7 @@ describe("las palabras que llevan a un dibujo", () => {
     // they meant. What must never happen is one picture answering twice.
     for (const palabra of ["paquete", "caja", "maleta", "montana", "reunion", "a"]) {
       const encontrados = searchDrawings(palabra);
-      const unicos = new Set(encontrados.map((entry) => entry.glyph));
+      const unicos = new Set(encontrados.map((entry) => entry.id));
       expect(unicos.size, palabra).toBe(encontrados.length);
     }
   });

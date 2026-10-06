@@ -1,4 +1,4 @@
-import type { IconRef } from "@orbit-hub/contracts";
+import type { IconLibrary, IconRef } from "@orbit-hub/contracts";
 import { VECTOR_ICON_CATEGORIES } from "@orbit-hub/contracts";
 
 import { EMOJI_CATALOG, EMOJI_GROUPS } from "@/lib/icons/emoji-catalog.generated";
@@ -23,13 +23,18 @@ import { DRAWINGS, searchDrawings } from "@/lib/icons/vector-drawings";
  */
 
 export interface GridCell {
-  /** Stable identity for the list: the glyph for a drawing, the emoji itself. */
+  /**
+   * Stable identity for the list: `library:glyph` for a drawing, the emoji
+   * itself for an emoji. A row is matched on this, never on the key.
+   */
   id: string;
   category: string;
   /** The label a screen reader reads. Empty on a padding cell. */
   label: string;
   /** The key stored when this cell is picked. Undefined on a padding cell. */
   value?: string;
+  /** Where the drawing comes from. Undefined on emoji and padding cells. */
+  library?: IconLibrary;
   /** What this cell picks, already resolved. Undefined on a padding cell. */
   onPick?: () => void;
   /** A cell that exists only to complete a row. */
@@ -71,7 +76,16 @@ export interface BuildIconGridInput {
   kind: "emoji" | "vector";
   query: string;
   columns: number;
-  onPickVector?: (key: string) => void;
+  /**
+   * Called with the key **and the library** to store when a drawing is picked.
+   *
+   * Both, because the key alone does not say which font draws it: `pan` is an
+   * Ionicons word and `manzana` a Material one, and storing a Material key with
+   * the Ionicons library draws nothing anywhere. That is exactly what happened
+   * before this carried the library — every Material icon arrived at the server
+   * as `library: "ionicons"` and no row could draw it.
+   */
+  onPickVector?: (key: string, library: IconLibrary) => void;
   onPickEmoji?: (emoji: string) => void;
 }
 
@@ -109,11 +123,12 @@ export function buildIconGrid(input: BuildIconGridInput, titles: Titles = "on"):
           onPick: () => onPickEmoji?.(entry.emoji),
         }))
       : searchDrawings(input.query).map((drawing) => ({
-          id: drawing.glyph,
+          id: drawing.id,
           category: drawing.category,
           label: drawing.label,
           value: drawing.key,
-          onPick: () => onPickVector?.(drawing.key),
+          library: drawing.library,
+          onPick: () => onPickVector?.(drawing.key, drawing.library),
         }));
 
   /*

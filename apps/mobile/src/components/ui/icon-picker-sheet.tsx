@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
@@ -10,7 +11,7 @@ import {
 } from "react-native";
 import type { ListRenderItemInfo, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 
-import type { IconColor, IconRef, VectorIconCategory } from "@orbit-hub/contracts";
+import type { IconColor, IconLibrary, IconRef, VectorIconCategory } from "@orbit-hub/contracts";
 import {
   ITEM_ICON_COLORS,
   VECTOR_ICON_CATEGORY_LABEL,
@@ -148,8 +149,8 @@ function IconPickerBody({
   );
 
   const pickVector = useCallback(
-    (key: string) => {
-      onSelect({ type: "vector", value: key, library: "ionicons", style: drawing, color: tint });
+    (key: string, library: IconLibrary) => {
+      onSelect({ type: "vector", value: key, library, style: drawing, color: tint });
     },
     [drawing, onSelect, tint],
   );
@@ -177,7 +178,7 @@ function IconPickerBody({
     current?.type === "emoji"
       ? current.value
       : current?.type === "vector"
-        ? vectorGlyph(current.value, "outline")
+        ? `${current.library ?? "ionicons"}:${vectorGlyph(current.value, "outline", current.library ?? "ionicons")}`
         : null;
 
   const elegidaRow = useMemo(
@@ -516,15 +517,52 @@ function Cell({
       ]}
     >
       {esVector ? (
-        <Ionicons
-          name={vectorGlyph(cell.value!, drawing) as keyof typeof Ionicons.glyphMap}
-          size={Math.round(size * 0.56)}
-          color={theme.colors.icon[tint]}
-        />
+        <VectorCellGlyph cell={cell} drawing={drawing} size={size} tint={tint} />
       ) : (
         <AppText style={{ fontSize: Math.round(size * 0.58) }}>{cell.id}</AppText>
       )}
     </Pressable>
+  );
+}
+
+/**
+ * The drawing of one grid cell, in the font it comes from.
+ *
+ * Ionicons and MaterialCommunityIcons are two different components over two
+ * different fonts: asking one for the other's glyph draws nothing and says
+ * nothing. The cell knows which one it is, because the grid built it from a
+ * drawing that knows.
+ */
+function VectorCellGlyph({
+  cell,
+  drawing,
+  size,
+  tint,
+}: {
+  cell: GridCell;
+  drawing: "outline" | "fill";
+  size: number;
+  tint: IconColor;
+}) {
+  // No testID here: the Pressable around it already carries `icon-cell-<key>`,
+  // and two elements answering the same testID makes every harness tap the
+  // first one — which is the 24px glyph instead of the 49px cell.
+  const theme = useTheme();
+  if (!cell.library || cell.library === "ionicons") {
+    return (
+      <Ionicons
+        name={vectorGlyph(cell.value!, drawing, "ionicons") as keyof typeof Ionicons.glyphMap}
+        size={Math.round(size * 0.56)}
+        color={theme.colors.icon[tint]}
+      />
+    );
+  }
+  return (
+    <MaterialCommunityIcons
+      name={vectorGlyph(cell.value!, drawing, "material") as keyof typeof MaterialCommunityIcons.glyphMap}
+      size={Math.round(size * 0.56)}
+      color={theme.colors.icon[tint]}
+    />
   );
 }
 

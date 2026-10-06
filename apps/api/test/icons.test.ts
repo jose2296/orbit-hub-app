@@ -54,6 +54,34 @@ describe('sanitisePayload con icon', () => {
     });
   });
 
+  it('deja un icono de la otra libreria con su dibujo y su estilo', () => {
+    const out = sanitisePayload('list_item', {
+      icon: { type: 'vector', value: 'manzana', library: 'material', style: 'outline', color: 'rose' },
+    });
+    expect(out.icon).toEqual({
+      type: 'vector',
+      value: 'manzana',
+      library: 'material',
+      style: 'outline',
+      color: 'rose',
+    });
+  });
+
+  it('rescata un vector sin libreria como si fuera de Ionicons', () => {
+    // Asi se guardaron todos antes de que hubiera dos: sin la palabra, y todos
+    // eran de Ionicons. Tirarlos seria borrarle los iconos a todo el mundo.
+    const out = sanitisePayload('list_item', {
+      icon: { type: 'vector', value: 'pan', style: 'fill', color: 'rose' },
+    });
+    expect(out.icon).toEqual({
+      type: 'vector',
+      value: 'pan',
+      library: 'ionicons',
+      style: 'fill',
+      color: 'rose',
+    });
+  });
+
   it('deja un emoji de varios puntos de código', () => {
     expect(sanitisePayload('workspace', { icon: { type: 'emoji', value: '👨‍👩‍👧‍👦' } }).icon).toEqual(
       { type: 'emoji', value: '👨‍👩‍👧‍👦', color: 'auto' },
@@ -63,9 +91,15 @@ describe('sanitisePayload con icon', () => {
   it('vuelve null en vez de tirar cuando el icono no se puede dibujar', () => {
     // Una clave de una build futura, o un payload editado a mano, no pueden ser
     // un 500 ni pueden tirar la fila entera.
+    //
+    // `{ type: "vector", value: "pan" }` sin `library` NO esta en esta lista: es
+    // como se guardaron todos los iconos antes de que hubiera dos librerias, y
+    // todos eran de Ionicons. Perderlos por una palabra que entonces no existia
+    // seria borrarle los iconos a todo el mundo en una migracion.
     for (const icon of [
       { type: 'vector', value: 'no-existe', library: 'ionicons' },
-      { type: 'vector', value: 'pan' },
+      { type: 'vector', value: 'no-existe', library: 'material' },
+      { type: 'vector', value: 'no-existe', library: 'uniconos' },
       { type: 'emoji' },
       { type: 'emoji', value: 42 },
       'pan',

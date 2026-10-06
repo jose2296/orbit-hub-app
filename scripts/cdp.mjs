@@ -364,8 +364,17 @@ export async function seedSession(tab, session, appUrl) {
  * fuente declarada y no cargada tampoco dibuja: el estado importa tanto como la
  * familia.
  */
+/**
+ * Las dos fuentes de los iconos, y no solo la primera.
+ *
+ * Con dos librerias hay dos `@font-face`, y esperar solo a `ionicons` deja pasar
+ * capturas con los dibujos de Material en blanco — que parecen un bug de layout y
+ * son una fuente que todavia no habia llegado. El nombre de familia de la segunda
+ * es `material-community`, que es lo que declara su propio CSS.
+ */
+export const ICON_FONTS = ['ionicons', 'material-community'];
 export const ICON_FONT_LOADED =
-  `[...document.fonts].some((f) => f.family === 'ionicons' && f.status === 'loaded')`;
+  `(${JSON.stringify(ICON_FONTS)}).every((family) => [...document.fonts].some((f) => f.family === family && f.status === 'loaded'))`;
 
 /**
  * Espera a que la fuente de los iconos esté en el documento.

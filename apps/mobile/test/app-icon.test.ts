@@ -29,8 +29,8 @@ describe("AppIcon", () => {
       { type: "vector", value: "pan", library: "ionicons", style: "fill", color: "auto" },
       "light",
     );
-    expect(outline).toEqual({ kind: "vector", glyph: "cafe-outline", color: expect.any(String) });
-    expect(fill).toEqual({ kind: "vector", glyph: "cafe", color: expect.any(String) });
+    expect(outline).toEqual({ kind: "vector", glyph: "cafe-outline", color: expect.any(String), library: "ionicons" });
+    expect(fill).toEqual({ kind: "vector", glyph: "cafe", color: expect.any(String), library: "ionicons" });
   });
 
   it("no tiene icono cuando no hay icono, para que el que llama ponga el respaldo", () => {
@@ -46,7 +46,7 @@ describe("AppIcon", () => {
       { type: "vector", value: "pan", library: "ionicons", style: "outline", color: "rose" },
       "light",
     );
-    expect(resolved).toEqual({ kind: "vector", glyph: "cafe-outline", color: expect.stringMatching(/^#/) });
+    expect(resolved).toEqual({ kind: "vector", glyph: "cafe-outline", color: expect.stringMatching(/^#/), library: "ionicons" });
     expect(resolved?.color).not.toBe("rose");
   });
 
@@ -61,6 +61,27 @@ describe("AppIcon", () => {
     const light = resolveAppIcon({ type: "emoji", value: "🍎", color: "auto" }, "light");
     const dark = resolveAppIcon({ type: "emoji", value: "🍎", color: "auto" }, "dark");
     expect(light?.color).not.toBe(dark?.color);
+  });
+
+  it("resuelve en la libreria que trae el icono", () => {
+    // La manzana es material: el glifo sale de su fuente y no de la otra.
+    const manzana = resolveAppIcon(
+      { type: "vector", value: "manzana", library: "material", style: "outline", color: "auto" },
+      "light",
+    );
+    expect(manzana).toEqual({
+      kind: "vector",
+      glyph: "food-apple-outline",
+      color: expect.any(String),
+      library: "material",
+    });
+    // Y una clave de una libreria en la otra no dibuja nada.
+    expect(
+      resolveAppIcon(
+        { type: "vector", value: "manzana", library: "ionicons", style: "outline", color: "auto" },
+        "light",
+      ),
+    ).toBeNull();
   });
 
   it("devuelve null en vez de un glifo roto cuando no puede dibujar", () => {

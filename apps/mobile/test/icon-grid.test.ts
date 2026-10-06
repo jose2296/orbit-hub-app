@@ -136,7 +136,7 @@ describe("el grid de vectoriales", () => {
       // Buscar "azucar" elige el cubo, y guarda la clave del cubo, no "azucar":
       // si guardara la palabra escrita, "sal" y "azucar" serían dos filas
       // distintas con el mismo dibujo.
-      expect(DRAWINGS.find((d) => d.glyph === celda.id)?.aliases).toContain(celda.value!);
+      expect(DRAWINGS.find((d) => d.id === celda.id)?.aliases).toContain(celda.value!);
     }
   });
 
