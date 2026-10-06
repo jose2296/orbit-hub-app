@@ -229,7 +229,6 @@ const es = {
   "filters.active": "{count} filtros activos",
   "filters.none": "Sin filtros",
   "filters.searchLabel": "Buscar en la lista",
-  "filters.searchPlaceholder": "Pan, tomate, Mercadona…",
   "filters.searchPlaceholderMedia": "Matrix, Amélie, Dune…",
   "filters.artwork": "Carátula",
   "filters.withArtwork": "Con carátula",
@@ -266,7 +265,7 @@ const es = {
   "tags.colorCustom": "Un color tuyo, escrito como #RRGGBB",
   "tags.colorBad": "Un color se escribe con tres o seis cifras: #1F6FEB.",
   "tags.colorSquareValue": "Saturación {saturation}%, claridad {brightness}%",
-  "tags.colorUse": "Usar este color",
+  /* `tags.colorUse` se fue con el boton de "usar este color". */
   /*
    * Los nombres accesibles del selector, **todos con `{name}` al final**, y el motivo
    * es que en la pagina de etiquetas de la hoja hay dos selectores montados a la vez:
@@ -287,7 +286,7 @@ const es = {
   "tags.colorSquareOf": "Saturación y claridad del color de {name}",
   "tags.colorCustomOf": "Un color tuyo, escrito como #RRGGBB, para {name}",
   "tags.colorSaveOf": "Guardar el color de {name}",
-  "tags.colorUseOf": "Usar este color para {name}",
+  /* `tags.colorUseOf` se fue con el boton de "usar este color". */
   "tags.colorCloseOf": "Cerrar el selector de color de {name}",
   "tags.recentColors": "Los que has usado en etiquetas",
   "tags.recentColorOf": "Usar el color {color}",
@@ -401,6 +400,7 @@ const es = {
   "place.noSpaces":
     "Todavía no tienes ningún espacio propio, y sólo puedes guardar esto en uno que sea tuyo.",
   "place.createSpace": "Crear un espacio",
+  "place.whereNeeded": "Elige donde va",
   "place.saving": "Poniéndolo…",
   "place.chooseSpaceHint": "Elegir en qué espacio de los tuyos va a aparecer.",
   "share.subtitle": "Compartir «{name}»",
@@ -462,6 +462,7 @@ const es = {
   "share.roleViewerHint": "Puede mirarla, pero no tocarla.",
   "share.send": "Compartir",
   "share.sending": "Compartiendo…",
+  "share.pickSomebody": "Elige a quién",
   "share.sent": "Ya está compartido",
   "share.sentBody":
     "Le llega un correo y aparece en su bandeja hasta que decide dónde ponerlo. Tú decides quién lo ve en cualquier momento: deja de compartir y desaparece de su móvil.",
@@ -514,7 +515,7 @@ const es = {
   "workspaces.colorBad": "Un color se escribe con seis cifras: #1F6FEB.",
   "workspaces.colorSquare": "Tono y claridad del color",
   "workspaces.colorHue": "Tono del color",
-  "workspaces.colorUse": "Usar este color",
+  /* `workspaces.colorUse` se fue con el boton de "usar este color". */
   "workspaces.washGroup": "Cómo se pinta el color del espacio",
   "workspaces.washSide.desde": "Empieza en",
   "workspaces.washSide.hasta": "Termina en",
@@ -707,6 +708,8 @@ const es = {
   "itemEdit.tagsSubtitle.one": "1 etiqueta",
   "itemEdit.tagsSubtitle.other": "{count} etiquetas",
   "itemEdit.name": "Nombre",
+  "itemEdit.nameNeeded": "Ponle un nombre",
+  "itemCreate.create": "Crear",
   "itemEdit.description": "Descripción",
   "itemEdit.descriptionPlaceholder": "Un detalle, una marca, un tamaño...",
   "itemEdit.priority": "Urgencia",
@@ -996,6 +999,12 @@ const es = {
   "items.empty.body": "Añade el primer elemento a esta lista.",
   "items.titleLabel": "Nuevo elemento",
   "items.titlePlaceholder": "Comprar pan, Ver Dune, Leer…",
+  "lists.searchItems": "Buscar en la lista",
+  "lists.createFromSearch": "Crear con ese nombre",
+  "sheet.unsavedTitle": "Tienes cambios sin guardar",
+  "sheet.unsavedBody": "Si sales ahora se pierden. Guarda antes de cerrar.",
+  "sheet.unsavedLeave": "Salir igualmente",
+  "sheet.unsavedStay": "Cancelar",
   "items.add": "Añadir",
   "items.remove": "Quitar",
   "items.createHint": "Se guarda en el dispositivo y se sincroniza al momento.",
@@ -1271,7 +1280,6 @@ const en: Record<TranslationKey, string> = {
   "filters.active": "{count} filters on",
   "filters.none": "No filters",
   "filters.searchLabel": "Search in the list",
-  "filters.searchPlaceholder": "Bread, tomato, Mercadona…",
   "filters.searchPlaceholderMedia": "Matrix, Amélie, Dune…",
   "filters.withoutArtwork": "Without artwork",
   "filters.added": "Added",
@@ -1308,7 +1316,7 @@ const en: Record<TranslationKey, string> = {
   "tags.colorCustom": "One of yours, written as #RRGGBB",
   "tags.colorBad": "A colour is three or six digits: #1F6FEB.",
   "tags.colorSquareValue": "Saturation {saturation}%, brightness {brightness}%",
-  "tags.colorUse": "Use this colour",
+  /* `tags.colorUse` went with the "use this colour" button. */
   "tags.pendingLabel": "the new label",
   "tags.colorOf": "Colour of {name}",
   "tags.colorSwatchOf": "{color} for {name}",
@@ -1316,7 +1324,7 @@ const en: Record<TranslationKey, string> = {
   "tags.colorSquareOf": "Colour saturation and brightness of {name}",
   "tags.colorCustomOf": "One of yours, written as #RRGGBB, for {name}",
   "tags.colorSaveOf": "Save the colour of {name}",
-  "tags.colorUseOf": "Use this colour for {name}",
+  /* `tags.colorUseOf` went with the "use this colour" button. */
   "tags.colorCloseOf": "Close the colour picker of {name}",
   "tags.recentColors": "The ones you have used on labels",
   "tags.recentColorOf": "Use the colour {color}",
@@ -1424,7 +1432,8 @@ const en: Record<TranslationKey, string> = {
   "place.noSpaces":
     "You do not have a space of your own yet, and this can only be filed in one that is yours.",
   "place.createSpace": "Create a space",
-  "place.saving": "Putting it…",
+  "place.whereNeeded": "Choose where it goes",
+  "place.saving": "Poniéndolo…",
   "place.chooseSpaceHint": "Choose which of your spaces it shows up in.",
   "share.subtitle": 'Share "{name}"',
   /* With no noun on purpose: this sits under the share entry of a list, a note and a
@@ -1481,6 +1490,7 @@ const en: Record<TranslationKey, string> = {
   "share.roleViewerHint": "They can look, but not touch it.",
   "share.send": "Share",
   "share.sending": "Sharing…",
+  "share.pickSomebody": "Pick somebody",
   "share.sent": "Shared",
   "share.sentBody":
     "They get an email and it shows up in their inbox until they decide where to put it. You decide who sees it at any time: stop sharing and it leaves their phone.",
@@ -1531,7 +1541,7 @@ const en: Record<TranslationKey, string> = {
   "workspaces.colorBad": "A colour is six digits: #1F6FEB.",
   "workspaces.colorSquare": "Colour strength and brightness",
   "workspaces.colorHue": "Colour tone",
-  "workspaces.colorUse": "Use this colour",
+  /* `workspaces.colorUse` went with the "use this colour" button. */
   "workspaces.washGroup": "How the space colour is painted",
   "workspaces.washSide.desde": "Starts in",
   "workspaces.washSide.hasta": "Ends in",
@@ -1723,6 +1733,8 @@ const en: Record<TranslationKey, string> = {
   "itemEdit.tagsSubtitle.one": "1 label",
   "itemEdit.tagsSubtitle.other": "{count} labels",
   "itemEdit.name": "Name",
+  "itemEdit.nameNeeded": "Give it a name",
+  "itemCreate.create": "Create",
   "itemEdit.description": "Description",
   "itemEdit.descriptionPlaceholder": "A detail, a brand, a size...",
   "itemEdit.priority": "How urgent",
@@ -1990,6 +2002,12 @@ const en: Record<TranslationKey, string> = {
   "items.empty.body": "Add the first item to this list.",
   "items.titleLabel": "New item",
   "items.titlePlaceholder": "Buy bread, watch Dune, read…",
+  "lists.searchItems": "Search the list",
+  "lists.createFromSearch": "Create with that name",
+  "sheet.unsavedTitle": "You have unsaved changes",
+  "sheet.unsavedBody": "Leaving now loses them. Save before closing.",
+  "sheet.unsavedLeave": "Leave anyway",
+  "sheet.unsavedStay": "Cancel",
   "items.add": "Add",
   "items.remove": "Remove",
   "items.createHint": "Stored on the device and synced right away.",

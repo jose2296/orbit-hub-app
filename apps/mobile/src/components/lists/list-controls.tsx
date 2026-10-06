@@ -91,12 +91,22 @@ function ListControlsButton({
   filterCount,
   orderLabel,
   onPress,
+  iconOnly = false,
   testID,
 }: {
   filtrando: boolean;
   filterCount: number;
   orderLabel: string;
   onPress: () => void;
+  /**
+   * Solo el dibujo, y el texto se queda para el lector de pantalla.
+   *
+   * Flotando, el botón decía "Filtros · Como yo lo pongo" sobre una pantalla de
+   * trescientos y noventa puntos: ciento sesenta de ancho para el estado de un
+   * control, encima del `+`. Con el icono solo, y `variant` como estaba, sigue
+   * diciendo si hay filtros puesta.
+   */
+  iconOnly?: boolean;
   testID?: string;
 }) {
   const t = useTranslation();
@@ -112,6 +122,7 @@ function ListControlsButton({
       size="sm"
       variant={filtrando ? "primary" : "secondary"}
       fullWidth={false}
+      iconOnly={iconOnly}
       onPress={onPress}
       testID={testID}
     />
@@ -160,6 +171,7 @@ export function ListControls({
             filterCount={filterCount}
             orderLabel={orderLabel}
             onPress={() => setAbierto(true)}
+            iconOnly
             testID={testID}
           />
         </View>

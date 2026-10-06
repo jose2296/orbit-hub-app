@@ -511,10 +511,17 @@ try {
     const stamp = `Prueba-${Date.now().toString(36).slice(-4)}`;
     const written = await typeInto(tab, '[data-testid="item-name"]', stamp);
     await sleep(500);
-    // The save button by its test id and not by its words: the sheet's button is
-    // `itemCreate.save`, and a check that presses a label has to know the label
-    // in two languages to keep working.
-    const saved = await pressTestId(tab, "item-create");
+    /*
+      The save button by its test id and not by its words, because a check that
+      presses a label has to know the label in two languages to keep working.
+
+      And it is `sheet-save` and not `item-create`: the button that creates left the
+      contents of the panel and is now the one at the foot of it, **the same one
+      every sheet uses**. A script that keeps pressing the old id after the button
+      moved fails for the right reason, which is the most confusing way there is
+      to break something.
+    */
+    const saved = await pressTestId(tab, "sheet-save");
     await sleep(2500);
     const after = await tab.evaluate(`document.querySelectorAll('[data-testid^="item-row-"]').length`);
     const listed = await tab.evaluate(`(${hasText})(${JSON.stringify(stamp)})`);

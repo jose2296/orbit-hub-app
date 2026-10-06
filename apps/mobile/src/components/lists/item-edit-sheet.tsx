@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useFieldChain } from "@/lib/forms/field-chain";
@@ -45,6 +46,16 @@ export interface ItemEditSheetProps {
    * what a row can have.
    */
   mode?: "edit" | "create";
+  /**
+   * El titulo con el que arranca la hoja cuando esta creando.
+   *
+   * Viene de "crea esto con lo que estaba buscando". Escribir el nombre dos
+   * veces —una en el buscador y otra en el formulario— es la accion que hace que
+   * alguien que no encuentra algo no llegue a crear el.
+   *
+   * Solo cuando `mode` es `create`: en editar manda el item.
+   */
+  initialTitle?: string;
   /** The page to open on, so a tap on the icon goes straight to the icons. */
   startOn?: Page;
   /** This list's chosen label colours, and the only ones there are. */
@@ -75,6 +86,41 @@ export interface ItemEditSheetProps {
   onDeleted?: () => void;
 }
 
+/**
+ * Whether two sets of labels are the same, **and not whether they are in the same
+ * order**.
+ *
+ * The order tags were added in is not part of what somebody meant to say. Somebody
+ * who adds "urgente" after "casa" and somebody who adds "casa" after "urgente"
+ * wrote the same task, and a panel that said "you have unsaved changes" for that
+ * is teaching people to ignore the warning.
+ */
+function sameLabels(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const m = new Set(b);
+  return a.every((tag) => m.has(tag));
+}
+
+/**
+ * Whether two colour maps say the same, **key by key**.
+ *
+ * `null` and absent are both "derived", so both count as the same as each other:
+ * somebody who picks a colour and then goes back to derived has not changed
+ * anything, and the question must not pretend otherwise.
+ */
+function sameColors(
+  a: Record<string, string | null>,
+  b: TagColors,
+): boolean {
+  const claves = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const clave of claves) {
+    if ((a[clave] ?? null) !== ((b as Record<string, string>)[clave] ?? null)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** What a row being written looks like before it exists. */
 interface Draft {
   title: string;
@@ -84,6 +130,8 @@ interface Draft {
   iconStyle: ListItem["iconStyle"];
   iconColor: ListItem["iconColor"];
   tags: string[];
+  /** Whether it is done, which also lives here and **not** on the row. */
+  completed: boolean;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -94,6 +142,7 @@ const EMPTY_DRAFT: Draft = {
   iconStyle: "outline",
   iconColor: "neutral",
   tags: [],
+  completed: false,
 };
 
 /**
@@ -119,6 +168,7 @@ export function ItemEditSheet({
   item,
   listId,
   mode = "edit",
+  initialTitle = "",
   startOn = "edit",
   tagColors,
   onTagColor,
@@ -172,8 +222,23 @@ export function ItemEditSheet({
    * writes are of different entities and only the colours need guarding, and for why
    * the check has to come first rather than after the two clears.
    */
-  const [guardando, setGuardando] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+
+  /*
+    Los colores de las etiquetas, y **tambien en borrador**.
+
+    `tagColors` viene por props —es de la lista, no de la tarea— y hasta ahora
+    `pickColor` lo escribia al instante por `onTagColor`. Eso era la ultima puerta
+    por la que el panel guardaba solo: cambiabas el color de una etiqueta, salias
+    sin pulsar Guardar, y el color se quedaba puesto.
+
+    Asi que el borrador es un mapa con **solo lo cambiado**: `null` significa
+    "vuelto al deducido" y ausente significa "igual que estaba". Al confirmar se
+    vuelca la diferencia por `onTagColor`, en serie y no en paralelo — que es lo
+    que hacia `guardando` antes, y sin el dos escrituras planificaban desde la misma
+    lista y la segunda se comia a la primera.
+  */
+  const [colores, setColores] = useState<Record<string, string | null>>({});
 
   /*
    * The colour chosen for a label that **does not exist yet**, and the whole of why
@@ -225,6 +290,10 @@ export function ItemEditSheet({
     setTitle(item.title);
     setAnnotation(item.annotation ?? "");
     setNewTag("");
+    // Y los colores del borrador, por el mismo motivo que el resto: el panel se
+    // queda montado al cerrarse, y sin esto la siguiente tarea abre con los
+    // colores que se tocaron en la anterior.
+    setColores({});
     // And the picker with it: `colorDe` is state of this component and the panel
     // stays mounted while it is closed (it returns `null` rather than being
     // unmounted), so a panel closed with a picker open came back with that same
@@ -241,13 +310,15 @@ export function ItemEditSheet({
       setTitle("");
       setAnnotation("");
       setNewTag("");
+      setTitle(initialTitle);
       // `setNewTag("")` on a field that is already empty changes nothing, so React
       // drops it and the effect on `nombreNuevo` never fires. That is why the
       // pending colour is cleared here as well and not only there.
       setPendiente(null);
       setDraft(EMPTY_DRAFT);
+      setColores({});
     }
-  }, [isNew]);
+  }, [isNew, initialTitle]);
 
   /** What the panel is showing, whether the row exists yet or not. */
   const shown: Draft = isNew
@@ -256,6 +327,7 @@ export function ItemEditSheet({
         title: item?.title ?? "",
         annotation: item?.annotation ?? null,
         priority: item?.priority ?? "none",
+        completed: item?.completed ?? false,
         icon: item?.icon ?? null,
         iconStyle: item?.iconStyle ?? "outline",
         iconColor: item?.iconColor ?? "neutral",
@@ -299,36 +371,164 @@ export function ItemEditSheet({
    * `TagChip`. It is here because the button that opens the picker has to *say*
    * the colour out loud, in the words the dictionary has for it.
    */
-  const colorOf = (tag: string): string => tagColors[tag] ?? derivedTagColor(tag);
+  /*
+    El color que el panel enseña para una etiqueta, y **sale del borrador primero**.
+
+    Sin esto, elegir un color y ver el viejo hasta pulsar Guardar es un panel que
+    miente sobre lo que va a guardar. El `null` del borrador —"vuelto al deducido"—
+    se salta a proposito: si llegara al `TagChip` pintaria "sin color", y lo que hay
+    que pintar es el deducido.
+  */
+  const coloresVistos: TagColors = useMemo(() => {
+    const vistos: Record<string, string> = { ...tagColors };
+    for (const [etiqueta, color] of Object.entries(colores)) {
+      if (color === null) delete vistos[etiqueta];
+      else vistos[etiqueta] = color;
+    }
+    return vistos as TagColors;
+  }, [tagColors, colores]);
+
+  const colorOf = (tag: string): string =>
+    coloresVistos[tag] ?? derivedTagColor(tag);
+
+  const { setSucio } = useSheetSucio();
+
+  /*
+    "Sucio" es **todo el panel**, cada campo con su valor de partida.
+
+    Se comparaba solo con el nombre y la nota, y la justificacion era que elegir
+    prioridad o tocar un icono son **pulsaciones** y por tanto se guardan solas.
+    Esa distincion la invente yo y no la habia pedido nadie: lo pedido era que
+    **nada** se guardara hasta pulsar Guardar.
+
+    Y el argumento, ademas, era falso en la practica: un panel que se guarda a
+    medias es un panel del que no se fia uno. Marcas "urgente", cambias el icono,
+    escribes dos lineas de nota y pulsas atras, y resulta que la nota no estaba,
+    porque "eso era solo texto". Que parte se guarda depende de que campo tocaste,
+    y eso no se aprende: se endurece en la cabeza y se acaboicky pulsando Guardar
+    siempre, que es el mismo trabajo con dos pasos.
+
+    Asi que ahora todo va al borrador y sale por un unico `updateItem` al Guardar.
+    Las etiquetas se comparan **como conjunto y no como lista**, porque el orden en
+    que se anotaron no es parte de lo que alguien quiso decir.
+  */
+  const sucio = useMemo(() => {
+    const base = isNew ? EMPTY_DRAFT : item;
+    if (!base) return false;
+    return (
+      title.trim() !== (isNew ? "" : base.title.trim()) ||
+      annotation.trim() !== (isNew ? "" : (base.annotation ?? "").trim()) ||
+      draft.priority !== (isNew ? "none" : base.priority) ||
+      draft.icon !== (isNew ? null : base.icon) ||
+      draft.iconStyle !== (isNew ? "outline" : base.iconStyle) ||
+      draft.iconColor !== (isNew ? "neutral" : base.iconColor) ||
+      draft.completed !== (isNew ? false : base.completed) ||
+      !sameLabels(draft.tags, isNew ? [] : base.tags) ||
+      !sameColors(colores, isNew ? {} : tagColors)
+    );
+  }, [isNew, item, title, annotation, draft, colores, tagColors]);
+
+  /*
+    Los hooks van **antes** del `return null` de mas abajo, y no por estetica.
+
+    Un hook que depende de donde estas en el cuerpo del componente es un hook
+    condicional: el dia que la fila tarda un poco mas en llegar, se cambia el
+    numero de hooks que se ejecutan y React dice "se cambio el orden de los hooks".
+    No es un fallo raro, es el primero que aparece al abrir la hoja por segunda
+    vez, que es justo el camino que acabamos de arreglar para que la segunda vez
+    funcione.
+  */
+  useEffect(() => {
+    setSucio(sucio);
+  }, [sucio, setSucio]);
 
   if (!isNew && !item) return null;
 
-  const save = (changes: Parameters<typeof updateItem>[1]) => {
-    if (isNew) {
-      setDraft((current) => ({ ...current, ...changes }));
-      return;
+
+  /**
+   * Un nombre vacio no es un nombre.
+   *
+   * La fila seria una linea en blanco en la lista, sin nada dentro con que
+   * encontrarla otra vez. El motivo se **escribe en el boton** en vez de dejarlo
+   * gris y sin texto: un boton apagado sin explicacion se pulsa dos veces para
+   * averiguar que no hace nada.
+   */
+  const sinNombre = title.trim().length === 0;
+
+  /**
+   * El unico commit de toda la app para esta fila, y **es una sola escritura**.
+   *
+   * Todo lo que se haya tocado —el nombre, la nota, la prioridad, el icono, las
+   * etiquetas, lo hecho— sale por aqui en un `updateItem` con el borrador entero.
+   * Antes eran siete escrituras repartidas por el panel, y por eso perder la nota
+   * al cambiar el icono no era un descuido: era la forma normal de funcionar.
+   */
+  /**
+   * Vuelca los colores del borrador a la lista, **en serie**.
+   *
+   * En serie y no en paralelo, y no por lentitud: `onTagColor` planifica desde la
+   * lista que su llamador capturo, asi que dos escrituras a la vez parten del mismo
+   * mapa y la segunda se come a la primera sin que ninguna se entere. Era lo que
+   * impedia el flag `guardando`, que ya no existe porque ya no hay escrituras
+   * concurrentes que impedir — esta es la unica, y va de una en una.
+   */
+  const volcarColores = async () => {
+    for (const [etiqueta, color] of Object.entries(colores)) {
+      if ((tagColors[etiqueta] ?? null) === color) continue;
+      await onTagColor(etiqueta, color);
     }
-    void updateItem(item!, changes);
   };
 
-  const saveTitle = () => {
-    const trimmed = title.trim();
-    // An empty name is not a name: the row would be a blank line in the list
-    // with nothing in it to find again.
+  const confirmar = () => {
     if (isNew) {
-      if (trimmed) setDraft((current) => ({ ...current, title: trimmed }));
+      void create();
       return;
     }
-    if (trimmed && trimmed !== item!.title) save({ title: trimmed });
+    /*
+      En orden y con el cierre al final, pase lo que pase.
+
+      La tarea va primero y los colores despues, porque la etiqueta tiene que estar
+      **en la tarea** antes de que el mapa tenga clave para ella. Y si algo falla,
+      igual se intenta cerrar: el "sucio" sigue puesto, asi que cerrar pregunta "lo
+      pierdes" en vez de perderlo en silencio.
+    */
+    void (async () => {
+      try {
+        await updateItem(item!, {
+          // Los dos textos se leen **vivos**, no del borrador: el `setState` de un
+          // campo no ha llegado al borrador en este mismo frame, asi que leer el
+          // borrador aqui guardaria el nombre de hace un instante.
+          title: title.trim(),
+          annotation: annotation.trim() || null,
+          priority: draft.priority,
+          icon: draft.icon,
+          iconStyle: draft.iconStyle,
+          iconColor: draft.iconColor,
+          tags: draft.tags,
+          completed: draft.completed,
+        });
+        await volcarColores();
+      } finally {
+        onClose();
+      }
+    })();
   };
 
-  const saveNotes = () => {
-    const trimmed = annotation.trim();
-    if (isNew) {
-      setDraft((current) => ({ ...current, annotation: trimmed || null }));
-      return;
-    }
-    if (trimmed !== (item!.annotation ?? "")) save({ annotation: trimmed || null });
+  /**
+   * Cambia el borrador. **Y no escribe nada.**
+   *
+   * Antes esta funcion escribia en la fila cuando la tarea ya existia, y por eso
+   * el panel tenia dos velocidades: elegias prioridad y se guardaba al instante,
+   * escribias el nombre y se guardaba al salir del campo. Esa distincion la
+   * invente yo, y no la habia pedido nadie: lo pedido era que **nada** se guardara
+   * hasta pulsar Guardar.
+   *
+   * Asi que ahora **todas** las puertas del panel pasan por aqui y todas se quedan
+   * en el borrador. Prioridad, icono, etiquetas y lo hechoincluded: tocarlos cambia
+   * el panel, no la tarea.
+   */
+  const save = (changes: Partial<Draft>) => {
+    setDraft((current) => ({ ...current, ...changes }));
   };
 
   /**
@@ -374,16 +574,19 @@ export function ItemEditSheet({
    * So the tap is still a no-op, but it leaves the name and the colour where they were
    * instead of throwing both away.
    */
-  const addTag = async () => {
+  const addTag = () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
-    if (guardando) return;
     if (shown.tags.includes(trimmed)) return;
 
-    // Read into a local before the name is cleared, because clearing the name is what
-    // invalidates it — the effect above drops `pendiente` on the next render — and the
-    // `await` below would otherwise be reading state that has already stopped meaning
-    // "the colour of the label I am about to create".
+    /*
+      El color pendiente va **al borrador**, y no a la lista.
+
+      Antes se escribia aqui por `onTagColor`, y era la otra puerta por la que el
+      panel guardaba solo. Ahora se queda en `colores` y sale con todo lo demas al
+      confirmar — en serie con el resto, que es lo unico que impide que dos
+      escrituras partan del mismo mapa.
+    */
     const color = pendiente;
     setNewTag("");
     setPendiente(null);
@@ -394,12 +597,7 @@ export function ItemEditSheet({
     // which is a colour like any other and not a missing one, and nothing is written
     // to `tagColors` for it.
     if (!color) return;
-    setGuardando(true);
-    try {
-      await onTagColor(trimmed, color);
-    } finally {
-      setGuardando(false);
-    }
+    setColores((previos) => ({ ...previos, [trimmed]: color }));
   };
 
   const toggleTag = (tag: string) =>
@@ -445,18 +643,19 @@ export function ItemEditSheet({
    *   `finally` closes the picker either way, so a write that throws cannot leave
    *   the panel stuck open.
    */
-  const pickColor = async (tag: string, option: string | null) => {
-    if (guardando) return;
-    setGuardando(true);
-    try {
-      await onTagColor(tag, option);
-    } finally {
-      setGuardando(false);
-      // Only closes its own picker: the write takes long enough for somebody to
-      // open another label's colours, and closing that one instead would be a
-      // picker that opened and vanished on its own.
-      setColorDe((current) => (current === tag ? null : current));
-    }
+  const pickColor = (tag: string, option: string | null) => {
+    /*
+      Al borrador, y **sincrono**.
+
+      Antes escribia por `onTagColor` y tardaba lo bastante para que alguien abriera
+      los colores de otra etiqueta mientras tanto — de ahi el cierre cuidadoso de
+      abajo y el flag `guardando`. Ahora no hay espera: el mapa cambia en el acto y
+      el cierre puede ser inmediato, porque ya no hay nada que llegue tarde.
+    */
+    setColores((previos) => ({ ...previos, [tag]: option }));
+    // Only closes its own picker: closing another label's colours instead would be
+    // a picker that opened and vanished on its own.
+    setColorDe((current) => (current === tag ? null : current));
   };
 
   /** Writes the row for the first time, with everything the panel was given. */
@@ -474,6 +673,9 @@ export function ItemEditSheet({
       iconColor: draft.iconColor,
       tags: draft.tags,
     });
+    // Y los colores de las etiquetas que se crearon aqui: sin esto, crear una
+    // tarea con una etiqueta de color dejaba la etiqueta sin su color.
+    await volcarColores();
     onClose();
   };
 
@@ -500,6 +702,15 @@ export function ItemEditSheet({
       // scroll hides its own save button under the bottom of the screen.
       scrollable
       onBack={page === "edit" ? undefined : () => setPage("edit")}
+      /*
+        El Guardar es **el del pie**, y no el boton que estaba aqui abajo. Dos
+        botones de confirmar en la misma pantalla son el mismo boton en el sitio
+        donde se busca y en el que no se mira, y el de dentro se va con el
+        contenido en una hoja larga.
+      */
+      onSave={confirmar}
+      saveLabel={isNew ? t("itemCreate.create") : t("rename.save")}
+      saveDisabledReason={sinNombre ? t("itemEdit.nameNeeded") : undefined}
     >
       <View
         style={{
@@ -518,25 +729,46 @@ export function ItemEditSheet({
               label={t("itemEdit.name")}
               value={title}
               onChangeText={setTitle}
-              onBlur={saveTitle}
+              /*
+                Foco solo al crear, y no al editar.
+
+                Al crear, lo primero que se hace es escribir el nombre: pedir un
+                toque antes es un paso por nada. Al editar, lo primero que se hace
+                es mirar —marcar hecho, cambiar prioridad— y un teclado que sale
+                solo tapa la mitad del panel para nada.
+              */
+              autoFocus={isNew}
+              /*
+                **Ya no guarda al salir del campo.**
+                Era `onBlur={saveTitle}`, y es la razon de que "se guarda con
+                Guardar" no era cierto: los dos campos de texto escribian solos en
+                cuanto perdian el foco, sin que nadie hubiera pulsado nada. Con dos
+                campos, ademas, se guardaba a mitad de la frase — ibas a escribir
+                "llamar al/installador", pulsabas el de abajo, y el servidor ya
+                tenia media frase.
+              */
               returnKeyType="next"
               selectTextOnFocus={false}
               ref={cadena.register(0)}
               onSubmitEditing={() => cadena.advance(0, () => {
-                // El nombre ya esta guardado en `onBlur`; saltar es lo que se
-                // pidio, y al campo de la nota, que es a donde se sigue.
+                // Saltar al campo de la nota, que es a donde se sigue. Aqui ya no
+                // se guarda nada: el nombre se queda escrito hasta que alguien
+                // pulse Guardar, que es lo unico que decide que se guarda.
               })}
               // The width the contracts will store it at, so the counter and the
               // server agree. The title of a task is 300 on purpose, and a list of
               // 300 of them is not a thing anyone writes.
               limit={FIELD_LIMITS['list_item.title']}
+              // La clave existed, en los dos idiomas, sin que nadie la usara: un
+              // ejemplo de titulo escrito y nunca conectado. Es el campo que mas
+              // se abre de la app, asi que es el primero que se nota vacio.
+              placeholder={t("items.titlePlaceholder")}
             />
 
             <TextField
               label={t("itemEdit.description")}
               value={annotation}
               onChangeText={setAnnotation}
-              onBlur={saveNotes}
               limit={FIELD_LIMITS['list_item.annotation']}
               placeholder={t("itemEdit.descriptionPlaceholder")}
               multiline
@@ -677,7 +909,7 @@ export function ItemEditSheet({
                   {...pistaMarkDone.props}
                   onPress={() => {
                     onClose();
-                    void toggleCompleted(item!);
+                    save({ completed: !shown.completed });
                   }}
                   style={({ pressed }) => [
                     styles.link,
@@ -694,7 +926,7 @@ export function ItemEditSheet({
                     checked={item!.completed}
                     onToggle={() => {
                       onClose();
-                      void toggleCompleted(item!);
+                      save({ completed: !shown.completed });
                     }}
                     label=""
                   />
@@ -737,26 +969,18 @@ export function ItemEditSheet({
               </View>
             ) : null}
 
-            {isNew ? (
-              <Button
-                testID="item-create"
-                label={t("itemCreate.save")}
-                icon="checkmark"
-                fullWidth
-                disabled={title.trim().length === 0}
-                onPress={() => void create()}
-              />
-            ) : (
-              <Button
-                label={t("rename.save")}
-                icon="checkmark"
-                fullWidth
-                onPress={() => {
-                  saveTitle();
-                  saveNotes();
-                }}
-              />
-            )}
+            {/*
+              Y aqui **ya no hay ningun boton de guardar**.
+
+              Estaba este y ahora esta el del pie del panel, que es el mismo en las
+              veinticuatro hojas. Dos botones de confirmar en la misma pantalla son
+              el mismo boton en el sitio donde se busca y en el que no se mira.
+
+              Y el `testID="item-create"` no se ha perdido: se ha movido al boton
+              del pie, que ahora es el que crea. Un `testID` que desaparece hace
+              fallar la prueba **por lo que arregla**, que es la forma mas
+              confusa de romper algo.
+            */}
 
             {/* Last, red, and it says what it is going to take with it. A row
                 being created has nothing to delete yet. */}
@@ -813,7 +1037,7 @@ export function ItemEditSheet({
             >
               {shown.tags.map((tag) => (
                 <Fragment key={tag}>
-                  <TagChip tag={tag} colors={tagColors}>
+                  <TagChip tag={tag} colors={coloresVistos}>
                     {(ink) => (
                       <>
                         <Pressable
@@ -878,7 +1102,7 @@ export function ItemEditSheet({
                 >
                   {labels.map(({ tag, count }) => (
                     <Fragment key={tag}>
-                      <TagChip tag={tag} colors={tagColors}>
+                      <TagChip tag={tag} colors={coloresVistos}>
                         {(ink) => (
                           <>
                             {/* `TagChip` writes the name, so the count is what is

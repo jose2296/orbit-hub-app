@@ -65,13 +65,13 @@ export function PlaceShareSheet({
   const { syncNow } = useSyncStatus();
   const tree = useSpacesTree();
 
+  const [saving, setSaving] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   /**
    * Where the list is looking and what it would file, as two separate things. The rules
    * live in `where-it-goes.ts` and are tested there; this is just the state.
    */
   const [recorrido, setRecorrido] = useState<Recorrido>(EN_LA_RAIZ);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const spaces = useMemo(() => spacesYouCanFileInto(tree.spaces()), [tree]);
@@ -91,6 +91,15 @@ export function PlaceShareSheet({
    */
   const confirmar = async () => {
     if (!workspaceId) return;
+    /*
+      Y `saving` sigue haciendo falta aunque el boton ya no lo lea.
+      El boton apagado del pie se encarga de que no se pulse dos veces con el dedo,
+      pero con teclado o con un lector de pantalla no hay dedo que lo impida, y dos
+      invitations con el mismo enlace es una invitacion repetida. El flag se
+      comprueba **en la accion**, que es donde un segundo intento se puede parar sin
+      haber escrito nada.
+    */
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -116,6 +125,10 @@ export function PlaceShareSheet({
       title={t("place.title")}
       subtitle={share.title}
       scrollable={false}
+      /* El Guardar es el del pie. El Cancelar de abajo se va: era una segunda
+         puerta de salida, y la unica que no hacia la pregunta. */
+      onSave={() => void confirmar()}
+      saveDisabledReason={!workspaceId ? t("place.whereNeeded") : undefined}
     >
       <View
         style={{
@@ -260,20 +273,11 @@ export function PlaceShareSheet({
           </AppText>
         ) : null}
 
-        <View style={{ gap: theme.spacing.sm }}>
-          <Button
-            label={saving ? t("place.saving") : t("place.confirm")}
-            disabled={!workspaceId || saving}
-            fullWidth
-            onPress={() => void confirmar()}
-          />
-          <Button
-            label={t("common.cancel")}
-            variant="ghost"
-            fullWidth
-            onPress={onClose}
-          />
-        </View>
+        {/*
+          Y aqui ya no hay botones: el de confirmar esta en el pie y el Cancelar
+          se ha ido. Era la segunda forma de cerrar de esta hoja, y la unica que
+          no preguntaba antes de perder la eleccion.
+        */}
       </View>
     </Sheet>
   );
