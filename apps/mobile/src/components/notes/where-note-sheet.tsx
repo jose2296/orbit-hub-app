@@ -1,10 +1,9 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { View } from "react-native";
 
 import { Sheet } from "@/components/ui/sheet";
 import { useSheetSucio } from "@/components/ui/sheet-sucio";
-import { AppText } from "@/components/ui/text";
+import { PlacePicker } from "@/components/workspace/place-picker";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -24,25 +23,23 @@ export interface WhereNoteSheetProps {
  * the wrong place. Asking is one tap for somebody with one space, and the only
  * honest answer for somebody with five.
  *
- * The folder is offered too, not just the space, because the reason somebody is
- * here is usually a folder — they are in the middle of organising something — and
- * making them go back to pick one after the note exists is the wrong order.
+ * La decision vive en `PlacePicker` y esto es solo el cromo: el `Sheet`, el
+ * titulo y el Guardar del pie. Sin colecciones, que aqui no existen.
  */
 export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
   const tree = useSpacesTree();
+  const { setSucio } = useSheetSucio();
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [folderId, setFolderId] = useState<string | null>(null);
-  const { setSucio } = useSheetSucio();
 
   /*
     Limpio al abrir, y **aunque antes recordaba**.
 
-    Antes la hoja recordaba el ultimo sitio elegido, y con el contrato eso es
-    llegar sucia: abrir, no tocar nada y salir preguntaria "lo pierdes" por una
-    eleccion de la vez anterior. Una hoja nunca llega sucia.
+    Una hoja nunca llega sucia: abrir, no tocar nada y salir no debe preguntar
+    "lo pierdes" por una eleccion de la vez anterior.
   */
   useEffect(() => {
     if (visible) {
@@ -51,20 +48,16 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
     }
   }, [visible]);
 
-  /*
-    Sucio es **haber elegido sitio**, y nada mas.
-
-    Moverse por espacios y carpetas es mirar, no elegir: solo el destino cuenta.
-    Y sin destino no hay nada que perder, que es justo el estado en el que se abre.
-  */
   const spaces = useMemo(() => tree.spaces(), [tree]);
-  const folders = workspaceId ? tree.foldersOf(workspaceId, folderId) : [];
 
   /*
     Sucio es **haber elegido sitio**, y nada mas.
 
     Moverse por espacios y carpetas es mirar, no elegir: solo el destino cuenta.
     Y sin destino no hay nada que perder, que es justo el estado en el que se abre.
+
+    The one space is used without asking: with a single space the destination is
+    already decided, so Guardar is enabled whenever there is a space at all.
   */
   const destino = workspaceId ?? spaces[0]?.id ?? null;
   useEffect(() => {
@@ -80,9 +73,8 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
       title={t("note.where.title")}
       scrollable={false}
       /*
-        El Guardar es el del pie, y elige el destino. La fila de confirmar que
-        habia abajo hacia lo mismo desde dentro, y era la que se iba con el
-        contenido en una hoja larga.
+        El Guardar es el del pie, y elige el destino: el mismo en todas las hojas
+        y fuera del area que scrollea.
       */
       onSave={() => {
         if (!destino) return;
@@ -97,137 +89,17 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
           gap: theme.spacing.md,
         }}
       >
-        {spaces.length === 0 ? (
-          <AppText variant="body" tone="muted">
-            {t("note.where.noSpaces")}
-          </AppText>
-        ) : null}
-
-        {spaces.length > 1 ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            <AppText variant="caption" tone="subtle">
-              {t("note.where.chooseSpace")}
-            </AppText>
-            <ScrollView style={{ maxHeight: 190 }} nestedScrollEnabled>
-              <View style={{ gap: 2 }}>
-                {spaces.map((space) => (
-                  <Pick
-                    key={space.id}
-                    icon="grid-outline"
-                    label={space.name}
-                    selected={workspaceId === space.id}
-                    onPress={() => {
-                      setWorkspaceId(space.id);
-                      setFolderId(null);
-                    }}
-                  />
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {/* With one space there is nothing to choose, so it is used without asking
-            and only the folder is worth a question. */}
-        {spaces.length === 1 ? (
-          <AppText variant="caption" tone="muted">
-            {spaces[0]?.name}
-          </AppText>
-        ) : null}
-
-        {workspaceId ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            <AppText variant="caption" tone="subtle">
-              {t("note.where.chooseFolder")}
-            </AppText>
-            <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
-              <View style={{ gap: 2 }}>
-                <Pick
-                  icon="ellipsis-horizontal-circle-outline"
-                  label={t("note.where.rootOfSpace")}
-                  selected={folderId === null}
-                  onPress={() => setFolderId(null)}
-                />
-                {folders.map((folder) => (
-                  <Pick
-                    key={folder.id}
-                    icon="folder-outline"
-                    label={folder.name}
-                    selected={false}
-                    onPress={() => setFolderId(folder.id)}
-                  />
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {/*
-          The one space is used without asking, and that is what the button being
-          enabled means here. It was written as "disabled unless a space was
-          picked", which greys out the only case where there is nothing to pick:
-          somebody with a single space got a sheet asking them a question they had
-          already answered, and then a button that would not do anything about it.
-        */}
-        {/*
-          Y aqui **ya no hay fila de confirmar**.
-
-          Elegia el destino desde dentro, y ahora lo elige el Guardar del pie: el
-          mismo en todas las hojas y fuera del area que scrollea.
-        */}
+        <PlacePicker
+          workspaceId={workspaceId}
+          folderId={folderId}
+          collectionId={null}
+          showCollections={false}
+          onChange={(place) => {
+            setWorkspaceId(place.workspaceId);
+            setFolderId(place.folderId);
+          }}
+        />
       </View>
     </Sheet>
-  );
-}
-
-function Pick({
-  icon,
-  label,
-  selected,
-  disabled,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  selected: boolean;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected, disabled: disabled === true }}
-      accessibilityLabel={label}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        minHeight: 40,
-        paddingHorizontal: theme.spacing.sm,
-        borderRadius: theme.radius.md,
-        opacity: disabled ? 0.4 : 1,
-        backgroundColor: selected
-          ? theme.colors.accentSoft
-          : pressed
-            ? theme.colors.surfaceMuted
-            : "transparent",
-      })}
-    >
-      <Ionicons
-        name={icon as never}
-        size={16}
-        color={selected ? theme.colors.accent : theme.colors.textMuted}
-      />
-      <AppText
-        variant="body"
-        numberOfLines={1}
-        style={{ flex: 1, color: selected ? theme.colors.accent : undefined }}
-      >
-        {label}
-      </AppText>
-    </Pressable>
   );
 }

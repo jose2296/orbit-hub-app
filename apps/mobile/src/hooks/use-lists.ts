@@ -1,4 +1,5 @@
 import type {
+  Bookmark,
   BoardStates,
   IconRef,
   List,
@@ -977,12 +978,24 @@ export function useListItems(listId: string | undefined) {
 }
 
 /**
+ * Un hit de bookmark en la busqueda local.
+ *
+ * El contrato (`searchResultSchema`) no trae `bookmark` en el alcance porque
+ * alla el alcance describe lo que el `GET /search` del servidor sabe devolver,
+ * y este hit solo existe en el cliente. Se suma como union local para no tocar
+ * el contrato por un alcance que el servidor no sirve.
+ */
+export type BookmarkSearchResult = Omit<SearchResult, "scope"> & {
+  scope: "bookmark";
+};
+
+/**
  * Global search over the local cache, so it works with no connection. The
  * server search (GET /search) is the online half; this is the offline one, and
  * both return the same shape.
  */
 export function useLocalSearch() {
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useState<Array<SearchResult | BookmarkSearchResult>>([]);
   const [isSearching, setIsSearching] = useState(false);
 
   const search = useCallback(async (rawQuery: string) => {
@@ -995,12 +1008,13 @@ export function useLocalSearch() {
 
     setIsSearching(true);
     const store = await getLocalStoreReady();
-    const [workspaces, folders, lists, items, notes] = await Promise.all([
+    const [workspaces, folders, lists, items, notes, bookmarks] = await Promise.all([
       store.listCached("workspace"),
       store.listCached("folder"),
       store.listCached("list"),
       store.listCached("list_item"),
       store.listCached("note"),
+      store.listCached("bookmark"),
     ]);
 
     const workspacesById = new Map(
@@ -1010,7 +1024,7 @@ export function useLocalSearch() {
       ]),
     );
 
-    const found: SearchResult[] = [];
+    const found: Array<SearchResult | BookmarkSearchResult> = [];
 
     for (const row of workspaces) {
       const record = readRecord<List & { name: string; id: string }>(row);
@@ -1128,6 +1142,38 @@ export function useLocalSearch() {
       });
     }
 
+    for (const row of bookmarks) {
+      const record = readRecord<Bookmark>(row);
+      if (record.deletedAt !== null) continue;
+      // Titulo y texto, como las notas. El texto lo deriva el servidor en la
+      // extraccion, asi que un bookmark que aun no subio lo trae ausente: los
+      // dos accesos van con red porque la fila local no lo tiene.
+      const title = record.title ?? "";
+      const body = record.plainText ?? "";
+      const inTitle = title.toLowerCase().includes(query);
+      const inBody = body.toLowerCase().includes(query);
+      if (!inTitle && !inBody) continue;
+
+      found.push({
+        scope: "bookmark",
+        id: record.id,
+        workspaceId: record.workspaceId,
+        // Un bookmark no esta en una lista, asi que no hay a donde apuntar.
+        // Nulo y no su propio id, que haria a la app abrir una lista que no
+        // existe.
+        listId: null,
+        kind: null,
+        // Un bookmark no lleva icono propio: el grupo ya se reconoce por el suyo.
+        icon: null,
+        title,
+        subtitle: record.siteName ?? record.url ?? null,
+        // Un bookmark no es una fila, asi que no hay nada que marcar. Nulo y
+        // no falso, porque falso dibujaria una casilla vacia junto al enlace.
+        completed: null,
+        updatedAt: record.updatedAt,
+      });
+    }
+
     found.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     setResults(found.slice(0, 50));
     setIsSearching(false);
@@ -1136,12 +1182,18 @@ export function useLocalSearch() {
   useEffect(() => subscribeToLocalStore(() => undefined), []);
 
   const grouped = useMemo(() => {
+    // Lo clasico estrechado al alcance del contrato, para que quien lo
+    // consume (la pantalla de busqueda) siga viendo lo mismo de siempre.
+    const classic = results.filter((item): item is SearchResult => item.scope !== "bookmark");
     return {
-      workspaces: results.filter((item) => item.scope === "workspace"),
-      lists: results.filter((item) => item.scope === "list"),
-      items: results.filter((item) => item.scope === "list_item"),
-      folders: results.filter((item) => item.scope === "folder"),
-      notes: results.filter((item) => item.scope === "note"),
+      workspaces: classic.filter((item) => item.scope === "workspace"),
+      lists: classic.filter((item) => item.scope === "list"),
+      items: classic.filter((item) => item.scope === "list_item"),
+      folders: classic.filter((item) => item.scope === "folder"),
+      notes: classic.filter((item) => item.scope === "note"),
+      bookmarks: results.filter(
+        (item): item is BookmarkSearchResult => item.scope === "bookmark",
+      ),
     };
   }, [results]);
 

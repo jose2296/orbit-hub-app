@@ -129,7 +129,7 @@ export default function SignInScreen() {
         <AppText variant="callout" tone="muted" align="center">
           {t('auth.noAccount')}
         </AppText>
-        <Link href="/(auth)/sign-up" asChild>
+        <Link href={next ? { pathname: '/(auth)/sign-up', params: { next } } : '/(auth)/sign-up'} asChild>
           <Button label={t('onboarding.createAccount')} variant="secondary" />
         </Link>
       </View>

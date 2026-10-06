@@ -42,6 +42,8 @@ export const SYNC_ENTITIES = [
   'list_item',
   'note',
   'dashboard',
+  'collection',
+  'bookmark',
 ] as const;
 export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
 
@@ -65,6 +67,20 @@ export const LIST_KINDS = [
   'board',
 ] as const;
 export type ListKindName = (typeof LIST_KINDS)[number];
+
+/**
+ * Los estados de la extraccion de un bookmark. Escribi los cuatro valores en
+ * `packages/contracts/src/bookmarks.ts` tambien: ahi vive el `z.enum` que
+ * valida la red, y aca el tipo que usa la columna. Es el mismo duplicado que
+ * `LIST_KINDS` y `listKindSchema`.
+ */
+export const BOOKMARK_EXTRACTION_STATES = [
+  'pending',
+  'ready',
+  'metadata_only',
+  'failed',
+] as const;
+export type BookmarkExtractionStateName = (typeof BOOKMARK_EXTRACTION_STATES)[number];
 
 /**
  * The colours a space can be painted with.
@@ -150,6 +166,25 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    */
   note: ['title', 'document', 'folderId', 'tags', 'position', 'icon'],
   dashboard: ['layout', 'pages'],
+  /**
+   * Una coleccion es una carpeta con nombre: lo que la persona elige es donde va
+   * y como se llama, y nada mas.
+   */
+  collection: ['folderId', 'name', 'description', 'emoji', 'position'],
+  /**
+   * De un bookmark el cliente elige el enlace, el titulo, donde queda y como se
+   * ordena. Lo que **no** aparece aqui es el corazon de la decision, y son siete
+   * campos: `document`, `plainText`, `extractionState`, `extractionError`,
+   * `description`, `imageUrl` y `siteName` son del servidor. Un cliente que
+   * escribiera el documento podria hacer que la busqueda (que corre sobre
+   * `plainText`) dijera una cosa y la lectura otra, que es exactamente el
+   * problema que `note` ya resuelve re-derivando `plainText`.
+   *
+   * `workspaceId` tampoco esta, y por el mismo motivo que en `note`: el servidor
+   * es dueno de ese campo, porque un cliente que pudiera mover un bookmark entre
+   * espacios lo archivaria donde el dueno nunca lo puso.
+   */
+  bookmark: ['url', 'title', 'collectionId', 'folderId', 'tags', 'position'],
 };
 
 export const AUDIT_EVENTS = [

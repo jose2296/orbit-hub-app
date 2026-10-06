@@ -9,6 +9,8 @@ import type {
   SyncPushResponse,
 } from '@orbit-hub/contracts';
 import {
+  bookmarkSchema,
+  collectionSchema,
   MAX_BOARD_STATES,
   NOTE_DOCUMENT_MAX_BYTES,
   isKnownStateId,
@@ -129,7 +131,40 @@ const STRING_LIMITS: Partial<Record<SyncEntityName, Record<string, number>>> = {
   list: { title: 120, description: 1000 },
   list_item: { annotation: 2000 },
   note: { title: 200 },
+  collection: { name: 120, description: 500, emoji: 16 },
+  bookmark: { title: 300 },
 };
+
+/**
+ * El techo de una URL guardada, y el filtro de esquema que la hace una URL.
+ *
+ * `url` no lleva entrada en `STRING_LIMITS` a proposito: la columna es `text` y
+ * no tiene ancho, asi que ese mapa existe solo para acotar a un `varchar`. El
+ * limite de 2048 y el `http`/`https` los trae el contrato, pero **el contrato
+ * no es una frontera de confianza para una peticion que sale del servidor**: en
+ * la fase 2 el endpoint de extraccion hace `fetch` de esta URL, y un
+ * `refine()` que se puede saltar con otro cliente --un script, una version vieja,
+ * el movil propio-- deja el SSRF esperando. Las dos capas hacen falta, y esta es
+ * la del servidor.
+ */
+const BOOKMARK_URL_MAX = 2048;
+
+/**
+ * Dice si el valor es una URL que el servidor va a pedir.
+ *
+ * `z.url()` acepta `data:`, y un `data:text/plain,...` pegado del share sheet no
+ * es una pagina: es un payload. Se prueba por prefijo y no con `URL` a proposito,
+ * porque `new URL('http:/x')` tambien parsea y normaliza a algo que startsWith
+ * rechaza: el chequeo tiene que ser el mismo que el del contrato, no uno
+ * parecido.
+ */
+export function esUrlQueSePuedePedir(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    (value.startsWith('http://') || value.startsWith('https://')) &&
+    value.length <= BOOKMARK_URL_MAX
+  );
+}
 
 /**
  * What a device is told when an operation fails.
@@ -183,7 +218,7 @@ export function sanitisePayload(
   for (const [key, value] of Object.entries(payload ?? {})) {
     if (!allowed.has(key) || value === undefined) continue;
 
-    if (key === 'name' || key === 'description') {
+    if (key === 'name' || key === 'description' || key === 'emoji') {
       // Keyed by entity, not by field name. `name` is varchar(80) on a workspace
       // and varchar(120) on a folder: a single number per field name let a write
       // past the column, and that is a 500 from Postgres on ordinary input
@@ -234,8 +269,29 @@ export function sanitisePayload(
       continue;
     }
 
-    if (key === 'folderId') {
+    // Las dos FK opcionales de un bookmark y la unica de una coleccion van
+    // juntas: `null` o texto, y nada mas.
+    //
+    // Sin esta rama no es que `collectionId` se casteara mal: es que el bucle no
+    // tiene donde asignarlo y **lo tira**. El allow-list dice que es escribible,
+    // el payload lo trae, y la fila se inserta sin el -- el push responde
+    // `applied` y el bookmark queda sin clasificar para siempre. Por eso la
+    // rama tiene que existir aunque solo castee.
+    if (key === 'folderId' || key === 'collectionId') {
       clean[key] = value === null ? null : String(value);
+      continue;
+    }
+
+    // La URL se limpia antes de nada: un enlace pegado del share sheet llega con
+    // espacios, y un espacio en medio de una URL es un fallo de red mas adelante.
+    //
+    // Sin esta rama el bucle la tira entera, que es peor que guardarla sucia: un
+    // bookmark sin `url` no es un error de Postgres porque la columna es `text` y
+    // no tiene tope, es un `notNull` en el INSERT. El esquema y el techo los
+    // decide la validacion del servicio; aqui lo unico es no escribir lo que no
+    // es un texto.
+    if (key === 'url') {
+      clean[key] = String(value).trim();
       continue;
     }
 
@@ -563,13 +619,15 @@ export class SyncService {
    * permission check in one place and hides the list behind the same 404.
    */
   /**
-   * The space a note belongs to, which is its own `workspace_id`.
+   * El espacio de una fila que lleva su propio `workspace_id`.
    *
-   * A list item has to look its list up because it does not carry one. A note
-   * does, so this reads the row it already has instead of a second query.
+   * Un item de lista tiene que buscar su lista porque no lleva ninguno. Una nota,
+   * una coleccion y un bookmark si lo llevan, asi que esto lee la fila que ya
+   * tenemos en vez de gastar una segunda consulta -- y las tres comparten el
+   * metodo porque la pregunta es identica, no por conveniencia.
    */
-  private workspaceOfNote(note: StoredEntity): string | null {
-    return (note['workspaceId'] as string | null) ?? null;
+  private workspaceDeLaFila(row: StoredEntity): string | null {
+    return (row['workspaceId'] as string | null) ?? null;
   }
 
   /** The list a row belongs to. `null` when the row does not say which one. */
@@ -590,6 +648,109 @@ export class SyncService {
     if (list === null) return null;
     void userId;
     return (list['workspaceId'] as string | null) ?? null;
+  }
+
+  /**
+   * La carpeta de un destino, comprobada contra el espacio del payload.
+   *
+   * **Review Focus #3.** El cliente no es una frontera de seguridad (AGENTS.md
+   * regla 8), asi que un `folderId` que llega en el payload es una afirmacion y
+   * no un hecho: si no se contrasta aqui, un bookmark puede colgar de una carpeta
+   * de otro espacio --la fila entra, la FK se cumple porque la carpeta existe, y
+   * el arbol del otro espacio se abre con un enlace ajeno dentro--. Este es el
+   * unico lugar donde se puede comprobar, porque es el unico que inserta.
+   *
+   * Los dos fallos son distintos a proposito. Una carpeta que **no existe** es un
+   * 404, igual que en el resto del servicio. Una que existe en **otro** espacio
+   * es un 422 con el motivo escrito: quien la manda ya es miembro del espacio del
+   * payload, o sea que no le revelamos nada nuevo, y "tu carpeta no es de
+   * aqui" es un mensaje que la persona puede entender y un 404 no.
+   */
+  private async resolveCarpetaDeEsteEspacio(
+    folderId: string | null | undefined,
+    workspaceId: string,
+  ): Promise<string | null> {
+    /**
+     * `== null` y no `=== null`, y no es estilo.
+     *
+     * `sanitisePayload` copia **solo las claves que vienen en el payload**, asi
+     * que una clave ausente llega aqui como `undefined`. Con un guard estricto,
+     * `undefined` pasaba el "no hay carpeta" y se iba a `eq(folders.id,
+     * undefined)`, que el driver traduce a `NULL`: la consulta no trae filas y el
+     * resultado es `HttpError.notFound('Folder not found')` para una coleccion que
+     * no queria estar en ninguna carpeta. Eso es el caso normal, no el exotico, y
+     * hacia que **no se pudiera crear ninguna coleccion**.
+     *
+     * Lo loose blinda a todos los que llamen a este metodo, no solo a los que se
+     * acuerden del `?? null`. Es el otro camino por el que vuelve a colarse
+     * `undefined`.
+     */
+    if (folderId == null) return null;
+
+    const carpeta = await syncRepository.findEntity('folder', folderId);
+    if (!carpeta || carpeta['deletedAt']) {
+      throw HttpError.notFound('Folder not found');
+    }
+    if (carpeta['workspaceId'] !== workspaceId) {
+      throw HttpError.validation('That folder is not in this workspace');
+    }
+    return carpeta['id'] as string;
+  }
+
+  /**
+   * La coleccion de un destino, comprobada contra el espacio del payload.
+   *
+   * `null` cuando no hay coleccion: sin clasificar es un destino valido. La fila
+   * y no el id, porque el create necesita leerle el `folderId` para derivarlo.
+   *
+   * El mismo contrato que `resolveCarpetaDeEsteEspacio`, y por el mismo motivo:
+   * el cliente no es una frontera de seguridad, y la FK de `collection_id` se
+   * cumple con cualquier coleccion que exista, sea de quien sea.
+   */
+  private async findColeccionDeEsteEspacio(
+    collectionId: string | null | undefined,
+    workspaceId: string,
+  ): Promise<StoredEntity | null> {
+    // Loose por la misma razon que `resolveCarpetaDeEsteEspacio`: una clave
+    // ausente en el payload es `undefined`, no `null`.
+    if (collectionId == null) return null;
+
+    const coleccion = await syncRepository.findEntity('collection', collectionId);
+    if (!coleccion || coleccion['deletedAt']) {
+      throw HttpError.notFound('Collection not found');
+    }
+    if (coleccion['workspaceId'] !== workspaceId) {
+      throw HttpError.validation('That collection is not in this workspace');
+    }
+    return coleccion;
+  }
+
+  /** El primer motivo de un `safeParse` fallido, en una linea y en ingles. */
+  private primerMotivoDe(error: { issues: ReadonlyArray<{ path: PropertyKey[]; message: string }> }): string {
+    const issue = error.issues[0];
+    if (!issue) return 'The values sent are not valid';
+    const donde = issue.path.length ? `"${issue.path.join('.')}" is not valid: ` : '';
+    return `${donde}${issue.message}`.slice(0, 500);
+  }
+
+  /**
+   * Los bookmarks siguen a su coleccion cuando esta se mueve de carpeta.
+   *
+   * Se compara la fila aplicada con la que habia, y no el payload: asi cubre
+   * los dos caminos que escriben (version al dia y merge) sin razonar dos
+   * veces sobre que trajo el cliente. Sin cambio de carpeta no hay nada que
+   * hacer, y en conflicto no se aplico nada, asi que tampoco.
+   */
+  private async seguirCarpetaDeColeccion(
+    entity: SyncEntityName,
+    antes: StoredEntity,
+    despues: StoredEntity,
+  ): Promise<void> {
+    if (entity !== 'collection') return;
+    const carpetaAntes = (antes['folderId'] as string | null) ?? null;
+    const carpetaAhora = (despues['folderId'] as string | null) ?? null;
+    if (carpetaAntes === carpetaAhora) return;
+    await syncRepository.moveBookmarksToFolder(despues.id, carpetaAhora);
   }
 
   private async apply(operation: SyncOperation, userId: string): Promise<AppliedResult> {
@@ -774,6 +935,168 @@ export class SyncService {
           return { status: 'applied', version: row.version };
         }
 
+        case 'collection': {
+          // Igual que una carpeta: el espacio viene del payload crudo y se nombra
+          // uno por uno en vez de esparcirlo, porque el sanitizador tira
+          // `workspaceId` y en un create es el cliente quien dice donde vive.
+          if (workspaceId.length === 0) {
+            throw HttpError.validation('A collection needs a workspaceId');
+          }
+          // Sin `target`: la puerta del grant es `resolveTarget`, y su
+          // `shareNodeTypeSchema` no acepta `collection` ni `bookmark` todavia.
+          // Compartir estas entidades es otra fase; mientras tanto el unico
+          // permiso que se consulta es la pertenencia al espacio, que es
+          // ademas el unico que puede existir.
+          await this.assertCanWrite(workspaceId, userId);
+
+          const folderId = await this.resolveCarpetaDeEsteEspacio(
+            (payload['folderId'] as string | null | undefined) ?? null,
+            workspaceId,
+          );
+
+          // Se valida lo que se va a insertar, no lo que llego. Un nombre que
+          // el sanitizador corto a 120 y una posicion que el contrato exige
+          // entera son cosas que se pueden comprobar aqui, antes del INSERT,
+          // en vez de convertirlas en un error de Postgres.
+          const fila = {
+            folderId,
+            name: (payload['name'] as string) ?? 'Collection',
+            description: (payload['description'] as string | null) ?? null,
+            emoji: (payload['emoji'] as string | null) ?? null,
+            position: (payload['position'] as number) ?? 0,
+          };
+          const valida = collectionSchema.safeParse({
+            ...fila,
+            id: operation.entityId,
+            workspaceId,
+            version: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            role: 'editor',
+            shared: false,
+          });
+          if (!valida.success) {
+            throw HttpError.validation(this.primerMotivoDe(valida.error));
+          }
+
+          const row = await syncRepository.insertEntity('collection', {
+            ...fila,
+            id: operation.entityId,
+            workspaceId,
+          });
+          return { status: 'applied', version: row.version };
+        }
+
+        case 'bookmark': {
+          if (workspaceId.length === 0) {
+            throw HttpError.validation('A bookmark needs a workspaceId');
+          }
+          // Mismo criterio que la coleccion: sin `target`, porque compartir un enlace no
+          // es parte de esta fase.
+          await this.assertCanWrite(workspaceId, userId);
+
+          // El destino se resuelve **antes** de validar nada, y en este orden.
+          //
+          // La regla de la spec es "si se elige una coleccion, el workspaceId y
+          // el folderId salen de la coleccion". Hacerla aqui, en el servidor, es
+          // lo que hace que no dependa de que todos los clientes la hagan bien: un
+          // cliente que mande `folderId: null` con una coleccion que si tiene
+          // carpeta igual termina en la carpeta correcta, en vez de quedar
+          // flotando. Y un cliente que mande los tres campos y se equivoque en uno
+          // recibe un `rejected` limpio en vez de un bookmark en el espacio
+          // ajeno.
+          const collectionId = (payload['collectionId'] as string | null | undefined) ?? null;
+          const folderIdDelPayload = (payload['folderId'] as string | null | undefined) ?? null;
+          let folderId = folderIdDelPayload;
+
+          if (collectionId !== null) {
+            const coleccion = await this.findColeccionDeEsteEspacio(collectionId, workspaceId);
+            const carpetaDeLaColeccion = (coleccion?.['folderId'] as string | null) ?? null;
+
+            /*
+              Los dos campos tienen que decir lo mismo.
+
+              Aceptarlos y creerse el del cliente deja el bookmark clasificado en
+              una coleccion y archivado en una carpeta que no es la de esa
+              coleccion: un estado que ninguna pantalla sabe dibujar, y que la
+              regla de la spec no contempla porque dice que el destino **sale** de
+              la coleccion. Se rechaza con el motivo escrito porque el que se
+              equivoco es el cliente y necesita saber cual de los dos.
+            */
+            if (folderIdDelPayload !== null && folderIdDelPayload !== carpetaDeLaColeccion) {
+              throw HttpError.validation(
+                'The folder has to be the one that belongs to the collection',
+              );
+            }
+            // Si no vino carpeta --ausente o en null-- la de la coleccion manda.
+            // Es lo que hace que la regla no dependa de que todos los clientes la
+            // hagan bien: uno que mande `folderId: null` con una coleccion que si
+            // tiene carpeta termina igual en la carpeta correcta.
+            folderId = carpetaDeLaColeccion;
+          }
+
+          folderId = await this.resolveCarpetaDeEsteEspacio(folderId, workspaceId);
+
+          // **El segundo filtro de la URL.** El `refine` del contrato exige
+          // http/https, y no basta: en la fase 2 el servidor hace `fetch` de esta
+          // URL, y un cliente --un script, una version vieja, el movil propio-- no
+          // pasa por el contrato. Un `data:text/plain,...` guardado aqui es el
+          // SSRF esperando.
+          const url = payload['url'];
+          if (!esUrlQueSePuedePedir(url)) {
+            throw HttpError.validation('A bookmark URL has to be http or https');
+          }
+
+          /*
+            Los siete campos del servidor, forzados a sus defaults **sin mirar el
+            payload**.
+
+            `document` y `plainText` son lo que hace que la busqueda sea un index
+            hit y que se pueda leer sin red; `extractionState`, `extractionError`,
+            `siteName`, `description` e `imageUrl` los escribe la extraccion de la
+            fase 2. El sanitizador ya los tira, porque no son escribibles, y
+            ponerlos aqui deja el invariante explicito en el unico lugar que
+            inserta: si manana el allow-list crece por lo que sea, el default de
+            aqui sigue siendo el que gana.
+          */
+          const fila = {
+            folderId,
+            collectionId,
+            url,
+            title: (payload['title'] as string) ?? '',
+            tags: Array.isArray(payload['tags']) ? (payload['tags'] as string[]) : [],
+            position: (payload['position'] as number) ?? 0,
+            document: '',
+            plainText: '',
+            extractionState: 'pending' as const,
+            extractionError: null,
+            siteName: null,
+            description: null,
+            imageUrl: null,
+          };
+
+          const valida = bookmarkSchema.safeParse({
+            ...fila,
+            id: operation.entityId,
+            workspaceId,
+            version: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            role: 'editor',
+            shared: false,
+          });
+          if (!valida.success) {
+            throw HttpError.validation(this.primerMotivoDe(valida.error));
+          }
+
+          const row = await syncRepository.insertEntity('bookmark', {
+            ...fila,
+            id: operation.entityId,
+            workspaceId,
+          });
+          return { status: 'applied', version: row.version };
+        }
+
         default:
           throw HttpError.validation(`The entity "${entity}" cannot be created`);
       }
@@ -821,7 +1144,12 @@ export class SyncService {
       } else if (entity === 'list_item') {
         await this.assertCanDelete(await this.workspaceOfListItem(existing, userId), userId);
       } else if (entity === 'note') {
-        await this.assertCanDelete(this.workspaceOfNote(existing), userId);
+        await this.assertCanDelete(this.workspaceDeLaFila(existing), userId);
+      } else if (entity === 'collection' || entity === 'bookmark') {
+        // Las dos tienen su propia `workspace_id`, igual que una nota: no hace
+        // falta cruzarlas con nada para saber de quien son. Sin esta rama un
+        // delete de cualquiera de las dos se aplicaria sin comprobar nada.
+        await this.assertCanDelete(this.workspaceDeLaFila(existing), userId);
       }
 
       const row = await syncRepository.updateEntity(entity, operation.entityId, {}, {
@@ -831,6 +1159,15 @@ export class SyncService {
     }
 
     // update
+    /**
+     * La operacion tal cual se va a escribir, y las entidades nuevas pueden
+     * necesitar corregirla antes: un cambio de coleccion tiene que mover la
+     * carpeta con ella, y eso no cabe en el payload que mando el cliente. Se
+     * reescribe la operacion y no el `updateEntity` para que los dos caminos de
+     * abajo --la coincidencia de version y el merge-- escriban lo mismo.
+     */
+    let operacion: SyncOperation = operation;
+
     if (entity === 'workspace') {
       await this.assertCanWrite(operation.entityId, userId);
     } else if (entity === 'folder' || entity === 'list') {
@@ -862,22 +1199,133 @@ export class SyncService {
         }
       }
     } else if (entity === 'note') {
-      await this.assertCanWrite(this.workspaceOfNote(existing), userId, {
+      await this.assertCanWrite(this.workspaceDeLaFila(existing), userId, {
         nodeType: 'note',
         nodeId: operation.entityId,
       });
+    } else if (entity === 'collection' || entity === 'bookmark') {
+      // Sin `target`: la puerta del grant no los conoce todavia.
+      await this.assertCanWrite(this.workspaceDeLaFila(existing), userId);
+
+      const destino = sanitisePayload(entity, operation.payload);
+
+      /*
+        La URL se filtra tambien en un update, y no solo en el create.
+
+        Filtrarla solo al crear deja la defensa a medias: un cliente que no
+        valida --un script, una version vieja-- manda `data:text/html,...` en un
+        update y la fila lo acepta igual, porque el sanitizador solo recorta
+        espacios. El `refine` del contrato corre antes de la red, no de esta
+        escritura, asi que el filtro del servidor tiene que estar en **los dos**
+        caminos que escriben la columna.
+      */
+      if (entity === 'bookmark' && destino['url'] !== undefined) {
+        if (!esUrlQueSePuedePedir(destino['url'])) {
+          throw HttpError.validation('A bookmark URL has to be http or https');
+        }
+      }
+
+      /*
+        El destino se comprueba tambien aqui, y no solo en el create.
+
+        La regla 8 de AGENTS.md dice que cualquier `folderId` o `collectionId` se
+        verifica contra el workspace, y sin esto un update es un agujero igual de
+        grande que el create: la FK se cumple porque la carpeta existe, y el
+        bookmark queda colgando de una carpeta de otro espacio.
+      */
+      const workspaceDeLaFila = this.workspaceDeLaFila(existing);
+      if (workspaceDeLaFila !== null) {
+        const coleccion = await this.findColeccionDeEsteEspacio(
+          (destino['collectionId'] as string | null | undefined) ?? null,
+          workspaceDeLaFila,
+        );
+        await this.resolveCarpetaDeEsteEspacio(
+          (destino['folderId'] as string | null | undefined) ?? null,
+          workspaceDeLaFila,
+        );
+
+        if (entity === 'bookmark' && 'collectionId' in destino) {
+          /*
+            La invariante que create establece tiene que sobrevivir a la primera
+            edicion.
+
+            Antes, un update que mandaba solo `collectionId` dejaba el `folderId`
+            viejo, que ya no era el de la coleccion nueva: la regla de la spec
+            era cierta al crear y falsa a partir de la primera edicion. Y uno
+            que mandara los dos con valores distintos se guardaba clasificado en
+            una coleccion y archivado en una carpeta que no era de esa coleccion.
+
+            Las formas, entonces:
+            - clasificar sin `folderId`: la carpeta se deriva de la coleccion.
+            - los dos de acuerdo: se acepta tal cual.
+            - los dos en discrepancia: 422 con el motivo, porque el que se
+              equivoco es el cliente y necesita saber cual de los dos.
+            - desempaquetar (`collectionId` en null) sin `folderId`: la carpeta
+              actual se conserva y no se toca nada. Sin clasificar, la carpeta
+              la elige la persona, y un update que no la trae no tiene por que
+              pisarla. Solo un `folderId` explicito --incluido null-- usa el
+              valor traido, porque ese si es una decision.
+          */
+          const clasifica = (destino['collectionId'] as string | null) !== null;
+          if (clasifica) {
+            const carpetaDeLaColeccion = (coleccion?.['folderId'] as string | null) ?? null;
+            const carpetaDelPayload = (destino['folderId'] as string | null | undefined) ?? null;
+            const claveFolderId = Object.prototype.hasOwnProperty.call(destino, 'folderId');
+
+            if (claveFolderId && carpetaDelPayload !== carpetaDeLaColeccion) {
+              throw HttpError.validation(
+                'The folder has to be the one that belongs to the collection',
+              );
+            }
+
+            if (!claveFolderId) {
+              operacion = {
+                ...operation,
+                payload: { ...(operation.payload ?? {}), folderId: carpetaDeLaColeccion },
+              };
+            }
+          }
+        }
+
+        /*
+          Un update que trae solo `folderId` tambien puede romper la
+          invariante, y este es el camino por el que entra: `updateBookmarkAction`
+          acepta `folderId` suelto, asi que un bookmark clasificado en A (carpeta
+          F1) que recibe `{ folderId: F2 }` quedaba clasificado en A y archivado
+          en F2. Se compara contra la carpeta de la coleccion actual de la fila:
+          si discrepa, 422 con el motivo. Si coincide o la fila no tiene
+          coleccion, pasa como hoy.
+        */
+        if (entity === 'bookmark' && !('collectionId' in destino) && 'folderId' in destino) {
+          const actual = (existing['collectionId'] as string | null) ?? null;
+          if (actual !== null) {
+            const coleccionActual = await syncRepository.findEntity('collection', actual);
+            if (coleccionActual !== null) {
+              const carpetaDeLaColeccion = (coleccionActual['folderId'] as string | null) ?? null;
+              const carpetaDelPayload =
+                (destino['folderId'] as string | null | undefined) ?? null;
+              if (carpetaDelPayload !== carpetaDeLaColeccion) {
+                throw HttpError.validation(
+                  'The folder has to be the one that belongs to the collection',
+                );
+              }
+            }
+          }
+        }
+      }
     }
 
-    if (operation.baseVersion === existing.version) {
+    if (operacion.baseVersion === existing.version) {
       const row = await syncRepository.updateEntity(
         entity,
-        operation.entityId,
-        noteFieldsForWrite(entity, sanitisePayload(entity, operation.payload)),
+        operacion.entityId,
+        noteFieldsForWrite(entity, sanitisePayload(entity, operacion.payload)),
       );
+      await this.seguirCarpetaDeColeccion(entity, existing, row);
       return { status: 'applied', version: row.version };
     }
 
-    const { values, conflictingFields } = merge(operation, existing);
+    const { values, conflictingFields } = merge(operacion, existing);
 
     if (conflictingFields.length === 0) {
       if (Object.keys(values).length === 0) {
@@ -890,6 +1338,7 @@ export class SyncService {
       }
       // The client had stale data but touched nothing that changed: a safe merge.
       const row = await syncRepository.updateEntity(entity, operation.entityId, values);
+      await this.seguirCarpetaDeColeccion(entity, existing, row);
       return { status: 'applied', version: row.version };
     }
 

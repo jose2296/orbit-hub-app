@@ -10,7 +10,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22.22.2"
   },
   "scripts": {
     "start": "npm run start --workspace @orbit-hub/mobile",

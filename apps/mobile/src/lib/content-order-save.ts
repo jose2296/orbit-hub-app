@@ -7,6 +7,8 @@ const ENTITY_DE: Record<ContentRow["kind"], SyncEntity> = {
   folder: "folder",
   list: "list",
   note: "note",
+  collection: "collection",
+  bookmark: "bookmark",
 };
 
 /** One row, with its new number, and the number it had. */

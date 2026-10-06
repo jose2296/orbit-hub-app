@@ -5,6 +5,8 @@ import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
 import type { MembershipRoleName, SyncEntityName } from '../../db/constants.js';
 import {
+  bookmarks,
+  collections,
   dashboardLayouts,
   folders,
   listItems,
@@ -46,6 +48,8 @@ function toEntityName(nodeType: string): SyncEntityName | null {
   if (nodeType === 'list') return 'list';
   if (nodeType === 'list_item') return 'list_item';
   if (nodeType === 'note') return 'note';
+  if (nodeType === 'collection') return 'collection';
+  if (nodeType === 'bookmark') return 'bookmark';
   return null;
 }
 
@@ -113,7 +117,9 @@ export type SyncEntityTable =
   | typeof lists
   | typeof listItems
   | typeof notes
-  | typeof dashboardLayouts;
+  | typeof dashboardLayouts
+  | typeof collections
+  | typeof bookmarks;
 
 export interface StoredEntity {
   id: string;
@@ -142,6 +148,10 @@ export class SyncRepository {
         return notes;
       case 'dashboard':
         return dashboardLayouts;
+      case 'collection':
+        return collections;
+      case 'bookmark':
+        return bookmarks;
       default:
         throw new Error(`Unsupported sync entity: ${entity}`);
     }
@@ -218,6 +228,28 @@ export class SyncRepository {
       throw new Error('The update returned no row');
     }
     return row as StoredEntity;
+  }
+
+  /**
+   * Los bookmarks de una coleccion siguen a su carpeta nueva.
+   *
+   * La carpeta de un bookmark clasificado es la de su coleccion, y esa
+   * invariante la rompe mover la coleccion sin tocar a sus miembros: A pasa de
+   * F1 a F2 y sus bookmarks quedarian clasificados en A y archivados en F1. La
+   * cascada es lo unico que la mantiene sin intervencion, por el camino normal
+   * de `updateEntity`: cada fila movida suma version y `updatedAt`, asi que el
+   * proximo pull la trae, que es lo correcto y no un efecto colateral.
+   */
+  async moveBookmarksToFolder(collectionId: string, folderId: string | null): Promise<void> {
+    const db = await this.db();
+    await db
+      .update(bookmarks)
+      .set({
+        folderId,
+        version: sql`${bookmarks.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(bookmarks.collectionId, collectionId), isNull(bookmarks.deletedAt)));
   }
 
   /** One row per user, created on first write. */
@@ -1114,6 +1146,88 @@ export class SyncRepository {
             ...this.accesoDe({
               workspaceId: row.row.workspaceId,
               noteId: row.row.id,
+              folderId: row.row.folderId,
+              rolesPorEspacio,
+              cadenas,
+              carpetasConcedidas: carpetasConcedidasEn,
+            }),
+          },
+        });
+        remember(row.row.updatedAt);
+      }
+    }
+
+    /*
+      Colecciones y bookmarks, en la misma forma que las notas.
+
+      Estas dos **no** aparecen en el `switch` de `table()` del pull porque el
+      pull no usa `table()`: cada bloque consulta su tabla y proyecta el cambio
+      con `accesoDe`. Lo que si comparte con las demas es el filtro: solo entran
+      las filas de un espacio donde la persona es miembro, mas las de un espacio
+      que le entregaron entero.
+
+      `aplicaMontaje` **no** se les aplica, por la misma razon que `montajesDe`
+      no los proyecta: compartir un enlace no es parte de esta fase. Sin la
+      proyeccion, un bookmark nunca llega montado --y no puede, porque no hay
+      montajes que lo esperen-- asi que la llamada seria un no-op, no un bug.
+    */
+    if (hayAlgoQueTraer && changes.length < input.limit) {
+      const collectionChanges = await db
+        .select({ row: collections })
+        .from(collections)
+        .where(
+          and(
+            or(
+              inArray(collections.workspaceId, memberWorkspaceIds),
+              inArray(collections.workspaceId, espaciosConcedidos),
+            ),
+            gt(collections.updatedAt, after),
+          ),
+        )
+        .orderBy(asc(collections.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of collectionChanges) {
+        changes.push({
+          entity: 'collection',
+          record: {
+            ...(row.row as Record<string, unknown>),
+            ...this.accesoDe({
+              workspaceId: row.row.workspaceId,
+              folderId: row.row.folderId,
+              rolesPorEspacio,
+              cadenas,
+              carpetasConcedidas: carpetasConcedidasEn,
+            }),
+          },
+        });
+        remember(row.row.updatedAt);
+      }
+    }
+
+    if (hayAlgoQueTraer && changes.length < input.limit) {
+      const bookmarkChanges = await db
+        .select({ row: bookmarks })
+        .from(bookmarks)
+        .where(
+          and(
+            or(
+              inArray(bookmarks.workspaceId, memberWorkspaceIds),
+              inArray(bookmarks.workspaceId, espaciosConcedidos),
+            ),
+            gt(bookmarks.updatedAt, after),
+          ),
+        )
+        .orderBy(asc(bookmarks.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of bookmarkChanges) {
+        changes.push({
+          entity: 'bookmark',
+          record: {
+            ...(row.row as Record<string, unknown>),
+            ...this.accesoDe({
+              workspaceId: row.row.workspaceId,
               folderId: row.row.folderId,
               rolesPorEspacio,
               cadenas,
