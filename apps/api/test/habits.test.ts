@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { getDatabase } from '../src/db/client.js';
+import { habitEntries } from '../src/db/habit-schema.js';
 import { createVerifiedUser, startTestServer } from './helpers';
 import type { TestServer } from './helpers';
 
@@ -283,4 +285,46 @@ describe('habitos', () => {
   it('sin sesion no hay habitos', async () => {
     expect((await api.get('/habits')).status).toBe(401);
   });
+
+  it('con mas de 200 entradas la ventana pide las recientes y las trae', async () => {
+    // El limite es un tope de seguridad sobre la ventana, no sobre el
+    // historico: con 210 entradas pedidas de 10 en 10 por el final, el
+    // SQL anterior traia las 200 mas viejas y la ventana salia vacia.
+    const yo = await createVerifiedUser(api);
+    const base = '2024-01-01';
+    const habito = await crearHabito(yo.accessToken, {
+      schedule: { kind: 'rrule', rule: 'FREQ=DAILY' },
+      startDate: base,
+    });
+
+    const { db } = await getDatabase();
+    await db.insert(habitEntries).values(
+      Array.from({ length: 210 }, (_, i) => ({
+        habitId: habito.id as string,
+        date: sumaDias(base, i),
+        status: 'done' as const,
+      })),
+    );
+
+    const desde = sumaDias(base, 200);
+    const hasta = sumaDias(base, 209);
+    const r = await api.get(
+      `/habits/${habito.id}/entries?from=${desde}&to=${hasta}&limit=200`,
+      yo.accessToken,
+    );
+    expect(r.status).toBe(200);
+    expect(r.body.data.items).toHaveLength(10);
+    expect(r.body.data.items[0].date).toBe(desde);
+    expect(r.body.data.items[9].date).toBe(hasta);
+  });
 });
+
+/** Suma dias a un `YYYY-MM-DD` en UTC: para series largas vale cualquier zona. */
+function sumaDias(fecha: string, dias: number): string {
+  const [anio, mes, dia] = fecha.split('-').map(Number);
+  const base = new Date(Date.UTC(anio as number, (mes as number) - 1, dia as number));
+  base.setUTCDate(base.getUTCDate() + dias);
+  const mesTexto = String(base.getUTCMonth() + 1).padStart(2, '0');
+  const diaTexto = String(base.getUTCDate()).padStart(2, '0');
+  return `${base.getUTCFullYear()}-${mesTexto}-${diaTexto}`;
+}

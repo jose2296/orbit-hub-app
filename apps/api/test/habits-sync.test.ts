@@ -235,6 +235,39 @@ describe('los habitos en el motor de sync', () => {
     expect(entries[0]?.record.status).toBe('done');
   });
 
+  it('el pull no trae entradas de un habito borrado', async () => {
+    // El borrado es logico y el habito sigue llegando como lapida, pero sus
+    // entradas ya no: sin el filtro por habito vivo cada pull las servia para
+    // siempre como trafico muerto.
+    const user = await createVerifiedUser(api);
+    const habit = await createHabit(user);
+    const entryId = randomUUID();
+    const pushed = await push(user, [
+      operation({
+        entity: 'habit_entry',
+        kind: 'create',
+        entityId: entryId,
+        payload: entryPayload(habit.id),
+      }),
+    ]);
+    expect(pushed.body.data.results[0].status).toBe('applied');
+
+    expect((await api.delete(`/habits/${habit.id}`, user.accessToken)).status).toBe(204);
+
+    const changes = (await pull(user)).body.data.changes as {
+      entity: string;
+      record: Record<string, unknown>;
+    }[];
+    const tombstone = changes.find(
+      (change) => change.entity === 'habit' && change.record.id === habit.id,
+    );
+    expect(tombstone?.record.deletedAt).toBeTruthy();
+    const entries = changes.filter(
+      (change) => change.entity === 'habit_entry' && change.record.habitId === habit.id,
+    );
+    expect(entries).toHaveLength(0);
+  });
+
   it('el dueno borra su habito sin ser dueno de ningun espacio', async () => {
     // Sin rama personal, el borrado pediria un rol de dueno en un espacio
     // que no existe. El habito cuelga del usuario: basta con ser el.

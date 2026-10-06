@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 
 import type {
   Habit,
@@ -260,10 +260,17 @@ export class HabitsService {
     const filas = await db
       .select()
       .from(habitEntries)
-      .where(and(eq(habitEntries.habitId, habitId), isNull(habitEntries.deletedAt)))
+      .where(
+        and(
+          eq(habitEntries.habitId, habitId),
+          isNull(habitEntries.deletedAt),
+          gte(habitEntries.date, from),
+          lte(habitEntries.date, to),
+        ),
+      )
       .orderBy(asc(habitEntries.date))
       .limit(limit);
-    return filas.filter((row) => row.date >= from && row.date <= to).map(toEntry);
+    return filas.map(toEntry);
   }
 
   /**

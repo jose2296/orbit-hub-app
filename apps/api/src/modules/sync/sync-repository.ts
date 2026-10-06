@@ -1176,7 +1176,13 @@ export class SyncRepository {
         .select({ entry: habitEntries })
         .from(habitEntries)
         .innerJoin(habits, eq(habitEntries.habitId, habits.id))
-        .where(and(eq(habits.userId, input.userId), gt(habitEntries.updatedAt, after)))
+        .where(
+          and(
+            eq(habits.userId, input.userId),
+            isNull(habits.deletedAt),
+            gt(habitEntries.updatedAt, after),
+          ),
+        )
         .orderBy(asc(habitEntries.updatedAt))
         .limit(input.limit - changes.length);
 
