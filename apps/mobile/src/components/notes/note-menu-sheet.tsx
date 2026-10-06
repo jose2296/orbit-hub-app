@@ -197,7 +197,7 @@ export function NoteMenuSheet({
       <ShareFormContexto.Provider value={shareCanal}>
       <Sheet
         step="rename"
-        visible
+        visible={pedido !== null}
         onClose={close}
         onBack={volver}
         title={t("note.rename")}
@@ -384,7 +384,7 @@ export function NoteMenuSheet({
 
   return (
     <ShareFormContexto.Provider value={shareCanal}>
-    <Sheet step="menu" visible onClose={close} title={note.title || t("note.untitled")}>
+    <Sheet step="menu" visible={pedido !== null} onClose={close} title={note.title || t("note.untitled")}>
       <View style={{ gap: theme.spacing.sm }}>
         <SharedBadge shared={note.shared} role={note.role} />
         <SheetOptions options={opciones} />

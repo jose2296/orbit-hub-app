@@ -23,10 +23,10 @@ pages swap instantly. The pilot (`create-sheet` + FloatingButton) was approved b
   cannot be selected, so delegation is not available; AGENTS.md says do the task here).
 
 ## Tasks
-- [ ] T1 `lib/touch-origin` (last touch point, recency) + unit test; record it at the app root and inside `Sheet`
-- [ ] T2 `Sheet`: origin fallback to last touch; `step` prop (SheetStep inside); create-sheet uses the prop
-- [ ] T3 Pass `step` to list-menu, note-menu, template-menu, workspace-menu, item-edit
-- [ ] T4 Browser check of every sheet (open morph, step change, back, close, light/dark); fix findings
+- [x] T1 `lib/touch-origin` (last touch point, recency) + unit test; record it at the app root and inside `Sheet`
+- [x] T2 `Sheet`: origin fallback to last touch; `step` prop (SheetStep inside); create-sheet uses the prop
+- [x] T3 Pass `step` to list-menu, note-menu, template-menu, workspace-menu, item-edit
+- [~] T4 Browser check of every sheet (open morph, step change, back, close, light/dark); fix findings
 - [ ] T5 Cleanup: demo route stays dev-only decision, docs note, typecheck + tests
 
 ## Acceptance
@@ -36,3 +36,15 @@ pages swap instantly. The pilot (`create-sheet` + FloatingButton) was approved b
 
 ## Progress / evidence
 (created before first source write of this feature)
+
+### Evidence (2026-10-06)
+- T1-T3 commit aaad536; typecheck + 96 vitest files (1261 tests) green; test #7 updated: height is now a spring with overshootClamping.
+- Fixed-body (scrollable=false) multi-page sheets now animate height (inner onLayout measure + sm padding).
+- T4 browser (Playwright, 430x900, light; dark spot check): OK = create (incl. kind/details/back), workspace menu
+  (edit/share), list menu (rename/share/export), note menu (rename/icon/share), item edit (new+existing, icon, tags),
+  list filter, add-menu -> where-note, create-from-/notes, save-template, media-actions open.
+- Found + fixed (pre-existing): note-menu "menu"/"rename" steps used a literal `visible`, so the menu never closed when the
+  parent closed it (save-as-template sheet opened hidden behind it).
+- Not verified: /lists FAB create, template page menu, folder menu/create folder, share-node/place-share, reorder, providers,
+  media "Añadir a otra lista", wide (desktop) layout, native (Android/iOS).
+- Env notes: API 500 on /people and 501 on /catalog/details are dev-environment (PGlite / no provider), not UI.
