@@ -54,13 +54,17 @@
  *      pasa con la app **abierta**: mover, ver la pantalla, contar el cable, leer el
  *      outbox, y comprobar que moverse a la columna en la que ya está no encola
  *      nada. Es la capa fuerte, y mientras esté puesta **ninguna** petición sale.
- *   2. **`Network.setBlockedURLs`** sobre `*/api/*` — para **cerrar y abrir**,
+ *   2. **`Network.setBlockedURLs`** sobre `*/api/v1/*` — para **cerrar y abrir**,
  *      porque corta la API y **no** el bundle: la app vuelve a cargar de verdad,
  *      arranca sin servidor, lee la cache y el outbox del almacenamiento local, y se
  *      dibuja. Es la condición de un tren, que es la que el diseño local-primero
  *      promete, y es más fuerte en un sentido que la emulación no alcanza: **el
- *      navegador descargó doce megas de bundle sin conexión**, o sea que la sesión
- *      no dependía de la red para arrancar.
+ *      `tab.goto` con la API ya cortada pinta el tablero entero**, o sea que la
+ *      sesión no dependía de la red para arrancar. **Cuántos bytes son, no se mide y no
+ *      se afirma** — ver el comentario del check de la capa 2 más abajo: no hay
+ *      escuchador de bytes en este guion, y el bundle se sirve desde la caché del
+ *      navegador, así que su `encodedDataLength` no sería ni el tamaño del bundle ni el
+ *      de la descarga.
  *
  * Las dos se miden por separado y se dice cuál es cuál en cada línea, porque
  *.presentarlas como la misma cosa daría un verde que no dice lo que parece.
@@ -376,7 +380,21 @@ const TABLERO = `(() => {
         // El numero **de su propio elemento**, no el texto de la fila: la cabecera
         // lleva el nombre al lado y trocear el innerText daria "Done3".
         contador: cuenta ? Number(cuenta.innerText) : null,
-        contadorDeLaPestana: tab ? Number((tab.innerText || '').replace(/\\D+/g, "")) : null,
+        // El numero de la pastilla, y **null** cuando no hay ninguno. Antes salia de
+        // Number((tab.innerText || '').replace(\D+/g, "")) y Number("") es **0**: una
+        // pastilla sin numero leia como una columna vacia. Ese 0 no es una columna
+        // vacia, es un numero que nadie ha mirado, y en un ok se lee como medido.
+        // Con match sale null, y null sale en FALLA.
+        //
+        // Se juntan todos los grupos de digitos porque el texto de la pastilla es
+        // "nombre numero"; con un nombre de estado que llevara un numero —la semilla
+        // no lo tiene— los dos se sumarian en uno, que es el mismo defecto que ya
+        // tiene el nombre del contador de cabecera.
+        contadorDeLaPestana: tab
+          ? ((tab.innerText || '').match(/\\d+/g) || []).length
+            ? Number(((tab.innerText || '').match(/\\d+/g)).join(''))
+            : null
+          : null,
         tarjetas: [...slot.querySelectorAll('[data-testid^="item-row-"]')].map((el) => {
           const tid = el.getAttribute('data-testid').replace('item-row-', '');
           return NOMBRES[tid] ?? tid;
@@ -707,6 +725,41 @@ try {
     visto.columnas.every((c) => c.contador === c.tarjetas.length),
     `cabeceras: ${visto.columnas.map((c) => `${c.contador}/${c.tarjetas.length}`).join(" ")}`,
   );
+
+  /**
+   * El numero de la **pastilla** de la pestaña, que se leia y no se miraba.
+   *
+   * El punto 1 del brief pide "cuatro pestañas con sus contadores", y hay dos
+   * numeros distintos en pantalla: el de la cabecera de la columna (`board-count-`) y
+   * el de la pastilla (`board-tab-`). Antes solo se comprobaba el primero y el
+   * segundo se leia en un campo que nadie miraba —un campo muerto **parece**
+   * cobertura, que es justo lo que este repo trata peor que no tenerlo—.
+   *
+   * De donde sale cada uno, y por que **en este punto** tienen que coincidir:
+   * `board/[listId].tsx:186-191` construye `counts` con `countInState(items, ...)`
+   * sobre **todos** los elementos y lo pasa a las pestanas (`board-tabs.tsx:321`,
+   * `iconColor` y `{count}` en `:410`), y la cabecera pinta `tasks.length`
+   * (`board-column.tsx:405`) sobre `tasksInState(visible, ...)`. **No son la misma
+   * pregunta**: la pastilla dice cuanto trabajo tiene la columna y la cabecera cuanto
+   * se ve ahora mismo, y con un filtro puesto **se separan a proposito** —el propio
+   * codigo lo dice en el `counts` de arriba—.
+   *
+   * Aqui se comprueban **sin filtro**, que es como abre el tablero este recorrido: sin
+   * filtro `visible` es `items` y los dos numeros son el mismo. Por eso la
+   * comprobacion vale, y por eso valdria **menos** en cualquier otro sitio: con un
+   * filtro activo un `ok` de esta linea seria el fallo del filtro, no del tablero.
+   *
+   * Y el `null` falla: si la pastilla no tiene un numero legible sale en `FALLA`, no
+   * como un `0` que se leeria como "columna vacia".
+   */
+  check(
+    "cada pastilla de la pestaña lleva el mismo numero que su columna (sin filtro puesto, aqui no hay)",
+    visto.columnas.every(
+      (c) => c.contadorDeLaPestana !== null && c.contadorDeLaPestana === c.contador,
+    ),
+    `pestilla/cabecera: ${visto.columnas.map((c) => `${c.contadorDeLaPestana ?? "?"}/${c.contador}`).join(" ")}` +
+      ` | ninguna pastilla sin numero: ${visto.columnas.every((c) => c.contadorDeLaPestana !== null)}`,
+  );
   await tab.screenshot(`${SHOTS}/01-tablero-claro.png`);
 
   /* --- 2. Cortar la red: emulacion, la capa fuerte --- */
@@ -830,15 +883,41 @@ try {
   */
   const caboOffline = desenlace(pushes.length ? pushes[0].at : Date.now());
   note(`cable: ${cuadernoDelCable(caboOffline)}`);
+
+  /**
+   * Los tres buckets de una vez, y **cada uno con su check**.
+   *
+   * La condicion de abajo solo miraba `llegaron` —los que contestaron— y por eso un
+   * POST **cuyo desenlace no se registro** contaba como "no llego" sin que nadie
+   * hubiera mirado si llego. Eso es la misma forma del fallo de §6.2: una casilla
+   * contada como la buena sin haberla mirado. Con `sinFinal` aqui en la condicion,
+   * "no llego" solo es verdad si todos los intentos se observaron.
+   */
   check(
     "**ningun POST con la red emulada llega al servidor: todos se quedan sin respuesta**",
-    caboOffline.llegaron.length === 0 && caboOffline.dentro.length > 0,
+    caboOffline.llegaron.length === 0 && caboOffline.dentro.length > 0 && caboOffline.sinFinal.length === 0,
     `POST intentados: ${caboOffline.dentro.length} | sin respuesta: ${caboOffline.noSalieron.length} | ` +
       `**con respuesta: ${caboOffline.llegaron.length}**` +
       `${caboOffline.llegaron.length ? ` — ${JSON.stringify(caboOffline.llegaron.map((p) => finales.get(p.requestId)))}` : ""} | ` +
       `sin desenlace registrado: ${caboOffline.sinFinal.length} | ` +
       `preflights OPTIONS (no cuentan): ${caboOffline.preflights.length}` +
       `${caboOffline.preflights.length ? ` — ${JSON.stringify(caboOffline.preflights.map((p) => finales.get(p.requestId)?.que ?? "sin desenlace"))}` : ""}`,
+  );
+
+  /*
+    **El tercer bucket, y por que necesita su propia linea y no solo un `detail`.**
+    `sinFinal` estaba en el `detail` de la comprobacion de arriba y en ningun sitio
+    mas: se imprimia y no se comprobaba. Un intento sin desenlace registrado no es un
+    intento que "no llego" —es un intento del que **no se sabe**—, y meterlo en el
+    mismo `ok` que los otros dos lo camufla entre un numero que no se ha mirado y
+    una conclusion que si se ha medido. Con las dos mitades separadas se ve cual de
+    las dos fallo: sin respuesta de verdad, o sin observacion.
+  */
+  check(
+    "y ningun POST se queda sin desenlace: un intento sin registrar no es \"no llego\", es \"no se sabe\"",
+    caboOffline.sinFinal.length === 0,
+    `POST intentados: ${caboOffline.dentro.length} | sin desenlace registrado: ${caboOffline.sinFinal.length}` +
+      `${caboOffline.sinFinal.length ? ` — requestIds: ${JSON.stringify(caboOffline.sinFinal.map((p) => p.requestId))}` : ""}`,
   );
   check(
     "y el intento que hubo llevaba el estado, o sea que el outbox estaba encolando de verdad",
@@ -866,10 +945,29 @@ try {
       } catch (e) { return "fallo: " + e.name; }
     })()`,
   );
+  /*
+    **Lo que este check mide es UNA MITAD, y el nombre lo dice: la API esta cortada.**
+    El `fetch` a `/health` con la pagina viva tiene que fallar, y falla. La otra mitad —
+    que el bundle **no** esta cortado— la mide el `tab.goto` de las dos lineas siguientes,
+    con su propio check, porque un bundle que se descarga y una pagina que se pinta no se
+    comprueban con un `fetch` a otra URL.
+
+    **Aqui no hay ninguna lectura de bytes, y por eso este texto ya no dice "12 MB".** La
+    version anterior de esta linea decia *"el bundle se pidio 12 MB"* y el informe lo
+    repetia como *"el navegador descargo doce megas de bundle sin conexion"*, en un
+    parrafo que empezaba por "Medido, no supuesto". No habia ningun escuchador de bytes
+    en el guion: los tres de `Network` (`requestWillBeSent`, `loadingFailed`,
+    `responseReceived`, mas abajo) filtran por `/sync/push`, y `dataReceived`,
+    `encodedDataLength` y `transferSize` no aparecen en el fichero. Una cifra que no hay
+    de donde sacarla no es una cifra pequena: es una inventada, y en un `ok` se lee como
+    medida. La conclusion de que "la sesion no depende de la red para arrancar" **si** se
+    sostiene —con el `goto` de abajo, que pinta el tablero entero con la API cortada—, y
+    por eso lo que se afirma es eso y no cuantos bytes fueron.
+  */
   check(
-    "**la API esta cortada y el bundle no**: el bundle se pidio 12 MB y la API no responde",
+    "**la API esta cortada**: un fetch a la API con la pagina viva no responde",
     /fallo/.test(apiSigueCortada) === true,
-    `un fetch a la API con la pagina viva responde: ${apiSigueCortada}`,
+    `un fetch a la API con la pagina viva responde: ${apiSigueCortada} | lo que NO se mide aqui: los bytes del bundle; eso lo mide el "arranca sin API y pinta el tablero entero" de las lineas siguientes, con su propio goto`,
   );
 
   // El bundle se pide aqui, con la API ya cortada: es lo que hace honesta a esta capa.
@@ -957,7 +1055,21 @@ try {
     `Done: [${(trasNoop.columnas.find((c) => c.columna === ESTADOS[3].id)?.tarjetas ?? []).join(",")}] | ` +
       `WIP: [${(trasNoop.columnas.find((c) => c.columna === ESTADOS[2].id)?.tarjetas ?? []).join(",")}]`,
   );
-  note(`la hoja abria ${noop.filas} filas y se cerro en ${noop.cerrada.ms} ms`);
+  /*
+    **Que la hoja se cerrara tambien, y no solo que saliera el `ms`.**
+
+    `noop.cerrada.sigue` se imprimia y no se comprobaba, y era un hueco de verdad: si
+    elegir la columna en la que ya se está **dejara la hoja abierta**, ni el check del
+    outbox ni el de la pantalla lo notarían —los dos miran la columna de la tarjeta y el
+    outbox, no la hoja—, y el recorrido daría verde con una hoja encima del tablero.
+    `esperarHojaCerrada` devuelve `sigue: true` cuando la hoja seguía ahí al agotar los
+    1500 ms, así que `sigue === false` es lo que dice "se cerró".
+  */
+  check(
+    "y la hoja se cierra igual, sin encolar nada",
+    noop.cerrada.sigue === false,
+    `la hoja seguia abierta ${noop.cerrada.ms} ms despues de elegir | abria ${noop.filas} filas`,
+  );
   await tab.screenshot(`${SHOTS}/04-sin-conexion-sin-movimiento.png`);
 
   /* --- 7. Volver a tener red: el servidor se queda con el movimiento y el outbox vacia --- */

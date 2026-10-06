@@ -35,7 +35,7 @@ El script hace cuatro cosas, siempre:
 4. **Falla si hay un error de consola, una excepción o una respuesta 4xx/5xx** en todo lo
    que ha hecho. Un `console.error` es un bug aunque la pantalla se vea bien.
 
-## Los cinco trampas del arnés
+## Las ocho trampas del arnés
 
 Cada una costó tiempo. Están en `cdp.mjs`, que es el único sitio donde se conduce el
 navegador: cualquier script nuevo importa de ahí en vez de copiar el código.
@@ -78,7 +78,7 @@ navegador: cualquier script nuevo importa de ahí en vez de copiar el código.
 - Un móvil de verdad. Todo se verifica a 430×932 en web, y el typecheck cubre nativo, pero
   nadie ha ejecutado un `expo run:ios` todavía.
 
-Y dos cosas más que esta tarea se encontró, porque un guion se los Saltó por completo:
+Y dos cosas más que esta tarea se encontró, porque un guion se los pasó por alto:
 
 - **Que el almacenamiento local sobreviva a cerrar la app de verdad.** En web "cerrar y abrir" es
   recargar la página y el almacenamiento es `localStorage`; en nativo es SQLite. Un recorrido que
@@ -87,6 +87,73 @@ Y dos cosas más que esta tarea se encontró, porque un guion se los Saltó por 
 - **Lo que un `204` significa.** Ni un empujón sin conexión ni una escritura aplicada se distinguen
   por el código, y sólo una de las dos significa que el servidor tiene el cambio. Un guion que
   cuente respuestas sin mirar el método se puede pasar por alto un preflight de CORS.
+
+## Lo que el recorrido del tablero NO midió
+
+Un guion de navegador que recorre una pantalla nueva deja huecos, y el peor no es el que no se
+midió: es el que alguien da por medido porque el recorrido pasó en verde. Estos son los del
+recorrido del tablero de la Task 15, con lo que hay y lo que no.
+
+**1. El swipe corto y el extremo del carril.** El punto 2 del brief pedía tres cosas — swipe corto
+no cambia, swipe largo cambia **una** columna, y en la última un swipe más no sale de rango. Lo
+que hay:
+
+- `apps/mobile/test/board-paging.test.ts`, **44 pruebas** de las que **19** son de `nextPageFor`, y
+  las tres primeras del fichero (`it` de `:27`, `:33` y `:40`) son exactamente los tres casos del
+  brief. La función pura está probada.
+- `verify-state-editor.mjs` §20.6 (`:3557` el arrastre, `:3587-3593` la comprobación), **un** arrastre
+  horizontal de −240 puntos, que comprueba que la pestaña avanza **una**:
+  `pestanaDespues === (pestanaAntes + 1) % columnas.length`.
+
+Lo que no hay, y por qué no se puede escribir todavía:
+
+- **El swipe corto en el navegador.** El gesto pasa por `Gesture.Pan()` con `activeOffsetX([-14, 14])`,
+  y **el `activeOffsetX` ya se ha comido 14 de los 20 puntos** antes de que `nextPageFor` vea nada.
+  Que la función pura diga `nextPageFor(-20, -60, 4, 1) === 1` no dice que un arrastre de 20 puntos
+  llegue a ser uno de 20.
+- **El extremo.** Que `nextPageFor` recorte a la última es una prueba de una función. Que el scroller
+  y `scrollTargetFor` no dejen la pista colgando **en el navegador, en el último estado** es otra
+  cosa, y el comentario de `settle` (`board/[listId].tsx:1151-1182`) dice que ahí el navegador
+  **recorta el `scrollTo` y no dispara evento**, con lo que `onScroll` no lo corrige.
+
+**El protocolo de tres pasos** está escrito en `irA` (`board/[listId].tsx:910-925`), con sus números:
+arrastrar la pista hasta que `scrollLeft` sea `maxScroll`; pulsar la pestaña del último estado; y
+arrastrar veinte puntos. Medido en el navegador a 1440×900 con cinco estados: `offsets`
+`[0, 283, 566, 849, 1132]` y `maxScroll` 283; cinco repeticiones dieron `scrollPrevio` escrito **283**
+con el recorte y **1132** sin él, el rebase **0** contra **−849**, y `trackX` cargado **−1.5** contra
+**−850.5**. **Empezando desde la primera columna el protocolo no ve nada con el bug vivo**, porque el
+`scrollTo` de esa pestaña sí mueve el scroller y dispara 12 a 15 eventos antes de que llegue el dedo:
+el orden de los tres pasos es el todo. Ese caso solo se midió a mano en la Task 9 y no se convirtió
+en guion. Montarlo es trabajo de una tarea, no de una nota: hace falta una pista con `contenido >
+cliente` **y** un tablero ya anclado en su extremo, y `verify-state-editor.mjs` solo monta la primera
+—§20.2 lo comprueba y lo dice, `la pista tiene una columna fuera de pantalla` (`:3111-3114`), pero el
+tablero abre en la primera columna y de ahi no se llega al estado en el que el bug se ve—.
+
+**2. El punto de color de la pestaña y el filo de la tarjeta, en ningún tema.** El punto de la
+pestaña lo pinta `board-tabs.tsx:323` (`iconColor(state.color)`) sobre el fondo del tema que escribe
+la pastilla elegida (`:398`). **Ningún guion lee ese color**, ni en claro ni en oscuro: de una pestaña
+solo se lee el número (`verify-state-editor.mjs:712`) y el `aria-selected`
+(`verify-board-offline.mjs:372`), y el `aria-selected` es el estado, no el color.
+
+El filo es el otro de los dos que el brief nombra, y tampoco lo lee nadie: `board-column.tsx:801` pasa
+`edgeColor={iconColor(state.color)}` y `task-row.tsx:150-151` lo pinta como `borderLeftColor`, y
+`borderLeftColor` **no aparece en ningún fichero de `scripts/`** —comprobado con grep sobre todo el
+directorio—. Lo que se mide de la tarjeta en oscuro es la **elevación**
+(`verify-state-editor.mjs:3649-3656`, los fotogramas con `shadow.floating`), que es otra cosa.
+
+Es el detalle que el brief señalaba como el que más cambia en oscuro, y son los dos que nadie ha
+mirado.
+
+**3. El punto 1 en oscuro.** Que la primera pestaña esté activa y que los contadores cuadren con las
+tarjetas de debajo está afirmado en `verify-board-offline.mjs:719-756`, **en claro** (`:711` afirma
+`colorScheme: light` antes de aceptar nada). Lo que sí se repite en oscuro, con el tema afirmado, es
+la **elevación** de la tarjeta (`verify-state-editor.mjs:3649-3656`, los fotogramas con
+`shadow.floating`; **el filo de color no**, y por eso va en el punto 2 de arriba), el editor entero y
+la pregunta del borrado.
+
+**Lo que sí está medido en oscuro** es lo de `verify-state-editor.mjs` y `verify-state-picker.mjs`
+(puntos 3 a 7), y lo de `verify-board-offline.mjs` y `verify-board-export.mjs` es de tema neutro por
+diseño — un outbox, un `Content-Type` y una cabecera de CSV.
 
 ## Y lo que un guion NO puede decir de Android
 
