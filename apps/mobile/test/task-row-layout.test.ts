@@ -898,3 +898,52 @@ describe('el contrato de guardar, igual en todas las hojas', () => {
     expect(pie, 'el pie va despues del Body, no dentro').toBeGreaterThan(fin);
   });
 });
+
+describe('la primera hoja que adopta el contrato', () => {
+  const fichero = readFileSync(
+    join(import.meta.dirname, '../src/components/ui/rename-sheet.tsx'),
+    'utf8',
+  );
+  /**
+   * Solo el trozo de `RenameSheet`.
+   *
+   * El fichero trae tambien `ConfirmSheet`, que **si** necesita su Cancelar — es una
+   * pregunta, y una pregunta no tiene nada que guardar. Un guard que barre el
+   * fichero entero obliga a romper la otra para poder pasar: o el guard miente, o
+   * obliga a un cambio que nadie quiere.
+   */
+  const rename =
+    fichero.slice(
+      fichero.indexOf('export function RenameSheet'),
+      fichero.indexOf('export interface ConfirmSheetProps'),
+    ) ?? '';
+
+  it('el Guardar es el del pie del panel, y no un boton mas dentro', () => {
+    // Dos botones de guardar en la misma pantalla: el que buscas y el que no miras.
+    // Y el de dentro se va con el contenido en una hoja larga.
+    expect(rename, 'delega en onSave').toContain('onSave={submit}');
+    expect(rename, 'y no trae el suyo').not.toContain('t("rename.save")');
+  });
+
+  it('no deja el Cancelar de antes, que era la salida que no preguntaba', () => {
+    // La ✕ y el fondo ya cierran, y ya preguntan. Un Cancelar aqui era una
+    // tercera forma de cerrar, y la unica que se saltaba la pregunta.
+    expect(rename, 'sin Cancelar propio').not.toContain('t("common.cancel")');
+  });
+
+  it('"sucio" es el texto, no el teclado', () => {
+    // Volver a borrar lo que habia deja el panel igual, y preguntar "¿sales sin
+    // guardar?" a alguien que no ha cambiado nada enseña que el aviso no significa
+    // nada.
+    expect(rename, 'compara con el nombre que habia').toContain(
+      'const cambiado = name.trim() !== value.trim()',
+    );
+    expect(rename, 'y lo dice').toContain('setSucio(cambiado)');
+  });
+
+  it('Guardar sin cambios no renombra a la mitad de escribir', () => {
+    // Si solo se ha tecleado un espacio, el nombre recortado es el mismo y
+    // "guardar" no tiene nada que hacer.
+    expect(rename).toMatch(/if \(!trimmed \|\| !cambiado\) return;/);
+  });
+});
