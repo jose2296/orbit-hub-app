@@ -127,6 +127,14 @@ function IconPickerBody({
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const lista = useRef<FlatList<GridRow>>(null);
+  /*
+    The category bar follows the list: when the lit category changes because the
+    grid scrolled under it, the bar scrolls itself so the lit chip is on screen.
+    Without this, deep in "Viajes y lugares" the bar still shows the start and
+    the lit chip is somewhere off-screen to the right, saying nothing.
+  */
+  const barra = useRef<ScrollView>(null);
+  const chipX = useRef<Record<string, number>>({});
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(query), 250);
@@ -219,6 +227,19 @@ function IconPickerBody({
     },
     [grid.rows, grid.sections, rowHeight],
   );
+
+  /*
+    The bar scrolls to the lit chip, and only when the lit chip changes. `onScroll`
+    fires per frame, so doing it there would fight the finger dragging the bar
+    itself; doing it here runs once per category. Scrolling the bar never loops
+    back: it is a different scroll view and nothing reads its offset.
+  */
+  useEffect(() => {
+    if (!activeCategory) return;
+    const x = chipX.current[activeCategory];
+    if (x === undefined) return;
+    barra.current?.scrollTo({ x: Math.max(0, x - 12), animated: true });
+  }, [activeCategory]);
 
   /*
     Where the list opens: on the icon that is already chosen, or at the top.
@@ -425,6 +446,7 @@ function IconPickerBody({
           in the list below, and the lit one says which stretch is on screen. */}
       {grid.sections.length > 0 ? (
         <ScrollView
+          ref={barra}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={[styles.row, { gap: theme.spacing.xs }]}
@@ -436,6 +458,9 @@ function IconPickerBody({
               label={categoryLabel(section.category)}
               active={activeCategory === section.category}
               onPress={() => irA(section.category)}
+              onLayoutX={(x) => {
+                chipX.current[section.category] = x;
+              }}
             />
           ))}
         </ScrollView>
@@ -595,16 +620,20 @@ function Chip({
   active,
   onPress,
   testID,
+  onLayoutX,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
   testID?: string;
+  /** Where the chip sits inside the bar, so the bar can scroll to it. */
+  onLayoutX?: (x: number) => void;
 }) {
   const theme = useTheme();
   return (
     <Pressable
       testID={testID}
+      onLayout={(event) => onLayoutX?.(event.nativeEvent.layout.x)}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       accessibilityLabel={label}
