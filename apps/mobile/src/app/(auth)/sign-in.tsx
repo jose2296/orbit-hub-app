@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Screen } from '@/components/ui/screen';
 import { TextField } from '@/components/ui/text-field';
+import { useFieldChain } from '@/lib/forms/field-chain';
 import { AppText } from '@/components/ui/text';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { useSession } from '@/hooks/use-session';
@@ -26,6 +27,7 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const cadena = useFieldChain(2);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit() {
@@ -91,8 +93,10 @@ export default function SignInScreen() {
           keyboardType="email-address"
           inputMode="email"
           textContentType="emailAddress"
-          placeholder="nombre@ejemplo.com"
+          placeholder={t("auth.emailPlaceholder")}
+          ref={cadena.register(0)}
           returnKeyType="next"
+          onSubmitEditing={() => cadena.advance(0, () => void onSubmit())}
         />
         <TextField
           label={t('auth.password')}
@@ -101,6 +105,7 @@ export default function SignInScreen() {
           secureTextEntry
           autoComplete="current-password"
           textContentType="password"
+          ref={cadena.register(1)}
           returnKeyType="go"
           onSubmitEditing={() => {
             void onSubmit();

@@ -39,6 +39,7 @@ import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Badge } from "@/components/ui/badge";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { expandedProps, selectedProps } from "@/components/ui/a11y-state";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { SpaceDot } from "@/components/ui/wash";
 import { useListItems } from "@/hooks/use-lists";
@@ -457,7 +458,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
             >
               <Ionicons
                 name={destination.icon as never}
-                size={18}
+                size={theme.iconSize.body}
                 color={tint}
               />
               <AppText variant="body" style={{ color: tint }}>
@@ -522,7 +523,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
         >
           <Ionicons
             name="grid-outline"
-            size={18}
+            size={theme.iconSize.body}
             color={theme.colors.textMuted}
           />
           <AppText variant="body" tone="muted">
@@ -561,7 +562,7 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
           >
             <Ionicons
               name="mail-unread-outline"
-              size={18}
+              size={theme.iconSize.body}
               color={theme.colors.accent}
             />
             <View style={{ flex: 1 }}>
@@ -871,14 +872,24 @@ function FolderBranch({
             },
           ]}
         >
-          <Ionicons
-            name={open ? "folder-open-outline" : "folder-outline"}
-            size={15}
-            color={theme.colors.textSubtle}
-          />
+          {/*
+            One icon, not two. The row used to draw the open/closed folder glyph
+            and then the folder's own icon inside the name: two drawings for one
+            thing, and the chosen one crammed where the label goes. With an icon
+            of its own the row shows it; without one it keeps the open/closed
+            glyph it always had.
+          */}
+          {folder.icon ? (
+            <AppIcon icon={folder.icon} size={theme.iconSize.body} />
+          ) : (
+            <Ionicons
+              name={open ? "folder-open-outline" : "folder-outline"}
+              size={theme.iconSize.body}
+              color={theme.colors.textSubtle}
+            />
+          )}
 
-          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
-            {folder.emoji ? `${folder.emoji} ` : ""}
+          <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {folder.name}
           </AppText>
         </Pressable>
@@ -975,13 +986,14 @@ function ListBranch({
             },
           ]}
         >
-          <Ionicons
-            name={LIST_ICON[list.kind] ?? "list-outline"}
-            size={15}
-            color={theme.colors.textSubtle}
+          <AppIcon
+            icon={list.icon}
+            size={theme.iconSize.body}
+            inheritColor={theme.colors.textSubtle}
+            fallback={LIST_ICON[list.kind] ?? "list-outline"}
           />
 
-          <AppText variant="callout" numberOfLines={1} style={styles.flex}>
+          <AppText variant="body" numberOfLines={1} style={styles.flex}>
             {list.title}
           </AppText>
           {list.itemCount > 0 ? (

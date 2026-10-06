@@ -27,6 +27,7 @@ import { useNotes } from "@/hooks/use-notes";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { Button } from "@/components/ui/button";
 import { useScreenSpace } from "@/hooks/use-screen-space";
+import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 
@@ -59,7 +60,7 @@ export default function WorkspaceScreen() {
     { kind: "folder"; folder: Folder } | { kind: "list"; list: List } | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createStep, setCreateStep] = useState<"what" | "details">("what");
+  const [createStep, setCreateStep] = useState<"what" | "kind" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -86,7 +87,21 @@ export default function WorkspaceScreen() {
    */
   // The second colour went with it because it is the person's own choice, and a
   // band that drops it paints a different pair from the one the picker shows.
-  useScreenTitle(workspace?.name ?? t("workspaces.title"));
+  useScreenTitle(workspace?.name ?? t("workspaces.title"), workspace?.icon ?? null);
+
+  /*
+   * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.
+   *
+   * No hay boton de compartir en la cabecera: compartir es una accion, y las
+   * acciones van en los tres puntitos. Esto no es un boton, es **una nota sobre lo
+   * que estas mirando** — y solo aparece cuando hay algo que decir. Dos iconos
+   * distintos porque son dos hechos distintos: te lo dieron, o tu lo diste.
+   */
+  useScreenShare({
+    node: workspace ? { nodeType: "workspace", id: workspace.id } : null,
+    conmigo: workspace?.shared === true,
+    onShare: () => setMenuOpen(true),
+  });
 
   /** The folder a list lives in, for the menu to say where it is. */
   const folderOf = (list: List) =>
@@ -332,7 +347,6 @@ export default function WorkspaceScreen() {
             params: { workspaceId },
           });
         }}
-        creating={false}
       />
     </Screen>
   );

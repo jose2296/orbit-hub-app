@@ -1,5 +1,5 @@
 {
-  "id": "49d0df86-cf0e-4eca-9619-33115de009e1",
+  "id": "8f1c9a72-4e0b-4d6a-9c31-6b5d20a7e441",
   "prevId": "ccf688db-62b8-4525-b91b-d7b41382c118",
   "version": "7",
   "dialect": "postgresql",
@@ -905,9 +905,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "emoji": {
-          "name": "emoji",
-          "type": "varchar(16)",
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -1063,12 +1063,6 @@
           "notNull": true,
           "default": false
         },
-        "state_id": {
-          "name": "state_id",
-          "type": "varchar(36)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "priority": {
           "name": "priority",
           "type": "varchar(8)",
@@ -1078,23 +1072,9 @@
         },
         "icon": {
           "name": "icon",
-          "type": "varchar(32)",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "icon_style": {
-          "name": "icon_style",
-          "type": "varchar(8)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'outline'"
-        },
-        "icon_color": {
-          "name": "icon_color",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'neutral'"
         },
         "tags": {
           "name": "tags",
@@ -1270,9 +1250,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "emoji": {
-          "name": "emoji",
-          "type": "varchar(16)",
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -1303,13 +1283,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'manual'"
-        },
-        "states": {
-          "name": "states",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
         },
         "version": {
           "name": "version",
@@ -1794,6 +1767,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "position": {
           "name": "position",
@@ -2933,9 +2912,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "emoji": {
-          "name": "emoji",
-          "type": "varchar(16)",
+        "icon": {
+          "name": "icon",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

@@ -11,7 +11,7 @@ import { Sheet, useLastValue } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
-import { iconColor } from "@/lib/lists/item-icons";
+import { stateColorHex } from "@/lib/lists/board";
 import { useTheme } from "@/theme";
 
 export interface StateEditSheetProps {
@@ -116,7 +116,7 @@ export function StateEditSheet({ state: pedido, onSave, onClose }: StateEditShee
               width: 10,
               height: 10,
               borderRadius: theme.radius.pill,
-              backgroundColor: iconColor(color),
+              backgroundColor: stateColorHex(color, theme.colors.icon),
             }}
           />
           <AppText variant="body" style={{ flex: 1 }} numberOfLines={1}>

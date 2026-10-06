@@ -27,6 +27,7 @@ import { StateEditorSheet } from "@/components/lists/state-editor-sheet";
 import { StatePickerSheet } from "@/components/lists/state-picker-sheet";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
+import { TextField } from "@/components/ui/text-field";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { useScreenSpace } from "@/hooks/use-screen-space";
@@ -1632,7 +1633,21 @@ export default function BoardScreen() {
                 />
               )}
             >
-              <FiltersBody
+              {/*
+                The text search lives here and not in `FiltersBody`: the shared
+                body lost its field on purpose (one search per app, in the global
+                one), and a board still narrows by text — so the board brings its
+                own field above the shared body, with the sheet's own rhythm
+                between them.
+              */}
+              <View style={{ gap: theme.spacing.md }}>
+                <TextField
+                  label={t("filters.searchLabel")}
+                  value={filterText}
+                  onChangeText={setFilterText}
+                  testID="board-filter-text"
+                />
+                <FiltersBody
                 tags={labels}
                 selectedTags={selectedTags}
                 onToggleTag={(tag) =>
@@ -1642,8 +1657,6 @@ export default function BoardScreen() {
                       : [...previas, tag],
                   )
                 }
-                text={filterText}
-                onText={setFilterText}
                 onReset={() => {
                   setSelectedTags([]);
                   setFilterText("");
@@ -1655,7 +1668,14 @@ export default function BoardScreen() {
                   el motivo esta debajo; ver el razonamiento en `visible`.
                 */
                 completedDisabled
-              />
+                /*
+                  **El conteo lo lleva la pantalla y no la hoja.** Es el mismo
+                  `activeFilterCount` que enciende el boton flotante, asi que el
+                  boton y la hoja no pueden discrepar sobre si hay algo filtrado.
+                */
+                activeCount={activeFilterCount}
+                />
+              </View>
             </ListControls>
           ) : null}
 
@@ -2000,7 +2020,7 @@ export default function BoardScreen() {
         startOn={editing?.page ?? "edit"}
         tagColors={list.tagColors ?? {}}
         showCompleted={false}
-        onTagColor={(tag, color) => setTagColor(list, tag, color)}
+        onTagColor={(tag, color) => setTagColor(list.id, tag, color)}
         onClose={() => {
           // The draft choice dies with the panel: it belongs to the row being
           // written, and the panel stays mounted while it is closed.

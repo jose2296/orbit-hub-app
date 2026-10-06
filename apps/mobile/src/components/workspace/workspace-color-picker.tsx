@@ -2,9 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
+import { normalizaColor } from "@orbit-hub/contracts";
+
 import { useTranslation } from "@/lib/i18n";
 import {
-  DEFAULT_WORKSPACE_COLOR,
   WORKSPACE_COLORS,
   colorOf,
   isWorkspaceColor,
@@ -37,13 +38,6 @@ export interface WorkspaceColorPickerProps {
   onPickWash: (wash: WashVariant) => void;
 }
 
-const ES_HEX = /^#?[0-9A-Fa-f]{6}$/;
-
-const comoHex = (value: string): string => {
-  const limpio = value.trim();
-  return (limpio.startsWith("#") ? limpio : `#${limpio}`).toUpperCase();
-};
-
 /**
  * The colour an end of a wash has right now, as a hex the square can open on.
  *
@@ -51,11 +45,17 @@ const comoHex = (value: string): string => {
  * end nobody chose falls back to the first one — which is what the space is
  * actually painted, derived and all, so the square opens on the colour the person
  * is looking at and not on a blank.
+ *
+ * **Through `normalizaColor` and not through an `ES_HEX` of its own.** This file
+ * had its own regex —six digits, `#` optional— which was one of the seven colour
+ * rules in this repository and which **did not match any of the other six**. It
+ * asks the contract now, which owns the shape, and what comes back is the
+ * **normalised** shape: six digits, uppercase, with `#abc` widened to `#AABBCC`. A
+ * `#abc` used to fall through to the default — the field accepted it and the picker
+ * rejected it — and now the picker opens on the `#AABBCC` the field meant.
  */
 function hexDe(valor: string | null | undefined): string {
-  if (typeof valor === "string" && ES_HEX.test(valor.trim())) return comoHex(valor);
-  if (isWorkspaceColor(valor)) return colorOf(valor);
-  return colorOf(DEFAULT_WORKSPACE_COLOR);
+  return normalizaColor(valor) ?? colorOf(valor);
 }
 
 /**
@@ -77,7 +77,7 @@ function hexDe(valor: string | null | undefined): string {
  * you had; the field is the only way to say it exactly, and there is a
  * difference between the two that matters when the colour is a brand.
  *
- * **Nothing is written until you press the check.** A picker that fires on every
+ * **Nothing is written until the finger lifts.** A picker that fires on every
  * pixel of a drag would put a hundred undoable writes in the sync queue and
  * make the space flicker between eleven colours while you are trying to look at
  * one.
@@ -93,8 +93,20 @@ export function WorkspaceColorPicker({
   const theme = useTheme();
   const t = useTranslation();
 
-  const esPropioDesde = typeof value === "string" && ES_HEX.test(value.trim());
-  const esPropioHasta = typeof valueTo === "string" && ES_HEX.test(valueTo.trim());
+  /**
+   * The two ends as **the hex they are already in**, or `null` for a name.
+   *
+   * One call each and no regex: these two replaced an `ES_HEX` of this file's own,
+   * and asking `normalizaColor` for the answer also gives the **canonical** form,
+   * which is what `guardadoDesde`/`guardadoHasta` draw with. The old `ES_HEX` only
+   * said yes or no, so those two had a second helper —`comoHex`— to turn the raw
+   * value into something paintable; with `#abc` accepted, a "yes" is no longer
+   * already six digits, and that helper would have handed `#FFF` to a style.
+   */
+  const propioDesde = normalizaColor(value);
+  const propioHasta = normalizaColor(valueTo);
+  const esPropioDesde = propioDesde !== null;
+  const esPropioHasta = propioHasta !== null;
 
   /**
    * Which of the two ends is being edited.
@@ -162,20 +174,12 @@ export function WorkspaceColorPicker({
    *
    * The preview is the pair the square has built — this side from the square, the
    * other one as it is — because a preview that ignores the thing you are dragging
-   * is not a preview. And the button only lights up when what the square says is
-   * not what is saved.
+   * is not a preview.
    */
-  const guardadoDesde = esPropioDesde ? comoHex(value as string) : colorOf(value);
-  const guardadoHasta = valueTo
-    ? esPropioHasta
-      ? comoHex(valueTo)
-      : colorOf(valueTo)
-    : null;
+  const guardadoDesde = propioDesde ?? colorOf(value);
+  const guardadoHasta = valueTo ? (propioHasta ?? colorOf(valueTo)) : null;
 
-  const colorGuardada = lado === "desde" ? guardadoDesde : (guardadoHasta ?? guardadoDesde);
-  const sucio = vista !== colorGuardada;
-
-  /**
+/**
    * The end the square is **not** on, so the preview and the two little
    * pictures can show both ends while this one moves.
    *
@@ -255,7 +259,23 @@ export function WorkspaceColorPicker({
               <AppText
                 variant="callout"
                 numberOfLines={1}
-                style={{ color: elegido ? theme.colors.accent : undefined }}
+                /*
+                  El color del extremo **elegido**, y el de verdad para el otro.
+
+                  Era `elegido ? accent : undefined`, y `undefined` no es "sin color":
+                  es "usa el que traiga el `AppText`". En oscuro ese color por
+                  defecto sale casi negro sobre el fondo oscuro, y "Empieza en" se
+                  hacia ilegible justo en la pestana que **no** has elegido — que es
+                  donde mas hace falta leerla para saber cual de las dos estas
+                  cambiando.
+
+                  Y solo en Android se veia, porque en la web el color por defecto
+                  de `AppText` cae en otro sitio. Un fallo que solo se reproduce en
+                  una de las tres plataformas no se puede cazar en la otra.
+                */
+                style={{
+                  color: elegido ? theme.colors.accent : theme.colors.textMuted,
+                }}
               >
                 {t(`workspaces.washSide.${extremo}` as never)}
               </AppText>
@@ -372,30 +392,24 @@ export function WorkspaceColorPicker({
         {/*
           The square, shared with the states: the same saturation square and hue
           strip `ColorSquare` draws, with this end's colour on it. What moves
-          reports live into the preview (`setVista`); writing stays on the check,
-          so a drag never enqueues anything.
+          reports live into the preview (`setVista`) and writes only when the finger
+          lifts, so a drag never enqueues anything.
         */}
         <ColorSquare
           color={hexDe(valorDelLado)}
           onChange={setVista}
+          onCommit={escribir}
           squareLabel={t("workspaces.colorSquare")}
           hueLabel={t("workspaces.colorHue")}
         />
 
         {/*
-          The preview, and the button that writes it.
+          The preview.
 
           **It shows both ends**, whichever one the square is on. A preview of one
           colour when there are two is a picture of half the thing, and the half
           you are not editing is exactly the half you need to see while you edit
           this one.
-
-          It commits on press and not on every pixel of a drag: a picker that fired
-          on drag would put a hundred writes in the sync queue and make the space
-          flicker between eleven colours while you are trying to look at one. So it
-          is a button, and it is **dimmed rather than hidden** when there is nothing
-          to change — hiding it would move the layout under the finger of somebody
-          about to drag the square.
 
           Its height is **not** left to the text inside it. `flex: 1` on a centred
           row collapses the column to the height of a line of text, which is not a
@@ -415,29 +429,15 @@ export function WorkspaceColorPicker({
             </AppText>
           </SpaceWash>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("workspaces.colorUse")}
-            accessibilityState={{ disabled: !sucio }}
-            disabled={!sucio}
-            onPress={() => escribir(vista)}
-            style={({ pressed }) => [
-              styles.usar,
-              {
-                backgroundColor: theme.colors.accent,
-                borderRadius: theme.radius.md,
-                opacity: !sucio ? 0.35 : pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <AppText
-              variant="callout"
-              numberOfLines={1}
-              style={{ color: theme.colors.onAccent }}
-            >
-              {t("workspaces.colorUse")}
-            </AppText>
-          </Pressable>
+{/*
+            Y aqui **ya no hay boton de "usar este color"**.
+
+            Era el que escribia lo que el cuadrado mostraba, y pedia confirmar dos
+            veces lo mismo: mover el dedo al color y pulsar que lo quieres. Ahora
+            escribe el dedo al levantarse —mismo commit, sin el segundo paso— y lo
+            unico que queda en esta columna es la previsualizacion, que es lo que
+            esta columna siempre fue.
+          */}
         </View>
       </View>
 
@@ -606,9 +606,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
   },
-  usar: {
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  /*
+    `usar` se fue con el boton de "usar este color": era su estilo y de nadie mas.
+  */
 });

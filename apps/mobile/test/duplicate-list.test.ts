@@ -19,7 +19,7 @@ function source(overrides: Record<string, unknown> = {}) {
     kind: 'movies' as const,
     title: 'Películas 2026',
     description: 'Lo que quiero ver',
-    emoji: '🎬',
+    icon: { type: 'emoji', value: '🎬', color: 'auto' } as const,
     tags: ['pendiente'],
     position: 3,
     orderMode: 'manual' as const,
@@ -45,7 +45,7 @@ const items = [
     completed: true,
     stateId: null,
     priority: 'high' as const,
-    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    icon: null,
     tags: [] as string[],
     externalId: 'movie:603',
     metadata: { provider: 'tmdb', year: '1999' },
@@ -60,7 +60,7 @@ const items = [
     completed: false,
     stateId: null,
     priority: 'none' as const,
-    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    icon: null,
     tags: [] as string[],
     externalId: 'movie:329865',
     metadata: { provider: 'tmdb' },
@@ -75,7 +75,7 @@ const items = [
     completed: false,
     stateId: null,
     priority: 'none' as const,
-    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    icon: null,
     tags: [] as string[],
     externalId: null,
     metadata: null,
@@ -90,7 +90,7 @@ const items = [
     completed: false,
     stateId: null,
     priority: 'none' as const,
-    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    icon: null,
     tags: [] as string[],
     externalId: null,
     metadata: null,
@@ -122,7 +122,7 @@ function boardSource(overrides: Record<string, unknown> = {}) {
     kind: 'board' as const,
     title: 'Tablero',
     description: null,
-    emoji: null,
+    icon: null,
     tags: [],
     position: 0,
     orderMode: 'manual' as const,
@@ -233,7 +233,20 @@ describe('planDuplication', () => {
     expect(plan.list.folderId).toBe('folder-1');
     expect(plan.list.position).toBe(3);
     expect(plan.list.kind).toBe('movies');
-    expect(plan.list.emoji).toBe('🎬');
+    expect(plan.list.icon).toEqual({ type: 'emoji', value: '🎬', color: 'auto' });
+  });
+
+  it('copies the icon by value, not by reference', () => {
+    const from = source();
+    const plan = planDuplication(from, items, {
+      newListId: 'list-2',
+      newItemId: () => 'new-1',
+      newStateId: () => 'estado-1',
+      now: '2026-06-01T00:00:00.000Z',
+    });
+
+    expect(plan.list.icon).toEqual({ type: 'emoji', value: '🎬', color: 'auto' });
+    expect(plan.list.icon).not.toBe(from.icon);
   });
 
   it('copies the tags by value, not by reference', () => {

@@ -5,6 +5,8 @@ import { Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
+import { useFieldChain } from "@/lib/forms/field-chain";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { Sheet, SheetOptions, type SheetOption, useLastValue } from "@/components/ui/sheet";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import {
@@ -94,8 +96,25 @@ export function TemplateMenuSheet({
 
   const [step, setStep] = useState<Step>("menu");
   const [name, setName] = useState("");
+  const cadena = useFieldChain(2);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
+  const { setSucio } = useSheetSucio();
+
+  /*
+    Sucio **solo en la pagina de renombrar**, y con los dos campos por delante de
+    sus valores de partida.
+
+    El menu y la pagina de compartir no tienen nada escrito, y en el resto no hay
+    borrador que perder.
+  */
+  useEffect(() => {
+    setSucio(
+      step === "rename" &&
+        (name.trim() !== (template?.name ?? "").trim() ||
+          description.trim() !== (template?.description ?? "").trim()),
+    );
+  }, [step, name, description, template?.name, template?.description, setSucio]);
 
   // Re-seeded on every open, so the box holds this template's words and not the
   // ones somebody typed into another one ten minutes ago.
@@ -108,10 +127,21 @@ export function TemplateMenuSheet({
     }
   }, [template?.description, template?.id, template?.name]);
 
+  /**
+   * Out of the sheet, which is only what the ✕ does now.
+   *
+   * It used to also `setStep("menu")`, so the "Cancelar" of the rename page went
+   * back **and** closed — the same two-jobs-one-button as the note sheet, and the
+   * same fix. Going back is `volver`.
+   */
   const close = useCallback(() => {
-    setStep("menu");
     onClose();
   }, [onClose]);
+
+  /** Up one page, and the sheet stays open. */
+  const volver = useCallback(() => {
+    setStep("menu");
+  }, []);
 
   const save = useCallback(async () => {
     if (!template || busy) return;
@@ -160,6 +190,10 @@ export function TemplateMenuSheet({
         onClose={close}
         title={t("note.template.rename")}
         scrollable
+        onBack={volver}
+        /* El Guardar es el del pie, y abajo solo queda el contenido. */
+        onSave={() => void save()}
+        saveDisabledReason={name.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined}
       >
         <View style={{ gap: theme.spacing.md }}>
           <TextField
@@ -169,6 +203,9 @@ export function TemplateMenuSheet({
             placeholder={t("note.templateName")}
             autoCapitalize="sentences"
             autoFocus
+            ref={cadena.register(0)}
+            returnKeyType="next"
+            onSubmitEditing={() => cadena.advance(0, () => void save())}
           />
           <TextField
             value={description}
@@ -176,20 +213,19 @@ export function TemplateMenuSheet({
             label={t("note.template.description")}
             placeholder={t("note.template.description")}
             autoCapitalize="sentences"
+            ref={cadena.register(1)}
+            returnKeyType="go"
+            onSubmitEditing={() => void save()}
           />
-          <SheetOptions
-            options={[
-              {
-                key: "save",
-                label: busy ? t("common.saving") : t("common.save"),
-                icon: "checkmark",
-                tone: "accent",
-                disabled: name.trim().length === 0 || busy,
-                onPress: () => void save(),
-              },
-              { key: "cancel", label: t("common.cancel"), onPress: close },
-            ]}
-          />
+          {/*
+            Y aqui **no hay botones**: el de guardar esta en el pie y el "Volver"
+            tambien se fue.
+
+            El "Volver" estaba cableado a `volver`, que solo retrocede un paso —no
+            cerraba—, y la flecha de la cabecera hace exactamente lo mismo desde mas
+            arriba. Dos formas de lo mismo, y la de abajo era ademas la salida que
+            **no preguntaba** lo que habia escrito en los dos campos.
+          */}
         </View>
       </Sheet>
     );
@@ -200,7 +236,8 @@ export function TemplateMenuSheet({
       <ShareStep
         template={template}
         busy={busy}
-        onBack={() => setStep("menu")}
+        onBack={volver}
+        onCloseSheet={close}
         onShare={async (input) => {
           setBusy(true);
           try {
@@ -329,11 +366,20 @@ function ShareStep({
   template,
   busy,
   onBack,
+  onCloseSheet,
   onShare,
 }: {
   template: NoteTemplate;
   busy: boolean;
   onBack: () => void;
+  /**
+   * Out of the sheet altogether, which is what the ✕ does.
+   *
+   * It used to be the same `onBack`, so the ✕ said "Cerrar" and went back to the
+   * menu instead of closing — and the ✕ in every other sheet in the app closes.
+   * Two props because there are two jobs and they are not the same one.
+   */
+  onCloseSheet: () => void;
   onShare: (input: {
     scope: "personal" | "workspace";
     workspaceId?: string;
@@ -349,7 +395,8 @@ function ShareStep({
   return (
     <Sheet
       visible
-      onClose={onBack}
+      onClose={onCloseSheet}
+      onBack={onBack}
       title={t("note.template.chooseSpace")}
       scrollable={false}
     >
@@ -399,11 +446,12 @@ function ShareStep({
           ) : null}
         </View>
 
-        <Pressable onPress={onBack} accessibilityRole="button">
-          <AppText variant="body" tone="muted">
-            {t("common.cancel")}
-          </AppText>
-        </Pressable>
+        {/*
+          The "Cancelar" that was down here went back a step, and the header now has
+          the arrow that does exactly that from the same place on every page. It was
+          the last row of a panel whose whole content is a list of spaces, so the row
+          that left it was the widest thing on screen.
+        */}
       </View>
     </Sheet>
   );

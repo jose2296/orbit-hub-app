@@ -4,7 +4,9 @@ import { Pressable, StyleSheet, View } from "react-native";
 import type { StateColor } from "@orbit-hub/contracts";
 
 import { useTranslation } from "@/lib/i18n";
-import { ICON_COLOR_KEYS, ICON_COLOR_LABEL, iconColor } from "@/lib/lists/item-icons";
+import { ITEM_ICON_COLORS } from "@orbit-hub/contracts";
+import { ICON_COLOR_LABEL } from "@/theme/tokens";
+import { stateColorHex } from "@/lib/lists/board";
 import { useTheme } from "@/theme";
 import { ColorSquare } from "@/components/ui/color-square";
 import { AppText } from "@/components/ui/text";
@@ -60,9 +62,9 @@ export function StateColorStrip({
    * an empty field — and an empty field would be the picker forgetting the
    * answer it already has.
    */
-  const [hex, setHex] = useState(() => iconColor(color));
+  const [hex, setHex] = useState(() => stateColorHex(color, theme.colors.icon));
   useEffect(() => {
-    setHex(iconColor(color));
+    setHex(stateColorHex(color, theme.colors.icon));
     // `color` and nothing else: syncing on every render would take the field
     // back while it is being typed in, and the text is local state precisely so
     // that it is not taken back.
@@ -82,7 +84,7 @@ export function StateColorStrip({
 
   return (
     <View style={[styles.tira, { gap: theme.spacing.xs }]}>
-      {ICON_COLOR_KEYS.map((opcion) => {
+      {ITEM_ICON_COLORS.map((opcion) => {
         const activa = color === opcion;
         return (
           <Pressable
@@ -95,7 +97,7 @@ export function StateColorStrip({
             style={({ pressed }) => [
               styles.muestra,
               {
-                backgroundColor: iconColor(opcion),
+                backgroundColor: stateColorHex(opcion, theme.colors.icon),
                 borderColor: activa ? theme.colors.text : "transparent",
                 opacity: pressed ? 0.7 : 1,
               },
@@ -117,7 +119,7 @@ export function StateColorStrip({
           {t("board.stateCustom")}
         </AppText>
         <ColorSquare
-          color={iconColor(color)}
+          color={stateColorHex(color, theme.colors.icon)}
           onChange={onChange}
           testIDPrefix={testIDPrefix}
           squareLabel={t("board.stateCustom")}

@@ -20,7 +20,7 @@ function makeItem(partial: Partial<ListItem> & { externalId: string | null }): L
     completed: false,
     stateId: null,
     priority: 'none',
-    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    icon: null,
     tags: [],
     metadata: null,
     annotation: null,

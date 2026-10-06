@@ -25,7 +25,7 @@ function item(partial: Partial<ListItem> & { id: string }): ListItem {
     completed: false,
     stateId: null,
     priority: 'none',
-    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    icon: null,
     tags: [],
     externalId: null,
     metadata: null,

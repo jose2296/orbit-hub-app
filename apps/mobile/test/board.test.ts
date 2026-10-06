@@ -9,6 +9,7 @@ import {
 import type {
   BoardState,
   BoardStates,
+  IconColor,
   ItemIconColor,
   ListItem,
 } from '@orbit-hub/contracts';
@@ -27,6 +28,7 @@ import {
   newState,
   removeState,
   renumberWithinState,
+  stateColorHex,
   stateIdToWrite,
   tasksInState,
 } from '../src/lib/lists/board';
@@ -55,7 +57,7 @@ function itemDe(partial: Partial<ListItem> & { id: string }): ListItem {
     completed: false,
     stateId: null,
     priority: 'none',
-    icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+    icon: null,
     tags: [],
     externalId: null,
     metadata: null,
@@ -871,6 +873,29 @@ describe('el color de un estado en el contrato', () => {
     for (const color of ['chartreuse', '#fff', '#a3e635ff', 'a3e635', '', '#gggggg']) {
       expect(boardStateSchema.safeParse({ ...base, color }).success).toBe(false);
     }
+  });
+});
+/**
+ * El hex que pinta un estado, en el esquema que este encendido.
+ *
+ * Un hex elegido pasa tal cual; una clave se resuelve en la tabla del tema (un
+ * hex por esquema); lo demas cae al neutro. La tabla la pasa quien llama desde
+ * `theme.colors.icon`, asi que aqui va una de mentira con dos entradas.
+ */
+describe('el hex que pinta un estado', () => {
+  const icon = { neutral: '#111111', red: '#FF0000' } as unknown as Record<IconColor, string>;
+  it('un hex elegido se pinta tal cual, en las dos cajas', () => {
+    expect(stateColorHex('#a3e635', icon)).toBe('#a3e635');
+    expect(stateColorHex('#A3E635', icon)).toBe('#A3E635');
+  });
+  it('una clave se resuelve en la tabla', () => {
+    expect(stateColorHex('red', icon)).toBe('#FF0000');
+  });
+  it('lo demas cae al neutro', () => {
+    expect(stateColorHex('chartreuse', icon)).toBe('#111111');
+    expect(stateColorHex(null, icon)).toBe('#111111');
+    expect(stateColorHex(undefined, icon)).toBe('#111111');
+    expect(stateColorHex('#fff', icon)).toBe('#111111');
   });
 });
 

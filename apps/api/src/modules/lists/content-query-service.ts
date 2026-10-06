@@ -1,4 +1,4 @@
-import { isItemIcon, notePreviewBelowTitle } from '@orbit-hub/contracts';
+import { notePreviewBelowTitle, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
   List,
   ListItem,
@@ -15,6 +15,7 @@ import { folders, listItems, lists, memberships, notes, workspaces } from '../..
 import { HttpError } from '../../lib/http-error.js';
 
 import type { ListKindName } from '../../db/constants';
+
 
 interface ListFilters {
   workspaceId?: string;
@@ -124,7 +125,9 @@ export class ContentQueryService {
       kind: row.kind,
       title: row.title,
       description: row.description,
-      emoji: row.emoji,
+      // What this build cannot draw is no icon, not a broken list: a payload
+      // from a future build still opens the list.
+      icon: sanitiseIconRef(row.icon),
       tags: row.tags,
       tagColors: row.tagColors ?? {},
       // `?? []` and not `row.states`: a row written before the column arrived
@@ -180,7 +183,7 @@ export class ContentQueryService {
       kind: row.kind,
       title: row.title,
       description: row.description,
-      emoji: row.emoji,
+      icon: sanitiseIconRef(row.icon),
       tags: row.tags,
       tagColors: row.tagColors ?? {},
       states: row.states ?? [],
@@ -234,13 +237,9 @@ export class ContentQueryService {
       // a list that has no columns.
       stateId: row.stateId ?? null,
       priority: row.priority,
-      // An icon this build does not know is no icon, and not a broken row: the
-      // column is free text and a future build can write a key this one has
-      // never heard of. Showing nothing in the picture's place is a missing
-      // detail; refusing to answer is a list that does not open.
-      icon: isItemIcon(row.icon) ? row.icon : null,
-      iconStyle: row.iconStyle,
-      iconColor: row.iconColor,
+      // An icon this build cannot draw is no icon, and not a broken row: a
+      // payload from a future build still opens the row.
+      icon: sanitiseIconRef(row.icon),
       tags: row.tags ?? [],
       externalId: row.externalId,
       metadata: row.metadata,
@@ -309,6 +308,7 @@ export class ContentQueryService {
         kind: null,
         title: row.name,
         subtitle: row.description,
+        icon: sanitiseIconRef(row.icon),
         updatedAt: row.updatedAt.toISOString(),
       });
     }
@@ -336,6 +336,7 @@ export class ContentQueryService {
           kind: null,
           title: row.name,
           subtitle: null,
+          icon: sanitiseIconRef(row.icon),
           updatedAt: row.updatedAt.toISOString(),
         });
       }
@@ -367,6 +368,7 @@ export class ContentQueryService {
           kind: row.kind,
           title: row.title,
           subtitle: row.description,
+          icon: sanitiseIconRef(row.icon),
           updatedAt: row.updatedAt.toISOString(),
         });
       }
@@ -398,6 +400,7 @@ export class ContentQueryService {
           title: row.item.title,
           subtitle: row.list.title,
           completed: row.item.completed,
+          icon: sanitiseIconRef(row.item.icon),
           updatedAt: row.item.updatedAt.toISOString(),
         });
       }
@@ -436,6 +439,7 @@ export class ContentQueryService {
           subtitle: notePreviewBelowTitle(row.document, row.title),
           // `null` and not `false`: a note is not a row and cannot be ticked.
           completed: null,
+          icon: sanitiseIconRef(row.icon),
           updatedAt: row.updatedAt.toISOString(),
         });
       }

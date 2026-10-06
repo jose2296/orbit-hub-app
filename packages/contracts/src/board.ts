@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ITEM_ICON_COLORS } from './item-icons.js';
+import { ITEM_ICON_COLORS } from './icons.js';
 
 /**
  * How many states a board may hold. The cap lives here, as a name, because both

@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Screen } from '@/components/ui/screen';
 import { TextField } from '@/components/ui/text-field';
+import { useFieldChain } from '@/lib/forms/field-chain';
 import { AppText } from '@/components/ui/text';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
@@ -31,6 +32,7 @@ export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const cadena = useFieldChain(2);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,7 +102,9 @@ export default function ResetPasswordScreen() {
           secureTextEntry
           autoComplete="new-password"
           textContentType="newPassword"
+          ref={cadena.register(0)}
           returnKeyType="next"
+          onSubmitEditing={() => cadena.advance(0, () => void onSubmit())}
         />
         <TextField
           label={t('auth.passwordConfirm')}
@@ -109,6 +113,7 @@ export default function ResetPasswordScreen() {
           secureTextEntry
           autoComplete="new-password"
           textContentType="newPassword"
+          ref={cadena.register(1)}
           returnKeyType="go"
           onSubmitEditing={() => {
             void onSubmit();

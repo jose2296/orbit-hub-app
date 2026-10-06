@@ -12,17 +12,18 @@ import {
   MAX_BOARD_STATES,
   NOTE_DOCUMENT_MAX_BYTES,
   isKnownStateId,
+  normalizaColor,
   noteDocumentSchema,
   noteDocumentToPlainText,
+  sanitiseIconRef,
   sanitiseTagColors,
   syncOperationSchema,
 } from '@orbit-hub/contracts';
+import type { IconRef } from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import {
-  ITEM_ICON_COLORS,
-  isItemIcon,
   LIST_KINDS,
   LIST_ORDER_MODES,
   WORKSPACE_COLORS,
@@ -33,7 +34,6 @@ import {
 } from '../../db/constants.js';
 import type {
   ListKindName,
-  ListOrderModeName,
   MembershipRoleName,
   SyncEntityName,
 } from '../../db/constants.js';
@@ -112,7 +112,68 @@ function noteFieldsForWrite(
  * Keeps only the fields the sync protocol owns, coerced to the column types.
  * Anything else in the payload is dropped instead of being written.
  */
-function sanitisePayload(
+/**
+ * Column widths for the free-text fields, per entity.
+ *
+ * These are the `varchar` lengths in `content-schema.ts`. The contract schemas
+ * in `packages/contracts` carry the same numbers as validation, and the two
+ * copies are checked against each other by `sync-limits.test.ts` — which reads
+ * the columns, so a migration that changes a width cannot leave this stale
+ * without a test going red.
+ */
+const STRING_LIMITS: Partial<Record<SyncEntityName, Record<string, number>>> = {
+  // No `icon` entry and no `emoji` one either: the icon is a jsonb object whose
+  // shape the contract fixes, so there is no width here to keep in step with.
+  workspace: { name: 80, description: 500 },
+  folder: { name: 120 },
+  list: { title: 120, description: 1000 },
+  list_item: { annotation: 2000 },
+  note: { title: 200 },
+};
+
+/**
+ * What a device is told when an operation fails.
+ *
+ * `The operation failed` was the answer for everything that was not an
+ * `HttpError`, and that includes every error Postgres raises on its own — a value
+ * too long for a column being the one that happens on ordinary input. The device
+ * records the reason and drops the operation from the outbox, so a message that
+ * says nothing is a message nobody can act on: the write is gone and there is no
+ * way to tell whether retrying could ever work.
+ *
+ * Postgres error codes are the ones worth naming, because they are stable and
+ * they are not guesswork: 22001 is a string longer than its column, 23505 a
+ * unique violation, 23503 a foreign key that does not resolve. Everything else
+ * stays as it was, because an invented message for an unknown failure is worse
+ * than an honest one.
+ */
+function describeFailureInner(error: unknown): string {
+  if (error instanceof HttpError) return error.message;
+
+  const code = (error as { code?: unknown } | null)?.code;
+
+  if (code === '22001') {
+    return 'A value is longer than the field allows, so it was not saved.';
+  }
+  if (code === '23505') {
+    return 'That would duplicate something that already exists, so it was not saved.';
+  }
+  if (code === '23503') {
+    return 'It refers to something that does not exist, so it was not saved.';
+  }
+
+  return 'The operation failed';
+}
+
+/**
+ * Exported for its tests, which is also how a test can name what a device is
+ * told about a failure without a database.
+ */
+export function describeFailure(error: unknown): string {
+  return describeFailureInner(error);
+}
+
+export function sanitisePayload(
   entity: SyncEntityName,
   payload: Record<string, unknown> | null,
 ): Record<string, unknown> {
@@ -122,8 +183,15 @@ function sanitisePayload(
   for (const [key, value] of Object.entries(payload ?? {})) {
     if (!allowed.has(key) || value === undefined) continue;
 
-    if (key === 'name' || key === 'description' || key === 'emoji') {
-      clean[key] = value === null ? null : String(value).slice(0, key === 'name' ? 120 : 500);
+    if (key === 'name' || key === 'description') {
+      // Keyed by entity, not by field name. `name` is varchar(80) on a workspace
+      // and varchar(120) on a folder: a single number per field name let a write
+      // past the column, and that is a 500 from Postgres on ordinary input
+      // rather than a rejected operation
+      // with a message. The widths live in `content-schema.ts`; a test in
+      // `sync-limits.test.ts` holds the two together.
+      const limit = STRING_LIMITS[entity]?.[key];
+      clean[key] = value === null ? null : String(value).slice(0, limit ?? 500);
       continue;
     }
 
@@ -153,7 +221,11 @@ function sanitisePayload(
     }
 
     if (key === 'title') {
-      clean[key] = String(value).slice(0, entity === 'list_item' ? 300 : 120);
+      // A list title is varchar(120) and a note title is varchar(200), so the
+      // old "everything that is not an item is 120" silently threw away eighty
+      // characters of a note title. The push still answered `applied`.
+      const limit = entity === 'list_item' ? 300 : STRING_LIMITS[entity]?.title ?? 120;
+      clean[key] = String(value).slice(0, limit);
       continue;
     }
 
@@ -181,8 +253,10 @@ function sanitisePayload(
 
     if (key === 'orderMode') {
       // An order from a newer build falls back to manual, which is the order
-      // the items are already in: a list is never left unreadable.
-      clean[key] = LIST_ORDER_MODES.includes(value as ListOrderModeName) ? value : 'manual';
+      // the items are already in: a list is never left unreadable. The list of
+      // orders is the contract's, so this cannot fall behind it again.
+      const known = LIST_ORDER_MODES.find((mode) => mode === value);
+      clean[key] = known ?? 'manual';
       continue;
     }
 
@@ -196,10 +270,19 @@ function sanitisePayload(
       // "is it in the list", which turned every custom colour into slate — and
       // did it silently, so the picker looked like it worked and the space came
       // back grey on every pull.
+      //
+      // **The check is `normalizaColor`, and the reason is the silent one.** This
+      // used to be a second hex regex of its own — six digits, `#` required, any
+      // case— and it was the sixth rule for "what is a colour string" in this
+      // repository. The app's own validators did not agree with it about `#` or
+      // about three digits, so a value a field had just accepted came back
+      // `slate` with no error anywhere. The contract owns that question and this
+      // file is on the other side of the wire, so this asks it, and it is the
+      // normalised hex that is stored: `#abc` and `a1b2c3` now store `#AABBCC` and
+      // `#A1B2C3` instead of being thrown away.
       const color = String(value).trim();
       const esNombre = (WORKSPACE_COLORS as readonly string[]).includes(color);
-      const esPropio = /^[#][0-9A-F]{6}$/.test(color.toUpperCase());
-      clean[key] = esNombre ? color : esPropio ? color.toUpperCase() : 'slate';
+      clean[key] = esNombre ? color : (normalizaColor(color) ?? 'slate');
       continue;
     }
 
@@ -222,33 +305,20 @@ function sanitisePayload(
         clean[key] = null;
         continue;
       }
+      // **The same rule as `color`, and the same function**, which is why there is
+      // no regex left here. The fallback is `null` and not `slate`: the two ends are
+      // not the same field, and here `null` means "not chosen yet", which is the
+      // state the app already knows how to draw.
       const segundo = String(value).trim();
       const esNombre = (WORKSPACE_COLORS as readonly string[]).includes(segundo);
-      const esPropio = /^#[0-9A-F]{6}$/.test(segundo.toUpperCase());
-      clean[key] = esNombre ? segundo : esPropio ? segundo.toUpperCase() : null;
+      clean[key] = esNombre ? segundo : normalizaColor(segundo);
       continue;
     }
 
     if (key === 'icon') {
-      // A key out of the icons the app offers, never free text: the same shape
-      // on every device and something the app can draw.
-      const icon = String(value);
-      clean[key] = isItemIcon(icon) ? icon : null;
-      continue;
-    }
-
-    if (key === 'iconStyle') {
-      // Outline or filled. Anything else is the outline, which is what a row
-      // with no style has always been drawn as.
-      clean[key] = value === 'fill' ? 'fill' : 'outline';
-      continue;
-    }
-
-    if (key === 'iconColor') {
-      // One of the colours the app offers, and not a colour value: a row with a
-      // colour nobody can draw is a row with no colour.
-      const color = String(value);
-      clean[key] = (ITEM_ICON_COLORS as readonly string[]).includes(color) ? color : 'neutral';
+      // Un objeto, y no una clave suelta: la forma la fija el contrato y una forma
+      // que no se puede dibujar es no tener icono, no una fila que no abre.
+      clean[key] = sanitiseIconRef(value);
       continue;
     }
 
@@ -573,6 +643,10 @@ export class SyncService {
             ...payload,
             id: operation.entityId,
             name: (payload['name'] as string) ?? 'Workspace',
+            // Named by hand even though the payload is spread above: the spread
+            // carries `icon` whatever the sanitiser made of it, and an explicit
+            // `null` is the state the column is nullable for.
+            icon: (payload['icon'] as IconRef | null) ?? null,
           });
           // The creator owns what they create.
           await syncRepository.addMembership(row.id, userId, 'owner');
@@ -593,7 +667,7 @@ export class SyncService {
             workspaceId,
             parentId: (payload['parentId'] as string | null) ?? null,
             name: (payload['name'] as string) ?? 'Folder',
-            emoji: (payload['emoji'] as string) ?? null,
+            icon: (payload['icon'] as IconRef | null) ?? null,
             position: (payload['position'] as number) ?? 0,
           });
           return { status: 'applied', version: row.version };
@@ -693,6 +767,9 @@ export class SyncService {
             // the text that search matches on cannot drift apart.
             plainText: noteDocumentToPlainText(document),
             tags: Array.isArray(payload['tags']) ? (payload['tags'] as string[]) : [],
+            // Named by hand because this `create` does not spread: it is the same
+            // one that dropped the icon of a list item once.
+            icon: (payload['icon'] as IconRef | null) ?? null,
           });
           return { status: 'applied', version: row.version };
         }
@@ -966,7 +1043,7 @@ export class SyncService {
           error: applied.error ?? null,
         });
       } catch (error) {
-        const message = error instanceof HttpError ? error.message : 'The operation failed';
+        const message = describeFailure(error);
         logger.warn({ err: error, operationId: operation.operationId }, 'sync operation failed');
 
         results.push({

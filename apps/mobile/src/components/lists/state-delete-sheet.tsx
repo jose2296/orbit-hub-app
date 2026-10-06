@@ -6,7 +6,7 @@ import type { BoardState, BoardStates } from "@orbit-hub/contracts";
 import { AppText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { pluralKey, useTranslation } from "@/lib/i18n";
-import { iconColor } from "@/lib/lists/item-icons";
+import { stateColorHex } from "@/lib/lists/board";
 import { useTheme } from "@/theme";
 
 export interface StateDeleteSheetProps {
@@ -284,7 +284,7 @@ function FilaDestino({
         style={[
           styles.punto,
           {
-            backgroundColor: iconColor(state.color),
+            backgroundColor: stateColorHex(state.color, theme.colors.icon),
             borderRadius: theme.radius.pill,
           },
         ]}

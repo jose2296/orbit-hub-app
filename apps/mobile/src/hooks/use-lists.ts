@@ -1,6 +1,6 @@
 import type {
   BoardStates,
-  ItemIconColor,
+  IconRef,
   List,
   ListItem,
   ListKind,
@@ -9,11 +9,13 @@ import type {
   Priority,
   SearchResult,
 } from "@orbit-hub/contracts";
-import { notePreviewBelowTitle } from "@orbit-hub/contracts";
+import { notePreviewBelowTitle, sanitiseIconRef } from "@orbit-hub/contracts";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { duplicationPayloads, planDuplication } from "@/lib/lists/duplicate";
+import { createListPlan } from "@/lib/lists/create-plan";
+import { applyItemCounts } from "@/lib/lists/item-count";
 import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
 import { planTagColorChange } from "@/lib/lists/tag-colors";
 import { defaultStates } from "@/lib/lists/board";
@@ -83,7 +85,12 @@ export function useLists(filters: ListFilters = {}) {
       .filter((list) => (kind ? list.kind === kind : true));
 
     visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    setLists(visible);
+    // The number of items comes from the cache, not from `itemCount` on the row.
+    // That field was a photo from the server that nothing refreshed: the
+    // projection recalculates when the *list* changes, and adding or ticking an
+    // item changes the item. So a list filled in on one device read `0` forever,
+    // and that zero is what a delete confirmation said before deleting the lot.
+    setLists(applyItemCounts(visible, await store.countCachedItemsByList()));
     setIsLoading(false);
   }, [folderId, kind, workspaceId]);
 
@@ -101,11 +108,14 @@ export function useLists(filters: ListFilters = {}) {
       kind: ListKind;
       /** `null` is the space itself, which is the root folder. */
       folderId?: string | null;
-      emoji?: string;
+      icon?: IconRef | null;
     }) => {
       const store = await getLocalStoreReady();
       const id = Crypto.randomUUID();
       const now = new Date().toISOString();
+      // One plan, two writes: the cache row and the queued operation read the
+      // folder from the same answer, so they cannot end up disagreeing.
+      const plan = createListPlan({ id, ...input });
 
       /**
        * The columns of a board, **minted here and not in the form that asked for
@@ -140,11 +150,11 @@ export function useLists(filters: ListFilters = {}) {
             workspaceId: input.workspaceId,
             // A list is never floating: `null` is the space itself, which is the
             // root folder of the tree.
-            folderId: input.folderId ?? null,
+            folderId: plan.folderId,
             kind: input.kind,
             title: input.title,
             description: null,
-            emoji: input.emoji ?? null,
+            icon: input.icon ?? null,
             tags: [],
             position: 0,
             // `manual`, which is the contract's own default and the only order a
@@ -173,13 +183,13 @@ export function useLists(filters: ListFilters = {}) {
         entityId: id,
         baseVersion: 0,
         payload: {
-          workspaceId: input.workspaceId,
-          title: input.title,
-          kind: input.kind,
-          ...(input.emoji ? { emoji: input.emoji } : {}),
+          ...plan.payload,
           // Only for a board, and that is a decision and not an omission: `manual`
           // is already the default of the column, so sending it for every other
           // kind would be a field written to say what was going to happen anyway.
+          // The columns travel for the same reason the cache row above carries
+          // them: a board created without states opens blank with nothing to say
+          // why.
           ...(input.kind === "board" ? { states, orderMode: "manual" } : {}),
         },
       });
@@ -218,7 +228,7 @@ export function useLists(filters: ListFilters = {}) {
           kind: source.kind,
           title: source.title,
           description: source.description,
-          emoji: source.emoji,
+          icon: source.icon,
           tags: source.tags,
           position: source.position,
           // A copy of a list sorted by name that came out sorted by hand would
@@ -356,14 +366,27 @@ export function useLists(filters: ListFilters = {}) {
    * Local-first like every other write here — the label repaints from the cache
    * at once and the operation waits in the outbox, so choosing a colour on a
    * train is a colour when the train stops.
+   *
+   * **Planned from the store and not from a captured list, and that is the whole
+   * of this function.** The sheet keeps its colour picker open while colours are
+   * chosen, so two colour writes can be in flight at once —two quick taps, or a
+   * tap and a label created with a colour right after— and planning both from the
+   * same captured map would make the second quietly eat the first. Reading the
+   * cached list at write time means every write plans from everything already
+   * written, no matter how close together the taps were. The `readRecord` merge
+   * is what makes that true: it layers the pending writes over the server's
+   * copy, so "fresh" includes what has not synced yet.
    */
   const setTagColor = useCallback(
-    async (list: List, tag: string, color: ItemIconColor | null) => {
+    async (listId: string, tag: string, color: string | null) => {
+      const store = await getLocalStoreReady();
+      const cached = await store.getCached("list", listId);
+      const fresh = cached ? withListDefaults(readRecord<List>(cached)) : null;
       // `?? {}` because a list that did not come through `withListDefaults`
       // arrives with no `tagColors` key at all, and a list with no colours
       // chosen is a map with nothing in it.
-      await localUpdate("list", list.id, {
-        tagColors: planTagColorChange(list.tagColors ?? {}, tag, color),
+      await localUpdate("list", listId, {
+        tagColors: planTagColorChange(fresh?.tagColors ?? {}, tag, color),
       });
       await load();
     },
@@ -391,7 +414,7 @@ export function useLists(filters: ListFilters = {}) {
       changes: {
         title?: string;
         description?: string | null;
-        emoji?: string | null;
+        icon?: IconRef | null;
         /**
          * The columns of a board, **whole and in order**: the order of the array is
          * the order of the columns, so this is one write and not one per column.
@@ -559,9 +582,7 @@ export function useListItems(listId: string | undefined) {
       metadata?: Record<string, unknown> | null;
       /** The rest of what the item panel offers, when it created the row. */
       annotation?: string | null;
-      icon?: ListItem["icon"];
-      iconStyle?: ListItem["iconStyle"];
-      iconColor?: ListItem["iconColor"];
+      icon?: IconRef | null;
       tags?: string[];
       /**
        * The column of a board this row is created in, **and not a default.**
@@ -610,8 +631,6 @@ export function useListItems(listId: string | undefined) {
         priority: input.priority,
         annotation: input.annotation ?? null,
         icon: input.icon ?? null,
-        iconStyle: input.iconStyle,
-        iconColor: input.iconColor,
         tags: input.tags,
         stateId: input.stateId ?? null,
         externalId: input.externalId ?? null,
@@ -641,8 +660,6 @@ export function useListItems(listId: string | undefined) {
           position: nextPosition(existing),
           ...(input.priority ? { priority: input.priority } : {}),
           ...(input.icon ? { icon: input.icon } : {}),
-          ...(input.iconStyle ? { iconStyle: input.iconStyle } : {}),
-          ...(input.iconColor ? { iconColor: input.iconColor } : {}),
           ...(input.annotation ? { annotation: input.annotation } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
           /*
@@ -759,10 +776,7 @@ export function useListItems(listId: string | undefined) {
     async (
       item: ListItem,
       changes: {
-        icon?: ListItem["icon"];
-        /** Filled or outline, and which of the colours the app offers. */
-        iconStyle?: ListItem["iconStyle"];
-        iconColor?: ListItem["iconColor"];
+        icon?: IconRef | null;
         tags?: string[];
         /** The name, the description and how urgent it is. */
         title?: string;
@@ -797,6 +811,19 @@ export function useListItems(listId: string | undefined) {
          * reason applies here.
          */
         position?: number;
+        /**
+         * Whether it is done.
+         *
+         * It was missing, and not by accident: nothing could write it. Which is
+         * exactly why "done" had to go through `toggleCompleted` on its own, and
+         * that es lo que hacia que **la fila se guardara sola al marcarla** —
+         * un unico campo de siete con una puerta propia por debajo de la puerta
+         * de Guardar, sin que nadie lo hubiera decidido asi.
+         *
+         * Con esto, marcar "hecho" es un campo mas del borrador y sale por el mismo
+         * `updateItem` que el nombre, la nota y el icono.
+         */
+        completed?: boolean;
       },
     ) => {
       if (!listId) return;
@@ -998,6 +1025,7 @@ export function useLocalSearch() {
         kind: null,
         title: record.name,
         subtitle: record.description ?? null,
+        icon: sanitiseIconRef((record as { icon?: unknown }).icon),
         updatedAt: record.updatedAt,
       });
     }
@@ -1021,6 +1049,7 @@ export function useLocalSearch() {
         kind: null,
         title: record.name,
         subtitle: workspacesById.get(record.workspaceId)?.name ?? null,
+        icon: sanitiseIconRef((record as { icon?: unknown }).icon),
         updatedAt: record.updatedAt,
       });
     }
@@ -1038,6 +1067,7 @@ export function useLocalSearch() {
         kind: record.kind,
         title: record.title,
         subtitle: record.description,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }
@@ -1064,6 +1094,7 @@ export function useLocalSearch() {
         // So the hit can be ticked from the search itself, which is the whole
         // reason somebody is looking for "milk" a second time.
         completed: record.completed,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }
@@ -1092,6 +1123,7 @@ export function useLocalSearch() {
         // A note is not a row, so there is nothing to tick. Null and not false,
         // because false would draw an empty checkbox next to a document.
         completed: null,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }

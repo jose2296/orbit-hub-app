@@ -47,16 +47,38 @@ const API_PREFIX = '/api/v1';
 /**
  * What the web build cannot do without.
  *
- * `EXPO_PUBLIC_GOOGLE_CLIENT_ID` is here because its absence is silent in the worst
- * way: `GoogleSignInButton` reads a missing id, decides there is no OAuth client, and
- * renders a **disabled button with an explanation underneath**. The page looks
- * finished. The user cannot sign in and the app gives no hint that a build variable
- * was empty.
+ * `EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID` is here because its absence is silent in
+ * the worst way: `GoogleSignInButton` reads a missing id, decides there is no OAuth
+ * client, and renders a **disabled button with an explanation underneath**. The
+ * page looks finished. The user cannot sign in and the app gives no hint that a
+ * build variable was empty.
+ *
+ * **And `_ANDROID`, not `GOOGLE_CLIENT_ID`.** This script checked the bare
+ * `EXPO_PUBLIC_GOOGLE_CLIENT_ID`, which nothing defines any more: `google-auth.ts`
+ * reads a client **per platform** —`_WEB`, `_ANDROID`, `_IOS`— because Google
+ * refuses a web client id inside an installed app. So the guard was asking for a
+ * variable that no configuration could provide, and the release could not pass
+ * whatever was written in `.env.release`.
+ *
+ * That is worth being precise about, because the fix has two directions and only
+ * one of them is right: changing the guard to the variable the app really reads,
+ * or adding a variable to satisfy a guard. The second would have meant putting the
+ * **web** client id in an Android build, which is exactly what
+ * `.env.release.example` warns against, twenty lines above where the release reads
+ * it. A guard that can only be satisfied by doing the thing it exists to prevent
+ * is not a guard.
+ *
+ * `_WEB` and `_IOS` are deliberately not required. The one that matters for a
+ * Play build is Android, and `.env.release.example` says it carries only that one.
  *
  * `EXPO_PUBLIC_GOOGLE_REDIRECT_URI` is not listed: on web the redirect comes from
  * `window.location.origin`, and the scheme is only for native.
  */
-const REQUIRED = ['EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_WEB_ORIGIN', 'EXPO_PUBLIC_GOOGLE_CLIENT_ID'];
+const REQUIRED = [
+  'EXPO_PUBLIC_API_URL',
+  'EXPO_PUBLIC_WEB_ORIGIN',
+  'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID',
+];
 
 /**
  * Throws, and only exits when run as a command.
@@ -190,7 +212,7 @@ export function bundleContainsUrl(distDir, value) {
  * @throws ExportEnvError
  */
 export function checkPublicEnvironment(env = process.env) {
-  checkPresent(env.EXPO_PUBLIC_GOOGLE_CLIENT_ID, 'EXPO_PUBLIC_GOOGLE_CLIENT_ID');
+  checkPresent(env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID, 'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID');
   checkPublicOrigin(env.EXPO_PUBLIC_WEB_ORIGIN, 'EXPO_PUBLIC_WEB_ORIGIN');
   return checkExportApiUrl(env.EXPO_PUBLIC_API_URL);
 }

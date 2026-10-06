@@ -9,6 +9,7 @@ import {
 import type {
   BoardState,
   BoardStates,
+  IconColor,
   ListItem,
   StateColor,
 } from "@orbit-hub/contracts";
@@ -68,6 +69,25 @@ export const MAX_STATE_TITLE = 40;
  */
 function columnIdOf(states: BoardStates, stateId: string | null): string | null {
   return stateOf(states, stateId)?.id ?? null;
+}
+
+/**
+ * The hex a state paints in, in the scheme that is on.
+ *
+ * A hex a person chose paints as it is; a palette key resolves through the
+ * theme's own table — one hex per scheme, so a colour reads in the dark as
+ * well as in the light, which the old single-hex table never did; anything
+ * else is neutral rather than nothing. The table comes in as an argument
+ * because this file is pure logic with no theme in it: the screens read it off
+ * `theme.colors.icon` at the call site.
+ */
+export function stateColorHex(
+  color: string | null | undefined,
+  icon: Record<IconColor, string>,
+): string {
+  if (typeof color === "string" && /^#[0-9A-Fa-f]{6}$/.test(color)) return color;
+  if (typeof color !== "string") return icon.neutral;
+  return icon[color as IconColor] ?? icon.neutral;
 }
 
 /**

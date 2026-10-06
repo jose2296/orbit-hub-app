@@ -64,6 +64,19 @@ export interface LocalStore {
     listId: string,
     options?: { includeCompleted?: boolean; limit?: number },
   ): Promise<CachedEntity[]>;
+  /**
+   * How many items each list has, in one pass, for every list at once.
+   *
+   * One query rather than one per list: the drawer, the folder browser and the
+   * panel all want this number on every row they draw, so asking list by list turns
+   * a screen of thirty rows into thirty queries. Native groups in SQL; web walks
+   * the cache once.
+   *
+   * It counts **every** item, completed included, because that is what the number
+   * on a row means. Deleted items are not counted: they are still in the cache,
+   * marked.
+   */
+  countCachedItemsByList(): Promise<Map<string, number>>;
   getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null>;
   putCached(entity: SyncEntity, entityId: string, values: Record<string, unknown>): Promise<void>;
   clearCache(): Promise<void>;
@@ -324,6 +337,23 @@ class ExpoSqliteStore implements NativeStore {
       listId,
     );
     return rows.map(toCachedEntity);
+  }
+
+  async countCachedItemsByList(): Promise<Map<string, number>> {
+    // Grouped here and not in JS: this is the one query that has to stay one
+    // query however many items the account has.
+    const rows = await this.db().getAllAsync<{ listId: string | null; total: number }>(
+      `SELECT json_extract(payload, '$.listId') AS listId, COUNT(*) AS total
+       FROM cached_entities
+       WHERE entity = 'list_item' AND deleted_at IS NULL
+       GROUP BY json_extract(payload, '$.listId')`,
+    );
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      if (typeof row.listId === 'string' && row.listId) counts.set(row.listId, row.total);
+    }
+    return counts;
   }
 
   async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {
@@ -642,6 +672,26 @@ class WebStorageStore implements LocalStore {
     // The raw cached rows, exactly as the sqlite driver returns them: the caller
     // parses the payload itself.
     return options.limit ? rows.slice(0, Math.max(1, options.limit)) : rows;
+  }
+
+  async countCachedItemsByList(): Promise<Map<string, number>> {
+    // One pass over the `list_item` rows, where sqlite would have grouped in SQL.
+    // Only that entity is considered, so a cache holding every entity in the app
+    // is not walked in full.
+    const counts = new Map<string, number>();
+
+    for (const item of Object.values(
+      readJson<Record<string, CachedEntity>>(webStorage(), WEB_KEYS.cache, {}),
+    )) {
+      if (item.entity !== 'list_item' || item.deletedAt !== null) continue;
+
+      const listId = readCachedPayload<{ listId?: string }>(item).listId;
+      if (typeof listId !== 'string' || !listId) continue;
+
+      counts.set(listId, (counts.get(listId) ?? 0) + 1);
+    }
+
+    return counts;
   }
 
   async getCached(entity: SyncEntity, entityId: string): Promise<CachedEntity | null> {

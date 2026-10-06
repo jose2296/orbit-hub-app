@@ -37,6 +37,9 @@ jobs:
       - name: Test (app)
         run: npm run test --workspace @orbit-hub/mobile
 
+      - name: Test (scripts)
+        run: npm run test:scripts
+
       - name: Validate Expo config
         run: npm run config:check --workspace @orbit-hub/mobile
 

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Card } from '@/components/ui/card';
+import { AppIcon } from '@/components/ui/app-icon';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Screen } from '@/components/ui/screen';
@@ -137,10 +138,11 @@ export default function SearchScreen() {
                           },
                         ]}
                       >
-                        <Ionicons
-                          name={SCOPE_ICON[result.scope]}
+                        <AppIcon
+                          icon={result.icon}
                           size={18}
-                          color={theme.colors.accentSoftText}
+                          inheritColor={theme.colors.accentSoftText}
+                          fallback={SCOPE_ICON[result.scope]}
                         />
                         <View style={styles.flex}>
                           <AppText

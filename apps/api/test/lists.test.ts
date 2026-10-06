@@ -598,6 +598,62 @@ describe('GET /search', () => {
     expect(byPlayas.body.data.items[0].title).toBe('Playas 2026');
   });
 
+  it('brings the icon of every hit, and null where there is none', async () => {
+    // The results are recognised by their picture: a search that cannot show it
+    // is a list you have to open one by one.
+    const user = await createVerifiedUser(api);
+    const workspaceId = randomUUID();
+    const folderId = randomUUID();
+
+    await sync(user, [
+      {
+        entity: 'workspace',
+        kind: 'create',
+        entityId: workspaceId,
+        payload: {
+          name: 'Iconos',
+          icon: { type: 'emoji', value: '🏠', color: 'auto' },
+        },
+      },
+      {
+        entity: 'folder',
+        kind: 'create',
+        entityId: folderId,
+        payload: {
+          workspaceId,
+          name: 'Iconos carpeta',
+          icon: { type: 'vector', value: 'carpeta', library: 'ionicons', style: 'fill', color: 'blue' },
+        },
+      },
+    ]);
+
+    await createList(user, workspaceId, {
+      title: 'Iconos lista',
+      icon: { type: 'emoji', value: '🛒', color: 'auto' },
+    });
+
+    const response = await api.get('/search?q=iconos', user.accessToken);
+    expect(response.status).toBe(200);
+    const hits = response.body.data.items as { scope: string; icon: unknown }[];
+    expect(hits.find((row) => row.scope === 'workspace')?.icon).toEqual({
+      type: 'emoji',
+      value: '🏠',
+      color: 'auto',
+    });
+    expect(hits.find((row) => row.scope === 'folder')?.icon).toEqual({
+      type: 'vector',
+      value: 'carpeta',
+      library: 'ionicons',
+      style: 'fill',
+      color: 'blue',
+    });
+    expect(hits.find((row) => row.scope === 'list')?.icon).toEqual({
+      type: 'emoji',
+      value: '🛒',
+      color: 'auto',
+    });
+  });
+
   it('searches items and points at their list', async () => {
     const user = await createVerifiedUser(api);
     const workspaceId = await createWorkspace(user, 'Libros');

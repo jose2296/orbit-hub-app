@@ -12,6 +12,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { NOTE_SANITIZATION } from "@/lib/notes/sanitization";
+import { NOTE_BODY_FONT } from "@/theme/tokens";
 import { useTheme } from "@/theme";
 
 /**
@@ -471,9 +472,17 @@ export function useNoteHtmlStyle() {
    * Without this the editor draws at the platform's default, which is not what
    * anything else in the app uses — the note read as a different app rather than
    * as a screen of this one.
+   *
+   * **Y ahora también la familia, que era lo que faltaba.** El tamaño estaba aquí desde
+   * hacía tiempo y la letra no: `fontFamily` no estaba, así que la nota se dibujaba con
+   * Roboto en Android, con San Francisco en iOS y con la del navegador en la web —tres
+   * letras para el mismo texto, que es la misma mentira que el comentario de arriba
+   * denuncia pero por el otro lado—. Ahora sale de `NOTE_BODY_FONT`, una pila de
+   * serifas del sistema: gratis en las tres plataformas y sin salto de carga.
    */
   const bodyStyle = useMemo(
     () => ({
+      fontFamily: NOTE_BODY_FONT,
       fontSize: type.body.fontSize,
       lineHeight: type.body.lineHeight,
       color: theme.colors.text,

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, useLastValue } from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
 import { pluralKey, useTranslation } from "@/lib/i18n";
-import { iconColor } from "@/lib/lists/item-icons";
+import { stateColorHex } from "@/lib/lists/board";
 import { useTheme } from "@/theme";
 
 export interface StatePickerSheetProps {
@@ -422,7 +422,7 @@ function FilaEstado({
         style={[
           styles.punto,
           {
-            backgroundColor: iconColor(state.color),
+            backgroundColor: stateColorHex(state.color, theme.colors.icon),
             borderRadius: theme.radius.pill,
           },
         ]}

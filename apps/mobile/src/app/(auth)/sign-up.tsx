@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Screen } from '@/components/ui/screen';
 import { TextField } from '@/components/ui/text-field';
+import { useFieldChain } from '@/lib/forms/field-chain';
 import { AppText } from '@/components/ui/text';
 import { useSession } from '@/hooks/use-session';
 import { toApiError } from '@/lib/api';
@@ -27,6 +28,7 @@ export default function SignUpScreen() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const cadena = useFieldChain(4);
   const [error, setError] = useState<string | null>(null);
 
   function validate(): string | null {
@@ -95,7 +97,9 @@ export default function SignUpScreen() {
           autoComplete="name"
           textContentType="name"
           autoCapitalize="words"
+          ref={cadena.register(0)}
           returnKeyType="next"
+          onSubmitEditing={() => cadena.advance(0, () => void onSubmit())}
         />
         <TextField
           label={t('auth.email')}
@@ -106,7 +110,9 @@ export default function SignUpScreen() {
           keyboardType="email-address"
           inputMode="email"
           textContentType="emailAddress"
+          ref={cadena.register(1)}
           returnKeyType="next"
+          onSubmitEditing={() => cadena.advance(1, () => void onSubmit())}
         />
         <TextField
           label={t('auth.password')}
@@ -115,7 +121,9 @@ export default function SignUpScreen() {
           secureTextEntry
           autoComplete="new-password"
           textContentType="newPassword"
+          ref={cadena.register(2)}
           returnKeyType="next"
+          onSubmitEditing={() => cadena.advance(2, () => void onSubmit())}
         />
         <TextField
           label={t('auth.passwordConfirm')}
@@ -123,6 +131,7 @@ export default function SignUpScreen() {
           onChangeText={setPasswordConfirm}
           secureTextEntry
           autoComplete="new-password"
+          ref={cadena.register(3)}
           returnKeyType="go"
           onSubmitEditing={() => {
             void onSubmit();

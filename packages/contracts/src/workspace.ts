@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { ITEM_ICON_COLORS, ITEM_ICONS } from "./item-icons.js";
-import { tagColorSchema } from "./tag-colors.js";
+import { iconRefSchema } from "./icons.js";
+import { normalizaColor, tagColorSchema } from "./tag-colors.js";
 import { boardStatesSchema } from "./board.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
@@ -64,15 +64,35 @@ export type WorkspaceColorKey = z.infer<typeof workspaceColorKeySchema>;
 /**
  * A colour a person made up, as `#RRGGBB`.
  *
- * Upper case and exactly seven characters, and the strictness is the point: this
- * goes straight into a style, and `#abc`, `#ABCDEF`, `red` and `javascript:` are
- * all things a text field will happily accept and none of them is a colour this
- * app can draw. Normalising here means the app and the API never have to be the
- * ones deciding whether a string is a colour.
+ * **It normalises, which is what the line above it claimed all along.** It used to
+ * be a `z.string().regex(/^#[0-9A-F]{6}$/)` under a comment saying that normalising
+ * here is what stops the app and the API from being the ones deciding whether a
+ * string is a colour. A regex does the opposite of that: it **validates** without
+ * **normalising**. So `#abc`, `a1b2c3` and `#a1b2c3` were all refused here, all
+ * three of which are colours this app draws, and the app's own validators had
+ * already accepted them. It now runs the value through `normalizaColor` — the one
+ * rule — and answers six digits, uppercase, with the `#`: `#abc` becomes
+ * `#AABBCC`, `a1b2c3` becomes `#A1B2C3`. `red` and `javascript:` are still refused,
+ * which is the half that was right.
+ *
+ * **Widening, never narrowing, and that is a decision about who gets hurt.** Stored
+ * data is already six digits and uppercase, so nothing that exists moves: the old
+ * rule was six digits with the `#` in uppercase, and a value that passes it today
+ * passes the new one unchanged. What changes is what is *accepted*, and the test in
+ * `apps/api/test/workspaces.test.ts` pins all three halves — `#abc`, `a1b2c3` and
+ * `#1F6FEB` stored as `#AABBCC`, `#A1B2C3` and `#1F6FEB`.
  */
-export const workspaceColorHexSchema = z
-  .string()
-  .regex(/^#[0-9A-F]{6}$/, "A custom space colour is written as #RRGGBB");
+export const workspaceColorHexSchema = z.string().transform((value, ctx) => {
+  const hex = normalizaColor(value);
+  if (hex === null) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'A custom space colour is a hex of three or six digits',
+    });
+    return z.NEVER;
+  }
+  return hex;
+});
 
 /**
  * A named colour from the list, or a custom one.
@@ -124,15 +144,50 @@ export function isWorkspaceColorKey(value: unknown): value is WorkspaceColorKey 
   );
 }
 
-/** Whether a value is a custom `#RRGGBB`, and not one of the names. */
+/**
+ * Whether a value is a custom `#RRGGBB`, and not one of the names.
+ *
+ * Wider than it reads, and wider for free: it asks the schema above, and that
+ * schema now **normalises** rather than validating with a regex of its own, so a
+ * three-digit `#abc` and a lowercase `#aabbcc` are both a custom colour. Before,
+ * this would have said no to both.
+ */
 export function isWorkspaceColorHex(value: unknown): value is string {
   return typeof value === "string" && workspaceColorHexSchema.safeParse(value).success;
 }
 
+/**
+ * Los anchos de los campos de texto, como datos.
+ *
+ * Estos números estaban en tres sitios que no se hablaban: el `.max()` de cada
+ * esquema de abajo, el `varchar` de `apps/api/src/db/content-schema.ts` y un
+ * `.slice()` en el sanitizador de sync. No coincidían, y no era cosmético: un
+ * nombre de espacio de 81 caracteres pasaba el 120 del sanitizador y llegaba a la
+ * columna de 80 — un **500** con entrada corriente, y `The operation failed` como
+ * único mensaje para el móvil. El título de una nota de 121 perdía 80
+ * caracteres calladamente y el push respondía `applied`.
+ *
+ * Exportarlos desde aquí los convierte en la fuente única: el esquema valida con
+ * ellos, la API corta con ellos, y la app pinta el contador con ellos. Un test en
+ * `apps/api/test/sync-limits.test.ts` lee los `varchar` reales y los compara, así
+ * que una migración que cambie un ancho rompe el test en vez de romper producción.
+ */
+export const WORKSPACE_NAME_MAX = 80;
+export const WORKSPACE_DESCRIPTION_MAX = 500;
+export const FOLDER_NAME_MAX = 120;
+export const LIST_TITLE_MAX = 120;
+export const LIST_DESCRIPTION_MAX = 1000;
+export const LIST_ITEM_TITLE_MAX = 300;
+export const LIST_ITEM_ANNOTATION_MAX = 2000;
+export const LIST_ITEM_EXTERNAL_ID_MAX = 120;
+/** Una etiqueta, no un título: corta a propósito y se ve corta. */
+export const TAG_MAX = 40;
+export const NOTE_TITLE_MAX = 200;
+
 export const workspaceSchema = syncableEntitySchema.extend({
-  name: z.string().trim().min(1).max(80),
-  description: z.string().max(500).nullable().default(null),
-  emoji: z.string().max(16).nullable().default(null),
+  name: z.string().trim().min(1).max(WORKSPACE_NAME_MAX),
+  description: z.string().max(WORKSPACE_DESCRIPTION_MAX).nullable().default(null),
+  icon: iconRefSchema.default(null),
   /**
    * The colour this space is painted with, out of the eight the app offers.
    *
@@ -216,8 +271,8 @@ export const folderSchema = syncableEntitySchema
   .extend({
     workspaceId: uuidSchema,
     parentId: uuidSchema.nullable().default(null),
-    name: z.string().trim().min(1).max(120),
-    emoji: z.string().max(16).nullable().default(null),
+    name: z.string().trim().min(1).max(FOLDER_NAME_MAX),
+    icon: iconRefSchema.default(null),
     position: z.number().int().min(0),
   })
   .extend(nodeAccessSchema.shape);
@@ -265,15 +320,46 @@ export type ListKind = z.infer<typeof listKindSchema>;
  * neither of them can be a step behind the other.
  */
 export {
-  ITEM_ICONS,
-  ITEM_ICON_CATEGORIES,
-  ITEM_ICON_GROUP,
+  EXTRA_BY_CATEGORY,
+  EXTRA_KEYWORDS,
+  EXTRA_LABELS,
+} from "./icons-catalogo-ampliado.js";
+export {
+  MATERIAL_BY_CATEGORY,
+  MATERIAL_FILL_ONLY,
+  MATERIAL_KEYWORDS,
+  MATERIAL_LABELS,
+} from "./icons-material.js";
+export {
   ITEM_ICON_COLORS,
-  isItemIcon,
-} from "./item-icons.js";
-export type { ItemIcon, ItemIconCategory, ItemIconColor } from "./item-icons.js";
+  ITEM_ICONS,
+  canDrawVector,
+  iconColorSchema,
+  iconLibrarySchema,
+  iconRefSchema,
+  iconSchema,
+  isVectorIcon,
+  labelOf,
+  materialIconsOf,
+  sanitiseIconRef,
+  vectorGlyph,
+  vectorIconsOf,
+  MATERIAL_ICON_GLYPHS,
+  VECTOR_ICON_CATALOG,
+  VECTOR_ICON_CATEGORIES,
+  VECTOR_ICON_CATEGORY_LABEL,
+  VECTOR_ICON_GLYPHS,
+  VECTOR_ICON_KEYWORDS,
+} from "./icons.js";
+export type { IconLibrary, IconRef, IconColor, ItemIconColor, VectorIconCategory } from "./icons.js";
 
-export { tagColorSchema, derivedTagColor, sanitiseTagColors } from "./tag-colors.js";
+export {
+  TAG_HEX,
+  tagColorSchema,
+  derivedTagColor,
+  normalizaColor,
+  sanitiseTagColors,
+} from "./tag-colors.js";
 export type { TagColors } from "./tag-colors.js";
 
 /**
@@ -319,10 +405,10 @@ export const listSchema = syncableEntitySchema
     workspaceId: uuidSchema,
     folderId: uuidSchema.nullable().default(null),
     kind: listKindSchema,
-    title: z.string().trim().min(1).max(120),
-    description: z.string().max(1000).nullable().default(null),
-    emoji: z.string().max(16).nullable().default(null),
-    tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    title: z.string().trim().min(1).max(LIST_TITLE_MAX),
+    description: z.string().max(LIST_DESCRIPTION_MAX).nullable().default(null),
+    icon: iconRefSchema.default(null),
+    tags: z.array(z.string().trim().min(1).max(TAG_MAX)).max(20).default([]),
     /**
      * The colours of the labels of this list, and only the ones somebody chose.
      *
@@ -379,7 +465,7 @@ export type List = z.infer<typeof listSchema>;
 export const listItemSchema = syncableEntitySchema
   .extend({
   listId: uuidSchema,
-  title: z.string().trim().min(1).max(300),
+  title: z.string().trim().min(1).max(LIST_ITEM_TITLE_MAX),
   position: z.number().int().min(0),
   completed: z.boolean().default(false),
   /**
@@ -406,37 +492,21 @@ export const listItemSchema = syncableEntitySchema
    */
   priority: z.enum(["none", "low", "medium", "high"]).default("none"),
   /**
-   * An icon out of the ones the app offers, for the things a list of tasks is
-   * also used for: what to buy, what to pack, what to fix.
+   * The icon, as one value.
    *
-   * It is a key and not an emoji on purpose. An emoji looks different on every
-   * device and means a different thing to every person, while a key is the same
-   * shape everywhere and the app can draw it with the same care it draws a
-   * button.
+   * It was three fields — `icon` as a key out of the ones the app offers,
+   * `iconStyle` and `iconColor` — and three fields can disagree with each
+   * other. As one value they cannot: a system emoji or one of the app's line
+   * drawings, with the colour it was given. Null is "nobody chose an icon",
+   * which the app knows how to draw.
    */
-  icon: z.enum(ITEM_ICONS).nullable().default(null),
-  /**
-   * Filled or outline.
-   *
-   * Two drawings of the same thing and not a decoration: a row of twelve things
-   * drawn con trazo is una lista de palabras, y rellenar los que importan dice
-   * cuales sin tener que leer ninguno.
-   */
-  iconStyle: z.enum(["outline", "fill"]).default("outline"),
-  /**
-   * Which of the app's icon colours it is drawn in.
-   *
-   * A key and not a colour value, for the reason the space colour is a key: the
-   * app draws the ones it offers, so there is no colour nobody can read and no
-   * picker of fifty shades on a phone.
-   */
-  iconColor: z.enum(ITEM_ICON_COLORS).default("neutral"),
+  icon: iconRefSchema.default(null),
   /**
    * Free labels, so "Mercadona" and "Carrefour" are values and not folders:
    * the same thing to buy in two shops is one item to buy.
    */
   tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
-  externalId: z.string().max(120).nullable().default(null),
+  externalId: z.string().max(LIST_ITEM_EXTERNAL_ID_MAX).nullable().default(null),
   metadata: z.record(z.string(), z.unknown()).nullable().default(null),
   /**
    * A short remark on the row itself, in words. "Buy milk, *bring your own*".
@@ -447,7 +517,7 @@ export const listItemSchema = syncableEntitySchema
    * way to be shared. This is a remark on a row; a note is a document and lives
    * in `noteSchema`. See [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
    */
-  annotation: z.string().max(2000).nullable().default(null),
+  annotation: z.string().max(LIST_ITEM_ANNOTATION_MAX).nullable().default(null),
 })
   .extend(nodeAccessSchema.shape);
 export type ListItem = z.infer<typeof listItemSchema>;
@@ -463,10 +533,11 @@ export const noteSchema = syncableEntitySchema
   .extend({
     workspaceId: uuidSchema,
     folderId: uuidSchema.nullable().default(null),
-    title: z.string().trim().min(1).max(200),
+    title: z.string().trim().min(1).max(NOTE_TITLE_MAX),
     document: noteDocumentSchema,
     plainText: z.string().default(""),
     tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    icon: iconRefSchema.default(null),
     attachmentCount: z.int().min(0).default(0),
     /**
      * Where this note sits among the things in its folder when somebody has put
@@ -636,7 +707,7 @@ export type Invitation = z.infer<typeof invitationSchema>;
 export const createWorkspaceRequestSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().max(500).optional(),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
 });
 export type CreateWorkspaceRequest = z.infer<
   typeof createWorkspaceRequestSchema
@@ -646,7 +717,7 @@ export const createFolderRequestSchema = z.object({
   workspaceId: uuidSchema,
   parentId: uuidSchema.nullable().default(null),
   name: z.string().trim().min(1).max(120),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
   position: z.number().int().min(0).default(0),
 });
 export type CreateFolderRequest = z.infer<typeof createFolderRequestSchema>;
@@ -657,7 +728,7 @@ export const createListRequestSchema = z.object({
   kind: listKindSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().max(1000).optional(),
-  emoji: z.string().max(16).optional(),
+  icon: iconRefSchema.optional(),
   position: z.number().int().min(0).default(0),
 });
 export type CreateListRequest = z.infer<typeof createListRequestSchema>;
@@ -756,7 +827,7 @@ export const previewInvitationResponseSchema = z.object({
   workspace: z.object({
     id: uuidSchema,
     name: z.string(),
-    emoji: z.string().nullable().default(null),
+    icon: iconRefSchema.default(null),
     color: workspaceColorSchema,
   }),
   role: membershipRoleSchema.exclude(["owner"]),
@@ -988,6 +1059,15 @@ export const searchResultSchema = z.object({
    * to leave and come back from.
    */
   completed: z.boolean().nullable().default(null),
+  /**
+   * The icon somebody chose for the hit, or null.
+   *
+   * It travels here for the same reason `completed` does: the point of finding
+   * something is recognising it, and a list of results that cannot show the
+   * picture is a list you have to open one by one. Nullable like the column,
+   * because most rows have no icon and that is a state, not a gap.
+   */
+  icon: iconRefSchema.default(null),
   updatedAt: isoDateTimeSchema,
 });
 export type SearchResult = z.infer<typeof searchResultSchema>;
@@ -1187,7 +1267,7 @@ export type DeleteNoteTemplateResponse = z.infer<typeof deleteNoteTemplateRespon
 export const createNoteRequestSchema = z.object({
   workspaceId: uuidSchema,
   folderId: uuidSchema.nullable().default(null),
-  title: z.string().trim().min(1).max(200),
+  title: z.string().trim().min(1).max(NOTE_TITLE_MAX),
   /** Validated against the editor's tag set. A document that fails is never stored. */
   document: noteDocumentSchema,
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),

@@ -345,6 +345,64 @@ export async function seedSession(tab, session, appUrl) {
  * The rule from the doc: a console error is a bug even when the screen looks
  * right, so this collects and the script fails on it.
  */
+/**
+ * Si la fuente de los iconos está cargada de verdad, en la página.
+ *
+ * Va al documento por `document.fonts` y no por `document.fonts.check()`, que no
+ * sirve: medido en un `about:blank` con cero fuentes registradas,
+ *
+ *     document.fonts.check("18px ionicons")   -> true
+ *     document.fonts.check("18px inventada")  -> true
+ *     document.fonts.size                     -> 0
+ *
+ * `check()` responde `true` cuando no hay nada contra qué comparar. Una espera
+ * construida sobre él dice "la fuente ha llegado" en el primer intento,
+ * siempre — la de `verify-tag-colors.mjs` llevaba así desde antes de este
+ * arreglo, con veinte segundos de plazo y un contador que nunca contaba nada.
+ *
+ * Además `check()` no distingue una `@font-face` declarada de una cargada, y una
+ * fuente declarada y no cargada tampoco dibuja: el estado importa tanto como la
+ * familia.
+ */
+/**
+ * Las dos fuentes de los iconos, y no solo la primera.
+ *
+ * Con dos librerias hay dos `@font-face`, y esperar solo a `ionicons` deja pasar
+ * capturas con los dibujos de Material en blanco — que parecen un bug de layout y
+ * son una fuente que todavia no habia llegado. El nombre de familia de la segunda
+ * es `material-community`, que es lo que declara su propio CSS.
+ */
+export const ICON_FONTS = ['ionicons', 'material-community'];
+export const ICON_FONT_LOADED =
+  `(${JSON.stringify(ICON_FONTS)}).every((family) => [...document.fonts].some((f) => f.family === family && f.status === 'loaded'))`;
+
+/**
+ * Espera a que la fuente de los iconos esté en el documento.
+ *
+ * Vive aquí y no en un script porque **doce** de ellos hacen capturas y solo uno
+ * esperaba. El arnés que espera, la app no: cada `<Ionicons>` pedía su propia
+ * fuente desde su propio `componentDidMount`, sin nada que la esperara, y en web
+ * la promesa puede rechazar en silencio —el observador expira a los 12s y el
+ * `try/catch` de expo-font solo captura thrown síncronos— dejando los iconos como
+ * `<Text />` vacíos de forma permanente, con un único error en consola.
+ *
+ * Ya está resuelto en la app (`useFonts` en `src/app/_layout.tsx`), pero una
+ * espera aquí sigue siendo la diferencia entre una captura que prueba algo y una
+ * captura de una lista sin glifos que parece un bug de layout.
+ */
+export async function waitForIconFont(tab, { timeout = 20000, every = 400 } = {}) {
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    const loaded = await tab.evaluate(ICON_FONT_LOADED);
+    if (loaded === true) return { ok: true };
+
+    await new Promise((resolve) => setTimeout(resolve, every));
+  }
+
+  return { ok: false };
+}
+
 export function collectProblems(tab) {
   const problems = [];
 

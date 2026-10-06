@@ -10,6 +10,7 @@ import { SaveTemplateSheet } from "@/components/notes/save-template-sheet";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { ATTACHMENT_IMAGE_MAX_BYTES_DEFAULT } from "@orbit-hub/contracts";
+import { FIELD_LIMITS } from "@/lib/lists/field-limit";
 import { pickAnyFile, pickImage } from "@/lib/notes/file-picker";
 import {
   listAttachments,
@@ -41,6 +42,7 @@ import {
 import { hasReachedServer } from "@/lib/notes/placement";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { SpaceBand } from "@/components/workspace/space-band";
+import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useTheme } from "@/theme";
 
@@ -134,6 +136,18 @@ export default function NoteScreen() {
   const { workspaces } = useWorkspaces();
   const espacio = workspaces.find((item) => item.id === note?.workspaceId) ?? null;
   useScreenSpace(espacio);
+
+  /*
+   * La insignia de compartido, **debajo del titulo**. Sin boton de compartir en la
+   * cabecera: compartir es una accion y las acciones van en los tres puntitos.
+   * Esto solo aparece cuando hay algo que decir, y son dos iconos porque son dos
+   * hechos: te lo dieron, o tu lo diste.
+   */
+  useScreenShare({
+    node: note ? { nodeType: "note", id: note.id } : null,
+    conmigo: note?.shared === true,
+    onShare: () => setMenuOpen(true),
+  });
 
   const editorRef = useRef<EnrichedTextInputInstance | null>(null);
   const [title, setTitle] = useState("");
@@ -449,6 +463,9 @@ export default function NoteScreen() {
         }}
         placeholder={t("note.titlePlaceholder")}
         autoCapitalize="sentences"
+        // 200 for a note, where the old sanitiser cut at 120 and lost eighty
+        // characters without telling anybody.
+        limit={FIELD_LIMITS["note.title"]}
         onSubmitEditing={() => void autosave.flush()}
       />
       <NoteEditor

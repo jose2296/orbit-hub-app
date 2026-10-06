@@ -1,5 +1,26 @@
 # El color de una etiqueta: uno por lista, y deducido cuando nadie lo elige
 
+> **Este documento se conserva como la historia de cómo se hizo, y hay que leerlo con
+> otro al lado.** El diseño que decide hoy es
+> `2026-10-03-color-libre-y-pastilla-pressable-design.md` —con su plan al lado, en
+> `docs/superpowers/plans/`—, y cambia **dos** cosas de las que aquí se afirman:
+>
+> 1. **Cambia la puerta de contraste.** Aquí —y en el `roadmap.md` que se escribió a
+>    partir de aquí— el texto de una pastilla se escribía en `theme.colors.text`
+>    cuando el color de la etiqueta no llegaba a 4.5:1 sobre el fondo de la pastilla.
+>    Esa puerta **está borrada**: el relleno es ahora el color de la etiqueta mezclado
+>    con la superficie y el texto se deriva de ese mismo color hasta que se lee sobre
+>    ese relleno, en la dirección del esquema y luego en la contraria. **Ninguna
+>    pastilla se escribe en el color del tema**, que es justo el caso para el que la
+>    puerta existía.
+> 2. **El color deja de ser uno de doce.** Aquí el color era un nombre de la paleta
+>    de los iconos. Ahora es **cualquier hex**, y los doce son los doce atajos del
+>    selector. Con este documento, un hex fuera de la paleta no se podía guardar.
+>
+> Lo que **sigue en pie** es el resto: el color es de la lista y no de la tarea, es
+> obligatorio y elegirlo es opcional, y por eso no hay backfill. Eso no lo ha tocado
+> nadie.
+
 Estado: implementado. El bloque correspondiente de `docs/roadmap.md` es el que
 dice como ha quedado de verdad.
 

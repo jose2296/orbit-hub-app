@@ -1,5 +1,6 @@
 import type {
   BoardStates,
+  IconRef,
   ListItem,
   ListKind,
   ListOrderMode,
@@ -22,7 +23,7 @@ export interface DuplicationSource {
   kind: ListKind;
   title: string;
   description: string | null;
-  emoji: string | null;
+  icon: IconRef | null;
   tags: string[];
   position: number;
   /** How the list is read, copied so the copy reads the same way. */
@@ -55,9 +56,7 @@ export interface DuplicableItem {
    */
   stateId: string | null;
   priority: ListItemPriority;
-  icon: ListItem["icon"];
-  iconStyle: ListItem["iconStyle"];
-  iconColor: ListItem["iconColor"];
+  icon: IconRef | null;
   tags: string[];
   externalId: string | null;
   metadata: Record<string, unknown> | null;
@@ -201,10 +200,10 @@ export function planDuplication(
     */
     stateId: item.stateId === null ? null : (remapeo.get(item.stateId) ?? null),
     priority: item.priority,
-    icon: item.icon,
-    // How it is drawn is part of how the row is, so a copy looks the same.
-    iconStyle: item.iconStyle,
-    iconColor: item.iconColor,
+    // The icon is one value, so a copy carries it whole: how it is drawn is
+    // part of how the row is, and a copy looks the same. Spread, like the tags
+    // below: a later write to the copy must not touch the original.
+    icon: item.icon ? { ...item.icon } : null,
     // Copied by value: a later push to the copy must not touch the original.
     tags: [...item.tags],
     externalId: item.externalId,
@@ -228,7 +227,9 @@ export function planDuplication(
       kind: source.kind,
       title,
       description: source.description,
-      emoji: source.emoji,
+      // The icon is one value, so the copy carries it whole. Spread, like the
+      // tags below: a later write to the copy must not touch the original.
+      icon: source.icon ? { ...source.icon } : null,
         // Copied by value: a later push to the copy must not touch the original.
       tags: [...source.tags],
       position: source.position,
@@ -291,7 +292,7 @@ export function duplicationPayloads(plan: DuplicationPlan): {
       title: plan.list.title,
       kind: plan.list.kind,
       ...(plan.list.folderId ? { folderId: plan.list.folderId } : {}),
-      ...(plan.list.emoji ? { emoji: plan.list.emoji } : {}),
+      ...(plan.list.icon ? { icon: plan.list.icon } : {}),
       // Always, and not only when there is at least one column: this is the field
       // that says whether the list is a board, and a create that leaves it out
       // arrives as a board with nothing to draw and no way to know why.

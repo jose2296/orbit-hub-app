@@ -10,7 +10,7 @@ import {
   FLOATING_BUTTON_STACK_INSET,
 } from "@/components/ui/floating-button";
 import { pluralKey, useTranslation } from "@/lib/i18n";
-import { iconColor } from "@/lib/lists/item-icons";
+import { stateColorHex } from "@/lib/lists/board";
 import { useTheme } from "@/theme";
 
 import { TaskRow } from "./task-row";
@@ -242,7 +242,7 @@ export function BoardColumn({
           style={[
             styles.punto,
             {
-              backgroundColor: iconColor(state.color),
+              backgroundColor: stateColorHex(state.color, theme.colors.icon),
               borderRadius: theme.radius.pill,
             },
           ]}
@@ -429,7 +429,7 @@ function Tarjeta({
         tagColors={tagColors}
         onEdit={() => onOpenTask(item)}
         onIcon={() => onOpenIcon(item)}
-        edgeColor={iconColor(state.color)}
+        edgeColor={stateColorHex(state.color, theme.colors.icon)}
       />
     </View>
   );

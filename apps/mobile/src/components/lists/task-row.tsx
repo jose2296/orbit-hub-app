@@ -4,21 +4,15 @@ import type { ListItem, Priority, TagColors } from "@orbit-hub/contracts";
 
 import { Badge } from "@/components/ui/badge";
 import type { IconName } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
-import { ItemIcon } from "@/components/lists/icon-picker";
+import { AppIcon } from "@/components/ui/app-icon";
 import { TagChip } from "@/components/lists/tag-chip";
 import { AppText } from "@/components/ui/text";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { useTranslation } from "@/lib/i18n";
+import { PRIORITY_TONE } from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
-
-const PRIORITY_TONE = {
-  none: "neutral",
-  low: "info",
-  medium: "warning",
-  high: "danger",
-} as const;
 
 /**
  * The glyph each urgency carries in a row, next to the colour.
@@ -154,29 +148,14 @@ export function TaskRow({
       ]}
     >
       {/*
-        The checkbox, **and only when something can tick it.**
-
-        A board row has no `onToggle`, because a task there is in a state rather
-        than done, and a box in the margin of every row would be a control that
-        says nothing. `null` rather than a disabled box for the same reason: a
-        greyed-out tick is furniture, and the row is already saying what it is.
-
-        The `label=""` is untouched and must stay: it is the thing that keeps an
-        empty `Text` with `flex: 1` out of the checkbox, which measured 755 points
-        of a row's 754 and ate the title. See `styles.nombre` and `checkbox.tsx`. */}
-      {onToggle ? (
-        <Checkbox checked={item.completed} onToggle={onToggle} label="" />
-      ) : null}
-
-      {/*
         The column, and it has two children that take part in layout: the line of
-        the title and the line of the labels. The `gap: 2` is the distance under the
-        title and it is the same number it has always been — the other two children,
+        the title and the line of the labels. The `gap` is the distance under the
+        title, the row's own `spacing.md` — the other two children,
         `nombreLargo.sheet` and `pistaNombre.node`, were never counted by it and
         still are not: the sheet is a `Modal`, which on web is a portal out of this
         box entirely, and the hint is `position: absolute`, and a child in either
         of those is not a flex item for `gap` to put anything between. */}
-      <View style={[styles.flex, { gap: 2 }]}>
+      <View style={[styles.flex, { gap: theme.spacing.md }]}>
         {/*
           The icon and the name, **on one line**, and that line is the whole fix.
 
@@ -217,6 +196,22 @@ export function TaskRow({
           testID={`item-title-line-${item.id}`}
           style={[styles.titulo, { gap: theme.spacing.md }]}
         >
+          {/* The checkbox, **inside the line of the title** and only when something
+              can tick it, so it is centred on that line and not on the whole row.
+
+              A board row has no `onToggle`, because a task there is in a state
+              rather than done, and a box in the margin of every row would be a
+              control that says nothing. `null` rather than a disabled box for the
+              same reason.
+
+              The `label=""` is untouched and must stay: it is the thing that keeps
+              an empty `Text` with `flex: 1` out of the checkbox, which measured 755
+              points of a row's 754 and ate the title. See `styles.nombre` and
+              `checkbox.tsx`. */}
+          {onToggle ? (
+            <Checkbox checked={item.completed} onToggle={onToggle} label="" />
+          ) : null}
+
           {/* The icon is its own target: it is a picture of what to buy, and
               pressing it opens the pictures rather than the row. */}
           {item.icon ? (
@@ -228,11 +223,7 @@ export function TaskRow({
               onPress={onIcon}
               style={styles.iconSlot}
             >
-              <ItemIcon
-                icon={item.icon}
-                style={item.iconStyle}
-                color={item.iconColor}
-              />
+              <AppIcon icon={item.icon} size={18} />
             </Pressable>
           ) : null}
 
@@ -284,20 +275,37 @@ export function TaskRow({
             is the coarser of the two, and the labels are what you are looking for
             when you are looking for a shop.
 
-            The badge is not pressable here. The name above opens the sheet, and the
-            sheet has the urgency as four things you can see, so a second way in
-            from the row is two ways to end up disagreeing about the value.
+            The badge and the pills open the task too, with the same `onEdit`, and
+            they carry the name's own hint (`hintProps`) rather than a sentence of
+            their own: every control of the row opens the same sheet, so that
+            sentence is written once and they all point at it. It is a prop and not
+            a `{...spread}`, because `Badge` and `TagChip` do not accept loose props.
 
             And it is compact, with a glyph: at this size the colour alone is not
             enough to sort a list by. */}
         {item.priority !== "none" || item.tags.length > 0 ? (
-          <View style={[styles.meta, { gap: theme.spacing.xs }]}>
+          <View
+            style={[
+              styles.meta,
+              {
+                gap: theme.spacing.xs,
+                // The box plus **one** gap lines this line up with the name, or
+                // with the icon when there is one. With no checkbox (a board row)
+                // there is nothing to line up under.
+                ...(onToggle
+                  ? { paddingLeft: CHECKBOX_BOX_SIZE + theme.spacing.md }
+                  : null),
+              },
+            ]}
+          >
             {item.priority !== "none" ? (
               <Badge
                 label={t(`items.priority.${item.priority}` as never)}
                 tone={PRIORITY_TONE[item.priority]}
                 icon={PRIORITY_ICON[item.priority]}
                 size="compact"
+                onPress={onEdit}
+                hintProps={pistaNombre.props}
               />
             ) : null}
 
@@ -332,7 +340,10 @@ export function TaskRow({
                 tag={tag}
                 colors={tagColors}
                 size="compact"
-                style={styles.metaTag}
+                testID={`tag-pill-fila-${tag}`}
+                style={[styles.metaTag, { paddingHorizontal: theme.spacing.sm }]}
+                onPress={onEdit}
+                hintProps={pistaNombre.props}
               />
             ))}
           </View>
@@ -345,7 +356,6 @@ export function TaskRow({
 const styles = StyleSheet.create({
   item: {
     flexDirection: "row",
-    alignItems: "center",
   },
   /**
    * La linea del icono y del nombre, y **`alignItems: "center"` aqui es el arreglo**.

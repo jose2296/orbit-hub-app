@@ -31,18 +31,40 @@ npm run check       # typecheck + test + expo config
 
 Plus, for UI changes: verify on the **web**, in light and dark theme.
 
-Web is the only target that is checked by hand. The native ones are not: there is no
-simulator or device attached to this machine, and a change that is only measured
-through a checklist of assumptions is not a check. So a UI change is opened in a
-browser, driven to the screen, scrolled, and looked at — and a claim that it works
-on Android or iOS is a claim about a build nobody ran.
+Web is still the first target to check, and for most changes the only one you need:
+it is fast, and the browser catches a lot. But **there is an Android emulator on this
+machine** — `emulator-5554`, AVD `Medium_Phone_API_35` (Android 15 / API 35) — and
+**iOS simulators** (iPhone 15 / 15 Pro, runtimes 17.5 and 18.4, currently shut down).
+So "a claim that it works on Android is a claim about a build nobody ran" is no
+longer true here, and it should not be used as a reason to skip.
 
-That makes the web the place where platform-only bugs hide, and the notes editor is
-the standing example: it refused every picture, handed the editor unresolved
+An earlier version of this file said there was no simulator or device, and that was
+simply wrong. It was not a small error: three bugs in the list of pending work were
+written off as "unverifiable without a device" on the strength of it, and the
+first of them turned out to be a one-line omission that a screenshot proves in a
+minute.
+
+What it takes, so nobody has to rediscover it:
+
+```bash
+npx expo start --port 8081            # the installed build has no bundle of its own
+adb -s emulator-5554 reverse tcp:8081 tcp:8081
+adb -s emulator-5554 shell monkey -p com.jrzlabs.orbithub -c android.intent.category.LAUNCHER 1
+adb -s emulator-5554 exec-out screencap -p > shot.png
+```
+
+Two things about that loop worth knowing. The app has to be **launched after** Metro
+answers, not before, or it draws "Unable to load script" and stays there. And
+`scripts/verify-android-screens.mjs` already exists for checking that a tap
+actually landed — it compares the screen hash, because a tap that misses does not
+crash either.
+
+The web is still where platform-only bugs hide, and the notes editor is the
+standing example: it refused every picture, handed the editor unresolved
 references, and drew a `+` that scrolled away, and every one of those was found in
-a browser in the time it would have taken to boot an emulator. What the browser
-cannot tell you is a native selection handle or a system keyboard, and those stay
-unverified until somebody runs a device.
+a browser. What the browser cannot tell you is a native selection handle, a system
+keyboard, or a gesture — so use it first, and then use the emulator rather than
+writing "unverifiable" in a comment.
 
 ## Where things live
 

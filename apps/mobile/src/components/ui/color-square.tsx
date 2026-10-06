@@ -1,6 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { StyleSheet, View } from "react-native";
 
 import { HUE_STRIP, hexToHsv, hsvToHex, puntoAHsv, puntoAHue } from "@/lib/workspace/picker";
@@ -20,11 +21,20 @@ export interface ColorSquareProps {
    * Called with every move, **not on release.**
    *
    * Live and not committed, on purpose: the caller decides what "commit" means
-   * — the workspace writes on its check so a drag does not enqueue a hundred
+   * — the workspace writes on release so a drag does not enqueue a hundred
    * operations, a state sheet stages into its own state and saves on its button.
    * A square that wrote would make that choice for them.
    */
   onChange: (hex: string) => void;
+  /**
+   * Called once, when the finger lifts after a gesture that ran.
+   *
+   * A cancelled gesture — the finger leaves, the system interrupts — is not a
+   * choice, so this is `onEnd` and not `onFinalize`. A tap counts: with
+   * `minDistance(0)` it goes through `onBegin`/`onEnd` like any drag. Callers
+   * with nothing to commit leave it out.
+   */
+  onCommit?: (hex: string) => void;
   /** Both sides in points, and square on purpose (see below). */
   size?: number;
   /** Front for the square's and the strip's `testID`s, when a walkthrough needs them. */
@@ -53,6 +63,7 @@ export interface ColorSquareProps {
 export function ColorSquare({
   color,
   onChange,
+  onCommit,
   size = 132,
   testIDPrefix,
   squareLabel,
@@ -76,12 +87,20 @@ export function ColorSquare({
   const moverCuadrado = (x: number, y: number) => {
     const siguiente = puntoAHsv(x, y, caja.width, caja.height, hsv.h);
     setHsv(siguiente);
-    onChange(hsvToHex(siguiente));
+    ultimoHex.current = hsvToHex(siguiente);
+    onChange(ultimoHex.current);
   };
   const moverTira = (x: number) => {
     const siguiente = { ...hsv, h: puntoAHue(x, anchoTira) };
     setHsv(siguiente);
-    onChange(hsvToHex(siguiente));
+    ultimoHex.current = hsvToHex(siguiente);
+    onChange(ultimoHex.current);
+  };
+  /** The hex the finger is on, for the release to commit. */
+  const ultimoHex = useRef(hsvToHex(hsv));
+  /** Commit on release, and only on release (see `onCommit`). */
+  const terminar = () => {
+    onCommit?.(ultimoHex.current);
   };
 
   /*
@@ -93,15 +112,39 @@ export function ColorSquare({
   moverCuadradoRef.current = moverCuadrado;
   const moverTiraRef = useRef(moverTira);
   moverTiraRef.current = moverTira;
+  const terminarRef = useRef(terminar);
+  terminarRef.current = terminar;
 
+  /*
+    Stable arrows that read the ref **when they are called**. `runOnJS(ref.current)`
+    would resolve `.current` once, when the worklet is built, and the gesture would
+    keep calling the functions of the first render with the first measured box.
+  */
+  const alMoverCuadrado = useCallback(
+    (x: number, y: number) => moverCuadradoRef.current(x, y),
+    [],
+  );
+  const alMoverTira = useCallback((x: number) => moverTiraRef.current(x), []);
+  const alTerminar = useCallback(() => terminarRef.current(), []);
+
+  /*
+    Through `runOnJS`, and not called straight: on the new architecture a worklet
+    calling the JavaScript thread directly never arrives — the gesture registers,
+    the app opens, the finger moves over the square and the colour does not
+    change, with no compile or startup error to point at it. On the old
+    architecture the direct call is forgiven, which is why this only bites on a
+    phone. The arrow is created once and reads the ref when called, so it never
+    holds the measured box of the first render.
+  */
   const gestoCuadrado = useMemo(
     () =>
       Gesture.Pan()
         // From the first pixel: tapping the square is a choice, and waiting for
         // a threshold would mean a tap lands nowhere.
         .minDistance(0)
-        .onBegin((e) => moverCuadradoRef.current(e.x, e.y))
-        .onUpdate((e) => moverCuadradoRef.current(e.x, e.y)),
+        .onBegin((e) => runOnJS(alMoverCuadrado)(e.x, e.y))
+        .onUpdate((e) => runOnJS(alMoverCuadrado)(e.x, e.y))
+        .onEnd(() => runOnJS(alTerminar)()),
     [],
   );
 
@@ -109,8 +152,9 @@ export function ColorSquare({
     () =>
       Gesture.Pan()
         .minDistance(0)
-        .onBegin((e) => moverTiraRef.current(e.x))
-        .onUpdate((e) => moverTiraRef.current(e.x)),
+        .onBegin((e) => runOnJS(alMoverTira)(e.x))
+        .onUpdate((e) => runOnJS(alMoverTira)(e.x))
+        .onEnd(() => runOnJS(alTerminar)()),
     [],
   );
 

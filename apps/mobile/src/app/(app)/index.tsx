@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -8,6 +8,22 @@ import { useScreenTitle } from "@/hooks/use-screen-title";
 
 import { PanelGrid } from "@/components/dashboard/panel-grid";
 import { PanelPicker } from "@/components/dashboard/pin-picker";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
+
+/**
+ * Dice si lo elegido cambio, y vive **dentro** de la hoja a proposito.
+ *
+ * La pantalla pinta el `Sheet` y esta por encima de el, asi que `useSheetSucio`
+ * ahi daria el valor por defecto. Este componente no pinta nada: esta dentro del
+ * arbol del `Sheet` para que el que si pinta sepa.
+ */
+function PinsSucios({ sucio }: { sucio: boolean }) {
+  const { setSucio } = useSheetSucio();
+  useEffect(() => {
+    setSucio(sucio);
+  }, [sucio, setSucio]);
+  return null;
+}
 import { Button } from "@/components/ui/button";
 import { Screen } from "@/components/ui/screen";
 import { Sheet } from "@/components/ui/sheet";
@@ -31,6 +47,8 @@ import { routeForList } from "@/lib/lists/route";
 import type { ListKind } from "@orbit-hub/contracts";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
+
+import { widgetIcon } from "@/lib/dashboard/pin";
 
 /**
  * The home screen: the panel, and nothing else.
@@ -278,7 +296,7 @@ export default function HomeScreen() {
           return {
             title,
             subtitle: t("dashboard.deletedFolder"),
-            emoji: (widget.settings?.["emoji"] as string) ?? null,
+            icon: widgetIcon(widget.settings),
             href: null,
             // Still a folder's card, even though the folder is gone: the mark says
             // what it was, and a card that changes its mark when its subject is
@@ -292,7 +310,7 @@ export default function HomeScreen() {
           subtitle: t(pluralKey("dashboard.listsInside", inside), {
             count: inside,
           }),
-          emoji: folder.emoji,
+          icon: folder.icon ?? null,
           href: `/(app)/workspace/${folder.workspaceId}/folder/${folder.id}`,
           mark: cardMark({ folder: true }),
         };
@@ -307,7 +325,7 @@ export default function HomeScreen() {
           return {
             title,
             subtitle: t("dashboard.deletedNote"),
-            emoji: null,
+            icon: null,
             href: null,
             mark: cardMark({ note: true }),
           };
@@ -315,7 +333,7 @@ export default function HomeScreen() {
         return {
           title: note.title.length > 0 ? note.title : t("note.untitled"),
           subtitle: notePreview(note).slice(0, 80),
-          emoji: null,
+          icon: note.icon ?? null,
           href: `/(app)/note/${note.id}`,
           mark: cardMark({ note: true }),
         };
@@ -328,7 +346,7 @@ export default function HomeScreen() {
         return {
           title,
           subtitle: t("dashboard.deletedList"),
-          emoji: (widget.settings?.["emoji"] as string) ?? null,
+          icon: widgetIcon(widget.settings),
           href: null,
           // What it was, from the card itself. The list is gone but the kind was
           // written into the card when it was pinned, and a film list that has
@@ -341,7 +359,7 @@ export default function HomeScreen() {
         subtitle: t(pluralKey("lists.itemCount", list.itemCount), {
           count: list.itemCount,
         }),
-        emoji: list.emoji,
+icon: list.icon ?? null,
         href: routeForList(list),
         mark: cardMark({ kind: list.kind }),
       };
@@ -349,47 +367,126 @@ export default function HomeScreen() {
     [folderById, listById, lists, t],
   );
 
-  const addList = useCallback(
-    (listId: string) => {
-      const list = listById.get(listId);
-      if (!list) return;
-      void save(withPinnedList(layout, list, currentPage));
+  /*
+    Lo fijado en el panel, y **en borrador hasta Guardar**.
+
+    Cada toque llamaba a fijar o quitar al instante, asi que salir sin Guardar
+    dejaba un panel que nadie confirmo. Ahora los toques mueven estas copias y solo
+    Guardar escribe, una sola vez: cada `save` planifica desde el `layout` que su
+    llamador capturo, asi que N escrituras seguidas parten del mismo y la segunda
+    se come a la primera. Una sola escritura no tiene ese problema porque no hay
+    segunda.
+  */
+  const [pinsBorrador, setPinsBorrador] = useState<{
+    lists: Set<string>;
+    folders: Set<string>;
+    notes: Set<string>;
+  } | null>(null);
+  useEffect(() => {
+    /*
+      Al abrir y no en cada render: los conjuntos vivos cambian de identidad en
+      cada render del padre, y depender de ellos tiraria lo elegido con cada
+      tecla en cualquier otro sitio. Lo elegido pertenece a esta apertura.
+    */
+    if (picking) {
+      setPinsBorrador({
+        lists: new Set(onPanel),
+        folders: new Set(folderOnPanel),
+        notes: new Set(noteOnPanel),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picking]);
+
+  /** Mueve una copia, y no escribe nada. */
+  const moverPin = useCallback(
+    (kind: "lists" | "folders" | "notes", id: string) => {
+      setPinsBorrador((previo) => {
+        const base = previo ?? {
+          lists: new Set(onPanel),
+          folders: new Set(folderOnPanel),
+          notes: new Set(noteOnPanel),
+        };
+        const copia = {
+          lists: new Set(base.lists),
+          folders: new Set(base.folders),
+          notes: new Set(base.notes),
+        };
+        const conjunto = copia[kind];
+        if (conjunto.has(id)) conjunto.delete(id);
+        else conjunto.add(id);
+        return copia;
+      });
     },
-    [currentPage, layout, listById, save],
+    [onPanel, folderOnPanel, noteOnPanel],
   );
 
-  const removeList = useCallback(
-    (listId: string) => void save(withoutPinnedList(layout, listId)),
-    [layout, save],
-  );
+  const pinsSucios = useMemo(() => {
+    if (!pinsBorrador) return false;
+    const distinto = (a: Set<string>, b: ReadonlySet<string>) =>
+      a.size !== b.size || [...a].some((id) => !b.has(id));
+    return (
+      distinto(pinsBorrador.lists, onPanel) ||
+      distinto(pinsBorrador.folders, folderOnPanel) ||
+      distinto(pinsBorrador.notes, noteOnPanel)
+    );
+  }, [pinsBorrador, onPanel, folderOnPanel, noteOnPanel]);
 
-  const addNote = useCallback(
-    (noteId: string) => {
-      const note = notesById.get(noteId);
-      if (!note) return;
-      void save(withPinnedNote(layout, note, currentPage));
-    },
-    [currentPage, layout, notesById, save],
-  );
-
-  const removeNote = useCallback(
-    (noteId: string) => void save(withoutPinnedNote(layout, noteId)),
-    [layout, save],
-  );
-
-  const addFolder = useCallback(
-    (folderId: string) => {
-      const folder = folderById.get(folderId);
-      if (!folder) return;
-      void save(withPinnedFolder(layout, folder));
-    },
-    [folderById, layout, save],
-  );
-
-  const removeFolder = useCallback(
-    (folderId: string) => void save(withoutPinnedFolder(layout, folderId)),
-    [layout, save],
-  );
+  /**
+   * Escribe lo elegido, **una sola vez**.
+   *
+   * Parte del `layout` vivo y le aplica la diferencia con copias locales, en vez
+   * de llamar a fijar/quitar N veces: cada una de esas planifica desde el
+   * `layout` capturado y N seguidas se comerian entre si.
+   */
+  const guardarPins = useCallback(async () => {
+    if (!pinsBorrador) {
+      setPicking(false);
+      return;
+    }
+    let siguiente = layout;
+    for (const id of onPanel) {
+      if (!pinsBorrador.lists.has(id)) siguiente = withoutPinnedList(siguiente, id);
+    }
+    for (const id of pinsBorrador.lists) {
+      if (!onPanel.has(id)) {
+        const list = listById.get(id);
+        if (list) siguiente = withPinnedList(siguiente, list, currentPage);
+      }
+    }
+    for (const id of folderOnPanel) {
+      if (!pinsBorrador.folders.has(id)) siguiente = withoutPinnedFolder(siguiente, id);
+    }
+    for (const id of pinsBorrador.folders) {
+      if (!folderOnPanel.has(id)) {
+        const folder = folderById.get(id);
+        if (folder) siguiente = withPinnedFolder(siguiente, folder);
+      }
+    }
+    for (const id of noteOnPanel) {
+      if (!pinsBorrador.notes.has(id)) siguiente = withoutPinnedNote(siguiente, id);
+    }
+    for (const id of pinsBorrador.notes) {
+      if (!noteOnPanel.has(id)) {
+        const note = notesById.get(id);
+        if (note) siguiente = withPinnedNote(siguiente, note, currentPage);
+      }
+    }
+    await save(siguiente);
+    setPinsBorrador(null);
+    setPicking(false);
+  }, [
+    pinsBorrador,
+    layout,
+    onPanel,
+    folderOnPanel,
+    noteOnPanel,
+    listById,
+    folderById,
+    notesById,
+    currentPage,
+    save,
+  ]);
 
   /*
    * What could still be added, and the panel's plus is drawn only when there is
@@ -532,26 +629,25 @@ export default function HomeScreen() {
         subtitle={t(pluralKey("dashboard.cardsAvailable", available), {
           count: available,
         })}
+        /*
+          El Guardar es el del pie, y escribe lo elegido una sola vez. Los toques
+          de dentro solo mueven el borrador: salir sin Guardar deja el panel como
+          estaba, que es lo que "salir sin guardar se pierde" significa aqui.
+        */
+        onSave={() => void guardarPins()}
       >
+        <PinsSucios sucio={pinsSucios} />
         <PanelPicker
           workspaces={workspaces}
           folders={folders}
           lists={lists}
-          pinnedLists={onPanel}
-          pinnedFolders={folderOnPanel}
+          pinnedLists={pinsBorrador?.lists ?? onPanel}
+          pinnedFolders={pinsBorrador?.folders ?? folderOnPanel}
           notes={notes}
-          pinnedNotes={noteOnPanel}
-          onToggleNote={(noteId) =>
-            noteOnPanel.has(noteId) ? removeNote(noteId) : addNote(noteId)
-          }
-          onToggleList={(listId) =>
-            onPanel.has(listId) ? removeList(listId) : addList(listId)
-          }
-          onToggleFolder={(folderId) =>
-            folderOnPanel.has(folderId)
-              ? removeFolder(folderId)
-              : addFolder(folderId)
-          }
+          pinnedNotes={pinsBorrador?.notes ?? noteOnPanel}
+          onToggleNote={(noteId) => moverPin("notes", noteId)}
+          onToggleList={(listId) => moverPin("lists", listId)}
+          onToggleFolder={(folderId) => moverPin("folders", folderId)}
         />
       </Sheet>
     </Screen>

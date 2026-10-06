@@ -8,6 +8,7 @@ import {
   matchesFilter,
   moveRow,
   sortRows,
+  toRow,
   type ContentRow,
 } from '../src/lib/content-order';
 
@@ -26,6 +27,9 @@ const fila = (over: Partial<ContentRow> & { id: string }): ContentRow => ({
   position: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   folderId: null,
+  // Sin icono, como la mayoria de las filas: el icono viaja en la fila para que
+  // la lista lo dibuje sin preguntar por la entidad, y aqui se prueba el orden.
+  icon: null,
   ...over,
 });
 
@@ -257,5 +261,41 @@ describe('el filtro', () => {
     expect(
       activeFilterCount({ kind: 'list', listKind: 'tasks', folderId: 'f1', query: 'x' }),
     ).toBe(4);
+  });
+});
+
+describe('toRow lleva el icono', () => {
+  it('la fila de una carpeta trae su icono', () => {
+    const icono = { type: 'emoji', value: '🏠', color: 'auto' } as const;
+    const row = toRow.folder({
+      id: 'f1',
+      workspaceId: 'w1',
+      parentId: null,
+      name: 'Casa',
+      position: 0,
+      icon: { ...icono },
+    } as never);
+    expect(row.icon).toEqual({ ...icono });
+  });
+
+  it('la fila de una lista trae el suyo, y la de una nota el suyo', () => {
+    const lista = toRow.list({
+      id: 'l1',
+      workspaceId: 'w1',
+      folderId: null,
+      kind: 'tasks',
+      title: 'Compra',
+      icon: { type: 'vector', value: 'pan', library: 'ionicons', style: 'outline', color: 'amber' },
+    } as never);
+    expect(lista.icon).toEqual({
+      type: 'vector',
+      value: 'pan',
+      library: 'ionicons',
+      style: 'outline',
+      color: 'amber',
+    });
+
+    const nota = toRow.note({ id: 'n1', workspaceId: 'w1', title: 'Salsa' } as never);
+    expect(nota.icon).toBeNull();
   });
 });

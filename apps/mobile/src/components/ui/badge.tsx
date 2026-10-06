@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { ViewStyle } from "react-native";
 
 import { useTheme } from "@/theme";
+import type { ThemeColors } from "@/theme";
 
 import type { IconName } from "./button";
 import { AppText } from "./text";
@@ -23,11 +24,51 @@ export interface BadgeProps {
    * it is describing. Same colours, same pill, same words — less padding and a
    * smaller glyph.
    *
-   * `regular` is the default on purpose: the sixteen other call sites are the ones
+   * `regular` is the default on purpose: the fifteen other call sites are the ones
    * a badge is the headline of, and a default they all have to opt out of is a
    * default that gets opted out of wrongly.
    */
   size?: "regular" | "compact";
+  /**
+   * A press on the badge, **and nothing at all without it.**
+   *
+   * It becomes a `Pressable` and not a `View` with a `Pressable` put around it,
+   * because the box the row measures is **this** one. `flexShrink: 0` below is on
+   * the badge, so a wrapper around it would be the flex child instead, and a flex
+   * child with no `flexShrink` of its own **refuses to shrink** — Yoga defaults it
+   * to 0 and `react-native-web` writes it on every `View` in
+   * `exports/View/index.js` (`view$raw`). The wrapper would sit there at the badge's
+   * full width, the badge would keep that width inside it, and the pair would be
+   * wider than the line: the badge is what gets pushed off the end.
+   *
+   * Optional and not required, because the other call sites pass nothing and get
+   * exactly the tree this file has always drawn — the same `View`, carrying the same
+   * `accessibilityLabel` and the same `testID`.
+   *
+   * **The `accessibilityRole` below is what makes this a button and not a caption,
+   * and on web it also decides the element.** `propsToAccessibilityComponent.js`
+   * returns the *tag* for a role that has one, so this branch is a `<button>` and
+   * the other is a `<div>` — measured, and the browser checks that look for pills
+   * among a row's elements ask for `div,button` because of it.
+   */
+  onPress?: () => void;
+  /**
+   * What activating the badge does, **spread, not a string.**
+   *
+   * The spread of `useA11yHint` from whoever calls, the same prop `TagColorButton`
+   * takes and for the same reason: **the node stays with the caller**, so a row whose
+   * pressables share one sentence renders it once in the document and has every one
+   * of their `aria-describedby` pointing at it — which is legal, and is what the
+   * name above the badge already does with its own hint.
+   *
+   * Not a plain `accessibilityHint` string, because that prop is deleted at the
+   * `View` boundary on web — `react-native-web@0.21.2` has the string nowhere in
+   * its package and filters props through an allowlist — so passing it here would
+   * work on a phone and vanish in a browser without a word. `Button` takes the
+   * string and calls the hook itself; a badge cannot, because it renders a second
+   * node per call site and fifteen call sites do not each need their own copy.
+   */
+  hintProps?: Record<string, string>;
   style?: ViewStyle;
   /**
    * What a screen reader says instead of the bare label.
@@ -41,57 +82,76 @@ export interface BadgeProps {
   testID?: string;
 }
 
+/**
+ * The two colours one tone is drawn with, **and the same pair for anybody who needs
+ * to paint a tone outside a badge.**
+ *
+ * It was a literal inside `Badge`, which meant the only way to know what colour a tone
+ * looks like was to render a badge. The priority buttons in the item sheet need
+ * exactly these two colours —and the point of those buttons is that they look like
+ * what the row is going to look like afterwards— so the map moved here, next to the
+ * tokens it reads, instead of being written a second time.
+ *
+ * **`neutral` is the odd one**: its background is `surfaceMuted` and not a
+ * `*Soft`, because there is no soft neutral in the theme, and its text is
+ * `textMuted` rather than a colour. So "paint this tone" has two different shapes in
+ * here, and a caller that indexes `theme.colors[`${tone}Soft`]` gets `undefined` for
+ * `neutral`. That is why this is a function and not a template literal at the call
+ * site.
+ */
+export function tonesFor(
+  colors: ThemeColors,
+  tone: BadgeTone,
+): { background: string; text: string } {
+  switch (tone) {
+    case "neutral":
+      return { background: colors.surfaceMuted, text: colors.textMuted };
+    case "accent":
+      return { background: colors.accentSoft, text: colors.accentSoftText };
+    case "success":
+      return { background: colors.successSoft, text: colors.success };
+    case "warning":
+      return { background: colors.warningSoft, text: colors.warning };
+    case "danger":
+      return { background: colors.dangerSoft, text: colors.danger };
+    case "info":
+      return { background: colors.infoSoft, text: colors.info };
+  }
+}
+
 export function Badge({
   label,
   tone = "neutral",
   icon,
   size = "regular",
+  onPress,
+  hintProps,
   style,
   accessibilityLabel,
   testID,
 }: BadgeProps) {
   const theme = useTheme();
 
-  const tones: Record<BadgeTone, { background: string; text: string }> = {
-    neutral: {
-      background: theme.colors.surfaceMuted,
-      text: theme.colors.textMuted,
-    },
-    accent: {
-      background: theme.colors.accentSoft,
-      text: theme.colors.accentSoftText,
-    },
-    success: {
-      background: theme.colors.successSoft,
-      text: theme.colors.success,
-    },
-    warning: {
-      background: theme.colors.warningSoft,
-      text: theme.colors.warning,
-    },
-    danger: { background: theme.colors.dangerSoft, text: theme.colors.danger },
-    info: { background: theme.colors.infoSoft, text: theme.colors.info },
-  };
+  const palette = tonesFor(theme.colors, tone);
 
-  const palette = tones[tone];
   const compacto = size === "compact";
 
-  return (
-    <View
-      accessibilityLabel={accessibilityLabel}
-      testID={testID}
-      style={[
-        styles.container,
-        {
-          backgroundColor: palette.background,
-          borderRadius: theme.radius.pill,
-          paddingHorizontal: compacto ? theme.spacing.sm : theme.spacing.md,
-          paddingVertical: compacto ? theme.spacing.xxs : theme.spacing.xs,
-          gap: theme.spacing.xs,
-        },
-        style,
-      ]}
-    >
+  // One style array for both branches, so the box is the same box either way and
+  // there is no second place where a padding or a radius can drift apart.
+  const estilo = [
+    styles.container,
+    {
+      backgroundColor: palette.background,
+      borderRadius: theme.radius.pill,
+      paddingHorizontal: compacto ? theme.spacing.sm : theme.spacing.md,
+      paddingVertical: compacto ? theme.spacing.xxs : theme.spacing.xs,
+      gap: theme.spacing.xs,
+    },
+    style,
+  ];
+
+  const dentro = (
+    <>
       {icon ? (
         <Ionicons
           name={icon}
@@ -102,7 +162,37 @@ export function Badge({
       <AppText variant="caption" style={{ color: palette.text }}>
         {label}
       </AppText>
-    </View>
+    </>
+  );
+
+  if (!onPress) {
+    // Los mismos dos props que siempre, y no por costumbre: quince sitios de la app
+    // viven de que el nombre accesible de una insignia llegue entero, y este es el
+    // unico sitio por el que puede pasar.
+    return (
+      <View
+        accessibilityLabel={accessibilityLabel}
+        testID={testID}
+        style={estilo}
+      >
+        {dentro}
+      </View>
+    );
+  }
+
+  // El `accessibilityLabel` solo si quien lo llama dio uno: si no, lo que un lector
+  // de pantalla dice es la palabra escrita dentro, que es la que se lee encima.
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      {...hintProps}
+      testID={testID}
+      onPress={onPress}
+      style={estilo}
+    >
+      {dentro}
+    </Pressable>
   );
 }
 

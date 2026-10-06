@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Divider } from "@/components/ui/divider";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Screen } from "@/components/ui/screen";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useLists } from "@/hooks/use-lists";
@@ -156,9 +157,7 @@ export default function ListsScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={list.title}
                 onLongPress={() =>
-                  nombreLargo.onLongPress(
-                    `${list.emoji ? `${list.emoji} ` : ""}${list.title}`,
-                  )
+                  nombreLargo.onLongPress(list.title)
                 }
                 onPress={() => router.push(routeForList(list))}
                 style={({ pressed }) => [
@@ -188,7 +187,7 @@ export default function ListsScreen() {
 
                 <View style={styles.flex}>
                                     <AppText variant="bodyStrong">
-                    {list.emoji ? `${list.emoji} ` : ""}
+                    <AppIcon icon={list.icon} size={18} />
                     {list.title}
                   </AppText>
                   <View style={[styles.meta, { gap: theme.spacing.sm }]}>

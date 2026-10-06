@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Animated, {
   cancelAnimation,
@@ -17,13 +17,18 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 
+import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
+import { Button } from "./button";
+import { ConfirmDialog } from "./confirm-dialog";
+import { SheetSucioContexto } from "./sheet-sucio";
 import { AppText } from "./text";
 
 export interface SheetProps {
@@ -45,10 +50,53 @@ export interface SheetProps {
    */
   artwork?: ReactNode;
   children: ReactNode;
+  /**
+   * Go back one step, **and not close**.
+   *
+   * Seven sheets here hold more than one page, and each one had its own button at
+   * the *bottom* of the form labelled either "Back" or "Cancelar" — two labels for
+   * the same shape of button, one of which was lying, because it went up a step
+   * rather than out of the sheet. And the export page had no way back at all: the
+   * ✕ was the only exit and it closed everything.
+   *
+   * On the left of the header, which is where a back arrow goes and where the hand
+   * already is. Left out entirely when absent, so the eighteen sheets that are one
+   * step deep do not grow a control that does nothing.
+   */
+  onBack?: () => void;
+  /** What the back control is called, for a screen reader. */
+  backLabel?: string;
   /** Renders the content in a scroll view, for a long list of options. */
   scrollable?: boolean;
   /** Caps the height on a tall screen so a long list does not run off it. */
   maxHeightRatio?: number;
+
+  /**
+   * Commits the draft, and **its presence is what puts a Guardar in the sheet**.
+   *
+   * A sheet with nothing to commit does not get a disabled button that does
+   * nothing: it gets no button, because there is nothing to commit. A Guardar
+   * greyed out on a menu with six options to read teaches people that Guardar is
+   * decoration.
+   *
+   * So this is the switch, and it is one switch: no second `showSave` that can
+   * disagree with it, and no `saving` the caller has to remember to flip.
+   */
+  onSave?: () => void | Promise<void>;
+  /** The confirming button, for a screen reader. */
+  saveLabel?: string;
+  /**
+   * Why the confirming button cannot be pressed, or `undefined` when it can.
+   *
+   * A `string` and not a `boolean`, and that is the whole reason it exists: a grey
+   * button with nothing written on it is a button somebody presses twice to find
+   * out. Saying **why** —"Ponle un nombre"— turns a dead control into an
+   * instruction.
+   *
+   * `undefined` means enabled, so a sheet with nothing to say about it passes
+   * nothing and gets a live button.
+   */
+  saveDisabledReason?: string;
 }
 
 /**
@@ -69,15 +117,118 @@ export function Sheet({
   subtitle,
   artwork,
   children,
+  onBack,
+  backLabel,
   scrollable = true,
   maxHeightRatio = 0.85,
+  onSave,
+  saveLabel,
+  saveDisabledReason,
 }: SheetProps) {
   const theme = useTheme();
   const t = useTranslation();
   const insets = useSafeAreaInsets();
   const wide = isWide();
+  const teclado = useKeyboardHeight();
+  const { height: altoVentana } = useWindowDimensions();
 
-  const Body = scrollable ? ScrollView : View;
+
+
+  /**
+   * Whether there is anything uncommitted, and who says so.
+   *
+   * The flag lives here and not in the screen that drew the panel, and that is
+   * the fix for the family of bugs where opening one sheet leaves the next one
+   * holding the first one's draft. It also **resets on open**, so there is no
+   * path by which a sheet arrives dirty.
+   */
+  const [sucio, setSucio] = useState(false);
+  /** The "¿sales sin guardar?" question, and nothing else. */
+  const [preguntando, setPreguntando] = useState(false);
+  /** Saving, so the button cannot be pressed twice and the words can change. */
+  const [guardando, setGuardando] = useState(false);
+
+  /*
+    Clean on open, and **before** anything else.
+
+    Resetting in an effect that runs after paint would leave one frame where the
+    sheet is already visible and still dirty, and the guard would be armed for a
+    panel nobody has typed in yet. So the same effect that mounts the panel
+    disarms the question.
+  */
+  useEffect(() => {
+    if (!visible) return;
+    setSucio(false);
+    setPreguntando(false);
+    setGuardando(false);
+  }, [visible]);
+
+  /*
+    The one way out, and **every exit goes through it**.
+
+    A sheet leaves five ways: the dimmed background, the ✕, a drag downwards, the
+    hardware back button on Android, and the screen itself setting something to
+    null. Guarding "the close button" guards one of the five, and the other four
+    keep throwing the work away — which is how a guard that is there still loses
+    the edits. So they all arrive at `pedirCierre`, and `onClose` is only ever
+    called from inside it.
+
+    The drag is the subtle one: it has already committed to closing, animated the
+    panel away and needs to leave immediately, and a question cannot be asked
+    after the panel is gone. So the drag asks *before* it commits — see the
+    gesture, which calls `puedeCerrar` first and only starts the exit if the
+    answer was yes.
+  */
+  const puedeCerrar = useCallback((): boolean => {
+    if (!sucio) return true;
+    setPreguntando(true);
+    return false;
+  }, [sucio]);
+
+  /** The committing button, and the only thing that clears "dirty". */
+  const guardar = useCallback(async () => {
+    if (!onSave || saveDisabledReason !== undefined) return;
+    setGuardando(true);
+    try {
+      await onSave();
+      /*
+        And only once the promise is settled. Clearing before would mean a save
+        that fails leaves the sheet looking clean with the text gone from the
+        screen and never having reached the server — the worst of both, because
+        the one signal that says "this is not saved" is the signal that said it
+        was dirty.
+      */
+      setSucio(false);
+    } finally {
+      setGuardando(false);
+    }
+  }, [onSave, saveDisabledReason]);
+
+  /** The exit itself, and the only caller of the screen's `onClose`. */
+  const salir = useCallback(() => {
+    setPreguntando(false);
+    onClose();
+  }, [onClose]);
+
+  /** For the three exits that are a plain press: ask, and if allowed, go. */
+  const pedirCierre = useCallback(() => {
+    if (puedeCerrar()) salir();
+  }, [puedeCerrar, salir]);
+
+  /**
+   * The same question, **for the gesture**, which runs on the UI thread.
+   *
+   * `runOnJS` sends it to the JS thread and brings the answer back, so this is the
+   * same `sucio` and the same dialog as the ✕. A second name and not a second
+   * rule, on purpose: a drag that discarded the work while the ✕ asked is exactly
+   * the bug this exists to prevent.
+   *
+   * The cast through `unknown` is because `runOnJS` is declared as returning
+   * `void` whatever it is handed, and it does not: it returns whatever the
+   * function returned. Asserted once, in the one place that needs the value back,
+   * instead of `as any` sprinkled over the gesture.
+   */
+  const preguntarCierre = useCallback((): boolean => puedeCerrar(), [puedeCerrar]);
 
   /*
     The content, **arriving a beat after the panel**.
@@ -99,6 +250,22 @@ export function Sheet({
   /** How far the panel has been pulled down, and how far it is willing to go. */
   const arrastre = useSharedValue(0);
   const altoPanel = useSharedValue(0);
+  /**
+   * El alto al que el cuerpo **va persiguiendo**, y no el que tiene.
+   *
+   * Sin esto, cambiar de paso en una hoja de varias páginas —de "opciones" a
+   * "editar", del icono a las etiquetas— hace que el panel salte de tamaño de un
+   * frame al siguiente. Se nota mucho mas de lo que parece: el salto **mueve el
+   * contenido**, y si tenias el dedo o el cursor encima de una fila, esa fila se ha
+   * movido sola justo cuando ibas a tocarla.
+   *
+   * El valor se anima con `withTiming` y el final se escribe al terminar, por el
+   * mismo motivo que la entrada: una animacion que no llega a su ultimo frame deja
+   * el cuerpo con la altura de antes y la hoja se queda a medias.
+   */
+  const altoCuerpo = useSharedValue(0);
+  /** The height we are already heading for, so the same one is not re-animated. */
+  const objetivo = useRef(0);
   /** Whether the pull has already decided to close, so nothing undoes it. */
   const cerrando = useSharedValue(false);
   /** The dimming on its own, so the background does not travel with the panel. */
@@ -255,6 +422,61 @@ export function Sheet({
   }));
 
   /*
+    The body's own height, **chasing the content**.
+
+    Zero until the first measurement, and that is not a flash: the panel is still
+    rising in, so for those frames there is nothing to give a height to and the
+    body takes its natural one — the sheet arrives at the right size in the same
+    movement that brings it up.
+  */
+  const estiloCuerpo = useAnimatedStyle(() => ({
+    height: altoCuerpo.value > 0 ? altoCuerpo.value : undefined,
+  }));
+
+  /**
+   * A new height for the body, and **only if it is really a new one**.
+   *
+   * The `objetivo` guard is what stops the loop that this would otherwise have:
+   * setting the height re-lays-out the content, the content reports a height, and
+   * without the guard every frame would start a new animation and the body would
+   * chase its own tail forever. It is compared against the **target** and not
+   * against the current value, so a measurement that arrives mid-animation is not
+   * mistaken for a new one.
+   *
+   * Scrolling sheets are measured with `onContentSizeChange` and not with
+   * `onLayout`, and the reason is that an `onLayout` inside a scroll view reports
+   * the height the box was **given**, not the height of what is in it — so once
+   * the box has a fixed height, that number never changes again and the animation
+   * can never start.
+   */
+  const fijarAltoCuerpo = useCallback((alto: number) => {
+    if (alto <= 0 || alto === objetivo.current) return;
+    objetivo.current = alto;
+    altoCuerpo.value = withTiming(alto, {
+      duration: ALTO_CUERPO,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [altoCuerpo]);
+
+  /**
+   * The size handler for a scrolling sheet, and it is a named one because a typed
+   * arrow written **inside a JSX expression** has to be parsed as JSX before it is
+   * read as TypeScript, and `(w: number, h: number)` is exactly the shape that
+   * parser has an opinion about.
+   */
+  const alMedirElContenido = useCallback(
+    (_ancho: number, alto: number) => fijarAltoCuerpo(alto),
+    [fijarAltoCuerpo],
+  );
+
+  /** And on a step change the height starts again, or a short sheet stays short. */
+  useEffect(() => {
+    if (!visible) return;
+    objetivo.current = 0;
+    altoCuerpo.value = 0;
+  }, [visible, altoCuerpo]);
+
+  /*
     Pulling the sheet down, **on the grabber's strip and nowhere else**.
 
     The panel follows the finger while it goes down, and goes back if it is let go
@@ -308,6 +530,21 @@ export function Sheet({
     .onEnd((event) => {
       const linea = Math.max(90, altoPanel.value * 0.2);
       if (event.translationY > linea || event.velocityY > 700) {
+        /*
+          Se pregunta **antes** de comprometerse, y no despues.
+
+          El gesto que cierra ya ha animado el panel hacia abajo y tiene que salir
+          en el mismo instante: no hay forma de preguntar nada con el panel fuera
+          de la pantalla. Preguntar despues significaria que tirar hacia abajo
+          guarda lo que habia sin preguntar, que es justo lo que el resto de las
+          cinco salidas evita. Asi que el gesto pide permiso primero y solo empieza
+          la salida si le dicen que si — y si no, el panel vuelve a su sitio con
+          el mismo rebote de siempre, que es lo que hace un gesto que se arrepiente.
+        */
+        if (!(runOnJS(preguntarCierre)() as unknown as boolean)) {
+          volver();
+          return;
+        }
         cerrando.value = true;
         // It leaves downwards as the modal fades, so on the web — where the modal
         // has no animation of its own — the sheet is seen to go and not to blink.
@@ -324,13 +561,49 @@ export function Sheet({
     });
 
   return (
+    <SheetSucioContexto.Provider value={{ sucio, setSucio }}>
     <Modal
       visible={montada}
       transparent
       animationType="none"
-      onRequestClose={onClose}
+      /*
+        El boton atras de Android, que llega aqui sin pasar por ningun control. Sin
+        esto es la quinta salida — y la que nadie toca en una prueba manual, porque
+        probar el guardado pulsando el atras fisico del movil es la forma mas
+        rapida de perder el trabajo de un dia.
+      */
+      onRequestClose={pedirCierre}
       statusBarTranslucent
     >
+      {/*
+        `GestureHandlerRootView` **inside** the `Modal`, and not only the one in
+        `app/_layout.tsx`.
+
+        On Android a React Native `Modal` is not a view: it is a separate native
+        window with its own tree. A `GestureDetector` that lives inside it does not
+        hang off the app's `GestureHandlerRootView`, and without a root of its own
+        **the gesture is never registered**: no error, no crash, the panel opens and
+        the finger moves across the square and nothing happens.
+
+        This is what made both colour pickers — the workspace one and the tag one —
+        change neither the colour nor the hue on a phone, with `runOnJS` in place and
+        without it. Both pickers live inside a `Sheet`, and the `Sheet` is a `Modal`.
+        On the web `Modal` is a div in the same tree, `_layout`'s root does cover it,
+        and that is why the bug was never visible there.
+
+        This repo has now paid this same bill twice; the first time is written in
+        `docs/roadmap.md`: without `GestureHandlerRootView` the gesture handler does
+        not set `touch-action: none` and the browser keeps the finger. There it was the
+        browser taking the gesture and there was no way to give it back; here it is the
+        modal's native window, and there is not either.
+
+        **It goes inside and not around the `Modal`**: a root around the `Modal` is a
+        root in the app's window, which is exactly the one that does not contain the
+        panel's gestures. And `flex: 1` because this is the view that has to be
+        measured, not the content: a container with no height receives no touches,
+        which is the same failure shape as the `flex: 1` on the hue strip.
+      */}
+      <GestureHandlerRootView style={styles.raizGestos}>
       {/*
         `animationType="none"`, **and that is the point of the whole file**.
 
@@ -386,7 +659,7 @@ export function Sheet({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("common.close")}
-          onPress={onClose}
+          onPress={pedirCierre}
           style={styles.backdrop}
         />
 
@@ -403,10 +676,38 @@ export function Sheet({
             {
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.border,
-              maxHeight: `${Math.round(maxHeightRatio * 100)}%`,
-              paddingBottom: wide
-                ? theme.spacing.lg
-                : insets.bottom + theme.spacing.lg,
+              /*
+                `paddingBottom`, not `marginBottom` and not a resize.
+
+                The keyboard takes the bottom `teclado` points of the window, and
+                the panel's last `paddingBottom` of points is what would be under
+                it — so that is what has to grow, not the panel moving up. A
+                `margin` would push the whole panel up and take the header with
+                it, which is not what happens when a sheet meets a keyboard: the
+                sheet stays where it is and the **bottom of its content** comes
+                into view.
+
+                And the two are added, not swapped: with the keyboard up the
+                gesture bar is behind it, so keeping `insets.bottom` as well only
+                adds padding nobody needs. Small, and not worth a conditional for
+                a bar that is not even visible while you are typing.
+              */
+              paddingBottom: teclado + (wide ? theme.spacing.lg : insets.bottom + theme.spacing.lg),
+              /*
+                Y el alto, que aqui es donde se rompe de verdad: `maxHeight` en
+                porcentaje se mide contra la **ventana**, y el teclado no encoge la
+                ventana —la encoge la vista—. Un panel al 85% con el teclado abierto
+                llega 85% de una ventana que tiene el teclado delante, o sea que su
+                mitad de abajo queda debajo del teclado.
+
+                Asi que cuando hay teclado el alto pasa a ser absoluto y sale de lo
+                que queda: el alto de la ventana menos el teclado, y del panel solo
+                un `maxHeightRatio` de eso. Es la unica forma de que el limite y el
+                relleno hablen del mismo sitio.
+              */
+              ...(teclado > 0
+                ? { maxHeight: Math.round(altoVentana * (1 - teclado / altoVentana) * maxHeightRatio) }
+                : { maxHeight: `${Math.round(maxHeightRatio * 100)}%` }),
             },
             estiloPanel,
           ]}
@@ -454,6 +755,38 @@ export function Sheet({
                 *move with it. One row, one height, the same whether there is a
                 picture or not.
               */}
+              {/*
+                The back control, **to the left of everything and not inside the
+                text block**.
+
+                `styles.close` carries `marginLeft: "auto"`, which is what throws
+                the ✕ to the right end. Putting the arrow there would make the two
+                fight over one row. So the arrow goes first in the row, the text
+                takes what is left, and the ✕ keeps pushing itself right.
+
+                It is the same thirty-point circle as the close, which is the point:
+                one sheet, one header, and the two controls that end something —
+                one step or all of it — are the same weight to the eye.
+              */}
+              {onBack ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={backLabel ?? t("common.back")}
+                  hitSlop={10}
+                  testID="sheet-back"
+                  onPress={onBack}
+                  style={({ pressed }) => [
+                    styles.back,
+                    {
+                      backgroundColor: theme.colors.surfaceMuted,
+                      borderRadius: theme.radius.pill,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
+                </Pressable>
+              ) : null}
               {artwork || title ? (
                 <View style={[styles.cabecera, { gap: theme.spacing.md }]}>
                   {artwork}
@@ -475,7 +808,7 @@ export function Sheet({
               accessibilityRole="button"
               accessibilityLabel={t("common.close")}
               hitSlop={10}
-              onPress={onClose}
+              onPress={pedirCierre}
               style={({ pressed }) => [
                 styles.close,
                 {
@@ -504,28 +837,166 @@ export function Sheet({
             The margin is here now and off the option row, so everything in every
             sheet lines up on the same eighteen whatever it is.
           */}
-          <Body
-            {...(scrollable
-              ? {
-                  contentContainerStyle: {
-                    paddingTop: theme.spacing.sm,
-                    paddingHorizontal: MARGEN,
-                  },
-                  showsVerticalScrollIndicator: false,
-                  keyboardShouldPersistTaps: "handled" as const,
-                }
-              : {
-                  style: {
-                    paddingTop: theme.spacing.sm,
-                    paddingHorizontal: MARGEN,
-                  },
-                })}
+          {/*
+            El cuerpo va dentro de una caja animada, y **no es por estilo**.
+
+            Es porque un `ScrollView` de React Native no admite un estilo animado, y
+            porque la caja es mejor estructura: el alto que persigue el contenido es
+            de la **caja**, y lo que scrollea se estira dentro de ella. Animando el
+            scroller directamente habria que animar algo que ademas decide su propia
+            altura.
+          */}
+          <Animated.View
+            style={[
+              estiloCuerpo,
+              {
+                paddingTop: theme.spacing.sm,
+                paddingHorizontal: MARGEN,
+              },
+            ]}
           >
-            <Animated.View style={estiloContenido}>{children}</Animated.View>
-          </Body>
+          {/*
+            Los dos cuerpos, **en dos ramas y no en una**.
+
+            `Body` era `scrollable ? ScrollView : View`, y esa union es la que
+            rompia: `onContentSizeChange` es del `ScrollView` y el `View` no lo
+            tiene, asi que TypeScript rechazaba las props de los dos a la vez. Con
+            dos ramas cada una lleva lo suyo y no hay ni un `as` por medio.
+
+            Y el motivo de que la medida no sea un `onLayout` en ninguno de los dos
+            esta en el `ScrollView`: un `onLayout` dentro de algo que scrollea
+            informa de la altura que **le dieron**, no de la que tiene lo que lleva
+            dentro. En cuanto la caja lleva una altura fija, ese numero no vuelve a
+            cambiar y la animacion no puede arrancar otra vez — el alto se queda
+            clavado en el primer paso y se rompe para siempre. `onContentSizeChange`
+            informa del contenido, y el contenido no depende de la caja.
+          */}
+          {scrollable ? (
+            <ScrollView
+              style={styles.cuerpoLleno}
+              contentContainerStyle={{
+                paddingTop: theme.spacing.sm,
+                paddingHorizontal: MARGEN,
+              }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              onContentSizeChange={alMedirElContenido}
+            >
+              <Animated.View style={estiloContenido}>{children}</Animated.View>
+            </ScrollView>
+          ) : (
+            /*
+              Y el que no scrollea **no se anima, y a proposito**.
+
+              Es el mismo bucle del que huye el `onContentSizeChange` de arriba: una
+              caja con una altura fija informa de la altura que **le dieron**, asi
+              que en cuanto se le pone una el numero se queda clavado y la animacion
+              no vuelve a arrancar. aqui el bucle seria peor porque la caja se
+              ajusta al contenido y el contenido se mide dentro de ella.
+
+              Y no se pierde nada. Las hojas que no scrollean son las de una sola
+              pagina —un menu, una confirmacion, un campo con su boton— y las que
+              cambian de alto de verdad son las de varias paginas, que scrollean
+              todas. Una hoja que no cambia de pagina tampoco tiene un salto que
+              ocultar.
+            */
+            <View style={styles.cuerpoLleno}>
+              <Animated.View style={estiloContenido}>{children}</Animated.View>
+            </View>
+          )}
+          </Animated.View>
+
+          {/*
+            El boton de Guardar, **al pie y no en la cabecera**.
+
+            La cabecera es donde estan las acciones de la pantalla —volver, cerrar—
+            y quien esta escribiendo necesita el boton de confirmar en el sitio donde
+            llega el pulgar al terminar. Ademas cabe en un sitio en todas las
+            plataformas: abajo siempre hay espacio para el pulgar, y en un dialogo
+            centrado no lo hay en ningun sitio.
+
+            Y **solo aparece si hay algo que confirmar**. Una hoja que abre a
+            escribir el nombre de una lista tiene Guardar; una hoja de seis
+            opciones para leer, no. Un Guardar gris en un menu enseña que el boton
+            es decoracion, y a partir de ahi nadie fia de ningun Guardar.
+          */}
+          {onSave ? (
+            <View
+              style={[
+                styles.pieGuardar,
+                {
+                  borderTopColor: theme.colors.border,
+                  paddingHorizontal: MARGEN,
+                  paddingTop: theme.spacing.md,
+                  // El teclado se come el borde inferior, y un boton debajo del
+                  // teclado es un boton que no se puede pulsar. Mismo relleno que
+                  // el panel, por el mismo motivo y con la misma cuenta.
+                  paddingBottom:
+                    teclado + (wide ? theme.spacing.lg : theme.spacing.lg),
+                },
+              ]}
+            >
+              <Button
+                testID="sheet-save"
+                label={guardando ? t("common.saving") : (saveLabel ?? t("common.save"))}
+                onPress={() => void guardar()}
+                disabled={guardando || saveDisabledReason !== undefined}
+                accessibilityHint={saveDisabledReason}
+                fullWidth
+              />
+            </View>
+          ) : null}
         </Animated.View>
       </View>
+      {/*
+        `GestureHandlerRootView` **dentro** del `Modal`, y no solo el que hay en
+        `app/_layout.tsx`.
+
+        En Android un `Modal` de React Native no es una vista: es una ventana nativa
+        aparte, con su propio árbol. Un `GestureDetector` que vive dentro de ella no
+        cuelga del `GestureHandlerRootView` de la app, y sin una raiz propia **el gesto
+        no se registra**: no hay error, no hay crash, el panel abre y el dedo se mueve
+        sobre el cuadrado sin que pase nada.
+
+        Esto es lo que hacia que los dos selectores de color —el de workspace y el de
+        etiquetas— no cambiaran ni el color ni el tono en un movil, con `runOnJS`
+        puesto y sin él. Los dos picker viven dentro de un `Sheet`, y el `Sheet` es un
+        `Modal`. En la web `Modal` es un div en el mismo arbol, la raiz de `_layout` si
+        lo cubre, y por ahi el bug nunca se vio.
+
+        Es la segunda vez que este repo paga esta misma factura; la primera esta
+        escrita en `docs/roadmap.md`: sin `GestureHandlerRootView` el gestor de gestos
+        no pone `touch-action: none` y el navegador se queda con el dedo. Ahi era el
+        navegador tomando el gesto, y no habia forma dearlo; aqui es la ventana nativa
+        del modal, y tampoco.
+
+        **Va dentro y no envolviendo el `Modal`**: una raiz alrededor del `Modal` es
+        una raiz en la ventana de la app, que es justo la que no contiene los gestos
+        del panel.
+      */}
+      </GestureHandlerRootView>
     </Modal>
+
+    {/*
+      La pregunta va **fuera** del `Modal` del panel y no dentro.
+
+      Un `Modal` de Android es una ventana del sistema, y dos ventanas del sistema
+      apiladas en el mismo sitio no se ordenan: la de arriba tiene que ser la
+      pregunta, y dentro del panel del sheet lo que se dibujaria encima seria el
+      panel, que es justo lo que esta haciendo el gesto del pull. Aparte y por
+      encima, que es lo que hace un dialogo.
+    */}
+    <ConfirmDialog
+      visible={preguntando}
+      title={t("sheet.unsavedTitle")}
+      body={t("sheet.unsavedBody")}
+      confirmLabel={t("sheet.unsavedLeave")}
+      cancelLabel={t("sheet.unsavedStay")}
+      destructive
+      onConfirm={salir}
+      onCancel={() => setPreguntando(false)}
+    />
+    </SheetSucioContexto.Provider>
   );
 }
 
@@ -793,6 +1264,24 @@ export const MARGEN = 18;
 const DURACION = 180;
 
 /**
+ * How long the body takes to reach a new height, and it is **slower than the
+ * entrance**.
+ *
+ * A sheet opening is somebody else's action — they pressed something — and a
+ * sheet changing size is somebody's own while they are looking at it. The second
+ * one wants to be followed rather than announced, so it takes a third longer and
+ * decelerates: a body that arrives at its new size after the movement has settled
+ * reads as a panel that grew, and one that arrives in the same time as the
+ * opening reads as a second opening.
+ *
+ * It is a duration and not a spring because a spring on a height **overshoots**,
+ * and the overshoot is visible as the content being cut at the bottom for a frame
+ * on the way past. A sheet that clips its own content for a frame is worse than one
+ * that arrives slightly late.
+ */
+const ALTO_CUERPO = 260;
+
+/**
  * How long it takes to **go**, for the panel and for the veil.
  *
  * Leaving is slower than the veil on purpose. The panel is the thing being put
@@ -844,6 +1333,15 @@ export function useLastValue<T>(valor: T | null | undefined): T | null {
 
 
 const styles = StyleSheet.create({
+  /*
+    The gesture root's own style, and it is only `flex: 1` because it has to be
+    measured. It is the direct child of the `Modal`, so it is what gives the modal's
+    window its size; a root that collapsed to zero would leave the panel unmeasurable
+    and a view with no height takes no touches.
+  */
+  raizGestos: {
+    flex: 1,
+  },
   root: {
     flex: 1,
     justifyContent: "flex-end",
@@ -853,6 +1351,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
+  },
+  /**
+   * The foot with the Save button, **outside the area that scrolls**.
+   *
+   * A sibling of `Body` and not inside it: a Save inside the scroll goes away with
+   * the contents on a long sheet, and the confirming button disappears exactly
+   * when it is most needed, which is when the contents are long.
+   */
+  pieGuardar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  /**
+   * El scroller dentro de la caja animada, estirado a ocuparla entera.
+   *
+   * `flex: 1` y no una altura: la caja es la que tiene el alto que persigue al
+   * contenido, y el scroller tiene que **`stretch` con ella**. Sin esto, el
+   * scroller mide lo que mide su contenido y la animacion no llega a verse, porque
+   * la caja crece y el scroller no la sigue.
+   */
+  cuerpoLleno: {
+    flex: 1,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
@@ -918,6 +1437,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: "auto",
+  },
+  /**
+   * The back control, and **the same circle as `close` without the `auto` margin**.
+   *
+   * The margin is the whole difference. `close` needs it to reach the right end;
+   * the arrow has to be the first thing on the row, and taking it away is what
+   * leaves room for the title instead of letting the two push each other around.
+   */
+  back: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
   },
   option: {
     flexDirection: "row",

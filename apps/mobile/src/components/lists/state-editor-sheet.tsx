@@ -44,11 +44,9 @@ import {
   moveState,
   newState,
   removeState,
+  stateColorHex,
 } from "@/lib/lists/board";
 import { dropIndex, rowShift } from "@/lib/lists/drag-shift";
-import {
-  iconColor,
-} from "@/lib/lists/item-icons";
 import { useTheme } from "@/theme";
 
 export interface StateEditorSheetProps {
@@ -697,7 +695,7 @@ function FilaEstado({
           style={[
             styles.punto,
             {
-              backgroundColor: iconColor(state.color),
+              backgroundColor: stateColorHex(state.color, theme.colors.icon),
               borderRadius: theme.radius.pill,
             },
           ]}

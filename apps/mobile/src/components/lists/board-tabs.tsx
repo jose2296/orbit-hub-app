@@ -13,7 +13,7 @@ import type { BoardStates } from "@orbit-hub/contracts";
 
 import { AppText } from "@/components/ui/text";
 import { pluralKey, useTranslation } from "@/lib/i18n";
-import { iconColor } from "@/lib/lists/item-icons";
+import { stateColorHex } from "@/lib/lists/board";
 import { useTheme } from "@/theme";
 
 /**
@@ -320,7 +320,7 @@ export function BoardTabs({
         {states.map((state) => {
           const count = counts.get(state.id) ?? 0;
           const activa = state.id === currentId;
-          const color = iconColor(state.color);
+          const color = stateColorHex(state.color, theme.colors.icon);
 
           return (
             <Pressable

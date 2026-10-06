@@ -134,6 +134,23 @@ Applied per IP for authentication endpoints (login, register, password reset) an
 writes. Limits are configurable through `AUTH_RATE_LIMIT_*` and returned as `Retry-After` when
 exceeded.
 
+The per-IP limit and the per-account limit are **not the same kind of thing**, and the difference
+is what stops them from locking out the wrong person:
+
+- **Per IP** (`AUTH_RATE_LIMIT_MAX`) is a flood guard. Every request is the thing being guarded
+  against, so every request counts.
+- **Per account** (`AUTH_ACCOUNT_RATE_LIMIT_MAX`) exists to stop somebody guessing one account's
+  password, so it only charges a `4xx` other than `429`. A `2xx` is not an attempt, a `5xx` is the
+  server's fault and says nothing about a password, and a `429` never reached the route. Counting
+  successes as well — which it used to do — stops nobody, since a guesser never gets it right, and
+  locks the account's own owner out after five ordinary logins under a `rate_limited` that reads
+  like an attack in progress.
+
+The charge happens **before** the route runs, so a flood of concurrent attempts is refused the same
+way; what the response status decides is whether the unit is given back. Both paths arm that in one
+place (`arm` in `middleware/rate-limit.ts`), because armed twice it is easy for one path to skip the
+status check and turn the limit into `max + 1`.
+
 The current limiter keeps its counters in process memory, which is correct for a single
 instance. With more than one instance the effective limit becomes `max x instances`, so moving
 it to a shared store (Redis or Postgres) is a deployment requirement, not an optimisation.

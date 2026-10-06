@@ -1,5 +1,6 @@
-import type { Accent } from "@orbit-hub/contracts";
+import type { Accent, IconColor } from "@orbit-hub/contracts";
 import type { TextStyle, ViewStyle } from "react-native";
+import type { TranslationKey } from "@/lib/i18n";
 
 export type ColorSchemeName = "light" | "dark";
 
@@ -234,23 +235,198 @@ export const RADIUS = {
   pill: 999,
 } as const;
 
-const TYPE_SCALE = {
-  display: { fontSize: 32, lineHeight: 38, fontWeight: "700" },
-  title: { fontSize: 24, lineHeight: 30, fontWeight: "700" },
-  heading: { fontSize: 18, lineHeight: 24, fontWeight: "600" },
-  body: { fontSize: 16, lineHeight: 23, fontWeight: "400" },
+/**
+ * La escala, **en orden, y bajando**.
+ *
+ * Antes de esto la tabla estaba escrita asi:
+ *
+ * ```
+ * display 32 · title 24 · heading 18 · body 16 · bodyLarge 18 · bodyStrong 16
+ * ```
+ *
+ * Nueve nombres para siete tamaños, y el tamaño **volvía a subir** en `bodyLarge`.
+ * Una tabla así no puede contestar a "haz los textos más grandes": tocar un nombre
+ * sube el que está debajo y baja el que está encima, y no hay forma de saber
+ * cuál de los dos era el que había que tocar.
+ *
+ * La regla que se sigue ahora, y que `test/type-scale.test.ts` comprueba:
+ *
+ * 1. **El orden en que se declara es el orden en que baja el tamaño.** Un nombre no
+ *    puede meterse entre dos que no le dejan sitio.
+ * 2. **Un tamaño, un nombre.** La única repetición es `bodyStrong`, que es `body` en
+ *    negrita: mismo tamaño, mismo interlineado, distinto peso. Antes `bodyStrong`
+ *    medía 16/22 y `body` 16/23 — el mismo tamaño a dos alturas distintas, que es
+ *    la forma de que dos renglones que deberían alinearse no se alineen.
+ * 3. **El interlineado no se aprieta al bajar el tamaño.** Si la razón
+ *    `lineHeight / fontSize` sube al bajar, el paso pequeño se nota pegado y el
+ *    grande se nota aireado, que es la jerarquía al revés.
+ * 4. **La razón es la misma para `body` y `bodyStrong`**, por el punto 2.
+ *
+ * Los números: subir uno a cada uno, menos `display`, que es de las dos pantallas
+ * que ya son una sola cosa grande y subirlo las empuja al borde.
+ *
+ * `display` 32→34 se sube y no se sube a 40 porque es la pantalla del nombre
+ * entero, y a 40 un título largo deja de caber en la caja. Es el único sitio donde
+ * la regla dice "un punto más" y el resto dice "los de abajo", y está escrito
+ * aquí para que la próxima vez se sepa que fue a propósito.
+ */
+export const TYPE_SCALE = {
+  /** The one screen whose whole content is a name. */
+  display: { fontSize: 34, lineHeight: 40, fontWeight: "700" },
+  /** The title of a sheet, and of a card that is mostly a title. */
+  title: { fontSize: 26, lineHeight: 32, fontWeight: "700" },
+  /**
+   * A screen's own title in the bar, and a section inside a sheet.
+   *
+   * It was 18 and it is 20. **Not `title`**, which was measured: the bar leaves 264
+   * points between the menu and the action slot, and at 26 a thirty-character name
+   * wants about 390 — so every long list would have shown a cut name in the one
+   * line that says which screen you are on. Twenty is as far as it goes before that
+   * starts happening, and a cut name is still recoverable with a long press.
+   */
+  heading: { fontSize: 20, lineHeight: 26, fontWeight: "600" },
   /** For the one long text a screen is really about, like a film's synopsis. */
-  bodyLarge: { fontSize: 18, lineHeight: 27, fontWeight: "400" },
-  bodyStrong: { fontSize: 16, lineHeight: 22, fontWeight: "600" },
-  callout: { fontSize: 14, lineHeight: 20, fontWeight: "500" },
-  caption: { fontSize: 12, lineHeight: 17, fontWeight: "500" },
+  bodyLarge: { fontSize: 19, lineHeight: 27, fontWeight: "400" },
+  body: { fontSize: 17, lineHeight: 24, fontWeight: "400" },
+  /** `body` in bold. Same size, **same leading**: see rule 2 above. */
+  bodyStrong: { fontSize: 17, lineHeight: 24, fontWeight: "600" },
+  callout: { fontSize: 15, lineHeight: 21, fontWeight: "500" },
+  /**
+   * Counts, badges and the small print. 174 uses, and the reason the app read small:
+   * it was the most-used size in it and it was 12.
+   */
+  caption: { fontSize: 13, lineHeight: 18, fontWeight: "500" },
+  /** Uppercase micro-labels. */
   label: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "600",
     letterSpacing: 0.6,
   },
 } as const satisfies Record<string, TextStyle>;
+
+/**
+ * How much bigger an icon is than the label it goes with.
+ *
+ * An icon **leads** its label. Same size and the row reads as two things of equal
+ * weight instead of a name with a picture in front of it, and this is not a matter
+ * of taste: it is what happens when the text moves and the icons do not.
+ *
+ * Measured while making this, and it is the reason the icons are not left alone.
+ * The drawer's nav icons were `size={18}` written by hand in **31 places**, and the
+ * label beside them was 16. Then the label went to 17 and the icon stayed at 18 —
+ * one point of lead on a row that had had two, which is a row that has quietly
+ * stopped being an icon. So the number now comes from the size of the text, and
+ * there is only one number.
+ */
+const ICON_LEAD = 1.15;
+
+/**
+ * The icon that goes with each size, **computed and not written**.
+ *
+ * A second table of nine numbers next to the first one is how the two drift apart,
+ * which is what just happened. This one cannot be edited: it is `TYPE_SCALE` with
+ * `fontSize * 1.15`, and `test/type-scale.test.ts` comprueba que el icono sigue
+ * siendo más grande que la etiqueta.
+ */
+/**
+ * La tipografía del **cuerpo de una nota**, y solo de ahí.
+ *
+ * El editor de notas es el único sitio de la app que **no fija la familia**: usa
+ * `theme.typography.body` para el tamaño y para el color, y para la letra se queda con
+ * lo que tenga la plataforma. Que son **tres**: Roboto en Android, San Francisco en iOS y
+ * la del navegador en la web — Chromium y Safari no tienen la misma, así que en web
+ * tampoco hay una sola. Medido: la misma nota se ve distinta en cada uno de los tres
+ * sitios, y el editor tenía ya un comentario diciendo que sin esto "la nota se leía como
+ * otra app en vez de como una pantalla de esta". El comentario llevaba razón y el tamaño
+ * estaba resuelto; la familia no.
+ *
+ * **Una pila de las que ya tiene el sistema, y no una fuente empaquetada.** Una fuente
+ * propia son megabytes en el bundle y un salto visible mientras carga —y en el editor de
+ * notas eso es la primera cosa que se ve al abrir—. Una pila de serifas del sistema no
+ * cuesta nada, está en las tres plataformas y no se nota la diferencia entre ellas en el
+ * cuerpo de texto, que es donde la serifa importa y no en la interfaz.
+ *
+ * **Serifada a propósito, y solo en las notas.** Una nota es el único texto de la app
+ * que se lee de principio a fin: las listas son rótulos, los títulos son rótulos, y un
+ * rótulo en serifa es un rótulo con adorno. El cuerpo de una nota de tres párrafos en
+ * una sans de interfaz es correcto y es lo que hace todo el mundo; en un párrafo largo
+ * cansa más, y la serifa es lo que sostiene la lectura sin que se canse la vista.
+ */
+export const NOTE_BODY_FONT =
+  // iOS y macOS
+  'ui-serif, "New York", Georgia, ' +
+  // Android
+  '"Noto Serif", "Roboto Serif", serif, ' +
+  // Windows y el resto de escritorio
+  '"Segoe UI", Cambria, "Times New Roman", serif';
+
+export const ICON_SCALE = Object.fromEntries(
+  Object.entries(TYPE_SCALE).map(([nombre, t]) => [nombre, Math.round(t.fontSize * ICON_LEAD)]),
+) as Record<keyof typeof TYPE_SCALE, number>;
+
+/**
+ * The colours an icon is drawn in, one pair per name.
+ *
+ * They used to be twelve hexes in `lib/lists/item-icons.ts`, outside the theme
+ * and with no dark mode. The light hex is the one that was there; the dark one
+ * is the same hue lifted until it reads on a dark surface. `auto` is not a
+ * colour at all: it is "whatever this icon is on", so it points at the theme's
+ * own subtle text in each scheme.
+ */
+export const ICON_COLORS: Record<IconColor, { light: string; dark: string }> = {
+  auto: { light: NEUTRALS.light.textSubtle, dark: NEUTRALS.dark.textMuted },
+  neutral: { light: "#8A93A8", dark: "#9AA3B8" },
+  accent: { light: "#6366F1", dark: "#8B8DF8" },
+  green: { light: "#16A34A", dark: "#34C759" },
+  olive: { light: "#4D7C0F", dark: "#84CC16" },
+  amber: { light: "#D97706", dark: "#FBBF24" },
+  orange: { light: "#EA580C", dark: "#FB923C" },
+  red: { light: "#DC2626", dark: "#F87171" },
+  rose: { light: "#E11D48", dark: "#FB7185" },
+  purple: { light: "#9333EA", dark: "#C084FC" },
+  blue: { light: "#2563EB", dark: "#60A5FA" },
+  teal: { light: "#0D9488", dark: "#2DD4BF" },
+  brown: { light: "#92400E", dark: "#B45309" },
+};
+
+/**
+ * The name of each icon colour, in the language of the app.
+ *
+ * Typed against the keys the dictionaries declare, on purpose: a colour added
+ * to the contract and not here is a compile error and not a swatch with no
+ * name on it.
+ */
+export const ICON_COLOR_LABEL: Record<IconColor, TranslationKey> = {
+  auto: "icons.colors.auto",
+  neutral: "icons.colors.neutral",
+  accent: "icons.colors.accent",
+  green: "icons.colors.green",
+  olive: "icons.colors.olive",
+  amber: "icons.colors.amber",
+  orange: "icons.colors.orange",
+  red: "icons.colors.red",
+  rose: "icons.colors.rose",
+  purple: "icons.colors.purple",
+  blue: "icons.colors.blue",
+  teal: "icons.colors.teal",
+  brown: "icons.colors.brown",
+};
+
+/**
+ * The hex for the name in the scheme that is on.
+ *
+ * The gate is here and not in the caller: this is a plain object, so
+ * `ICON_COLORS["toString"]` is a function and not a colour. A name from a
+ * future build, or a text somebody edited by hand, still comes out — in the
+ * neutral one, which is a state the row already has.
+ */
+export function iconColorHex(key: string | null | undefined, scheme: ColorSchemeName): string {
+  const entry = Object.prototype.hasOwnProperty.call(ICON_COLORS, String(key))
+    ? ICON_COLORS[String(key) as IconColor]
+    : undefined;
+  return (entry ?? ICON_COLORS.neutral)[scheme];
+}
 
 export type ThemeColors = NeutralColors &
   (typeof STATUS)["light"] & {
@@ -266,6 +442,8 @@ export type ThemeColors = NeutralColors &
     accentBorder: string;
     onSurface: string;
     headerBackground: string;
+    /** The icon colours, resolved for the scheme that is on. */
+    icon: Record<IconColor, string>;
   };
 
 export interface Theme {
@@ -275,6 +453,8 @@ export interface Theme {
   spacing: typeof SPACING;
   radius: typeof RADIUS;
   typography: typeof TYPE_SCALE;
+  /** The icon that goes with each size. See `ICON_SCALE`. */
+  iconSize: typeof ICON_SCALE;
   shadow: {
     card: ViewStyle;
     floating: ViewStyle;
@@ -299,10 +479,14 @@ export function createTheme(scheme: ColorSchemeName, accent: Accent): Theme {
       accentBorder: accentColors.border,
       onSurface: neutral.text,
       headerBackground: neutral.background,
+      icon: Object.fromEntries(
+        (Object.keys(ICON_COLORS) as IconColor[]).map((key) => [key, ICON_COLORS[key][scheme]]),
+      ) as Record<IconColor, string>,
     },
     spacing: SPACING,
     radius: RADIUS,
     typography: TYPE_SCALE,
+    iconSize: ICON_SCALE,
     // `boxShadow` rather than the `shadow*` family: React Native Web dropped
     // the old props, and the new architecture understands the CSS form on
     // native too, so one token covers all three targets.

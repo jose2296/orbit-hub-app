@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import {
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -12,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { READING_WIDTH } from "@/lib/layout/measure";
 import { useHeaderOwnsTopInset } from "@/components/ui/header-inset";
 import { SpaceBand, type SpaceBandProps } from "@/components/workspace/space-band";
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { useTheme } from "@/theme";
 
 export interface ScreenProps {
@@ -107,6 +107,24 @@ export function Screen({
 }: ScreenProps) {
   const theme = useTheme();
 
+  /*
+   * Tirar hacia abajo recarga, y es una **accion explicita** de la persona.
+   *
+   * El motor ya sincroniza solo, con su rebote y cuando vuelve la red, asi que
+   * esto no es lo que hace que los datos esten al dia: es la salida para cuando
+   * sabes que algo cambio y no quieres esperar. Es tambien lo unico que funcionaba
+   * en la web, donde no hay gesto de tirar hacia abajo del sistema.
+   *
+   * Se tira de `syncNow()` y no de un `pull` suelto porque el motor ya sabe lo que
+   * tiene y lo que no, y una segunda ruta para bajar cambios es una segunda ruta
+   * para equivocarse.
+   *
+   * El `recargando` no se apaga solo al terminar la promesa: se apaga en el
+   * `finally`, porque una sincronizacion que falla —sin red, con el servidor caido—
+   * tambien tiene que dejar de girar el indicador.
+   */
+  const { refreshControl } = usePullToRefresh();
+
   /**
    * Whether the bar above already spent the status bar's height.
    *
@@ -164,6 +182,7 @@ export function Screen({
       contentContainerStyle={[styles.content, padding, column]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      refreshControl={refreshControl}
     >
       {children}
     </ScrollView>
@@ -179,10 +198,28 @@ export function Screen({
       style={[styles.flex, { backgroundColor: theme.colors.background }, style]}
       testID={testID}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flex}
-      >
+      {/*
+        `padding` on **both**, y la razon de que antes no lo estuviera es el
+        objeto entero de este cambio.
+
+        Decia `Platform.OS === "ios" ? "padding" : undefined`, y `undefined` no es
+        un valor por defecto — es **no hacer nada**. Asi que en Android cada
+        pantalla de esta app tenia un `KeyboardAvoidingView` que no esquivaba nada,
+        y parecian deliberadas: el componente esta ahi, en el arbol, envolviendo el
+        scroller, haciendo su trabajo.
+
+        Medido en API 35 con el teclado abierto, en la pantalla de registro: el
+        campo con el foco quedaba libre del teclado y **el campo siguiente estaba
+        cortado por el borde del teclado** —dibujado, medio debajo, ni fuera de
+        pantalla ni ausente del arbol.
+
+        Por que la ventana no lo resuelve: la app no declara
+        `android.windowSoftInputMode`, y lo que Android hace aqui por defecto es
+        `adjustPan` — **mueve** la ventana para que el campo con el foco se vea y
+        no toca el alto. Eso basta para enseyar el campo en el que escribes y no
+        basta para ensenar el siguiente, que es el unico que se nota que falta.
+      */}
+      <KeyboardAvoidingView behavior="padding" style={styles.flex}>
         {fondo}
         {content}
         {/*
