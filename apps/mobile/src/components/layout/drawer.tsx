@@ -42,6 +42,7 @@ import { expandedProps, selectedProps } from "@/components/ui/a11y-state";
 import { AppText } from "@/components/ui/text";
 import { SpaceDot } from "@/components/ui/wash";
 import { useListItems } from "@/hooks/use-lists";
+import { useUnclassifiedCount } from "@/hooks/use-bookmarks";
 import { useSession } from "@/hooks/use-session";
 import { useShares } from "@/hooks/use-shares";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
@@ -87,6 +88,18 @@ const DESTINATIONS = [
     labelKey: "notes.title",
   },
   {
+    /*
+     * Bookmarks, junto a las notas y por la misma razon: no estan dentro de
+     * ningun espacio, son todos los enlaces guardados. La lista filtra por
+     * coleccion cuando se la pide, asi que esta entrada es la vista sin
+     * filtro y el inbox de abajo es el filtro de sin-clasificar.
+     */
+    route: "/(app)/bookmarks",
+    path: "/bookmarks",
+    icon: "bookmark-outline",
+    labelKey: "bookmarks.title",
+  },
+  {
     route: "/(app)/search",
     path: "/search",
     icon: "search",
@@ -108,6 +121,21 @@ const DESTINATIONS = [
     path: "/people",
     icon: "people-outline",
     labelKey: "people.title",
+  },
+  {
+    /*
+     * Sin clasificar, entre la gente y los ajustes: es el inbox de enlaces,
+     * y un inbox con algo dentro no pertenece al final del menu. La etiqueta
+     * es `place.unclassified` a proposito y no una clave propia que diga lo
+     * mismo: dos claves con el mismo texto son dos textos que se desincronizan.
+     *
+     * La pantalla todavia no existe (llega en la Task 5): esta entrada es la
+     * puerta y el contador, y la puerta sin pantalla es el orden del plan.
+     */
+    route: "/(app)/unclassified",
+    path: "/unclassified",
+    icon: "file-tray-outline",
+    labelKey: "place.unclassified",
   },
   {
     route: "/(app)/settings",
@@ -351,6 +379,15 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
    */
   const { count: pendientes } = usePendingInvitations(status === "authenticated");
 
+  /*
+   * Cuantos enlaces esperan clasificacion, para la entrada del inbox.
+   *
+   * Sin `workspaceId`: el inbox cruza todos los espacios, asi que el numero
+   * es global. Lee de la cache con live-update, igual que el resto del menu,
+   * y por eso no necesita red para decirlo.
+   */
+  const sinClasificar = useUnclassifiedCount();
+
   const sinMirar = useUnseen(
     status === "authenticated" ? (user?.id ?? null) : null,
   );
@@ -462,6 +499,24 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
               <AppText variant="body" style={{ color: tint }}>
                 {t(destination.labelKey)}
               </AppText>
+              {/*
+                El contador del inbox, y solo el del inbox: las demas entradas
+                son vistas y no tienen nada pendiente. Calcado de la fila de
+                invitaciones de abajo —badge condicional a que haya algo que
+                contar, con su propio testID— y no un numero siempre visible
+                que la mitad de los dias dice cero.
+              */}
+              {destination.path === "/unclassified" && sinClasificar > 0 ? (
+                <Badge
+                  label={String(sinClasificar)}
+                  tone="accent"
+                  testID="drawer-unclassified-badge"
+                  accessibilityLabel={t(
+                    pluralKey("bookmarks.unclassifiedCount", sinClasificar),
+                    { count: sinClasificar },
+                  )}
+                />
+              ) : null}
             </Pressable>
           );
         })}

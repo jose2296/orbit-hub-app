@@ -2,7 +2,7 @@ import * as Crypto from "expo-crypto";
 
 import type { Bookmark } from "@orbit-hub/contracts";
 
-import { enqueueOperation, localUpdate } from "@/lib/offline";
+import { enqueueOperation, getLocalStoreReady, localUpdate } from "@/lib/offline";
 
 /**
  * Guardar un enlace.
@@ -129,4 +129,37 @@ export async function updateBookmarkAction(
   // La version la lee `localUpdate` de la cache: la del input es la que habia
   // en pantalla cuando se abrio el editor, y ya puede ir por detras.
   await localUpdate("bookmark", input.id, cambios);
+}
+
+/**
+ * Un tombstone, en local tambien.
+ *
+ * La fila se marca y no se quita, para que el enlace salga de la lista y un
+ * aparato que lo tenia se entere de que ya no esta cuando vuelva. Quitar la
+ * fila haria un borrado sin sincronizar indistinguible de un enlace que nunca
+ * existio.
+ */
+export async function deleteBookmarkAction(bookmarkId: string): Promise<void> {
+  const store = await getLocalStoreReady();
+  const cached = await store.getCached("bookmark", bookmarkId);
+  const baseVersion = cached?.version ?? 0;
+  const now = new Date().toISOString();
+
+  await store.upsertCached([
+    {
+      entity: "bookmark",
+      entityId: bookmarkId,
+      version: baseVersion,
+      updatedAt: now,
+      deletedAt: now,
+      payload: cached?.payload ?? JSON.stringify({ id: bookmarkId }),
+      pending: null,
+    },
+  ]);
+  await enqueueOperation({
+    kind: "delete",
+    entity: "bookmark",
+    entityId: bookmarkId,
+    baseVersion,
+  });
 }
