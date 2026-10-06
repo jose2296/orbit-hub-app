@@ -730,6 +730,15 @@ export function ItemEditSheet({
               value={title}
               onChangeText={setTitle}
               /*
+                Foco solo al crear, y no al editar.
+
+                Al crear, lo primero que se hace es escribir el nombre: pedir un
+                toque antes es un paso por nada. Al editar, lo primero que se hace
+                es mirar —marcar hecho, cambiar prioridad— y un teclado que sale
+                solo tapa la mitad del panel para nada.
+              */
+              autoFocus={isNew}
+              /*
                 **Ya no guarda al salir del campo.**
                 Era `onBlur={saveTitle}`, y es la razon de que "se guarda con
                 Guardar" no era cierto: los dos campos de texto escribian solos en

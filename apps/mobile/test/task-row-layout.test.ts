@@ -1627,3 +1627,95 @@ describe('donde va la nota: el Guardar del pie', () => {
     );
   });
 });
+
+describe('reordenar y fijar tambien esperan al Guardar', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  const sin = (p: string) => sinComentarios(leer(p));
+  const crudo = (p: string) => leer(p);
+
+  it('soltar una fila mueve la copia, y no llama a onMove', () => {
+    /*
+      Cada suelta llamaba a escribir en el store de paso, y cerrar sin Guardar
+      dejaba un orden que nadie confirmo.
+    */
+    const hoja = sin('src/components/ui/reorder-sheet.tsx');
+    const suelta = hoja.match(/onReorder=\{\(movedId, toIndex\) =>[\s\S]*?\n              \}/)?.[0] ?? '';
+    expect(suelta, 'la suelta existe').not.toBe('');
+    expect(suelta, 'mueve la copia').toContain('setOrden(');
+    expect(suelta, 'y no escribe').not.toContain('onMove(');
+  });
+
+  it('el replay es contra el orden vivo, de uno en uno', () => {
+    const hoja = sin('src/components/ui/reorder-sheet.tsx');
+    expect(hoja, 'hay replay').toContain('await onMove(id, i - j);');
+    expect(hoja, 'las que se fueron no se fuerzan').toContain(
+      '.filter((id) => enVivos.has(id))',
+    );
+    expect(hoja, 'y las que llegaron se quedan donde estan').toContain(
+      'if (!objetivo.includes(id)) objetivo.push(id);',
+    );
+  });
+
+  it('los pins se escriben una sola vez, y no N', () => {
+    /*
+      Cada `save` planifica desde el `layout` capturado: N escrituras seguidas
+      parten del mismo y la segunda se come a la primera. Una sola no tiene ese
+      problema porque no hay segunda.
+    */
+    const panel = sin('src/app/(app)/index.tsx');
+    expect(panel, 'hay borrador').toContain('pinsBorrador');
+    expect(panel, 'los toques lo mueven').toContain('moverPin');
+    expect(panel, 'y Guardar escribe una vez').toContain('await save(siguiente);');
+    const saves = panel.match(/await save\(siguiente\);/g) ?? [];
+    expect(saves.length, 'una sola escritura').toBe(1);
+  });
+
+  it('los seis fijar/quitar al instante se fueron', () => {
+    // Existian solo para los toques de la hoja. Con el borrador no hay nadie que
+    // los llame, y una funcion que nadie llama y escribe en el store es la proxima
+    // puerta por la que se guarda solo.
+    const panel = crudo('src/app/(app)/index.tsx');
+    for (const nombre of [
+      'addList',
+      'removeList',
+      'addNote',
+      'removeNote',
+      'addFolder',
+      'removeFolder',
+    ]) {
+      expect(panel, `${nombre} fuera`).not.toContain(`const ${nombre} = `);
+    }
+  });
+});
+
+describe('#2: el foco va al primer campo sin pedir un toque', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  const sin = (p: string) => sinComentarios(leer(p));
+
+  it('crear enfoca, y las hojas de crear tambien', () => {
+    /*
+      Abrir "crear tarea" y tener que tocar el campo antes de escribir es un paso
+      por nada: lo primero que se hace al crear es escribir el nombre.
+    */
+    for (const [quien, ruta] of [
+      ['guardar plantilla', 'src/components/notes/save-template-sheet.tsx'],
+      ['compartir', 'src/components/shares/share-node-sheet.tsx'],
+      ['crear espacio', 'src/components/workspace/workspace-create-sheet.tsx'],
+      ['crear cosa', 'src/components/folders/create-sheet.tsx'],
+      ['renombrar', 'src/components/ui/rename-sheet.tsx'],
+      ['renombrar nota', 'src/components/notes/note-menu-sheet.tsx'],
+      ['renombrar plantilla', 'src/components/notes/template-menu-sheet.tsx'],
+    ] as const) {
+      expect(sin(ruta), `${quien}: enfoca al abrir`).toContain('autoFocus');
+    }
+  });
+
+  it('editar NO roba el teclado', () => {
+    // Al editar, lo primero que se hace es mirar —marcar hecho, cambiar
+    // prioridad— y un teclado que sale solo tapa la mitad del panel para nada.
+    const panel = sin('src/components/lists/item-edit-sheet.tsx');
+    expect(panel, 'el foco es solo al crear').toContain('autoFocus={isNew}');
+  });
+});

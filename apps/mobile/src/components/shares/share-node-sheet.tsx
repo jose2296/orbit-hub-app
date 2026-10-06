@@ -233,6 +233,7 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
       <TextField
         value={email}
         onChangeText={setEmail}
+        autoFocus
         label={t("share.whoseEmail")}
         placeholder={t("share.searchPlaceholder")}
         autoCapitalize="none"

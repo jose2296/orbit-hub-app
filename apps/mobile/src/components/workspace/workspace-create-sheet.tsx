@@ -139,6 +139,7 @@ export function WorkspaceCreateSheet({
         <TextField
           value={name}
           onChangeText={setName}
+          autoFocus
           label={t("workspaces.nameLabel")}
           placeholder={t("workspaces.namePlaceholder")}
           autoCapitalize="sentences"

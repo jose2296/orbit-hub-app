@@ -144,6 +144,7 @@ export function SaveTemplateSheet({
           value={name}
           onChangeText={setName}
           placeholder={t("note.templateName")}
+          autoFocus
           label={t("note.templateName")}
           autoCapitalize="sentences"
         />
