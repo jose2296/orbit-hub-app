@@ -131,6 +131,21 @@ describe('lists through sync', () => {
     expect(response.body.data.kind).toBe('board');
   });
 
+  it('stores a hex state colour the person chose', async () => {
+    // Since the free picker, a column colour is a palette key or `#rrggbb`: the
+    // server takes the hex the contract takes, and the pull hands it back as it
+    // came.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Hex');
+    const states = [{ id: 's1', title: 'Backlog', color: '#a3e635' }];
+    const listId = await createList(user, workspaceId, { kind: 'board', states });
+
+    const pull = await api.post('/sync/pull', { cursor: null, limit: 100 }, user.accessToken);
+    const row = (pull.body.data.changes as { entity: string; record: { id: string; states: unknown } }[])
+      .find((change) => change.entity === 'list' && change.record.id === listId);
+    expect(row?.record.states).toEqual(states);
+  });
+
   it('stores an empty state id as no state at all', async () => {
     // The floor the contract asks for and a ceiling alone does not give:
     // `boardStateSchema.id` is `min(1).max(36)` so that an empty string is a

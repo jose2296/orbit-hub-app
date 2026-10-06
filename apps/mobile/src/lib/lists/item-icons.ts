@@ -132,10 +132,14 @@ const ICON_COLORS: Record<IconColorKey, string> = {
   brown: "#92400E",
 };
 
-/** The colour an icon is drawn in, or the app's own if the key is unknown. */
+/** The colour an icon is drawn in, a free hex, or the app's own if unknown. */
 export function iconColor(key: string | null | undefined): string {
-  // The column is free text, so a row from a future build can name a colour this
-  // one does not have. It comes out in the neutral one instead of not coming out.
+  // A hex a person chose is painted as it is: hash-led, six hex digits. Anything
+  // else goes through the palette, and what is neither is neutral rather than
+  // nothing — the column is free text, so a row from a future build can name a
+  // colour this one does not have, and it comes out in the neutral one instead
+  // of not coming out.
+  if (typeof key === "string" && /^#[0-9A-Fa-f]{6}$/.test(key)) return key;
   const found = ICON_COLORS[String(key) as IconColorKey];
   return found ?? ICON_COLORS.neutral;
 }

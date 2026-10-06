@@ -1027,6 +1027,10 @@ const es = {
   "board.editOrder": "Editar orden",
   "board.columnMenu": "Opciones de la columna",
   "board.columnMenuHint": "Cambia el nombre, el color o el orden de esta columna",
+  "board.stateCustom": "Tu color",
+  "board.stateHex": "Código hex",
+  "board.stateHexPlaceholder": "a3e635",
+  "board.stateHexInvalid": "Seis letras o números, como a3e635",
   "board.stateHere": "está aquí",
 
   /*
@@ -2135,6 +2139,10 @@ const en: Record<TranslationKey, string> = {
   "board.editOrder": "Edit order",
   "board.columnMenu": "Column options",
   "board.columnMenuHint": "Change this column's name, colour or order",
+  "board.stateCustom": "Your colour",
+  "board.stateHex": "Hex code",
+  "board.stateHexPlaceholder": "a3e635",
+  "board.stateHexInvalid": "Six letters or digits, like a3e635",
   "board.stateHere": "is here",
 
   /*

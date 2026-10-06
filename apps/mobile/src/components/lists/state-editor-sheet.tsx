@@ -25,8 +25,8 @@ import { MAX_BOARD_STATES } from "@orbit-hub/contracts";
 import type {
   BoardState,
   BoardStates,
-  ItemIconColor,
   List,
+  StateColor,
 } from "@orbit-hub/contracts";
 
 import { StateDeleteSheet } from "@/components/lists/state-delete-sheet";
@@ -198,7 +198,7 @@ export function StateEditorSheet({
 
   /** What the page for one column is changing, and nothing is written from it. */
   const [nombre, setNombre] = useState("");
-  const [color, setColor] = useState<ItemIconColor>("neutral");
+  const [color, setColor] = useState<StateColor>("neutral");
 
   /** The name of the column about to be added, and it is not there until it is. */
   const [nombreNuevo, setNombreNuevo] = useState("");

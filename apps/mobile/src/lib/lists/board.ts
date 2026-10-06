@@ -9,8 +9,8 @@ import {
 import type {
   BoardState,
   BoardStates,
-  ItemIconColor,
   ListItem,
+  StateColor,
 } from "@orbit-hub/contracts";
 
 import { nextOrderFromDrop } from "./drag";
@@ -73,19 +73,16 @@ function columnIdOf(states: BoardStates, stateId: string | null): string | null 
 /**
  * The colour a state is written in, or the one it already had.
  *
- * The picker offers the twelve of `ITEM_ICON_COLORS`, so this only ever arrives
- * from a future build or from a payload somebody edited by hand. A colour the
- * schema does not know fails the write of the **whole** array, because the states
- * travel as one field, so it is dropped here rather than at the server.
+ * A palette key or a hex a person chose — anything else is dropped here rather
+ * than at the server, because a colour the schema does not know fails the write
+ * of the **whole** array, and the states travel as one field. What the picker
+ * does not offer only ever arrives from a future build or from a payload
+ * somebody edited by hand.
  */
-function colorOf(
-  value: ItemIconColor | undefined,
-  current: ItemIconColor,
-): ItemIconColor {
+function colorOf(value: string | undefined, current: string): string {
   if (!value) return current;
-  return (ITEM_ICON_COLORS as readonly string[]).includes(value)
-    ? value
-    : current;
+  if ((ITEM_ICON_COLORS as readonly string[]).includes(value)) return value;
+  return /^#[0-9A-Fa-f]{6}$/.test(value) ? value : current;
 }
 
 /**
@@ -307,7 +304,7 @@ export function moveState(
 export function editState(
   states: BoardStates,
   stateId: string,
-  patch: { title?: string; color?: ItemIconColor },
+  patch: { title?: string; color?: StateColor },
 ): BoardStates {
   const index = states.findIndex((state) => state.id === stateId);
   const current = states[index];

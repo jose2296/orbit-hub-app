@@ -50,17 +50,35 @@ export const boardStateSchema = z.object({
    */
   title: z.string().trim().min(1).max(40),
   /**
-   * A key and not a colour value, for the reason the icon colour is a key: the
-   * app draws the ones it offers, so there is no colour nobody can read and no
-   * picker of fifty shades on a phone.
+   * A palette key or a hex colour, **and the hex is the person's own choice.**
    *
-   * It is the icon palette and not a palette of its own because two palettes are
-   * two lists that drift apart, and a state that the app cannot paint is a state
-   * that reads as a bug in the board.
+   * The twelve keys are the icon palette and not a palette of its own, because
+   * two palettes are two lists that drift apart. The hex beside them is what a
+   * person picks when none of the twelve is theirs: `#rrggbb`, six digits with
+   * the hash, lowercase or not — anything else is refused, because a colour the
+   * app cannot parse is a state the app cannot paint, which reads as a bug in
+   * the board.
+   *
+   * **What this does not promise is legibility.** The twelve were chosen so
+   * that a word on them reads in both themes; a free hex was chosen by a person
+   * who saw it on one screen, and on the other theme it may not read. That is
+   * the price of "the colour I want", and it is paid knowingly: the row keeps
+   * its name in the theme's text colour, so the column is never *only* its
+   * colour.
    */
-  color: z.enum(ITEM_ICON_COLORS),
+  color: z.union([z.enum(ITEM_ICON_COLORS), z.string().regex(/^#[0-9A-Fa-f]{6}$/)]),
 });
 export type BoardState = z.infer<typeof boardStateSchema>;
+
+/**
+ * A state colour as the screens carry it: a palette key or a hex value.
+ *
+ * `z.infer` of the union above collapses to `string`, which says nothing — this
+ * name says where the string may come from. It is *not* `ItemIconColor`: icons
+ * still only take the twelve, and a hex on an icon is a value the icon picker
+ * never offered.
+ */
+export type StateColor = z.infer<typeof boardStateSchema>["color"];
 
 /**
  * The states of a list, and **the order of the array is the order of the

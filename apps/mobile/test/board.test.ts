@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MAX_BOARD_STATES,
+  boardStateSchema,
   boardStatesSchema,
   stateOf,
 } from '@orbit-hub/contracts';
@@ -478,6 +479,15 @@ describe('editar un estado', () => {
     expect(edited[0]?.title).toHaveLength(40);
   });
 
+  it('un hex que la persona eligio si se escribe', () => {
+    // Desde el punto 7 el color puede ser uno de los doce o un hex: el contrato
+    // acepta `#rrggbb` y `editState` lo deja pasar igual que una clave.
+    const states = estadosDe('a');
+    const edited = editState(states, 'a', { color: '#a3e635' });
+    expect(edited[0]?.color).toBe('#a3e635');
+    expect(edited[1]).toBe(states[1]);
+  });
+
   it('un color que el contrato no acepta no se escribe', () => {
     // The picker offers twelve, so this only arrives from a future build or a
     // payload edited by hand — and one bad colour fails the save of every column.
@@ -842,3 +852,25 @@ describe('lo que sale de aqui lo acepta el contrato', () => {
     expect(quedan).toHaveLength(3);
   });
 });
+/**
+ * Lo que el contrato deja pasar como color de estado.
+ *
+ * Doce claves o un hex de seis digitos: lo demas romperia el pintado, y como los
+ * estados viajan como un solo campo un color malo tira la escritura entera.
+ */
+describe('el color de un estado en el contrato', () => {
+  const base = { id: 's1', title: 'Backlog' };
+  it('acepta las doce claves', () => {
+    expect(boardStateSchema.safeParse({ ...base, color: 'red' }).success).toBe(true);
+  });
+  it('acepta un hex de seis digitos, en las dos cajas', () => {
+    expect(boardStateSchema.safeParse({ ...base, color: '#a3e635' }).success).toBe(true);
+    expect(boardStateSchema.safeParse({ ...base, color: '#A3E635' }).success).toBe(true);
+  });
+  it('rechaza lo que no es ni clave ni hex', () => {
+    for (const color of ['chartreuse', '#fff', '#a3e635ff', 'a3e635', '', '#gggggg']) {
+      expect(boardStateSchema.safeParse({ ...base, color }).success).toBe(false);
+    }
+  });
+});
+

@@ -164,3 +164,29 @@ describe("finding an icon by typing", () => {
     expect(new Set(found).size).toBe(found.length);
   });
 });
+/**
+ * Lo que `iconColor` pinta con cada clase de valor.
+ *
+ * Las claves van a la paleta, un hex va tal cual y lo demas cae al neutro: un
+ * color libre que no se pintara es un estado que parece un bug en el tablero, y
+ * un nombre desconocido que rompiera seria una fila de otra build que no sale.
+ */
+describe("the colour a key paints", () => {
+  it("paints palette keys from the palette", () => {
+    // A key is never painted as itself: it resolves to a hex of the theme, so a
+    // test that only said "red paints red" would pass with the passthrough below
+    // and prove nothing.
+    expect(iconColor("red")).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(iconColor("red")).not.toBe("red");
+  });
+  it("paints a chosen hex as it is", () => {
+    expect(iconColor("#a3e635")).toBe("#a3e635");
+    expect(iconColor("#A3E635")).toBe("#A3E635");
+  });
+  it("falls back to neutral for anything else", () => {
+    expect(iconColor("chartreuse")).toBe(iconColor("neutral"));
+    expect(iconColor("#fff")).toBe(iconColor("neutral"));
+    expect(iconColor(null)).toBe(iconColor("neutral"));
+  });
+});
+

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-import type { BoardState, ItemIconColor } from "@orbit-hub/contracts";
+import type { BoardState, StateColor } from "@orbit-hub/contracts";
 
 import { MAX_STATE_TITLE } from "@/lib/lists/board";
 
@@ -30,7 +30,7 @@ export interface StateEditSheetProps {
    * panel hands over the two values and the screen builds the array with
    * `editState`, which trims, caps and refuses blanks and no-ops by identity.
    */
-  onSave: (title: string, color: ItemIconColor) => void;
+  onSave: (title: string, color: StateColor) => void;
   onClose: () => void;
 }
 
@@ -55,7 +55,7 @@ export function StateEditSheet({ state: pedido, onSave, onClose }: StateEditShee
   const abierto = pedido !== null;
 
   const [nombre, setNombre] = useState(columna?.title ?? "");
-  const [color, setColor] = useState<ItemIconColor>(columna?.color ?? "neutral");
+  const [color, setColor] = useState<StateColor>(columna?.color ?? "neutral");
 
   /*
     Reopening starts where the column is, **keyed on the column's id and not on
