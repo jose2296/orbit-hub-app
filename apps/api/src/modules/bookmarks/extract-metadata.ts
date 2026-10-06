@@ -223,7 +223,9 @@ function esLiteralNumerico(anfitrion: string): boolean {
 /** La primera imagen del articulo, si hay articulo, o de la pagina. */
 function imagenPrincipal(documento: DocumentoLeible, base: string): string | null {
   const enArticulo = documento.querySelector('article img, main img')?.getAttribute('src');
-  const cualquiera = enArticulo ?? documento.querySelector('img')?.getAttribute('src');
+  // El `?.` da `undefined` cuando no hay `img` y `imagenUtilizable` pide
+  // `string | null`: sin el `?? null` no typecheckea.
+  const cualquiera = enArticulo ?? documento.querySelector('img')?.getAttribute('src') ?? null;
   return imagenUtilizable(cualquiera, base);
 }
 
