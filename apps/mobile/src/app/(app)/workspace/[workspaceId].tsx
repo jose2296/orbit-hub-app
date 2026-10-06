@@ -347,7 +347,6 @@ export default function WorkspaceScreen() {
             params: { workspaceId },
           });
         }}
-        creating={false}
       />
     </Screen>
   );

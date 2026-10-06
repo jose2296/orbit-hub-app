@@ -352,7 +352,6 @@ export default function FolderScreen() {
             params: { workspaceId },
           });
         }}
-        creating={false}
       />
     </Screen>
   );

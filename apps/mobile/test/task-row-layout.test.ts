@@ -1085,3 +1085,77 @@ describe('el panel de un elemento: dos velocidades de guardado', () => {
     expect(script, 'y no el id que ya no existe').not.toContain('pressTestId(tab, "item-create")');
   });
 });
+
+describe('las hojas de creacion: el Guardar del pie y el color tambien', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  const crearEspacio = sinComentarios(
+    leer('src/components/workspace/workspace-create-sheet.tsx'),
+  );
+  const crearCosa = sinComentarios(
+    leer('src/components/folders/create-sheet.tsx'),
+  );
+
+  it('las dos usan el Guardar del pie y no un boton propio', () => {
+    for (const [quien, s] of [
+      ['el espacio', crearEspacio],
+      ['carpeta, lista o nota', crearCosa],
+    ] as const) {
+      expect(s, `${quien}: delega en onSave`).toContain('onSave=');
+      expect(s, `${quien}: sin boton de crear dentro`).not.toMatch(
+        /<Button[\s\S]{0,200}t\("common\.create"\)/,
+      );
+      expect(s, `${quien}: y sin Cancelar`).not.toMatch(
+        /<Button[\s\S]{0,200}t\("common\.cancel"\)/,
+      );
+    }
+  });
+
+  it('el color del espacio cuenta como cambio, no solo el nombre', () => {
+    /*
+      El color es la razon de mirar: en una hoja donde el nombre ya esta escrito,
+      cambiar el lavado y salir con la ✕ es perder media hora de buscar el tono. Y
+      el nombre —que se ve en la barra— no es lo que delata que se ha perdido.
+    */
+    expect(crearEspacio).toMatch(/color !== DEFAULT_WORKSPACE_COLOR/);
+    expect(crearEspacio).toMatch(/colorTo !== null/);
+    expect(crearEspacio).toMatch(/wash !== DEFAULT_WASH/);
+  });
+
+  it('"sucio" no es "ha escrito algo", es "difiere de la partida"', () => {
+    // Volver a elegir el color que ya tenia no es un cambio, y preguntar por eso
+    // enseña a ignorar el aviso.
+    expect(crearEspacio, 'se compara con los valores de partida').toContain(
+      'const sucio =',
+    );
+    expect(crearEspacio, 'y lo dice').toContain('setSucio(sucio)');
+  });
+
+  it('sin nombre no se crea, y el boton DICE por que', () => {
+    for (const [quien, s] of [
+      ['el espacio', crearEspacio],
+      ['carpeta, lista o nota', crearCosa],
+    ] as const) {
+      expect(s, `${quien}: pasa el motivo`).toMatch(
+        /saveDisabledReason=\{\w+\.trim\(\)\.length === 0 \? t\("itemEdit\.nameNeeded"\)/,
+      );
+    }
+  });
+
+  it('el borrador de la hoja de creacion sigue en la pantalla padre', () => {
+    /*
+      Y se dice en el propio fichero, porque es la parte que el contrato **no**
+      arregla: `Sheet` resuelve la *pregunta* —si hay cambios y hay que avisar—, no
+      el almacenamiento. El texto sigue llegando por props, y si la pantalla no lo
+      limpia al cerrar, la siguiente vez abre con las palabras de la anterior.
+
+      Un guard que dijera "el borrador ya no se fuga" seria mentira.
+    */
+    // Este mira un **comentario**, asi que lee el fichero entero: un guard que
+    // busca una frase en el codigo sin comentarios no puede encontrar una frase
+    // que solo existe en un comentario.
+    expect(leer('src/components/folders/create-sheet.tsx')).toMatch(
+      /borrador que vive mas alla de la hoja/,
+    );
+  });
+});
