@@ -10,17 +10,48 @@ import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
 import { useListItems, useLocalSearch } from '@/hooks/use-lists';
+import type { BookmarkSearchResult } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
 import { useTheme } from '@/theme';
 import type { SearchResult } from '@orbit-hub/contracts';
 
-const SCOPE_ICON: Record<SearchResult['scope'], keyof typeof Ionicons.glyphMap> = {
+const SCOPE_ICON: Record<SearchResult['scope'] | 'bookmark', keyof typeof Ionicons.glyphMap> = {
   workspace: 'albums-outline',
   folder: 'folder-outline',
   list: 'list-outline',
   list_item: 'document-text-outline',
   note: 'document-text-outline',
+  // El mismo icono que la lista y el drawer de bookmarks: el grupo se
+  // reconoce sin aprender un dibujo nuevo.
+  bookmark: 'bookmark-outline',
 };
+
+/**
+ * A donde lleva un resultado, o nulo si no lleva a ningun lado.
+ *
+ * Separada para probarse sin montar: el bookmark trae `workspaceId` y sin su
+ * rama propia el fallback lo mandaria al espacio, no al lector.
+ */
+export function rutaResultado(result: SearchResult | BookmarkSearchResult): string | null {
+  if (result.scope === 'bookmark') {
+    return `/(app)/bookmark/${result.id}`;
+  }
+  if (result.scope === 'workspace') {
+    return `/(app)/workspace/${result.id}`;
+  }
+  if (result.scope === 'list' || result.scope === 'list_item') {
+    return `/(app)/list/${result.listId ?? result.id}`;
+  }
+  if (result.scope === 'note') {
+    // Directo a la nota. Un hit que no se puede abrir es una busqueda que
+    // encuentra algo que no va a ensenar.
+    return `/(app)/note/${result.id}`;
+  }
+  if (result.workspaceId) {
+    return `/(app)/workspace/${result.workspaceId}`;
+  }
+  return null;
+}
 
 /**
  * Search runs against the local cache, so it answers with no connection. The
@@ -42,23 +73,10 @@ export default function SearchScreen() {
     void search(value);
   }
 
-  function open(result: SearchResult) {
-    if (result.scope === 'workspace') {
-      router.push(`/(app)/workspace/${result.id}`);
-      return;
-    }
-    if (result.scope === 'list' || result.scope === 'list_item') {
-      router.push(`/(app)/list/${result.listId ?? result.id}`);
-      return;
-    }
-    if (result.scope === 'note') {
-      // Straight to the note. A hit you cannot open is a search that found
-      // something it will not show you.
-      router.push(`/(app)/note/${result.id}`);
-      return;
-    }
-    if (result.workspaceId) {
-      router.push(`/(app)/workspace/${result.workspaceId}`);
+  function open(result: SearchResult | BookmarkSearchResult) {
+    const ruta = rutaResultado(result);
+    if (ruta) {
+      router.push(ruta);
     }
   }
 
@@ -104,6 +122,10 @@ export default function SearchScreen() {
               ['lists', t('search.group.lists')],
               ['items', t('search.group.items')],
               ['notes', t('search.group.notes')],
+              // El grupo que faltaba: sin el, un query que solo casa en
+              // bookmarks pintaba grupos vacios sin `EmptyState`. La etiqueta
+              // es la misma que la lista y el drawer, sin copy nuevo.
+              ['bookmarks', t('bookmarks.title')],
             ] as const
           ).map(([group, label]) => {
             const hits = grouped[group];

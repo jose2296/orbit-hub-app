@@ -5,7 +5,7 @@ import { Image, Linking, Pressable, View } from "react-native";
 
 import type { Bookmark } from "@orbit-hub/contracts";
 
-import { DocumentView } from "@/components/bookmarks/document-view";
+import { DocumentView, safeLinkTarget } from "@/components/bookmarks/document-view";
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { Screen } from "@/components/ui/screen";
@@ -84,12 +84,18 @@ export default function BookmarkReaderScreen() {
     disparoSiPendiente(bookmark, disparados.current);
   }, [bookmark]);
 
+  // El unico destino que el boton puede abrir, o nulo si la URL no es
+  // http(s). El guardado acepta esquema opcional, asi que la fila puede
+  // traer `javascript:` o texto sin esquema: eso no se abre, se oculta.
+  // Mismo predicado que `DocumentView`, importado y no copiado.
+  const destinoSeguro = bookmark ? safeLinkTarget(bookmark.url) : null;
+
   const abrirOriginal = useCallback(() => {
-    if (!bookmark) return;
+    if (!destinoSeguro) return;
     // El fallo no se anuncia: si el sistema no puede abrir el enlace no hay
     // nada que la pantalla pueda arreglar, y un toast lo diria dos veces.
-    void Linking.openURL(bookmark.url).catch(() => {});
-  }, [bookmark]);
+    void Linking.openURL(destinoSeguro).catch(() => {});
+  }, [destinoSeguro]);
 
   const reintentar = useCallback(() => {
     if (!bookmark) return;
@@ -98,7 +104,9 @@ export default function BookmarkReaderScreen() {
 
   const accionCabecera = useCallback(
     () =>
-      bookmark ? (
+      // Sin destino seguro no hay boton: un `javascript:` en la cabecera es
+      // el mismo riesgo que en el cuerpo, y se oculta igual.
+      destinoSeguro ? (
         <Pressable
           testID="bookmark-open-original"
           accessibilityRole="button"
@@ -110,7 +118,7 @@ export default function BookmarkReaderScreen() {
           <Ionicons name="open-outline" size={24} color={theme.colors.text} />
         </Pressable>
       ) : null,
-    [abrirOriginal, bookmark, t, theme.colors.text],
+    [abrirOriginal, destinoSeguro, t, theme.colors.text],
   );
   useHeaderAction(accionCabecera, [accionCabecera]);
 
@@ -230,12 +238,15 @@ export default function BookmarkReaderScreen() {
           <AppText variant="caption" tone="muted">
             {t("bookmarks.reader.metadataBody")}
           </AppText>
-          <Button
-            testID="bookmark-open-original-body"
-            label={t("bookmarks.reader.openOriginal")}
-            icon="open-outline"
-            onPress={abrirOriginal}
-          />
+          {/* Sin destino seguro no hay boton, igual que en la cabecera. */}
+          {destinoSeguro ? (
+            <Button
+              testID="bookmark-open-original-body"
+              label={t("bookmarks.reader.openOriginal")}
+              icon="open-outline"
+              onPress={abrirOriginal}
+            />
+          ) : null}
         </View>
       </Screen>
     );
