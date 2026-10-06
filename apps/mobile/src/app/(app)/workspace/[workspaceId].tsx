@@ -63,6 +63,7 @@ export default function WorkspaceScreen() {
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [compartirDirecto, setCompartirDirecto] = useState(false);
   /*
     A note acted on from its row, and the template sheet it can lead to.
     Both live here rather than in the list because the list is drawn by three
@@ -169,16 +170,28 @@ export default function WorkspaceScreen() {
   useHeaderAction(
     () =>
       workspace ? (
-        <Button
-          testID="workspace-menu-button"
-          label={t("workspaceMenu.open")}
-          variant="ghost"
-          size="sm"
-          icon="ellipsis-horizontal"
-          iconOnly
-          fullWidth={false}
-          onPress={() => setMenuOpen(true)}
-        />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Button
+            testID="workspace-share-button"
+            label={t("workspaceMenu.share")}
+            variant="ghost"
+            size="sm"
+            icon="people-outline"
+            iconOnly
+            fullWidth={false}
+            onPress={() => setCompartirDirecto(true)}
+          />
+          <Button
+            testID="workspace-menu-button"
+            label={t("workspaceMenu.open")}
+            variant="ghost"
+            size="sm"
+            icon="ellipsis-horizontal"
+            iconOnly
+            fullWidth={false}
+            onPress={() => setMenuOpen(true)}
+          />
+        </View>
       ) : null,
     [t, workspace],
   );
@@ -254,8 +267,12 @@ export default function WorkspaceScreen() {
         />
       </View>
       <WorkspaceMenuSheet
-        workspace={menuOpen ? workspace : null}
-        onClose={closeSheets}
+        workspace={menuOpen || compartirDirecto ? workspace : null}
+        initialPage={compartirDirecto ? "share" : "options"}
+        onClose={() => {
+          setCompartirDirecto(false);
+          closeSheets();
+        }}
         onDeleted={() => router.replace("/(app)/workspaces")}
       />
       <NoteMenuSheet

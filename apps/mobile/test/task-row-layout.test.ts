@@ -662,3 +662,44 @@ describe('la barra tiene los dos margenes', () => {
     expect(derecha, 'y centrados en vertical').toContain("justifyContent: 'center'");
   });
 });
+
+describe('#11: compartir, en la cabecera y no solo dentro del menu', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+
+  it('el espacio publica un boton de compartir en la cabecera', () => {
+    const ws = leer('src/app/(app)/workspace/[workspaceId].tsx');
+    expect(ws, 'el boton de compartir va en la cabecera').toContain(
+      'testID="workspace-share-button"',
+    );
+    expect(ws, 'y son dos botones, no uno que hace las dos cosas').toContain(
+      'testID="workspace-menu-button"',
+    );
+  });
+
+  it('la carpeta tambien, y su opcion de compartir deja de no hacer nada', () => {
+    const carpeta = leer('src/app/(app)/workspace/[workspaceId]/folder/[folderId].tsx');
+    expect(carpeta).toContain('testID="folder-share-button"');
+
+    // La opcion del menu cerraba la hoja y no abria nada: `onPress: () =>
+    // setMenuFor(null)`. Un "Compartir" que cierra el menu es un boton que dice
+    // una cosa y hace otra.
+    const opcion = carpeta.match(/key: "share"[\s\S]*?onPress:[\s\S]*?\}/)?.[0] ?? '';
+    expect(opcion, 'compartir tiene que abrir la hoja, no cerrar el menu').toContain(
+      'setCompartirCarpeta(true)',
+    );
+  });
+
+  it('las dos hojas de compartir son la misma, no dos distintas', () => {
+    const hoja = leer('src/components/workspace/workspace-menu-sheet.tsx');
+    expect(hoja, 'el boton abre la hoja del menu en su pagina de compartir').toContain(
+      'initialPage?: Page',
+    );
+
+    // Y abrir la hoja para compartir y cerrar, y volver a abrir el menu, tiene que
+    // salir por el menu. Por eso la pagina inicial se lee una vez.
+    expect(hoja, 'la pagina inicial se lee una vez, no en cada render').toContain(
+      'useState<Page>(initialPage)',
+    );
+  });
+});

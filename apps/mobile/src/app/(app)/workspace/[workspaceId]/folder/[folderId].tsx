@@ -1,11 +1,13 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
+import { View } from "react-native";
 
 import type { List } from "@orbit-hub/contracts";
 
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { CreateSheet } from "@/components/folders/create-sheet";
+import { ShareNodeSheet } from "@/components/shares/share-node-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
 import { ContentList } from "@/components/content/content-list";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
@@ -46,6 +48,7 @@ export default function FolderScreen() {
     | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [compartirCarpeta, setCompartirCarpeta] = useState(false);
   const [createStep, setCreateStep] = useState<"what" | "kind" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
@@ -75,7 +78,18 @@ export default function FolderScreen() {
   useHeaderAction(
     () =>
       folder ? (
-        <Button
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Button
+            testID="folder-share-button"
+            label={t("common.share")}
+            variant="ghost"
+            size="sm"
+            icon="people-outline"
+            iconOnly
+            fullWidth={false}
+            onPress={() => setCompartirCarpeta(true)}
+          />
+          <Button
           testID="folder-menu-button"
           label={t("folders.menu")}
           variant="ghost"
@@ -96,7 +110,8 @@ export default function FolderScreen() {
               },
             })
           }
-        />
+          />
+        </View>
       ) : null,
     [folder, t],
   );
@@ -167,7 +182,10 @@ export default function FolderScreen() {
           label: t("common.share"),
           icon: "people-outline",
           description: t("lists.shareHint"),
-          onPress: () => setMenuFor(null),
+          onPress: () => {
+            setMenuFor(null);
+            setCompartirCarpeta(true);
+          },
         },
         {
           key: "pin",
@@ -289,6 +307,14 @@ export default function FolderScreen() {
       >
         <SheetOptions options={menuOptions} />
       </Sheet>
+      <ShareNodeSheet
+        target={
+          compartirCarpeta && folder
+            ? { nodeType: "folder", nodeId: folder.id, title: folder.name }
+            : null
+        }
+        onClose={() => setCompartirCarpeta(false)}
+      />
       <CreateSheet
         open={createOpen}
         onClose={closeSheets}
