@@ -35,6 +35,8 @@
 import { Readability } from '@mozilla/readability';
 import { noteDocumentSchema, noteDocumentToPlainText } from '@orbit-hub/contracts';
 
+import { esIpProhibida } from '../../lib/ssrf.js';
+
 // @ts-expect-error jsdom no trae tipos, y no se instalan: ver la nota de tipos de mas abajo.
 import * as jsdom from 'jsdom';
 
@@ -277,6 +279,34 @@ function enteroDeImagen(valor: string | null): string | null {
   return String(numero);
 }
 
+/**
+ * Si el anfitrion se puede leer como IP sin pasar por DNS.
+ *
+ * La misma forma que `extract-metadata.ts`: un nombre nunca contiene `:` y
+ * casi nunca es solo digitos y puntos. Se duplica en vez de importarse porque
+ * alla es privada y no es la tabla de rangos —la tabla vive en `ssrf.ts` y no
+ * se copia— sino el predicado de forma que decide si mirar la tabla.
+ */
+function esLiteralNumerico(anfitrion: string): boolean {
+  if (anfitrion.includes(':')) return true;
+  if (/^[\d.]+$/.test(anfitrion)) return true;
+  if (/^0[xX][\da-fA-F]+$/.test(anfitrion)) return true;
+  return false;
+}
+
+/**
+ * Si el `src` ya resuelto apunta a un literal prohibido.
+ *
+ * Recibe la URL absoluta que devuelve `resolver`, asi que `new URL` no tira:
+ * lo relativo y lo que no es URL ya se descarto antes.
+ */
+function esImagenConLiteralProhibido(src: string): boolean {
+  // `URL` deja los corchetes de una IPv6 literal en `hostname`, igual que en
+  // el guard: se sacan antes de mirar rangos.
+  const literal = new URL(src).hostname.replace(/^\[/, '').replace(/\]$/, '');
+  return esLiteralNumerico(literal) && esIpProhibida(literal);
+}
+
 /* ------------------------------------------------------------ la reduccion -- */
 
 /**
@@ -441,6 +471,19 @@ function reducir(
     // Sin `src` —o con un `src` que no sea una URL— el `img` no se guarda: el
     // validador exige que tenga uno, y una imagen sin archivo no es una imagen.
     if (src === null || !ESQUEMAS_DE_IMAGEN.test(src)) return;
+    // Un literal prohibido tampoco se guarda: es el mismo chequeo de rangos
+    // que `imagenUtilizable` aplica a `og:image` en `extract-metadata.ts`, con
+    // la misma funcion importada y sin copiar la tabla. Un `img` sin `src`
+    // valido es peor que sin `img` —el validador lo rechaza—, asi que la
+    // imagen se borra con su `alt`.
+    //
+    // Solo se mira el literal: un nombre necesitaria DNS y la reduccion es
+    // sincrona por contrato, asi que un anfitrion que no se lee como IP pasa.
+    // Es la misma limitacion honesta que `og:image` tenia antes de D4, y queda
+    // escrita por el mismo motivo. Se elige no resolver en el servicio porque
+    // seria N consultas DNS por articulo, una por imagen; el `og:image` era
+    // una sola y por eso si se confirma alla.
+    if (esImagenConLiteralProhibido(src)) return;
     const imagen = documento.createElement('img');
     imagen.setAttribute('src', src);
     const alt = nodo.getAttribute('alt');

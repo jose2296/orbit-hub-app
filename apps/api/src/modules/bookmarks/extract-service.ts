@@ -298,12 +298,13 @@ export async function extractBookmark(
   }
 
   if (!contenido.ok) {
-    // El texto no entro pero la metadata si: un articulo del que no se pudo
-    // sacar el texto igual tiene titulo, sitio e imagen, y eso ya es el
-    // `metadata_only` del spec. `unreadable` es la excepcion: ni el HTML se
-    // pudo leer con confianza, asi que es `failed`.
-    const estado: BookmarkExtractionStateName =
-      contenido.motivo === 'unreadable' ? 'failed' : 'metadata_only';
+    // El HTML ya se trajo: lo que `extraerContenido` no pudo sacar es
+    // `metadata_only` del spec ("si el `document` resultante no pasa el
+    // validador, la fila se guarda igual y el estado es `metadata_only`"). El
+    // `failed` queda para no poder traerlo —sitio caido, guard, techo—, que ya
+    // volvio antes con su propio motivo. Un validador que rechaza no se arregla
+    // reintentando: `failed` mostraria "reintentar" para siempre.
+    const estado: BookmarkExtractionStateName = 'metadata_only';
     await guardar(fila, {
       document: '',
       plainText: '',

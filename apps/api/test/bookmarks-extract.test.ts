@@ -506,6 +506,26 @@ describe('los atributos', () => {
     expect(() => noteDocumentSchema.parse(r.contenido.document)).not.toThrow();
   });
 
+  it('una imagen con un literal prohibido no se guarda, y la publica si', async () => {
+    // El `src` del documento solo pasaba el filtro de esquema: un
+    // `http://169.254.169.254/x.png` se guardaba tal cual y el lector lo pedia
+    // despues sin guard. Sin el chequeo de rangos este test se pone rojo.
+    const r = ok(
+      await extraerContenido(
+        `<article><h1>Titulo</h1><p>${'palabra '.repeat(60)}` +
+          '<img src="http://169.254.169.254/x.png" alt="interna"> y ' +
+          '<img src="https://cdn.ejemplo.local/a.png" alt="publica"></p></article>',
+        'https://ejemplo.local/x',
+      ),
+    );
+    expect(r.contenido.document).not.toContain('169.254.169.254');
+    expect(r.contenido.document).not.toContain('alt="interna"');
+    expect(r.contenido.document).toContain(
+      '<img src="https://cdn.ejemplo.local/a.png" alt="publica">',
+    );
+    expect(() => noteDocumentSchema.parse(r.contenido.document)).not.toThrow();
+  });
+
   it('una medida de imagen que no es un numero no se copia', async () => {
     const r = ok(
       await extraerContenido(
@@ -974,6 +994,39 @@ describe('extraer un bookmark', () => {
     expect(despues.siteName).toBe('YouTube');
     expect(despues.imageUrl).toBe('https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
     expect(despues.extractionError).not.toBeNull();
+    expect(despues.version).toBe(antes.version + 1);
+  });
+
+  it('un unreadable post-fetch queda metadata_only, con metadata y sin documento', async () => {
+    // El spec reserva `failed` para no poder traer el HTML —sitio caido,
+    // guard, techo— y manda `metadata_only` cuando el `document` no pasa el
+    // validador. Sin el arreglo, una pagina con metadata perfecta pero HTML
+    // irreducible mostraba "reintentar" para siempre.
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Validador');
+    const url = 'https://ejemplo.local/nota-larga';
+    const id = await crearBookmark(owner, workspaceId, { url });
+    const antes = await getBookmark(owner.userId, id);
+
+    await extractBookmark(
+      owner.userId,
+      id,
+      dependencias({
+        traerHtml: async () => paginaOk(ARTICULO, url),
+        contenidoDe: async () => ({ ok: false, motivo: 'unreadable' }),
+      }),
+    );
+
+    const despues = await getBookmark(owner.userId, id);
+    const meta = sacarmetadata(ARTICULO, url);
+    expect(despues.extractionState).toBe('metadata_only');
+    expect(despues.document).toBe('');
+    expect(despues.plainText).toBe('');
+    expect(despues.title).toBe(meta.title);
+    expect(despues.siteName).toBe('El sitio');
+    expect(despues.description).toBe('La descripcion');
+    expect(despues.imageUrl).toBe('https://cdn.ejemplo.local/a.png');
+    expect(despues.extractionError).toBe('unreadable');
     expect(despues.version).toBe(antes.version + 1);
   });
 
