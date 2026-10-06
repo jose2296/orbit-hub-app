@@ -11,6 +11,7 @@ const fila = (title: string, completed: boolean): ListItem =>
     title,
     position: 0,
     completed,
+    stateId: null,
     priority: "none",
     icon: null,
     tags: [],

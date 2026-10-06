@@ -2,8 +2,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 
-import type { IconRef, ListItem, Priority, TagColors } from "@orbit-hub/contracts";
+import type {
+  BoardStates,
+  IconRef,
+  ListItem,
+  Priority,
+  TagColors,
+} from "@orbit-hub/contracts";
 import { derivedTagColor, labelOf } from "@orbit-hub/contracts";
+import { stateOf } from "@orbit-hub/contracts";
 
 import { AppIcon } from "@/components/ui/app-icon";
 import { Badge, tonesFor } from "@/components/ui/badge";
@@ -23,6 +30,7 @@ import {
   PRIORITY_TONE,
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
+import { stateIdToWrite, stateColorHex } from "@/lib/lists/board";
 import { useTheme } from "@/theme";
 
 import { completedMatch } from "@/lib/lists/done-match";
@@ -60,6 +68,22 @@ export interface ItemEditSheetProps {
   initialTitle?: string;
   /** The page to open on, so a tap on the icon goes straight to the icons. */
   startOn?: Page;
+  /**
+   * Whether this list has a "done" at all, and **the board is the one that does
+   * not.**
+   *
+   * A task on a board is in a state and not completed — that is the whole reason a
+   * board is a `kind` of its own — so the tick is not drawn here either. It is a
+   * prop and not a branch on the kind because this panel does not read the list's
+   * kind anywhere else, and adding one would make it depend on a field it has no
+   * other reason to want.
+   *
+   * What it costs to leave it on is not that the tick fails: `completed` is a real
+   * field and the write succeeds. It is that **nothing on a board reads it**, so
+   * pressing it looks like it worked and the board is identical afterwards — the
+   * same reason `TaskRow` does not draw a checkbox for a board row.
+   */
+  showCompleted?: boolean;
   /** This list's chosen label colours, and the only ones there are. */
   tagColors: TagColors;
   /**
@@ -83,6 +107,49 @@ export interface ItemEditSheetProps {
   onClose: () => void;
   /** Called after the row is gone, so the screen can put itself right. */
   onDeleted?: () => void;
+  /**
+   * The columns of a board, **and `[]` on every other kind of list.**
+   *
+   * This panel does not read the list's kind anywhere else — see `showCompleted`,
+   * which is a prop for the same reason and says so at length — and a column is
+   * the second thing that is only true of a board. So the row is drawn when this
+   * is not empty and not drawn when it is, and a list that is not a board cannot
+   * get one by accident.
+   */
+  states?: BoardStates;
+  /**
+   * Asked for when the column row is pressed, **so this panel opens no sheet of
+   * its own.**
+   *
+   * The sheet that lists the columns is mounted by the screen, next to this one,
+   * and always mounted — it is the same `Sheet` the board mounts for the tap that
+   * used to open it, and `useLastValue` is why that one is never unmounted. Two
+   * reasons it stays there and does not come in here: a `Modal` inside a `Modal`
+   * is a nesting that only has to work on both targets to be worth it, and this
+   * panel is used by every list in the app, so the board's sheet would become a
+   * dependency of all of them.
+   */
+  onOpenStates?: () => void;
+  /**
+   * Called with the column chosen in that sheet.
+   *
+   * **It is not written straight to the row from here.** It goes through `save`,
+   * which is the one door this panel already has to a write: on a row that exists
+   * that is an immediate update, and on one being written it goes into the draft
+   * and leaves with the rest when the row is created. A second path to
+   * `updateItem` would be two paths that can disagree about when a column changes.
+   */
+  onPickState?: (stateId: string) => void;
+  /**
+   * The column chosen for the row being written, **`null` for "none was chosen".**
+   *
+   * It lives in the screen and not in this panel because the sheet that chooses
+   * it is mounted by the screen as well: the choice travels sheet → screen →
+   * panel, and a copy kept here would be two answers to "which column was
+   * chosen" that can disagree. On a row that exists this is ignored — its column
+   * is the row's own, read live — so it is only read in create mode.
+   */
+  draftStateId?: string | null;
 }
 
 /**
@@ -165,10 +232,14 @@ export function ItemEditSheet({
   mode = "edit",
   initialTitle = "",
   startOn = "edit",
+  showCompleted = true,
   tagColors,
   onTagColor,
   onClose,
   onDeleted,
+  states = [],
+  onOpenStates,
+  draftStateId = null,
 }: ItemEditSheetProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -328,8 +399,39 @@ export function ItemEditSheet({
    */
   const yaHecho = isNew ? completedMatch(title, items) : null;
 
+  /**
+   * Whether this row belongs to a board, **and it is the columns that say so.**
+   *
+   * A row that has been given no columns is a row of a list, and the answer is
+   * `false` without asking anything else: `states` is `[]` everywhere but a board,
+   * and a board always has at least one column (`boardStatesSchema` refuses an
+   * empty one).
+   */
+  const esTablero = (states?.length ?? 0) > 0;
+
+  /**
+   * The column this row is in, **and the resolved one.**
+   *
+   * A row whose `stateId` is `null` is drawn in the first column, and one that
+   * names a column another device deleted is drawn there too — that is what
+   * `stateOf` answers and what the board's own columns already do. So the row
+   * says the first column rather than "nowhere": saying nowhere would draw a
+   * panel that disagrees with the board behind it, and the first column is where
+   * the row is.
+   *
+   * On a row being written there is no row to read, so the screen's choice is
+   * read instead (`draftStateId`, `null` for "none was chosen") — and it resolves
+   * through the same function, so "none was chosen" reads as the first column,
+   * which is where the row will land if it is created untouched. **Which is
+   * honest**: the row is not claiming a choice was made.
+   */
+  const columna = esTablero
+    ? (stateOf(states ?? [], isNew ? (draftStateId ?? null) : (item?.stateId ?? null)) ?? null)
+    : null;
+
   const pistaIcon = useA11yHint(t("itemEdit.iconHint"));
   const pistaTags = useA11yHint(t("itemEdit.tagsHint"));
+  const pistaEstado = useA11yHint(t("itemEdit.stateHint"));
   const pistaMarkDone = useA11yHint(t("itemEdit.markDoneHint"));
   /*
    * One hint for every colour button on this panel, and not one per label: it
@@ -638,7 +740,6 @@ export function ItemEditSheet({
    * the picker stays open.
    *
    * `option` is **a hex and not a name from the twelve any more**, because
-<<<<<<< HEAD
    * `TagColorPicker` hands back whatever was chosen and a free colour is not one
    * of the twelve. Nothing is written here: the colour lands in the `colores`
    * draft and leaves the panel on Guardar with everything else, in series (see
@@ -677,6 +778,20 @@ export function ItemEditSheet({
       priority: draft.priority,
       icon: draft.icon,
       tags: draft.tags,
+      /*
+        **Only sent when a column was chosen**, and even then through
+        `stateIdToWrite`: a column another device deleted while this panel was
+        open resolves to `null` instead of travelling, because the server refuses
+        an item whose `stateId` is not one of its list's `states` — and a refused
+        create inside a push that answers 200 is a row that never existed, which
+        is worse than a row in the first column. `addItem` leaves anything that is
+        not a string off the wire, so a task created without touching the row
+        travels exactly as it did before this row existed.
+      */
+      stateId:
+        isNew && esTablero && draftStateId != null
+          ? (stateIdToWrite(states ?? [], null, draftStateId) ?? undefined)
+          : undefined,
     });
     // Y los colores de las etiquetas que se crearon aqui: sin esto, crear una
     // tarea con una etiqueta de color dejaba la etiqueta sin su color.
@@ -888,6 +1003,70 @@ export function ItemEditSheet({
             </Pressable>
             {pistaIcon.node}
 
+            {/*
+              The column, **and only on a board.**
+
+              It is a row like the icon and the labels because it is a row: it says
+              which column, it opens the sheet that lists them, and it comes back
+              with the answer. What is different is that it opens **another panel**
+              and not a page of this one — and that is not a shortcut, it is the
+              only place the sheet with the columns is mounted from, because the
+              screen next to this one owns it (see `onOpenStates`).
+
+              **It is drawn above the labels and not below the delete** because the
+              column is the one row on a board that decides where the task is, and
+              the row that has to be reachable while deciding the rest of the task.
+              A board task's column is as editable as its name.
+            */}
+            {esTablero && onOpenStates ? (
+              <>
+                <Pressable
+                  testID="item-state-row"
+                  accessibilityRole="button"
+                  accessibilityLabel={t("itemEdit.state")}
+                  {...pistaEstado.props}
+                  onPress={onOpenStates}
+                  style={({ pressed }) => [
+                    styles.link,
+                    {
+                      borderColor: theme.colors.border,
+                      borderRadius: theme.radius.md,
+                      backgroundColor: pressed
+                        ? theme.colors.surfaceMuted
+                        : "transparent",
+                    },
+                  ]}
+                >
+                  {/*
+                    **The column's own colour, as the dot the board draws beside
+                    its name.** `iconColor` is what the column panel, the tabs and
+                    this row all call with the column's key, so the dot here is
+                    the same colour by construction rather than by a table kept in
+                    step by hand — and it is the whole reason this row can be read
+                    without opening anything.
+                  */}
+                  <View
+                    style={[
+                      styles.stateDot,
+                      {
+                        backgroundColor: stateColorHex(columna?.color, theme.colors.icon),
+                        borderRadius: theme.radius.pill,
+                      },
+                    ]}
+                  />
+                  <AppText variant="body" style={styles.flex}>
+                    {columna?.title ?? t("itemEdit.stateNone")}
+                  </AppText>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={theme.colors.textSubtle}
+                  />
+                </Pressable>
+                {pistaEstado.node}
+              </>
+            ) : null}
+
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("itemEdit.tags")}
@@ -928,8 +1107,11 @@ export function ItemEditSheet({
             {/* Whether it is done, as a thing you can change and not as a badge
                 you can only read. A shopping list lives on this: "I already
                 bought the milk" puts the row back in the pending section, and
-                the only place to say that is the row itself. */}
-            {!isNew ? (
+                the only place to say that is the row itself.
+
+                **And not on a board**, where "done" is a state and this write is
+                read by nothing — see `showCompleted`. */}
+            {!isNew && showCompleted ? (
               <>
                 <Pressable
                   accessibilityRole="button"
@@ -1477,6 +1659,19 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  /*
+    The dot of the column this row is in, **and it is ten and not a token for the
+    same reason it is ten in the two places that already draw it**: the theme has
+    no token that means "how big is a dot", and `board-tabs.tsx` and
+    `board-column.tsx` both draw it at ten — the roundness comes from
+    `theme.radius.pill` at the use site, next to the colour, like they do. Three
+    tens that match by reading each other are one size; a token that means
+    something else would be a second size wearing its name.
+  */
+  stateDot: {
+    width: 10,
+    height: 10,
   },
   priority: {
     paddingHorizontal: 12,

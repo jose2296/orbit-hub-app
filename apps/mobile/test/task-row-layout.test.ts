@@ -11,7 +11,8 @@ import { describe, expect, it } from 'vitest';
  * suite runs in `node` with React Native stubbed, so nothing measures a pixel and
  * nothing can catch Yoga. What it can do is stop the four shapes below from
  * coming back, which is what happened once already — see `styles.nombre` in
- * `list/[listId].tsx` for a comment that blamed the wrong file and fixed nothing.
+ * `components/lists/task-row.tsx` for a comment that blamed the wrong file and
+ * fixed nothing.
  *
  * The measurements that found them are in the comments on the code they guard, and
  * they were taken on an Android release build (API 35), not reasoned about.
@@ -96,10 +97,13 @@ const verifyTag = readFileSync(
 const checkbox = src('src/components/ui/checkbox.tsx');
 const badge = src('src/components/ui/badge.tsx');
 const listId = src('src/app/(app)/list/[listId].tsx');
-const itemPresentation = src('src/lib/lists/item-presentation.ts');
+const taskRow = src('src/components/lists/task-row.tsx');
 const appHeader = src('src/components/ui/app-header.tsx');
 const screen = src('src/components/ui/screen.tsx');
 const spaceBand = src('src/components/workspace/space-band.tsx');
+const statePickerSheet = src('src/components/lists/state-picker-sheet.tsx');
+const boardScreen = src('src/app/(app)/board/[listId].tsx');
+const itemPresentation = src('src/lib/lists/item-presentation.ts');
 const tagChip = src('src/components/lists/tag-chip.tsx');
 const itemEditSheet = src('src/components/lists/item-edit-sheet.tsx');
 
@@ -139,14 +143,14 @@ describe('la casilla no se come la fila', () => {
     // El intervalo, no un `indexOf` suelto: hay **dos** `<Checkbox` en el fichero
     // —el otro es el de la bandeja de lo hecho— asi que buscar el primero从上
     // daria el de otro componente y la comprobacion pasaria siempre.
-    const linea = listId.indexOf('item-title-line-');
-    const meta = listId.indexOf('styles.meta,');
+    const linea = taskRow.indexOf('item-title-line-');
+    const meta = taskRow.indexOf('styles.meta,');
     expect(
       linea,
       'la linea del titulo necesita su propio testID, que es lo que permite medirla'
     ).toBeGreaterThan(-1);
     expect(meta, 'la segunda linea de la columna es el ancla de cierre').toBeGreaterThan(linea);
-    const casilla = listId.indexOf('<Checkbox', linea);
+    const casilla = taskRow.indexOf('<Checkbox', linea);
     expect(
       casilla,
       'la casilla tiene que dibujarse dentro de la linea del titulo, no al lado de la columna'
@@ -159,7 +163,7 @@ describe('la casilla no se come la fila', () => {
     // `alignItems` tiene sentido aqui. Con un hijo, alinear no tiene a que, y un
     // `flex-start` ahi es un numero que no hace nada y que el siguiente que lea
     // el fichero va a usar creyendo que alinea algo.
-    const item = listId.match(/  item:\s*\{[\s\S]*?\n  \}/)?.[0] ?? '';
+    const item = taskRow.match(/  item:\s*\{[\s\S]*?\n  \}/)?.[0] ?? '';
     expect(item, 'styles.item debe seguir existiendo').toContain('flexDirection: "row"');
     expect(
       item,
@@ -348,8 +352,8 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
    * boton nuevo.
    */
   it('la fila lo pasa a la insignia y a la pastilla, igual que al nombre', () => {
-    const soloLaFila = sinComentarios(listId).slice(
-      sinComentarios(listId).indexOf('function TaskRow('),
+    const soloLaFila = sinComentarios(taskRow).slice(
+      sinComentarios(taskRow).indexOf('function TaskRow('),
     );
     expect({
       insignias: aperturas(soloLaFila, 'Badge').length,
@@ -401,8 +405,8 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
    * navegador: 8 px a cada lado en las filas, en los dos temas.
    */
   it('la pastilla de la fila suma padding horizontal por style y la hoja no', () => {
-    const soloLaFila = sinComentarios(listId).slice(
-      sinComentarios(listId).indexOf('function TaskRow('),
+    const soloLaFila = sinComentarios(taskRow).slice(
+      sinComentarios(taskRow).indexOf('function TaskRow('),
     );
     expect(aperturas(soloLaFila, 'TagChip')[0]).toContain(
       'paddingHorizontal: theme.spacing.sm',
@@ -448,8 +452,8 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
       }
     }
     expect(conToque).toEqual([
-      'src/app/(app)/list/[listId].tsx <Badge>',
-      'src/app/(app)/list/[listId].tsx <TagChip>',
+      'src/components/lists/task-row.tsx <Badge>',
+      'src/components/lists/task-row.tsx <TagChip>',
     ]);
   });
 
@@ -590,8 +594,8 @@ describe('los cuatro botones de prioridad se ven distintos entre si', () => {
    * porque el segundo pasa mientras alguien tenga el mapa definido en los dos.
    */
   it('el mapa vive en un solo sitio y los dos lo importan', () => {
-    expect(sinComentarios(listId)).not.toMatch(/const PRIORITY_TONE/);
-    expect(sinComentarios(listId)).toMatch(/PRIORITY_TONE[,\s}]/);
+    expect(sinComentarios(taskRow)).not.toMatch(/const PRIORITY_TONE/);
+    expect(sinComentarios(taskRow)).toMatch(/PRIORITY_TONE[,\s}]/);
     expect(sinComentarios(itemEditSheet)).toMatch(/PRIORITY_TONE/);
   });
 });
@@ -691,6 +695,11 @@ describe('la fila de una tarea no reserva el asa de arrastrar', () => {
    * of every list.
    */
   it('no tiene paddingRight de asa', () => {
+    // `taskRow` and not the screen: the row is a component of its own, and a
+    // `not.toContain` on a file the row no longer lives in would pass for the
+    // wrong reason. The screen is still asserted on, below, for the shapes it
+    // decides itself.
+    expect(taskRow).not.toContain('dragHandle');
     expect(listId).not.toContain('dragHandle');
   });
 
@@ -702,13 +711,90 @@ describe('la fila de una tarea no reserva el asa de arrastrar', () => {
     // the badge and the labels moved to a **second** line under it, so that the
     // icon and the title line up between rows. The badge is still first on that
     // line, so it is still the one that survives.
-    expect(listId).toContain('metaTag');
+    expect(taskRow).toContain('metaTag');
     // And the second line is drawn only when there is something to draw.
-    expect(listId).toContain(
+    expect(taskRow).toContain(
       '{item.priority !== "none" || item.tags.length > 0 ? (',
     );
-    const meta = listId.slice(listId.indexOf('metaTag: {'));
+    const meta = taskRow.slice(taskRow.indexOf('metaTag: {'));
     expect(meta).toContain('flexShrink: 1');
+  });
+});
+
+/**
+ * The row is shared by two screens now, and a shared component that one of them
+ * cannot use is not shared.
+ *
+ * Two of the three below are the differences between a list row and a board row:
+ * the checkbox, which a board row does not draw, and the colour down the left
+ * edge, which a list row does not paint. The third is not a difference between
+ * the two rows — it is about there being **one** row at all.
+ *
+ * All three assert on the source for the same reason as everything else here: the
+ * question is whether the **optional** parts are optional, and the only way to
+ * see that in `node` is to read the props and the condition.
+ */
+describe('la fila sabe dibujarse sin casilla y con filo de estado', () => {
+  it('la casilla se dibuja solo si hay algo que marque', () => {
+    // Optional in the props, and **not defaulted to a no-op**: a `onToggle` that
+    // did nothing would draw a box that lies about the task being tickable.
+    expect(taskRow).toContain('onToggle?: () => void');
+    // And the box is inside a condition on it, not rendered and hidden.
+    expect(taskRow).toContain('{onToggle ? (');
+    // The empty label stays. This is the one that measured 755 of 754 points.
+    expect(taskRow).toContain('onToggle={onToggle} label=""');
+  });
+
+  it('el filo de color solo existe cuando le pasan un color', () => {
+    expect(taskRow).toContain('edgeColor?: string');
+    // Conditional, not `edgeColor ?? theme.colors.border`: the flat list must draw
+    // exactly what it drew before this prop existed, and a default colour would
+    // put an edge on every row of every list.
+    expect(taskRow).toContain('...(edgeColor');
+    expect(taskRow).toContain('borderLeftColor: edgeColor');
+  });
+
+  /**
+   * A board card has **one** door to the task panel, and it is the tap itself.
+   *
+   * It used to be two: the tap opened the state sheet and a row inside it
+   * (`state-picker-edit-task`, `onEditTask`) opened the panel. That decision was
+   * revisited — the tap now opens the panel straight away and the column is a row
+   * inside it (`item-state-row`) — so the sheet no longer carries a door back to
+   * the room it was opened from. These assertions are here because a route that
+   * exists only in someone's head is exactly what went missing once already, and
+   * because a door that comes back would be a round trip dressed as a feature.
+   *
+   * The browser walkthrough proves the door opens; these prove the wiring is
+   * still in the source, without a browser.
+   */
+  it('la tarjeta de un tablero abre el panel, y la hoja ya no lleva la vuelta', () => {
+    // The icon is conditional — this is the fact the old second door rested on.
+    expect(taskRow).toContain('{item.icon ? (');
+    // The card's own press opens the task panel, not the state sheet.
+    expect(boardScreen).toContain('setEditing({ itemId: item.id, page: "edit" })');
+    // And the sheet has no way back: no row, no prop, no call.
+    expect(statePickerSheet).not.toContain('state-picker-edit-task');
+    expect(statePickerSheet).not.toContain('onEditTask');
+    expect(boardScreen).not.toContain('onEditTask={');
+    // The column lives inside the panel instead: the row is drawn there and it
+    // opens the sheet the screen owns.
+    expect(itemEditSheet).toContain('testID="item-state-row"');
+    expect(itemEditSheet).toContain('onOpenStates');
+    expect(boardScreen).toContain('onOpenStates={abrirEstadosParaFormulario}');
+  });
+
+  it('la pantalla de listas usa la fila del componente, y no una suya', () => {
+    // **One** screen uses it today; the board is Task 8. So this does not claim
+    // anything about who passes what: it claims that the list screen draws the
+    // shared row and does not carry a second copy of it, because two
+    // `function TaskRow` in the repo is the thing this move exists to stop.
+    //
+    // Nothing here would notice who passes `onToggle` and who does not. That is
+    // not what this test is for, and a title that said it was would be the reason
+    // nobody notices.
+    expect(listId).toContain('from "@/components/lists/task-row"');
+    expect(listId).not.toContain('function TaskRow');
   });
 });
 
@@ -1537,6 +1623,9 @@ describe('"usar este color" fuera de los dos selectores', () => {
   const etiquetaCrudo = leer('src/components/lists/tag-color-picker.tsx');
   const espacio = sinComentarios(espacioCrudo);
   const etiqueta = sinComentarios(etiquetaCrudo);
+  // Los gestos del selector del espacio viven en el cuadrado que comparte con los
+  // estados, y es ahi donde se vigila que escriban al terminar.
+  const cuadrado = sinComentarios(leer('src/components/ui/color-square.tsx'));
 
   it('ninguno de los dos tiene el boton', () => {
     for (const [quien, crudo] of [
@@ -1558,16 +1647,21 @@ describe('"usar este color" fuera de los dos selectores', () => {
       —el dedo se sale, el sistema lo interrumpe— no es una eleccion, y escribirlo
       guardaria el color donde el dedo iba de paso.
     */
+    // El del espacio entrega el color con `onCommit` al cuadrado compartido.
+    expect(espacio, 'el del espacio: lo escribe el cuadrado compartido').toContain(
+      'onCommit={escribir}',
+    );
     for (const [quien, s] of [
-      ['el del espacio', espacio],
+      ['el del espacio', cuadrado],
       ['el de etiqueta', etiqueta],
     ] as const) {
-      expect(s, `${quien}: el cuadrado escribe al terminar`).toContain(
-        '.onEnd(() => runOnJS(terminar)())',
+      expect(s, `${quien}: el cuadrado escribe al terminar`).toMatch(
+        /\.onEnd\(\(\) => runOnJS\((?:alTerminar|terminar)\)\(\)\)/,
       );
       // Los dos gestos del fichero —cuadrado y tira— escriben al terminar. Uno solo
       // dejaria la tira como un adorno que mueve el marcador sin guardar nada.
-      const fines = s.match(/\.onEnd\(\(\) => runOnJS\(terminar\)\(\)\)/g) ?? [];
+      const fines =
+        s.match(/\.onEnd\(\(\) => runOnJS\((?:alTerminar|terminar)\)\(\)\)/g) ?? [];
       expect(fines.length, `${quien}: cuadrado y tira escriben`).toBe(2);
       expect(s, `${quien}: nunca en onFinalize`).not.toContain('onFinalize');
     }
@@ -1578,7 +1672,7 @@ describe('"usar este color" fuera de los dos selectores', () => {
     // arrastre. Sin esto, quitar el boton dejaba **al toque sin puerta** — se
     // moveria el marcador y no se guardaria nada.
     for (const [quien, s] of [
-      ['el del espacio', espacio],
+      ['el del espacio', cuadrado],
       ['el de etiqueta', etiqueta],
     ] as const) {
       expect(s, `${quien}: el gesto empieza en el primer pixel`).toContain(

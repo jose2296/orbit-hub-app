@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { iconRefSchema } from "./icons.js";
 import { normalizaColor, tagColorSchema } from "./tag-colors.js";
+import { boardStatesSchema } from "./board.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
 import { userSchema } from "./auth";
@@ -294,6 +295,7 @@ export const listKindSchema = z.enum([
   "series",
   "movies_and_series",
   "books",
+  "board",
 ]);
 export const listKindLabelKey = {
   tasks: "lists.kind.tasks",
@@ -301,6 +303,7 @@ export const listKindLabelKey = {
   series: "lists.kind.series",
   movies_and_series: "lists.kind.moviesAndSeries",
   books: "lists.kind.books",
+  board: "lists.kind.board",
 } as const satisfies Record<z.infer<typeof listKindSchema>, string>;
 export type ListKind = z.infer<typeof listKindSchema>;
 
@@ -437,6 +440,19 @@ export const listSchema = syncableEntitySchema
      * alphabetical order lands somewhere the order did not ask for.
      */
     orderMode: listOrderModeSchema.default("manual"),
+    /**
+     * The columns of a board, and only a `board` list has any.
+     *
+     * They are a property of the **list** and not of the task, so everybody
+     * looking at a shared board sees the same columns — the only way a board
+     * somebody else arranged still means something to you.
+     *
+     * `[]` is the default so a row written before boards existed, or by a client
+     * that does not know about them, parses into the shape the screens read
+     * without a backfill: the same `.default()` that `tags` and `tagColors`
+     * already lean on. A list of films carries `[]` and never looks at it.
+     */
+    states: boardStatesSchema.default([]),
   })
   .extend(nodeAccessSchema.shape);
 export type List = z.infer<typeof listSchema>;
@@ -452,6 +468,23 @@ export const listItemSchema = syncableEntitySchema
   title: z.string().trim().min(1).max(LIST_ITEM_TITLE_MAX),
   position: z.number().int().min(0),
   completed: z.boolean().default(false),
+  /**
+   * The column this task is in, on a `board` list, and null on every other kind.
+   *
+   * It stands in for `completed` there and leaves `completed` alone everywhere
+   * else: a task on a board is never completed, and a task on a shopping list has
+   * no column to be in.
+   *
+   * Nullable with no default of an id because **null means the first state**, and
+   * that is what lets creating a task on a board be the very same code that
+   * creates a task on any other list: the new row lands in the first column
+   * instead of in a limbo that no screen knows how to paint.
+   *
+   * `.nullable().default(null)` is then what lets an old row, or one written by a
+   * client that has never heard of states, parse without a branch and without a
+   * migration: the same pattern `annotation` and `metadata` already use.
+   */
+  stateId: z.string().min(1).max(36).nullable().default(null),
   /**
    * How urgent the row is, in words and not in a number: a number is something
    * to sort by and nothing to read, and "alta" on a shopping list says why you

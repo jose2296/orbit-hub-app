@@ -32,8 +32,8 @@ workspaces ──< memberships >── users
 | `workspaces` | Name, description, emoji, soft delete |
 | `memberships` | `(workspace_id, user_id)` unique, role `owner`/`editor`/`viewer` |
 | `folders` | `parent_id` nullable; cycles are rejected by the API |
-| `lists` | `kind` = `tasks` \| `movies` \| `books`; one shape for all three |
-| `list_items` | Position, completed, priority, tags, `external_id`, `metadata` jsonb, `annotation` |
+| `lists` | `kind` = `tasks` \| `board` \| `movies` \| `series` \| `movies_and_series` \| `books`; one shape for all six. `states` jsonb holds a board's columns, in order, and is `[]` on every other kind |
+| `list_items` | Position, completed, priority, tags, `external_id`, `metadata` jsonb, `annotation`, `state_id`: the board column the row is drawn in |
 | `notes` | `document` jsonb (portable editor format) plus denormalised `plain_text` for search |
 | `attachments` | Storage key, never a public URL; size and mime type validated server side |
 | `invitations` | Token, role, expiry, status; single use |
@@ -46,6 +46,22 @@ provider again.
 `notes` until [ADR 0008](adr/0008-note-entity.md), which settled that a note is an entity of its
 own: the name collision had led to a comment claiming notes had no table of their own, which
 Phase 4 makes false, because a note is a document and does not fit in a `varchar(2000)`.
+
+A board is `kind: 'board'` and its columns are `lists.states`: a jsonb array whose **order is
+the order of the columns**, so reordering columns is one write and not one write per column.
+`[]` is legal and is the ordinary value: every list that is not a board carries it and never
+has to invent a state. A task points at one of those ids with `list_items.state_id`, which is
+nullable and carries **no foreign key**: `null` means the first column, which is what lets a
+task on a board be created by the same code that creates a task on any other list. A foreign key
+cannot stand in for that check: `states` is a column and not a table, so comparing a row against
+it is a second query. The server checks the invariant on every write instead and rejects an
+unknown id (`isKnownStateId`) rather than storing a value no screen can draw.
+
+`state_id` is unindexed on purpose. Nothing in the database filters by it: a board splits the
+items it has already pulled in memory (`tasksInState`, `countInState` in
+`apps/mobile/src/lib/lists/board.ts`), so an index would be paid for on every move and read by
+no query. `completed` is indexed no more than this: the items query can filter on it, and the
+index list below says nothing about that either.
 
 ## Sync support
 

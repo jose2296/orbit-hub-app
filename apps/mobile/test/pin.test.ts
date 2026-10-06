@@ -45,6 +45,7 @@ function list(partial: Partial<List> = {}): List {
     icon: null,
     tags: [],
     tagColors: {},
+    states: [],
     position: 0,
     itemCount: 0,
     orderMode: "manual",

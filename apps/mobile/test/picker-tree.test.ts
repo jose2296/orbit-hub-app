@@ -31,7 +31,7 @@ function folder(id: string, parentId: string | null, name = id): Folder {
 function list(id: string, folderId: string | null, title = id): List {
   return {
     id, workspaceId: WS, folderId, kind: 'tasks', title, description: null, icon: null,
-    tags: [], tagColors: {}, position: 0, orderMode: 'manual', itemCount: 0,
+    tags: [], tagColors: {}, states: [], position: 0, orderMode: 'manual', itemCount: 0,
     createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z',
     deletedAt: null, version: 1, role: 'owner', shared: false,
   } as List;

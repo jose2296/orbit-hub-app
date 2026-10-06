@@ -52,7 +52,9 @@ export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
  * Fields the client may write, per entity. Anything else is ignored.
  *
  * The kinds match the contract exactly: a list is one of these for good, and
- * never two at once.
+ * never two at once. `board` is one of them and not a flag on top of `tasks`,
+ * because the difference between them is what a task carries — a state or a
+ * checkbox — and a list that is both is a list whose rows nobody can draw.
  */
 export const LIST_KINDS = [
   'tasks',
@@ -60,6 +62,7 @@ export const LIST_KINDS = [
   'series',
   'movies_and_series',
   'books',
+  'board',
 ] as const;
 export type ListKindName = (typeof LIST_KINDS)[number];
 
@@ -109,11 +112,12 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   // version, so it looks like it worked and nothing changed. That is worse than a
   // rejection, because a rejection at least tells the person their choice did not
   // save, and this one looked like it saved for four whole rebuilds.
-  // `icon` replaced `emoji` here, and it is not a rename: the column is a jsonb
-  // object now, so a value this build cannot draw is stored as `null` rather than
-  // as a key nobody has. See `sanitisePayload`.
   workspace: ['name', 'description', 'icon', 'color', 'colorTo', 'wash'],
   folder: ['parentId', 'name', 'icon', 'position'],
+  // `states` and `stateId` below are the board's two, and being on this list is
+  // **half** of writing them: a key allowed here still needs its branch in
+  // `sanitisePayload`, and the test that catches the missing half pushes a board
+  // and reads its states back (`lists.test.ts`).
   list: [
     'folderId',
     'title',
@@ -124,6 +128,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'position',
     'kind',
     'orderMode',
+    'states',
   ],
   list_item: [
     'title',
@@ -135,6 +140,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'externalId',
     'metadata',
     'annotation',
+    'stateId',
   ],
   /**
    * `document` is on this list and the client is expected to send it, but the
