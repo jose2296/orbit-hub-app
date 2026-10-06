@@ -261,6 +261,7 @@ function IconPickerBody({
             ) : (
               <FlatList
                 data={emojis}
+                key="emoji-grid"
                 keyExtractor={(entry) => entry.emoji}
                 numColumns={8}
                 scrollEnabled={false}
@@ -327,6 +328,7 @@ function IconPickerBody({
             ) : (
               <FlatList
                 data={vectors}
+                key="vector-grid"
                 keyExtractor={(key) => key}
                 numColumns={4}
                 scrollEnabled={false}
