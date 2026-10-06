@@ -1406,3 +1406,78 @@ describe('"usar este color" fuera de los dos selectores', () => {
     }
   });
 });
+
+describe('#7: la hoja cambia de alto persiguiendo al contenido', () => {
+  const hoja = readFileSync(
+    join(import.meta.dirname, '../src/components/ui/sheet.tsx'),
+    'utf8',
+  );
+
+  it('el cuerpo tiene un alto animado, no el que le toca', () => {
+    /*
+      Sin esto, cambiar de paso en una hoja de varias paginas hace que el panel
+      salte de un frame al siguiente. Se nota mas de lo que parece: **el salto
+      mueve el contenido**, y si tenias el dedo encima de una fila, esa fila se ha
+      movido sola justo cuando ibas a tocarla.
+    */
+    expect(hoja, 'el cuerpo se anima').toMatch(
+      /const estiloCuerpo = useAnimatedStyle\(\(\) => \(\{[\s\S]*?height: altoCuerpo\.value/,
+    );
+    expect(hoja, 'y hay un valor que lo persigue').toContain(
+      'const altoCuerpo = useSharedValue(0)',
+    );
+  });
+
+  it('el bucle de re-layout esta cerrado', () => {
+    /*
+      Poner una altura vuelve a maquetar, lo que reporta otra altura, y sin cerrar
+      eso cada frame arranca una animacion nueva y el cuerpo se persigue a si mismo
+      para siempre. Se compara con el **objetivo** y no con el valor actual, para que
+      una medida que llega a mitad de animacion no se tome por una nueva.
+    */
+    expect(hoja, 'guarda el objetivo').toContain('const objetivo = useRef(0)');
+    expect(hoja, 'y lo compara antes de animar').toContain(
+      'if (alto <= 0 || alto === objetivo.current) return;',
+    );
+  });
+
+  it('la medida es del CONTENIDO, y no de la caja', () => {
+    /*
+      Un `onLayout` dentro de algo que scrollea informa de la altura que **le
+      dieron**, no de la que tiene lo que lleva dentro. En cuanto la caja lleva una
+      altura fija, ese numero no vuelve a cambiar y la animacion no puede arrancar
+      otra vez: el alto se queda clavado en el primer paso.
+    */
+    expect(hoja, 'usa onContentSizeChange').toContain('onContentSizeChange={alMedirElContenido}');
+    expect(hoja, 'y no un onLayout en la caja animada').not.toMatch(
+      /<Animated\.View[^>]*style=\{\[\s*estiloCuerpo[\s\S]{0,200}onLayout/,
+    );
+  });
+
+  it('las hojas de una sola pagina no se animan', () => {
+    // Mismo bucle, y peor: la caja se ajusta al contenido y el contenido se mide
+    // dentro de ella. Y no se pierde nada — las que cambian de alto de verdad son
+    // las de varias paginas, que scrollean todas.
+    const ramaFija = hoja.match(/\) : \(\n(?:.|\n)*?<View style=\{styles\.cuerpoLleno\}>/)?.[0] ?? '';
+    expect(ramaFija, 'la rama fija mide por onLayout').not.toContain('onLayout');
+  });
+
+  it('la animacion es mas lenta que la entrada y no se pasa', () => {
+    // Abrir es la accion de otro —ha pulsado algo—; cambiar de alto es la accion
+    // propia de alguien que esta mirando. El segundo quiere que se le siga, no que
+    // se anuncie. Y un spring **se pasa**, y el excesso se ve como contenido
+    // cortado abajo un frame.
+    expect(hoja, 'con una duracion propia').toMatch(
+      /const ALTO_CUERPO = \d+;/,
+    );
+    expect(hoja, 'y con timing, no con spring').toMatch(
+      /altoCuerpo\.value = withTiming\(alto,[\s\S]*?duration: ALTO_CUERPO/,
+    );
+    expect(hoja, 'que es mas lenta que la entrada').toMatch(
+      /const ALTO_CUERPO = (\d+);/,
+    );
+    const duracion = Number(hoja.match(/const DURACION = (\d+);/)?.[1]);
+    const cuerpo = Number(hoja.match(/const ALTO_CUERPO = (\d+);/)?.[1]);
+    expect(cuerpo, 'el cuerpo tarda mas que la entrada').toBeGreaterThan(duracion);
+  });
+});

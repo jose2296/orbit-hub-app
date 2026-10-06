@@ -132,7 +132,6 @@ export function Sheet({
   const teclado = useKeyboardHeight();
   const { height: altoVentana } = useWindowDimensions();
 
-  const Body = scrollable ? ScrollView : View;
 
 
   /**
@@ -251,6 +250,22 @@ export function Sheet({
   /** How far the panel has been pulled down, and how far it is willing to go. */
   const arrastre = useSharedValue(0);
   const altoPanel = useSharedValue(0);
+  /**
+   * El alto al que el cuerpo **va persiguiendo**, y no el que tiene.
+   *
+   * Sin esto, cambiar de paso en una hoja de varias páginas —de "opciones" a
+   * "editar", del icono a las etiquetas— hace que el panel salte de tamaño de un
+   * frame al siguiente. Se nota mucho mas de lo que parece: el salto **mueve el
+   * contenido**, y si tenias el dedo o el cursor encima de una fila, esa fila se ha
+   * movido sola justo cuando ibas a tocarla.
+   *
+   * El valor se anima con `withTiming` y el final se escribe al terminar, por el
+   * mismo motivo que la entrada: una animacion que no llega a su ultimo frame deja
+   * el cuerpo con la altura de antes y la hoja se queda a medias.
+   */
+  const altoCuerpo = useSharedValue(0);
+  /** The height we are already heading for, so the same one is not re-animated. */
+  const objetivo = useRef(0);
   /** Whether the pull has already decided to close, so nothing undoes it. */
   const cerrando = useSharedValue(false);
   /** The dimming on its own, so the background does not travel with the panel. */
@@ -405,6 +420,61 @@ export function Sheet({
   const estiloContenido = useAnimatedStyle(() => ({
     transform: [{ translateY: (1 - entrada.value) * 10 }],
   }));
+
+  /*
+    The body's own height, **chasing the content**.
+
+    Zero until the first measurement, and that is not a flash: the panel is still
+    rising in, so for those frames there is nothing to give a height to and the
+    body takes its natural one — the sheet arrives at the right size in the same
+    movement that brings it up.
+  */
+  const estiloCuerpo = useAnimatedStyle(() => ({
+    height: altoCuerpo.value > 0 ? altoCuerpo.value : undefined,
+  }));
+
+  /**
+   * A new height for the body, and **only if it is really a new one**.
+   *
+   * The `objetivo` guard is what stops the loop that this would otherwise have:
+   * setting the height re-lays-out the content, the content reports a height, and
+   * without the guard every frame would start a new animation and the body would
+   * chase its own tail forever. It is compared against the **target** and not
+   * against the current value, so a measurement that arrives mid-animation is not
+   * mistaken for a new one.
+   *
+   * Scrolling sheets are measured with `onContentSizeChange` and not with
+   * `onLayout`, and the reason is that an `onLayout` inside a scroll view reports
+   * the height the box was **given**, not the height of what is in it — so once
+   * the box has a fixed height, that number never changes again and the animation
+   * can never start.
+   */
+  const fijarAltoCuerpo = useCallback((alto: number) => {
+    if (alto <= 0 || alto === objetivo.current) return;
+    objetivo.current = alto;
+    altoCuerpo.value = withTiming(alto, {
+      duration: ALTO_CUERPO,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [altoCuerpo]);
+
+  /**
+   * The size handler for a scrolling sheet, and it is a named one because a typed
+   * arrow written **inside a JSX expression** has to be parsed as JSX before it is
+   * read as TypeScript, and `(w: number, h: number)` is exactly the shape that
+   * parser has an opinion about.
+   */
+  const alMedirElContenido = useCallback(
+    (_ancho: number, alto: number) => fijarAltoCuerpo(alto),
+    [fijarAltoCuerpo],
+  );
+
+  /** And on a step change the height starts again, or a short sheet stays short. */
+  useEffect(() => {
+    if (!visible) return;
+    objetivo.current = 0;
+    altoCuerpo.value = 0;
+  }, [visible, altoCuerpo]);
 
   /*
     Pulling the sheet down, **on the grabber's strip and nowhere else**.
@@ -767,25 +837,74 @@ export function Sheet({
             The margin is here now and off the option row, so everything in every
             sheet lines up on the same eighteen whatever it is.
           */}
-          <Body
-            {...(scrollable
-              ? {
-                  contentContainerStyle: {
-                    paddingTop: theme.spacing.sm,
-                    paddingHorizontal: MARGEN,
-                  },
-                  showsVerticalScrollIndicator: false,
-                  keyboardShouldPersistTaps: "handled" as const,
-                }
-              : {
-                  style: {
-                    paddingTop: theme.spacing.sm,
-                    paddingHorizontal: MARGEN,
-                  },
-                })}
+          {/*
+            El cuerpo va dentro de una caja animada, y **no es por estilo**.
+
+            Es porque un `ScrollView` de React Native no admite un estilo animado, y
+            porque la caja es mejor estructura: el alto que persigue el contenido es
+            de la **caja**, y lo que scrollea se estira dentro de ella. Animando el
+            scroller directamente habria que animar algo que ademas decide su propia
+            altura.
+          */}
+          <Animated.View
+            style={[
+              estiloCuerpo,
+              {
+                paddingTop: theme.spacing.sm,
+                paddingHorizontal: MARGEN,
+              },
+            ]}
           >
-            <Animated.View style={estiloContenido}>{children}</Animated.View>
-          </Body>
+          {/*
+            Los dos cuerpos, **en dos ramas y no en una**.
+
+            `Body` era `scrollable ? ScrollView : View`, y esa union es la que
+            rompia: `onContentSizeChange` es del `ScrollView` y el `View` no lo
+            tiene, asi que TypeScript rechazaba las props de los dos a la vez. Con
+            dos ramas cada una lleva lo suyo y no hay ni un `as` por medio.
+
+            Y el motivo de que la medida no sea un `onLayout` en ninguno de los dos
+            esta en el `ScrollView`: un `onLayout` dentro de algo que scrollea
+            informa de la altura que **le dieron**, no de la que tiene lo que lleva
+            dentro. En cuanto la caja lleva una altura fija, ese numero no vuelve a
+            cambiar y la animacion no puede arrancar otra vez — el alto se queda
+            clavado en el primer paso y se rompe para siempre. `onContentSizeChange`
+            informa del contenido, y el contenido no depende de la caja.
+          */}
+          {scrollable ? (
+            <ScrollView
+              style={styles.cuerpoLleno}
+              contentContainerStyle={{
+                paddingTop: theme.spacing.sm,
+                paddingHorizontal: MARGEN,
+              }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              onContentSizeChange={alMedirElContenido}
+            >
+              <Animated.View style={estiloContenido}>{children}</Animated.View>
+            </ScrollView>
+          ) : (
+            /*
+              Y el que no scrollea **no se anima, y a proposito**.
+
+              Es el mismo bucle del que huye el `onContentSizeChange` de arriba: una
+              caja con una altura fija informa de la altura que **le dieron**, asi
+              que en cuanto se le pone una el numero se queda clavado y la animacion
+              no vuelve a arrancar. aqui el bucle seria peor porque la caja se
+              ajusta al contenido y el contenido se mide dentro de ella.
+
+              Y no se pierde nada. Las hojas que no scrollean son las de una sola
+              pagina —un menu, una confirmacion, un campo con su boton— y las que
+              cambian de alto de verdad son las de varias paginas, que scrollean
+              todas. Una hoja que no cambia de pagina tampoco tiene un salto que
+              ocultar.
+            */
+            <View style={styles.cuerpoLleno}>
+              <Animated.View style={estiloContenido}>{children}</Animated.View>
+            </View>
+          )}
+          </Animated.View>
 
           {/*
             El boton de Guardar, **al pie y no en la cabecera**.
@@ -1145,6 +1264,24 @@ export const MARGEN = 18;
 const DURACION = 180;
 
 /**
+ * How long the body takes to reach a new height, and it is **slower than the
+ * entrance**.
+ *
+ * A sheet opening is somebody else's action — they pressed something — and a
+ * sheet changing size is somebody's own while they are looking at it. The second
+ * one wants to be followed rather than announced, so it takes a third longer and
+ * decelerates: a body that arrives at its new size after the movement has settled
+ * reads as a panel that grew, and one that arrives in the same time as the
+ * opening reads as a second opening.
+ *
+ * It is a duration and not a spring because a spring on a height **overshoots**,
+ * and the overshoot is visible as the content being cut at the bottom for a frame
+ * on the way past. A sheet that clips its own content for a frame is worse than one
+ * that arrives slightly late.
+ */
+const ALTO_CUERPO = 260;
+
+/**
  * How long it takes to **go**, for the panel and for the veil.
  *
  * Leaving is slower than the veil on purpose. The panel is the thing being put
@@ -1224,6 +1361,17 @@ const styles = StyleSheet.create({
    */
   pieGuardar: {
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  /**
+   * El scroller dentro de la caja animada, estirado a ocuparla entera.
+   *
+   * `flex: 1` y no una altura: la caja es la que tiene el alto que persigue al
+   * contenido, y el scroller tiene que **`stretch` con ella**. Sin esto, el
+   * scroller mide lo que mide su contenido y la animacion no llega a verse, porque
+   * la caja crece y el scroller no la sigue.
+   */
+  cuerpoLleno: {
+    flex: 1,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
