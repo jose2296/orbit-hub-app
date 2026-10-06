@@ -1,6 +1,8 @@
+import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import {
   KeyboardAvoidingView,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -11,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { READING_WIDTH } from "@/lib/layout/measure";
 import { useHeaderOwnsTopInset } from "@/components/ui/header-inset";
 import { SpaceBand, type SpaceBandProps } from "@/components/workspace/space-band";
+import { syncNow } from "@/lib/offline/sync-engine";
 import { useTheme } from "@/theme";
 
 export interface ScreenProps {
@@ -106,6 +109,32 @@ export function Screen({
 }: ScreenProps) {
   const theme = useTheme();
 
+  /*
+   * Tirar hacia abajo recarga, y es una **accion explicita** de la persona.
+   *
+   * El motor ya sincroniza solo, con su rebote y cuando vuelve la red, asi que
+   * esto no es lo que hace que los datos esten al dia: es la salida para cuando
+   * sabes que algo cambio y no quieres esperar. Es tambien lo unico que funcionaba
+   * en la web, donde no hay gesto de tirar hacia abajo del sistema.
+   *
+   * Se tira de `syncNow()` y no de un `pull` suelto porque el motor ya sabe lo que
+   * tiene y lo que no, y una segunda ruta para bajar cambios es una segunda ruta
+   * para equivocarse.
+   *
+   * El `recargando` no se apaga solo al terminar la promesa: se apaga en el
+   * `finally`, porque una sincronizacion que falla —sin red, con el servidor caido—
+   * tambien tiene que dejar de girar el indicador.
+   */
+  const [recargando, setRecargando] = useState(false);
+  const alTirar = useCallback(async () => {
+    setRecargando(true);
+    try {
+      await syncNow();
+    } finally {
+      setRecargando(false);
+    }
+  }, []);
+
   /**
    * Whether the bar above already spent the status bar's height.
    *
@@ -163,6 +192,13 @@ export function Screen({
       contentContainerStyle={[styles.content, padding, column]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={recargando}
+          onRefresh={alTirar}
+          tintColor={theme.colors.textSubtle}
+        />
+      }
     >
       {children}
     </ScrollView>

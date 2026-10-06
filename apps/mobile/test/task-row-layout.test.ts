@@ -703,3 +703,36 @@ describe('#11: compartir, en la cabecera y no solo dentro del menu', () => {
     );
   });
 });
+
+describe('#9: tirar hacia abajo recarga', () => {
+  const screen = readFileSync(
+    join(import.meta.dirname, '../src/components/ui/screen.tsx'),
+    'utf8',
+  );
+
+  it('toda pantalla con scroller tiene el gesto', () => {
+    // Ponerlo en un solo sitio —el que se Controlled bien— deja el resto de
+    // pantallas sin salida, y en la web es la unica que hay: no hay gesto del
+    // sistema a la que agarrarse.
+    expect(screen, 'el RefreshControl va en el ScrollView de Screen').toMatch(
+      /<ScrollView[\s\S]*?<RefreshControl/,
+    );
+  });
+
+  it('tira del motor de sincronizacion y no de una segunda ruta', () => {
+    expect(screen, 'usa syncNow, que ya sabe lo que tiene').toContain(
+      'await syncNow()',
+    );
+  });
+
+  it('el indicador se apaga tambien cuando la sincronizacion falla', () => {
+    // Sin red —o con el servidor caido— un `await` sin `finally` deja el
+    // indicador girando para siempre, y eso se lee como "sincronizando" en
+    // pantalla con algo que no va a pasar nunca.
+    const accion = screen.match(/const alTirar = useCallback\(async \(\) => \{[\s\S]*?\}, \[\]\);/)?.[0] ?? '';
+    expect(accion, 'apaga en finally').toContain('finally');
+    expect(accion, 'y apaga antes de termina, no despues').toContain(
+      'setRecargando(false)',
+    );
+  });
+});
