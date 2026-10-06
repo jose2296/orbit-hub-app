@@ -51,14 +51,17 @@ export default function ShareSaveScreen() {
   }, [router]);
 
   // Guardado: primero se limpia el payload nativo para que reabrir la ruta no
-  // re-guarde lo mismo, y despues se vuelve. El destino con highlight llega
-  // en la fase 4 (inbox "sin clasificar" y lista de bookmarks): esas rutas
-  // todavia no existen y no se inventan aqui.
-  // TODO(fase-4): navegar a la coleccion destino o a `bookmarks?highlight=<id>`.
-  const alGuardar = useCallback(() => {
-    clearShare();
-    router.replace('/(app)');
-  }, [router]);
+  // re-guarde lo mismo, y despues se va al lector del enlace recien creado.
+  // Una sola navegacion a proposito: el share aterriza en el detalle, que ya
+  // sabe mostrar cada estado (pendiente incluido), y la lista no necesita un
+  // param extra que habria que coordinar con otra tarea.
+  const alGuardar = useCallback(
+    (id: string) => {
+      clearShare();
+      router.replace({ pathname: "/bookmark/[bookmarkId]", params: { bookmarkId: id } });
+    },
+    [router],
+  );
 
   if (status === 'loading') {
     return (
