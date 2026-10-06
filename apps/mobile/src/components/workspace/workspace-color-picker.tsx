@@ -177,15 +177,16 @@ export function WorkspaceColorPicker({
    *
    * The preview is the pair the square has built — this side from the square, the
    * other one as it is — because a preview that ignores the thing you are dragging
-   * is not a preview. And the button only lights up when what the square says is
-   * not what is saved.
+   * is not a preview.
    */
   const guardadoDesde = propioDesde ?? colorOf(value);
   const guardadoHasta = valueTo ? (propioHasta ?? colorOf(valueTo)) : null;
 
   const colorActual = hsvToHex(hsv);
-  const colorGuardada = lado === "desde" ? guardadoDesde : (guardadoHasta ?? guardadoDesde);
-  const sucio = colorActual !== colorGuardada;
+  /*
+    `sucio` y `colorGuardada` se fueron con el boton: eran la comparacion que lo
+    apagaba cuando no habia nada que escribir. Sin boton no hay nada que apagar.
+  */
 
   /**
    * The end the square is **not** on, so the preview and the two little
@@ -275,6 +276,42 @@ export function WorkspaceColorPicker({
   const alMoverTiraRef = useRef(alMoverTira);
   alMoverTiraRef.current = alMoverTira;
 
+  /*
+    Las dos flechas del hilo de JS. Se crean **una vez** y leen el ref cada vez que
+    se las llama, que es lo unico que hace falta para que el gesto no se reconstruya
+    con un dedo encima sin quedarse con el ancho del primer render.
+  */
+  const moverCuadrado = useCallback((x: number, y: number) => {
+    alMoverCuadradoRef.current(x, y);
+  }, []);
+  const moverTira = useCallback((x: number) => {
+    alMoverTiraRef.current(x);
+  }, []);
+
+  /*
+    El commit, **al levantar el dedo y no en un boton**.
+
+    El cuadrado y la tira mueven una previsualizacion local mientras el dedo esta
+    encima, y al soltar se escribe lo que quedo. Es el mismo "commitea al pulsar y
+    no en cada pixel del arrastre" de antes, solo que el pulsar ahora es soltar:
+    un boton aparte para decir "usa esto" pedia confirmar dos veces lo mismo —
+    elegir el color y decir que lo elegiste.
+
+    Y un toque cuenta como un arrastre de un pixel: el gesto tiene `minDistance(0)`,
+    asi que tocar el cuadrado tambien pasa por `onBegin`/`onEnd` y tambien escribe.
+    Sin esto, quitar el boton dejaba al toque sin puerta.
+  */
+  const hsvRef = useRef(hsv);
+  hsvRef.current = hsv;
+  const alTerminar = useCallback(() => {
+    escribir(hsvToHex(hsvRef.current));
+  }, [escribir]);
+  const alTerminarRef = useRef(alTerminar);
+  alTerminarRef.current = alTerminar;
+  const terminar = useCallback(() => {
+    alTerminarRef.current();
+  }, []);
+
   const gestoCuadrado = useMemo(
     () =>
       Gesture.Pan()
@@ -300,8 +337,42 @@ export function WorkspaceColorPicker({
           `panel-grid.tsx`, `panel-card.tsx` y `draggable-row.tsx`— y aquí era el único
           que no. `test/gesture-thread.test.ts` lo vigila para los cinco.
         */
-        .onBegin((e) => runOnJS(alMoverCuadradoRef.current)(e.x, e.y))
-        .onUpdate((e) => runOnJS(alMoverCuadradoRef.current)(e.x, e.y)),
+        /*
+          **El `runOnJS` envuelve una flecha, y no el callback.**
+
+          Estaba asi:
+
+              .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y))
+
+          que parece leer el ref en cada movimiento y no lo hace: `runOnJS(fn)`
+          devuelve una funcion nueva, y esa llamada se evalua **al construir el
+          gesto**. El `useMemo` de arriba tiene `[]`, asi que corre una vez al
+          montar y se queda con el `alMoverCuadrado` de ese momento —que captura
+          `caja` con el ancho supuesto de 132, porque `onLayout` corre despues del
+          primer pintado—.
+
+          O sea que toda la indireccion por ref de este fichero no estaba
+          haciendo nada, y justo en el punto que pretendia: el gesto se construia
+          con el ancho del primer render y se quedaba con el para siempre.
+
+          Por eso en la web parecia funcionar —ahi el cuadrado mide 132 y el
+          supuesto coincide por casualidad— y en un movil no: el ancho medido es
+          otro, el color sale mal, y **la tira entera no hacia nada** porque con
+          `anchoTira` a 0 `puntoAHue` devuelve 0 siempre.
+
+          Ahora la flecha se crea una vez —para no reconstruir el gesto con un dedo
+          encima— y **lee el ref cuando se la llama**, que es cuando importa.
+        */
+        .onBegin((e) => runOnJS(moverCuadrado)(e.x, e.y))
+        .onUpdate((e) => runOnJS(moverCuadrado)(e.x, e.y))
+        /*
+          Solo al terminar con exito, y no en `onFinalize`.
+
+          Un gesto cancelado —el dedo se sale, el sistema lo interrumpe— no es una
+          eleccion: escribirlo guardaria el color donde el dedo iba de paso. `onEnd`
+          es el dedo levantado a proposito; `onFinalize` es tambien el que no.
+        */
+        .onEnd(() => runOnJS(terminar)()),
     [],
   );
 
@@ -309,8 +380,9 @@ export function WorkspaceColorPicker({
     () =>
       Gesture.Pan()
         .minDistance(0)
-        .onBegin((e) => runOnJS(alMoverTiraRef.current)(e.x))
-        .onUpdate((e) => runOnJS(alMoverTiraRef.current)(e.x)),
+        .onBegin((e) => runOnJS(moverTira)(e.x))
+        .onUpdate((e) => runOnJS(moverTira)(e.x))
+        .onEnd(() => runOnJS(terminar)()),
     [],
   );
 
@@ -368,7 +440,23 @@ export function WorkspaceColorPicker({
               <AppText
                 variant="callout"
                 numberOfLines={1}
-                style={{ color: elegido ? theme.colors.accent : undefined }}
+                /*
+                  El color del extremo **elegido**, y el de verdad para el otro.
+
+                  Era `elegido ? accent : undefined`, y `undefined` no es "sin color":
+                  es "usa el que traiga el `AppText`". En oscuro ese color por
+                  defecto sale casi negro sobre el fondo oscuro, y "Empieza en" se
+                  hacia ilegible justo en la pestana que **no** has elegido — que es
+                  donde mas hace falta leerla para saber cual de las dos estas
+                  cambiando.
+
+                  Y solo en Android se veia, porque en la web el color por defecto
+                  de `AppText` cae en otro sitio. Un fallo que solo se reproduce en
+                  una de las tres plataformas no se puede cazar en la otra.
+                */
+                style={{
+                  color: elegido ? theme.colors.accent : theme.colors.textMuted,
+                }}
               >
                 {t(`workspaces.washSide.${extremo}` as never)}
               </AppText>
@@ -585,29 +673,15 @@ export function WorkspaceColorPicker({
             </AppText>
           </SpaceWash>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("workspaces.colorUse")}
-            accessibilityState={{ disabled: !sucio }}
-            disabled={!sucio}
-            onPress={() => escribir(colorActual)}
-            style={({ pressed }) => [
-              styles.usar,
-              {
-                backgroundColor: theme.colors.accent,
-                borderRadius: theme.radius.md,
-                opacity: !sucio ? 0.35 : pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <AppText
-              variant="callout"
-              numberOfLines={1}
-              style={{ color: theme.colors.onAccent }}
-            >
-              {t("workspaces.colorUse")}
-            </AppText>
-          </Pressable>
+          {/*
+            Y aqui **ya no hay boton de "usar este color"**.
+
+            Era el que escribia lo que el cuadrado mostraba, y pedia confirmar dos
+            veces lo mismo: mover el dedo al color y pulsar que lo quieres. Ahora
+            escribe el dedo al levantarse —mismo commit, sin el segundo paso— y lo
+            unico que queda en esta columna es la previsualizacion, que es lo que
+            esta columna siempre fue.
+          */}
         </View>
       </View>
 
@@ -844,9 +918,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
   },
-  usar: {
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  /*
+    `usar` se fue con el boton de "usar este color": era su estilo y de nadie mas.
+  */
 });

@@ -708,6 +708,19 @@ export function useListItems(listId: string | undefined) {
         title?: string;
         annotation?: string | null;
         priority?: Priority;
+        /**
+         * Whether it is done.
+         *
+         * It was missing, and not by accident: nothing could write it. Which is
+         * exactly why "done" had to go through `toggleCompleted` on its own, and
+         * that es lo que hacia que **la fila se guardara sola al marcarla** —
+         * un unico campo de siete con una puerta propia por debajo de la puerta
+         * de Guardar, sin que nadie lo hubiera decidido asi.
+         *
+         * Con esto, marcar "hecho" es un campo mas del borrador y sale por el mismo
+         * `updateItem` que el nombre, la nota y el icono.
+         */
+        completed?: boolean;
       },
     ) => {
       if (!listId) return;

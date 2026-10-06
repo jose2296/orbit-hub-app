@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 
 import { ShareNodeForm } from "@/components/shares/share-node-sheet";
+import { ShareFormContexto, type ShareFormPublicado } from "@/components/shares/share-form-publicado";
 import { SharedBadge } from "@/components/shares/shared-badge";
 import {
   Sheet,
@@ -9,6 +10,7 @@ import {
   type SheetOption,
   useLastValue,
 } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { TextField } from "@/components/ui/text-field";
 import type { Note } from "@orbit-hub/contracts";
 
@@ -91,6 +93,30 @@ export function NoteMenuSheet({
   const [step, setStep] = useState<Step>("menu");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const { setSucio } = useSheetSucio();
+
+  /*
+    El canal por el que la pagina de compartir publica su Guardar, y el estado que
+    lo guarda aqui. Mismo reparto que `ShareNodeSheet`: el formulario publica por
+    el canal y esta hoja lo pinta en el pie.
+  */
+  const [sharePublicado, setSharePublicado] =
+    useState<ShareFormPublicado | null>(null);
+  const shareCanal = useMemo(
+    () => ({ publicar: setSharePublicado }),
+    [],
+  );
+
+  /*
+    Sucio **solo en la pagina de renombrar**, y solo con el nombre distinto.
+
+    En el menu no hay nada escrito, y el nombre arranca con el de la nota: cambiarlo
+    y volver a ponerlo es no haber cambiado nada, y preguntar por eso enseña a
+    ignorar el aviso.
+  */
+  useEffect(() => {
+    setSucio(step === "rename" && name.trim() !== (note?.title ?? "").trim());
+  }, [step, name, note?.title, setSucio]);
 
   // Reset on every open, so the name in the box is this note's name and not the
   // one somebody typed into another note ten minutes ago.
@@ -159,6 +185,16 @@ export function NoteMenuSheet({
         onBack={volver}
         title={t("note.rename")}
         scrollable
+        /*
+          El Guardar es **el del pie del panel**, y el "Volver" de abajo se queda.
+
+          "Volver" no estaba de sobra: sale por aqui lo unico que esta escrito, y
+          salir por el fondo o por la ✕ no lo pregunta porque no cambia de pagina —se
+          va de la hoja entera—. Con el nombre dentro, esas tres salidas necesitan la
+          misma pregunta, y es la que `Sheet` hace sola.
+        */
+        onSave={() => void rename()}
+        saveDisabledReason={name.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined}
       >
         <View style={{ gap: theme.spacing.md }}>
           <TextField
@@ -168,27 +204,16 @@ export function NoteMenuSheet({
             autoCapitalize="sentences"
             autoFocus
           />
-          <SheetOptions
-            options={[
-              {
-                key: "save",
-                label: t("common.save"),
-                icon: "checkmark",
-                tone: "accent",
-                disabled: name.trim().length === 0 || busy,
-                onPress: () => void rename(),
-              },
-              /*
-                "Cancelar" is now **"Volver"**, and it goes back and keeps the
-                sheet. It used to be `close`, which both went back and closed, so
-                the one button that sounded like it was leaving was the one that
-                was doing both jobs. The arrow in the header does the same thing
-                now, which is the point of the arrow: same place, same label, on
-                every page.
-              */
-              { key: "cancel", label: t("common.back"), onPress: volver },
-            ]}
-          />
+          {/*
+            Y aqui **ya no hay botones**.
+
+            El de guardar esta en el pie, que es el mismo en todas las hojas y no se
+            va con el contenido.
+
+            Y el "Volver" se fue con el: la flecha de arriba hace lo mismo desde hace
+            tiempo, y tener las dos es tener dos formas de hacer una cosa. Era, ademas,
+            la salida que **no preguntaba**.
+          */}
         </View>
       </Sheet>
     );
@@ -278,12 +303,21 @@ export function NoteMenuSheet({
 
   if (step === "share") {
     return (
+      <ShareFormContexto.Provider value={shareCanal}>
       <Sheet
         visible={pedido !== null}
         onClose={close}
         title={note.title || t("note.untitled")}
         subtitle={t("share.subtitle", { name: note.title })}
         scrollable
+        /*
+          El Guardar es el del pie, y sale de lo que el formulario publica: el
+          estado del formulario vive dos niveles mas abajo y la hoja no puede
+          leerlo, asi que el formulario lo publica por el canal y la hoja lo pinta.
+          Mismo reparto que en `ShareNodeSheet`, misma razon.
+        */
+        onSave={sharePublicado ? sharePublicado.enviar : undefined}
+        saveDisabledReason={sharePublicado?.motivo}
       >
         <View
           style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
@@ -294,6 +328,7 @@ export function NoteMenuSheet({
           />
         </View>
       </Sheet>
+      </ShareFormContexto.Provider>
     );
   }
 

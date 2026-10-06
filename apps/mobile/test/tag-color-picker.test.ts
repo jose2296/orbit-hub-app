@@ -248,22 +248,18 @@ describe("los dos montajes del selector en la hoja", () => {
     expect([...hoja.matchAll(/\{colorDe === tag \? \(/g)]).toHaveLength(2);
   });
 
-  it("el de una etiqueta que ya existe lee del mapa y escribe al momento", () => {
-    // `?? null` y no el valor a secas: `colores[tag]` es `string | undefined`, y
-    // `undefined` para `value: string | null` seria "sin color" por la puerta de
-    // atras en lugar de por la de adelante.
+  it("el de una etiqueta que ya existe lee del borrador mezclado", () => {
+    // `?? null` y no el valor a secas: `coloresVistos[tag]` es `string |
+    // undefined`, y `undefined` para `value: string | null` seria "sin color"
+    // por la puerta de atras en lugar de por la de adelante.
     //
-    // **`colores` y no `tagColors`, que es donde estaba el fallo del repintado.**
-    // `colores` es el mapa con el optimista aplicado (`coloresVistos`): el color
-    // que `pickColor` pone en el mismo commit que empieza la escritura, para que
-    // la pastilla se repinte en el toque y no en el viaje de vuelta del store.
-    // La primera version del optimista solo llegaba al `value` del selector y al
-    // boton del lapiz (`colorOf`), pero el relleno de la pastilla lo pone
-    // `TagChip` y seguia leyendo el mapa sin mezclar —asi que nada se movia—.
-    // Un `null` en el optimista ("volver al deducido") se guarda y no se borra,
-    // porque el mapa aun trae el color viejo hasta que el store contesta.
+    // **`coloresVistos` y no `tagColors`: el selector enseña lo que se va a
+    // guardar.** `coloresVistos` es el mapa de la lista con el borrador
+    // (`colores`) aplicado —el color se pinta en el toque y sale por Guardar—,
+    // y un `null` en el borrador ("volver al deducido") borra la clave para que
+    // se pinte el deducido y no el color viejo.
     const deLaPastilla = montajes.filter((m) =>
-      m.includes("value={colores[tag] ?? null}"),
+      m.includes("value={coloresVistos[tag] ?? null}"),
     );
     expect(deLaPastilla).toHaveLength(2);
     for (const montaje of deLaPastilla) {
@@ -272,11 +268,12 @@ describe("los dos montajes del selector en la hoja", () => {
     }
   });
 
-  it("las dos pastillas de la hoja se pintan con el mapa mas el arrastre y no con el mapa", () => {
+  it("las dos pastillas de la hoja se pintan con el borrador mas el arrastre y no con lo guardado", () => {
     // Este es el pin del fallo real: las dos `TagChip` de la hoja leian
-    // `colors={tagColors}` y ni el optimista ni el arrastre les llegaban por
-    // ningun camino. Si alguien las vuelve al mapa sin mezclar, el repintado en
-    // vivo se rompe aunque el selector y el lapiz sigan yendo al momento.
+    // `colors={tagColors}` y ni el borrador ni el arrastre les llegaban por
+    // ningun camino. Si alguien las vuelve a lo guardado, elegir un color y ver
+    // el viejo hasta pulsar Guardar es un panel que miente sobre lo que va a
+    // guardar.
     const pastillas = [...hoja.matchAll(/<TagChip tag=\{tag\} colors=\{[^}]+\}/g)].map((m) => m[0]);
     expect(pastillas).toHaveLength(2);
     for (const pastilla of pastillas) {
@@ -318,33 +315,37 @@ describe("los dos montajes del selector en la hoja", () => {
     expect(deLaEtiquetaNueva[0]).not.toContain("onClose");
   });
 
-  it("el alta de una etiqueta con color se encola detras de elegir uno", () => {
-    // El alta con color son dos escrituras seguidas, y un toque en un atajo puede
-    // caer justo antes: sin orden, las dos se planificarian desde el mismo mapa y
-    // la segunda se comeria la primera. Por eso el color del alta va por la misma
-    // cadena que `pickColor`, y cada escritura planifica desde el store fresco.
-    const addTag = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/);
+  it("el alta de una etiqueta con color va al borrador, y no a la lista", () => {
+    /*
+      Antes pasaba por el mismo guard async que elegir un color, porque eran dos
+      escrituras seguidas que partian del mismo mapa. Ahora no hay escrituras
+      seguidas: el alta deja el color en `colores` y sale todo junto al confirmar,
+      en serie, que es lo unico que impide que dos escrituras partan del mismo mapa.
+    */
+    const addTag = hoja.match(/const addTag = \(\) => \{([\s\S]*?)\n  \};/);
     expect(addTag).not.toBeNull();
     const cuerpo = addTag?.[1] ?? "";
-    expect(cuerpo).toContain("encolarColor(() => Promise.resolve().then(() => onTagColor(trimmed, color)));");
-    expect(cuerpo).not.toContain("await onTagColor");
+    expect(cuerpo).toContain("setColores((previos) => ({ ...previos, [trimmed]: color }))");
+    expect(cuerpo, "el alta ya no escribe").not.toContain("onTagColor");
+    expect(cuerpo, "y ya no es async").not.toContain("await");
     // Y por la prop y no por el hook: la hoja recibe `listId` y `tagColors`, no la
     // lista, y la escritura vive en quien la tiene.
     expect(hoja).not.toContain("setTagColor");
   });
 
   it("elegir un color no cierra el selector: solo lo cierra un cierre", () => {
-    // Cerrar al escribir revelaba el formulario de etiqueta nueva y leer eso era
+    // Cerrar al elegir revelaba el formulario de etiqueta nueva y leer eso era
     // salir de edicion para entrar en creacion. Ahora elegir es probar: la
-    // pastilla sigue cada toque y el selector se queda, y solo el lapiz o
-    // "cerrar" lo quitan. Si `pickColor` volviera a llamar a `setColorDe`, el
-    // arreglo entero se iria con el.
+    // pastilla sigue cada toque desde el borrador y el selector se queda, y solo
+    // el lapiz o "cerrar" lo quitan. Si `pickColor` volviera a llamar a
+    // `setColorDe`, el arreglo entero se iria con el.
     const pick = hoja.match(/const pickColor = \([^)]*\) => \{([\s\S]*?)\n  \};/);
     expect(pick).not.toBeNull();
     const cuerpoPick = pick?.[1] ?? "";
-    expect(cuerpoPick).toContain("encolarColor(");
+    expect(cuerpoPick).toContain("setColores(");
     expect(cuerpoPick).not.toContain("setColorDe");
-    expect(cuerpoPick).not.toContain("guardando");
+    expect(cuerpoPick).not.toContain("onTagColor");
+    expect(cuerpoPick).not.toContain("await");
   });
 
   /**
@@ -355,22 +356,14 @@ describe("los dos montajes del selector en la hoja", () => {
    * en la tarea deja la etiqueta puesta sin color, tira el color pendiente con
    * el nombre, y no queda nada de donde recuperarlo: `pendiente` nunca estuvo en
    * `tagColors`. La perdida de datos era **una consecuencia del orden**, asi que
-   * lo que se fija es el orden.
-   *
-   * Se comprueba **por la posicion y no por la presencia**: un test que solo
-   * buscara el texto seguiria en verde con la comprobacion donde estaba, que es
-   * justo el arrangement que perderia el color. Y sin guard que perder: ningun
-   * toque se tira, todos se encolan, asi que no hay "antes de tirar nada" que
-   * fijar.
+   * lo que se fija es el orden, por la posicion y no por la presencia.
    */
   it("la comprobacion de duplicado va antes de limpiar nada", () => {
-    const cuerpo = hoja.match(/const addTag = async \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "";
+    const cuerpo = hoja.match(/const addTag = \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "";
     const duplicado = cuerpo.indexOf("if (shown.tags.includes(trimmed)) return;");
     const limpiaNombre = cuerpo.indexOf('setNewTag("")');
     const limpiaColor = cuerpo.indexOf("setPendiente(null)");
-    const guarda = cuerpo.indexOf("save({ tags: [...shown.tags, trimmed] });");
-    expect(cuerpo).not.toContain("guardando");
-    expect([duplicado, limpiaNombre, limpiaColor, guarda].every((i) => i >= 0)).toBe(true);
+    expect([duplicado, limpiaNombre, limpiaColor].every((i) => i >= 0)).toBe(true);
     expect({
       duplicadoAntesDeLimpiar: duplicado < limpiaNombre && duplicado < limpiaColor,
       limpiaDespuesDeLeerElColor: cuerpo.indexOf("const color = pendiente;") < limpiaColor,
@@ -378,6 +371,32 @@ describe("los dos montajes del selector en la hoja", () => {
       duplicadoAntesDeLimpiar: true,
       limpiaDespuesDeLeerElColor: true,
     });
+  });
+
+  /**
+   * **El volcado es en serie, y eso es lo que impide que una escritura se coma a
+   * la otra.**
+   *
+   * `onTagColor` planifica desde la lista que su llamante capturo, asi que dos
+   * escrituras a la vez parten del mismo mapa y la segunda se come a la primera sin
+   * que ninguna se entere. Antes lo impedia el flag `guardando`, que ya no existe
+   * porque ya no hay escrituras concurrentes que impedir — el volcado es la unica,
+   * y va de una en una con `await` dentro de un `for`.
+   *
+   * Un test que solo buscara "hay un await" seguiria en verde con un
+   * `Promise.all`, que es justo el arrangement que perderia el color.
+   */
+  it("los colores salen de uno en uno al confirmar", () => {
+    const volcado = hoja.match(/const volcarColores = async \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? '';
+    expect(volcado, "existe el volcado").not.toBe('');
+    expect(volcado, "un bucle y no un Promise.all").toMatch(/for \(const .* of Object\.entries\(colores\)\)/);
+    expect(volcado, "con await dentro").toContain("await onTagColor(etiqueta, color);");
+    expect(volcado, "y sin Promise.all").not.toContain("Promise.all");
+    // Y el que no ha cambiado no sale: escribir lo mismo es una operacion en la
+    // cola de sincronizacion por nada.
+    expect(volcado, "salta lo que no cambio").toContain(
+      "if ((tagColors[etiqueta] ?? null) === color) continue;",
+    );
   });
 
   it("el color pendiente se vacia con el nombre, y en los dos caminos que lo vacian", () => {
@@ -442,15 +461,24 @@ describe("los dos selectores de la hoja no se confunden de nombre", () => {
   );
 
   /**
-   * Las ocho claves del panel, y la razon de que sean **ocho y no una**: cada control
-   * necesita la suya porque cada control se nombra por separado y "de quien" se
-   * primero. Una clave con un parametro y un nombre generico no sirve: el nombre
-   * generico es justo lo que hay que quitar.
+   * Las ocho claves del panel, y la razon de que sean **ocho y no una**: cada
+   * control necesita la suya porque cada control se nombra por separado y "de
+   * quien" se primero. Una clave con un parametro y un nombre generico no sirve:
+   * el nombre generico es justo lo que hay que quitar.
    *
-   * **`tags.recentColorOf` no esta y no es un olvido**: la fila de recientes solo se
-   * pinta cuando tiene algo, y en una instancia que se cierra al escribir no tiene
-   * nunca nada —la cabecera del componente lo dice—, asi que solo hay una que la
-   * nombra. Si alguna vez dejara de cerrarse, esta lista tiene que crecer.
+   * **`tags.recentColorOf` esta porque la fila de recientes vive en las dos
+   * instancias.** Antes no estaba, y no era un olvido: la fila solo se pinta
+   * cuando tiene algo, y en una instancia que se cerraba al escribir no tenia
+   * nunca nada —asi que solo habia una que la nombrara y el nombre sin
+   * calificar no era ambiguo—. Desde que el selector se queda abierto, la fila
+   * acumula tambien ahi, y "usar el color" sin decir para quien son las mismas
+   * palabras para dos etiquetas distintas.
+   *
+   * **Y `tags.colorUseOf` tampoco esta, y tampoco es un olvido**: era el nombre del
+   * boton de "usar este color", y el boton se fue —ahora escribe el dedo al
+   * levantarse. Una clave en esta lista que ya no esta en el componente rompe el
+   * test de abajo, que es exactamente lo que tiene que pasar cuando un control
+   * muere: la lista lo entierra con el.
    */
   const CALIFICADAS = [
     "tags.colorOf",
@@ -459,20 +487,17 @@ describe("los dos selectores de la hoja no se confunden de nombre", () => {
     "tags.colorSquareOf",
     "tags.colorCustomOf",
     "tags.colorSaveOf",
-    "tags.colorUseOf",
     "tags.colorCloseOf",
+    "tags.recentColorOf",
   ] as const satisfies readonly TranslationKey[];
 
   it("cada nombre accesible del selector lleva el nombre de quien es", () => {
-    // **La excepcion esta escrita aqui y no metida en el filtro**, para que dejar de
-    // exceptuar una cosa sea tocar una linea de esta lista y relajar la regla lo sea
-    // para todos los nombres a la vez.
-    const SIN_NOMBRE_POR_RAZON = [
-      // La fila de recientes solo se pinta cuando tiene algo, y en una instancia que
-      // se cierra al escribir no tiene nunca nada —la cabecera del componente lo
-      // dice—, asi que solo hay una que nombra esa fila. Si dejara de cerrarse, sale.
-      "tags.recentColorOf",
-    ];
+    // **La lista de excepciones esta escrita aqui y no metida en el filtro**, para
+    // que anadir una excepcion sea tocar una linea de esta lista y relajar la
+    // regla lo sea para todos los nombres a la vez. Hoy esta vacia: hasta los
+    // recientes dicen para quien son, desde que la fila vive tambien en los
+    // selectores que ya no se cierran.
+    const SIN_NOMBRE_POR_RAZON: string[] = [];
     const sinNomear = etiquetasAccesibles(fuente)
       .filter((expr) => expr.includes('t("tags.'))
       .filter((expr) => !expr.includes("nombreDe"))

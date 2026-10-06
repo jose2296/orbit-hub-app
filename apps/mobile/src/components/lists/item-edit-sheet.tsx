@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 
 import type { ListItem, Priority, TagColors } from "@orbit-hub/contracts";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useFieldChain } from "@/lib/forms/field-chain";
@@ -48,6 +49,16 @@ export interface ItemEditSheetProps {
    * what a row can have.
    */
   mode?: "edit" | "create";
+  /**
+   * El titulo con el que arranca la hoja cuando esta creando.
+   *
+   * Viene de "crea esto con lo que estaba buscando". Escribir el nombre dos
+   * veces —una en el buscador y otra en el formulario— es la accion que hace que
+   * alguien que no encuentra algo no llegue a crear el.
+   *
+   * Solo cuando `mode` es `create`: en editar manda el item.
+   */
+  initialTitle?: string;
   /** The page to open on, so a tap on the icon goes straight to the icons. */
   startOn?: Page;
   /** This list's chosen label colours, and the only ones there are. */
@@ -59,22 +70,55 @@ export interface ItemEditSheetProps {
    * It lands on the list and not on the task, which is why the signature has no
    * task in it: one write recolours every row that carries the label.
    *
-   * **It may hand back the write, and this panel does not wait for it** — hence
+   * **It may hand back the write, and nobody waits for it** — hence
    * `void | Promise<void>`, so a caller with nothing to wait for can ignore it.
-   * The chosen colour arrives at `tagColors` only after the store has been
-   * written and read back, so the pill is painted from the sheet's optimistic
-   * map in the meantime (see `coloresVistos`): the tap reads as answered in the
-   * frame that answered it, and the picker stays open so more colours can be
-   * tried. Closing is the person's own press, not the write's.
+   * It is only called once, on Guardar, once per label that changed: the panel
+   * paints from its draft in the meantime (see `coloresVistos`), so the tap reads
+   * as answered in the frame that answered it, and choosing never writes.
    *
-   * **Two doors in this panel call it and one chain orders both**: a colour chosen
-   * for a label the task carries (`pickColor`) and a colour chosen for a label that
-   * is about to exist (`addTag`). See `colaDeColores` for why that matters.
+   * **One call per changed label, in series, and that is the whole ordering.**
+   * `volcarColores` awaits each one before starting the next, so two colours
+   * never plan from the same map and the second never eats the first.
    */
   onTagColor: (tag: string, color: string | null) => void | Promise<void>;
   onClose: () => void;
   /** Called after the row is gone, so the screen can put itself right. */
   onDeleted?: () => void;
+}
+
+/**
+ * Whether two sets of labels are the same, **and not whether they are in the same
+ * order**.
+ *
+ * The order tags were added in is not part of what somebody meant to say. Somebody
+ * who adds "urgente" after "casa" and somebody who adds "casa" after "urgente"
+ * wrote the same task, and a panel that said "you have unsaved changes" for that
+ * is teaching people to ignore the warning.
+ */
+function sameLabels(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const m = new Set(b);
+  return a.every((tag) => m.has(tag));
+}
+
+/**
+ * Whether two colour maps say the same, **key by key**.
+ *
+ * `null` and absent are both "derived", so both count as the same as each other:
+ * somebody who picks a colour and then goes back to derived has not changed
+ * anything, and the question must not pretend otherwise.
+ */
+function sameColors(
+  a: Record<string, string | null>,
+  b: TagColors,
+): boolean {
+  const claves = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const clave of claves) {
+    if ((a[clave] ?? null) !== ((b as Record<string, string>)[clave] ?? null)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** What a row being written looks like before it exists. */
@@ -86,6 +130,8 @@ interface Draft {
   iconStyle: ListItem["iconStyle"];
   iconColor: ListItem["iconColor"];
   tags: string[];
+  /** Whether it is done, which also lives here and **not** on the row. */
+  completed: boolean;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -96,6 +142,7 @@ const EMPTY_DRAFT: Draft = {
   iconStyle: "outline",
   iconColor: "neutral",
   tags: [],
+  completed: false,
 };
 
 /**
@@ -121,6 +168,7 @@ export function ItemEditSheet({
   item,
   listId,
   mode = "edit",
+  initialTitle = "",
   startOn = "edit",
   tagColors,
   onTagColor,
@@ -158,97 +206,23 @@ export function ItemEditSheet({
    * which is what `labels` filters out.
    */
   const [colorDe, setColorDe] = useState<string | null>(null);
-  /*
-   * **The colour just chosen, before the store has said it back, and why the
-   * pill repaints on the tap and not on the round trip.**
-   *
-   * `pickColor` writes through `onTagColor`, which plans from the parent's
-   * captured `list` and only lands in `tagColors` once `load()` has read the
-   * cache back. Without this, the pill keeps the old colour for the whole write
-   * —and the picker, which derives its own square from the same `value`, shows
-   * the old colour too— so choosing a colour feels like nothing happened until
-   * the panel repaints a moment later. Setting the override here is synchronous,
-   * so the same commit that starts the write already paints the new colour.
-   *
-   * It is keyed by label and never cleared: once the store answers, `tagColors`
-   * carries the same value and the override agrees with it, so there is nothing
-   * to reconcile. A `null` choice ("back to derived") is stored as `null`, not
-   * by removing the key: `tagColors` still holds the old colour until the store
-   * answers, so removing the key would fall back to that old colour instead of
-   * to the derived one.
-   */
-  const [coloresVistos, setColoresVistos] = useState<Record<string, string | null>>({});
-  /*
-   * **What the pills are painted with: the map with the overrides applied.**
-   *
-   * Both `TagChip` mounts below read this and not `tagColors` directly —that
-   * was the actual bug behind "the colour does not show in real time": the
-   * override reached the pencil button (`colorOf`) and the picker's `value`,
-   * but the pill's fill comes from `TagChip`, which kept reading the stale map.
-   * A `null` override deletes the key, which is the shape "no colour chosen",
-   * so the pill falls back to the derived colour at once.
-   */
-  const colores: TagColors = { ...tagColors };
-  for (const [etiqueta, visto] of Object.entries(coloresVistos)) {
-    if (visto === null) delete colores[etiqueta];
-    else colores[etiqueta] = visto;
-  }
-  /*
-   * **The colour under the finger, not yet chosen, and why the pill follows the
-   * drag.**
-   *
-   * A swatch press commits at once, but dragging the square or the hue strip
-   * only moves the picker's local state until "use this colour" is pressed — so
-   * without this the pill keeps its old colour while a new one is already on
-   * screen. The picker reports its square through `onPreviewChange` and it lands
-   * here, synchronously, in the same commit as the drag.
-   *
-   * One `{tag, hex}` and not a map, because only one picker is ever open
-   * (`colorDe`): a second one cannot start previewing without closing the first.
-   * It applies only while its picker is the open one — after closing, the tag no
-   * longer matches and the pill falls back to what was committed, which is also
-   * what "closing without choosing keeps nothing" means. And it paints the pills
-   * only, never the picker's `value`: feeding the draft back in would make the
-   * picker's own sync effect snap the square back mid-drag.
-   */
-  const [vistaPrevia, setVistaPrevia] = useState<{ tag: string; hex: string } | null>(null);
-  const coloresPintados: TagColors = { ...colores };
-  if (vistaPrevia && vistaPrevia.tag === colorDe) coloresPintados[vistaPrevia.tag] = vistaPrevia.hex;
-  /*
-   * The colour writes in flight, in order, and **every tap gets its write**.
-   *
-   * The picker stays open while colours are chosen, so a second tap can arrive
-   * while the first write has not finished —two quick taps on two swatches, or a
-   * tap and a label created with a colour right after. Dropping the second tap
-   * would leave the pill showing a colour the finger never chose, and running
-   * both at once would plan both from the same map and let the second eat the
-   * first. So each write waits for the one before it: the chain is the order the
-   * taps arrived in, and each write plans from the store fresh (see
-   * `setTagColor`), which by then includes everything already written.
-   *
-   * A write that throws does not break the chain: the `catch` keeps a slot that
-   * only ever resolves, so the tap after a failed one still writes. Nothing in
-   * this app reports a failed write —there is no error path to report it
-   * on— and the pill keeps showing the optimistic colour either way, which the
-   * next successful write then confirms or the next tap replaces.
-   */
-  const colaDeColores = useRef<Promise<void>>(Promise.resolve());
-  /**
-   * Runs `escribir` after every write already queued, and queues it.
-   *
-   * Fire-and-forget on purpose: no caller waits for a colour write, and the
-   * queued slot never rejects, so there is nothing to `void` and nothing
-   * unhandled. The only thing that matters is that the writes run in tap order.
-   * (`colaDeColores` and not `cadena`: that name is already the focus chain of
-   * the form fields two screens above.)
-   */
-  const encolarColor = (escribir: () => Promise<void>): void => {
-    colaDeColores.current = colaDeColores.current.then(escribir).then(
-      () => undefined,
-      () => undefined,
-    );
-  };
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+
+  /*
+    Los colores de las etiquetas, y **tambien en borrador**.
+
+    `tagColors` viene por props —es de la lista, no de la tarea— y hasta ahora
+    `pickColor` lo escribia al instante por `onTagColor`. Eso era la ultima puerta
+    por la que el panel guardaba solo: cambiabas el color de una etiqueta, salias
+    sin pulsar Guardar, y el color se quedaba puesto.
+
+    Asi que el borrador es un mapa con **solo lo cambiado**: `null` significa
+    "vuelto al deducido" y ausente significa "igual que estaba". Al confirmar se
+    vuelca la diferencia por `onTagColor`, en serie y no en paralelo — que es lo
+    que hacia `guardando` antes, y sin el dos escrituras planificaban desde la misma
+    lista y la segunda se comia a la primera.
+  */
+  const [colores, setColores] = useState<Record<string, string | null>>({});
 
   /*
    * The colour chosen for a label that **does not exist yet**, and the whole of why
@@ -300,6 +274,10 @@ export function ItemEditSheet({
     setTitle(item.title);
     setAnnotation(item.annotation ?? "");
     setNewTag("");
+    // Y los colores del borrador, por el mismo motivo que el resto: el panel se
+    // queda montado al cerrarse, y sin esto la siguiente tarea abre con los
+    // colores que se tocaron en la anterior.
+    setColores({});
     // And the picker with it: `colorDe` is state of this component and the panel
     // stays mounted while it is closed (it returns `null` rather than being
     // unmounted), so a panel closed with a picker open came back with that same
@@ -316,13 +294,15 @@ export function ItemEditSheet({
       setTitle("");
       setAnnotation("");
       setNewTag("");
+      setTitle(initialTitle);
       // `setNewTag("")` on a field that is already empty changes nothing, so React
       // drops it and the effect on `nombreNuevo` never fires. That is why the
       // pending colour is cleared here as well and not only there.
       setPendiente(null);
       setDraft(EMPTY_DRAFT);
+      setColores({});
     }
-  }, [isNew]);
+  }, [isNew, initialTitle]);
 
   /** What the panel is showing, whether the row exists yet or not. */
   const shown: Draft = isNew
@@ -331,6 +311,7 @@ export function ItemEditSheet({
         title: item?.title ?? "",
         annotation: item?.annotation ?? null,
         priority: item?.priority ?? "none",
+        completed: item?.completed ?? false,
         icon: item?.icon ?? null,
         iconStyle: item?.iconStyle ?? "outline",
         iconColor: item?.iconColor ?? "neutral",
@@ -374,79 +355,207 @@ export function ItemEditSheet({
    * `TagChip`. It is here because the button that opens the picker has to *say*
    * the colour out loud, in the words the dictionary has for it.
    */
-  const colorOf = (tag: string): string => coloresPintados[tag] ?? derivedTagColor(tag);
+  /*
+    El color que el panel enseña para una etiqueta, y **sale del borrador primero**.
+
+    Sin esto, elegir un color y ver el viejo hasta pulsar Guardar es un panel que
+    miente sobre lo que va a guardar. El `null` del borrador —"vuelto al deducido"—
+    se salta a proposito: si llegara al `TagChip` pintaria "sin color", y lo que hay
+    que pintar es el deducido.
+  */
+  const coloresVistos: TagColors = useMemo(() => {
+    const vistos: Record<string, string> = { ...tagColors };
+    for (const [etiqueta, color] of Object.entries(colores)) {
+      if (color === null) delete vistos[etiqueta];
+      else vistos[etiqueta] = color;
+    }
+    return vistos as TagColors;
+  }, [tagColors, colores]);
+
+  /*
+   * **The colour under the finger, not yet even in the draft, and why the pill
+   * follows the drag.**
+   *
+   * A swatch press lands in the draft at once, but dragging the square or the
+   * hue strip only moves the picker's local state until "use this colour" is
+   * pressed — so without this the pill keeps its old colour while a new one is
+   * already on screen. The picker reports its square through `onPreviewChange`
+   * and it lands here, synchronously, in the same commit as the drag.
+   *
+   * One `{tag, hex}` and not a map, because only one picker is ever open
+   * (`colorDe`): a second one cannot start previewing without closing the first.
+   * It applies only while its picker is the open one — after closing, the tag no
+   * longer matches and the pill falls back to the draft, which is also what
+   * "closing without choosing keeps nothing" means. And it paints the pills
+   * only, never the picker's `value`: feeding the draft back in would make the
+   * picker's own sync effect snap the square back mid-drag.
+   */
+  const [vistaPrevia, setVistaPrevia] = useState<{ tag: string; hex: string } | null>(null);
+  const coloresPintados: TagColors = { ...coloresVistos };
+  if (vistaPrevia && vistaPrevia.tag === colorDe) coloresPintados[vistaPrevia.tag] = vistaPrevia.hex;
+
+  const colorOf = (tag: string): string =>
+    coloresPintados[tag] ?? derivedTagColor(tag);
+
+  const { setSucio } = useSheetSucio();
+
+  /*
+    "Sucio" es **todo el panel**, cada campo con su valor de partida.
+
+    Se comparaba solo con el nombre y la nota, y la justificacion era que elegir
+    prioridad o tocar un icono son **pulsaciones** y por tanto se guardan solas.
+    Esa distincion la invente yo y no la habia pedido nadie: lo pedido era que
+    **nada** se guardara hasta pulsar Guardar.
+
+    Y el argumento, ademas, era falso en la practica: un panel que se guarda a
+    medias es un panel del que no se fia uno. Marcas "urgente", cambias el icono,
+    escribes dos lineas de nota y pulsas atras, y resulta que la nota no estaba,
+    porque "eso era solo texto". Que parte se guarda depende de que campo tocaste,
+    y eso no se aprende: se endurece en la cabeza y se acaboicky pulsando Guardar
+    siempre, que es el mismo trabajo con dos pasos.
+
+    Asi que ahora todo va al borrador y sale por un unico `updateItem` al Guardar.
+    Las etiquetas se comparan **como conjunto y no como lista**, porque el orden en
+    que se anotaron no es parte de lo que alguien quiso decir.
+  */
+  const sucio = useMemo(() => {
+    const base = isNew ? EMPTY_DRAFT : item;
+    if (!base) return false;
+    return (
+      title.trim() !== (isNew ? "" : base.title.trim()) ||
+      annotation.trim() !== (isNew ? "" : (base.annotation ?? "").trim()) ||
+      draft.priority !== (isNew ? "none" : base.priority) ||
+      draft.icon !== (isNew ? null : base.icon) ||
+      draft.iconStyle !== (isNew ? "outline" : base.iconStyle) ||
+      draft.iconColor !== (isNew ? "neutral" : base.iconColor) ||
+      draft.completed !== (isNew ? false : base.completed) ||
+      !sameLabels(draft.tags, isNew ? [] : base.tags) ||
+      !sameColors(colores, isNew ? {} : tagColors)
+    );
+  }, [isNew, item, title, annotation, draft, colores, tagColors]);
+
+  /*
+    Los hooks van **antes** del `return null` de mas abajo, y no por estetica.
+
+    Un hook que depende de donde estas en el cuerpo del componente es un hook
+    condicional: el dia que la fila tarda un poco mas en llegar, se cambia el
+    numero de hooks que se ejecutan y React dice "se cambio el orden de los hooks".
+    No es un fallo raro, es el primero que aparece al abrir la hoja por segunda
+    vez, que es justo el camino que acabamos de arreglar para que la segunda vez
+    funcione.
+  */
+  useEffect(() => {
+    setSucio(sucio);
+  }, [sucio, setSucio]);
 
   if (!isNew && !item) return null;
 
-  const save = (changes: Parameters<typeof updateItem>[1]) => {
-    if (isNew) {
-      setDraft((current) => ({ ...current, ...changes }));
-      return;
+
+  /**
+   * Un nombre vacio no es un nombre.
+   *
+   * La fila seria una linea en blanco en la lista, sin nada dentro con que
+   * encontrarla otra vez. El motivo se **escribe en el boton** en vez de dejarlo
+   * gris y sin texto: un boton apagado sin explicacion se pulsa dos veces para
+   * averiguar que no hace nada.
+   */
+  const sinNombre = title.trim().length === 0;
+
+  /**
+   * El unico commit de toda la app para esta fila, y **es una sola escritura**.
+   *
+   * Todo lo que se haya tocado —el nombre, la nota, la prioridad, el icono, las
+   * etiquetas, lo hecho— sale por aqui en un `updateItem` con el borrador entero.
+   * Antes eran siete escrituras repartidas por el panel, y por eso perder la nota
+   * al cambiar el icono no era un descuido: era la forma normal de funcionar.
+   */
+  /**
+   * Vuelca los colores del borrador a la lista, **en serie**.
+   *
+   * En serie y no en paralelo, y no por lentitud: `onTagColor` planifica desde la
+   * lista que su llamador capturo, asi que dos escrituras a la vez parten del mismo
+   * mapa y la segunda se come a la primera sin que ninguna se entere. Era lo que
+   * impedia el flag `guardando`, que ya no existe porque ya no hay escrituras
+   * concurrentes que impedir — esta es la unica, y va de una en una.
+   */
+  const volcarColores = async () => {
+    for (const [etiqueta, color] of Object.entries(colores)) {
+      if ((tagColors[etiqueta] ?? null) === color) continue;
+      await onTagColor(etiqueta, color);
     }
-    void updateItem(item!, changes);
   };
 
-  const saveTitle = () => {
-    const trimmed = title.trim();
-    // An empty name is not a name: the row would be a blank line in the list
-    // with nothing in it to find again.
+  const confirmar = () => {
     if (isNew) {
-      if (trimmed) setDraft((current) => ({ ...current, title: trimmed }));
+      void create();
       return;
     }
-    if (trimmed && trimmed !== item!.title) save({ title: trimmed });
+    /*
+      En orden y con el cierre al final, pase lo que pase.
+
+      La tarea va primero y los colores despues, porque la etiqueta tiene que estar
+      **en la tarea** antes de que el mapa tenga clave para ella. Y si algo falla,
+      igual se intenta cerrar: el "sucio" sigue puesto, asi que cerrar pregunta "lo
+      pierdes" en vez de perderlo en silencio.
+    */
+    void (async () => {
+      try {
+        await updateItem(item!, {
+          // Los dos textos se leen **vivos**, no del borrador: el `setState` de un
+          // campo no ha llegado al borrador en este mismo frame, asi que leer el
+          // borrador aqui guardaria el nombre de hace un instante.
+          title: title.trim(),
+          annotation: annotation.trim() || null,
+          priority: draft.priority,
+          icon: draft.icon,
+          iconStyle: draft.iconStyle,
+          iconColor: draft.iconColor,
+          tags: draft.tags,
+          completed: draft.completed,
+        });
+        await volcarColores();
+      } finally {
+        onClose();
+      }
+    })();
   };
 
-  const saveNotes = () => {
-    const trimmed = annotation.trim();
-    if (isNew) {
-      setDraft((current) => ({ ...current, annotation: trimmed || null }));
-      return;
-    }
-    if (trimmed !== (item!.annotation ?? "")) save({ annotation: trimmed || null });
+  /**
+   * Cambia el borrador. **Y no escribe nada.**
+   *
+   * Antes esta funcion escribia en la fila cuando la tarea ya existia, y por eso
+   * el panel tenia dos velocidades: elegias prioridad y se guardaba al instante,
+   * escribias el nombre y se guardaba al salir del campo. Esa distincion la
+   * invente yo, y no la habia pedido nadie: lo pedido era que **nada** se guardara
+   * hasta pulsar Guardar.
+   *
+   * Asi que ahora **todas** las puertas del panel pasan por aqui y todas se quedan
+   * en el borrador. Prioridad, icono, etiquetas y lo hechoincluded: tocarlos cambia
+   * el panel, no la tarea.
+   */
+  const save = (changes: Partial<Draft>) => {
+    setDraft((current) => ({ ...current, ...changes }));
   };
 
   /**
    * A new label, and its colour if one was chosen for it.
    *
-   * **Two writes, and they are of two different things.** `save` writes the **task**
-   * and `onTagColor` writes the **list**, and there is no overlap between them: one
-   * is a column of `items`, the other a column of `lists`, and neither reads what
-   * the other is writing. That is why they do not need to be ordered against each
-   * other beyond putting the task first — the label has to be **on the task** before
-   * the map has a key for it, or a sync payload can carry a colour for a label that
-   * no row carries and the server would have to decide whether to keep it.
-   *
-   * **`onTagColor` and not `setTagColor`,** and not because it is tidier: this sheet
-   * receives `listId` and `tagColors`, not the list, and the colour write plans
-   * from the cached list. The parent holds the write and hands it down, and the
-   * `pickColor` below already writes through the same prop for the same reason.
-   *
-   * **Queued behind the other colour writes, and this is why the queue exists.**
-   * Adding a label with a colour is two writes in a row, and a swatch tap on an
-   * open picker can land right before it: without ordering, the two would plan
-   * from the same map and the second would eat the first without either of them
-   * finding out. `encolarColor` runs them in tap order, and each one plans from
-   * the store fresh, so by the time this one plans, the tap's colour is already
-   * in the map it reads.
+   * **Both land in the draft, and neither is a write.** `save` puts the label on
+   * the task's draft tags and the colour goes to the `colores` draft; both leave
+   * the panel on Guardar, the task first and the colours right after (see
+   * `confirmar`) — the label has to be **on the task** before the map has a key
+   * for it, or a sync payload can carry a colour for a label that no row carries
+   * and the server would have to decide whether to keep it.
    *
    * **And the checks come before the clears, which is what keeps this from losing
    * colour.** The duplicate check and the read of `pendiente` sit above the two
-   * clears, so a tap that arrives for a name already on the task leaves the name
-   * and the colour where they were instead of clearing both and writing a label
-   * with no colour and no trace of the colour anywhere. What used to guard the
-   * writes was a flag (`guardando`) that dropped the tap; the queue replaced the
-   * dropping as the thing that keeps two writes from colliding, so no tap is lost
-   * and the order of the checks is all that is left to protect.
-   *
-   * **And the checks are the first thing, which is what keeps a tap from losing
-   * colour.** They sat *after* the two clears and after the `save` once, so a tap
-   * for a name already on the task put the label on with no colour, dropped the
-   * pending colour with the name, and had nothing left to restore it from:
-   * `pendiente` had never been in `tagColors`. **The data loss was a consequence
-   * of the order**, and moving the checks above the clears is what fixes it. What
-   * is left is a no-op tap —the name stays, the colour stays— instead of a label
-   * written without its colour and no trace of the colour anywhere.
+   * clears, so a tap for a name already on the task leaves the name and the
+   * colour where they were instead of clearing both. They sat *after* the clears
+   * once, and a tap for a name already there put the label on with no colour and
+   * dropped the pending colour with the name, with nothing left to restore it
+   * from: `pendiente` had never been in `tagColors`. **The data loss was a
+   * consequence of the order**, and what is left is a no-op tap instead of a
+   * label without its colour and no trace of the colour anywhere.
    *
    * **The duplicate check sits here for the same reason, and it is not new.** A name
    * already on this task is not a new label, so nothing is written; what used to happen
@@ -457,15 +566,19 @@ export function ItemEditSheet({
    * So the tap is still a no-op, but it leaves the name and the colour where they were
    * instead of throwing both away.
    */
-  const addTag = async () => {
+  const addTag = () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
     if (shown.tags.includes(trimmed)) return;
 
-    // Read into a local before the name is cleared, because clearing the name is what
-    // invalidates it — the effect above drops `pendiente` on the next render — and the
-    // `await` below would otherwise be reading state that has already stopped meaning
-    // "the colour of the label I am about to create".
+    /*
+      El color pendiente va **al borrador**, y no a la lista.
+
+      Antes se escribia aqui por `onTagColor`, y era la otra puerta por la que el
+      panel guardaba solo. Ahora se queda en `colores` y sale con todo lo demas al
+      confirmar — en serie con el resto, que es lo unico que impide que dos
+      escrituras partan del mismo mapa.
+    */
     const color = pendiente;
     setNewTag("");
     setPendiente(null);
@@ -476,11 +589,7 @@ export function ItemEditSheet({
     // which is a colour like any other and not a missing one, and nothing is written
     // to `tagColors` for it.
     if (!color) return;
-    // Queued and not awaited, like every other colour write: the picker that chose
-    // it is the always-visible one, which never closes, so there is nothing to wait
-    // for — and the chain (`encolarColor`) is what keeps this write ordered against
-    // a swatch tap that landed a moment earlier.
-    encolarColor(() => Promise.resolve().then(() => onTagColor(trimmed, color)));
+    setColores((previos) => ({ ...previos, [trimmed]: color }));
   };
 
   /*
@@ -531,45 +640,34 @@ export function ItemEditSheet({
     );
 
   /**
-   * A tap on one swatch of a label the task already carries: one write, and the
-   * picker stays open.
+   * A tap on one swatch of a label the task already carries: to the draft, and
+   * the picker stays open.
    *
    * `option` is **a hex and not a name from the twelve any more**, because
    * `TagColorPicker` hands back whatever was chosen and a free colour is not in
-   * `ICON_COLOR_KEYS`. `onTagColor` takes a string and the server is what decides
-   * what a colour is, so nothing here has to know which of the two it is.
+   * `ICON_COLOR_KEYS`. Nothing is written here: the colour lands in the `colores`
+   * draft and leaves the panel on Guardar with everything else, in series (see
+   * `volcarColores`).
    *
    * Two things are happening here and both were measured, not chosen:
    *
-   * - **The optimistic paint.** `tagColors` only moves once the store has been
-   *   written and read back, so the pill is painted from `coloresVistos` in the
-   *   meantime: setting the override is synchronous, so the same commit that
-   *   starts the write already paints the new colour. React 18 flushes the state
-   *   changes in one pass, so the tap has its consequence in the frame that
-   *   answered it.
+   * - **The paint is synchronous.** The pill is painted from the draft
+   *   (`coloresVistos`), so setting it repaints in the same commit as the tap:
+   *   the tap has its consequence in the frame that answered it, with nothing
+   *   to wait for and no round trip.
    *
-   * - **No closing.** The picker used to close in the write's `finally`, and
-   *   closing revealed the new-label form underneath —tapping a colour read as
-   *   being thrown out of editing and into creating a new label. Now choosing a
-   *   colour is trying it: the pill follows every tap (and every drag, through
-   *   the preview), and the picker closes only on an explicit press, the pencil
-   *   or "close".
-   *
-   * - **The chain.** That open picker is a second tap away, and a tap that
-   *   arrived while a write was in flight used to be dropped by a guard —a pill
-   *   showing a colour the finger never chose. Now every tap paints at once and
-   *   queues its write behind the ones before it (`encolarColor`), and each
-   *   write plans from the store fresh, so two quick taps land in tap order and
-   *   neither eats the other.
+   * - **No closing.** The picker used to close on the tap, and closing revealed
+   *   the new-label form underneath —tapping a colour read as being thrown out
+   *   of editing and into creating a new label. Now choosing a colour is trying
+   *   it: the pill follows every tap (and every drag, through the preview), and
+   *   the picker closes only on an explicit press, the pencil or "close".
    */
   const pickColor = (tag: string, option: string | null) => {
-    // Paint it now: the store answers later, and the pill should not wait.
-    // `option` is already normalised by the picker's single door (`escribir`),
-    // so what goes in the override is exactly what the write carries —including
-    // `null`, which is stored and not removed, because `tagColors` still holds
-    // the old colour until the store answers (see `coloresVistos` above).
-    setColoresVistos((previos) => (previos[tag] === option ? previos : { ...previos, [tag]: option }));
-    encolarColor(() => Promise.resolve().then(() => onTagColor(tag, option)));
+    // To the draft, synchronously: the pill repaints from it in the same commit.
+    // And the picker stays open — closing it here is what used to throw editing
+    // out and show the new-label form instead. Only an explicit press (the pencil
+    // or "close") takes it down.
+    setColores((previos) => ({ ...previos, [tag]: option }));
   };
 
   /** Writes the row for the first time, with everything the panel was given. */
@@ -587,6 +685,9 @@ export function ItemEditSheet({
       iconColor: draft.iconColor,
       tags: draft.tags,
     });
+    // Y los colores de las etiquetas que se crearon aqui: sin esto, crear una
+    // tarea con una etiqueta de color dejaba la etiqueta sin su color.
+    await volcarColores();
     onClose();
   };
 
@@ -613,6 +714,15 @@ export function ItemEditSheet({
       // scroll hides its own save button under the bottom of the screen.
       scrollable
       onBack={page === "edit" ? undefined : () => setPage("edit")}
+      /*
+        El Guardar es **el del pie**, y no el boton que estaba aqui abajo. Dos
+        botones de confirmar en la misma pantalla son el mismo boton en el sitio
+        donde se busca y en el que no se mira, y el de dentro se va con el
+        contenido en una hoja larga.
+      */
+      onSave={confirmar}
+      saveLabel={isNew ? t("itemCreate.create") : t("rename.save")}
+      saveDisabledReason={sinNombre ? t("itemEdit.nameNeeded") : undefined}
     >
       <View
         style={{
@@ -631,25 +741,46 @@ export function ItemEditSheet({
               label={t("itemEdit.name")}
               value={title}
               onChangeText={setTitle}
-              onBlur={saveTitle}
+              /*
+                Foco solo al crear, y no al editar.
+
+                Al crear, lo primero que se hace es escribir el nombre: pedir un
+                toque antes es un paso por nada. Al editar, lo primero que se hace
+                es mirar —marcar hecho, cambiar prioridad— y un teclado que sale
+                solo tapa la mitad del panel para nada.
+              */
+              autoFocus={isNew}
+              /*
+                **Ya no guarda al salir del campo.**
+                Era `onBlur={saveTitle}`, y es la razon de que "se guarda con
+                Guardar" no era cierto: los dos campos de texto escribian solos en
+                cuanto perdian el foco, sin que nadie hubiera pulsado nada. Con dos
+                campos, ademas, se guardaba a mitad de la frase — ibas a escribir
+                "llamar al/installador", pulsabas el de abajo, y el servidor ya
+                tenia media frase.
+              */
               returnKeyType="next"
               selectTextOnFocus={false}
               ref={cadena.register(0)}
               onSubmitEditing={() => cadena.advance(0, () => {
-                // El nombre ya esta guardado en `onBlur`; saltar es lo que se
-                // pidio, y al campo de la nota, que es a donde se sigue.
+                // Saltar al campo de la nota, que es a donde se sigue. Aqui ya no
+                // se guarda nada: el nombre se queda escrito hasta que alguien
+                // pulse Guardar, que es lo unico que decide que se guarda.
               })}
               // The width the contracts will store it at, so the counter and the
               // server agree. The title of a task is 300 on purpose, and a list of
               // 300 of them is not a thing anyone writes.
               limit={FIELD_LIMITS['list_item.title']}
+              // La clave existed, en los dos idiomas, sin que nadie la usara: un
+              // ejemplo de titulo escrito y nunca conectado. Es el campo que mas
+              // se abre de la app, asi que es el primero que se nota vacio.
+              placeholder={t("items.titlePlaceholder")}
             />
 
             <TextField
               label={t("itemEdit.description")}
               value={annotation}
               onChangeText={setAnnotation}
-              onBlur={saveNotes}
               limit={FIELD_LIMITS['list_item.annotation']}
               placeholder={t("itemEdit.descriptionPlaceholder")}
               multiline
@@ -816,7 +947,7 @@ export function ItemEditSheet({
                   {...pistaMarkDone.props}
                   onPress={() => {
                     onClose();
-                    void toggleCompleted(item!);
+                    save({ completed: !shown.completed });
                   }}
                   style={({ pressed }) => [
                     styles.link,
@@ -833,7 +964,7 @@ export function ItemEditSheet({
                     checked={item!.completed}
                     onToggle={() => {
                       onClose();
-                      void toggleCompleted(item!);
+                      save({ completed: !shown.completed });
                     }}
                     label=""
                   />
@@ -876,26 +1007,18 @@ export function ItemEditSheet({
               </View>
             ) : null}
 
-            {isNew ? (
-              <Button
-                testID="item-create"
-                label={t("itemCreate.save")}
-                icon="checkmark"
-                fullWidth
-                disabled={title.trim().length === 0}
-                onPress={() => void create()}
-              />
-            ) : (
-              <Button
-                label={t("rename.save")}
-                icon="checkmark"
-                fullWidth
-                onPress={() => {
-                  saveTitle();
-                  saveNotes();
-                }}
-              />
-            )}
+            {/*
+              Y aqui **ya no hay ningun boton de guardar**.
+
+              Estaba este y ahora esta el del pie del panel, que es el mismo en las
+              veinticuatro hojas. Dos botones de confirmar en la misma pantalla son
+              el mismo boton en el sitio donde se busca y en el que no se mira.
+
+              Y el `testID="item-create"` no se ha perdido: se ha movido al boton
+              del pie, que ahora es el que crea. Un `testID` que desaparece hace
+              fallar la prueba **por lo que arregla**, que es la forma mas
+              confusa de romper algo.
+            */}
 
             {/* Last, red, and it says what it is going to take with it. A row
                 being created has nothing to delete yet. */}
@@ -996,7 +1119,7 @@ export function ItemEditSheet({
                     <View style={styles.anchoCompleto}>
                       <TagColorPicker
                         tag={tag}
-                        value={colores[tag] ?? null}
+                        value={coloresVistos[tag] ?? null}
                         onChange={(hex) => void pickColor(tag, hex)}
                         onPreviewChange={(hex) =>
                           setVistaPrevia((previa) =>
@@ -1106,7 +1229,7 @@ export function ItemEditSheet({
                         <View style={styles.anchoCompleto}>
                           <TagColorPicker
                             tag={tag}
-                            value={colores[tag] ?? null}
+                            value={coloresVistos[tag] ?? null}
                             onChange={(hex) => void pickColor(tag, hex)}
                             onPreviewChange={(hex) =>
                               setVistaPrevia((previa) =>

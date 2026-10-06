@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import type { Person, Share, ShareRole } from "@orbit-hub/contracts";
@@ -13,6 +13,8 @@ import { useShareReach, useShares } from "@/hooks/use-shares";
 import { getLocalStoreReady } from "@/lib/offline/local-store";
 import { flushOutbox } from "@/lib/offline/sync-service";
 import { pendingOperationFor } from "@/lib/shares/pending-node";
+import { ShareFormContexto, useShareFormCanal, type ShareFormPublicado } from "@/components/shares/share-form-publicado";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -85,21 +87,20 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
    * there is a write somebody already asked for, and holding it back to share one
    * folder would be inventing a priority the app does not have.
    */
-  const [sincronizando, setSincronizando] = useState(false);
   const asegurarQueEstaEnElServidor = useCallback(async () => {
     const store = await getLocalStoreReady();
     const pendiente = pendingOperationFor(await store.listPending(200), target);
     if (!pendiente) return true;
 
-    setSincronizando(true);
-    try {
-      const resultado = await flushOutbox();
-      // Still there after a flush means the server said no, and retrying will not
-      // change that. Saying so beats a second 404.
-      return !resultado.error;
-    } finally {
-      setSincronizando(false);
-    }
+    /*
+      Sin flag de "sincronizando": antes apagaba el boton mientras se vaciaba la
+      bandeja de salida, y ahora ese trabajo lo hace el Guardar del pie —que se
+      apaga solo mientras guarda— porque todo el envio pasa por el.
+    */
+    const resultado = await flushOutbox();
+    // Still there after a flush means the server said no, and retrying will not
+    // change that. Saying so beats a second 404.
+    return !resultado.error;
   }, [target]);
 
   const enviar = async () => {
@@ -154,8 +155,57 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
     }
   };
 
-  const puedeEnviar =
-    !sincronizando && (person !== null || email.trim().length > 0);
+  /*
+    `puedeEnviar` se fue con los botones: era la condicion que los apagaba, y ahora
+    la condicion vive en `motivo` —`undefined` significa que se puede.
+  */
+
+  /*
+    Que se puede enviar **y lo que hay sin confirmar**, publicado hacia arriba.
+
+    El boton de enviar esta **aqui**, con el estado del formulario, y el Guardar
+    del panel esta **arriba**, en otro componente. Es el mismo reparto que
+    `header-action.tsx`: el hijo publica y el padre pinta, y no al reves — que es
+    lo que hace que el layout gane siempre.
+
+    Y el "sucio" va **directo a la hoja**, sin pasar por el canal: este formulario
+    esta *dentro* del arbol del `Sheet` —lo pinta la hoja—, asi que `useSheetSucio`
+    aqui si llega. El canal es solo para lo que el pie necesita (enviar, motivo),
+    que es lo que vive arriba.
+  */
+  const { setSucio } = useSheetSucio();
+  const sucio = person !== null || email.trim().length > 0;
+  useEffect(() => {
+    setSucio(sucio);
+  }, [sucio, setSucio]);
+
+  /*
+    `enviar` en un ref, y no en las dependencias del efecto de abajo.
+
+    `enviar` se crea en cada render —cierra sobre el email, la persona, el rol— y
+    si el efecto dependiera de el, cada tecla del campo republicaria y cada
+    republicacion re-pintaria el wrapper: un bucle de renders por cada letra. El
+    ref siempre llama a **la ultima**, que es la que sabe lo que hay escrito.
+  */
+  const enviarRef = useRef(enviar);
+  enviarRef.current = enviar;
+
+  const publicar = useShareFormCanal();
+  const motivo =
+    person === null && email.trim().length === 0
+      ? t("share.pickSomebody")
+      : undefined;
+  useEffect(() => {
+    /*
+      Publicado en un efecto, y **limpiado al desmontar**.
+
+      Sin la limpieza, enviar y ver el "enviado" dejaria el Guardar del pie puesto:
+      `done` monta otra cosa en lugar del formulario, pero lo publicado seguiria
+      en el estado del wrapper — un Guardar que no hace nada, que es decoracion.
+    */
+    publicar({ enviar: () => void enviarRef.current(), motivo, enviando: sending });
+    return () => publicar(null);
+  }, [publicar, motivo, sending]);
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -183,6 +233,7 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
       <TextField
         value={email}
         onChangeText={setEmail}
+        autoFocus
         label={t("share.whoseEmail")}
         placeholder={t("share.searchPlaceholder")}
         autoCapitalize="none"
@@ -253,13 +304,14 @@ export function ShareNodeForm({ target, onDone }: ShareNodeFormProps) {
       ) : null}
 
       <View style={{ gap: theme.spacing.sm }}>
-        <Button
-          label={sending ? t("share.sending") : t("share.send")}
-          disabled={!puedeEnviar || sending}
-          fullWidth
-          onPress={() => void enviar()}
-        />
-        <Button label={t("common.cancel")} variant="ghost" fullWidth onPress={onDone} />
+        {/*
+          Y aqui **ya no hay botones**.
+
+          El de enviar esta en el pie, como en las demas hojas, y el Cancelar se
+          va. Era la segunda puerta de salida y **no hacia la pregunta**, y en esta
+          hoja es donde mas cuesta: una direccion escrita a mano no se vuelve a
+          escribir.
+        */}
       </View>
     </View>
   );
@@ -275,15 +327,33 @@ export function ShareNodeSheet({ target, onClose, onShared }: ShareNodeSheetProp
 
   const [done, setDone] = useState(false);
 
+  /*
+    Lo que el formulario de dentro publica, guardado **aqui** y no leido del
+    contexto.
+
+    El contexto no fluye hacia arriba: este wrapper esta *por encima* del Provider
+    —que lo pinta el— y leerlo aqui daria siempre `null`. Asi que el wrapper guarda
+    lo publicado en su estado y le pasa el canal al formulario, que lo escribe.
+
+    Y cuando el formulario se desmonta —al enviar, `done` monta otra cosa— el canal
+    limpia a `null` y el pie se queda sin Guardar: no queda nada que enviar, y un
+    Guardar que no hace nada es decoracion.
+  */
+  const [publicado, setPublicado] = useState<ShareFormPublicado | null>(null);
+  const canal = useMemo(() => ({ publicar: setPublicado }), []);
+
   if (!target) return null;
 
   return (
+    <ShareFormContexto.Provider value={canal}>
     <Sheet
       visible
       onClose={onClose}
       title={target.title}
       subtitle={t("share.subtitle", { name: target.title })}
       scrollable={false}
+      onSave={publicado ? publicado.enviar : undefined}
+      saveDisabledReason={publicado?.motivo}
     >
       <View
         style={{
@@ -313,5 +383,6 @@ export function ShareNodeSheet({ target, onClose, onShared }: ShareNodeSheetProp
         )}
       </View>
     </Sheet>
+    </ShareFormContexto.Provider>
   );
 }

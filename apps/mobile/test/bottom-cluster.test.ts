@@ -126,19 +126,42 @@ describe('la pila no se solapa', () => {
     expect(bordeInferiorDelBoton).toBeGreaterThan(bordeSuperiorDelMas);
   });
 
-  it('la bandeja empieza donde termina el botón', () => {
+  it('cada boton de la pila empieza donde termina el de abajo', () => {
+    /*
+     * La pila se lee de abajo arriba —`+`, filtrar, buscar, bandeja— y el fallo
+     * que se corrigio aqui era un hueco de 28 puntos para un boton de 36, que
+     * solo se veia en la pantalla y no en ningun fallo. Por eso se comprueba la
+     * cadena entera y no una pareja suelta: el buscador y el filtro son el mismo
+     * tamano y solo caben los dos si los dos estan contados.
+     */
     const pila = bottomCluster(TEMA);
-    const bordeInferiorDelBoton = pila.controlsBottom + pila.controlsHeight;
 
-    expect(pila.trayBottom).toBeGreaterThanOrEqual(bordeInferiorDelBoton);
-    expect(pila.trayBottom - bordeInferiorDelBoton).toBe(pila.gap);
+    const encimaDelMas = pila.fabBottom + pila.fabSize;
+    expect(pila.controlsBottom).toBe(encimaDelMas + pila.gap);
+
+    const encimaDelFiltro = pila.controlsBottom + pila.controlsHeight;
+    expect(pila.searchBottom).toBe(encimaDelFiltro + pila.gap);
+
+    const encimaDelBuscador = pila.searchBottom + pila.searchHeight;
+    expect(pila.trayBottom).toBe(encimaDelBuscador + pila.gap);
+
+    // Y que la pila entera quepa con el hueco de verdad: el fallo original era un
+    // hueco de 28 para un boton de 36, o sea que **el hueco no era el problema**,
+    // era que los numeros estaban escritos a mano y no se comprobaban.
+    expect(
+      pila.trayBottom,
+      'la pila completa tiene que caber sin que un boton pise al siguiente',
+    ).toBeLessThan(300);
+
   });
 
   it('la cuenta sale de los margenes del tema, no de numeros sueltos', () => {
     const conOtroTema = bottomCluster({ spacing: { lg: 24, sm: 12 } });
 
     expect(conOtroTema.fabBottom).toBe(24);
-    expect(conOtroTema.trayBottom).toBe(24 + 56 + 12 + 36 + 12);
+    expect(conOtroTema.controlsBottom).toBe(24 + 56 + 12);
+    expect(conOtroTema.searchBottom).toBe(24 + 56 + 12 + 36 + 12);
+    expect(conOtroTema.trayBottom).toBe(24 + 56 + 12 + 36 + 12 + 36 + 12);
   });
 
   it('el hueco que había antes era de 28 para un botón de 36', () => {
@@ -154,9 +177,25 @@ describe('la pila no se solapa', () => {
 });
 
 describe('la pila se usa, y no unos números escritos a mano', () => {
-  it('la bandeja recibe la cuenta y no una suma suelta', () => {
+  it('la pantalla cuenta la pila y no unos numeros escritos a mano', () => {
     expect(LISTA).toContain('bottomCluster(');
-    expect(LISTA).toMatch(/bottomInset=\{[^}]*trayBottom/);
+
+    // Lo que se comprueba ahora: **el boton de buscar usa la cuenta**. Antes esto
+    // miraba que la bandeja cogiera `trayBottom`, y la bandeja ya no esta — se
+    // sustituyo por el buscador, que se mide igual de lejos del borde y por el
+    // mismo motivo. Un guard que sigue mirando la pieza que se quito no protege
+    // la que se puso.
+    expect(LISTA, 'el boton de buscar sale de la pila, no de un numero suelto')
+      .toMatch(/bottom: pila\.searchBottom/);
+  });
+
+  it('la bandeja de completados no vuelve a la esquina', () => {
+    // Se quito porque es un sitio donde lo hecho vive aparte, y un sitio aparte
+    // no se busca: una bandeja se recorre con el pulgar, no se consulta con una
+    // palabra. Y con el buscador trayendo los dos lados, no anade nada que no
+    // tuviera ya — solo un sitio mas donde lo de arriba no esta.
+    expect(LISTA, 'la bandeja no se vuelve a montar').not.toContain('<DoneTray');
+    expect(LISTA, 'ni a importar').not.toContain('done-tray');
   });
 
   it('el inset antiguo, con su 12 a mano, no vuelve', () => {
@@ -206,5 +245,46 @@ describe('la pila se usa, y no unos números escritos a mano', () => {
     expect(TRAY).toMatch(/bottom: bottomInset/);
     expect(TRAY).toMatch(/left: theme\.spacing\.lg/);
     expect(TRAY).toMatch(/right: theme\.spacing\.lg/);
+  });
+});
+
+describe('el boton de filtro flotando es solo el icono', () => {
+  const controles = readFileSync(
+    join(import.meta.dirname, '../src/components/lists/list-controls.tsx'),
+    'utf8',
+  );
+
+  it('flotando se dibuja sin texto, y el texto se queda para el lector', () => {
+    // Decía "Filtros · Como yo lo pongo" encima del `+`: 160 puntos en una pantalla
+    // de 390 para el estado de un control. Con `iconOnly` el `Button` sigue
+    // poniendo el `accessibilityLabel` entero, asi que un lector de pantalla no
+    // pierde nada — solo se deja de pintar texto que ya esta en la hoja.
+    const flotante = controles.match(/placement === "floating"[\s\S]*?<\/View>/)?.[0] ?? '';
+    expect(flotante, 'el boton flotante tiene que pedir solo icono').toContain('iconOnly');
+
+    // Y el texto se sigue calculando: `iconOnly` **no** es "sin etiqueta". Eso vive
+    // en `Button`, asi que el guard mira alli y no aqui.
+    const button = readFileSync(
+      join(import.meta.dirname, '../src/components/ui/button.tsx'),
+      'utf8',
+    );
+    expect(
+      button,
+      'un boton que solo dibuja y no dice nada es un boton con dos nombres segun como preguntes',
+    ).toContain('accessibilityLabel={label}');
+  });
+
+  it('el inline no se toca: ahi el ancho no es el problema', () => {
+    // El inline esta en una barra o un encabezado con sitio de sobra, y ahi la
+    // frase es lo que dice que el boton abre filtros **y** orden. Quitarlo seria
+    // quitar informacion que en esa posicion si cabe.
+    //
+    // Se mira **el segundo sitio de llamada**, no se cuentan las apariciones de
+    // `iconOnly`: contar es fragil —la cuenta se equivoca en cuanto alguien anade
+    // una mencion en un comentario— y ademas no dice *donde* esta el problema.
+    const llamadas = controles.match(/<ListControlsButton[\s\S]*?\/>/g) ?? [];
+    expect(llamadas.length, 'un sitio flotante y uno en linea').toBe(2);
+    expect(llamadas[0], 'el flotante es solo icono').toContain('iconOnly');
+    expect(llamadas[1], 'el en linea conserva la frase').not.toContain('iconOnly');
   });
 });

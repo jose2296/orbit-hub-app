@@ -21,6 +21,14 @@ export interface WorkspaceMenuSheetProps {
   workspace: Workspace | null;
   onClose: () => void;
   onDeleted?: () => void;
+  /**
+   * Abrir ya en una pagina, en vez de en el menu.
+   *
+   * El boton de compartir de la cabecera abre **esta** hoja en su pagina de
+   * compartir, no una hoja nueva con la misma gente dentro: dos hojas de
+   * compartir son dos cosas que aprender y solo una es la buena.
+   */
+  initialPage?: Page;
 }
 
 type Page = "options" | "edit" | "share" | "delete";
@@ -42,6 +50,7 @@ export function WorkspaceMenuSheet({
   workspace: pedido,
   onClose,
   onDeleted,
+  initialPage = "options",
 }: WorkspaceMenuSheetProps) {
   /*
     `workspace` is **the last one, and not the one the caller is holding** — and that
@@ -88,7 +97,13 @@ export function WorkspaceMenuSheet({
   const { lists } = useLists(workspace ? { workspaceId: workspace.id } : {});
   const { folders } = useFolders(workspace?.id);
 
-  const [page, setPage] = useState<Page>("options");
+  /*
+    La pagina inicial se lee una vez y a proposito: si `initialPage` se aplicara
+    en cada render, abrir la hoja para compartir y luego cerrar y volver a
+    abrir el menu devolveria a la pagina de compartir. Se queda con el valor con
+    el que abrio.
+  */
+  const [page, setPage] = useState<Page>(initialPage);
   const [name, setName] = useState(workspace?.name ?? "");
 
   // Reopening always starts at the options, whatever page it was left on.

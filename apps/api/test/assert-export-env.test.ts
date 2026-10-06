@@ -11,7 +11,7 @@ import {
 const GOOD_ENV = {
   EXPO_PUBLIC_API_URL: 'https://orbithub-api.jrz-labs.com/api/v1',
   EXPO_PUBLIC_WEB_ORIGIN: 'https://orbithub-app.jrz-labs.com',
-  EXPO_PUBLIC_GOOGLE_CLIENT_ID: '959281134147-abc.apps.googleusercontent.com',
+  EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID: '959281134147-android.apps.googleusercontent.com',
 };
 
 /**
@@ -67,8 +67,108 @@ describe('checkPublicEnvironment', () => {
   });
 
   it('rejects a missing Google client id, which renders a dead button', () => {
-    const { EXPO_PUBLIC_GOOGLE_CLIENT_ID: _omitted, ...rest } = GOOD_ENV;
-    expect(() => checkPublicEnvironment(rest)).toThrow(/EXPO_PUBLIC_GOOGLE_CLIENT_ID/);
+    const { EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID: _omitted, ...rest } = GOOD_ENV;
+    expect(() => checkPublicEnvironment(rest)).toThrow(/EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID/);
+  });
+
+  /**
+   * The guard was asking for a variable that **nothing defines**.
+   *
+   * `google-auth.ts` reads a client id per platform — `_WEB`, `_ANDROID`, `_IOS` —
+   * because Google refuses a web client id inside an installed app. The script
+   * still asked for the bare `EXPO_PUBLIC_GOOGLE_CLIENT_ID`, so no `.env.release`
+   * could satisfy it and the release could not pass.
+   *
+   * The test that pins this reads the real script rather than a copy, because a
+   * copy is exactly the thing that drifts: it passed happily with the old name
+   * while the release was stuck, which is the failure this is about.
+   */
+  it('exige el client id que la app lee de verdad, y no uno que nadie define', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const script = readFileSync(
+      join(import.meta.dirname, '../../../scripts/assert-export-env.mjs'),
+      'utf8',
+    );
+
+    // Y que no vuelva el nombre viejo: ese es el que hacia la release
+    // imposible de satisfacer.
+    expect(
+      script,
+      'el client id de Android es el que se exige',
+    ).toContain('EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID');
+    expect(
+      script,
+      'el nombre sin plataforma no puede volver a aparecer en REQUIRED',
+    ).not.toMatch(/REQUIRED\s*=\s*\[[^\]]*EXPO_PUBLIC_GOOGLE_CLIENT_ID'/);
+  });
+
+  it('el Dockerfile de la web declara las MISMAS variables que el script exige', () => {
+    /*
+     * El fallo que hizo esto necesario.
+     *
+     * El `ARG` de `Dockerfile.web` se llamaba `EXPO_PUBLIC_GOOGLE_CLIENT_ID` y el
+     * `RUN` que invoca el assert se quedaba sin la variable: el build de Railway
+     * fallo con "GOOGLE_CLIENT_ID_ANDROID is empty" en un repo donde el assert
+     * estaba **bien**.
+     *
+     * El assert es correcto y aun asi el build se rompio, porque hay un segundo
+     * sitio donde el nombre aparece y nadie lo Miro: el `ARG`. Dos lugares con el
+     * mismo nombre en dos ficheros, y el unico que habia verificado algo era el que
+     * no hacia falta cambiar.
+     *
+     * Docker no entrega a un `RUN` una variable de build que el stage no nombre, de
+     * ahi el `ARG`: es el unico mecanismo. Por eso el chequeo tiene que leer el
+     * `Dockerfile` y no basta con que el assert este bien.
+     */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const raiz = join(import.meta.dirname, '../../..');
+    const dockerfile = readFileSync(join(raiz, 'Dockerfile.web'), 'utf8');
+
+    for (const name of [
+      'EXPO_PUBLIC_API_URL',
+      'EXPO_PUBLIC_WEB_ORIGIN',
+      'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID',
+    ]) {
+      // El `ARG` es lo que hace el trabajo: sin el, el `RUN` no ve la variable.
+      expect(
+        new RegExp(`^ARG ${name}$`, 'm').test(dockerfile),
+        `${name} necesita un ARG en Dockerfile.web, o el RUN del assert no lo ve`,
+      ).toBe(true);
+      expect(
+        new RegExp(`^ENV ${name}=`, 'm').test(dockerfile),
+        `${name} necesita un ENV en Dockerfile.web, o no llega al RUN`,
+      ).toBe(true);
+    }
+
+    // Y el nombre viejo no puede volver a colarse, que es el que rompio el build.
+    expect(
+      dockerfile,
+      'el client id sin plataforma no puede volver al Dockerfile',
+    ).not.toMatch(/^(ARG|ENV) EXPO_PUBLIC_GOOGLE_CLIENT_ID=/m);
+  });
+
+  it('lo que el script exige existe en el fichero de release de ejemplo', () => {
+    // El otro sentido del drift: que las variables que el guard exige esten
+    // **de verdad** en el `.env.release.example` que el script de release copia.
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const ejemplo = readFileSync(
+      join(import.meta.dirname, '../../mobile/.env.release.example'),
+      'utf8',
+    );
+
+    for (const name of [
+      'EXPO_PUBLIC_API_URL',
+      'EXPO_PUBLIC_WEB_ORIGIN',
+      'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID',
+    ]) {
+      expect(
+        new RegExp(`^${name}=`, 'm').test(ejemplo),
+        `${name} tiene que existir en .env.release.example, o el guard exige algo que el release no puede dar`,
+      ).toBe(true);
+    }
   });
 
   it('rejects a missing web origin', () => {
