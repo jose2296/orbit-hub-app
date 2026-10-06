@@ -1,4 +1,4 @@
-import type { Folder, List, Workspace } from "@orbit-hub/contracts";
+import type { Collection, Folder, List, Workspace } from "@orbit-hub/contracts";
 import { useEffect, useMemo, useState } from "react";
 
 import { withListDefaults } from "@/lib/lists/item-record";
@@ -7,6 +7,7 @@ export interface SpacesTree {
   spaces: () => Workspace[];
   foldersOf: (workspaceId: string, parentId: string | null) => Folder[];
   listsOf: (workspaceId: string, parentId: string | null) => List[];
+  collectionsOf: (workspaceId: string, folderId: string | null) => Collection[];
   isEmpty: (workspaceId: string) => boolean;
   isFolderEmpty: (folderId: string) => boolean;
   /**
@@ -38,6 +39,7 @@ export interface SpacesTree {
 export function useSpacesTree(): SpacesTree {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [lists, setLists] = useState<List[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const [spaces, setSpaces] = useState<Workspace[]>([]);
 
   useEffect(() => {
@@ -51,9 +53,10 @@ export function useSpacesTree(): SpacesTree {
         ]);
 
       const store = await localStore.getLocalStoreReady();
-      const [folderRows, listRows, workspaceRows] = await Promise.all([
+      const [folderRows, listRows, collectionRows, workspaceRows] = await Promise.all([
         readAllCachedFolders(),
         store.listCached("list"),
+        store.listCached("collection"),
         readCachedWorkspaces(),
       ]);
 
@@ -74,9 +77,26 @@ export function useSpacesTree(): SpacesTree {
         })
         .filter((list): list is List => list !== null && list.deletedAt === null);
 
+      // Leidas como las listas y por el mismo motivo: el payload manda y la
+      // fila borrada no se ofrece. El orden lo pone `selectCollections` al
+      // preguntar, igual que `foldersOf` y `listsOf` ordenan al preguntar.
+      const collectionRecords = collectionRows
+        .map((row) => {
+          try {
+            return JSON.parse(row.payload) as Collection;
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (collection): collection is Collection =>
+            collection !== null && collection.deletedAt === null,
+        );
+
       if (!active) return;
       setFolders(folderRows);
       setLists(listRecords);
+      setCollections(collectionRecords);
       setSpaces(workspaceRows);
     };
 
@@ -142,11 +162,14 @@ export function useSpacesTree(): SpacesTree {
       byName(foldersByParent.get(key(workspaceId, parentId)) ?? []);
     const listsOf = (workspaceId: string, parentId: string | null) =>
       byTitle(listsByParent.get(key(workspaceId, parentId)) ?? []);
+    const collectionsOf = (workspaceId: string, folderId: string | null) =>
+      selectCollections(collections, workspaceId, folderId);
 
     return {
       spaces: () => spaces,
       foldersOf,
       listsOf,
+      collectionsOf,
       isEmpty: (workspaceId) =>
         (foldersByParent.get(key(workspaceId, null))?.length ?? 0) === 0 &&
         (listsByParent.get(key(workspaceId, null))?.length ?? 0) === 0,
@@ -157,5 +180,34 @@ export function useSpacesTree(): SpacesTree {
         return foldersById.get(parentId) ?? null;
       },
     };
-  }, [folders, lists, spaces]);
+  }, [folders, lists, collections, spaces]);
+}
+
+/**
+ * Las colecciones de un sitio, sin las borradas y en su orden.
+ *
+ * Funcion pura y no un metodo del hook, porque un hook no se prueba sin
+ * React y esta regla si se puede comprobar sin el: filtra por espacio y
+ * carpeta (`null` es la raiz del espacio), saca las que tienen `deletedAt`
+ * y ordena por `position` con el nombre de desempate, que es lo mismo que
+ * `readAllCachedFolders` hace para las carpetas. El hook la usa para su
+ * `collectionsOf` y el test la prueba directamente.
+ */
+export function selectCollections(
+  collections: Collection[],
+  workspaceId: string,
+  folderId: string | null,
+): Collection[] {
+  return collections
+    .filter(
+      (collection) =>
+        collection.workspaceId === workspaceId &&
+        collection.folderId === folderId &&
+        collection.deletedAt === null,
+    )
+    .sort(
+      (one, two) =>
+        (one.position ?? 0) - (two.position ?? 0) ||
+        one.name.localeCompare(two.name),
+    );
 }

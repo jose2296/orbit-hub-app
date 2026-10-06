@@ -1,9 +1,8 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { useState } from "react";
+import { View } from "react-native";
 
 import { Sheet } from "@/components/ui/sheet";
-import { AppText } from "@/components/ui/text";
+import { Pick, PlacePicker } from "@/components/workspace/place-picker";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -23,9 +22,8 @@ export interface WhereNoteSheetProps {
  * the wrong place. Asking is one tap for somebody with one space, and the only
  * honest answer for somebody with five.
  *
- * The folder is offered too, not just the space, because the reason somebody is
- * here is usually a folder — they are in the middle of organising something — and
- * making them go back to pick one after the note exists is the wrong order.
+ * La decision vive en `PlacePicker` y esto es solo el cromo: el `Sheet`, el
+ * titulo y el boton de confirmar. Sin colecciones, que aqui no existen.
  */
 export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps) {
   const theme = useTheme();
@@ -35,10 +33,9 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [folderId, setFolderId] = useState<string | null>(null);
 
-  const spaces = useMemo(() => tree.spaces(), [tree]);
-  const folders = workspaceId ? tree.foldersOf(workspaceId, folderId) : [];
-
   if (!visible) return null;
+
+  const spaces = tree.spaces();
 
   return (
     <Sheet
@@ -54,70 +51,16 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
           gap: theme.spacing.md,
         }}
       >
-        {spaces.length === 0 ? (
-          <AppText variant="body" tone="muted">
-            {t("note.where.noSpaces")}
-          </AppText>
-        ) : null}
-
-        {spaces.length > 1 ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            <AppText variant="caption" tone="subtle">
-              {t("note.where.chooseSpace")}
-            </AppText>
-            <ScrollView style={{ maxHeight: 190 }} nestedScrollEnabled>
-              <View style={{ gap: 2 }}>
-                {spaces.map((space) => (
-                  <Pick
-                    key={space.id}
-                    icon="grid-outline"
-                    label={space.name}
-                    selected={workspaceId === space.id}
-                    onPress={() => {
-                      setWorkspaceId(space.id);
-                      setFolderId(null);
-                    }}
-                  />
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {/* With one space there is nothing to choose, so it is used without asking
-            and only the folder is worth a question. */}
-        {spaces.length === 1 ? (
-          <AppText variant="caption" tone="muted">
-            {spaces[0]?.name}
-          </AppText>
-        ) : null}
-
-        {workspaceId ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            <AppText variant="caption" tone="subtle">
-              {t("note.where.chooseFolder")}
-            </AppText>
-            <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
-              <View style={{ gap: 2 }}>
-                <Pick
-                  icon="ellipsis-horizontal-circle-outline"
-                  label={t("note.where.rootOfSpace")}
-                  selected={folderId === null}
-                  onPress={() => setFolderId(null)}
-                />
-                {folders.map((folder) => (
-                  <Pick
-                    key={folder.id}
-                    icon="folder-outline"
-                    label={folder.name}
-                    selected={false}
-                    onPress={() => setFolderId(folder.id)}
-                  />
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        ) : null}
+        <PlacePicker
+          workspaceId={workspaceId}
+          folderId={folderId}
+          collectionId={null}
+          showCollections={false}
+          onChange={(place) => {
+            setWorkspaceId(place.workspaceId);
+            setFolderId(place.folderId);
+          }}
+        />
 
         {/*
           The one space is used without asking, and that is what the button being
@@ -139,57 +82,5 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
         />
       </View>
     </Sheet>
-  );
-}
-
-function Pick({
-  icon,
-  label,
-  selected,
-  disabled,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  selected: boolean;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected, disabled: disabled === true }}
-      accessibilityLabel={label}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        minHeight: 40,
-        paddingHorizontal: theme.spacing.sm,
-        borderRadius: theme.radius.md,
-        opacity: disabled ? 0.4 : 1,
-        backgroundColor: selected
-          ? theme.colors.accentSoft
-          : pressed
-            ? theme.colors.surfaceMuted
-            : "transparent",
-      })}
-    >
-      <Ionicons
-        name={icon as never}
-        size={16}
-        color={selected ? theme.colors.accent : theme.colors.textMuted}
-      />
-      <AppText
-        variant="body"
-        numberOfLines={1}
-        style={{ flex: 1, color: selected ? theme.colors.accent : undefined }}
-      >
-        {label}
-      </AppText>
-    </Pressable>
   );
 }
