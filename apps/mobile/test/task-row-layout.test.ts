@@ -628,13 +628,37 @@ describe('la barra tiene los dos margenes', () => {
     ).toMatch(/paddingRight:\s*theme\.spacing\.xs \+ theme\.spacing\.lg/);
   });
 
-  it('el titulo se centra en el espacio que sobra, y eso no es el centro de la barra', () => {
-    // Documentado a proposito: `centro` lleva `flex: 1` + `alignItems: center`, y
-    // con dos botones a la izquierda y uno a la derecha el titulo queda desplazado.
-    // **Este test marca lo que falta, no lo que hay.** Arreglarlo necesita medir
-    // en pantalla el nombre mas largo que la app permite contra los botones.
-    const centro = header.match(/centro:\s*\{[\s\S]*?\}/)?.[0] ?? '';
-    expect(centro, 'el titulo vive en un flex: 1').toContain('flex: 1');
-    expect(centro).toContain("alignItems: 'center'");
+  it('las dos columnas laterales miden lo mismo, o el titulo no esta centrado', () => {
+    /*
+     * El descentrado no era del margen sino del **ancho**.
+     *
+     * `centro` lleva `flex: 1`, y eso lo centra en el espacio que sobra. El
+     * sobrante no estaba centrado porque la izquierda tiene dos botones —el menu
+     * y el atras— y la derecha uno. Repartido 104 contra 72, el titulo se iba 16
+     * puntos al lado corto, y en el panel, sin atras, se centraba. Ese "a veces" es
+     * lo que hacia que pareciera que el titulo bailaba.
+     *
+     * Igualar margenes no lo arregla. Lo que lo arregla es que las dos columnas
+     * midan igual, y el guard mira que las dos coijan el mismo `LADO`.
+     */
+    const anchos = [...header.matchAll(/width:\s*LADO/g)];
+    expect(
+      anchos.length,
+      'las dos columnas laterales tienen que usar el mismo ancho',
+    ).toBe(2);
+
+    // Y con justificacion espejada, para que los botones no se muevan: centrar el
+    // titulo moviendo los botones es un intercambio, no una correccion.
+    const lado = header.match(/lado:\s*\{[\s\S]*?\}/)?.[0] ?? '';
+    expect(lado, 'el menu y el atras se quedan a su extremo').toContain(
+      "justifyContent: 'flex-start'",
+    );
+    // Y el derecho se alinea con `alignItems` y no con `justifyContent`, porque su
+    // columna **no** es una fila: en columna el eje horizontal es el transversal.
+    const derecha = header.match(/derecha:\s*\{[\s\S]*?\}/)?.[0] ?? '';
+    expect(derecha, 'los tres puntitos se quedan a su extremo').toContain(
+      "alignItems: 'flex-end'",
+    );
+    expect(derecha, 'y centrados en vertical').toContain("justifyContent: 'center'");
   });
 });

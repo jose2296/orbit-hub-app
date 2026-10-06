@@ -170,7 +170,7 @@ export function AppHeader({ options, children }: AppHeaderProps) {
       ) : null}
 
       <View style={styles.fila}>
-        <View style={[styles.lado, { paddingLeft: theme.spacing.xs + theme.spacing.lg }]}>
+        <View style={[styles.lado, { paddingLeft: theme.spacing.xs + theme.spacing.lg, width: LADO }]}>
           <DrawerButton />
           <BackButton />
         </View>
@@ -235,7 +235,10 @@ export function AppHeader({ options, children }: AppHeaderProps) {
           es el que hay que igualar, porque es el que iguala los centros.
         */}
         <View
-          style={[styles.derecha, { paddingRight: theme.spacing.xs + theme.spacing.lg }]}
+          style={[
+            styles.derecha,
+            { paddingRight: theme.spacing.xs + theme.spacing.lg, width: LADO },
+          ]}
         >
           {slotAccion()}
         </View>
@@ -246,6 +249,33 @@ export function AppHeader({ options, children }: AppHeaderProps) {
 
 /** The height of the bar, and the height its controls are centred within. */
 const ALTO = 56;
+
+/**
+ * El ancho de **los dos** lados de la barra, y el mismo a los dos.
+ *
+ * El titulo vivia en un `flex: 1` con `alignItems: center`, o sea centrado en el
+ * **espacio que sobra**. Ese espacio no estaba centrado porque el lado izquierdo
+ * tiene dos botones —el menu y el atras— y el derecho uno: los tres puntitos. Con
+ * dos botones a un lado y uno al otro, el sobrante se reparte en 104 y 72, y el
+ * titulo se va 16 puntos hacia el lado corto. En el panel, sin atras, se centraba.
+ * Ese "a veces" es lo que hace que parezca que el titulo baila.
+ *
+ * Igualar los margenes no lo arregla, porque lo que estaba descentrado era el
+ * **ancho**, no el margen. Lo que lo arregla es que los dos lados ocupen lo
+ * mismo, y con eso el sobrante queda centrado **por construccion** y no por
+ * suerte.
+ *
+ * Y la justificacion va espejada —el izquierdo al principio, el derecho al
+ * final— para que los botones **no se muevan**: cada uno se queda donde estaba y
+ * lo que cambia es el ancho de su columna. Un titulo centrado a costa de mover
+ * los botones es un intercambio, no una correccion.
+ *
+ * El ancho sale de lo que el lado izquierdo necesita de verdad: su margen
+ * exterior (`xs + lg` = 20), el menu, que son 40 con `marginLeft: -8` —o sea 32—
+ * y el atras, 40. Son 92, y se redondea a 96 para que el mas largo de los dos
+ * quepan sin recortar.
+ */
+const LADO = 96;
 
 
 const styles = StyleSheet.create({
@@ -302,10 +332,13 @@ const styles = StyleSheet.create({
   lado: {
     /* En fila y no en columna: el boton de atras va **al lado** del menu, y con
        una columna se caia debajo. Es la disposicion que el layout tenia antes y
-       que se ha traido aqui tal cual, con el mismo orden: menu y despues atras. */
+       que se ha traido aqui tal cual, con el mismo orden: menu y despues atras.
+       Y `flex-start`, no `center`: la columna tiene ancho fijo para que las dos
+       midan igual, y centrar aqui moveria el menu hacia dentro. Cada boton se
+       queda en su lado. */
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   centro: {
     flex: 1,
