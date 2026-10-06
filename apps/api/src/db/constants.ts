@@ -70,8 +70,7 @@ export type ListKindName = (typeof LIST_KINDS)[number];
  * colour it does not know, the app cannot draw one that is not here, and two
  * lists are two lists that are a step behind each other.
  */
-export { ITEM_ICON_COLORS, WORKSPACE_COLORS, WORKSPACE_WASHES, isItemIcon } from '@orbit-hub/contracts';
-export type { ItemIconColor as ItemIconColorName } from '@orbit-hub/contracts';
+export { ITEM_ICON_COLORS, WORKSPACE_COLORS, WORKSPACE_WASHES } from '@orbit-hub/contracts';
 export type { WorkspaceColor as WorkspaceColorName } from '@orbit-hub/contracts';
 export type { WorkspaceWash as WorkspaceWashName } from '@orbit-hub/contracts';
 
@@ -94,9 +93,6 @@ export type ListOrderModeName = ListOrderMode;
 
 export { listOrderModeSchema } from '@orbit-hub/contracts';
 export type { ListOrderMode } from '@orbit-hub/contracts';
-
-export { ITEM_ICONS } from '@orbit-hub/contracts';
-export type { ItemIcon } from '@orbit-hub/contracts';
 
 export const ITEM_PRIORITIES = ['none', 'low', 'medium', 'high'] as const;
 export type ItemPriority = (typeof ITEM_PRIORITIES)[number];

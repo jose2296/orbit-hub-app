@@ -5,7 +5,6 @@ import type { ListItem, ListOrderMode } from '@orbit-hub/contracts';
 import {
   canReorder,
   filterItems,
-  isItemIcon,
   orderItems,
   tagsByFrequency,
 } from '../src/lib/lists/item-presentation';
@@ -168,20 +167,6 @@ describe('tagsByFrequency', () => {
     expect(tagsByFrequency([item({ id: '1', tags: ['Mercadona', 'Mercadona'] })])).toEqual([
       { tag: 'Mercadona', count: 1 },
     ]);
-  });
-});
-
-describe('isItemIcon', () => {
-  it('knows the icons it can draw', () => {
-    expect(isItemIcon('pan')).toBe(true);
-  });
-
-  it('says no to a key it does not have, rather than drawing nothing', () => {
-    // A row with an icon the app does not know would show a blank space where
-    // the picture is, which looks like a broken row.
-    expect(isItemIcon('unicorn')).toBe(false);
-    expect(isItemIcon(null)).toBe(false);
-    expect(isItemIcon(undefined)).toBe(false);
   });
 });
 

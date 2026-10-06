@@ -26,8 +26,9 @@ import {
 import { useTheme } from "@/theme";
 
 import { completedMatch } from "@/lib/lists/done-match";
-import { ICON_COLOR_KEYS, ICON_COLOR_LABEL } from "@/lib/lists/item-icons";
-import type { IconColorKey } from "@/lib/lists/item-icons";
+import { ITEM_ICON_COLORS } from "@orbit-hub/contracts";
+import { ICON_COLOR_LABEL } from "@/theme/tokens";
+import type { IconColor } from "@orbit-hub/contracts";
 import { TagChip } from "./tag-chip";
 import { TagColorPicker } from "./tag-color-picker";
 
@@ -635,8 +636,9 @@ export function ItemEditSheet({
    * the picker stays open.
    *
    * `option` is **a hex and not a name from the twelve any more**, because
-   * `TagColorPicker` hands back whatever was chosen and a free colour is not in
-   * `ICON_COLOR_KEYS`. Nothing is written here: the colour lands in the `colores`
+<<<<<<< HEAD
+   * `TagColorPicker` hands back whatever was chosen and a free colour is not one
+   * of the twelve. Nothing is written here: the colour lands in the `colores`
    * draft and leaves the panel on Guardar with everything else, in series (see
    * `volcarColores`).
    *
@@ -1380,8 +1382,8 @@ function TagColorButton({
   // write one here — the picker offers the twelve as shortcuts and a hand-written hex
   // arrives as itself — and saying so is cheaper
   // than a colour that announces itself as `undefined`.
-  const clave = color as IconColorKey;
-  const nombre = ICON_COLOR_KEYS.includes(clave)
+  const clave = color as IconColor;
+  const nombre = (ITEM_ICON_COLORS as readonly string[]).includes(clave)
     ? ICON_COLOR_LABEL[clave]
     : undefined;
 

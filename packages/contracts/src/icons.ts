@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { ITEM_ICON_COLORS } from "./item-icons.js";
 
 /**
  * The colour an icon is drawn in.
@@ -11,6 +10,30 @@ import { ITEM_ICON_COLORS } from "./item-icons.js";
  * theme at the moment it paints. `auto` is the one nobody chose: it takes
  * the colour of whatever the icon is on.
  */
+/**
+ * The colours an icon can be drawn in.
+ *
+ * Twelve, and not a colour picker. An icon is a small shape on a busy list, and
+ * a colour on it has to be one you can read at that size from a thumb's distance:
+ * two reds look like one red, and a pale yellow on white is not a colour, it is
+ * nothing. Twelve is as many as stay apart at eighteen points.
+ */
+export const ITEM_ICON_COLORS = [
+  "neutral",
+  "accent",
+  "green",
+  "olive",
+  "amber",
+  "orange",
+  "red",
+  "rose",
+  "purple",
+  "blue",
+  "teal",
+  "brown",
+] as const;
+export type ItemIconColor = (typeof ITEM_ICON_COLORS)[number];
+
 export const iconColorSchema = z.enum(["auto", ...ITEM_ICON_COLORS]);
 export type IconColor = z.infer<typeof iconColorSchema>;
 
@@ -724,6 +747,149 @@ export const VECTOR_ICON_CATALOG: ReadonlyArray<{
     label: labelOf(key),
   })),
 );
+
+
+/**
+ * The keys the app offered before there was a catalogue.
+ *
+ * They are all in `VECTOR_ICON_CATALOG`, and this list is the test that keeps
+ * them there: removing one is taking away an icon somebody chose, and the push
+ * answers `applied` while the picture disappears. Nobody adds here any more —
+ * new icons go in the catalogue with their group and their glyph.
+ */
+export const ITEM_ICONS = [
+  "pan",
+  "leche",
+  "agua",
+  "cafe",
+  "te",
+  "cerveza",
+  "vino",
+  "refresco",
+  "zumo",
+  "fruta",
+  "verdura",
+  "queso",
+  "huevo",
+  "carne",
+  "pollo",
+  "pescado",
+  "marisco",
+  "arroz",
+  "pasta",
+  "chocolate",
+  "dulces",
+  "comida_bebe",
+  "detergente",
+  "jabon",
+  "champu",
+  "pasta_dientes",
+  "papel",
+  "toallitas",
+  "limpieza",
+  "bolsa",
+  "cubierto",
+  "bombilla",
+  "pila",
+  "cargador",
+  "herramienta",
+  "tornillo",
+  "cinta",
+  "pegamento",
+  "ropa",
+  "camiseta",
+  "pantalon",
+  "zapato",
+  "bota",
+  "abrigo",
+  "calcetin",
+  "ropa_interior",
+  "bolso",
+  "cinturon",
+  "pastilla",
+  "medicina",
+  "tirita",
+  "crema",
+  "vitaminas",
+  "termometro",
+  "bebe",
+  "panal",
+  "chupete",
+  "leche_materna",
+  "juguete",
+  "parque",
+  "lampara",
+  "manta",
+  "almohada",
+  "sabana",
+  "toalla",
+  "cortina",
+  "alfombra",
+  "mesa",
+  "silla",
+  "vaso",
+  "plato",
+  "cuchara",
+  "tenedor",
+  "olla",
+  "sarten",
+  "congelador",
+  "lavadora",
+  "aspiradora",
+  "coche",
+  "gasolina",
+  "aceite",
+  "neumatico",
+  "bateria_coche",
+  "tarjeta_azul",
+  "billete",
+  "hotel",
+  "maleta",
+  "vuelo",
+  "tren",
+  "bus",
+  "taxi",
+  "bici",
+  "casco",
+  "perro",
+  "gato",
+  "comida_perro",
+  "transportin",
+  "veterinario",
+  "cuaderno",
+  "libro",
+  "boligrafo",
+  "lapiz",
+  "goma",
+  "mochila",
+  "carpeta",
+  "calculadora",
+  "rotulador",
+  "tijeras",
+  "usb",
+  "balon",
+  "tenis",
+  "gafas",
+  "gorro",
+  "bufanda",
+  "botas",
+  "bicicleta",
+  "natacion",
+  "gimnasio",
+  "dvd",
+  "juego",
+  "musica",
+  "auriculares",
+  "regalo",
+  "caja",
+  "paquete",
+  "teclado",
+  "raton",
+  "monitor",
+  "wifi",
+  "bombilla_led",
+  "iluminar",
+] as const;
 
 const CATALOG_KEYS = new Set(VECTOR_ICON_CATALOG.map((entry) => entry.key));
 

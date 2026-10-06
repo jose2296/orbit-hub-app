@@ -1,5 +1,6 @@
 import type { Accent, IconColor } from "@orbit-hub/contracts";
 import type { TextStyle, ViewStyle } from "react-native";
+import type { TranslationKey } from "@/lib/i18n";
 
 export type ColorSchemeName = "light" | "dark";
 
@@ -387,6 +388,29 @@ export const ICON_COLORS: Record<IconColor, { light: string; dark: string }> = {
   blue: { light: "#2563EB", dark: "#60A5FA" },
   teal: { light: "#0D9488", dark: "#2DD4BF" },
   brown: { light: "#92400E", dark: "#B45309" },
+};
+
+/**
+ * The name of each icon colour, in the language of the app.
+ *
+ * Typed against the keys the dictionaries declare, on purpose: a colour added
+ * to the contract and not here is a compile error and not a swatch with no
+ * name on it.
+ */
+export const ICON_COLOR_LABEL: Record<IconColor, TranslationKey> = {
+  auto: "icons.colors.auto",
+  neutral: "icons.colors.neutral",
+  accent: "icons.colors.accent",
+  green: "icons.colors.green",
+  olive: "icons.colors.olive",
+  amber: "icons.colors.amber",
+  orange: "icons.colors.orange",
+  red: "icons.colors.red",
+  rose: "icons.colors.rose",
+  purple: "icons.colors.purple",
+  blue: "icons.colors.blue",
+  teal: "icons.colors.teal",
+  brown: "icons.colors.brown",
 };
 
 /**
