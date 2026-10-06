@@ -68,6 +68,16 @@ describe("la lista sigue el molde sin inventar patrones", () => {
     expect(pantalla).toContain('t("bookmarks.empty.title")');
     expect(pantalla).toContain('t("bookmarks.empty.body")');
   });
+
+  it("cada fila lleva papelera al lado, con la hoja compartida", () => {
+    // El brief pedia borrar desde el inbox y desde la lista: la confirmacion
+    // vive en `BookmarkDeleteSheet` y la lista solo abre y cierra, igual que
+    // el inbox. La papelera va al lado de la fila y no dentro (un `Pressable`
+    // dentro del de la fila es `<button>` en `<button>` en web).
+    expect(pantalla).toContain("BookmarkDeleteSheet");
+    expect(pantalla).toContain("list-delete-");
+    expect(pantalla).toContain("setABorrar");
+  });
 });
 
 describe("el drawer lleva las dos entradas", () => {

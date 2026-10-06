@@ -67,13 +67,32 @@ vi.mock("@/lib/i18n", async () => {
   };
 });
 
-// Los dos hooks los pone cada test: la cache real es `expo-sqlite` y en Node
-// no existe. Lo que se prueba es que la pantalla pinta lo que le dan, no la
-// lectura.
-vi.mock("@/hooks/use-bookmarks", () => ({
-  useBookmarks: () => ({ bookmarks: estado.bookmarks, isLoading: estado.isLoading }),
-  useUnclassifiedCount: () => estado.bookmarks.length,
+// Lo que `/lib/offline` promete y `use-bookmarks` importa: la cache real es
+// `expo-sqlite` y en Node no existe. Mismo apunte que en
+// `use-bookmarks.test.ts`.
+vi.mock("@/lib/offline", () => ({
+  getLocalStoreReady: vi.fn(),
+  subscribeToLocalStore: vi.fn(() => () => undefined),
 }));
+
+// El filtro real y no una lista fija: la pantalla pide
+// `collectionId: "unclassified"` y lo que vuelve es lo que la suscripcion
+// relee tras cada escritura. Sin el, un test no podria huerfanar filas.
+// (`@/lib/offline` ya esta anulado arriba, asi que el original carga sin
+// `expo-sqlite`.)
+vi.mock("@/hooks/use-bookmarks", async (importOriginal) => {
+  const real = (await importOriginal()) as typeof import(
+    "../src/hooks/use-bookmarks"
+  );
+  return {
+    useBookmarks: (filtros: any) => ({
+      bookmarks: real.applyBookmarkFilters(estado.bookmarks, filtros),
+      isLoading: estado.isLoading,
+    }),
+    useUnclassifiedCount: () =>
+      real.selectUnclassifiedBookmarks(estado.bookmarks).length,
+  };
+});
 
 vi.mock("@/hooks/use-spaces-tree", () => ({
   useSpacesTree: () => ({ spaces: () => estado.espacios }),
@@ -240,5 +259,31 @@ describe("el inbox pinta lo que le dan", () => {
     expect(html).toContain("bookmarks.inbox.empty.title");
     expect(html).toContain("bookmarks.inbox.empty.body");
     expect(html).not.toContain("inbox-delete-");
+  });
+
+  it("borrar la coleccion huerfana 50 filas y el re-render las muestra", () => {
+    // Fase 1: 50 enlaces colocados en una coleccion. El inbox pide
+    // `collectionId: "unclassified"`, asi que no hay nada que mostrar.
+    estado.bookmarks = cincuentaHuerfanos().map((bookmark) => ({
+      ...bookmark,
+      collectionId: "c1",
+    }));
+    estado.isLoading = false;
+    expect(pintar()).not.toContain("inbox-delete-");
+
+    // Fase 2: el efecto de borrar la coleccion. Sus filas pasan a null y la
+    // suscripcion del hook relee: el mismo render, con los datos nuevos, y
+    // las 50 filas aparecen agrupadas sin crash. Esto es la Review Focus #4,
+    // la transicion y no la foto.
+    estado.bookmarks = estado.bookmarks.map((bookmark) => ({
+      ...bookmark,
+      collectionId: null,
+    }));
+    const html = pintar();
+
+    const papeleras = html.match(/inbox-delete-huerfano-\d+/g) ?? [];
+    expect(papeleras).toHaveLength(50);
+    expect(html).toContain("Casa");
+    expect(html).toContain("Calle");
   });
 });

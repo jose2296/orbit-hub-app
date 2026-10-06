@@ -1,9 +1,11 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo } from "react";
-import { View } from "react-native";
+import { useMemo, useState } from "react";
+import { Pressable, View } from "react-native";
 
-import type { BookmarkExtractionState } from "@orbit-hub/contracts";
+import type { Bookmark, BookmarkExtractionState } from "@orbit-hub/contracts";
 
+import { BookmarkDeleteSheet } from "@/components/bookmarks/delete-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow } from "@/components/ui/list-row";
 import { Screen } from "@/components/ui/screen";
@@ -34,6 +36,10 @@ export default function BookmarksListScreen() {
   const router = useRouter();
   const theme = useTheme();
   const t = useTranslation();
+
+  // La papelera de cada fila, con la misma confirmacion que el inbox: el
+  // patron vive en `BookmarkDeleteSheet` para que no derive en dos copias.
+  const [aBorrar, setABorrar] = useState<Bookmark | null>(null);
 
   const { bookmarks, isLoading } = useBookmarks({
     workspaceId,
@@ -89,30 +95,62 @@ export default function BookmarksListScreen() {
       ) : (
         <View style={{ gap: theme.spacing.xs }}>
           {items.map((item) => (
-            <ListRow
+            <View
               key={item.id}
-              title={item.titulo}
-              subtitle={item.subtitulo.length > 0 ? item.subtitulo : undefined}
-              icon="bookmark-outline"
-              leading={
-                <View
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: item.punto,
-                  }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: theme.spacing.sm,
+              }}
+            >
+              <ListRow
+                title={item.titulo}
+                subtitle={item.subtitulo.length > 0 ? item.subtitulo : undefined}
+                icon="bookmark-outline"
+                leading={
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: item.punto,
+                    }}
+                  />
+                }
+                rightLabel={item.sitio}
+                chevron
+                style={{ flex: 1 }}
+                onPress={() =>
+                  router.push({ pathname: "/bookmark/[bookmarkId]", params: { bookmarkId: item.id } })
+                }
+              />
+              {/*
+                Al lado de la fila y no dentro: un `Pressable` dentro del de la
+                fila es `<button>` dentro de `<button>` en web, y el navegador
+                lo desarma (aviso de `place-share-sheet`). Misma forma que el
+                inbox, misma papelera, misma confirmacion.
+              */}
+              <Pressable
+                testID={`list-delete-${item.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={t("bookmarks.delete.title")}
+                hitSlop={8}
+                onPress={() =>
+                  setABorrar(bookmarks.find((b) => b.id === item.id) ?? null)
+                }
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={20}
+                  color={theme.colors.textMuted}
                 />
-              }
-              rightLabel={item.sitio}
-              chevron
-              onPress={() =>
-                router.push({ pathname: "/bookmark/[bookmarkId]", params: { bookmarkId: item.id } })
-              }
-            />
+              </Pressable>
+            </View>
           ))}
         </View>
       )}
+      <BookmarkDeleteSheet bookmark={aBorrar} onClose={() => setABorrar(null)} />
     </Screen>
   );
 }

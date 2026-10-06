@@ -8,15 +8,13 @@ import {
   AssignSheet,
   type BookmarkAClasificar,
 } from "@/components/bookmarks/assign-sheet";
-import { Button } from "@/components/ui/button";
+import { BookmarkDeleteSheet } from "@/components/bookmarks/delete-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow, SectionHeader } from "@/components/ui/list-row";
 import { Screen } from "@/components/ui/screen";
-import { Sheet, useLastValue } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { useBookmarks, useUnclassifiedCount } from "@/hooks/use-bookmarks";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
-import { deleteBookmarkAction } from "@/lib/bookmarks/actions";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -73,12 +71,6 @@ export default function UnclassifiedScreen() {
 
   const [aClasificar, setAClasificar] = useState<BookmarkAClasificar | null>(null);
   const [aBorrar, setABorrar] = useState<Bookmark | null>(null);
-  // El ultimo y no el del estado: el estado va a null para cerrar y la hoja
-  // necesita seguir pintando mientras baja. Patron de `note-menu-sheet`: un
-  // condicional aqui seria un corte de 45 ms en vez de una salida.
-  const ultimoBorrado = useLastValue(aBorrar);
-  const [borrando, setBorrando] = useState(false);
-  const [errorBorrado, setErrorBorrado] = useState<string | null>(null);
 
   const nombres = useMemo(() => {
     const mapa = new Map<string, string>();
@@ -104,25 +96,6 @@ export default function UnclassifiedScreen() {
   }, [bookmarks, t]);
 
   if (isLoading) return <View style={{ flex: 1 }} />;
-
-  const borrar = async () => {
-    if (!aBorrar || borrando) return;
-    setBorrando(true);
-    setErrorBorrado(null);
-    try {
-      // Existe desde la Task 3 (`actions.ts`): tombstone en local y operacion
-      // encolada, igual que en las notas. Verificado antes de usarlo, no
-      // asumido del reporte.
-      await deleteBookmarkAction(aBorrar.id);
-      setABorrar(null);
-    } catch (problem) {
-      setErrorBorrado(
-        problem instanceof Error ? problem.message : t("errors.unknown"),
-      );
-    } finally {
-      setBorrando(false);
-    }
-  };
 
   return (
     <Screen width="reading">
@@ -198,10 +171,7 @@ export default function UnclassifiedScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={t("bookmarks.delete.title")}
                       hitSlop={8}
-                      onPress={() => {
-                        setErrorBorrado(null);
-                        setABorrar(bookmark);
-                      }}
+                      onPress={() => setABorrar(bookmark)}
                       style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
                     >
                       <Ionicons
@@ -218,51 +188,9 @@ export default function UnclassifiedScreen() {
         </View>
       )}
       <AssignSheet bookmark={aClasificar} onClose={() => setAClasificar(null)} />
-      {/*
-        Confirmar antes de borrar, con doble boton: el patron de
-        `place-share-sheet.tsx:263-276`. Sin el, un toque a la papelera en el
-        bolsillo es un enlace menos y un tombstone sincronizado. Siempre
-        montada (sale de `ultimoBorrado`) para que la salida se vea.
-      */}
-      {ultimoBorrado ? (
-        <Sheet
-          visible={aBorrar !== null}
-          onClose={() => setABorrar(null)}
-          title={t("bookmarks.deleteConfirm")}
-          subtitle={
-            ultimoBorrado.title.length > 0
-              ? ultimoBorrado.title
-              : ultimoBorrado.url
-          }
-          scrollable={false}
-        >
-          <View style={{ gap: theme.spacing.md }}>
-            <AppText variant="body" tone="muted">
-              {t("bookmarks.deleteBody")}
-            </AppText>
-            {errorBorrado ? (
-              <AppText variant="caption" style={{ color: theme.colors.danger }}>
-                {errorBorrado}
-              </AppText>
-            ) : null}
-            <View style={{ gap: theme.spacing.sm }}>
-              <Button
-                label={borrando ? t("common.saving") : t("common.delete")}
-                variant="danger"
-                disabled={borrando}
-                fullWidth
-                onPress={() => void borrar()}
-              />
-              <Button
-                label={t("common.cancel")}
-                variant="ghost"
-                fullWidth
-                onPress={() => setABorrar(null)}
-              />
-            </View>
-          </View>
-        </Sheet>
-      ) : null}
+      {/* La misma confirmacion que la lista: vive en el componente para que no
+          derive en dos copias. */}
+      <BookmarkDeleteSheet bookmark={aBorrar} onClose={() => setABorrar(null)} />
     </Screen>
   );
 }

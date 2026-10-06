@@ -52,13 +52,13 @@ describe("el inbox es una vista agrupada por espacio", () => {
     expect(pantalla).toContain("setAClasificar");
   });
 
-  it("borrar pide confirmacion con doble boton", () => {
-    // `deleteBookmarkAction` existe desde la Task 3: verificado en
-    // `lib/bookmarks/actions.ts`, no asumido del reporte.
-    expect(pantalla).toContain("deleteBookmarkAction");
-    expect(pantalla).toContain("deleteConfirm");
-    expect(pantalla).toContain("common.delete");
-    expect(pantalla).toContain("common.cancel");
+  it("borrar usa la hoja compartida, con su papelera por fila", () => {
+    // La confirmacion vive en `BookmarkDeleteSheet` (compartida con la
+    // lista) y no duplicada aqui: la pantalla solo abre y cierra.
+    expect(pantalla).toContain("BookmarkDeleteSheet");
+    expect(pantalla).toContain("setABorrar");
+    expect(pantalla).toContain("inbox-delete-");
+    expect(pantalla).not.toContain("deleteBookmarkAction");
   });
 
   it("el vacio tiene copy propio", () => {
@@ -100,6 +100,36 @@ describe("el triage manda solo la coleccion", () => {
 
   it("el espacio no se pregunta: lo pone el bookmark", () => {
     expect(hoja).toContain("bookmark.workspaceId");
+  });
+});
+
+describe("la confirmacion de borrado, compartida por inbox y lista", () => {
+  const hoja = fuente(join("components", "bookmarks", "delete-sheet.tsx"));
+
+  it("borra con tombstone y doble boton, sin tocar listas", () => {
+    // `deleteBookmarkAction` existe desde la Task 3: verificado en
+    // `lib/bookmarks/actions.ts`, no asumido del reporte. La fila desaparece
+    // sola al releer la suscripcion, la hoja no toca ninguna lista.
+    expect(hoja).toContain("deleteBookmarkAction");
+    expect(hoja).toContain("bookmarks.deleteConfirm");
+    expect(hoja).toContain("bookmarks.deleteBody");
+    expect(hoja).toContain('variant="danger"');
+    expect(hoja).toContain('variant="ghost"');
+    expect(hoja).toContain("common.cancel");
+    expect(hoja).toContain("useLastValue");
+  });
+
+  it("las dos pantallas la usan y ninguna duplica", () => {
+    const inbox = fuente(join("app", "(app)", "unclassified.tsx"));
+    const lista = fuente(join("app", "(app)", "bookmarks.tsx"));
+
+    for (const [nombre, pantalla] of [
+      ["inbox", inbox],
+      ["lista", lista],
+    ] as const) {
+      expect(pantalla, nombre).toContain("BookmarkDeleteSheet");
+      expect(pantalla, nombre).not.toContain("deleteBookmarkAction");
+    }
   });
 });
 
