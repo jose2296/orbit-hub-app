@@ -4,6 +4,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
+import { MEMBERSHIP_ROLE_RANK } from '../../db/constants.js';
 import type { MembershipRoleName } from '../../db/constants.js';
 import type { CollectionRow } from '../../db/schema.js';
 import { bookmarks, collections, memberships } from '../../db/schema.js';
@@ -70,6 +71,23 @@ async function readableCollection(userId: string, id: string): Promise<Collectio
     throw HttpError.notFound('Collection not found');
   }
   return row;
+}
+
+/**
+ * Solo quien puede escribir puede borrar, igual que en las notas.
+ *
+ * Un viewer que pudiera borrar tumbaria la coleccion y desclasificaria todos
+ * sus bookmarks de una llamada: es el mismo nivel que `note-service remove`
+ * exige con su propio `assertCanWrite`, y por el mismo motivo.
+ */
+async function assertCanWrite(userId: string, workspaceId: string): Promise<void> {
+  const role = await roleIn(userId, workspaceId);
+  if (role === null) {
+    throw HttpError.notFound('Workspace not found');
+  }
+  if (MEMBERSHIP_ROLE_RANK[role] < MEMBERSHIP_ROLE_RANK.editor) {
+    throw HttpError.forbidden('This space is read only for you');
+  }
 }
 
 /**
@@ -151,18 +169,23 @@ export async function getCollection(userId: string, id: string): Promise<Collect
  */
 export async function deleteCollection(userId: string, id: string): Promise<void> {
   const existing = await readableCollection(userId, id);
+  await assertCanWrite(userId, existing.workspaceId);
 
   const database = await db();
-  await database
-    .update(bookmarks)
-    .set({
-      collectionId: null,
-      version: sql`${bookmarks.version} + 1`,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(bookmarks.collectionId, id), isNull(bookmarks.deletedAt)));
-  await database
-    .update(collections)
-    .set({ deletedAt: new Date(), version: existing.version + 1, updatedAt: new Date() })
-    .where(and(eq(collections.id, id), isNull(collections.deletedAt)));
+  // Los dos `update` en una transaccion: un fallo entre ambos deja bookmarks
+  // sueltos sin lapida, con `collectionId` en null y la coleccion viva.
+  await database.transaction(async (tx) => {
+    await tx
+      .update(bookmarks)
+      .set({
+        collectionId: null,
+        version: sql`${bookmarks.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(bookmarks.collectionId, id), isNull(bookmarks.deletedAt)));
+    await tx
+      .update(collections)
+      .set({ deletedAt: new Date(), version: existing.version + 1, updatedAt: new Date() })
+      .where(and(eq(collections.id, id), isNull(collections.deletedAt)));
+  });
 }

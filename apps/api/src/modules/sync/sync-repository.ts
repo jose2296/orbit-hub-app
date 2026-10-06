@@ -230,6 +230,28 @@ export class SyncRepository {
     return row as StoredEntity;
   }
 
+  /**
+   * Los bookmarks de una coleccion siguen a su carpeta nueva.
+   *
+   * La carpeta de un bookmark clasificado es la de su coleccion, y esa
+   * invariante la rompe mover la coleccion sin tocar a sus miembros: A pasa de
+   * F1 a F2 y sus bookmarks quedarian clasificados en A y archivados en F1. La
+   * cascada es lo unico que la mantiene sin intervencion, por el camino normal
+   * de `updateEntity`: cada fila movida suma version y `updatedAt`, asi que el
+   * proximo pull la trae, que es lo correcto y no un efecto colateral.
+   */
+  async moveBookmarksToFolder(collectionId: string, folderId: string | null): Promise<void> {
+    const db = await this.db();
+    await db
+      .update(bookmarks)
+      .set({
+        folderId,
+        version: sql`${bookmarks.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(bookmarks.collectionId, collectionId), isNull(bookmarks.deletedAt)));
+  }
+
   /** One row per user, created on first write. */
   async upsertDashboard(
     userId: string,

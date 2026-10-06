@@ -396,7 +396,10 @@ describe('coleccion y carpeta no pueden discrepar', () => {
     expect(response.body.data.results[0].error).toMatch(/collection/i);
   });
 
-  it('update: sacar el bookmark de la coleccion lo deja sin carpeta, no con la vieja', async () => {
+  it('update: sacar el bookmark de la coleccion conserva su carpeta', async () => {
+    // Sin clasificar, la carpeta la elige la persona: un update que pone
+    // `collectionId` en null sin traer `folderId` no tiene por que pisarla.
+    // Solo un `folderId` explicito --incluido null-- usa el valor traido.
     const user = await createVerifiedUser(api);
     const workspaceId = await createWorkspace(user, 'Personal');
     const f1 = await createFolder(user, workspaceId);
@@ -417,7 +420,36 @@ describe('coleccion y carpeta no pueden discrepar', () => {
     ]);
 
     expect(response.body.data.results[0].status).toBe('applied');
-    expect((await row(user, 'bookmark', bookmark.id)).folderId).toBeNull();
+    const record = await row(user, 'bookmark', bookmark.id);
+    expect(record.collectionId).toBeNull();
+    expect(record.folderId).toBe(f1);
+  });
+
+  it('update: desempaquetar con folderId en null explicito si la suelta', async () => {
+    // La otra cara: traer `folderId` en null es una decision, y se respeta.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Personal');
+    const f1 = await createFolder(user, workspaceId);
+    const coleccion = await createCollection(user, workspaceId, { folderId: f1 });
+    const bookmark = await createBookmark(user, workspaceId, {
+      collectionId: coleccion.id,
+      folderId: f1,
+    });
+
+    const response = await push(user, [
+      operation({
+        entity: 'bookmark',
+        kind: 'update',
+        entityId: bookmark.id,
+        baseVersion: bookmark.version,
+        payload: { collectionId: null, folderId: null },
+      }),
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+    const record = await row(user, 'bookmark', bookmark.id);
+    expect(record.collectionId).toBeNull();
+    expect(record.folderId).toBeNull();
   });
 
   it('update: mover solo la carpeta sigue funcionando sin coleccion', async () => {
@@ -440,5 +472,66 @@ describe('coleccion y carpeta no pueden discrepar', () => {
 
     expect(response.body.data.results[0].status).toBe('applied');
     expect((await row(user, 'bookmark', bookmark.id)).folderId).toBe(f2);
+  });
+});
+
+describe('update solo de carpeta contra la coleccion actual', () => {
+  it('rechaza la carpeta que no es la de su coleccion', async () => {
+    // `updateBookmarkAction` acepta `folderId` suelto, asi que este es el
+    // camino por el que entra: un bookmark clasificado en A (carpeta F1) que
+    // recibe solo `{ folderId: F2 }` quedaba clasificado en A y archivado en
+    // F2, el estado que ningun create puede producir.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Personal');
+    const f1 = await createFolder(user, workspaceId);
+    const f2 = await createFolder(user, workspaceId);
+    const coleccion = await createCollection(user, workspaceId, { folderId: f1 });
+    const bookmark = await createBookmark(user, workspaceId, {
+      collectionId: coleccion.id,
+      folderId: f1,
+    });
+
+    const response = await push(user, [
+      operation({
+        entity: 'bookmark',
+        kind: 'update',
+        entityId: bookmark.id,
+        baseVersion: bookmark.version,
+        payload: { folderId: f2 },
+      }),
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('rejected');
+    expect(response.body.data.results[0].error).toMatch(/collection/i);
+
+    // Y la fila quedo como estaba.
+    const record = await row(user, 'bookmark', bookmark.id);
+    expect(record.collectionId).toBe(coleccion.id);
+    expect(record.folderId).toBe(f1);
+  });
+
+  it('acepta la carpeta que si es la de su coleccion', async () => {
+    // Traer la misma carpeta de la coleccion no es un cambio, y no se rechaza.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await createWorkspace(user, 'Personal');
+    const f1 = await createFolder(user, workspaceId);
+    const coleccion = await createCollection(user, workspaceId, { folderId: f1 });
+    const bookmark = await createBookmark(user, workspaceId, {
+      collectionId: coleccion.id,
+      folderId: f1,
+    });
+
+    const response = await push(user, [
+      operation({
+        entity: 'bookmark',
+        kind: 'update',
+        entityId: bookmark.id,
+        baseVersion: bookmark.version,
+        payload: { folderId: f1 },
+      }),
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('applied');
+    expect((await row(user, 'bookmark', bookmark.id)).folderId).toBe(f1);
   });
 });

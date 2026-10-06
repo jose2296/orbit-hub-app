@@ -228,3 +228,55 @@ describe('las lecturas de bookmarks', () => {
     expect(detalle.status).toBe(404);
   });
 });
+
+describe('borrar una coleccion exige poder escribir', () => {
+  async function invitarComo(
+    owner: TestUser,
+    workspaceId: string,
+    role: 'editor' | 'viewer',
+  ): Promise<TestUser> {
+    // La invitacion es la unica via para entrar a un espacio, igual que en
+    // `notes.test.ts`: un viewer es un rol real y el DELETE tiene que
+    // respetarlo como lo respeta el PATCH de una nota.
+    const otro = await createVerifiedUser(api);
+    const link = await api.post(
+      `/workspaces/${workspaceId}/invitations`,
+      { email: otro.email, role },
+      owner.accessToken,
+    );
+    expect(link.status).toBe(201);
+    await api.post(`/invitations/${link.body.data.token}/accept`, {}, otro.accessToken);
+    return otro;
+  }
+
+  it('un viewer no puede borrar: 403 y la coleccion sigue viva', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspace = await createWorkspace(owner, 'Personal');
+    const collection = await createCollection(owner, workspace.id, { name: 'Rust' });
+    const viewer = await invitarComo(owner, workspace.id, 'viewer');
+
+    // El viewer si lee: esta dentro del espacio, asi que la respuesta habla
+    // de su rol y no de que la coleccion no exista.
+    const lectura = await api.get(`/collections/${collection.id}`, viewer.accessToken);
+    expect(lectura.status).toBe(200);
+
+    const intento = await api.delete(`/collections/${collection.id}`, viewer.accessToken);
+    expect([403, 404]).toContain(intento.status);
+
+    const sigue = await api.get(`/collections/${collection.id}`, owner.accessToken);
+    expect(sigue.status).toBe(200);
+  });
+
+  it('un editor si puede borrar', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspace = await createWorkspace(owner, 'Personal');
+    const collection = await createCollection(owner, workspace.id, { name: 'Rust' });
+    const editor = await invitarComo(owner, workspace.id, 'editor');
+
+    const borrado = await api.delete(`/collections/${collection.id}`, editor.accessToken);
+    expect(borrado.status).toBe(204);
+
+    const ausente = await api.get(`/collections/${collection.id}`, owner.accessToken);
+    expect(ausente.status).toBe(404);
+  });
+});

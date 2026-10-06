@@ -81,15 +81,15 @@ export async function createCollectionAction(input: NewCollectionInput): Promise
 /**
  * Guarda una coleccion.
  *
- * Solo llegan los campos definidos: un `undefined` mezclado en el registro
- * pisaria el valor guardado, y una coleccion sin nombre es una fila que el
- * navegador no sabe dibujar.
+ * Sin `workspaceId`: una coleccion no se muda de espacio, igual que una nota
+ * no se mueve entre espacios por un payload de sync. Solo llegan los campos
+ * definidos: un `undefined` mezclado en el registro pisaria el valor guardado,
+ * y una coleccion sin nombre es una fila que el navegador no sabe dibujar.
  */
 export async function updateCollectionAction(
-  input: { id: string; baseVersion: number } & Partial<NewCollectionInput>,
+  input: { id: string; baseVersion: number } & Partial<Omit<NewCollectionInput, "workspaceId">>,
 ): Promise<void> {
   const cambios: Record<string, unknown> = {};
-  if (input.workspaceId !== undefined) cambios["workspaceId"] = input.workspaceId;
   if (input.folderId !== undefined) cambios["folderId"] = input.folderId;
   if (input.name !== undefined) cambios["name"] = input.name;
   if (input.description !== undefined) cambios["description"] = input.description;

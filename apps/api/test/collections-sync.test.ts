@@ -102,6 +102,32 @@ async function createCollection(
   return { id, version: response.body.data.results[0].version as number };
 }
 
+/** Local a este archivo, igual que los demas helpers: nada se importa de otros tests. */
+async function createBookmark(
+  user: TestUser,
+  workspaceId: string,
+  over: Record<string, unknown> = {},
+): Promise<{ id: string; version: number }> {
+  const id = randomUUID();
+  const response = await push(user, [
+    operation({
+      entity: 'bookmark',
+      kind: 'create',
+      entityId: id,
+      payload: {
+        workspaceId,
+        url: 'https://example.com/a',
+        title: 'A',
+        tags: [],
+        position: 0,
+        ...over,
+      },
+    }),
+  ]);
+  expect(response.body.data.results[0].status).toBe('applied');
+  return { id, version: response.body.data.results[0].version as number };
+}
+
 /** El pull entero, como lo pide un movil que acaba de abrirse. */
 async function pull(user: TestUser, cursor: string | null = null) {
   const response = await api.post(
@@ -253,5 +279,43 @@ describe('el ciclo de update y delete de una coleccion', () => {
     expect(record).toBeDefined();
     expect(record?.deletedAt).toBeTruthy();
     expect(record?.version).toBe(2);
+  });
+
+  it('mover la coleccion de carpeta arrastra a sus bookmarks', async () => {
+    // La carpeta de un bookmark clasificado es la de su coleccion: si A pasa
+    // de F1 a F2 y sus miembros se quedan en F1, quedan clasificados en A y
+    // archivados en F1. La cascada los mueve en la misma operacion, por el
+    // camino normal, asi que cada uno suma version y el proximo pull los trae.
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Personal');
+    const f1 = await createFolder(user, workspace.id, 'F1');
+    const f2 = await createFolder(user, workspace.id, 'F2');
+    const collection = await createCollection(user, workspace.id, {
+      name: 'Rust',
+      folderId: f1,
+    });
+    const bookmark = await createBookmark(user, workspace.id, {
+      collectionId: collection.id,
+      folderId: f1,
+    });
+
+    const response = await push(user, [
+      operation({
+        entity: 'collection',
+        kind: 'update',
+        entityId: collection.id,
+        baseVersion: collection.version,
+        payload: { folderId: f2 },
+      }),
+    ]);
+    expect(response.body.data.results[0].status).toBe('applied');
+
+    const data = await pull(user);
+    expect(row(data, 'collection', collection.id)?.folderId).toBe(f2);
+
+    const miembro = row(data, 'bookmark', bookmark.id);
+    expect(miembro?.collectionId).toBe(collection.id);
+    expect(miembro?.folderId).toBe(f2);
+    expect(miembro?.version).toBe(bookmark.version + 1);
   });
 });

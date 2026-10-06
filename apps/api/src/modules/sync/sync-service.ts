@@ -700,6 +700,26 @@ export class SyncService {
     return `${donde}${issue.message}`.slice(0, 500);
   }
 
+  /**
+   * Los bookmarks siguen a su coleccion cuando esta se mueve de carpeta.
+   *
+   * Se compara la fila aplicada con la que habia, y no el payload: asi cubre
+   * los dos caminos que escriben (version al dia y merge) sin razonar dos
+   * veces sobre que trajo el cliente. Sin cambio de carpeta no hay nada que
+   * hacer, y en conflicto no se aplico nada, asi que tampoco.
+   */
+  private async seguirCarpetaDeColeccion(
+    entity: SyncEntityName,
+    antes: StoredEntity,
+    despues: StoredEntity,
+  ): Promise<void> {
+    if (entity !== 'collection') return;
+    const carpetaAntes = (antes['folderId'] as string | null) ?? null;
+    const carpetaAhora = (despues['folderId'] as string | null) ?? null;
+    if (carpetaAntes === carpetaAhora) return;
+    await syncRepository.moveBookmarksToFolder(despues.id, carpetaAhora);
+  }
+
   private async apply(operation: SyncOperation, userId: string): Promise<AppliedResult> {
     // Narrowed once: this build stores a subset of the entities in the contract.
     const entity = assertSupportedEntity(operation.entity);
@@ -1166,28 +1186,61 @@ export class SyncService {
             que mandara los dos con valores distintos se guardaba clasificado en
             una coleccion y archivado en una carpeta que no era de esa coleccion.
 
-            Las tres formas, entonces:
-            - `collectionId` sin `folderId`: la carpeta se deriva de la
-              coleccion. Sale o no, y por eso cambiar de coleccion mueve la fila.
+            Las formas, entonces:
+            - clasificar sin `folderId`: la carpeta se deriva de la coleccion.
             - los dos de acuerdo: se acepta tal cual.
             - los dos en discrepancia: 422 con el motivo, porque el que se
               equivoco es el cliente y necesita saber cual de los dos.
+            - desempaquetar (`collectionId` en null) sin `folderId`: la carpeta
+              actual se conserva y no se toca nada. Sin clasificar, la carpeta
+              la elige la persona, y un update que no la trae no tiene por que
+              pisarla. Solo un `folderId` explicito --incluido null-- usa el
+              valor traido, porque ese si es una decision.
           */
-          const carpetaDeLaColeccion = (coleccion?.['folderId'] as string | null) ?? null;
-          const carpetaDelPayload = (destino['folderId'] as string | null | undefined) ?? null;
-          const claveFolderId = Object.prototype.hasOwnProperty.call(destino, 'folderId');
+          const clasifica = (destino['collectionId'] as string | null) !== null;
+          if (clasifica) {
+            const carpetaDeLaColeccion = (coleccion?.['folderId'] as string | null) ?? null;
+            const carpetaDelPayload = (destino['folderId'] as string | null | undefined) ?? null;
+            const claveFolderId = Object.prototype.hasOwnProperty.call(destino, 'folderId');
 
-          if (claveFolderId && carpetaDelPayload !== carpetaDeLaColeccion) {
-            throw HttpError.validation(
-              'The folder has to be the one that belongs to the collection',
-            );
+            if (claveFolderId && carpetaDelPayload !== carpetaDeLaColeccion) {
+              throw HttpError.validation(
+                'The folder has to be the one that belongs to the collection',
+              );
+            }
+
+            if (!claveFolderId) {
+              operacion = {
+                ...operation,
+                payload: { ...(operation.payload ?? {}), folderId: carpetaDeLaColeccion },
+              };
+            }
           }
+        }
 
-          if (!claveFolderId) {
-            operacion = {
-              ...operation,
-              payload: { ...(operation.payload ?? {}), folderId: carpetaDeLaColeccion },
-            };
+        /*
+          Un update que trae solo `folderId` tambien puede romper la
+          invariante, y este es el camino por el que entra: `updateBookmarkAction`
+          acepta `folderId` suelto, asi que un bookmark clasificado en A (carpeta
+          F1) que recibe `{ folderId: F2 }` quedaba clasificado en A y archivado
+          en F2. Se compara contra la carpeta de la coleccion actual de la fila:
+          si discrepa, 422 con el motivo. Si coincide o la fila no tiene
+          coleccion, pasa como hoy.
+        */
+        if (entity === 'bookmark' && !('collectionId' in destino) && 'folderId' in destino) {
+          const actual = (existing['collectionId'] as string | null) ?? null;
+          if (actual !== null) {
+            const coleccionActual = await syncRepository.findEntity('collection', actual);
+            if (coleccionActual !== null) {
+              const carpetaDeLaColeccion = (coleccionActual['folderId'] as string | null) ?? null;
+              const carpetaDelPayload =
+                (destino['folderId'] as string | null | undefined) ?? null;
+              if (carpetaDelPayload !== carpetaDeLaColeccion) {
+                throw HttpError.validation(
+                  'The folder has to be the one that belongs to the collection',
+                );
+              }
+            }
           }
         }
       }
@@ -1199,6 +1252,7 @@ export class SyncService {
         operacion.entityId,
         noteFieldsForWrite(entity, sanitisePayload(entity, operacion.payload)),
       );
+      await this.seguirCarpetaDeColeccion(entity, existing, row);
       return { status: 'applied', version: row.version };
     }
 
@@ -1215,6 +1269,7 @@ export class SyncService {
       }
       // The client had stale data but touched nothing that changed: a safe merge.
       const row = await syncRepository.updateEntity(entity, operation.entityId, values);
+      await this.seguirCarpetaDeColeccion(entity, existing, row);
       return { status: 'applied', version: row.version };
     }
 
