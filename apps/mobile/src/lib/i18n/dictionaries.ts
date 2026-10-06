@@ -455,6 +455,11 @@ const es = {
   "content.kind.tasks": "Tareas",
   "content.kind.movies": "Películas",
   "content.kind.series": "Series",
+  /* Esta la compone `content-list.tsx` con el mismo `listKind` y el mismo
+     `as never` que la de un tablero, asi que el typechecker no avisa cuando
+     falta. Una lista de pelis y series se leia como
+     "12 · content.kind.movies_and_series" en vez de "12 · Peliculas y series". */
+  "content.kind.movies_and_series": "Películas y series",
   "content.kind.books": "Libros",
   "content.kind.notes": "Notas",
   /* La clave de un tablero la compone `content-list.tsx` con el `listKind` de la
@@ -1584,6 +1589,10 @@ const en: Record<TranslationKey, string> = {
   "content.kind.tasks": "Tasks",
   "content.kind.movies": "Movies",
   "content.kind.series": "Series",
+  /* Composed in `content-list.tsx` out of the same `listKind` behind the same
+     `as never` as the board one, so a missing entry is not a type error: it is a
+     movies-and-series row reading "12 · content.kind.movies_and_series". */
+  "content.kind.movies_and_series": "Films and series",
   "content.kind.books": "Books",
   "content.kind.notes": "Notes",
   /* See the Spanish block. This key is composed in `content-list.tsx` out of the
