@@ -457,6 +457,11 @@ const es = {
   "content.kind.series": "Series",
   "content.kind.books": "Libros",
   "content.kind.notes": "Notas",
+  /* La clave de un tablero la compone `content-list.tsx` con el `listKind` de la
+     fila, y ahi va con un `as never` porque el tipo no puede saber que valores
+     son. Sin esta entrada el tablero se leia como "12 · content.kind.board" en
+     vez de "12 · Tablero", y el typechecker no lo nota. */
+  "content.kind.board": "Tablero",
   "content.clear": "Quitar filtros",
   "content.hidden": "{hidden} de {total} cosas ocultas",
   "content.emptyFiltered": "Nada de esto sale con el filtro de ahora.",
@@ -1581,6 +1586,10 @@ const en: Record<TranslationKey, string> = {
   "content.kind.series": "Series",
   "content.kind.books": "Books",
   "content.kind.notes": "Notes",
+  /* See the Spanish block. This key is composed in `content-list.tsx` out of the
+     row's `listKind` behind an `as never`, so a missing entry is not a type
+     error: it is a board row reading "12 · content.kind.board". */
+  "content.kind.board": "Board",
   "content.clear": "Clear filters",
   "content.hidden": "{hidden} of {total} things hidden",
   "content.emptyFiltered": "None of this comes out with the current filter.",
