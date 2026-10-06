@@ -1,9 +1,13 @@
 import type { SyncOperation } from '@orbit-hub/contracts';
+import { todayIn } from '@orbit-hub/habit-core';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createVerifiedUser, startTestServer } from './helpers';
 import type { TestServer, TestUser } from './helpers';
+import { getDatabase } from '../src/db/client.js';
+import { habitEntries } from '../src/db/habit-schema.js';
+import { eq } from 'drizzle-orm';
 
 let api: TestServer;
 
@@ -250,5 +254,167 @@ describe('los habitos en el motor de sync', () => {
       (change) => change.entity === 'habit' && change.record.id === habit.id,
     );
     expect(tombstone?.record.deletedAt).toBeTruthy();
+  });
+});
+
+/** Suma un dia a un `YYYY-MM-DD` en UTC: para "manana" vale cualquier zona. */
+function diaMas(fecha: string, dias: number): string {
+  const [anio, mes, dia] = fecha.split('-').map(Number);
+  const base = new Date(Date.UTC(anio as number, (mes as number) - 1, dia as number));
+  base.setUTCDate(base.getUTCDate() + dias);
+  const mesTexto = String(base.getUTCMonth() + 1).padStart(2, '0');
+  const diaTexto = String(base.getUTCDate()).padStart(2, '0');
+  return `${base.getUTCFullYear()}-${mesTexto}-${diaTexto}`;
+}
+
+describe('la fecha imposible no entra por sync', () => {
+  // La misma disciplina que la REST: una fecha imposible se rechaza por
+  // operacion, con motivo, en vez de guardarse en silencio por venir sin
+  // conexion. El push no bloquea el offline: solo esa operacion cae.
+  const LUNES = '2026-10-05';
+  const MARTES = '2026-10-06';
+
+  async function habitSemanal(user: TestUser) {
+    return createHabit(user, {
+      name: 'Lunes',
+      schedule: { kind: 'rrule', rule: 'FREQ=WEEKLY;BYDAY=MO' },
+    });
+  }
+
+  async function marca(
+    user: TestUser,
+    habitId: string,
+    date: string,
+    status = 'done',
+  ) {
+    const response = await push(user, [
+      operation({
+        entity: 'habit_entry',
+        kind: 'create',
+        entityId: randomUUID(),
+        payload: entryPayload(habitId, { date, status }),
+      }),
+    ]);
+    return response.body.data.results[0] as { status: string; error: string | null };
+  }
+
+  it('rechaza el futuro con motivo', async () => {
+    const user = await createVerifiedUser(api);
+    const habit = await createHabit(user);
+    const manana = diaMas(todayIn('Europe/Madrid'), 1);
+
+    const result = await marca(user, habit.id, manana);
+    expect(result.status).toBe('rejected');
+    expect(result.error).toMatch(/futuro/i);
+  });
+
+  it('rechaza lo anterior al inicio', async () => {
+    const user = await createVerifiedUser(api);
+    const habit = await createHabit(user, { startDate: '2026-09-01' });
+
+    const result = await marca(user, habit.id, '2026-08-31');
+    expect(result.status).toBe('rejected');
+    expect(result.error).toMatch(/anterior al inicio/i);
+  });
+
+  it('rechaza lo posterior al fin', async () => {
+    const user = await createVerifiedUser(api);
+    const habit = await createHabit(user, {
+      startDate: '2026-01-01',
+      endDate: '2026-06-30',
+    });
+
+    const result = await marca(user, habit.id, '2026-07-01');
+    expect(result.status).toBe('rejected');
+    expect(result.error).toMatch(/posterior al fin/i);
+  });
+
+  it('rechaza el dia no programado, hecho o saltado', async () => {
+    const user = await createVerifiedUser(api);
+    const habit = await habitSemanal(user);
+
+    // El lunes vale: es el control de que la regla semanal se entiende.
+    expect((await marca(user, habit.id, LUNES)).status).toBe('applied');
+
+    // El martes no esta programado: ni hecho ni saltado entran.
+    const hecho = await marca(user, habit.id, MARTES, 'done');
+    expect(hecho.status).toBe('rejected');
+    expect(hecho.error).toMatch(/no esta programado/i);
+
+    const saltado = await marca(user, habit.id, MARTES, 'skipped');
+    expect(saltado.status).toBe('rejected');
+    expect(saltado.error).toMatch(/no esta programado/i);
+  });
+
+  it('rechaza el habito con el fin anterior al inicio', async () => {
+    const user = await createVerifiedUser(api);
+    const id = randomUUID();
+    const response = await push(user, [
+      operation({
+        entity: 'habit',
+        kind: 'create',
+        entityId: id,
+        payload: habitPayload({ startDate: '2026-01-01', endDate: '2025-12-31' }),
+      }),
+    ]);
+
+    const result = response.body.data.results[0] as { status: string; error: string | null };
+    expect(result.status).toBe('rejected');
+    expect(result.error).toMatch(/anterior al inicio/i);
+  });
+
+  it('rechaza el horario que no se entiende en un update', async () => {
+    const user = await createVerifiedUser(api);
+    const habit = await createHabit(user);
+
+    const response = await push(user, [
+      operation({
+        entity: 'habit',
+        kind: 'update',
+        entityId: habit.id,
+        baseVersion: habit.version,
+        payload: { schedule: { kind: 'rrule', rule: 'FREQ=NUNCA' } },
+      }),
+    ]);
+
+    const result = response.body.data.results[0] as { status: string; error: string | null };
+    expect(result.status).toBe('rejected');
+    expect(result.error).toBeTruthy();
+  });
+
+  it('remarcar tras borrar revive el dia', async () => {
+    // Asi converge la divergencia lapida-servidor/done-local: la proxima
+    // marca trae el dia de vuelta, como el upsert de la REST.
+    const user = await createVerifiedUser(api);
+    const habit = await createHabit(user);
+    const antes = await marca(user, habit.id, LUNES);
+    expect(antes.status).toBe('applied');
+
+    const { db } = await getDatabase();
+    const previas = await db
+      .select({ id: habitEntries.id })
+      .from(habitEntries)
+      .where(eq(habitEntries.habitId, habit.id));
+    expect(previas).toHaveLength(1);
+
+    // Borra por sync: lapida, como cualquier dispositivo borrando.
+    const borrado = await push(user, [
+      operation({ entity: 'habit_entry', kind: 'delete', entityId: previas[0]?.id as string }),
+    ]);
+    expect(borrado.body.data.results[0].status).toBe('applied');
+
+    // Remarca el mismo dia: revive en vez de chocar con el UNIQUE.
+    const remarcada = await marca(user, habit.id, LUNES, 'done');
+    expect(remarcada.status).toBe('applied');
+
+    const changes = (await pull(user)).body.data.changes as {
+      entity: string;
+      record: Record<string, unknown>;
+    }[];
+    const viva = changes.find(
+      (change) => change.entity === 'habit_entry' && change.record.habitId === habit.id,
+    );
+    expect(viva?.record.deletedAt).toBeFalsy();
+    expect(viva?.record.status).toBe('done');
   });
 });

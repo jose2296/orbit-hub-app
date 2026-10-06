@@ -10,12 +10,14 @@ import type {
 import {
   NOTE_DOCUMENT_MAX_BYTES,
   habitScheduleSchema,
+  localDateSchema,
   normalizaColor,
   noteDocumentSchema,
   noteDocumentToPlainText,
   sanitiseTagColors,
   syncOperationSchema,
 } from '@orbit-hub/contracts';
+import type { HabitSchedule } from '@orbit-hub/contracts';
 import { and, eq } from 'drizzle-orm';
 
 import { getDatabase } from '../../db/client.js';
@@ -40,6 +42,7 @@ import { logger } from '../../lib/logger.js';
 
 import { shareService } from '../shares/share-service.js';
 import { syncConflicts } from '../../db/schema.js';
+import { assertFechaValida, assertRango, assertScheduleUsable } from '../habits/habit-dates.js';
 
 import { syncRepository } from './sync-repository';
 import type { StoredEntity } from './sync-repository';
@@ -809,17 +812,27 @@ export class SyncService {
           const raw = operation.payload ?? {};
           const timezone =
             typeof raw['timezone'] === 'string' ? raw['timezone'].slice(0, 64) : '';
-          const startDate = typeof raw['startDate'] === 'string' ? raw['startDate'] : '';
           if (timezone.length === 0) {
             throw HttpError.validation('A habit needs a timezone');
-          }
-          if (startDate.length === 0) {
-            throw HttpError.validation('A habit needs a startDate');
           }
           const schedule = habitScheduleSchema.safeParse(payload['schedule']);
           if (!schedule.success) {
             throw HttpError.validation('A habit needs a schedule');
           }
+          // La misma disciplina que la REST: zona que existe, regla que se
+          // entiende y fin no anterior al inicio. El push rechaza por
+          // operacion, con motivo, sin bloquear el uso offline.
+          assertScheduleUsable(schedule.data, timezone);
+          const inicio = localDateSchema.safeParse(raw['startDate']);
+          if (!inicio.success) {
+            throw HttpError.validation('A habit needs a startDate');
+          }
+          const fin =
+            typeof raw['endDate'] === 'string' ? localDateSchema.safeParse(raw['endDate']) : null;
+          if (typeof raw['endDate'] === 'string' && (!fin || !fin.success)) {
+            throw HttpError.validation('That end date is not a date');
+          }
+          assertRango(inicio.data, fin && fin.success ? fin.data : null);
 
           const row = await syncRepository.insertEntity('habit', {
             ...payload,
@@ -828,8 +841,8 @@ export class SyncService {
             name: (payload['name'] as string) ?? 'Habit',
             schedule: schedule.data,
             timezone,
-            startDate,
-            endDate: typeof raw['endDate'] === 'string' ? raw['endDate'] : null,
+            startDate: inicio.data,
+            endDate: fin && fin.success ? fin.data : null,
             weekStart: raw['weekStart'] === 1 ? 1 : 0,
             position: Math.max(0, Math.trunc(Number(raw['position']) || 0)),
           });
@@ -839,11 +852,11 @@ export class SyncService {
         case 'habit_entry': {
           const raw = operation.payload ?? {};
           const habitId = typeof raw['habitId'] === 'string' ? raw['habitId'] : '';
-          const date = typeof raw['date'] === 'string' ? raw['date'] : '';
           if (habitId.length === 0) {
             throw HttpError.validation('An entry needs a habitId');
           }
-          if (date.length === 0) {
+          const fecha = localDateSchema.safeParse(raw['date']);
+          if (!fecha.success) {
             throw HttpError.validation('An entry needs a date');
           }
           const habit = await syncRepository.findEntity('habit', habitId);
@@ -853,14 +866,29 @@ export class SyncService {
           if (payload['status'] !== 'done' && payload['status'] !== 'skipped') {
             throw HttpError.validation('An entry needs a status');
           }
+          // La misma fecha valida que la REST: no futuro, dentro del rango y
+          // en dia programado. Una fecha imposible se rechaza con motivo en
+          // vez de guardarse en silencio por venir sin conexion.
+          assertFechaValida(
+            {
+              schedule: habit['schedule'] as HabitSchedule,
+              timezone: String(habit['timezone'] ?? ''),
+              weekStart: habit['weekStart'] === 1 ? 1 : 0,
+              startDate: String(habit['startDate'] ?? ''),
+              endDate: habit['endDate'] ? String(habit['endDate']) : null,
+            },
+            fecha.data,
+          );
           // Remarcar no acumula: el UNIQUE (habito, dia) es la regla y esto
           // la aplica, asi que la segunda marca reescribe la primera en vez
-          // de sumar una fila.
-          const previous = await syncRepository.findHabitEntry(habitId, date);
+          // de sumar una fila. Y revive: remarcar un dia borrado lo trae de
+          // vuelta, como el upsert de la REST.
+          const previous = await syncRepository.findHabitEntry(habitId, fecha.data);
           if (previous) {
             const row = await syncRepository.updateEntity('habit_entry', previous.id, {
               ...payload,
               status: payload['status'],
+              deletedAt: null,
             });
             return { status: 'applied', version: row.version };
           }
@@ -869,7 +897,7 @@ export class SyncService {
             ...payload,
             id: operation.entityId,
             habitId,
-            date,
+            date: fecha.data,
             status: payload['status'],
           });
           return { status: 'applied', version: row.version };
@@ -955,6 +983,15 @@ export class SyncService {
       });
     } else if (entity === 'habit') {
       this.assertOwnHabit(existing, userId);
+      // La fecha no viaja en un update (no es escribible), pero el horario
+      // si: se valida como en la REST, contra la zona congelada del habito.
+      if (operation.payload?.['schedule'] !== undefined) {
+        const horario = habitScheduleSchema.safeParse(operation.payload['schedule']);
+        if (!horario.success) {
+          throw HttpError.validation('Esa regla de repeticion no se entiende');
+        }
+        assertScheduleUsable(horario.data, String(existing['timezone'] ?? ''));
+      }
     } else if (entity === 'habit_entry') {
       await this.assertOwnHabitEntry(existing, userId);
     }

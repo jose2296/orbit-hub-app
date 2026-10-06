@@ -17,20 +17,21 @@ import {
 function cached(
   entityId: string,
   values: Record<string, unknown>,
+  deletedAt: string | null = null,
 ): CachedEntity {
   return {
     entity: "habit_entry",
     entityId,
     version: 3,
     updatedAt: "2026-10-01T08:00:00.000Z",
-    deletedAt: null,
+    deletedAt,
     payload: JSON.stringify({
       id: entityId,
       habitId: "habito-1",
       date: "2026-10-01",
       version: 3,
       updatedAt: "2026-10-01T08:00:00.000Z",
-      deletedAt: null,
+      deletedAt,
       ...values,
     }),
     pending: null,
@@ -171,6 +172,53 @@ describe("el merge de una entrada", () => {
       server("e7", { status: "done" }),
     ]);
 
+    expect(fixture.conflicts).toBe(0);
+  });
+
+  it("un borrado local revive en pantalla hasta que el push lo confirma", async () => {
+    // La direccion inversa: lapida local (borrado sin conexion) + fila viva
+    // del servidor => gana el servidor y la entrada vuelve a verse. Es
+    // resurreccion transitoria, el parpadeo en sentido contrario: el borrado
+    // sigue en el outbox, y cuando el push lo confirma y el pull trae la
+    // lapida, converge a borrado. Se acepta el parpadeo porque la alternativa
+    // (la lapida local pisa al servidor) esconderia una marca que otro
+    // dispositivo ya confirmo.
+    const fixture = storeWith([
+      cached("e8", { status: "done" }, "2026-10-01T09:30:00.000Z"),
+    ]);
+
+    const { corrections } = await applyHabitEntryChanges(fixture.store, [
+      server("e8", { status: "skipped" }),
+    ]);
+
+    const kept = read(await fixture.store.getCached("habit_entry", "e8"));
+    expect(kept.status).toBe("skipped");
+    expect(kept.deletedAt).toBeNull();
+    // Nada que contarle al servidor: lo suyo ya gano.
+    expect(corrections).toHaveLength(0);
+    expect(fixture.conflicts).toBe(0);
+  });
+
+  it("lapida del servidor + done local diverge hasta la proxima marca", async () => {
+    // La limitacion honesta del modelo de lapidas: el movil muestra done
+    // (la precedencia lo manda) y no emite correccion (una lapida no se
+    // revive por update), asi que el servidor mantiene la lapida. Converge
+    // en la proxima marca o borrado manual: remarcar revive por upsert en
+    // el servidor, y re-borrar confirma la lapida en ambos.
+    const fixture = storeWith([cached("e9", { status: "done" })]);
+
+    const { corrections } = await applyHabitEntryChanges(fixture.store, [
+      server("e9", {
+        status: "done",
+        deletedAt: "2026-10-01T10:00:00.000Z",
+      }),
+    ]);
+
+    const kept = read(await fixture.store.getCached("habit_entry", "e9"));
+    expect(kept.status).toBe("done");
+    expect(kept.deletedAt).toBeNull();
+    // Sin push-back no hay convergencia: el servidor sigue borrado.
+    expect(corrections).toHaveLength(0);
     expect(fixture.conflicts).toBe(0);
   });
 });

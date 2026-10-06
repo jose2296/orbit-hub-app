@@ -1,6 +1,5 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
-import { periodBounds, scheduledDates, todayIn } from '@orbit-hub/habit-core';
 import type {
   Habit,
   HabitEntry,
@@ -15,6 +14,8 @@ import type { Database } from '../../db/client.js';
 import type { HabitEntryRow, HabitRow } from '../../db/habit-schema.js';
 import { habitEntries, habits } from '../../db/habit-schema.js';
 import { HttpError } from '../../lib/http-error.js';
+
+import { assertFechaValida, assertRango, assertScheduleUsable } from './habit-dates.js';
 
 /** Lo que `POST /habits` acepta: todo el habito menos lo que pone el servidor. */
 export interface CreateHabitInput {
@@ -71,24 +72,6 @@ export interface WrittenEntry {
   amount: number | null;
   note: string | null;
   version: number;
-}
-
-/** Dias en cristiano y sin tildes, para el 422 que nombra el proximo dia. */
-const DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'] as const;
-
-function diaSemana(fecha: LocalDate): string {
-  const [anio, mes, dia] = fecha.split('-').map(Number);
-  const nombre = DIAS[new Date(Date.UTC(anio as number, (mes as number) - 1, dia as number)).getUTCDay()];
-  return nombre ?? fecha;
-}
-
-function diaMas(fecha: LocalDate, dias: number): LocalDate {
-  const [anio, mes, dia] = fecha.split('-').map(Number);
-  const base = new Date(Date.UTC(anio as number, (mes as number) - 1, dia as number));
-  base.setUTCDate(base.getUTCDate() + dias);
-  const mesTexto = String(base.getUTCMonth() + 1).padStart(2, '0');
-  const diaTexto = String(base.getUTCDate()).padStart(2, '0');
-  return `${base.getUTCFullYear()}-${mesTexto}-${diaTexto}`;
 }
 
 function toHabit(row: HabitRow): Habit {
@@ -167,34 +150,6 @@ export class HabitsService {
     return row;
   }
 
-  /**
-   * La zona y la regla tienen que valer antes de guardar.
-   *
-   * Una regla rota no puede esperar al primer check-in para reventar: ahi ya
-   * seria un 500 en una ruta que promete 422, asi que se prueba aqui con la
-   * misma funcion que luego valida las fechas.
-   */
-  private assertScheduleUsable(schedule: HabitSchedule, timezone: string): void {
-    let hoy: LocalDate;
-    try {
-      hoy = todayIn(timezone);
-    } catch {
-      throw HttpError.validation('Esa zona horaria no existe');
-    }
-    if (schedule.kind === 'quota') return;
-    try {
-      scheduledDates(schedule, hoy, hoy, timezone);
-    } catch {
-      throw HttpError.validation('Esa regla de repeticion no se entiende');
-    }
-  }
-
-  private assertRango(startDate: LocalDate, endDate: LocalDate | null): void {
-    if (endDate !== null && endDate < startDate) {
-      throw HttpError.validation('El fin no puede ser anterior al inicio');
-    }
-  }
-
   /** La lista con su proyeccion de resumen: el habito mas sus entradas vivas. */
   async list(userId: string, includeArchived: boolean): Promise<HabitSummary[]> {
     const db = await this.db();
@@ -217,8 +172,8 @@ export class HabitsService {
   }
 
   async create(userId: string, input: CreateHabitInput): Promise<Habit> {
-    this.assertRango(input.startDate, input.endDate);
-    this.assertScheduleUsable(input.schedule, input.timezone);
+    assertRango(input.startDate, input.endDate);
+    assertScheduleUsable(input.schedule, input.timezone);
     const db = await this.db();
     const [row] = await db
       .insert(habits)
@@ -243,8 +198,8 @@ export class HabitsService {
     const actual = await this.requireHabit(userId, habitId);
     const startDate = patch.startDate ?? actual.startDate;
     const endDate = patch.endDate ?? actual.endDate;
-    this.assertRango(startDate, endDate);
-    if (patch.schedule) this.assertScheduleUsable(patch.schedule, actual.timezone);
+    assertRango(startDate, endDate);
+    if (patch.schedule) assertScheduleUsable(patch.schedule, actual.timezone);
     const db = await this.db();
     const [row] = await db
       .update(habits)
@@ -313,56 +268,6 @@ export class HabitsService {
   }
 
   /**
-   * El proximo dia programado despues de `fecha`, con la misma funcion que
-   * decide si un dia vale. Sin ella el 422 seria un muro; con ella es una
-   * cita: "el lunes te toca".
-   */
-  private proximoProgramado(habit: HabitRow, fecha: LocalDate): LocalDate | null {
-    if (habit.schedule.kind !== 'rrule') return null;
-    const desde = diaMas(fecha, 1);
-    const encontrados = scheduledDates(habit.schedule, desde, diaMas(desde, 365), habit.timezone);
-    return encontrados[0] ?? null;
-  }
-
-  /**
-   * La disciplina dura: esto es lo que hace que "disciplina dura" sea algo y
-   * no un texto. La fecha se valida contra el horario local antes de insertar,
-   * y cada rechazo es un 422 que dice por que.
-   */
-  private assertFechaValida(habit: HabitRow, fecha: LocalDate): void {
-    const hoy = todayIn(habit.timezone);
-    if (fecha > hoy) {
-      throw HttpError.validation('No se puede registrar en el futuro');
-    }
-    if (fecha < habit.startDate) {
-      throw HttpError.validation('Ese dia es anterior al inicio del habito');
-    }
-    if (habit.endDate !== null && fecha > habit.endDate) {
-      throw HttpError.validation('Ese dia es posterior al fin del habito');
-    }
-    if (habit.schedule.kind === 'quota') {
-      // En una cuota cualquier dia del periodo abierto vale: no hay dias
-      // fijados, solo un contador por periodo.
-      const periodo = periodBounds(habit.schedule.period, hoy, habit.weekStart, habit.timezone);
-      if (fecha < periodo.start || fecha > periodo.end) {
-        throw HttpError.validation('Ese dia no esta en el periodo en curso');
-      }
-      return;
-    }
-    if (scheduledDates(habit.schedule, fecha, fecha, habit.timezone).length === 0) {
-      const proximo = this.proximoProgramado(habit, fecha);
-      if (proximo === null) {
-        throw HttpError.validation(
-          `Este habito no esta programado el ${diaSemana(fecha)} ni ningun dia posterior`,
-        );
-      }
-      throw HttpError.validation(
-        `Este habito no esta programado el ${diaSemana(fecha)}. El proximo dia programado es el ${diaSemana(proximo)}`,
-      );
-    }
-  }
-
-  /**
    * Registra un dia.
    *
    * Remarcar no acumula: el UNIQUE (habito, dia) es la regla y el upsert la
@@ -370,7 +275,7 @@ export class HabitsService {
    */
   async checkIn(userId: string, habitId: string, input: CheckInInput): Promise<WrittenEntry> {
     const habit = await this.requireHabit(userId, habitId);
-    this.assertFechaValida(habit, input.date);
+    assertFechaValida(habit, input.date);
     const db = await this.db();
     const [row] = await db
       .insert(habitEntries)

@@ -73,6 +73,14 @@ export interface EntryCorrection {
  * servidor, para que el que llama las encole y el servidor converja al
  * mismo valor. Una lapida no se revive desde aqui: un update no la limpia,
  * y inventar un create partiria el dia en dos filas.
+ *
+ * Divergencia conocida: lapida del servidor + done local. El movil muestra
+ * done y no hay correccion, asi que el servidor mantiene la lapida hasta
+ * que alguien actua: remarcar revive por upsert en el servidor, re-borrar
+ * confirma la lapida en ambos. No se revive solo porque el servidor no
+ * distingue "no vi el borrado" de "lo vi y remarco": un done viejo
+ * resucitando una lapida desharia un borrado que alguien pidio a proposito,
+ * y eso es peor que divergir a la vista hasta la proxima marca.
  */
 export async function applyHabitEntryChanges(
   store: LocalStore,
