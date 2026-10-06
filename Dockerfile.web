@@ -34,9 +34,10 @@ ENV npm_config_update_notifier=false
 #
 # Y el nombre lleva `_ANDROID` por lo que dice el propio assert: un build de Play
 # necesita el client de Android, porque Google rechaza el de web dentro de una app
-# instalada. Para la web hay otro (`_WEB`) y no se pide aqui: este `Dockerfile`
-# construye el bundle que se sirve como web, y el build de Android no pasa por
-# aqui — lo hace `release.sh`, con su `.env.release`.
+# instalada. Para la web hay otro (`_WEB`), y ese es el que usa el bundle que sirve
+# este `Dockerfile`: sin su `ARG` la web se despliega con el client id vacio y el
+# login con Google no funciona. El build de Android no pasa por aqui — lo hace
+# `release.sh`, con su `.env.release`.
 #
 # Y el motivo de que un `ARG` en vez de un `ENV` importase, escrito en el bloque
 # de arriba, sigue siendo el que hizo falta: Docker no entrega a un `RUN` una
@@ -44,9 +45,11 @@ ENV npm_config_update_notifier=false
 ARG EXPO_PUBLIC_API_URL
 ARG EXPO_PUBLIC_WEB_ORIGIN
 ARG EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID
+ARG EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 ENV EXPO_PUBLIC_WEB_ORIGIN=$EXPO_PUBLIC_WEB_ORIGIN
 ENV EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID=$EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID
+ENV EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB=$EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
 
 # Fails the build instead of shipping an app that cannot reach its own API, or one
 # with a disabled sign-in button and no hint why.

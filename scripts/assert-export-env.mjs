@@ -68,8 +68,12 @@ const API_PREFIX = '/api/v1';
  * it. A guard that can only be satisfied by doing the thing it exists to prevent
  * is not a guard.
  *
- * `_WEB` and `_IOS` are deliberately not required. The one that matters for a
- * Play build is Android, and `.env.release.example` says it carries only that one.
+ * `_WEB` is required too, because this script guards the bundle that is served as
+ * the website, and that bundle signs in with the web client. Leaving it out shipped
+ * a production web with `webClientId === ''`: the Dockerfile only forwarded
+ * `_ANDROID`, so Google login on the web was dead and nothing complained. `_IOS` is
+ * deliberately not required: nothing in the web bundle uses it. The Play build does
+ * not go through this script.
  *
  * `EXPO_PUBLIC_GOOGLE_REDIRECT_URI` is not listed: on web the redirect comes from
  * `window.location.origin`, and the scheme is only for native.
@@ -78,6 +82,7 @@ const REQUIRED = [
   'EXPO_PUBLIC_API_URL',
   'EXPO_PUBLIC_WEB_ORIGIN',
   'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID',
+  'EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB',
 ];
 
 /**
