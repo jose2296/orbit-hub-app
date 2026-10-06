@@ -344,6 +344,45 @@ atraviesa de verdad.
 Si el `document` resultante no pasa el validador, la fila se guarda igual y el estado es
 `metadata_only`. Un articulo que no entra es un enlace guardado, no una perdida.
 
+**Lo que el spike de viabilidad midio, y que cambia como se reduce.** Readability falla el
+validador en **5 de 5 paginas reales**: en Wikipedia, **1 203 de 2 093 elementos** (el 57,5 %) son
+tags que el conjunto cerrado no acepta, y aparecieron tags que este documento no preveia:
+`sup` (121 ocurrencias), `source`/`svg`/`path`, y `gu-island` de The Guardian.
+
+La sorpresa buena: al reducir **desenvolviendo** cada tag no permitido en vez de descartarlo —
+conservando sus hijos y su texto — **sobrevive el 99,8 % del texto** y quedan **0 problemas del
+validador**. La prosa no se pierde: `<sup>[1]</sup>`, `<cite>` y `<dd>` quedan como texto plano.
+Lo que si se infla es el marcado: 93 `<p>` de entrada salen 418, y hay 344 enlaces salientes.
+
+**Por eso la reduccion es *unwrap*, no descartar.** Descartar el tag entero tiraria texto real de
+un articulo, que es justo lo que el usuario guardo. Desenvolverlo conserva el contenido y
+normalmente ademas lo hace mejor, porque un `<div>` anidado pierde su sentido de bloque.
+
+### El piso de palabras, y por que existe
+
+Un articulo con nueve palabras no es un articulo, es un recorte de la pagina.
+
+Se midio tambien el rendimiento: **limpiar `<script>` antes de construir el DOM da 7x** (el DOM no
+se paga por scripts que nadie va a leer). Pero tiene un efecto secundario que obliga a un minimo:
+sin scripts, **una watch de YouTube deja de dar `null` y da nueve palabras**. Sin un piso, un video
+caeria en `ready` con nueve palabras y una portada, que es peor que `metadata_only` porque
+**parece** que se leyo el articulo y no se leyo nada.
+
+Por eso hay un **minimo de palabras** por debajo del cual el estado es `metadata_only` y no
+`ready`. El numero exacto lo fija la fase 2, no este documento.
+
+### Lo que el spike dejo abierto
+
+`linkedom@0.18.13` con Readability dio **las mismas palabras en 5 de 5 paginas**, entre 2 y 16
+veces mas rapido, con **15 paquetes y 3,7 MB** en vez de 45 paquetes y 47,6 MB. No se eligio
+porque `linkedom` no es un DOM completo y la sanitizacion necesita uno. Queda como decision abierta
+si el tamano pesa en el deploy.
+
+Dos cosas mas que el spike **no** pudo medir y que la fase 2 tiene que vigilar: ninguna SPA se
+probaron (devuelven HTML vacio), y los paywalls de verdad —New York Times, WSJ, FT— respondieron
+403/401 y quedaron sin medir. Los que se midieron (The Guardian) **traen el texto en el HTML
+crudo**: un muro de pago no salta por tecnica.
+
 ### El guard de SSRF, que es la parte que no se negocia
 
 Compartir una URL es **input no confiable**, y el servidor la va a fetchear. Ese es el vector
@@ -509,11 +548,15 @@ quiere compartir desde iOS, el camino barato es `expo-sharing`, no el web. El sh
 compartir **entra** igual en la app en iOS, porque `expo-sharing` lo soporta; lo que no se agrega
 es ninguna pieza nueva.
 
-**Readability.** No se ha verificado que jsdom mas Readability funcione en este proyecto, porque no
-esta instalado. La fase 2 arranca probandolo contra tres paginas reales: un articulo normal, una
-watch de YouTube, y uno paywalled. Si no convence, el camino de repliegue es quedarse solo con OG
-y `metadata_only`, y la feature sigue siendo util. Lo que **no** se puede hacer es construir la
-normalizacion y el lector alrededor de Readability sin haberlo probado.
+**Readability.** Verificado por spike, con numeros: **sirve**. Un articulo de Wikipedia dio 7 781
+palabras, The Guardian 947, The New Yorker 7 817. Una watch de YouTube dio `null`, que es
+exactamente la respuesta correcta para un video. La reduccion al conjunto cerrado deja pasar
+**99,8 % del texto** y el validador queda limpio. Las cifras de tamano, rendimiento y el detalle de
+los paywalls estan en la seccion "El extractor" y en el ledger del spike.
+
+Lo que queda abierto del spike: **ninguna SPA se probaron** (devuelven HTML vacio) y los paywalls
+que si lo hacen de verdad respondieron 403/401. La eleccion entre `jsdom` y `linkedom` tambien esta
+abierta con numeros a la vista.
 
 ## Como se verifica
 
