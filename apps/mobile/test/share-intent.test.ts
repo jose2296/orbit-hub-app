@@ -91,3 +91,38 @@ describe('el link de sign-in a sign-up conserva next', () => {
     expect(hrefASignUp()).toContain(`: '/(auth)/sign-up'`);
   });
 });
+
+/**
+ * El camino inverso tambien pierde el destino si el Link no lo lleva:
+ * share -> sign-in -> sign-up -> "ya tengo cuenta" -> sign-in pelado.
+ * Misma tecnica que arriba: se lee la expresion del href en la fuente.
+ */
+describe('el link de sign-up a sign-in conserva next', () => {
+  const fuente = readFileSync(join(import.meta.dirname, '..', 'src', 'app', '(auth)', 'sign-up.tsx'), 'utf8');
+
+  function hrefASignIn(): string {
+    const marca = '/(auth)/sign-in';
+    const uso = fuente.indexOf(marca);
+    expect(uso).toBeGreaterThan(-1);
+    const apertura = fuente.lastIndexOf('<Link', uso);
+    expect(apertura).toBeGreaterThan(-1);
+    let llaves = 0;
+    for (let i = apertura; i < fuente.length; i++) {
+      const letra = fuente[i];
+      if (letra === '{') llaves += 1;
+      if (letra === '}') {
+        llaves -= 1;
+        if (llaves === 0) return fuente.slice(apertura, i + 1);
+      }
+    }
+    throw new Error('el Link a sign-in no se pudo delimitar');
+  }
+
+  it('reenvia next cuando existe', () => {
+    expect(hrefASignIn()).toContain('params: { next }');
+  });
+
+  it('no mete params basura cuando no existe', () => {
+    expect(hrefASignIn()).toContain(`: '/(auth)/sign-in'`);
+  });
+});

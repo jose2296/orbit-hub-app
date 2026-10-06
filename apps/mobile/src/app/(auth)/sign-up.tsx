@@ -166,7 +166,10 @@ export default function SignUpScreen() {
         <AppText variant="callout" tone="muted" align="center">
           {t('auth.hasAccount')}
         </AppText>
-        <Link href="/(auth)/sign-in" asChild>
+        <Link
+          href={typeof next === 'string' && next.startsWith('/') ? { pathname: '/(auth)/sign-in', params: { next } } : '/(auth)/sign-in'}
+          asChild
+        >
           <Button label={t('onboarding.signIn')} variant="secondary" />
         </Link>
       </View>
