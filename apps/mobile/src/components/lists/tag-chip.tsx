@@ -2,7 +2,7 @@ import { useTheme } from "@/theme";
 import type { TagColors } from "@orbit-hub/contracts";
 import { derivedTagColor } from "@orbit-hub/contracts";
 import { Pressable, StyleSheet, View } from "react-native";
-import type { ViewStyle } from "react-native";
+import type { StyleProp, ViewStyle } from "react-native";
 import type { ReactNode } from "react";
 
 import { labelPillColors, tagColorHex } from "@/lib/lists/tag-colors";
@@ -84,7 +84,13 @@ export function TagChip({
    * inside it does not is an overflow waiting to happen. Nothing here sets it, so
    * a caller that passes nothing gets exactly the pill this file describes.
    */
-  style?: ViewStyle;
+  /*
+   * `StyleProp` y no `ViewStyle`, para que quien la usa pueda sumar su estilo al
+   * del componente sin aplastarlo: la fila de la lista añade su
+   * `paddingHorizontal` encima del de la pastilla, y con un `ViewStyle` a secas
+   * tendría que reescribir el `flexShrink` de `styles.metaTag` en el mismo objeto.
+   */
+  style?: StyleProp<ViewStyle>;
   /**
    * A press on the pill, **and nothing at all without it.**
    *

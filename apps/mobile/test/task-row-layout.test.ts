@@ -391,6 +391,29 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
   });
 
   /**
+   * La pastilla de la fila lleva **un poco mas de aire dentro que la del
+   * componente**, y solo la de la fila.
+   *
+   * `TagChip` en `size="compact"` trae `paddingHorizontal: xs` (4), que en la
+   * fila se lee apretado al lado de la insignia. La fila le suma `sm` (8) por
+   * `style` —que el componente aplica el ultimo, asi que gana— y la hoja no lo
+   * lleva: sus pastillas quedan como el componente las dibuja. Medido en el
+   * navegador: 8 px a cada lado en las filas, en los dos temas.
+   */
+  it('la pastilla de la fila suma padding horizontal por style y la hoja no', () => {
+    const soloLaFila = sinComentarios(listId).slice(
+      sinComentarios(listId).indexOf('function TaskRow('),
+    );
+    expect(aperturas(soloLaFila, 'TagChip')[0]).toContain(
+      'paddingHorizontal: theme.spacing.sm',
+    );
+    const hoja = sinComentarios('src/components/lists/item-edit-sheet.tsx');
+    for (const apertura of aperturas(hoja, 'TagChip')) {
+      expect(apertura).not.toContain('paddingHorizontal');
+    }
+  });
+
+  /**
    * La fila es **el unico sitio de la app** que le pasa un toque a una insignia o a
    * una pastilla, y se pregunta a todos los `.tsx` en vez de a los que hoy lo hacen.
    *

@@ -1146,8 +1146,19 @@ function TaskRow({
                 key={tag}
                 tag={tag}
                 colors={tagColors}
+                testID={`tag-pill-fila-${tag}`}
                 size="compact"
-                style={styles.metaTag}
+                /*
+                 * **A bit more air inside the pill, on this line only.** The compact
+                 * pill comes with `paddingHorizontal: xs` (4 pt) from the component,
+                 * which reads cramped next to the priority badge on a narrow row.
+                 * `sm` (8 pt) gives the label room without changing the pill anywhere
+                 * else: the sheet keeps its own padding, and the badge is untouched.
+                 * It rides on `style` —which the component applies last— rather than
+                 * in `styles.metaTag`, because the number is a theme token and
+                 * `StyleSheet.create` below cannot read the theme.
+                 */
+                style={[styles.metaTag, { paddingHorizontal: theme.spacing.sm }]}
                 onPress={onEdit}
                 hintProps={pistaNombre.props}
               />
