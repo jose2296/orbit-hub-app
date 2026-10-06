@@ -70,6 +70,29 @@ describe("la lista de habitos", () => {
     expect(codigo).toContain('t("habits.advanced")');
   });
 
+  it("el ordinal 1MO sigue como esta", () => {
+    const codigo = pantalla();
+    // El positivo no cambia: numero y dia con su clave de siempre.
+    expect(codigo).toContain('t("habits.schedule.monthlyOrdinal"');
+    expect(codigo).toContain("String(description.ordinal)");
+  });
+
+  it("el ordinal -1MO da ultimo y no un numero con signo", () => {
+    const codigo = pantalla();
+    // -1MO es "el ultimo lunes" en RFC 5545, y el motor lo admite: la
+    // pantalla lo nombra con su clave en vez de pintar "El -1 lunes".
+    expect(codigo).toContain("description.ordinal === -1");
+    expect(codigo).toContain('t("habits.schedule.monthlyLast"');
+  });
+
+  it("el ordinal -2MO cae en la reserva generica", () => {
+    const codigo = pantalla();
+    // -2 y -3 son raros y no tienen frase: generico, no texto inventado.
+    expect(codigo).toContain("description.ordinal < 0");
+    const rama = codigo.slice(codigo.indexOf("monthlyOrdinal"));
+    expect(rama).toContain('t("habits.advanced")');
+  });
+
   it("va sobre el molde de notes y el hook de habitos", () => {
     const codigo = pantalla();
     for (const pieza of [

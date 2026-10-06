@@ -80,11 +80,21 @@ function scheduleText(t: Translate, description: ScheduleDescription): string {
       return t("habits.schedule.intervalDays", {
         interval: description.interval,
       });
-    case "monthlyOrdinal":
+    case "monthlyOrdinal": {
+      // En RFC 5545, -1MO es "el ultimo lunes": el motor lo admite y la
+      // pantalla lo nombra con su clave. Otros negativos (-2, -3) son raros
+      // y no tienen frase, asi que caen en la reserva generica en vez de
+      // pintar un numero con signo delante del dia.
+      const weekday = t(`habits.weekday.${description.weekday}`);
+      if (description.ordinal === -1) {
+        return t("habits.schedule.monthlyLast", { weekday });
+      }
+      if (description.ordinal < 0) return t("habits.advanced");
       return t("habits.schedule.monthlyOrdinal", {
         ordinal: String(description.ordinal),
-        weekday: t(`habits.weekday.${description.weekday}`),
+        weekday,
       });
+    }
     case "timesPerPeriod":
       return t(pluralKey("habits.schedule.timesPerPeriod", description.count), {
         count: description.count,
