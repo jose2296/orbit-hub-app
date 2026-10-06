@@ -39,7 +39,12 @@ const ESTADOS_DE_REDIRECCION: ReadonlySet<number> = new Set([
 ]);
 
 export interface OpcionesDeBusqueda {
-  /** Por request, no por el total: con 3 redirects son 3 timers. */
+  /**
+   * Por salto, no por llamada. Un salto es **resolver + connect + TLS + cuerpo**:
+   * el reloj arranca antes de `dns.lookup` y lo cubre entero, porque el resolver
+   * no se puede abortar. Con 3 redirects son 4 saltos, o sea 4 timers y un techo
+   * de `4 x timeoutMs` en total.
+   */
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;

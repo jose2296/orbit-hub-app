@@ -143,6 +143,50 @@ describe('el timeout acota tambien la fase de resolver', () => {
     expect(r.ok).toBe(true);
     expect(opciones).toHaveLength(2);
   });
+
+  it('el salto siguiente recibe un reloj nuevo, no el que el anterior gasto', async () => {
+    // **Este es el test D al reves, y es el que vigila el `clearTimeout` por
+    // salto.** Ese `clearTimeout` es invisible y es load-bearing: si alguien
+    // sube el reloj arriba del `for` y deja el `clearTimeout` en el `finally`,
+    // el hop 0 termina en el `continue` del redirect, pasa por el `finally` y
+    // **mata el reloj compartido**. De ahi en adelante no hay reloj: nunca
+    // dispara `esperarAlResolver`, o sea que I1 queda sin cerrar desde el hop 1,
+    // y un servidor que manda cabeceras y despues se calla se queda con el
+    // socket abierto indefinidamente.
+    //
+    // Por que el test de arriba no lo agarra: el hops son rapidos, un hop 1 sin
+    // reloj da `ok: true` con dos requests y nadie lo nota. Aca el segundo
+    // lookup tarda **mas que el reloj**, que es la unica forma de que un hop sin
+    // reloj se note.
+    let saltos = 0;
+    falsos.lookup.mockImplementation(async () => {
+      saltos += 1;
+      await new Promise((resolve) => setTimeout(resolve, saltos === 1 ? 10 : 900));
+      return [{ address: '93.184.216.34', family: 4 }];
+    });
+
+    planear('https', [
+      { statusCode: 302, headers: { location: 'https://otro.example/final' } },
+      { statusCode: 200, html: HTML },
+    ]);
+
+    const inicio = Date.now();
+    const r = await traerHtmlSeguro('https://articulo.example/', { timeoutMs: 600 });
+    const elapsed = Date.now() - inicio;
+
+    // Con el codigo correcto el hop 1 arranca con 600 ms nuevos, el lookup #2 no
+    // llega, y se corta antes de abrir el segundo socket.
+    expect(r).toMatchObject({ ok: false, motivo: 'the request timed out' });
+    expect(falsos.httpsRequest).toHaveBeenCalledTimes(1);
+
+    // Volvio por el reloj y no por el resolver. Con el reloj muerto el lookup
+    // resuelve a los 900 ms y el resultado es `ok: true` con dos requests.
+    expect(elapsed).toBeLessThan(850);
+
+    // El lookup **si** arranco: perder la carrera no lo cancela, lo que se
+    // recupera es el control del caller.
+    expect(falsos.lookup).toHaveBeenCalledTimes(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
