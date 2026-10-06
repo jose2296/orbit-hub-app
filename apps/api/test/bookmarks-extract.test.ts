@@ -2,12 +2,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { Readability } from '@mozilla/readability';
+import type { SyncOperation } from '@orbit-hub/contracts';
 import { noteDocumentSchema, noteDocumentToPlainText } from '@orbit-hub/contracts';
-import { describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // @ts-expect-error jsdom no trae tipos y la API no tiene `lib.dom`, igual que en el extractor.
 import * as jsdom from 'jsdom';
 
+import type { ResultadoDeBusqueda } from '../src/lib/ssrf.js';
 import {
   colapsarParrafos,
   extraerContenido,
@@ -20,6 +23,11 @@ import {
   sacarmetadata,
   type PiezasDeMetadata,
 } from '../src/modules/bookmarks/extract-metadata.js';
+import { getBookmark } from '../src/modules/bookmarks/bookmark-service.js';
+import { extractBookmark } from '../src/modules/bookmarks/extract-service.js';
+import type { DependenciasDeExtraccion } from '../src/modules/bookmarks/extract-service.js';
+import { createVerifiedUser, startTestServer } from './helpers';
+import type { TestServer, TestUser } from './helpers';
 
 /**
  * La reduccion de un articulo al formato de las notas.
@@ -785,4 +793,369 @@ describe('el oembed de YouTube', () => {
     expect(m.description).toBeNull();
     expect(m.imageUrl).toContain('https://i.ytimg.com/vi/dQw4w9WgXcQ/');
   }, TIMEOUT_DE_PAGINA_REAL);
+});
+
+/**
+ * El servicio y el endpoint: `POST /api/v1/bookmarks/:id/extract`.
+ *
+ * Son tests de integracion contra PGlite, sin red: la red se inyecta como
+ * dependencias falsas y el contenido y la metadata corren de verdad. Lo que
+ * no necesita red (permisos y cableado de la ruta) va por HTTP; lo que si
+ * (los cuatro estados) llama al servicio directo con el fetch falso.
+ */
+describe('extraer un bookmark', () => {
+  let api: TestServer;
+
+  beforeAll(async () => {
+    api = await startTestServer();
+  });
+
+  afterAll(async () => {
+    await api.close();
+  });
+
+  function operation(
+    over: Partial<SyncOperation> & Pick<SyncOperation, 'entity' | 'kind' | 'entityId'>,
+  ) {
+    return {
+      operationId: randomUUID(),
+      clientId: 'bookmarks-extract-test',
+      baseVersion: 0,
+      payload: null,
+      base: null,
+      clientTimestamp: new Date().toISOString(),
+      ...over,
+    };
+  }
+
+  async function push(user: TestUser, operations: SyncOperation[]) {
+    return api.post(
+      '/sync/push',
+      { deviceId: randomUUID(), lastPulledAt: null, operations },
+      user.accessToken,
+    );
+  }
+
+  async function crearEspacio(user: TestUser, name: string): Promise<string> {
+    const id = randomUUID();
+    const response = await push(user, [
+      operation({ entity: 'workspace', kind: 'create', entityId: id, payload: { name } }),
+    ]);
+    expect(response.body.data.results[0].status).toBe('applied');
+    return id;
+  }
+
+  async function crearBookmark(
+    user: TestUser,
+    workspaceId: string,
+    over: Record<string, unknown> = {},
+  ): Promise<string> {
+    const id = randomUUID();
+    const response = await push(user, [
+      operation({
+        entity: 'bookmark',
+        kind: 'create',
+        entityId: id,
+        payload: {
+          workspaceId,
+          url: 'https://ejemplo.local/nota',
+          title: '',
+          tags: [],
+          position: 0,
+          ...over,
+        },
+      }),
+    ]);
+    expect(response.body.data.results[0].status).toBe('applied');
+    return id;
+  }
+
+  async function invitarViewer(owner: TestUser, workspaceId: string, viewer: TestUser) {
+    const link = await api.post(
+      `/workspaces/${workspaceId}/invitations`,
+      { email: viewer.email, role: 'viewer' },
+      owner.accessToken,
+    );
+    expect(link.status).toBe(201);
+    const aceptada = await api.post(
+      `/invitations/${link.body.data.token}/accept`,
+      {},
+      viewer.accessToken,
+    );
+    expect(aceptada.status).toBe(200);
+  }
+
+  /** Un articulo que Readability encuentra y el piso de palabras deja pasar. */
+  const ARTICULO: string =
+    '<!doctype html><html><head><title>La pagina</title>' +
+    '<meta property="og:title" content="El OG">' +
+    '<meta property="og:site_name" content="El sitio">' +
+    '<meta property="og:description" content="La descripcion">' +
+    '<meta property="og:image" content="https://cdn.ejemplo.local/a.png">' +
+    '</head><body><article><h1>La pagina</h1><p>' +
+    'palabra '.repeat(60) +
+    '</p></article></body></html>';
+
+  /** Una pagina con metadata pero sin texto: el caso del video. */
+  const PAGINA_CORTA: string =
+    '<!doctype html><html><head><title>El player</title>' +
+    '<meta property="og:title" content="El OG del player">' +
+    '<meta property="og:site_name" content="El player">' +
+    '<meta property="og:image" content="https://cdn.ejemplo.local/player.png">' +
+    '</head><body><p>Hola</p></body></html>';
+
+  function paginaOk(html: string, url: string): ResultadoDeBusqueda {
+    return { ok: true, html, finalUrl: url, bytes: html.length };
+  }
+
+  function dependencias(over: Partial<DependenciasDeExtraccion> = {}): DependenciasDeExtraccion {
+    return {
+      traerHtml: async (url) => paginaOk(ARTICULO, url),
+      contenidoDe: (html, url) => extraerContenido(html, url),
+      metadataDe: (html, url) => sacarmetadata(html, url),
+      youtubeDe: async () => null,
+      imagenResuelveAPublica: async () => true,
+      techoMs: 5_000,
+      ...over,
+    };
+  }
+
+  it('un bookmark pending con una pagina que se puede leer queda ready', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Lectura');
+    const id = await crearBookmark(owner, workspaceId);
+    const antes = await getBookmark(owner.userId, id);
+
+    await extractBookmark(owner.userId, id, dependencias());
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe('ready');
+    expect(despues.extractionError).toBeNull();
+    expect(despues.document).not.toBe('');
+    expect(despues.document).toBe(noteDocumentSchema.parse(despues.document));
+    expect(despues.plainText).toBe(noteDocumentToPlainText(despues.document));
+    expect(despues.plainText).toContain('palabra');
+    // Titulo vacio: se escribe el de la pagina. Sitio, descripcion e imagen
+    // vienen de los OG.
+    expect(despues.title).not.toBe('');
+    expect(despues.siteName).toBe('El sitio');
+    expect(despues.description).toBe('La descripcion');
+    expect(despues.imageUrl).toBe('https://cdn.ejemplo.local/a.png');
+    // Y suma version: es lo que hace que el pull del proximo ciclo lo traiga.
+    expect(despues.version).toBe(antes.version + 1);
+  });
+
+  it('un video queda metadata_only, con metadata y sin documento', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Videos');
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const id = await crearBookmark(owner, workspaceId, { url });
+    const antes = await getBookmark(owner.userId, id);
+
+    await extractBookmark(
+      owner.userId,
+      id,
+      dependencias({
+        traerHtml: async () => paginaOk(PAGINA_CORTA, url),
+        youtubeDe: async () => ({
+          title: 'El video',
+          siteName: 'YouTube',
+          description: null,
+          imageUrl: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+        }),
+      }),
+    );
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe('metadata_only');
+    expect(despues.document).toBe('');
+    expect(despues.plainText).toBe('');
+    expect(despues.title).toBe('El video');
+    expect(despues.siteName).toBe('YouTube');
+    expect(despues.imageUrl).toBe('https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+    expect(despues.extractionError).not.toBeNull();
+    expect(despues.version).toBe(antes.version + 1);
+  });
+
+  it('una URL que el guard rechaza queda failed, con el motivo', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Guard');
+    const id = await crearBookmark(owner, workspaceId, { url: 'http://169.254.169.254/x' });
+    const antes = await getBookmark(owner.userId, id);
+
+    await extractBookmark(
+      owner.userId,
+      id,
+      dependencias({
+        traerHtml: async () => ({ ok: false, motivo: 'dns resolves to a private address' }),
+      }),
+    );
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe('failed');
+    expect(despues.extractionError).toBe('dns resolves to a private address');
+    expect(despues.document).toBe('');
+    expect(despues.version).toBe(antes.version + 1);
+  });
+
+  it('nunca tira: un sitio caido deja el bookmark vivo y failed', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Caidas');
+    const id = await crearBookmark(owner, workspaceId);
+
+    // El guard real nunca tira, pero la red si puede: un socket que se cuelga
+    // no puede ser una excepcion que tumbe el request.
+    await expect(
+      extractBookmark(
+        owner.userId,
+        id,
+        dependencias({
+          traerHtml: async () => {
+            throw new Error('socket hang up');
+          },
+        }),
+      ),
+    ).resolves.toBeUndefined();
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe('failed');
+    expect(despues.extractionError).toBe('the request failed');
+  });
+
+  it('el que no es miembro recibe 404 y no extrae', async () => {
+    const owner = await createVerifiedUser(api);
+    const ajeno = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Privado');
+    const id = await crearBookmark(owner, workspaceId);
+    const antes = await getBookmark(owner.userId, id);
+
+    const respuesta = await api.post(`/bookmarks/${id}/extract`, {}, ajeno.accessToken);
+    // 404 y no 403: la lectura no confirma que el espacio existe (regla 8).
+    expect(respuesta.status).toBe(404);
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe(antes.extractionState);
+    expect(despues.version).toBe(antes.version);
+  });
+
+  it('un viewer recibe 403 y el bookmark no cambia', async () => {
+    const owner = await createVerifiedUser(api);
+    const viewer = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Con viewer');
+    await invitarViewer(owner, workspaceId, viewer);
+    const id = await crearBookmark(owner, workspaceId);
+    const antes = await getBookmark(owner.userId, id);
+
+    // Sin este chequeo, un viewer dispara extracciones y gasta el ancho de
+    // banda del servidor a voluntad: por HTTP para probar que va antes de la
+    // red, con el fetch real que nunca se llama.
+    const respuesta = await api.post(`/bookmarks/${id}/extract`, {}, viewer.accessToken);
+    expect(respuesta.status).toBe(403);
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe(antes.extractionState);
+    expect(despues.extractionError).toBe(antes.extractionError);
+    expect(despues.document).toBe(antes.document);
+    expect(despues.version).toBe(antes.version);
+  });
+
+  it('un ready no se reextrae: ni red ni escritura', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Listos');
+    const id = await crearBookmark(owner, workspaceId);
+    await extractBookmark(owner.userId, id, dependencias());
+    const listo = await getBookmark(owner.userId, id);
+    expect(listo.extractionState).toBe('ready');
+
+    let llamadas = 0;
+    await extractBookmark(
+      owner.userId,
+      id,
+      dependencias({
+        traerHtml: async (url) => {
+          llamadas += 1;
+          return paginaOk(ARTICULO, url);
+        },
+      }),
+    );
+
+    expect(llamadas).toBe(0);
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.version).toBe(listo.version);
+  });
+
+  it('el titulo escrito a mano no lo pisa nadie', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Titulos');
+    const id = await crearBookmark(owner, workspaceId, { title: 'Como yo lo llame' });
+
+    await extractBookmark(owner.userId, id, dependencias());
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe('ready');
+    expect(despues.title).toBe('Como yo lo llame');
+  });
+
+  it('el techo total corta un fetch que no termina', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Techos');
+    const id = await crearBookmark(owner, workspaceId);
+
+    // El guard es por salto y el techo del endpoint es lo que acota el total:
+    // un fetch que no resuelve nunca deja `failed` con el motivo del reloj.
+    await extractBookmark(
+      owner.userId,
+      id,
+      dependencias({
+        traerHtml: () => new Promise<ResultadoDeBusqueda>(() => {}),
+        techoMs: 50,
+      }),
+    );
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe('failed');
+    expect(despues.extractionError).toBe('the request timed out');
+  });
+
+  it('una imagen que no resuelve a publica queda en null', async () => {
+    const owner = await createVerifiedUser(api);
+    const workspaceId = await crearEspacio(owner, 'Imagenes');
+    const html =
+      '<!doctype html><html><head><title>T</title>' +
+      '<meta property="og:image" content="http://interno.local/x.png">' +
+      '</head><body><article><h1>T</h1><p>' +
+      'palabra '.repeat(60) +
+      '</p></article></body></html>';
+    const url = 'https://ejemplo.local/nota';
+
+    // Pasa el predicado de esquema de la funcion sincrona —un nombre no se
+    // puede juzgar sin DNS— y solo cae en la confirmacion del servicio.
+    expect(sacarmetadata(html, url).imageUrl).toBe('http://interno.local/x.png');
+
+    const id = await crearBookmark(owner, workspaceId);
+    await extractBookmark(
+      owner.userId,
+      id,
+      dependencias({
+        traerHtml: async () => paginaOk(html, url),
+        imagenResuelveAPublica: async () => false,
+      }),
+    );
+
+    const despues = await getBookmark(owner.userId, id);
+    expect(despues.extractionState).toBe('ready');
+    expect(despues.imageUrl).toBeNull();
+  });
+
+  it('un og:image con el loopback en hexadecimal queda en null', async () => {
+    // D5: `URL.hostname` normaliza las formas mixtas (`0x7f.0.0.1` con puntos
+    // y hex) a `127.0.0.1` antes de clasificar, asi que el chequeo de rangos
+    // las ve. Si algun dia la conserva tal cual, este test se pone rojo.
+    expect(new URL('http://0x7f.0.0.1/x.png').hostname).toBe('127.0.0.1');
+    const html =
+      '<!doctype html><html><head><title>T</title>' +
+      '<meta property="og:image" content="http://0x7f.0.0.1/x.png">' +
+      '</head><body></body></html>';
+    expect(sacarmetadata(html, 'https://ejemplo.local/nota').imageUrl).toBeNull();
+  });
 });

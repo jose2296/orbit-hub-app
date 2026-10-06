@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { requireAuth } from '../middleware/require-auth.js';
 import { getBookmark, listBookmarks } from '../modules/bookmarks/bookmark-service.js';
+import { extractBookmark } from '../modules/bookmarks/extract-service.js';
 
 import { sendData } from './respond.js';
 
@@ -48,4 +49,15 @@ bookmarksRouter.get('/', async (req, res) => {
 bookmarksRouter.get('/:id', async (req, res) => {
   const { id } = bookmarkParams.parse(req.params);
   sendData(res, 200, await getBookmark(caller(req), id));
+});
+
+/*
+  Dispara la extraccion en segundo plano y contesta 204 sin nada: el resultado
+  viaja por el sync, no por la respuesta. El cliente lo llama best-effort
+  despues de crear el bookmark y el texto llega en el proximo pull.
+*/
+bookmarksRouter.post('/:id/extract', async (req, res) => {
+  const { id } = bookmarkParams.parse(req.params);
+  await extractBookmark(caller(req), id);
+  sendData(res, 204, null);
 });
