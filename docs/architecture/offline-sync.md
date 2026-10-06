@@ -138,3 +138,12 @@ local store so the indicator is correct with no connectivity.
   per entity is the planned improvement.
 - Media attachments are not part of the outbox yet: uploads resume from a separate queue
   (Phase 4).
+- A board's columns are one field of one row (`lists.states`), so they merge as one value.
+  Two people editing the same board at the same time do **not** get a per-column merge: the
+  three way merge above compares the whole array, sees both sides moved away from `base`, and
+  returns `status: "conflict"` with both arrays kept whole in the conflict record. The server
+  keeps its own array, stores the conflict and stops there; nothing in it splits the array or
+  picks a winner per column, so the resolution in the sync centre is one whole array or the
+  other. The write that loses is not applied and is not silently discarded either: it is
+  dropped from the outbox and shown for review. Editing two different columns of the same
+  board at the same time is enough to get there.
