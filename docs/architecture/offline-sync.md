@@ -138,3 +138,39 @@ local store so the indicator is correct with no connectivity.
   per entity is the planned improvement.
 - Media attachments are not part of the outbox yet: uploads resume from a separate queue
   (Phase 4).
+
+## Habitos
+
+Dos entidades sincronizables, `habit` y `habit_entry`, con campos acotados en
+`SYNC_WRITABLE_FIELDS`: del habito se puede cambiar nombre, descripcion,
+horario, meta y archivado (`timezone` y `startDate` se congelan al crear, igual
+que `workspaceId` no viaja en el update de una nota); de la entrada, estado,
+cantidad y nota corta.
+
+Sin workspace: un habito cuelga del usuario, asi que no pasa por
+`assertCanWrite` ni `assertCanDelete`. La rama personal es explicita y no sigue
+el molde de `list`: `assertOwnHabit` (el habito ajeno es 404, no 403, porque
+confirmar que existe ya dice que existe) y `assertOwnHabitEntry` (la entrada se
+autoriza por su habito). El pull trae los habitos por `userId` con cursor de
+fecha, y las entradas a traves de su habito, nunca por espacio.
+
+El merge de entradas es propio y no el generico de "gana el servidor": marcar
+el mismo dia desde el telefono y desde la tablet no es un conflicto, es que lo
+hizo. Precedencia `done > skipped > borrado`, en
+`apps/mobile/src/lib/offline/habit-row.ts`: un hecho no lo deshace ni un salto
+ni un borrado que llega del servidor, y nunca abre conflicto en el centro de
+sync porque no hay nada que elegir. Donde lo local gana sobre una fila viva del
+servidor, se encola una correccion para que el servidor converja al mismo
+valor.
+
+Del lado del servidor, crear por sync hace upsert por el UNIQUE (habito, dia):
+la segunda marca reescribe la primera en vez de sumar una fila, y remarcar un
+dia borrado lo revive. Y la misma disciplina que la REST vale en el push: dia
+futuro, fuera de rango o no programado se rechaza por operacion con motivo, sin
+bloquear la cola offline.
+
+Divergencia conocida: lapida del servidor con done local muestra done en el
+movil sin correccion hasta la proxima accion, porque el servidor no distingue
+"no vi el borrado" de "lo vi y remarco". Remarcar revive por upsert y re-borrar
+confirma la lapida en ambos; resucitar solo desharia un borrado pedido a
+proposito, y eso es peor que divergir a la vista.

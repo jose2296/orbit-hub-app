@@ -13,6 +13,8 @@
 | [0009](0009-one-native-editor.md) | One native note editor everywhere, HTML as the format | Accepted |
 | [0031](0031-compartir.md) | Compartir: un vinculo, y el sitio lo elige quien lo recibe | Accepted |
 | [0032](0032-personas.md) | Personas: un directorio de con quien ya has tratado | Accepted |
+| [0033](0033-recurrencia-con-rrule-y-luxon.md) | La recurrencia de habitos: `rrule` + `luxon`, con el offset resuelto a mano | Accepted |
+| [0034](0034-horario-en-union-y-disciplina-dura.md) | El horario es una union `rrule\|quota`, y solo se registra lo programado | Accepted |
 
 ## Format
 
