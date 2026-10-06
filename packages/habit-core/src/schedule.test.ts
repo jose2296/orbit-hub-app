@@ -75,6 +75,59 @@ it('ordena de forma ascendente', () => {
   ).toEqual(['2026-03-23', '2026-03-25', '2026-03-27', '2026-03-30']);
 });
 
+// Regla 4, segunda mitad: una regla patologica lanza en vez de colgar el hilo.
+// FREQ=MINUTELY en 10 anos serian millones de ocurrencias; el tope duro frena
+// la iteracion con el callback de `between` y el error dice cual es la regla,
+// cuantas iteraciones aguanta y que ventana se pidio.
+it('una regla patologica lanza en vez de colgar', () => {
+  expect(() =>
+    scheduledDates({ kind: 'rrule', rule: 'FREQ=MINUTELY' }, '2020-01-01', '2030-01-01', 'UTC'),
+  ).toThrow(/FREQ=MINUTELY.*100000.*2020-01-01.*2030-01-01.*patologica/s);
+});
+
+// La otra cara del tope: FREQ=HOURLY en 10 anos son unas 87 mil iteraciones,
+// por debajo del tope, asi que no lanza y da los mismos 3654 dias.
+it('una frecuencia alta legitima no roza el tope', () => {
+  const dates = scheduledDates({ kind: 'rrule', rule: 'FREQ=HOURLY' }, '2020-01-01', '2030-01-01', 'UTC');
+  expect(dates).toHaveLength(3654);
+  expect(dates[0]).toBe('2020-01-01');
+  expect(dates[dates.length - 1]).toBe('2030-01-01');
+});
+
+// COUNT limita desde el dtstart fijo (el dia `from`), no desde cuando se invento la regla.
+it('respeta COUNT', () => {
+  expect(
+    scheduledDates({ kind: 'rrule', rule: 'FREQ=DAILY;COUNT=3' }, '2026-03-01', '2026-03-31', MADRID),
+  ).toEqual(['2026-03-01', '2026-03-02', '2026-03-03']);
+});
+
+// UNTIL corta la serie aunque la ventana siga. En UTC para que la aritmetica
+// del corte sea exacta sin offsets de por medio.
+it('respeta UNTIL', () => {
+  expect(
+    scheduledDates(
+      { kind: 'rrule', rule: 'FREQ=DAILY;UNTIL=20260305T000000Z' },
+      '2026-03-01',
+      '2026-03-31',
+      'UTC',
+    ),
+  ).toEqual(['2026-03-01', '2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05']);
+});
+
+// Un DTSTART propio de la regla se ignora: manda el dtstart fijo del motor.
+// Si mandara el de la regla, COUNT=3 contaria desde 2020 y la ventana de 2026
+// saldria vacia; sale con los 3 primeros dias de la ventana.
+it('ignora el DTSTART propio de la regla', () => {
+  expect(
+    scheduledDates(
+      { kind: 'rrule', rule: 'DTSTART:20200101T000000Z\nRRULE:FREQ=DAILY;COUNT=3' },
+      '2026-03-01',
+      '2026-03-31',
+      MADRID,
+    ),
+  ).toEqual(['2026-03-01', '2026-03-02', '2026-03-03']);
+});
+
 // Una cuota no tiene fechas: [] sin lanzar.
 it('una quota devuelve vacio sin lanzar', () => {
   expect(scheduledDates({ kind: 'quota', count: 3, period: 'week' }, '2026-03-01', '2026-03-31', MADRID)).toEqual(
@@ -138,9 +191,11 @@ it('el ano va de su primer a su ultimo dia', () => {
   expect(periodBounds('year', '2026-06-15', 0, MADRID)).toEqual({ start: '2026-01-01', end: '2026-12-31' });
 });
 
-it('todayIn devuelve un dia local con forma YYYY-MM-DD', () => {
+it('todayIn es la fecha de hoy en esa zona', () => {
   for (const zone of [MADRID, 'UTC', 'America/Argentina/Buenos_Aires']) {
-    expect(todayIn(zone)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const actual = todayIn(zone);
+    expect(actual).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(actual).toBe(DateTime.now().setZone(zone).toISODate());
   }
   expect(() => todayIn('No/Zone')).toThrow();
 });
