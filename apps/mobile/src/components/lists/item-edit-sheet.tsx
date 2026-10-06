@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useFieldChain } from "@/lib/forms/field-chain";
@@ -315,6 +316,46 @@ export function ItemEditSheet({
 
   if (!isNew && !item) return null;
 
+  const { setSucio } = useSheetSucio();
+
+  /*
+    "Sucio" son **los dos campos de texto, y nada mas**.
+
+    Es deliberado. La prioridad, el icono, las etiquetas y lo hecho se guardan al
+    pulsar, porque son **pulsaciones**: alguien eligio una de cuatro y guardarla
+    solo es lo que hace que la eleccion se vea. Escribir un nombre no es una
+    pulsacion, es media frase a medio camino, y guardar eso sin que nadie haya
+    pulsado nada es lo que hace que un formulario no sea un formulario.
+
+    Asi que el panel tiene dos velocidades, y por qué se distinguen es lo unico que
+    hay que saber para usarlo: eliges de golpe, y se guarda; escribes, y se guarda
+    cuando tu lo digas.
+  */
+  const sucioTexto =
+    title.trim() !== (isNew ? "" : (item?.title ?? "").trim()) ||
+    annotation.trim() !== (isNew ? "" : (item?.annotation ?? "").trim());
+
+  useEffect(() => {
+    setSucio(sucioTexto);
+  }, [sucioTexto, setSucio]);
+
+  /**
+   * Un nombre vacio no es un nombre.
+   *
+   * La fila seria una linea en blanco en la lista, sin nada dentro con que
+   * encontrarla otra vez. El motivo se **escribe en el boton** en vez de dejarlo
+   * gris y sin texto: un boton apagado sin explicacion se pulsa dos veces para
+   * averiguar que no hace nada.
+   */
+  const sinNombre = title.trim().length === 0;
+
+  /** Un solo commit: el Guardar. El nombre y la nota, en ese orden. */
+  const confirmar = () => {
+    saveTitle();
+    saveNotes();
+    onClose();
+  };
+
   const save = (changes: Parameters<typeof updateItem>[1]) => {
     if (isNew) {
       setDraft((current) => ({ ...current, ...changes }));
@@ -512,6 +553,15 @@ export function ItemEditSheet({
       // scroll hides its own save button under the bottom of the screen.
       scrollable
       onBack={page === "edit" ? undefined : () => setPage("edit")}
+      /*
+        El Guardar es **el del pie**, y no el boton que estaba aqui abajo. Dos
+        botones de confirmar en la misma pantalla son el mismo boton en el sitio
+        donde se busca y en el que no se mira, y el de dentro se va con el
+        contenido en una hoja larga.
+      */
+      onSave={isNew ? () => void create() : confirmar}
+      saveLabel={isNew ? t("itemCreate.create") : t("rename.save")}
+      saveDisabledReason={sinNombre ? t("itemEdit.nameNeeded") : undefined}
     >
       <View
         style={{
@@ -530,13 +580,22 @@ export function ItemEditSheet({
               label={t("itemEdit.name")}
               value={title}
               onChangeText={setTitle}
-              onBlur={saveTitle}
+              /*
+                **Ya no guarda al salir del campo.**
+                Era `onBlur={saveTitle}`, y es la razon de que "se guarda con
+                Guardar" no era cierto: los dos campos de texto escribian solos en
+                cuanto perdian el foco, sin que nadie hubiera pulsado nada. Con dos
+                campos, ademas, se guardaba a mitad de la frase — ibas a escribir
+                "llamar al/installador", pulsabas el de abajo, y el servidor ya
+                tenia media frase.
+              */
               returnKeyType="next"
               selectTextOnFocus={false}
               ref={cadena.register(0)}
               onSubmitEditing={() => cadena.advance(0, () => {
-                // El nombre ya esta guardado en `onBlur`; saltar es lo que se
-                // pidio, y al campo de la nota, que es a donde se sigue.
+                // Saltar al campo de la nota, que es a donde se sigue. Aqui ya no
+                // se guarda nada: el nombre se queda escrito hasta que alguien
+                // pulse Guardar, que es lo unico que decide que se guarda.
               })}
               // The width the contracts will store it at, so the counter and the
               // server agree. The title of a task is 300 on purpose, and a list of
@@ -552,7 +611,6 @@ export function ItemEditSheet({
               label={t("itemEdit.description")}
               value={annotation}
               onChangeText={setAnnotation}
-              onBlur={saveNotes}
               limit={FIELD_LIMITS['list_item.annotation']}
               placeholder={t("itemEdit.descriptionPlaceholder")}
               multiline
@@ -753,26 +811,18 @@ export function ItemEditSheet({
               </View>
             ) : null}
 
-            {isNew ? (
-              <Button
-                testID="item-create"
-                label={t("itemCreate.save")}
-                icon="checkmark"
-                fullWidth
-                disabled={title.trim().length === 0}
-                onPress={() => void create()}
-              />
-            ) : (
-              <Button
-                label={t("rename.save")}
-                icon="checkmark"
-                fullWidth
-                onPress={() => {
-                  saveTitle();
-                  saveNotes();
-                }}
-              />
-            )}
+            {/*
+              Y aqui **ya no hay ningun boton de guardar**.
+
+              Estaba este y ahora esta el del pie del panel, que es el mismo en las
+              veinticuatro hojas. Dos botones de confirmar en la misma pantalla son
+              el mismo boton en el sitio donde se busca y en el que no se mira.
+
+              Y el `testID="item-create"` no se ha perdido: se ha movido al boton
+              del pie, que ahora es el que crea. Un `testID` que desaparece hace
+              fallar la prueba **por lo que arregla**, que es la forma mas
+              confusa de romper algo.
+            */}
 
             {/* Last, red, and it says what it is going to take with it. A row
                 being created has nothing to delete yet. */}

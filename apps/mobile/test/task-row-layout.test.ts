@@ -871,7 +871,7 @@ describe('el contrato de guardar, igual en todas las hojas', () => {
     // Limpiar antes de tiempo deja una hoja que parece limpia con el texto fuera
     // de la pantalla y sin haber llegado al servidor: la unica senal de "esto no
     // esta guardado" es la misma que decia que estaba sucio.
-    const accion = sheet.match(/const guardar = useCallback[\s\S]*?\}, \[onSave\]\);/)?.[0] ?? '';
+    const accion = sheet.match(/const guardar = useCallback[\s\S]*?\}, \[onSave, saveDisabledReason\]\);/)?.[0] ?? '';
     expect(accion, 'limpia despues del await').toMatch(
       /await onSave\(\);[\s\S]*?setSucio\(false\)/,
     );
@@ -945,5 +945,95 @@ describe('la primera hoja que adopta el contrato', () => {
     // Si solo se ha tecleado un espacio, el nombre recortado es el mismo y
     // "guardar" no tiene nada que hacer.
     expect(rename).toMatch(/if \(!trimmed \|\| !cambiado\) return;/);
+  });
+});
+
+describe('el panel de un elemento: dos velocidades de guardado', () => {
+  const leer = (p: string) =>
+    readFileSync(join(import.meta.dirname, '..', p), 'utf8');
+  /**
+   * Sin comentarios.
+   *
+   * Los guards miran codigo, y un guard que barre tambien los comentarios matchea
+   * la frase que **explica el bug que acaba de arreglarse**. Este panel tiene, muy
+   * arriba, un comentario que dice "era `onBlur={saveTitle}`" — y un guard escrito
+   * sin esto dice que el bug sigue ahi porque alguien lo explico bien.
+   */
+  const panel = sinComentarios(leer('src/components/lists/item-edit-sheet.tsx'));
+
+  it('los dos campos de texto YA NO guardan al perder el foco', () => {
+    /*
+      Este era el motivo de que "se guarda con Guardar" no fuera cierto: los campos
+      escribian solos en cuanto perdian el foco. Y con dos campos se guardaba **a
+      mitad de la frase** — ibas a escribir "llamar al instalador", pulsabas el de
+      abajo, y el servidor ya tenia media frase.
+    */
+    expect(panel, 'el nombre no se guarda en onBlur').not.toMatch(/onBlur=\{saveTitle\}/);
+    expect(panel, 'la nota tampoco').not.toMatch(/onBlur=\{saveNotes\}/);
+  });
+
+  it('las pulsaciones SI se guardan al instante, y es a proposito', () => {
+    /*
+      Prioridad, icono, etiquetas y lo hecho son **elecciones entre opciones**, y
+      guardarlas al pulsar es lo que hace que se vea cual elegiste. Escribir un
+      nombre no es una eleccion, es media frase a medio camino.
+
+      Asi que el panel tiene dos velocidades y distinguirlas es lo unico que hay que
+      saber para usarlo: eliges de golpe y se guarda; escribes y se guarda cuando
+      tu lo digas.
+    */
+    expect(panel, 'la prioridad se guarda al pulsar').toContain('save({ priority: option })');
+    expect(panel, 'y las etiquetas tambien').toMatch(/save\(\{\s*tags: \[\.\.\./);
+  });
+
+  it('"sucio" son los dos textos, no el resto', () => {
+    expect(panel, 'compara el nombre').toMatch(/title\.trim\(\) !== /);
+    expect(panel, 'y la nota tambien').toMatch(/annotation\.trim\(\) !== /);
+    expect(panel, 'y lo dice').toContain('setSucio(sucioTexto)');
+  });
+
+  it('un solo boton de guardar: el del pie, y no otro aqui dentro', () => {
+    expect(panel, 'delega en onSave').toContain('onSave={isNew ?');
+    expect(panel, 'y no pinta un boton de guardar propio').not.toMatch(
+      /<Button[\s\S]{0,200}label=\{t\("(itemCreate\.save|rename\.save)"\)\}/,
+    );
+    // El `testID="item-create"` murio con el boton. Y el boton del pie se llama
+    // `sheet-save`, que es lo que pulsa ahora el script de regresion.
+    expect(panel, 'el id viejo se fue con el boton viejo').not.toMatch(
+      /testID="item-create"/,
+    );
+  });
+
+  it('sin nombre no se puede crear, y el boton DICE por que', () => {
+    /*
+      Un boton gris sin texto se pulsa dos veces para averiguar que no hace nada.
+      Por eso el motivo es un `string` y no un booleano: "Ponle un nombre" convierte
+      un control muerto en una instruccion.
+    */
+    const sheet = leer('src/components/ui/sheet.tsx');
+    expect(panel, 'pasa el motivo').toContain('saveDisabledReason={sinNombre ?');
+    expect(sheet, 'y el motivo apaga el boton').toMatch(
+      /disabled=\{guardando \|\| saveDisabledReason !== undefined\}/,
+    );
+    expect(sheet, 'y lo dice en voz alta').toContain('accessibilityHint={saveDisabledReason}');
+  });
+
+  it('el boton apagado no guarda igual, porque hay quien lo pulse sin verlo', () => {
+    const sheet = sinComentarios(leer('src/components/ui/sheet.tsx'));
+    // Un boton gris se puede pulsar con el teclado o con un lector de pantalla, y
+    // ahi no hay dedo que lo bloquee. El guard esta en la accion, no solo en el
+    // boton.
+    const accion = sheet.match(/const guardar = useCallback[\s\S]*?\}, \[onSave/)?.join('') ?? '';
+    expect(accion, 'la accion tambien respeta el motivo').toContain(
+      'if (!onSave || saveDisabledReason !== undefined) return;',
+    );
+  });
+
+  it('el script de regresion pulsa el boton que ahora crea', () => {
+    // Un script que sigue pulsando el id viejo falla **por lo que arregla**, que es
+    // la forma mas confusa de romper algo.
+    const script = leer('../../scripts/verify-app-regression.mjs');
+    expect(script, 'pulsa sheet-save').toContain('pressTestId(tab, "sheet-save")');
+    expect(script, 'y no el id que ya no existe').not.toContain('pressTestId(tab, "item-create")');
   });
 });

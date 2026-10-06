@@ -85,6 +85,18 @@ export interface SheetProps {
   onSave?: () => void | Promise<void>;
   /** The confirming button, for a screen reader. */
   saveLabel?: string;
+  /**
+   * Why the confirming button cannot be pressed, or `undefined` when it can.
+   *
+   * A `string` and not a `boolean`, and that is the whole reason it exists: a grey
+   * button with nothing written on it is a button somebody presses twice to find
+   * out. Saying **why** —"Ponle un nombre"— turns a dead control into an
+   * instruction.
+   *
+   * `undefined` means enabled, so a sheet with nothing to say about it passes
+   * nothing and gets a live button.
+   */
+  saveDisabledReason?: string;
 }
 
 /**
@@ -111,6 +123,7 @@ export function Sheet({
   maxHeightRatio = 0.85,
   onSave,
   saveLabel,
+  saveDisabledReason,
 }: SheetProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -175,7 +188,7 @@ export function Sheet({
 
   /** The committing button, and the only thing that clears "dirty". */
   const guardar = useCallback(async () => {
-    if (!onSave) return;
+    if (!onSave || saveDisabledReason !== undefined) return;
     setGuardando(true);
     try {
       await onSave();
@@ -190,7 +203,7 @@ export function Sheet({
     } finally {
       setGuardando(false);
     }
-  }, [onSave]);
+  }, [onSave, saveDisabledReason]);
 
   /** The exit itself, and the only caller of the screen's `onClose`. */
   const salir = useCallback(() => {
@@ -808,7 +821,8 @@ export function Sheet({
                 testID="sheet-save"
                 label={guardando ? t("common.saving") : (saveLabel ?? t("common.save"))}
                 onPress={() => void guardar()}
-                disabled={guardando}
+                disabled={guardando || saveDisabledReason !== undefined}
+                accessibilityHint={saveDisabledReason}
                 fullWidth
               />
             </View>
