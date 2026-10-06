@@ -300,6 +300,13 @@ try {
   }
   const tocado = await pressTestId("emoji-cell-📖");
   if (tocado !== true) throw new Error(`no se pudo tocar el libro: ${tocado}`);
+  // Volver a la pagina de edicion y Guardar: sin el pie no se escribe nada.
+  if ((await pressTestId("sheet-back")) !== true) {
+    const atras = await pressLabel("Volver", { exact: true });
+    if (!atras) throw new Error("no se pudo volver a edicion");
+  }
+  await sleep(700);
+  if ((await pressTestId("sheet-save")) !== true) throw new Error("no se pudo Guardar");
   const iconoEmoji = await waitForServerIcon(
     lista,
     tareaEmoji,
@@ -338,6 +345,9 @@ try {
   if ((await pressTestId("icon-style-fill")) !== true) throw new Error("no se pudo elegir relleno");
   if ((await pressTestId("icon-color-rose")) !== true) throw new Error("no se pudo elegir rosa");
   if ((await pressTestId("icon-cell-carpeta")) !== true) throw new Error("no se pudo tocar la carpeta");
+  if ((await pressTestId("sheet-back")) !== true) throw new Error("no se pudo volver a edicion (vector)");
+  await sleep(700);
+  if ((await pressTestId("sheet-save")) !== true) throw new Error("no se pudo Guardar (vector)");
   const iconoVector = await waitForServerIcon(
     lista,
     tareaVector,
@@ -360,8 +370,39 @@ try {
 
   /* ---------------- 4. Cambiar el color no borra el icono ---------------- */
   section("4. Elegir color despues no borra el icono");
+  // El Guardar anterior cerro la hoja: se vuelve a abrir y a la pagina de iconos.
+  await sleep(700);
+  let hoja = false;
+  for (let intento = 0; intento < 8 && !hoja; intento += 1) {
+    await sleep(500);
+    hoja = await pressLabel("Pan", { exact: false, root: `[data-testid="item-row-${tareaVector}"]` });
+  }
+  if (!hoja) throw new Error("no se reabrio la hoja de Pan");
+  await sleep(1000);
+  // La fila trae el boton del icono cuando ya tiene uno: ese tap abre la pagina
+  // directa, sin pasar por la fila "Icono" de edicion. Las dos entradas valen.
+  let reabierta = await tab.evaluate(`!!document.querySelector('[data-testid="icon-tab-emoji"]')`);
+  for (let intento = 0; intento < 8 && !reabierta; intento += 1) {
+    await sleep(500);
+    reabierta = await pressLabel("Icono", { exact: true });
+    if (!reabierta) {
+      reabierta = await tab.evaluate(`!!document.querySelector('[data-testid="icon-tab-emoji"]')`);
+    }
+  }
+  if (!reabierta) {
+    const etiquetas = await tab.evaluate(`[...document.querySelectorAll('[role="button"],[aria-label]')]
+      .filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
+      .map((e) => e.getAttribute("aria-label")).filter(Boolean).slice(0, 30)`);
+    console.log("ETIQUETAS:", JSON.stringify(etiquetas));
+    await tab.screenshot("capturas/icons/99-debug-reabrir.png");
+    throw new Error("no se reabrio la pagina de iconos");
+  }
+  await sleep(800);
   if ((await pressTestId("icon-color-teal")) !== true) throw new Error("no se pudo elegir verde azulado");
   if ((await pressTestId("icon-cell-carpeta")) !== true) throw new Error("no se pudo retocar la carpeta");
+  if ((await pressTestId("sheet-back")) !== true) throw new Error("no se pudo volver a edicion (recolor)");
+  await sleep(700);
+  if ((await pressTestId("sheet-save")) !== true) throw new Error("no se pudo Guardar (recolor)");
   const iconoColor = await waitForServerIcon(
     lista,
     tareaVector,

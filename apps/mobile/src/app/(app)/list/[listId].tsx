@@ -20,7 +20,6 @@ import { Card } from "@/components/ui/card";
 import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
-import { DoneTray } from "@/components/lists/done-tray";
 import { AppIcon } from "@/components/ui/app-icon";
 import { MediaListScreen } from "@/components/media/media-list-screen";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";

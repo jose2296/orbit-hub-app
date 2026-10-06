@@ -1,4 +1,4 @@
-import { iconChange } from "@/lib/icons/icon-change";
+import { iconChange, mismoIcono } from "@/lib/icons/icon-change";
 import { parseRecentEmojis, withRecentEmoji } from "@/lib/icons/recent-emojis";
 import { searchVectors } from "@/lib/icons/search-vectors";
 import { describe, expect, it } from "vitest";
@@ -131,5 +131,39 @@ describe("los emojis recientes", () => {
     const llenos = Array.from({ length: 16 }, (_, i) => `e${i}`);
     expect(withRecentEmoji(llenos, "nuevo")).toHaveLength(16);
     expect(withRecentEmoji(llenos, "nuevo")[0]).toBe("nuevo");
+  });
+});
+
+describe("mismoIcono", () => {
+  it("dos objetos diciendo lo mismo son lo mismo aunque no sean el mismo", () => {
+    // El borrador guarda lo elegido y la fila guarda lo que tiene: comparar por
+    // referencia encenderia Guardar en cada apertura.
+    expect(
+      mismoIcono(
+        { type: "vector", value: "pan", library: "ionicons", style: "outline", color: "auto" },
+        { type: "vector", value: "pan", library: "ionicons", style: "outline", color: "auto" },
+      ),
+    ).toBe(true);
+  });
+
+  it("distingue estilo, color, libreria y tipo", () => {
+    const base = {
+      type: "vector",
+      value: "pan",
+      library: "ionicons",
+      style: "outline",
+      color: "auto",
+    } as const;
+    expect(mismoIcono(base, { ...base, style: "fill" })).toBe(false);
+    expect(mismoIcono(base, { ...base, color: "rose" })).toBe(false);
+    expect(mismoIcono(base, { ...base, library: "material" })).toBe(false);
+    expect(mismoIcono(base, { type: "emoji", value: "🍎", color: "auto" })).toBe(false);
+  });
+
+  it("sin icono contra sin icono es lo mismo, y contra icono no", () => {
+    expect(mismoIcono(null, null)).toBe(true);
+    expect(mismoIcono(undefined, null)).toBe(true);
+    expect(mismoIcono(null, { type: "emoji", value: "🍎", color: "auto" })).toBe(false);
+    expect(mismoIcono({ type: "emoji", value: "🍎", color: "auto" }, null)).toBe(false);
   });
 });

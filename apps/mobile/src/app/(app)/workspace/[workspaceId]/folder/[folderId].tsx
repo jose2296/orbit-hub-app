@@ -85,7 +85,7 @@ export default function FolderScreen() {
         folder: {
           id: folder.id,
           name: folder.name,
-          emoji: folder.emoji,
+          icon: folder.icon,
           parentId: folder.parentId,
           position: folder.position,
         },

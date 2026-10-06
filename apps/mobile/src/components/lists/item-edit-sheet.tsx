@@ -26,6 +26,7 @@ import {
 import { useTheme } from "@/theme";
 
 import { completedMatch } from "@/lib/lists/done-match";
+import { mismoIcono } from "@/lib/icons/icon-change";
 import { ITEM_ICON_COLORS } from "@orbit-hub/contracts";
 import { ICON_COLOR_LABEL } from "@/theme/tokens";
 import type { IconColor } from "@orbit-hub/contracts";
@@ -417,9 +418,10 @@ export function ItemEditSheet({
       title.trim() !== (isNew ? "" : base.title.trim()) ||
       annotation.trim() !== (isNew ? "" : (base.annotation ?? "").trim()) ||
       draft.priority !== (isNew ? "none" : base.priority) ||
-      draft.icon !== (isNew ? null : base.icon) ||
-      draft.iconStyle !== (isNew ? "outline" : base.iconStyle) ||
-      draft.iconColor !== (isNew ? "neutral" : base.iconColor) ||
+      // By value and not by reference: the draft holds what was picked and the
+      // row holds what it has, and two objects saying the same icon are the same
+      // choice. A reference check would light Guardar up on every opening.
+      !mismoIcono(draft.icon, isNew ? null : base.icon) ||
       draft.completed !== (isNew ? false : base.completed) ||
       !sameLabels(draft.tags, isNew ? [] : base.tags) ||
       !sameColors(colores, isNew ? {} : tagColors)
@@ -499,9 +501,9 @@ export function ItemEditSheet({
           title: title.trim(),
           annotation: annotation.trim() || null,
           priority: draft.priority,
+          // The whole icon in the one write: colour and drawing travel inside it,
+          // and there is no second or third write that could half-land.
           icon: draft.icon,
-          iconStyle: draft.iconStyle,
-          iconColor: draft.iconColor,
           tags: draft.tags,
           completed: draft.completed,
         });

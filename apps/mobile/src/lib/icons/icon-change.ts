@@ -43,3 +43,20 @@ export function iconChange(current: IconRef | null | undefined, next: IconRef | 
   }
   return change;
 }
+
+/**
+ * Whether two icons are the one the person would recognise as the same.
+ *
+ * Field by field and not by reference: the panel keeps what was picked in its
+ * draft and what the row has in the row, and two different objects saying the
+ * same icon are the same choice. `JSON.stringify` would also answer, but only
+ * while both sides write the keys in the same order — which nothing promises.
+ */
+export function mismoIcono(a: IconRef | null | undefined, b: IconRef | null | undefined): boolean {
+  if (!a || !b) return a == null && b == null;
+  if (a.type !== b.type || a.value !== b.value || a.color !== b.color) return false;
+  if (a.type === "vector" && b.type === "vector") {
+    return a.library === b.library && a.style === b.style;
+  }
+  return true;
+}
