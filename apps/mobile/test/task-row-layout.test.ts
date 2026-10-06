@@ -612,3 +612,29 @@ describe('el lavado no se parte en dos puntos distintos', () => {
     expect(sinComentarios).not.toContain('top: -ALTO_CABECERA');
   });
 });
+describe('la barra tiene los dos margenes', () => {
+  const header = readFileSync(
+    join(import.meta.dirname, '../src/components/ui/app-header.tsx'),
+    'utf8',
+  );
+
+  it('los tres puntitos tienen el mismo margen que el menu', () => {
+    // El lado izquierdo lleva `paddingLeft: xs + lg` y el derecho no llevaba nada:
+    // los tres puntitos se pegaban al borde de la pantalla y el menu no. Los dos
+    // son botones de 32 en una barra de 56.
+    expect(
+      header,
+      'los dos lados de la barra necesitan el mismo margen exterior',
+    ).toMatch(/paddingRight:\s*theme\.spacing\.xs \+ theme\.spacing\.lg/);
+  });
+
+  it('el titulo se centra en el espacio que sobra, y eso no es el centro de la barra', () => {
+    // Documentado a proposito: `centro` lleva `flex: 1` + `alignItems: center`, y
+    // con dos botones a la izquierda y uno a la derecha el titulo queda desplazado.
+    // **Este test marca lo que falta, no lo que hay.** Arreglarlo necesita medir
+    // en pantalla el nombre mas largo que la app permite contra los botones.
+    const centro = header.match(/centro:\s*\{[\s\S]*?\}/)?.[0] ?? '';
+    expect(centro, 'el titulo vive en un flex: 1').toContain('flex: 1');
+    expect(centro).toContain("alignItems: 'center'");
+  });
+});

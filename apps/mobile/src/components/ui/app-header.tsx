@@ -222,7 +222,23 @@ export function AppHeader({ options, children }: AppHeaderProps) {
           above the line of the title. The height is here, not in the button,
           because the button does not know how tall the bar is.
         */}
-        <View style={styles.derecha}>{slotAccion()}</View>
+        {/*
+          El mismo margen que el lado izquierdo, y no ninguno.
+
+          La fila de la izquierda lleva `paddingLeft: xs + lg` y la de la derecha
+          no llevaba nada: los tres puntitos se pegaban al borde de la pantalla
+          mientras el menu de hamburguesa estaba a una unidad del. Los dos son
+          botones de 32 en una barra de 56, y que uno llegue al borde y el otro
+          no es lo que hace una barra.
+
+          Y el mismo, y no uno cualquiera: **el del lado que tiene un boton menos**
+          es el que hay que igualar, porque es el que iguala los centros.
+        */}
+        <View
+          style={[styles.derecha, { paddingRight: theme.spacing.xs + theme.spacing.lg }]}
+        >
+          {slotAccion()}
+        </View>
       </View>
     </View>
   );
