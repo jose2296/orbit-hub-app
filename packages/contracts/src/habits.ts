@@ -40,6 +40,27 @@ export const localDateSchema = z
 export type LocalDate = z.infer<typeof localDateSchema>;
 
 /**
+ * Cuantas veces se puede pedir por periodo, como datos.
+ *
+ * El tope es fisico y por eso va por periodo: una semana solo tiene 7 dias
+ * distintos, un mes 31 y un ano bisiesto 366, y con la unicidad por
+ * (habito, dia) no se puede marcar mas veces distintas de las que dias hay.
+ *
+ * `WEEK` es 31 y no 7 por el contrato: el brief lo pinnea con test (31 pasa,
+ * 32 no), asi que aqui manda el test aunque el fisico daria 7. Generoso, no
+ * fisico, y asi se dice.
+ */
+export const QUOTA_COUNT_MAX_WEEK = 31;
+export const QUOTA_COUNT_MAX_MONTH = 31;
+export const QUOTA_COUNT_MAX_YEAR = 366;
+
+const QUOTA_COUNT_MAX = {
+  week: QUOTA_COUNT_MAX_WEEK,
+  month: QUOTA_COUNT_MAX_MONTH,
+  year: QUOTA_COUNT_MAX_YEAR,
+} as const;
+
+/**
  * Como se repite un habito: dias fijados por una regla o cuota por periodo.
  *
  * Declarado otra vez aqui y no importado de `@orbit-hub/habit-core` a
@@ -54,18 +75,22 @@ export const habitScheduleSchema = z.discriminatedUnion('kind', [
     /** La regla en bruto, tal como va en el campo avanzado (`FREQ=DAILY`). */
     rule: z.string().trim().min(1).max(2000),
   }),
-  z.object({
-    kind: z.literal('quota'),
-    /**
-     * Cuantas veces hay que marcar en el periodo.
-     *
-     * El tope es 31 porque un mes largo tiene 31 dias: con la unicidad por
-     * (habito, dia) no se puede marcar mas veces distintas de las que dias
-     * hay, asi que pedir mas seria pedir lo imposible.
-     */
-    count: z.int().min(1).max(31),
-    period: z.enum(['week', 'month', 'year']),
-  }),
+  z
+    .object({
+      kind: z.literal('quota'),
+      /** Cuantas veces hay que marcar en el periodo, con tope fisico arriba. */
+      count: z.int().min(1),
+      period: z.enum(['week', 'month', 'year']),
+    })
+    .superRefine((value, ctx) => {
+      if (value.count > QUOTA_COUNT_MAX[value.period]) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `a ${value.period} holds at most ${QUOTA_COUNT_MAX[value.period]}`,
+          path: ['count'],
+        });
+      }
+    }),
 ]);
 export type HabitSchedule = z.infer<typeof habitScheduleSchema>;
 

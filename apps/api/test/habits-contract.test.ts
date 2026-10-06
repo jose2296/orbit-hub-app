@@ -79,6 +79,36 @@ describe('habitScheduleSchema', () => {
     ).toBe(true);
   });
 
+  it('acepta 31 por mes, que es el tope', () => {
+    expect(
+      habitScheduleSchema.safeParse({ kind: 'quota', count: 31, period: 'month' }).success,
+    ).toBe(true);
+  });
+
+  it('rechaza una cuota mensual de mas de 31', () => {
+    expect(
+      habitScheduleSchema.safeParse({ kind: 'quota', count: 32, period: 'month' }).success,
+    ).toBe(false);
+  });
+
+  it('acepta 366 por ano, que es el tope', () => {
+    expect(
+      habitScheduleSchema.safeParse({ kind: 'quota', count: 366, period: 'year' }).success,
+    ).toBe(true);
+  });
+
+  it('rechaza una cuota anual de mas de 366', () => {
+    expect(
+      habitScheduleSchema.safeParse({ kind: 'quota', count: 367, period: 'year' }).success,
+    ).toBe(false);
+  });
+
+  it('acepta 100 por ano, que es una cuota legitima', () => {
+    expect(
+      habitScheduleSchema.safeParse({ kind: 'quota', count: 100, period: 'year' }).success,
+    ).toBe(true);
+  });
+
   // Las dos declaraciones del horario no se pueden separar: contracts la
   // repite en vez de importar habit-core para no meter rrule ni luxon en la
   // API, asi que este test es la correa. Si el motor cambia la union, una de
