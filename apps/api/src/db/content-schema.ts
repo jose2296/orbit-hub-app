@@ -13,11 +13,10 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-import type { TagColors } from '@orbit-hub/contracts';
+import type { IconRef, TagColors } from '@orbit-hub/contracts';
 
 import { users } from './auth-schema';
 import type {
-  ItemIconColorName,
   ListKindName,
   ListOrderModeName,
   WorkspaceColorName,
@@ -36,7 +35,14 @@ export const workspaces = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 80 }).notNull(),
     description: varchar('description', { length: 500 }),
-    emoji: varchar('emoji', { length: 16 }),
+    /**
+     * The icon somebody chose, as one value.
+     *
+     * Nullable and with no default on purpose: a row without one is "nobody
+     * chose an icon", which is a real state the app already knows how to draw,
+     * and it is not the same thing as a default anybody would have to look at.
+     */
+    icon: jsonb('icon').$type<IconRef>(),
     // A key out of the eight the app offers and not a hex value: the person picks
     // from the eight and the app draws them, so there is no colour nobody can
     // read on a card.
@@ -137,7 +143,7 @@ export const folders = pgTable(
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     parentId: uuid('parent_id'),
     name: varchar('name', { length: 120 }).notNull(),
-    emoji: varchar('emoji', { length: 16 }),
+    icon: jsonb('icon').$type<IconRef>(),
     position: integer('position').notNull().default(0),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -313,7 +319,7 @@ export const lists = pgTable(
     kind: varchar('kind', { length: 24 }).$type<ListKindName>().notNull(),
     title: varchar('title', { length: 120 }).notNull(),
     description: varchar('description', { length: 1000 }),
-    emoji: varchar('emoji', { length: 16 }),
+    icon: jsonb('icon').$type<IconRef>(),
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     /**
      * The colours of this list's labels, and only the ones somebody chose.
@@ -361,20 +367,15 @@ export const listItems = pgTable(
       .$type<'none' | 'low' | 'medium' | 'high'>()
       .notNull()
       .default('none'),
-    // A key out of the icons the app offers, never an emoji: the same shape on
-    // every device and something the app can draw with the same care.
-    icon: varchar('icon', { length: 32 }),
-    // Filled or outline, and which of the app's colours. Both with a default, so
-    // a row written before them keeps drawing and does not need its data
-    // migrated: what it had was always an outline in the neutral colour.
-    iconStyle: varchar('icon_style', { length: 8 })
-      .$type<'outline' | 'fill'>()
-      .notNull()
-      .default('outline'),
-    iconColor: varchar('icon_color', { length: 16 })
-      .$type<ItemIconColorName>()
-      .notNull()
-      .default('neutral'),
+    /**
+     * The icon, the drawing and the colour, as one value.
+     *
+     * It was three columns — `icon varchar(32)`, `icon_style` and `icon_color` —
+     * and a key from the app's list plus two defaults. As one value the three
+     * cannot be disagreeing with each other any more, and there is no second
+     * build of this shape to keep in step.
+     */
+    icon: jsonb('icon').$type<IconRef>(),
     // Free labels, so two shops are values and not two folders.
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
     externalId: varchar('external_id', { length: 120 }),
@@ -438,6 +439,8 @@ export const notes = pgTable(
     /** Denormalised from the document for search, so search is an index hit. */
     plainText: text('plain_text').notNull().default(''),
     tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    /** Same value as on a workspace, a folder, a list and an item. */
+    icon: jsonb('icon').$type<IconRef>(),
     /**
      * Where this note sits among the things in its folder, when somebody has
      * put them in an order by hand.

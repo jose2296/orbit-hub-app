@@ -59,6 +59,17 @@ describe('la raiz espera a la fuente de los iconos', () => {
     );
   });
 
+  it('carga tambien la de MaterialCommunityIcons, que dibuja la otra mitad', () => {
+    // Pedirla en cada icono por su cuenta devuelve el fallo silencioso que este
+    // gate quita: en web la promesa puede rechazar sin que nadie lo vea y los
+    // iconos se quedan vacios de forma permanente.
+    assert.match(
+      LAYOUT,
+      /MaterialCommunityIcons\.font/,
+      'sin el `.font` de Material el gate espera a una fuente que nadie ha pedido',
+    );
+  });
+
   it('no pinta la app hasta que la fuente ha llegado o ha fallado', () => {
     // Las dos mitades: `loaded` para no pintar iconos vacios, y `error` para no
     // quedarse esperando a una fuente que no va a llegar nunca. Gatear solo con
@@ -68,6 +79,22 @@ describe('la raiz espera a la fuente de los iconos', () => {
       LAYOUT,
       /\bfontError\b|\berror\b/,
       'el gate tiene que mirar tambien si fallo, o un 404 deja la app colgada',
+    );
+  });
+
+  it('precarga la segunda fuente con un glifo invisible desde el primer frame', () => {
+    // El navegador descarga un `@font-face` al primer USO y no al pedirlo: sin
+    // esto la familia se queda `unloaded` doce segundos despues del arranque y
+    // la primera apertura del selector ensena tofu hasta que llega. Medido.
+    assert.match(
+      LAYOUT,
+      /precargaFuente/,
+      'sin el glifo invisible la fuente de Material llega tarde a su primera pantalla',
+    );
+    assert.match(
+      LAYOUT,
+      /material-community/,
+      'el glifo invisible tiene que ser de la fuente que tarda, no de la que ya esta',
     );
   });
 

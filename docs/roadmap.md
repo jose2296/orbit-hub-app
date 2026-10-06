@@ -401,13 +401,22 @@ Leyenda: ✅ hecho y verificado · 🟡 a medias · ⬜ sin empezar
 
 ### Iconos de los elementos
 
-Hecho y verificado en navegador. 131 iconos en 10 grupos, la clave es **la palabra que se
-escribe** ("pan", "pilas", "pastilla"), así que el buscador encuentra lo que se busca sin
-tener que traducirlo a otro idioma. Se eligen con buscador, con el color (12) y con el
-dibujo (contorno o relleno), y el elegido se marca **con un borde**: el color es lo que
-elegiste para el icono, y al marcarlo se perdía.
+Hecho y verificado en navegador. El icono es **un objeto en una columna `jsonb`**,
+igual en espacios, carpetas, listas, elementos y notas: `packages/contracts/src/icons.ts`
+(`IconRef`, unión discriminada de `emoji | vector`). 487 dibujos en 7 grupos más los
+emojis del sistema con buscador en español, y la clave sigue siendo **la palabra que
+se escribe** ("pan", "pilas", "pastilla"). Se eligen con buscador, con el color (12
+tokens del tema más `auto`) y con el dibujo (contorno o relleno), y el elegido se
+marca **con un borde**: el color es lo que elegiste para el icono, y al marcarlo se
+perdía.
 
-Archivos: `packages/contracts/src/item-icons.ts` (los 131 y sus grupos), `apps/mobile/src/lib/lists/item-icons.ts` (el buscador y las etiquetas), `apps/mobile/src/lib/lists/item-glyphs.ts` (el dibujo de cada uno, con los dos comprobados), `apps/mobile/src/components/lists/icon-picker.tsx`.
+Archivos: `packages/contracts/src/icons.ts` (el `IconRef` y los 487 con sus grupos),
+`apps/mobile/src/lib/icons/` (el buscador de emojis, el de dibujos y lo que el
+renderer decide sin React), `apps/mobile/src/components/ui/app-icon.tsx` (el que
+dibuja) y `apps/mobile/src/components/ui/icon-picker-sheet.tsx` (el que elige, con
+pestañas de emojis y de dibujos). Lo viejo (`item-icons.ts`, `item-glyphs.ts`,
+`icon-picker.tsx` y el `isItemIcon` duplicado de `item-presentation.ts`) está
+borrado, y las 131 claves de antes están todas dentro del catálogo nuevo.
 
 **Un bug que costó encontrar:** elegir un icono y luego un color **borraba el icono**. El
 selector mandaba el icono entero en cada cambio, y lo que mandaba era lo que él creía que

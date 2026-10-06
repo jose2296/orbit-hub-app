@@ -11,7 +11,10 @@ import {
 } from "@orbit-hub/contracts";
 import { describe, expect, it } from "vitest";
 
-import { iconColor } from "@/lib/lists/item-icons";
+import { iconColorHex } from "@/theme/tokens";
+
+/** What `iconColor` used to answer, and still does: the light hex. */
+const iconColor = (key: string | null | undefined): string => iconColorHex(key, "light");
 import {
   contrastRatio,
   labelPillColors,

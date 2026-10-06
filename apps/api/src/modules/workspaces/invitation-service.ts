@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import type {
   AcceptInvitationResponse,
+  IconRef,
   Invitation,
   InvitationStatus,
   ListInvitationsResponse,
@@ -9,7 +10,7 @@ import type {
   PreviewInvitationResponse,
   Workspace,
 } from "@orbit-hub/contracts";
-import { membershipRoleRank } from "@orbit-hub/contracts";
+import { membershipRoleRank, sanitiseIconRef } from "@orbit-hub/contracts";
 import { and, desc, eq, gt, isNull, notExists, sql } from "drizzle-orm";
 
 import { getDatabase } from "../../db/client.js";
@@ -28,7 +29,8 @@ interface InvitationRow {
   id: string;
   workspaceId: string;
   workspaceName: string;
-  workspaceEmoji: string | null;
+  /** The whole `IconRef`, not only its emoji: the wire is the one that narrows. */
+  workspaceIcon: IconRef | null;
   workspaceColor: Workspace["color"];
   role: "editor" | "viewer";
   status: "pending" | "accepted" | "declined" | "revoked";
@@ -367,7 +369,7 @@ export class InvitationService {
       workspace: {
         id: row.workspaceId,
         name: row.workspaceName,
-        emoji: row.workspaceEmoji,
+        icon: sanitiseIconRef(row.workspaceIcon),
         color: row.workspaceColor,
       },
       role: row.role as "editor" | "viewer",
@@ -539,7 +541,7 @@ export class InvitationService {
         invitedEmail: workspaceInvitations.invitedEmail,
         expiresAt: workspaceInvitations.expiresAt,
         workspaceName: workspaces.name,
-        workspaceEmoji: workspaces.emoji,
+        workspaceIcon: workspaces.icon,
         workspaceColor: workspaces.color,
         workspaceDeletedAt: workspaces.deletedAt,
         inviterName: users.displayName,

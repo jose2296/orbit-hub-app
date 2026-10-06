@@ -13,8 +13,6 @@ const fila = (title: string, completed: boolean): ListItem =>
     completed,
     priority: "none",
     icon: null,
-    iconStyle: "outline",
-    iconColor: "neutral",
     tags: [],
     externalId: null,
     metadata: null,

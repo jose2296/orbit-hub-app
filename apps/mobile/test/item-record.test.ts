@@ -34,7 +34,7 @@ describe('newListItem', () => {
       priority: 'none',
       role: 'editor',
       shared: false,
-      icon: null, iconStyle: 'outline' as const, iconColor: 'neutral' as const,
+      icon: null,
       tags: [],
       externalId: null,
       metadata: null,
@@ -54,23 +54,48 @@ describe('newListItem', () => {
   });
 
   it('keeps what the caller passes over the defaults', () => {
+    const icon = { type: 'vector', value: 'pan', library: 'ionicons', style: 'fill', color: 'rose' } as const;
     const item = newListItem({
       id: 'a',
       listId: 'l',
       title: 'Urgente',
       position: 0,
       priority: 'high',
-      icon: 'pan',
-      iconStyle: 'outline' as const,
-      iconColor: 'neutral' as const,
+      icon,
       externalId: 'movie:603',
       metadata: { imageUrl: 'https://x/y.jpg' },
     });
 
     expect(item.priority).toBe('high');
-    expect(item.icon).toBe('pan');
+    expect(item.icon).toEqual({ ...icon });
     expect(item.externalId).toBe('movie:603');
     expect(item.metadata).toEqual({ imageUrl: 'https://x/y.jpg' });
+  });
+
+  it('drops an icon this build cannot draw instead of breaking the row', () => {
+    // A key from a future build, or a payload somebody edited by hand, arrives
+    // here and the row still opens.
+    const item = newListItem({
+      id: 'a',
+      listId: 'l',
+      title: 'Pan',
+      position: 0,
+      icon: { type: 'vector', value: 'no-existe', library: 'ionicons' } as never,
+    });
+
+    expect(item.icon).toBeNull();
+  });
+
+  it('keeps an emoji the caller passes', () => {
+    const item = newListItem({
+      id: 'a',
+      listId: 'l',
+      title: 'Casa',
+      position: 0,
+      icon: { type: 'emoji', value: '🏠', color: 'auto' },
+    });
+
+    expect(item.icon).toEqual({ type: 'emoji', value: '🏠', color: 'auto' });
   });
 
   it('leaves a field out rather than writing undefined over a default', () => {

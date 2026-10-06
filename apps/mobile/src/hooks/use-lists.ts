@@ -1,4 +1,5 @@
 import type {
+  IconRef,
   List,
   ListItem,
   ListKind,
@@ -7,7 +8,7 @@ import type {
   Priority,
   SearchResult,
 } from "@orbit-hub/contracts";
-import { notePreviewBelowTitle } from "@orbit-hub/contracts";
+import { notePreviewBelowTitle, sanitiseIconRef } from "@orbit-hub/contracts";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -105,7 +106,7 @@ export function useLists(filters: ListFilters = {}) {
       kind: ListKind;
       /** `null` is the space itself, which is the root folder. */
       folderId?: string | null;
-      emoji?: string;
+      icon?: IconRef | null;
     }) => {
       const store = await getLocalStoreReady();
       const id = Crypto.randomUUID();
@@ -130,7 +131,7 @@ export function useLists(filters: ListFilters = {}) {
             kind: input.kind,
             title: input.title,
             description: null,
-            emoji: input.emoji ?? null,
+            icon: input.icon ?? null,
             tags: [],
             position: 0,
             version: 0,
@@ -185,7 +186,7 @@ export function useLists(filters: ListFilters = {}) {
           kind: source.kind,
           title: source.title,
           description: source.description,
-          emoji: source.emoji,
+          icon: source.icon,
           tags: source.tags,
           position: source.position,
           // A copy of a list sorted by name that came out sorted by hand would
@@ -237,7 +238,7 @@ export function useLists(filters: ListFilters = {}) {
           title: plan.list.title,
           kind: plan.list.kind,
           ...(plan.list.folderId ? { folderId: plan.list.folderId } : {}),
-          ...(plan.list.emoji ? { emoji: plan.list.emoji } : {}),
+          ...(plan.list.icon ? { icon: plan.list.icon } : {}),
         },
       });
 
@@ -365,7 +366,7 @@ export function useLists(filters: ListFilters = {}) {
       changes: {
         title?: string;
         description?: string | null;
-        emoji?: string | null;
+        icon?: IconRef | null;
       },
     ) => {
       await localUpdate("list", list.id, changes);
@@ -528,9 +529,7 @@ export function useListItems(listId: string | undefined) {
       metadata?: Record<string, unknown> | null;
       /** The rest of what the item panel offers, when it created the row. */
       annotation?: string | null;
-      icon?: ListItem["icon"];
-      iconStyle?: ListItem["iconStyle"];
-      iconColor?: ListItem["iconColor"];
+      icon?: IconRef | null;
       tags?: string[];
     }): Promise<{ added: boolean; itemId: string | null }> => {
       if (!listId) return { added: false, itemId: null };
@@ -562,8 +561,6 @@ export function useListItems(listId: string | undefined) {
         priority: input.priority,
         annotation: input.annotation ?? null,
         icon: input.icon ?? null,
-        iconStyle: input.iconStyle,
-        iconColor: input.iconColor,
         tags: input.tags,
         externalId: input.externalId ?? null,
         metadata: input.metadata ?? null,
@@ -592,8 +589,6 @@ export function useListItems(listId: string | undefined) {
           position: nextPosition(existing),
           ...(input.priority ? { priority: input.priority } : {}),
           ...(input.icon ? { icon: input.icon } : {}),
-          ...(input.iconStyle ? { iconStyle: input.iconStyle } : {}),
-          ...(input.iconColor ? { iconColor: input.iconColor } : {}),
           ...(input.annotation ? { annotation: input.annotation } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
           // The provider id travels with the item so the same title is
@@ -699,10 +694,7 @@ export function useListItems(listId: string | undefined) {
     async (
       item: ListItem,
       changes: {
-        icon?: ListItem["icon"];
-        /** Filled or outline, and which of the colours the app offers. */
-        iconStyle?: ListItem["iconStyle"];
-        iconColor?: ListItem["iconColor"];
+        icon?: IconRef | null;
         tags?: string[];
         /** The name, the description and how urgent it is. */
         title?: string;
@@ -922,6 +914,7 @@ export function useLocalSearch() {
         kind: null,
         title: record.name,
         subtitle: record.description ?? null,
+        icon: sanitiseIconRef((record as { icon?: unknown }).icon),
         updatedAt: record.updatedAt,
       });
     }
@@ -945,6 +938,7 @@ export function useLocalSearch() {
         kind: null,
         title: record.name,
         subtitle: workspacesById.get(record.workspaceId)?.name ?? null,
+        icon: sanitiseIconRef((record as { icon?: unknown }).icon),
         updatedAt: record.updatedAt,
       });
     }
@@ -962,6 +956,7 @@ export function useLocalSearch() {
         kind: record.kind,
         title: record.title,
         subtitle: record.description,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }
@@ -988,6 +983,7 @@ export function useLocalSearch() {
         // So the hit can be ticked from the search itself, which is the whole
         // reason somebody is looking for "milk" a second time.
         completed: record.completed,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }
@@ -1016,6 +1012,7 @@ export function useLocalSearch() {
         // A note is not a row, so there is nothing to tick. Null and not false,
         // because false would draw an empty checkbox next to a document.
         completed: null,
+        icon: record.icon ?? null,
         updatedAt: record.updatedAt,
       });
     }

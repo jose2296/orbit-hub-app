@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { derivedTagColor } from "@orbit-hub/contracts";
+import { derivedTagColor, ITEM_ICON_COLORS } from "@orbit-hub/contracts";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -8,12 +8,7 @@ import type { AccessibilityActionEvent } from "react-native";
 import { runOnJS } from "react-native-reanimated";
 
 import { useTranslation } from "@/lib/i18n";
-import {
-  ICON_COLOR_KEYS,
-  ICON_COLOR_LABEL,
-  ICON_COLORS,
-  iconColor,
-} from "@/lib/lists/item-icons";
+import { ICON_COLORS, ICON_COLOR_LABEL, iconColorHex } from "@/theme/tokens";
 import {
   hexDeHsv,
   normalizaHex,
@@ -165,11 +160,13 @@ function hexDeValor(value: string | null, tag?: string): string {
 /**
  * Whether a hex is one of the twelve, read out of the twelve's own table.
  *
- * A comparison and not a list written here: `ICON_COLORS` is the only copy of those
- * hexes in the app, and a second copy is the one that does not get updated.
+ * A comparison and not a list written here: the theme's table is the only copy
+ * of those hexes in the app, and a second copy is the one that does not get
+ * updated. Compared in the light scheme, because the stored hexes are the light
+ * ones.
  */
 function esDeLaPaleta(hex: string): boolean {
-  return Object.values(ICON_COLORS).includes(hex);
+  return Object.values(ICON_COLORS).some((entry) => entry.light === hex);
 }
 
 /**
@@ -552,8 +549,8 @@ export function TagColorPicker({ value, onChange, onClose, tag, onPreviewChange 
         </Pressable>
 
         <View style={[styles.rejilla, { gap: theme.spacing.xs }]}>
-          {ICON_COLOR_KEYS.map((option) => {
-            const hex = iconColor(option);
+          {ITEM_ICON_COLORS.map((option) => {
+            const hex = iconColorHex(option, "light");
             /*
              * Compared as colours and not against `value`: the map can hold one of
              * the twelve names from a build from before free colours, and the same

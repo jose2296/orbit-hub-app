@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import type { Workspace } from "@orbit-hub/contracts";
 
 import { WorkspaceColorPicker } from "@/components/workspace/workspace-color-picker";
 import { SharePanel } from "@/components/workspace/share-panel";
 import { SharedBadge } from "@/components/shares/shared-badge";
+import { AppIcon } from "../ui/app-icon";
 import { Button } from "../ui/button";
+import { IconPickerPanel } from "../ui/icon-picker-sheet";
 import { Sheet, SheetOptions, useLastValue } from "../ui/sheet";
 import type { SheetOption } from "../ui/sheet";
 import { AppText } from "../ui/text";
@@ -31,7 +33,7 @@ export interface WorkspaceMenuSheetProps {
   initialPage?: Page;
 }
 
-type Page = "options" | "edit" | "share" | "delete";
+type Page = "options" | "edit" | "icon" | "share" | "delete";
 
 /**
  * What can be done with a space.
@@ -177,11 +179,13 @@ export function WorkspaceMenuSheet({
       ? t(`workspaces.role.${workspace.role}` as never)
       : page === "edit"
         ? t("workspaceMenu.edit")
-        : page === "share"
-          ? t(pluralKey("share.peopleSubtitle", workspace.memberCount), {
-              count: workspace.memberCount,
-            })
-          : t("workspaceMenu.deleteTitle", { name: workspace.name });
+        : page === "icon"
+          ? t("icons.title")
+          : page === "share"
+            ? t(pluralKey("share.peopleSubtitle", workspace.memberCount), {
+                count: workspace.memberCount,
+              })
+            : t("workspaceMenu.deleteTitle", { name: workspace.name });
 
   return (
     <Sheet
@@ -257,6 +261,32 @@ export function WorkspaceMenuSheet({
               onPickWash={(wash) => void updateWorkspace(workspace, { wash })}
             />
 
+            {/* The icon lives here, next to the name and the colour, because a
+                space is the thing an icon is a property of and this is where
+                you go to change a space. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("icons.title")}
+              onPress={() => setPage("icon")}
+              style={({ pressed }) => [
+                {
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: theme.spacing.md,
+                  borderColor: theme.colors.border,
+                  borderWidth: 1,
+                  borderRadius: theme.radius.md,
+                  padding: theme.spacing.md,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <AppIcon icon={workspace.icon} size={20} fallback="folder-outline" />
+              <AppText variant="body" style={{ flex: 1 }}>
+                {t("icons.title")}
+              </AppText>
+            </Pressable>
+
             <View style={{ gap: theme.spacing.sm }}>
               <Button
                 label={t("rename.save")}
@@ -275,6 +305,13 @@ export function WorkspaceMenuSheet({
               */}
             </View>
           </View>
+        ) : null}
+
+        {page === "icon" ? (
+          <IconPickerPanel
+            current={workspace.icon}
+            onSelect={(icon) => void updateWorkspace(workspace, { icon })}
+          />
         ) : null}
 
         {page === "share" ? (

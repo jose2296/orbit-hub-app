@@ -47,6 +47,8 @@ import type { ListKind } from "@orbit-hub/contracts";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
+import { widgetIcon } from "@/lib/dashboard/pin";
+
 /**
  * The home screen: the panel, and nothing else.
  *
@@ -293,7 +295,7 @@ export default function HomeScreen() {
           return {
             title,
             subtitle: t("dashboard.deletedFolder"),
-            emoji: (widget.settings?.["emoji"] as string) ?? null,
+            icon: widgetIcon(widget.settings),
             href: null,
             // Still a folder's card, even though the folder is gone: the mark says
             // what it was, and a card that changes its mark when its subject is
@@ -307,7 +309,7 @@ export default function HomeScreen() {
           subtitle: t(pluralKey("dashboard.listsInside", inside), {
             count: inside,
           }),
-          emoji: folder.emoji,
+          icon: folder.icon ?? null,
           href: `/(app)/workspace/${folder.workspaceId}/folder/${folder.id}`,
           mark: cardMark({ folder: true }),
         };
@@ -322,7 +324,7 @@ export default function HomeScreen() {
           return {
             title,
             subtitle: t("dashboard.deletedNote"),
-            emoji: null,
+            icon: null,
             href: null,
             mark: cardMark({ note: true }),
           };
@@ -330,7 +332,7 @@ export default function HomeScreen() {
         return {
           title: note.title.length > 0 ? note.title : t("note.untitled"),
           subtitle: notePreview(note).slice(0, 80),
-          emoji: null,
+          icon: note.icon ?? null,
           href: `/(app)/note/${note.id}`,
           mark: cardMark({ note: true }),
         };
@@ -343,7 +345,7 @@ export default function HomeScreen() {
         return {
           title,
           subtitle: t("dashboard.deletedList"),
-          emoji: (widget.settings?.["emoji"] as string) ?? null,
+          icon: widgetIcon(widget.settings),
           href: null,
           // What it was, from the card itself. The list is gone but the kind was
           // written into the card when it was pinned, and a film list that has
@@ -356,7 +358,7 @@ export default function HomeScreen() {
         subtitle: t(pluralKey("lists.itemCount", list.itemCount), {
           count: list.itemCount,
         }),
-        emoji: list.emoji,
+        icon: list.icon ?? null,
         href: `/(app)/list/${list.id}`,
         mark: cardMark({ kind: list.kind }),
       };

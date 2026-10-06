@@ -282,8 +282,8 @@ describe('POST /sync/push', () => {
         kind: 'update',
         entityId: created.id,
         baseVersion: created.version,
-        base: { emoji: null },
-        payload: { emoji: '🏠' },
+        base: { icon: null },
+        payload: { icon: { type: 'emoji', value: '🏠' } },
       }),
     ]);
 
@@ -297,7 +297,7 @@ describe('POST /sync/push', () => {
     ).body.data.changes
       .filter((change: { entity: string }) => change.entity === 'workspace')
       .at(-1);
-    expect(workspace.record.emoji).toBe('🏠');
+    expect(workspace.record.icon).toEqual({ type: 'emoji', value: '🏠', color: 'auto' });
     expect(workspace.record.description).toBe('Otro dispositivo escribió esto');
   });
 
@@ -656,7 +656,7 @@ describe('POST /sync/pull', () => {
           listId,
           title: 'Pan',
           position: 0,
-          icon: 'pan',
+          icon: { type: 'vector', value: 'pan', library: 'ionicons', style: 'outline', color: 'rose' },
           tags: ['Mercadona', 'urgente'],
         },
       }),
@@ -664,7 +664,7 @@ describe('POST /sync/pull', () => {
 
     const items = await api.get(`/lists/${listId}/items`, user.accessToken);
     const row = items.body.data.items.find((entry: { id: string }) => entry.id === itemId);
-    expect(row.icon).toBe('pan');
+    expect(row.icon).toEqual({ type: 'vector', value: 'pan', library: 'ionicons', style: 'outline', color: 'rose' });
     expect(row.tags).toEqual(['Mercadona', 'urgente']);
 
     const list = await api.get(`/lists/${listId}`, user.accessToken);

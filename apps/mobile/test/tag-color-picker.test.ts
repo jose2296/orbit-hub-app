@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { ICON_COLORS } from "@/lib/lists/item-icons";
+import { ICON_COLORS } from "@/theme/tokens";
+
+/** The twelve in the light scheme: the stored hexes are the light ones. */
+const TWELVE = Object.values(ICON_COLORS).map((entry) => entry.light);
 import { dictionaries, formatTranslation } from "@/lib/i18n/dictionaries";
 import type { TranslationKey } from "@/lib/i18n/dictionaries";
 import {
@@ -57,7 +60,7 @@ describe("el campo de color", () => {
     // El round trip es el que decide si el boton de "usar este color" guarda lo
     // que se esta viendo o un hex al lado. Los doce de la paleta y un blanco, un
     // negro y un gris, que son los tres casos donde el tono no existe.
-    for (const hex of [...Object.values(ICON_COLORS), "#FFFFFF", "#000000", "#808080"]) {
+    for (const hex of [...TWELVE, "#FFFFFF", "#000000", "#808080"]) {
       const hsv = hexToHsv(hex);
       expect(hexDeHsv(hsv.h, hsv.s, hsv.v)).toBe(hex.toUpperCase());
     }
@@ -111,7 +114,7 @@ describe("la tinta que se lee encima de un color", () => {
   const MINIMO_DE_UN_ICONO = 3;
 
   it("se lee sobre los doce de la paleta", () => {
-    for (const hex of Object.values(ICON_COLORS)) {
+    for (const hex of TWELVE) {
       expect({ hex, ratio: contrastRatio(tintaDe(hex), hex) >= MINIMO_DE_UN_ICONO }).toEqual({
         hex,
         ratio: true,

@@ -1,8 +1,7 @@
-import { exportFilename } from '@orbit-hub/contracts';
+import { exportFilename, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
   ExportedAttachment,
   Folder,
-  ItemIcon,
   List,
   ListExport,
   ListItem,
@@ -57,13 +56,14 @@ export interface ExportFile {
  * lleva el suyo propio (la pertenencia al espacio) y `noteTemplateSchema` no
  * lleva ninguno: esas dos filas mapean directas.
  */
+
 function toFolder(row: typeof folders.$inferSelect, role: MembershipRoleName): Folder {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     parentId: row.parentId,
     name: row.name,
-    emoji: row.emoji,
+    icon: sanitiseIconRef(row.icon),
     position: row.position,
     role,
     shared: false,
@@ -86,7 +86,7 @@ function toList(
     kind: row.kind,
     title: row.title,
     description: row.description,
-    emoji: row.emoji,
+    icon: sanitiseIconRef(row.icon),
     tags: row.tags ?? [],
     // Los colores de las etiquetas de la lista. `?? {}` y no `row.tagColors`: la
     // columna es `notNull` para todo lo que escribio esta build, pero una fila de
@@ -116,21 +116,11 @@ function toItem(row: typeof listItems.$inferSelect, role: MembershipRoleName): L
     position: row.position,
     completed: row.completed,
     priority: row.priority,
-    // Tal cual esta almacenado, sin guarda, y **el cast es el precio de esa
-    // decision**. La columna es texto libre; `listItemSchema` describe el
-    // conjunto que este build conoce, y una copia no tiene por que ajustarse al
-    // vocabulario de la version que la exporta. Reescribirlo a `null` — lo que
-    // hacia antes — es decidir en el export que ese dato no existe, y una copia a
-    // la que le falta un icono es peor que una copia con un icono que este build
-    // no sabe dibujar.
-    //
-    // Y si alguna vez se quiere una guarda de verdad, tiene que caer igual sobre
-    // los cuatro enums cerrados de esta fila —`icon`, `iconStyle`, `iconColor` y
-    // `priority`—, porque los cuatro se guardan igual: la que protege `icon` y
-    // deja pasar los otros tres no protege nada y solo descarta datos.
-    icon: row.icon as ItemIcon | null,
-    iconStyle: row.iconStyle,
-    iconColor: row.iconColor,
+    // Los tres campos salen de la columna `icon`. Lo que esta build no puede
+    // dibujar sale como `null` en vez de como una forma inventada: una copia a
+    // la que le falta un icono es peor que una copia con un icono que el que la
+    // lee no sabe dibujar.
+    icon: sanitiseIconRef(row.icon),
     tags: row.tags ?? [],
     externalId: row.externalId,
     // Identidad: sin parsear, sin serializar y sin seleccionar claves. Lo que
@@ -157,6 +147,7 @@ function toNote(row: typeof notes.$inferSelect, role: MembershipRoleName): Note 
     document: row.document,
     plainText: row.plainText,
     tags: row.tags ?? [],
+    icon: sanitiseIconRef(row.icon),
     position: row.position,
     // Columna desnormalizada: se mapea tal como esta guardada, no se recuenta.
     attachmentCount: row.attachmentCount,
@@ -313,7 +304,7 @@ export class ExportService {
         id: workspaces.id,
         name: workspaces.name,
         description: workspaces.description,
-        emoji: workspaces.emoji,
+        icon: workspaces.icon,
         color: workspaces.color,
         colorTo: workspaces.colorTo,
         wash: workspaces.wash,
@@ -335,7 +326,7 @@ export class ExportService {
       id: row.id,
       name: row.name,
       description: row.description,
-      emoji: row.emoji,
+      icon: sanitiseIconRef(row.icon),
       color: row.color,
       colorTo: row.colorTo,
       wash: row.wash,

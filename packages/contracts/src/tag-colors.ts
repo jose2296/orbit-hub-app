@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { ITEM_ICON_COLORS } from './item-icons.js';
-import type { ItemIconColor } from './item-icons.js';
+import { ITEM_ICON_COLORS } from './icons.js';
+import type { ItemIconColor } from './icons.js';
 
 /**
  * A label's colour is a hex and not one of a list.

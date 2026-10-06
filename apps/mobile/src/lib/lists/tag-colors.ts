@@ -9,7 +9,9 @@ import {
   hsvToHex,
   rgbToHsl,
 } from "../workspace/hsl";
-import { ICON_COLOR_KEYS, iconColor } from "./item-icons";
+import { ITEM_ICON_COLORS } from "@orbit-hub/contracts";
+
+import { iconColorHex } from "@/theme/tokens";
 
 /**
  * What writing a label's colour should leave in the map.
@@ -418,8 +420,8 @@ export function tagColorHex(colour: string): string {
   // El nombre se recorta igual que la clave en el mapa: lo que viene por el cable
   // es texto libre y `" green "` es el color que alguien eligio, no otro.
   const nombre = typeof colour === "string" ? colour.trim() : "";
-  const esDeLaPaleta = (ICON_COLOR_KEYS as readonly string[]).includes(nombre);
-  return esDeLaPaleta ? iconColor(nombre) : iconColor("neutral");
+  const esDeLaPaleta = (ITEM_ICON_COLORS as readonly string[]).includes(nombre);
+  return esDeLaPaleta ? iconColorHex(nombre, "light") : iconColorHex("neutral", "light");
 }
 
 /**

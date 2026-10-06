@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { Screen } from "@/components/ui/screen";
 import { SectionHeader } from "@/components/ui/list-row";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { SpaceWash } from "@/components/ui/wash";
 import { WorkspaceCreateSheet } from "@/components/workspace/workspace-create-sheet";
@@ -124,27 +125,19 @@ export default function WorkspacesScreen() {
                     style={[styles.emoji, { borderRadius: theme.radius.md }]}
                   >
                     {/*
-                      A space with no emoji of its own gets the **outline**
+                      A space with no icon of its own gets the **outline**
                       folder, not a 📁.
 
                       That emoji was the only filled thing in the app: a
                       multicoloured, closed folder drawn by the system, heavier
                       than the line glyphs around it and the one mark on the
                       screen whose colour had nothing to do with the space. A
-                      space that has an emoji keeps it — that is the person's
+                      space that has an icon keeps it — that is the person's
                       own — and one that has not gets the same symbol the
                       folder rows and the drawer already use, so the row reads as
                       part of this app rather than pasted into it.
                     */}
-                    {workspace.emoji ? (
-                      <AppText variant="title">{workspace.emoji}</AppText>
-                    ) : (
-                      <Ionicons
-                        name="folder-outline"
-                        size={22}
-                        color={theme.colors.textSubtle}
-                      />
-                    )}
+                    <AppIcon icon={workspace.icon} size={22} fallback="folder-outline" />
                   </SpaceWash>
 
                   <View style={styles.flex}>

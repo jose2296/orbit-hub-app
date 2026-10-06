@@ -1,4 +1,4 @@
-import type { Folder, Workspace } from "@orbit-hub/contracts";
+import type { Folder, IconRef, Workspace } from "@orbit-hub/contracts";
 
 import { DEFAULT_WORKSPACE_COLOR } from "@/lib/workspace/color";
 import { DEFAULT_WASH } from "@/lib/workspace/wash";
@@ -68,6 +68,7 @@ export function useWorkspaces() {
       changes: {
         name?: string;
         description?: string | null;
+        icon?: IconRef | null;
         color?: string;
         /** The colour the wash ends in, or `null` to go back to deriving it. */
         colorTo?: string | null;
@@ -84,7 +85,7 @@ export function useWorkspaces() {
   const createWorkspace = useCallback(
     async (input: {
       name: string;
-      emoji?: string;
+      icon?: IconRef | null;
       description?: string;
       color?: string;
       colorTo?: string | null;
@@ -107,7 +108,7 @@ export function useWorkspaces() {
             id,
             name: input.name,
             description: input.description ?? null,
-            emoji: input.emoji ?? null,
+            icon: input.icon ?? null,
             // The colour a space is painted with travels with it from the start:
             // a space created without one would be a card with no colour to read
             // until somebody remembered to pick it.
@@ -139,7 +140,7 @@ export function useWorkspaces() {
         payload: {
           name: input.name,
           color: input.color ?? DEFAULT_WORKSPACE_COLOR,
-          ...(input.emoji ? { emoji: input.emoji } : {}),
+          ...(input.icon ? { icon: input.icon } : {}),
           ...(input.description ? { description: input.description } : {}),
         },
       });
@@ -262,6 +263,7 @@ export function useFolders(workspaceId: string | undefined) {
       name: string;
       parentId?: string | null;
       position?: number;
+      icon?: IconRef | null;
     }) => {
       if (!workspaceId) return;
       const { randomUUID } = await import("expo-crypto");
@@ -281,7 +283,7 @@ export function useFolders(workspaceId: string | undefined) {
             workspaceId,
             parentId: input.parentId ?? null,
             name: input.name,
-            emoji: null,
+            icon: input.icon ?? null,
             position: input.position ?? 0,
             version: 0,
             createdAt: now,
@@ -320,7 +322,7 @@ export function useFolders(workspaceId: string | undefined) {
   const updateFolder = useCallback(
     async (
       folder: { id: string },
-      changes: { name?: string; emoji?: string | null },
+      changes: { name?: string; icon?: IconRef | null },
     ) => {
       await localUpdate("folder", folder.id, changes);
       await load();

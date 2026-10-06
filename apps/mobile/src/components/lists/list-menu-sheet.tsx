@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import type { ExportFormat, Folder, List } from "@orbit-hub/contracts";
 
@@ -20,7 +20,9 @@ import { LIST_KIND_LABEL } from "@/lib/lists/kind";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
+import { AppIcon } from "../ui/app-icon";
 import { Button } from "../ui/button";
+import { IconPickerPanel } from "../ui/icon-picker-sheet";
 import { Sheet, SheetOptions, useLastValue } from "../ui/sheet";
 import type { SheetOption } from "../ui/sheet";
 import { AppText } from "../ui/text";
@@ -56,7 +58,7 @@ export interface ListMenuSheetProps {
  * has been gone for all of it. It is a second panel that comes up afterwards, and
  * the argument above does not reach a thing that has no answer yet.
  */
-type Page = "options" | "rename" | "share" | "export" | "delete";
+type Page = "options" | "rename" | "icon" | "share" | "export" | "delete";
 
 export function ListMenuSheet({
   list: pedido,
@@ -395,7 +397,9 @@ export function ListMenuSheet({
       ? `${t(LIST_KIND_LABEL[list.kind])}${folder ? ` · ${folder.name}` : ""}`
       : page === "rename"
         ? t("rename.title", { what: t(LIST_KIND_LABEL[list.kind]) })
-        : page === "share"
+        : page === "icon"
+          ? t("icons.title")
+          : page === "share"
           ? t("share.subtitle", { name: list.title })
           : page === "export"
             ? /*
@@ -517,6 +521,31 @@ export function ListMenuSheet({
                   void updateList(list, { title: trimmed });
                 }}
               />
+              {/* The icon lives here, next to the name, because a list is the
+                  thing an icon is a property of and this is where you go to
+                  change a list. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("icons.title")}
+                onPress={() => setPage("icon")}
+                style={({ pressed }) => [
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: theme.spacing.md,
+                    borderColor: theme.colors.border,
+                    borderWidth: 1,
+                    borderRadius: theme.radius.md,
+                    padding: theme.spacing.md,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <AppIcon icon={list.icon} size={20} />
+                <AppText variant="body" style={{ flex: 1 }}>
+                  {t("icons.title")}
+                </AppText>
+              </Pressable>
               <View style={{ gap: theme.spacing.sm }}>
                 <Button
                   label={t("rename.save")}
@@ -538,6 +567,13 @@ export function ListMenuSheet({
                 */}
               </View>
             </View>
+          ) : null}
+
+          {page === "icon" ? (
+            <IconPickerPanel
+              current={list.icon}
+              onSelect={(icon) => void updateList(list, { icon })}
+            />
           ) : null}
 
           {/*

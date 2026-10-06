@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
+import { Text } from 'react-native';
 
 import { PosterFlightProvider } from '@/components/media/poster-flight';
 import { AppText } from '@/components/ui/text';
@@ -88,7 +89,16 @@ function Navigation() {
     con `loaded` convierte un 404 en una pantalla en blanco permanente, que es el
     mismo bug con otro disfraz.
   */
-  const [fontsLoaded, fontError] = useFonts(Ionicons.font);
+  // Las dos fuentes de los iconos, pedidas juntas y esperadas juntas: un icono
+  // Material pintado con la fuente sin llegar es el mismo `<Text />` vacio que
+  // era un Ionicons sin llegar, y con el mismo silencio.
+  //
+  // Un solo mapa y no dos argumentos: `useFonts` recibe UN mapa de familias a
+  // fuentes, y el segundo argumento se tira en silencio. Pedirlas como
+  // `useFonts(Ionicons.font, MaterialCommunityIcons.font)` carga la primera y
+  // deja a la segunda sin pedir — que es justo el fallo silencioso que este
+  // gate existe para impedir, ahora en su version de dos fuentes.
+  const [fontsLoaded, fontError] = useFonts({ ...Ionicons.font, ...MaterialCommunityIcons.font });
   const fuenteLista = fontsLoaded || fontError !== null;
 
   useEffect(() => {
@@ -116,6 +126,23 @@ function Navigation() {
   return (
     <>
       <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
+      {/*
+        One glyph of the second icon font, mounted invisible from the first frame.
+        The browser downloads a `@font-face` file on first USE, not on load: asking
+        for it in `useFonts` declares it but the file only travels when something is
+        drawn in it, so the first picker opening showed tofu boxes until it arrived.
+        This paints one Material glyph where nobody can see it, during the splash,
+        so the file is already here when the picker needs it. Measured, not
+        guessed: without it the family sits `unloaded` twelve seconds after boot
+        and flips to `loaded` eight seconds after first use.
+      */}
+      <Text
+        style={styles.precargaFuente}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        {'\uF01D6'}
+      </Text>
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: theme.colors.background },
@@ -195,6 +222,21 @@ function Navigation() {
 }
 
 const styles = StyleSheet.create({
+  /*
+    Invisible and out of the way, but mounted: the browser only downloads the
+    font file when a glyph of it is actually drawn. One pixel, transparent, off
+    the touch path, and hidden from screen readers on all three targets.
+  */
+  precargaFuente: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 1,
+    height: 1,
+    opacity: 0,
+    fontSize: 1,
+    fontFamily: 'material-community',
+  },
   booting: {
     // Las cuatro propiedades escritas, y no `absoluteFillObject`: ese nombre no
     // existe en los tipos de esta version y se ve al compilar.

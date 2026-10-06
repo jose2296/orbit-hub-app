@@ -1,23 +1,6 @@
-import { ITEM_ICONS } from "@orbit-hub/contracts";
-import type {
-  ItemIcon,
-  ListItem,
-  ListOrderMode,
-  Priority,
-} from "@orbit-hub/contracts";
+import type { ListItem, ListOrderMode, Priority } from "@orbit-hub/contracts";
 
 import type { BadgeTone } from "@/components/ui/badge";
-
-
-/** Whether a value is an icon the app knows how to draw. */
-export function isItemIcon(
-  value: string | null | undefined,
-): value is ItemIcon {
-  return (
-    typeof value === "string" &&
-    (ITEM_ICONS as readonly string[]).includes(value)
-  );
-}
 
 /**
  * How a list is read.

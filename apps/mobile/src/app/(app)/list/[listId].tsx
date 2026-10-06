@@ -20,7 +20,7 @@ import { Card } from "@/components/ui/card";
 import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ItemIcon } from "@/components/lists/icon-picker";
+import { AppIcon } from "@/components/ui/app-icon";
 import { MediaListScreen } from "@/components/media/media-list-screen";
 import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { FiltersBody } from "@/components/lists/item-picker";
@@ -388,7 +388,7 @@ export default function ListScreen() {
 
   // The header carries the name of the list, so the screen only says what kind
   // of list it is and where it lives.
-  useScreenTitle(list?.title ?? t("lists.notFound"));
+  useScreenTitle(list?.title ?? t("lists.notFound"), list?.icon ?? null);
 
   /*
    * La insignia de compartido, **al lado del titulo y no en un hueco de la barra**.
@@ -1244,11 +1244,7 @@ function TaskRow({
               onPress={onIcon}
               style={styles.iconSlot}
             >
-              <ItemIcon
-                icon={item.icon}
-                style={item.iconStyle}
-                color={item.iconColor}
-              />
+              <AppIcon icon={item.icon} size={18} />
             </Pressable>
           ) : null}
 

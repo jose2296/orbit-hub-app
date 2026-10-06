@@ -70,8 +70,7 @@ export type ListKindName = (typeof LIST_KINDS)[number];
  * colour it does not know, the app cannot draw one that is not here, and two
  * lists are two lists that are a step behind each other.
  */
-export { ITEM_ICON_COLORS, WORKSPACE_COLORS, WORKSPACE_WASHES, isItemIcon } from '@orbit-hub/contracts';
-export type { ItemIconColor as ItemIconColorName } from '@orbit-hub/contracts';
+export { ITEM_ICON_COLORS, WORKSPACE_COLORS, WORKSPACE_WASHES } from '@orbit-hub/contracts';
 export type { WorkspaceColor as WorkspaceColorName } from '@orbit-hub/contracts';
 export type { WorkspaceWash as WorkspaceWashName } from '@orbit-hub/contracts';
 
@@ -95,9 +94,6 @@ export type ListOrderModeName = ListOrderMode;
 export { listOrderModeSchema } from '@orbit-hub/contracts';
 export type { ListOrderMode } from '@orbit-hub/contracts';
 
-export { ITEM_ICONS } from '@orbit-hub/contracts';
-export type { ItemIcon } from '@orbit-hub/contracts';
-
 export const ITEM_PRIORITIES = ['none', 'low', 'medium', 'high'] as const;
 export type ItemPriority = (typeof ITEM_PRIORITIES)[number];
 
@@ -113,13 +109,16 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   // version, so it looks like it worked and nothing changed. That is worse than a
   // rejection, because a rejection at least tells the person their choice did not
   // save, and this one looked like it saved for four whole rebuilds.
-  workspace: ['name', 'description', 'emoji', 'color', 'colorTo', 'wash'],
-  folder: ['parentId', 'name', 'emoji', 'position'],
+  // `icon` replaced `emoji` here, and it is not a rename: the column is a jsonb
+  // object now, so a value this build cannot draw is stored as `null` rather than
+  // as a key nobody has. See `sanitisePayload`.
+  workspace: ['name', 'description', 'icon', 'color', 'colorTo', 'wash'],
+  folder: ['parentId', 'name', 'icon', 'position'],
   list: [
     'folderId',
     'title',
     'description',
-    'emoji',
+    'icon',
     'tags',
     'tagColors',
     'position',
@@ -132,8 +131,6 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'completed',
     'priority',
     'icon',
-    'iconStyle',
-    'iconColor',
     'tags',
     'externalId',
     'metadata',
@@ -145,7 +142,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    * just validated, so a client cannot write a body and a search string that
    * disagree. `plainText` and `attachmentCount` are absent on purpose.
    */
-  note: ['title', 'document', 'folderId', 'tags', 'position'],
+  note: ['title', 'document', 'folderId', 'tags', 'position', 'icon'],
   dashboard: ['layout', 'pages'],
 };
 
