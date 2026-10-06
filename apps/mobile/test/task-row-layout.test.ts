@@ -1597,3 +1597,33 @@ describe('compartir y plantillas: el Guardar del pie', () => {
     expect(form, 'pasa el motivo').toContain('t("share.pickSomebody")');
   });
 });
+
+describe('donde va la nota: el Guardar del pie', () => {
+  const hoja = sinComentarios(
+    readFileSync(
+      join(import.meta.dirname, '../src/components/notes/where-note-sheet.tsx'),
+      'utf8',
+    ),
+  );
+
+  it('elige con el boton del pie y sin fila de confirmar dentro', () => {
+    expect(hoja, 'delega en onSave').toContain('onSave={() => {');
+    expect(hoja, 'sin fila de confirmar').not.toContain('note.where.create');
+  });
+
+  it('llega limpia aunque antes recordaba', () => {
+    /*
+      Antes recordaba el ultimo sitio, y con el contrato eso es llegar sucia:
+      abrir, no tocar nada y salir preguntaria por una eleccion de la vez anterior.
+    */
+    expect(hoja, 'limpia al abrir').toMatch(
+      /if \(visible\) \{[\s\S]*?setWorkspaceId\(null\)/,
+    );
+  });
+
+  it('mirar no ensucia: solo el destino cuenta', () => {
+    expect(hoja, 'el destino decide').toContain(
+      'setSucio(workspaceId !== null || folderId !== null)',
+    );
+  });
+});

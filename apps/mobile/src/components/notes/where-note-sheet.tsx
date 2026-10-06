@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useTranslation } from "@/lib/i18n";
@@ -34,9 +35,41 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [folderId, setFolderId] = useState<string | null>(null);
+  const { setSucio } = useSheetSucio();
 
+  /*
+    Limpio al abrir, y **aunque antes recordaba**.
+
+    Antes la hoja recordaba el ultimo sitio elegido, y con el contrato eso es
+    llegar sucia: abrir, no tocar nada y salir preguntaria "lo pierdes" por una
+    eleccion de la vez anterior. Una hoja nunca llega sucia.
+  */
+  useEffect(() => {
+    if (visible) {
+      setWorkspaceId(null);
+      setFolderId(null);
+    }
+  }, [visible]);
+
+  /*
+    Sucio es **haber elegido sitio**, y nada mas.
+
+    Moverse por espacios y carpetas es mirar, no elegir: solo el destino cuenta.
+    Y sin destino no hay nada que perder, que es justo el estado en el que se abre.
+  */
   const spaces = useMemo(() => tree.spaces(), [tree]);
   const folders = workspaceId ? tree.foldersOf(workspaceId, folderId) : [];
+
+  /*
+    Sucio es **haber elegido sitio**, y nada mas.
+
+    Moverse por espacios y carpetas es mirar, no elegir: solo el destino cuenta.
+    Y sin destino no hay nada que perder, que es justo el estado en el que se abre.
+  */
+  const destino = workspaceId ?? spaces[0]?.id ?? null;
+  useEffect(() => {
+    setSucio(workspaceId !== null || folderId !== null);
+  }, [workspaceId, folderId, setSucio]);
 
   if (!visible) return null;
 
@@ -46,6 +79,16 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
       onClose={onClose}
       title={t("note.where.title")}
       scrollable={false}
+      /*
+        El Guardar es el del pie, y elige el destino. La fila de confirmar que
+        habia abajo hacia lo mismo desde dentro, y era la que se iba con el
+        contenido en una hoja larga.
+      */
+      onSave={() => {
+        if (!destino) return;
+        onPick({ workspaceId: destino, folderId });
+      }}
+      saveDisabledReason={!destino ? t("note.where.chooseSpace") : undefined}
     >
       <View
         style={{
@@ -126,17 +169,12 @@ export function WhereNoteSheet({ visible, onClose, onPick }: WhereNoteSheetProps
           somebody with a single space got a sheet asking them a question they had
           already answered, and then a button that would not do anything about it.
         */}
-        <Pick
-          icon="checkmark"
-          label={t("note.where.create")}
-          selected={false}
-          disabled={spaces.length === 0}
-          onPress={() => {
-            const target = workspaceId ?? spaces[0]?.id ?? null;
-            if (!target) return;
-            onPick({ workspaceId: target, folderId });
-          }}
-        />
+        {/*
+          Y aqui **ya no hay fila de confirmar**.
+
+          Elegia el destino desde dentro, y ahora lo elige el Guardar del pie: el
+          mismo en todas las hojas y fuera del area que scrollea.
+        */}
       </View>
     </Sheet>
   );
