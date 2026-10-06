@@ -198,6 +198,7 @@ function AppNavigation() {
       <Stack.Screen name="notes" options={{ title: t("notes.title") }} />
       <Stack.Screen name="habits" options={{ title: t("habits.title") }} />
       <Stack.Screen name="habit/new" options={{ title: t("habits.add") }} />
+      <Stack.Screen name="habit/[habitId]" options={{ title: "" }} />
       <Stack.Screen name="people" options={{ title: t("people.title") }} />
       <Stack.Screen name="templates" options={{ title: t("note.templates") }} />
       {/* The template's own name, not the route: this screen draws it under the
