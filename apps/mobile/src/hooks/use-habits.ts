@@ -160,11 +160,17 @@ async function findEntryRow(
   habitId: string,
   date: LocalDate,
 ): Promise<CachedEntity | null> {
-  const rows = await store.listCachedEntries(habitId);
+  // Con lapidas incluidas a proposito: `listCachedEntries` filtra borrados,
+  // y sin esto remarcar tras desmarcar no encuentra la fila y crea otra con
+  // otro id — un dia = una fila, como el UNIQUE del servidor. La lectura
+  // caliente (`loadHabitSummaries`, `loadHabitDetail`) sigue usando
+  // `listCachedEntries`; esto solo corre en acciones de escritura.
+  const rows = await store.listCached("habit_entry", { includeDeleted: true });
   return (
-    rows.find(
-      (row) => (parsePayload(row).date as string | undefined) === date,
-    ) ?? null
+    rows.find((row) => {
+      const carga = parsePayload(row);
+      return carga.habitId === habitId && carga.date === date;
+    }) ?? null
   );
 }
 

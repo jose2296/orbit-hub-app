@@ -226,6 +226,10 @@ describe("el hook de habitos", () => {
     cache.set(clave("habit", HABIT_ID), filaHabito());
 
     await checkInHabit(HABIT_ID, MIERCOLES);
+    const primera = await loadHabitDetail(tienda as unknown as LocalStore, HABIT_ID);
+    const idPrimera = primera.entries[0]?.id;
+    expect(typeof idPrimera).toBe("string");
+
     expect(await clearHabitEntry(HABIT_ID, MIERCOLES)).toBe(true);
     const remarcado = await checkInHabit(HABIT_ID, MIERCOLES);
 
@@ -233,6 +237,13 @@ describe("el hook de habitos", () => {
     const detalle = await loadHabitDetail(tienda as unknown as LocalStore, HABIT_ID);
     expect(detalle.entries.filter((e) => e.date === MIERCOLES)).toHaveLength(1);
     expect(detalle.entries[0]?.status).toBe("done");
+    // Un dia = una fila: remarcar revive la lapida con update, no crea otro
+    // id. Dos creates vivos para el mismo dia partirian el UNIQUE del servidor.
+    expect(detalle.entries[0]?.id).toBe(idPrimera);
+    const ops = outbox.filter((op) => op.entity === "habit_entry");
+    expect(ops.filter((op) => op.kind === "create")).toHaveLength(0);
+    expect(ops.map((op) => op.kind).sort()).toEqual(["delete", "update"]);
+    expect(new Set(ops.map((op) => op.entityId))).toEqual(new Set([idPrimera]));
   });
 
   it("el progreso se mueve al instante, sin esperar al pull", async () => {
