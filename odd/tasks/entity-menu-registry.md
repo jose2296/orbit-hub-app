@@ -299,9 +299,9 @@ Y ademas de los tests:
 
 Cada una es un work unit y cierra con su commit.
 
-- [ ] **T1** `lib/menus/registry.tsx`: `MenuKind`, `Accion`, `ACCIONES`,
+- [x] **T1** `lib/menus/registry.tsx`: `MenuKind`, `Accion`, `ACCIONES`,
   `ORDEN_POR_KIND`, y los tests puros de filtrado, orden y paridad. Sin UI.
-- [ ] **T2** `EntityMenuSheet` (un `Sheet` con `step` + `onBack`) + `RenamePage` +
+- [x] **T2** `EntityMenuSheet` (un `Sheet` con `step` + `onBack`) + `RenamePage` +
   `DeletePage`, y migrar `CollectionMenuSheet` a esa version. La migracion es la
   prueba de que el patron anda: si reproduce la hoja mas chica, el registro
   alcanza.
