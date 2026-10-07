@@ -361,11 +361,19 @@ describe("un worklet no lee constantes del scope de modulo de su archivo", () =>
  * justamente lo que el guard de arriba no puede ser.
  *
  * **Y tiene un limite, que conviene decir en voz alta:** un default que solo se
- * mueve dentro de un rango en el que nada cambia no se nota. `rows` en `snapSize` es
- * el caso — la tarjeta mas alta de `CARD_SIZES` es de cuatro filas, asi que un
- * default de cinco y uno de seis responden lo mismo y este test no los distingue.
- * Lo que si distingue es cualquier cambio que llegue a notarse, que es el modo en
- * que un valor despegado llega a la pantalla.
+ * mueve dentro de un rango en el que nada cambia no se nota. **`rows` en `snapSize`
+ * es el caso, y lo sigue siendo:** la tarjeta mas alta de `CARD_SIZES` es de cuatro
+ * filas, asi que un default de cinco y uno de seis responden lo mismo y este test no
+ * los distingue ahi.
+ *
+ * **Lo que hace que `heldSpot` y `dropSpot` si distingan `rows` es el clamp, y por
+ * eso su fixture esta construido alrededor de un dedo que se sale del panel:** el
+ * tope de la respuesta es `columns - limit.w` y `rows - limit.h`, o sea que ahi el
+ * default es la unica cosa que decide el numero que sale. Un fixture con el dedo
+ * cerca de la primera celda responde lo mismo con cualquier grid y no ancla nada —
+ * que es lo que pasaba con el primer fixture de este archivo, con celda cuadrada y
+ * centro en (40, 40), que contestaba `{ x: 0, y: 0 }` para los seis grids que se le
+ * probaron.
  */
 describe("los valores duplicados de los worklets siguen valiendo lo del export", () => {
   it("snapSize: lo que responden con los defaults es lo que responden con los exports", () => {
@@ -406,15 +414,180 @@ describe("los valores duplicados de los worklets siguen valiendo lo del export",
     );
   });
 
-  it("heldSpot y dropSpot: el grid por defecto es el del panel", () => {
-    const cell = { width: 60, height: 60, gap: 8 };
-    const centro = { x: 40, y: 40 };
-    const others = [{ id: 'a', x: 0, y: 0, w: 2, h: 2 }];
-    expect(heldSpot({ w: 2, h: 2 }, centro, cell)).toEqual(
-      heldSpot({ w: 2, h: 2 }, centro, cell, PANEL_COLUMNS, PANEL_ROWS),
+  /**
+   * La celda, el centro y la tarjeta del fixture de `heldSpot` y `dropSpot`.
+   *
+   * **El centro esta lejos a proposito, y esa es la unica parte del fixture que hay
+   * que explicar.** El clamp de `clampCell` recorta a `[0, max]` con `max` igual a
+   * `columns - limit.w` y a `rows - limit.h`, y **un indice crudo que esta dentro
+   * del rango no llega al clamp**: sale el mismo numero que entra, y el `columns` o
+   * el `rows` que se escribieron en la firma no dejan ningun rastro en la respuesta.
+   * Un fixture con el dedo cerca de la primera celda esta, entonces, verde por la
+   * razon equivocada — verde porque el clamp no hizo nada — **y sigue verde si los
+   * literales de la firma son falsos, que es el agujero que quedaba en la primera
+   * version de este archivo.**
+   *
+   * Los numeros, medidos y no estimados:
+   *
+   * | | calculo | valor |
+   * | --- | --- | --- |
+   * | paso horizontal | `width + gap` = 60 + 8 | **68** |
+   * | paso vertical | `height + gap` = 40 + 8 | **48** |
+   * | indice crudo en X | `round((400 - 68) / 68)` | **5** |
+   * | indice crudo en Y | `round((500 - 48) / 48)` | **9** |
+   * | tope en X con `columns = 4` | `4 - 2` | **2** |
+   * | tope en Y con `rows = 6` | `6 - 2` | **4** |
+   *
+   * Los dos indices crudos son mayores que los dos topes, asi que **los dos clamps
+   * se enganchan de verdad**: la respuesta es el tope, y el tope es la unica parte
+   * de la funcion que depende del default. Por eso el dedo esta en (400, 500), que
+   * es fuera del panel — y esa es la razon, no la comodidad.
+   *
+   * **Y la celda no es cuadrada a proposito.** Con `height` igual a `width` los dos
+   * ejes se mueven juntos y un error en el `rows` se puede tapar con un error en el
+   * `columns`. Con 60 de ancho y 40 de alto los pasos son 68 y 48, distintos, y cada
+   * eje se lee por separado.
+   *
+   * Que el fixture viejo era vacio esta medido y no supuesto: con celda de 60 y 60,
+   * centro en (40, 40) y tarjeta de 2 x 2, el indice crudo cae en **0** en los dos
+   * ejes y la respuesta es `{ x: 0, y: 0 }` para todo grid de `2 x 2` a `12 x 20` —
+   * **una sola respuesta para seis grids distintos.** Si alguien acerca el centro
+   * otra vez, el fixture vuelve a ser eso.
+   */
+  const CELDA = { width: 60, height: 40, gap: 8 };
+  const CENTRO = { x: 400, y: 500 };
+  const TARJETA = { w: 2, h: 2 };
+
+  it("heldSpot: el clamp es lo que vuelve observable el grid por defecto", () => {
+    /**
+     * **El ancla: lo que responden con los defaults es lo que responden con los
+     * exports pasados a mano.** `PANEL_COLUMNS` y `PANEL_ROWS` son el cuatro y el
+     * seis de la firma, escritos por el mismo motivo en los dos lados.
+     */
+    expect(heldSpot(TARJETA, CENTRO, CELDA)).toEqual(
+      heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS),
     );
-    expect(dropSpot(others, { w: 2, h: 2 }, centro, cell)).toEqual(
-      dropSpot(others, { w: 2, h: 2 }, centro, cell, PANEL_COLUMNS, PANEL_ROWS),
+    // Y el valor, que es el tope del clamp en cada eje: `4 - 2` y `6 - 2`.
+    expect(heldSpot(TARJETA, CENTRO, CELDA)).toEqual({ x: 2, y: 4 });
+
+    /**
+     * **Y despues, que el fixture tiene que demostrar que muerde.** Estas cuatro
+     * lineas son la parte que faltaba: con el dedo cerca de la primera celda las
+     * cinco llamadas de abajo responderian `{ x: 0, y: 0 }` y el test pasaria con
+     * los literales falsos. **Que las cuatro respuestas de los lados sean distintas
+     * de la del medio es la prueba de que el clamp se engancho.**
+     */
+    const propia = heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS);
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS - 1, PANEL_ROWS)).not.toEqual(
+      propia,
+    );
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS - 1)).not.toEqual(
+      propia,
+    );
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS + 1)).not.toEqual(
+      propia,
+    );
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS + 1, PANEL_ROWS)).not.toEqual(
+      propia,
+    );
+    // Los valores y no solo la desigualdad: el crudo en X es 5 y el tope son 2, asi
+    // que con una columna menos el tope es 1 y con una mas es 3.
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS - 1, PANEL_ROWS)).toEqual({
+      x: 1,
+      y: 4,
+    });
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS + 1, PANEL_ROWS)).toEqual({
+      x: 3,
+      y: 4,
+    });
+    // El crudo en Y es 9 y el tope son 4: con una fila menos el tope es 3, con una
+    // mas es 5.
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS - 1)).toEqual({
+      x: 2,
+      y: 3,
+    });
+    expect(heldSpot(TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS + 1)).toEqual({
+      x: 2,
+      y: 5,
+    });
+  });
+
+  it("dropSpot: el mismo ancla, y ademas que sepa esquivar", () => {
+    /**
+     * **Una tarjeta en la esquina de arriba a la izquierda, lejos del dedo.** Con el
+     * dedo abajo a la derecha no hay nada que esquivar y la respuesta es la celda
+     * donde esta el dedo — **lo que hace que este sea el fixture del ancla**, y por
+     * que responde exactamente lo mismo que `heldSpot` en los cinco grids.
+     */
+    const others = [{ id: 'a', x: 0, y: 0, w: 2, h: 2 }];
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA)).toEqual(
+      dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS),
+    );
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA)).toEqual({ x: 2, y: 4 });
+    // El mismo barrido que en `heldSpot`, con los mismos cinco valores.
+    const propia = dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS);
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS - 1, PANEL_ROWS)).toEqual({
+      x: 1,
+      y: 4,
+    });
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS + 1, PANEL_ROWS)).toEqual({
+      x: 3,
+      y: 4,
+    });
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS - 1)).toEqual({
+      x: 2,
+      y: 3,
+    });
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS + 1)).toEqual({
+      x: 2,
+      y: 5,
+    });
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS - 1, PANEL_ROWS)).not.toEqual(
+      propia,
+    );
+    expect(dropSpot(others, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS - 1)).not.toEqual(
+      propia,
+    );
+
+    /**
+     * **Y ahora la otra mitad de `dropSpot`, que es la que la distingue de
+     * `heldSpot`: una tarjeta ocupa justo la celda donde esta la que se lleva.**
+     * Con los defaults el dedo dice `(2, 4)` y esa celda esta ocupada, asi que la
+     * respuesta tiene que ser otra — `(2, 2)`, que es la libre mas cercana. **Sin
+     * esta parte el test de arriba pasaria igual con un `dropSpot` que fuera un
+     * `heldSpot` con un `nearestFreeSpot` de mas**, que es el otro modo en que un
+     * guard queda verde sin vigilar.
+     */
+    const tapada = [{ id: 'a', x: 2, y: 4, w: 2, h: 2 }];
+    expect(dropSpot(tapada, TARJETA, CENTRO, CELDA)).toEqual(
+      dropSpot(tapada, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS),
+    );
+    expect(dropSpot(tapada, TARJETA, CENTRO, CELDA)).toEqual({ x: 2, y: 2 });
+    // Y que de verdad esquivo: la celda del dedo es `(2, 4)` y la respuesta es otra.
+    expect(heldSpot(TARJETA, CENTRO, CELDA)).toEqual({ x: 2, y: 4 });
+    expect(dropSpot(tapada, TARJETA, CENTRO, CELDA)).not.toEqual(
+      heldSpot(TARJETA, CENTRO, CELDA),
+    );
+    /**
+     * **El `columns` se lee tambien aca, y el `rows` no — y no es una falta de este
+     * test sino una consecuencia de como funciona el clamp, medida y no supuesta.**
+     * Con la celda tapada, `rows = 5` y `rows = 6` responden las dos `(2, 2)`: con
+     * seis filas el dedo cae en `(2, 4)`, que esta tapada, y la libre mas cercana es
+     * `(2, 2)` a distancia 4; con cinco filas el dedo ya cae en `(2, 3)`, que tambien
+     * esta tapada porque el rectangulo tapado la cubre, y la libre mas cercana es la
+     * misma `(2, 2)`, a distancia 1. **Dos indices crudos distintos y la misma
+     * respuesta.**
+     *
+     * Por eso el ancla del `rows` para `dropSpot` vive en el fixture de arriba, con
+     * una tarjeta que no tapa nada: ahi los dos clamps mandan y las cuatro respuestas
+     * alrededor son distintas. Y por eso el barrido de `columns` esta dos veces, una
+     * por fixture, con los dos numeros distintos que salen de cada uno.
+     */
+    expect(dropSpot(tapada, TARJETA, CENTRO, CELDA, PANEL_COLUMNS - 1, PANEL_ROWS)).not.toEqual(
+      dropSpot(tapada, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS),
+    );
+    expect(dropSpot(tapada, TARJETA, CENTRO, CELDA, PANEL_COLUMNS + 1, PANEL_ROWS)).not.toEqual(
+      dropSpot(tapada, TARJETA, CENTRO, CELDA, PANEL_COLUMNS, PANEL_ROWS),
     );
   });
 

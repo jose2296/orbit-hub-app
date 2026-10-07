@@ -120,7 +120,7 @@ local se despegue de su export — es exactamente lo que ese test caza.
 
 T1 a T4 hechas. El guard se escribio primero y fallo con las 18 referencias de la
 tabla antes de tocar `panel.ts` ni `board-paging.ts`; despues del arreglo el mismo
-guard pasa y la suite entera queda en verde (118 archivos, 1556 tests).
+guard pasa y la suite entera queda en verde (118 archivos, 1557 tests).
 
 **Lo que quedo escrito y no estaba en el brief:** los defaults de los cinco worklets
 de `panel.ts` y de `nextPageFor` son literales, y el catalogo de `CARD_SIZES` es un
@@ -130,3 +130,52 @@ alta del catalogo es de cuatro filas, asi que 5 y 6 contestan lo mismo — quedo
 anotado como limite en el guard y no como algo que el guard resuelva.
 
 Falta T5: nada de esto se ejecuto en el emulador.
+
+## Revision del commit d92fd55
+
+La revision aprobo el arreglo y quemo la autoridad, pero salio con dos warnings que
+son agujeros reales del archivo de test. Van juntos porque uno causa al otro.
+
+- [x] **R3-002** El fixture de `heldSpot`/`dropSpot` era vacio. Celda de 60 y 60,
+      centro en (40, 40) y tarjeta de 2 x 2: el indice crudo cae en **0** en los dos
+      ejes y la respuesta es `{ x: 0, y: 0 }` para todo grid de `2 x 2` a `12 x 20`
+      — **una sola respuesta para seis grids distintos, medida**. El clamp de
+      `clampCell` recorta a `[0, columns - limit.w]` y a `[0, rows - limit.h]`, y un
+      indice dentro del rango no llega al clamp: el default no deja ningun rastro.
+      Ahora el fixture es celda de 60 x 40 con gap de 8 y centro en **(400, 500)**:
+      crudo 5 en X contra un tope de 2, crudo 9 en Y contra un tope de 4. Los dos
+      clamps se enganchan, y hay una asercion por eje que demuestra que mover
+      cualquiera de los dos numeros mueve la respuesta.
+- [x] **R3-001** `rows = 6` sin anclaje comportamental. **Se cierra por consecuencia
+      de R3-002**, no con un test aparte: en `heldSpot` y `dropSpot` el tope es
+      `rows - limit.h`, que si cambia con `rows` para cualquier valor, asi que apenas
+      el fixture engancha el clamp el `rows` queda anclado en los dos call sites que
+      antes no lo tenian. Medido: con el dedo en (400, 500) el `rows` responde 3, 4
+      y 5 para `rows` de 5, 6 y 7. **Lo que sigue sin ancla es `rows` en
+      `snapSize`**, y no tiene arreglo con un test de comportamiento; queda anotado
+      como limite en el guard.
+
+### Abiertos, y no son parte de este encargo
+
+- [ ] **R3-004** El escaneo de la firma incluye el nombre del propio parametro, asi
+      que un `function f(f: number = f)` se contaria como referencia. No se ha
+      observado; es SUGGESTION.
+- [ ] **R3-005** El escaneo corre a nivel de modulo y por lo tanto tambien revisa
+      los callbacks que el plugin workletiza sin directiva (`useDerivedValue`,
+      `useAnimatedStyle`, `on*` de un gesture builder). No se ha observado; es
+      SUGGESTION.
+
+### Lo que la revision no vio, y quedo medido
+
+`dropSpot` con una tarjeta tapando justo la celda del dedo **no puede discriminar
+`rows`**: con la celda `(2, 4)` tapada, `rows = 5` y `rows = 6` responden las dos
+`(2, 2)`. Con seis filas el dedo cae en `(2, 4)` y la libre mas cercana esta a
+distancia 4; con cinco filas el dedo ya cae en `(2, 3)`, que el rectangulo tapado
+cubre igual, y la libre mas cercana es la misma a distancia 1. **Dos indices crudos
+distintos y la misma respuesta**, y no es un fallo del fixture: es la geometria de
+`nearestFreeSpot`, que busca por distancia y no por valor.
+
+Por eso el ancla del `rows` para `dropSpot` vive en un fixture donde nada esta
+tapado — ahi los dos clamps mandan — y el barrido de `columns` esta en los dos
+fixtures, con los numeros distintos que salen de cada uno. Esta escrito en el test,
+con los numeros, y no escondido.
