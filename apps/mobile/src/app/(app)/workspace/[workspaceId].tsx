@@ -5,6 +5,7 @@ import { View } from "react-native";
 import type { Folder, List, Note } from "@orbit-hub/contracts";
 
 import { CreateSheet } from "@/components/folders/create-sheet";
+import type { SheetOrigin } from "@/components/ui/sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
 import { ContentList } from "@/components/content/content-list";
 import { FolderMenuSheet } from "@/components/folders/folder-menu-sheet";
@@ -60,6 +61,7 @@ export default function WorkspaceScreen() {
     { kind: "folder"; folder: Folder } | { kind: "list"; list: List } | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createOrigin, setCreateOrigin] = useState<SheetOrigin | null>(null);
   const [createStep, setCreateStep] = useState<"what" | "kind" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
   const [title, setTitle] = useState("");
@@ -169,7 +171,12 @@ export default function WorkspaceScreen() {
   if (!workspaceId) {
     return (
       <Screen>
-        overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
+        overlay={<FloatingButton
+          onPress={(origin) => {
+            setCreateOrigin(origin);
+            setCreateOpen(true);
+          }}
+        />}
         <AppText variant="body">{t("workspaces.notFound")}</AppText>
       </Screen>
     );
@@ -217,7 +224,12 @@ export default function WorkspaceScreen() {
           ? { color: workspace.color, colorTo: workspace.colorTo, wash: workspace.wash }
           : null
       }
-      overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
+      overlay={<FloatingButton
+          onPress={(origin) => {
+            setCreateOrigin(origin);
+            setCreateOpen(true);
+          }}
+        />}
     >
       {/*
         Lo que queda de la banda, y lo que no, y por que la descripcion y la lista
@@ -322,12 +334,14 @@ export default function WorkspaceScreen() {
           setMenuFor(null);
           setCreateKind(kind);
           setCreateStep("details");
+          setCreateOrigin(null);
           setCreateOpen(true);
         }}
       />
 
       <CreateSheet
         open={createOpen}
+        origin={createOrigin}
         onClose={closeSheets}
         subtitle={workspace?.name}
         step={createStep}

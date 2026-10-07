@@ -7,6 +7,8 @@ import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+import { captureTouch } from '@/lib/touch-origin';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Text } from 'react-native';
 
@@ -26,7 +28,7 @@ export default function RootLayout() {
     // gestos seRegistren; en web es lo que pone `touch-action: none` a las
     // filas arrastrables, y sin eso el navegador se queda con el dedo para
     // desplazar la lista y el arrastre no llega a empezar nunca.
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }} onStartShouldSetResponderCapture={captureTouch}>
       {/*
         `initialMetrics={initialWindowMetrics}`, and it is the fix for a header
         that drew **under the status bar** on a phone with a notch.

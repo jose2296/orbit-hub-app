@@ -9,6 +9,8 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  interpolate,
+  Extrapolation,
 } from "react-native-reanimated";
 import {
   Modal,
@@ -24,15 +26,38 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-g
 
 import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { useTranslation } from "@/lib/i18n";
+import { captureTouch, originFromLastTouch } from "@/lib/touch-origin";
 import { useTheme } from "@/theme";
 
 import { Button } from "./button";
 import { ConfirmDialog } from "./confirm-dialog";
 import { SheetSucioContexto } from "./sheet-sucio";
+import { SheetStep } from "./sheet-step";
 import { AppText } from "./text";
+
+/** A rectangle in the coordinates of the Sheet's own window, as `measureInWindow` gives it. */
+export interface SheetOrigin {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface SheetProps {
   visible: boolean;
+  /**
+   * The control that opened the sheet. When it is given the panel **grows out of
+   * it** (and goes back into it) instead of rising from the bottom edge, and it
+   * does so on a spring. Without it the sheet behaves as it always did.
+   */
+  origin?: SheetOrigin | null;
+  /**
+   * The page the sheet is showing, for a sheet that has several. When it changes
+   * the new page settles in (fade + a slight scale) while the panel springs to the
+   * new height, in the language of the morph that opened it. Leave it out for a
+   * sheet that is always one page.
+   */
+  step?: string;
   onClose: () => void;
   title?: string;
   /** Short line under the title, for context. */
@@ -112,6 +137,8 @@ export interface SheetProps {
  */
 export function Sheet({
   visible,
+  origin: originProp,
+  step,
   onClose,
   title,
   subtitle,
@@ -130,7 +157,21 @@ export function Sheet({
   const insets = useSafeAreaInsets();
   const wide = isWide();
   const teclado = useKeyboardHeight();
-  const { height: altoVentana } = useWindowDimensions();
+  const { height: altoVentana, width: anchoVentana } = useWindowDimensions();
+
+  /*
+    Where the panel grows from, **decided once, when the sheet opens**: the control
+    that was handed in or, failing that, the point where the finger last came down.
+    It is read while rendering and kept in a ref because the entrance starts in the
+    same commit that makes the sheet visible, and a state set from an effect would
+    arrive a frame after the panel had already started rising from the edge.
+  */
+  const abierta = useRef(false);
+  const origenElegido = useRef<SheetOrigin | null>(null);
+  if (visible && !abierta.current) origenElegido.current = originProp ?? originFromLastTouch();
+  abierta.current = visible;
+  const origin = origenElegido.current;
+  const contenido = step === undefined ? children : <SheetStep step={step}>{children}</SheetStep>;
 
 
 
@@ -250,6 +291,7 @@ export function Sheet({
   /** How far the panel has been pulled down, and how far it is willing to go. */
   const arrastre = useSharedValue(0);
   const altoPanel = useSharedValue(0);
+  const anchoPanel = useSharedValue(0);
   /**
    * El alto al que el cuerpo **va persiguiendo**, y no el que tiene.
    *
@@ -290,7 +332,9 @@ export function Sheet({
       setMontada(true);
       arrastre.value = 0;
       cerrando.value = false;
-      entrada.value = withTiming(1, { duration: DURACION, easing: Easing.out(Easing.cubic) });
+      entrada.value = origin
+        ? withSpring(1, MORPH_SPRING)
+        : withTiming(1, { duration: DURACION, easing: Easing.out(Easing.cubic) });
       // A shade quicker than the panel: the dimming has to be there *before* the
       // sheet is, or the sheet arrives on a bright screen and the contrast of a
       // white panel on white is the first thing the eye gets.
@@ -321,7 +365,7 @@ export function Sheet({
         cancelAnimation(fondo);
         entrada.value = 1;
         fondo.value = 1;
-      }, DURACION + 150);
+      }, origin ? MORPH_RED : DURACION + 150);
       return;
     }
 
@@ -419,6 +463,11 @@ export function Sheet({
   /** Ten points and nothing else: the content settles, it does not fade. */
   const estiloContenido = useAnimatedStyle(() => ({
     transform: [{ translateY: (1 - entrada.value) * 10 }],
+    // Growing out of a button, the content waits for the panel to be big enough
+    // to hold it: the scaled-up text of a half-grown panel is not worth seeing.
+    ...(origin
+      ? { opacity: interpolate(entrada.value, [0.45, 0.9], [0, 1], Extrapolation.CLAMP) }
+      : null),
   }));
 
   /*
@@ -452,10 +501,7 @@ export function Sheet({
   const fijarAltoCuerpo = useCallback((alto: number) => {
     if (alto <= 0 || alto === objetivo.current) return;
     objetivo.current = alto;
-    altoCuerpo.value = withTiming(alto, {
-      duration: ALTO_CUERPO,
-      easing: Easing.out(Easing.cubic),
-    });
+    altoCuerpo.value = withSpring(alto, ALTO_SPRING);
   }, [altoCuerpo]);
 
   /**
@@ -513,6 +559,26 @@ export function Sheet({
     // **No opacity here.** The panel rises; it does not fade in. A fade would put
     // the visibility of the sheet behind an animation, and the one thing that has
     // to be there whatever the animation does is the thing you press.
+    if (origin && altoPanel.value > 0 && anchoPanel.value > 0) {
+      // The panel is a box that grows from the button's rectangle to its own.
+      // It is done with a transform (translate + scale about the centre) and not
+      // with `top/left/width/height`, so none of the layout the sheet measures
+      // itself with is touched while it moves.
+      const p = entrada.value;
+      const finalX = anchoVentana / 2;
+      const finalY = wide ? altoVentana / 2 : altoVentana - altoPanel.value / 2;
+      const dx = origin.x + origin.width / 2 - finalX;
+      const dy = origin.y + origin.height / 2 - finalY;
+      return {
+        opacity: interpolate(p, [0, 0.08], [0, 1], Extrapolation.CLAMP),
+        transform: [
+          { translateX: (1 - p) * dx },
+          { translateY: (1 - p) * dy + arrastre.value },
+          { scaleX: origin.width / anchoPanel.value + (1 - origin.width / anchoPanel.value) * p },
+          { scaleY: origin.height / altoPanel.value + (1 - origin.height / altoPanel.value) * p },
+        ],
+      };
+    }
     return { transform: [{ translateY: subida + arrastre.value }] };
   });
 
@@ -603,7 +669,7 @@ export function Sheet({
         measured, not the content: a container with no height receives no touches,
         which is the same failure shape as the `flex: 1` on the hue strip.
       */}
-      <GestureHandlerRootView style={styles.raizGestos}>
+      <GestureHandlerRootView style={styles.raizGestos} onStartShouldSetResponderCapture={captureTouch}>
       {/*
         `animationType="none"`, **and that is the point of the whole file**.
 
@@ -670,6 +736,7 @@ export function Sheet({
             // once the panel has been laid out.
             const alto = event.nativeEvent.layout.height;
             if (alto > 0) altoPanel.value = alto;
+            if (event.nativeEvent.layout.width > 0) anchoPanel.value = event.nativeEvent.layout.width;
           }}
           style={[
             wide ? styles.panelWide : styles.panelNarrow,
@@ -882,7 +949,7 @@ export function Sheet({
               keyboardShouldPersistTaps="handled"
               onContentSizeChange={alMedirElContenido}
             >
-              <Animated.View style={estiloContenido}>{children}</Animated.View>
+              <Animated.View style={estiloContenido}>{contenido}</Animated.View>
             </ScrollView>
           ) : (
             /*
@@ -901,7 +968,7 @@ export function Sheet({
               ocultar.
             */
             <View style={styles.cuerpoLleno}>
-              <Animated.View style={estiloContenido}>{children}</Animated.View>
+              <Animated.View style={estiloContenido}>{contenido}</Animated.View>
             </View>
           )}
           </Animated.View>
@@ -1263,23 +1330,16 @@ export const MARGEN = 18;
 /** How long the panel takes to arrive, and the net under the animation is this. */
 const DURACION = 180;
 
+/** Near critical damping, so the morph settles without a visible bounce. */
+const MORPH_SPRING = { damping: 26, stiffness: 190, mass: 1 } as const;
 /**
- * How long the body takes to reach a new height, and it is **slower than the
- * entrance**.
- *
- * A sheet opening is somebody else's action — they pressed something — and a
- * sheet changing size is somebody's own while they are looking at it. The second
- * one wants to be followed rather than announced, so it takes a third longer and
- * decelerates: a body that arrives at its new size after the movement has settled
- * reads as a panel that grew, and one that arrives in the same time as the
- * opening reads as a second opening.
- *
- * It is a duration and not a spring because a spring on a height **overshoots**,
- * and the overshoot is visible as the content being cut at the bottom for a frame
- * on the way past. A sheet that clips its own content for a frame is worse than one
- * that arrives slightly late.
+ * The same feel for the body height, so a change of step is a spring and not a
+ * tween. `overshootClamping` because a height that overshoots clips the content at
+ * the bottom for a frame on the way past; clamped, it only ever arrives.
  */
-const ALTO_CUERPO = 260;
+const ALTO_SPRING = { damping: 26, stiffness: 220, mass: 1, overshootClamping: true } as const;
+/** Net under the morph: it has to outlast the spring, or it cuts it. */
+const MORPH_RED = 1100;
 
 /**
  * How long it takes to **go**, for the panel and for the veil.

@@ -6,6 +6,7 @@ import type { IconRef, List } from "@orbit-hub/contracts";
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { CreateSheet } from "@/components/folders/create-sheet";
+import type { SheetOrigin } from "@/components/ui/sheet";
 import { ShareNodeSheet } from "@/components/shares/share-node-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
 import { ContentList } from "@/components/content/content-list";
@@ -48,6 +49,7 @@ export default function FolderScreen() {
     | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createOrigin, setCreateOrigin] = useState<SheetOrigin | null>(null);
   const [compartirCarpeta, setCompartirCarpeta] = useState(false);
   const [createStep, setCreateStep] = useState<"what" | "kind" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
@@ -235,6 +237,7 @@ export default function FolderScreen() {
           setMenuFor(null);
           setCreateKind("tasks");
           setCreateStep("details");
+          setCreateOrigin(null);
           setCreateOpen(true);
         },
       },
@@ -246,6 +249,7 @@ export default function FolderScreen() {
           setMenuFor(null);
           setCreateKind("folder");
           setCreateStep("details");
+          setCreateOrigin(null);
           setCreateOpen(true);
         },
       },
@@ -288,7 +292,12 @@ export default function FolderScreen() {
         pantalla y no la cabecera, y por eso el alto de la barra no cambia.
       */
       wash={{ color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }}
-      overlay={<FloatingButton onPress={() => setCreateOpen(true)} />}
+      overlay={<FloatingButton
+          onPress={(origin) => {
+            setCreateOrigin(origin);
+            setCreateOpen(true);
+          }}
+        />}
     >
       {/*
         Sin banda. El color del espacio lo pone ahora la cabecera de la app, que
@@ -333,6 +342,7 @@ export default function FolderScreen() {
       />
       <CreateSheet
         open={createOpen}
+        origin={createOrigin}
         onClose={closeSheets}
         subtitle={folder?.name ?? workspace?.name}
         step={createStep}

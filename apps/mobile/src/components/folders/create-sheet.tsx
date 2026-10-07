@@ -4,7 +4,7 @@ import { useEffect, useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
-import type { SheetOption } from "@/components/ui/sheet";
+import type { SheetOption, SheetOrigin } from "@/components/ui/sheet";
 import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
@@ -43,6 +43,8 @@ export interface CreateSheetProps {
    * nombres con una frase debajo sí. El orden es el de siempre: primero la pregunta
    * grande y después las pequeñas.
    */
+  /** The control it grows out of; without it the sheet rises from the edge. */
+  origin?: SheetOrigin | null;
   step: "what" | "kind" | "details";
   onStep: (step: "what" | "kind" | "details") => void;
   /** `null` until something is picked. */
@@ -78,6 +80,7 @@ export function CreateSheet({
   open,
   onClose,
   subtitle,
+  origin,
   step,
   onStep,
   kind,
@@ -192,6 +195,8 @@ export function CreateSheet({
   return (
     <Sheet
       visible={open}
+      origin={origin}
+      step={step}
       onClose={onClose}
       /*
         El Guardar es **el del pie del panel**. El boton de crear que estaba aqui

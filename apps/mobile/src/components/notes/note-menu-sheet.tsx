@@ -194,8 +194,10 @@ export function NoteMenuSheet({
 
   if (step === "rename") {
     return (
+      <ShareFormContexto.Provider value={shareCanal}>
       <Sheet
-        visible
+        step="rename"
+        visible={pedido !== null}
         onClose={close}
         onBack={volver}
         title={t("note.rename")}
@@ -231,6 +233,7 @@ export function NoteMenuSheet({
           */}
         </View>
       </Sheet>
+      </ShareFormContexto.Provider>
     );
   }
 
@@ -324,7 +327,9 @@ export function NoteMenuSheet({
 
   if (step === "icon") {
     return (
+      <ShareFormContexto.Provider value={shareCanal}>
       <Sheet
+        step="icon"
         visible={pedido !== null}
         onClose={close}
         onBack={volver}
@@ -341,6 +346,7 @@ export function NoteMenuSheet({
           />
         </View>
       </Sheet>
+      </ShareFormContexto.Provider>
     );
   }
 
@@ -348,6 +354,7 @@ export function NoteMenuSheet({
     return (
       <ShareFormContexto.Provider value={shareCanal}>
       <Sheet
+        step="share"
         visible={pedido !== null}
         onClose={close}
         title={note.title || t("note.untitled")}
@@ -376,11 +383,13 @@ export function NoteMenuSheet({
   }
 
   return (
-    <Sheet visible onClose={close} title={note.title || t("note.untitled")}>
+    <ShareFormContexto.Provider value={shareCanal}>
+    <Sheet step="menu" visible={pedido !== null} onClose={close} title={note.title || t("note.untitled")}>
       <View style={{ gap: theme.spacing.sm }}>
         <SharedBadge shared={note.shared} role={note.role} />
         <SheetOptions options={opciones} />
       </View>
     </Sheet>
+    </ShareFormContexto.Provider>
   );
 }

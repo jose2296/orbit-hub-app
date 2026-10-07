@@ -812,6 +812,7 @@ export function ItemEditSheet({
 
   return (
     <Sheet
+      step={page}
       visible
       onClose={onClose}
       title={isNew ? t("itemCreate.title") : item!.title}
