@@ -31,6 +31,7 @@ describe('newListItem', () => {
       title: 'Pan',
       position: 3,
       completed: false,
+      stateId: null,
       priority: 'none',
       role: 'editor',
       shared: false,

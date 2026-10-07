@@ -1,4 +1,6 @@
 import type {
+  Bookmark,
+  BoardStates,
   IconRef,
   List,
   ListItem,
@@ -12,11 +14,12 @@ import { notePreviewBelowTitle, sanitiseIconRef } from "@orbit-hub/contracts";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { planDuplication } from "@/lib/lists/duplicate";
+import { duplicationPayloads, planDuplication } from "@/lib/lists/duplicate";
 import { createListPlan } from "@/lib/lists/create-plan";
 import { applyItemCounts } from "@/lib/lists/item-count";
 import { nextPosition, planAddToList } from "@/lib/lists/add-to-list";
 import { planTagColorChange } from "@/lib/lists/tag-colors";
+import { defaultStates } from "@/lib/lists/board";
 import {
   newListItem,
   withListDefaults,
@@ -115,6 +118,27 @@ export function useLists(filters: ListFilters = {}) {
       // folder from the same answer, so they cannot end up disagreeing.
       const plan = createListPlan({ id, ...input });
 
+      /**
+       * The columns of a board, **minted here and not in the form that asked for
+       * the list.**
+       *
+       * There are three places in the app that create a list —the form of the lists
+       * screen, the sheet of a space and the sheet of a folder— and the kind is
+       * chosen in each of them. Seeding in whichever of the three the caller
+       * happened to be is how two of them end up creating boards **with no columns
+       * at all**, and that failure is silent: the board opens, the screen has
+       * nothing to draw, and nothing anywhere says the list was created without its
+       * states. It is the same argument as the one behind `routeForList`, which
+       * exists so that three callers cannot disagree about where a list opens.
+       *
+       * **The client mints them and the server never does.** The ids come from
+       * `defaultStates()` at this instant, so two boards made one after the other
+       * have four different ids each: two boards that shared column ids would be one
+       * board wearing two names, and renaming a column in either of them would move
+       * the other's tasks.
+       */
+      const states = input.kind === "board" ? defaultStates() : [];
+
       await store.upsertCached([
         {
           entity: "list",
@@ -134,6 +158,16 @@ export function useLists(filters: ListFilters = {}) {
             icon: input.icon ?? null,
             tags: [],
             position: 0,
+            // `manual`, which is the contract's own default and the only order a
+            // board has. It is written because **this payload is built by hand**,
+            // and a field that is not written here is a field that every screen
+            // reading it has to read with a fallback.
+            orderMode: "manual",
+            // The columns of a board, and `[]` for everything else, which is the
+            // value `withListDefaults` fills in anyway. It is written for the same
+            // reason as `orderMode`, and for a board it is the difference between
+            // four columns on screen and a blank page.
+            states,
             version: 0,
             itemCount: 0,
             createdAt: now,
@@ -149,7 +183,16 @@ export function useLists(filters: ListFilters = {}) {
         entity: "list",
         entityId: id,
         baseVersion: 0,
-        payload: plan.payload,
+        payload: {
+          ...plan.payload,
+          // Only for a board, and that is a decision and not an omission: `manual`
+          // is already the default of the column, so sending it for every other
+          // kind would be a field written to say what was going to happen anyway.
+          // The columns travel for the same reason the cache row above carries
+          // them: a board created without states opens blank with nothing to say
+          // why.
+          ...(input.kind === "board" ? { states, orderMode: "manual" } : {}),
+        },
       });
 
       await load();
@@ -195,6 +238,11 @@ export function useLists(filters: ListFilters = {}) {
           // Same for the colours of the labels: a copy whose "Mercadona" comes
           // out in another colour is a list that changed by being duplicated.
           tagColors: source.tagColors,
+          // And the same for the columns of a board. The copy gets its own, which
+          // is why the ids come from this hook and not from the plan: two lists
+          // sharing column ids would have their tasks moved by a rename in
+          // either of them.
+          states: source.states,
         },
         (await store.listCachedItems(source.id)).map((row) =>
           readRecord<ListItem>(row),
@@ -202,6 +250,7 @@ export function useLists(filters: ListFilters = {}) {
         {
           newListId: listId,
           newItemId: () => Crypto.randomUUID(),
+          newStateId: () => Crypto.randomUUID(),
           now: nowIso(),
           ...(input?.title ? { title: input.title } : {}),
         },
@@ -228,18 +277,18 @@ export function useLists(filters: ListFilters = {}) {
         })),
       ]);
 
+      // Which fields travel is not decided here. It is decided next to the plan
+      // that produced them, where a test can read it, because a projection of the
+      // plan written inside the hook is a projection nothing can check and the
+      // first field nobody remembers to add is the one that comes back missing.
+      const payloads = duplicationPayloads(plan);
+
       await enqueueOperation({
         kind: "create",
         entity: "list",
         entityId: listId,
         baseVersion: 0,
-        payload: {
-          workspaceId: plan.list.workspaceId,
-          title: plan.list.title,
-          kind: plan.list.kind,
-          ...(plan.list.folderId ? { folderId: plan.list.folderId } : {}),
-          ...(plan.list.icon ? { icon: plan.list.icon } : {}),
-        },
+        payload: payloads.list,
       });
 
       if (plan.items.length > 0) {
@@ -247,21 +296,12 @@ export function useLists(filters: ListFilters = {}) {
         // there yet, and a hundred entries would otherwise mean a hundred
         // outbox rows.
         await enqueueOperations(
-          plan.items.map((item) => ({
+          payloads.items.map(({ id, payload }) => ({
             kind: "create" as const,
             entity: "list_item" as const,
-            entityId: item.id,
+            entityId: id,
             baseVersion: 0,
-            payload: {
-              listId,
-              title: item.title,
-              position: item.position,
-              ...(item.completed ? { completed: true } : {}),
-              ...(item.priority !== "none" ? { priority: item.priority } : {}),
-              ...(item.externalId ? { externalId: item.externalId } : {}),
-              ...(item.metadata ? { metadata: item.metadata } : {}),
-              ...(item.annotation ? { annotation: item.annotation } : {}),
-            },
+            payload,
           })),
         );
       }
@@ -355,10 +395,19 @@ export function useLists(filters: ListFilters = {}) {
   );
 
   /**
-   * Changes what a list is called and what it says about itself.
+   * Changes what a list is called and what it says about itself, **and what
+   * columns it has when it is a board.**
    *
    * The same write as everything else, local first and into the outbox, so a
    * rename made on a train is a rename when the train stops.
+   *
+   * `states` is here because the columns are **one field of the list row and not a
+   * table of their own**: an editor that renamed four colours and then an order
+   * writes that array once, and the server's `SYNC_WRITABLE_FIELDS.list` already
+   * carries `'states'`. The type was the only thing not yet saying so, and a type
+   * that does not say it is a cast somebody eventually writes — the same field
+   * arriving through a `Record<string, unknown>` and out of the check on the
+   * server's side.
    */
   const updateList = useCallback(
     async (
@@ -367,6 +416,11 @@ export function useLists(filters: ListFilters = {}) {
         title?: string;
         description?: string | null;
         icon?: IconRef | null;
+        /**
+         * The columns of a board, **whole and in order**: the order of the array is
+         * the order of the columns, so this is one write and not one per column.
+         */
+        states?: BoardStates;
       },
     ) => {
       await localUpdate("list", list.id, changes);
@@ -531,6 +585,23 @@ export function useListItems(listId: string | undefined) {
       annotation?: string | null;
       icon?: IconRef | null;
       tags?: string[];
+      /**
+       * The column of a board this row is created in, **and not a default.**
+       *
+       * It is here because the panel that asks for a create is the same panel that
+       * now asks which column, and it asks on **both** kinds of create —the `+` of
+       * a board and the `+` of a list— so the column cannot live in the panel's
+       * call site: the panel writes the column itself, through `Draft`, and the
+       * row it builds has to be able to carry it.
+       *
+       * **Absent means "the first column" and not "no column".** A row created on a
+       * board without one has a null `stateId`, and null is the contract's way of
+       * saying it is in the first state, so sending nothing and sending null are
+       * the same request and the server decides. Only a column somebody actually
+       * chose travels, which is also why this is not `stateId: string` — a
+       * required one would make every other caller invent a column.
+       */
+      stateId?: string | null;
     }): Promise<{ added: boolean; itemId: string | null }> => {
       if (!listId) return { added: false, itemId: null };
 
@@ -562,6 +633,7 @@ export function useListItems(listId: string | undefined) {
         annotation: input.annotation ?? null,
         icon: input.icon ?? null,
         tags: input.tags,
+        stateId: input.stateId ?? null,
         externalId: input.externalId ?? null,
         metadata: input.metadata ?? null,
       });
@@ -591,6 +663,14 @@ export function useListItems(listId: string | undefined) {
           ...(input.icon ? { icon: input.icon } : {}),
           ...(input.annotation ? { annotation: input.annotation } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
+          /*
+            **Only a chosen column travels.** A row created on a board with no
+            choice has a null `stateId` locally, and the server resolves that to
+            the first state on its own — sending `stateId: null` would be the same
+            request said twice, and would put a column on the wire that nobody
+            picked. Anything that is not a `string` is left out for that reason.
+          */
+          ...(typeof input.stateId === "string" ? { stateId: input.stateId } : {}),
           // The provider id travels with the item so the same title is
           // recognisable later, and so a future import can tell them apart.
           ...(input.externalId ? { externalId: input.externalId } : {}),
@@ -685,10 +765,13 @@ export function useListItems(listId: string | undefined) {
   );
 
   /**
-   * Changes the fields of a row that are not its title or its state.
+   * Changes the fields of a row that are not its title or whether it is done.
    *
    * The icon and the labels are written the same way as everything else, local
    * first and into the outbox, so they work on a train and sync on their own.
+   *
+   * "Whether it is done" is `toggleCompleted` and not `stateId`: they are two
+   * different things that the word "state" used to be ambiguous about.
    */
   const updateItem = useCallback(
     async (
@@ -700,6 +783,35 @@ export function useListItems(listId: string | undefined) {
         title?: string;
         annotation?: string | null;
         priority?: Priority;
+        /**
+         * The board column this row moves to.
+         *
+         * In the signature and not in the body because nothing else in the app
+         * writes it yet: a board cannot be dragged until the board screen is
+         * there, and by then the only proof this field exists is that the
+         * compiler lets the drag compile.
+         */
+        stateId?: string | null;
+        /**
+         * Where the row sits inside its own column, counted from zero.
+         *
+         * **And it is here because `moveItemTo` cannot be used for a board.** That
+         * function is the only other thing in the app that writes `position`, and it
+         * renumbers **the whole list**: `reorderItems(current, …)` runs over
+         * `store.listCachedItems(listId)`, which is every row of the list and not the
+         * rows of one column. So a drag inside "Ready" would also write a `position`
+         * onto every row of "Done" — the same rows, in an order nobody asked for,
+         * in operations that outlive the session and that another device has to
+         * merge. That is exactly what `renumberWithinState` exists to avoid, and it
+         * is why the writer on the board screen is this one and not the drag of a
+         * flat list.
+         *
+         * The caller sends **only the rows whose number changed**: a partial update
+         * would leave the other devices with an order they cannot explain, which is
+         * what the comment on `moveItemTo` says about the same field, and the same
+         * reason applies here.
+         */
+        position?: number;
         /**
          * Whether it is done.
          *
@@ -866,12 +978,24 @@ export function useListItems(listId: string | undefined) {
 }
 
 /**
+ * Un hit de bookmark en la busqueda local.
+ *
+ * El contrato (`searchResultSchema`) no trae `bookmark` en el alcance porque
+ * alla el alcance describe lo que el `GET /search` del servidor sabe devolver,
+ * y este hit solo existe en el cliente. Se suma como union local para no tocar
+ * el contrato por un alcance que el servidor no sirve.
+ */
+export type BookmarkSearchResult = Omit<SearchResult, "scope"> & {
+  scope: "bookmark";
+};
+
+/**
  * Global search over the local cache, so it works with no connection. The
  * server search (GET /search) is the online half; this is the offline one, and
  * both return the same shape.
  */
 export function useLocalSearch() {
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useState<Array<SearchResult | BookmarkSearchResult>>([]);
   const [isSearching, setIsSearching] = useState(false);
 
   const search = useCallback(async (rawQuery: string) => {
@@ -884,12 +1008,13 @@ export function useLocalSearch() {
 
     setIsSearching(true);
     const store = await getLocalStoreReady();
-    const [workspaces, folders, lists, items, notes] = await Promise.all([
+    const [workspaces, folders, lists, items, notes, bookmarks] = await Promise.all([
       store.listCached("workspace"),
       store.listCached("folder"),
       store.listCached("list"),
       store.listCached("list_item"),
       store.listCached("note"),
+      store.listCached("bookmark"),
     ]);
 
     const workspacesById = new Map(
@@ -899,7 +1024,7 @@ export function useLocalSearch() {
       ]),
     );
 
-    const found: SearchResult[] = [];
+    const found: Array<SearchResult | BookmarkSearchResult> = [];
 
     for (const row of workspaces) {
       const record = readRecord<List & { name: string; id: string }>(row);
@@ -1017,6 +1142,38 @@ export function useLocalSearch() {
       });
     }
 
+    for (const row of bookmarks) {
+      const record = readRecord<Bookmark>(row);
+      if (record.deletedAt !== null) continue;
+      // Titulo y texto, como las notas. El texto lo deriva el servidor en la
+      // extraccion, asi que un bookmark que aun no subio lo trae ausente: los
+      // dos accesos van con red porque la fila local no lo tiene.
+      const title = record.title ?? "";
+      const body = record.plainText ?? "";
+      const inTitle = title.toLowerCase().includes(query);
+      const inBody = body.toLowerCase().includes(query);
+      if (!inTitle && !inBody) continue;
+
+      found.push({
+        scope: "bookmark",
+        id: record.id,
+        workspaceId: record.workspaceId,
+        // Un bookmark no esta en una lista, asi que no hay a donde apuntar.
+        // Nulo y no su propio id, que haria a la app abrir una lista que no
+        // existe.
+        listId: null,
+        kind: null,
+        // Un bookmark no lleva icono propio: el grupo ya se reconoce por el suyo.
+        icon: null,
+        title,
+        subtitle: record.siteName ?? record.url ?? null,
+        // Un bookmark no es una fila, asi que no hay nada que marcar. Nulo y
+        // no falso, porque falso dibujaria una casilla vacia junto al enlace.
+        completed: null,
+        updatedAt: record.updatedAt,
+      });
+    }
+
     found.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     setResults(found.slice(0, 50));
     setIsSearching(false);
@@ -1025,12 +1182,18 @@ export function useLocalSearch() {
   useEffect(() => subscribeToLocalStore(() => undefined), []);
 
   const grouped = useMemo(() => {
+    // Lo clasico estrechado al alcance del contrato, para que quien lo
+    // consume (la pantalla de busqueda) siga viendo lo mismo de siempre.
+    const classic = results.filter((item): item is SearchResult => item.scope !== "bookmark");
     return {
-      workspaces: results.filter((item) => item.scope === "workspace"),
-      lists: results.filter((item) => item.scope === "list"),
-      items: results.filter((item) => item.scope === "list_item"),
-      folders: results.filter((item) => item.scope === "folder"),
-      notes: results.filter((item) => item.scope === "note"),
+      workspaces: classic.filter((item) => item.scope === "workspace"),
+      lists: classic.filter((item) => item.scope === "list"),
+      items: classic.filter((item) => item.scope === "list_item"),
+      folders: classic.filter((item) => item.scope === "folder"),
+      notes: classic.filter((item) => item.scope === "note"),
+      bookmarks: results.filter(
+        (item): item is BookmarkSearchResult => item.scope === "bookmark",
+      ),
     };
   }, [results]);
 

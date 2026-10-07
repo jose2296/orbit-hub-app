@@ -11,6 +11,7 @@ import { Segmented } from '@/components/ui/segmented';
 import { TextField } from '@/components/ui/text-field';
 import { AppText } from '@/components/ui/text';
 import { allowedCatalogKinds } from '@/lib/lists/catalog-kinds';
+import { routeForList } from '@/lib/lists/route';
 import { CATALOG_MIN_QUERY, useCatalogSearch } from '@/hooks/use-catalog-search';
 import { useListExternalStates, useListItems, useLists } from '@/hooks/use-lists';
 import { useTranslation } from '@/lib/i18n';
@@ -111,7 +112,11 @@ export default function CatalogSearchScreen() {
       // Back to the list. router.back() is wrong here: this screen can be opened
       // directly from a deep link, and then there is nothing to go back to.
       if (router.canGoBack()) router.back();
-      else router.replace(`/(app)/list/${listId}`);
+      // `list` is a lookup in the local cache and it can still be empty on the
+      // first render of this screen, while the id is in the route the whole time.
+      // So the id is never in doubt, and only the kind falls back: `tasks` is
+      // where this went before boards existed.
+      else router.replace(routeForList(list ?? { id: listId, kind: 'tasks' }));
     } finally {
       setAddingId(null);
     }

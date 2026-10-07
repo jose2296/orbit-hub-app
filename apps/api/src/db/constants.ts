@@ -42,6 +42,8 @@ export const SYNC_ENTITIES = [
   'list_item',
   'note',
   'dashboard',
+  'collection',
+  'bookmark',
 ] as const;
 export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
 
@@ -52,7 +54,9 @@ export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
  * Fields the client may write, per entity. Anything else is ignored.
  *
  * The kinds match the contract exactly: a list is one of these for good, and
- * never two at once.
+ * never two at once. `board` is one of them and not a flag on top of `tasks`,
+ * because the difference between them is what a task carries — a state or a
+ * checkbox — and a list that is both is a list whose rows nobody can draw.
  */
 export const LIST_KINDS = [
   'tasks',
@@ -60,8 +64,23 @@ export const LIST_KINDS = [
   'series',
   'movies_and_series',
   'books',
+  'board',
 ] as const;
 export type ListKindName = (typeof LIST_KINDS)[number];
+
+/**
+ * Los estados de la extraccion de un bookmark. Escribi los cuatro valores en
+ * `packages/contracts/src/bookmarks.ts` tambien: ahi vive el `z.enum` que
+ * valida la red, y aca el tipo que usa la columna. Es el mismo duplicado que
+ * `LIST_KINDS` y `listKindSchema`.
+ */
+export const BOOKMARK_EXTRACTION_STATES = [
+  'pending',
+  'ready',
+  'metadata_only',
+  'failed',
+] as const;
+export type BookmarkExtractionStateName = (typeof BOOKMARK_EXTRACTION_STATES)[number];
 
 /**
  * The colours a space can be painted with.
@@ -109,11 +128,12 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   // version, so it looks like it worked and nothing changed. That is worse than a
   // rejection, because a rejection at least tells the person their choice did not
   // save, and this one looked like it saved for four whole rebuilds.
-  // `icon` replaced `emoji` here, and it is not a rename: the column is a jsonb
-  // object now, so a value this build cannot draw is stored as `null` rather than
-  // as a key nobody has. See `sanitisePayload`.
   workspace: ['name', 'description', 'icon', 'color', 'colorTo', 'wash'],
   folder: ['parentId', 'name', 'icon', 'position'],
+  // `states` and `stateId` below are the board's two, and being on this list is
+  // **half** of writing them: a key allowed here still needs its branch in
+  // `sanitisePayload`, and the test that catches the missing half pushes a board
+  // and reads its states back (`lists.test.ts`).
   list: [
     'folderId',
     'title',
@@ -124,6 +144,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'position',
     'kind',
     'orderMode',
+    'states',
   ],
   list_item: [
     'title',
@@ -135,6 +156,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'externalId',
     'metadata',
     'annotation',
+    'stateId',
   ],
   /**
    * `document` is on this list and the client is expected to send it, but the
@@ -144,6 +166,25 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    */
   note: ['title', 'document', 'folderId', 'tags', 'position', 'icon'],
   dashboard: ['layout', 'pages'],
+  /**
+   * Una coleccion es una carpeta con nombre: lo que la persona elige es donde va
+   * y como se llama, y nada mas.
+   */
+  collection: ['folderId', 'name', 'description', 'emoji', 'position'],
+  /**
+   * De un bookmark el cliente elige el enlace, el titulo, donde queda y como se
+   * ordena. Lo que **no** aparece aqui es el corazon de la decision, y son siete
+   * campos: `document`, `plainText`, `extractionState`, `extractionError`,
+   * `description`, `imageUrl` y `siteName` son del servidor. Un cliente que
+   * escribiera el documento podria hacer que la busqueda (que corre sobre
+   * `plainText`) dijera una cosa y la lectura otra, que es exactamente el
+   * problema que `note` ya resuelve re-derivando `plainText`.
+   *
+   * `workspaceId` tampoco esta, y por el mismo motivo que en `note`: el servidor
+   * es dueno de ese campo, porque un cliente que pudiera mover un bookmark entre
+   * espacios lo archivaria donde el dueno nunca lo puso.
+   */
+  bookmark: ['url', 'title', 'collectionId', 'folderId', 'tags', 'position'],
 };
 
 export const AUDIT_EVENTS = [

@@ -177,7 +177,7 @@ probados, sin nada de interfaz. `content-list.tsx` lo dibuja y `content-order-sa
 
 ## Fase 3 — Listas y búsqueda 🟡
 
-- [x] Esquema: `lists` y `list_items` con una forma única para los tres tipos
+- [x] Esquema: `lists` y `list_items` con una forma única para los seis tipos
 - [x] `list` y `list_item` como entidades sincronizables con campos acotados
 - [x] Los items heredan el workspace de su lista, comprobado antes de insertar
 - [x] Lecturas: `GET /lists`, `/lists/:id`, `/lists/:id/items` con filtros
@@ -190,6 +190,19 @@ probados, sin nada de interfaz. `content-list.tsx` lo dibuja y `content-order-sa
       puntuación, reparto, temporada/editorial e ISBN
 - [x] Duplicar una lista con sus elementos, su estado y su registro de proveedor
 - [x] Reordenar elementos
+- [x] Tablero: un `kind` nuevo con estados configurables y una columna por tarea
+- [x] Estados en un `jsonb` de la lista y `state_id` en el elemento, con su migración
+- [x] Invariante comprobado por el servidor en cada escritura: un elemento no puede apuntar
+      a un estado que su lista no tiene
+- [x] Pantalla propia en `/board/:id`, con pestañas con contador, y una columna en móvil o
+      varias en web ancha
+- [x] Swipe horizontal que **solo** pagina; mover una tarea es por la hoja de estado
+- [x] Editor de estados: añadir, renombrar, recolorear, reordenar y borrar, preguntando a
+      dónde van las tareas que se quedan sin columna
+- [x] Reordenar las tareas dentro de una columna, en el eje vertical
+- [x] Filtros, el orden manual fijo (un tablero no ofrece otros) y aviso de solo lectura para
+      quien solo mira
+- [x] Exportación del tablero con su columna en el CSV, en el sitio de `completado`
 - [ ] Fechas límite y recurrencia (descartadas en alcance, vuelve en revisión)
 - [ ] Plantillas
 
@@ -208,6 +221,56 @@ que se lleve la fila por delante, que en web significa reimplementar el arrastre
 a las filas simples que usa el resto de la app. Dos botones funcionan en las tres plataformas, son
 alcanzables con lector de pantalla y teclado, y no se pueden cancelar a medias. Queda anotado como
 decisión, no como descuido.
+
+### 3.1 El tablero de estados
+
+**Un `kind` nuevo, y no un modo de ver una lista de tareas.** `board` vive al lado de `tasks`,
+`movies`, `series`, `movies_and_series` y `books` en `listKindSchema`, y lo decide una sola función:
+`routeForList` manda un tablero a `/board/:id` y todo lo demás a `/list/:id`. Lo que distingue a una
+tarea de un tablero de una tarea de una lista normal es exactamente una cosa, **que tiene estado**;
+por lo demás es la misma tarea de siempre, con su icono, su prioridad y sus etiquetas.
+
+**Los estados son un `jsonb` en la fila de la lista, y no una tabla.** `lists.states` es un array y
+**el orden del array es el orden de las columnas**, así que reordenar columnas es una escritura y no
+una por columna. Cada tarea apunta a uno con `list_items.state_id`, que es nullable y **sin clave
+foránea**: `null` es lo normal y significa la primera columna, y por eso crear una tarea en un tablero
+es el mismo código que crea una tarea en cualquier otra lista. Una clave foránea no podría
+comprobarlo —`states` es una columna y no una tabla, y comprobar una fila contra otra fila es una
+segunda consulta—, así que lo comprueba el servidor en cada escritura con `isKnownStateId` y
+**rechaza** la operación en vez de guardarla. La migración es `0021_spicy_master_chief.sql`: dos
+`ALTER TABLE` y nada más. No hay tabla nueva, ni entidad de sync nueva, ni índice nuevo.
+
+**El swipe solo pagina.** Habían dos gestos horizontales peleándose el mismo sitio: pasar de columna y
+mover una tarea de columna. Se dejó **uno solo, y siempre pagina**. Mover una tarea se hace tocando la
+tarjeta y eligiendo estado en una hoja, así que mover son **dos toques en vez de uno**, y se acepta.
+El pan vive en la pista y no en las tarjetas, con `activeOffsetX([-14, 14])` y `failOffsetY([-12, 12])`:
+el dedo solo es suyo cuando ha ido claramente de lado, y el eje vertical queda libre para el
+reordenado dentro de la columna. En móvil se ve una columna y en web ancha varias:
+`columnLayout(1120, 12)` con cinco estados da cuatro columnas de 271.
+
+| Decisión | Por qué |
+| --- | --- |
+| `kind: 'board'` y no un interruptor sobre `tasks` | Los estados son de la lista y no de la fila: guardados por tarea, cada tarea tendría su juego de columnas privado |
+| Los estados en un `jsonb`, no en una tabla | Siempre se leen con la lista y nunca solos, y una tabla compraría una clave foránea que el servidor no puede comprobar sin una segunda consulta |
+| El orden de las columnas es el orden del array | Reordenar columnas es una escritura, y reordenarlas no es una cosa rara |
+| `state_id` nullable y sin clave foránea | `null` significa la primera columna, y el invariante lo comprueba `isKnownStateId` en cada escritura, que es justo lo que una clave foránea no puede hacer |
+| Un solo gesto horizontal, y siempre pagina | Pasar de columna y mover una tarea eran dos gestos en el mismo sitio; el vertical queda libre para el reordenado |
+| Mover por hoja y no arrastrando | Dos toques en vez de uno, y el gesto que se queda es el que nadie va a usar por error |
+| Sin límite WIP | Se descartó al decidir el alcance: «wip» es un nombre de estado, no una regla |
+
+**Lo que el tablero no es.** No hay límite WIP, ni arrastre de una tarjeta a otra columna, ni vistas
+de tabla o calendario, ni automatizaciones al entrar en un estado, ni reglas de bloqueo de columna,
+ni historial de cambios de estado, ni estados compartidos entre tableros, ni más de una plantilla, ni
+archivado de estados. Las nueve están en
+[scope.md](product/scope.md#out-of-scope-for-boards) con el motivo de cada una, porque son
+decisiones y no olvidos.
+
+`packages/contracts/src/board.ts` tiene el contrato, `apps/mobile/src/lib/lists/board.ts` la lógica
+pura de columnas y renumerados, `board-paging.ts` la aritmética del gesto, y
+`apps/mobile/src/app/(app)/board/[listId].tsx` la pantalla. Lo que se midió en navegador y **lo que
+no**, está escrito en [verificacion-en-navegador.md](verificacion-en-navegador.md): el recorrido del
+tablero pasó en verde con 285 comprobaciones y aun así deja huecos apuntados uno a uno, y en
+Android el guion sale con código 2 sin ejecutarse porque no hay dispositivo.
 
 ---
 

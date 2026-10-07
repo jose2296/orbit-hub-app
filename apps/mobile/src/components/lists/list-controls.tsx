@@ -7,6 +7,38 @@ import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
+/**
+ * What the caller wants drawn in place of the default button, **and the one thing
+ * it is told about it is what to call.**
+ *
+ * It is a function of the open action and not the open state, because this component
+ * keeps that state: a caller that wanted to drive it would be asking for a second
+ * source of truth about whether the sheet is up, and the sheet would answer to
+ * whichever of the two was asked last. **Measured on the browser** — no device,
+ * there is no simulator attached — the second door is what a board uses: its filter
+ * is a floating icon button above the `+`, in the corner where a thumb already is,
+ * and the button it replaced was a pill in the middle of the board saying "Filtrar ·
+ * A mano".
+ *
+ * **The default is untouched, so the four screens that pass nothing keep their
+ * button, their size, their label and their `testID`.**
+ */
+export interface ListControlsTriggerProps {
+  /** Opens the same sheet the default button opens. */
+  open: () => void;
+  /**
+   * The sentence the default button shows written on it, **handed over because a
+   * caller drawing an icon has nowhere to print it.**
+   *
+   * `"Filtrar"` with nothing on, and `"Filtrar 1"` with one filter — the same two
+   * strings the button below builds, from the same `filterCount`, so an icon button
+   * and a labelled one cannot disagree about whether anything is filtered. It
+   * belongs on `accessibilityLabel` of whatever the caller draws: on a bare glyph
+   * this is the *only* thing that says what the button is.
+   */
+  label: string;
+}
+
 export interface ListControlsProps {
   /**
    * How many filters are on, **and it is the number in the label**.
@@ -31,6 +63,22 @@ export interface ListControlsProps {
   /** Opens whatever arranges the rows, which is a sheet with a handle per row. */
   onReorder?: () => void;
 
+  /**
+   * Drawn instead of the default button, **for the one screen whose filter is a
+   * floating button and not a pill in the middle of the content.**
+   *
+   * It exists so this control stays *one* control: the alternative was a board that
+   * drew its own sheet, and a board with its own sheet is a second copy of the
+   * filter's title, of which section comes first, and of the count in the label —
+   * four copies of one decision that this file already owns.
+   *
+   * It coexists with `placement` below, and the two do not overlap: `trigger`
+   * draws the button somewhere else entirely (the board's corner stack, where
+   * the filter sits above the `+` as the same round button), while `placement`
+   * moves this file's own button. What both keep shared is the sheet, which is
+   * the part that must not drift.
+   */
+  trigger?: (props: ListControlsTriggerProps) => ReactNode;
   /**
    * Where the button sits, and **not what it does**.
    *
@@ -136,6 +184,7 @@ export function ListControls({
   orders = [],
   canReorder = false,
   onReorder,
+  trigger,
   placement = "inline",
   floatingBottom,
   floatingRight,
@@ -146,6 +195,22 @@ export function ListControls({
   const [abierto, setAbierto] = useState(false);
 
   const filtrando = filterCount > 0;
+
+  /**
+   * The sentence the `trigger` above says, **written once because an icon button
+   * has nowhere to print it.**
+   *
+   * The trigger gets only the short form — `"Filtrar 1"` and not `"Filtrar 1 · A
+   * mano"` — because an `accessibilityLabel` is read out loud and the order is not
+   * what the button does; it is what the list happens to be doing. **Not a
+   * shortening of the string**: it is the same `filterCount` and the same
+   * `filters.title` the button builds its own label from, so the two cannot drift.
+   */
+  const etiquetaDelBoton = filtrando
+    ? `${t("filters.title")} ${filterCount}`
+    : t("filters.title");
+  const abrir = () => setAbierto(true);
+
   return (
     <>
       {/*
@@ -155,7 +220,9 @@ export function ListControls({
         `ScrollView`, which silently degrades `fixed` to `absolute`. Anchoring it in
         a plain `View` is the part that cannot go wrong.
       */}
-      {placement === "floating" ? (
+      {trigger ? (
+        trigger({ open: abrir, label: etiquetaDelBoton })
+      ) : placement === "floating" ? (
         <View
           pointerEvents="box-none"
           style={[

@@ -43,6 +43,7 @@ import {
   withoutPinnedList,
 } from "@/lib/dashboard/pin";
 import { cardMark } from "@/lib/dashboard/card-kind";
+import { routeForList } from "@/lib/lists/route";
 import type { ListKind } from "@orbit-hub/contracts";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -358,8 +359,8 @@ export default function HomeScreen() {
         subtitle: t(pluralKey("lists.itemCount", list.itemCount), {
           count: list.itemCount,
         }),
-        icon: list.icon ?? null,
-        href: `/(app)/list/${list.id}`,
+icon: list.icon ?? null,
+        href: routeForList(list),
         mark: cardMark({ kind: list.kind }),
       };
     },

@@ -13,7 +13,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-import type { IconRef, TagColors } from '@orbit-hub/contracts';
+import type { BoardStates, IconRef, TagColors } from '@orbit-hub/contracts';
 
 import { users } from './auth-schema';
 import type {
@@ -23,6 +23,7 @@ import type {
   WorkspaceWashName,
   MembershipRoleName,
   SyncEntityName,
+  BookmarkExtractionStateName,
 } from './constants';
 
 /**
@@ -336,6 +337,20 @@ export const lists = pgTable(
       .$type<ListOrderModeName>()
       .notNull()
       .default('manual'),
+    /**
+     * The columns of a board, and the order of the array is the order of the
+     * columns.
+     *
+     * One column and not a table: the states are part of the list the way its
+     * labels are, they are always read with the list and never alone, and a
+     * table would buy a foreign key that nothing here can enforce — the server
+     * cannot check a row against another row without a second query, and this is
+     * the check the Task 3 makes on every write instead.
+     *
+     * Empty is the normal state and it is a real one: every list that is not a
+     * board carries `[]` and never has to invent a column.
+     */
+    states: jsonb('states').$type<BoardStates>().notNull().default([]),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -363,6 +378,17 @@ export const listItems = pgTable(
     title: varchar('title', { length: 300 }).notNull(),
     position: integer('position').notNull().default(0),
     completed: boolean('completed').notNull().default(false),
+    /**
+     * The column of the board this row is drawn in, as an id out of the list's
+     * `states`.
+     *
+     * Nullable, and null is the ordinary case: a task with no state of its own is
+     * drawn in the first one, so creating a task on a board is the same code that
+     * creates a task on any other list. There is no foreign key because `states`
+     * is a column of the list and not a table — the invariant is checked on every
+     * write instead of being declared here.
+     */
+    stateId: varchar('state_id', { length: 36 }),
     priority: varchar('priority', { length: 8 })
       .$type<'none' | 'low' | 'medium' | 'high'>()
       .notNull()
@@ -399,6 +425,103 @@ export const listsRelations = relations(lists, ({ one, many }) => ({
   workspace: one(workspaces, { fields: [lists.workspaceId], references: [workspaces.id] }),
   items: many(listItems),
 }));
+
+export const collections = pgTable(
+  'collections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    description: varchar('description', { length: 500 }),
+    emoji: varchar('emoji', { length: 16 }),
+    position: integer('position').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    index('collections_workspace_updated_at_idx').on(table.workspaceId, table.updatedAt),
+    index('collections_folder_idx').on(table.folderId),
+    index('collections_deleted_at_idx').on(table.deletedAt),
+  ],
+);
+
+export const collectionsRelations = relations(collections, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [collections.workspaceId], references: [workspaces.id] }),
+  folder: one(folders, { fields: [collections.folderId], references: [folders.id] }),
+  bookmarks: many(bookmarks),
+}));
+
+export type CollectionRow = typeof collections.$inferSelect;
+
+/**
+ * Bookmarks: links saved to read later.
+ *
+ * The link is the row and the article is a snapshot of it taken once, because
+ * `document` and `plain_text` are what makes search an index hit and reading
+ * work with no network. `extraction_state` is where the snapshot says it is:
+ * `pending` while nobody has tried, `ready` with text, `metadata_only` with the
+ * link's own metadata only, and `failed` with the reason in `extraction_error`.
+ *
+ * `collection_id` is `on delete set null` and not `cascade`, which is the only
+ * line in this table that is a rule instead of a convention. A collection is a
+ * label; deleting one is a filing decision, and cascading would take fifty
+ * saved links with it without telling anybody. The links survive as
+ * "unfiled", which is what unfiled means. A deleted workspace or folder is a
+ * different question — those spaces are gone — and those two cascade.
+ */
+export const bookmarks = pgTable(
+  'bookmarks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+    collectionId: uuid('collection_id').references(() => collections.id, { onDelete: 'set null' }),
+    url: text('url').notNull(),
+    title: varchar('title', { length: 300 }).notNull().default(''),
+    siteName: varchar('site_name', { length: 120 }),
+    description: text('description'),
+    imageUrl: text('image_url'),
+    /** The article, kept as the site served it, and empty until extraction. */
+    document: text('document').notNull().default(''),
+    /** Denormalised from the document for search, exactly like a note's. */
+    plainText: text('plain_text').notNull().default(''),
+    extractionState: varchar('extraction_state', { length: 16 })
+      .$type<BookmarkExtractionStateName>()
+      .notNull()
+      .default('pending'),
+    extractionError: varchar('extraction_error', { length: 200 }),
+    tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    position: integer('position').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    index('bookmarks_workspace_updated_at_idx').on(table.workspaceId, table.updatedAt),
+    index('bookmarks_folder_idx').on(table.folderId),
+    index('bookmarks_collection_idx').on(table.collectionId),
+    index('bookmarks_deleted_at_idx').on(table.deletedAt),
+    // Written by hand below: a GIN index over the tags array and a trigram index
+    // over the plain text, which is what searching inside a saved article needs
+    // and what a btree on a column of prose cannot answer.
+  ],
+);
+
+export const bookmarksRelations = relations(bookmarks, ({ one }) => ({
+  workspace: one(workspaces, { fields: [bookmarks.workspaceId], references: [workspaces.id] }),
+  folder: one(folders, { fields: [bookmarks.folderId], references: [folders.id] }),
+  collection: one(collections, { fields: [bookmarks.collectionId], references: [collections.id] }),
+}));
+
+export type BookmarkRow = typeof bookmarks.$inferSelect;
 
 export const listItemsRelations = relations(listItems, ({ one }) => ({
   list: one(lists, { fields: [listItems.listId], references: [lists.id] }),

@@ -9,6 +9,8 @@ import { notesRouter } from "./notes.js";
 import { peopleRouter } from "./people.js";
 import { applyTemplateRouter, noteTemplatesRouter } from "./note-templates.js";
 import { attachmentBytesRouter, attachmentsRouter } from "./attachments.js";
+import { bookmarksRouter } from "./bookmarks.js";
+import { collectionsRouter } from "./collections.js";
 
 import { syncRouter } from "./sync.js";
 import { listsRouter, searchRouter } from "./lists.js";
@@ -52,6 +54,8 @@ apiRouter.use("/attachments", attachmentBytesRouter);
 // before nothing in particular.
 apiRouter.use("/notes", attachmentsRouter);
 apiRouter.use("/notes", notesRouter);
+apiRouter.use("/collections", collectionsRouter);
+apiRouter.use("/bookmarks", bookmarksRouter);
 apiRouter.use("/catalog", catalogRouter);
 apiRouter.use("/people", peopleRouter);
 apiRouter.use("/shares", sharesRouter);

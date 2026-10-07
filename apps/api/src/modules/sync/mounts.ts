@@ -1,6 +1,16 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
-import { folders, lists, listItems, notes, shareMounts, shares, workspaces } from '../../db/schema.js';
+import {
+  bookmarks,
+  collections,
+  folders,
+  lists,
+  listItems,
+  notes,
+  shareMounts,
+  shares,
+  workspaces,
+} from '../../db/schema.js';
 import type { Database } from '../../db/client.js';
 
 /**
@@ -153,6 +163,25 @@ export async function montajesDe(
       continue;
     }
 
+    /*
+      Compartir un enlace o una carpeta de enlaces no es parte de esta fase, y
+      eso es lo que impide que `collection` y `bookmark` lleguen aqui.
+
+      Conviene decir **que** los detiene, porque no es esta cadena de `if`: los de
+      arriba hacen `continue` y no `else`, asi que un `nodeType: 'collection'` que
+      llegara a esta fila se proyectaria igual, y proyectarlo es lo correcto: un
+      nodo propio, con su `folderId` y su `position`, tiene que aparecer bajo donde
+      lo recibio quien lo guardo. Lo que no se puede es *llegar*:
+      `montajesDe` se llama con lo que hay en `share_mounts`, y
+      `shareNodeTypeSchema` no acepta estas dos, asi que no hay grant que las
+      traga.
+
+      Y "no hay grant" es una frase sobre TypeScript, no sobre la base:
+      `shares.nodeType` es un `varchar(16)` cuyo `$type<>` no existe en Postgres,
+      y una fila con un tipo raro metida por otra via pasaria por aqui. Por eso su
+      rama en `espacioDe` esta igual: esa funcion responde a lo que dice la fila,
+      y el dia que haya comparticion tiene que devolver bien.
+    */
     resultado.set(`${montaje.nodeType}:${montaje.nodeId}`, destino);
   }
 
@@ -244,6 +273,36 @@ async function espacioDe(
       .from(listItems)
       .innerJoin(lists, eq(listItems.listId, lists.id))
       .where(eq(listItems.id, nodeId))
+      .limit(1);
+    return fila[0]?.workspaceId ?? null;
+  }
+
+  /*
+    Las dos ramas de abajo van **antes** de la de notas, y no por orden.
+
+    La de notas es el final de la cadena y no lleva `else`: `workspace` devuelve
+    temprano y las demas son `if` con `return`, asi que cualquier `nodeType` que
+    no conozca cae aqui y se consulta contra `notes`. No encuentra nada y
+    devuelve `null` -- que es tambien lo que devuelve una nota que ya no existe.
+    Con dos tipos mas sin su rama, un bookmark compartido se resolveria contra
+    la tabla de notas, daria `null`, y el montaje se descartaria en silencio: la
+    fila seguiria llegando en el pull, pero colgando del espacio del dueno, que
+    es justo la desapareccion que este archivo existe para impedir.
+  */
+  if (nodeType === 'collection') {
+    const fila = await db
+      .select({ workspaceId: collections.workspaceId })
+      .from(collections)
+      .where(eq(collections.id, nodeId))
+      .limit(1);
+    return fila[0]?.workspaceId ?? null;
+  }
+
+  if (nodeType === 'bookmark') {
+    const fila = await db
+      .select({ workspaceId: bookmarks.workspaceId })
+      .from(bookmarks)
+      .where(eq(bookmarks.id, nodeId))
       .limit(1);
     return fila[0]?.workspaceId ?? null;
   }

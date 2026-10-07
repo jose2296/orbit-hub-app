@@ -4,7 +4,15 @@ import type { PgTable } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 
 import { LIST_ORDER_MODES } from '../src/db/constants.js';
-import { notes, folders, listItems, lists, workspaces } from '../src/db/content-schema.js';
+import {
+  notes,
+  folders,
+  listItems,
+  lists,
+  workspaces,
+  bookmarks,
+  collections,
+} from '../src/db/content-schema.js';
 import { describeFailure, sanitisePayload } from '../src/modules/sync/sync-service.js';
 import { HttpError } from '../src/lib/http-error.js';
 import type { SYNC_ENTITIES } from '../src/db/constants.js';
@@ -167,6 +175,8 @@ describe('sanitisePayload', () => {
       [lists, 'list'],
       [listItems, 'list_item'],
       [notes, 'note'],
+      [collections, 'collection'],
+      [bookmarks, 'bookmark'],
     ];
 
     const FREE_TEXT = ['name', 'title', 'description', 'annotation'];
