@@ -2,11 +2,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { View } from "react-native";
 
-import type { Folder, List, Note } from "@orbit-hub/contracts";
+import type { Collection, Folder, List, Note } from "@orbit-hub/contracts";
 
 import { CreateSheet } from "@/components/folders/create-sheet";
 import type { SheetOrigin } from "@/components/ui/sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
+import { CollectionMenuSheet } from "@/components/collections/collection-menu-sheet";
 import { ContentList } from "@/components/content/content-list";
 import { FolderMenuSheet } from "@/components/folders/folder-menu-sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
@@ -24,7 +25,9 @@ import {
   withoutPinnedFolder,
 } from "@/lib/dashboard/pin";
 import { useLists } from "@/hooks/use-lists";
+import { useCollections } from "@/hooks/use-collections";
 import { useNotes } from "@/hooks/use-notes";
+import { createCollectionAction } from "@/lib/collections/actions";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { Button } from "@/components/ui/button";
 import { useScreenSpace } from "@/hooks/use-screen-space";
@@ -56,6 +59,8 @@ export default function WorkspaceScreen() {
   );
   const { lists, createList } = useLists({ workspaceId });
   const { notes, createNote } = useNotes({ workspaceId });
+  const { collections, bookmarkCounts } = useCollections(workspaceId);
+  const [collectionFor, setCollectionFor] = useState<Collection | null>(null);
 
   const [menuFor, setMenuFor] = useState<
     { kind: "folder"; folder: Folder } | { kind: "list"; list: List } | null
@@ -148,6 +153,12 @@ export default function WorkspaceScreen() {
       closeSheets();
       router.push({ pathname: "/note/[noteId]", params: { noteId } });
       return;
+    } else if (createKind === "collection") {
+      await createCollectionAction({
+        workspaceId,
+        folderId: null,
+        name: trimmed,
+      });
     } else if (createKind) {
       await createList({
         workspaceId,
@@ -274,6 +285,9 @@ export default function WorkspaceScreen() {
           folders={folders}
           lists={lists}
           notes={notes}
+          collections={collections}
+          bookmarkCounts={bookmarkCounts}
+          onCollectionMenu={(collection) => setCollectionFor(collection)}
           isLoading={isLoading}
           onFolderMenu={(folder) => setMenuFor({ kind: "folder", folder })}
           onListMenu={(list) => setMenuFor({ kind: "list", list })}
@@ -284,6 +298,10 @@ export default function WorkspaceScreen() {
         workspace={menuOpen ? workspace : null}
         onClose={closeSheets}
         onDeleted={() => router.replace("/(app)/workspaces")}
+      />
+      <CollectionMenuSheet
+        collection={collectionFor}
+        onClose={() => setCollectionFor(null)}
       />
       <NoteMenuSheet
         note={noteFor}

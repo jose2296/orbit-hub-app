@@ -8,8 +8,20 @@ vi.mock("react-native", async () => {
   const React = await import("react");
   const View = ({ children, testID }: any) =>
     React.createElement("div", testID ? { "data-testid": testID } : null, children);
-  const Text = ({ children, onPress }: any) =>
-    React.createElement("span", onPress ? { onClick: onPress } : null, children);
+  // El estilo viaja serializado y ya aplanado, para poder afirmar que color y
+  // tipografia llegan a cada texto (o que NO los pisa un hijo).
+  const aplanar = (style: any): Record<string, unknown> =>
+    Array.isArray(style)
+      ? Object.assign({}, ...style.map(aplanar))
+      : style && typeof style === "object"
+        ? style
+        : {};
+  const Text = ({ children, onPress, style }: any) =>
+    React.createElement(
+      "span",
+      { ...(onPress ? { onClick: onPress } : {}), "data-style": JSON.stringify(aplanar(style)) },
+      children,
+    );
   const Image = ({ source, accessibilityLabel }: any) =>
     React.createElement("img", { src: source?.uri ?? "", alt: accessibilityLabel ?? "" });
   return {
@@ -19,7 +31,8 @@ vi.mock("react-native", async () => {
     Linking: { openURL: async () => true },
     StyleSheet: {
       create: (styles: any) => styles,
-      flatten: (style: any) => style,
+      flatten: (style: any) =>
+        Array.isArray(style) ? Object.assign({}, ...style.map((item: any) => item ?? {})) : style,
       hairlineWidth: 1,
     },
     Platform: { OS: "web", select: (spec: any) => spec.web ?? spec.default },
@@ -170,5 +183,33 @@ describe("DocumentView", () => {
     expect(canRenderDocument("<p>sin cerrar")).toBe(false);
     expect(canRenderDocument(42)).toBe(false);
     expect(markup("<p>sin cerrar")).toBe("");
+  });
+});
+
+
+describe("los textos dentro de un enlace o un titulo heredan, no pisan", () => {
+  // `AppText` fija color y tipografia en cada texto. Si el hijo de un enlace es
+  // otro `AppText`, el hijo gana: el enlace pierde el acento (no se distingue
+  // del resto, que es lo que se veia en el movil) y un titulo pierde su tamano.
+  const estilos = (html: string): Record<string, unknown>[] =>
+    [...html.matchAll(/data-style="([^"]*)"/g)].map((hallazgo) =>
+      JSON.parse((hallazgo[1] ?? "{}").replaceAll("&quot;", '"')),
+    );
+
+  it("el texto de un enlace no lleva color propio y el enlace si lleva acento y subrayado", () => {
+    const hojas = estilos(markup('<p><a href="https://ejemplo.test/x">leer mas</a></p>'));
+    const enlace = hojas.find((estilo) => estilo["textDecorationLine"] === "underline");
+    expect(enlace).toBeDefined();
+    expect(enlace?.["color"]).toBeTruthy();
+    // El resto de nodos de texto (el del interior) no fija color: hereda.
+    const interior = hojas[hojas.length - 1];
+    expect(interior?.["color"]).toBeUndefined();
+  });
+
+  it("el texto de un titulo no pisa el tamano del titulo", () => {
+    const hojas = estilos(markup("<h2>Un titulo</h2>"));
+    const [titulo, texto] = hojas;
+    expect(titulo?.["fontSize"]).toBeDefined();
+    expect(texto?.["fontSize"]).toBeUndefined();
   });
 });

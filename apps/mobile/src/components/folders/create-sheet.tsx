@@ -19,7 +19,7 @@ import {
 import { useTheme } from "@/theme";
 
 /** What a person can make inside a folder. */
-export type CreateKind = ListKind | "folder" | "note";
+export type CreateKind = ListKind | "folder" | "note" | "collection";
 
 /*
   `title` y `onTitle` vienen de la **pantalla padre**, y eso conviene decirlo.
@@ -94,12 +94,13 @@ export function CreateSheet({
   const t = useTranslation();
   const isFolder = kind === "folder";
   const isNote = kind === "note";
+  const isCollection = kind === "collection";
   /**
    * Only a list has a kind. Asking a note for one produced a panel with five
    * buttons about films and books above a note, and the person who clicked "Nota"
    * was handed a form for something else.
    */
-  const isList = !isFolder && !isNote;
+  const isList = !isFolder && !isNote && !isCollection;
 
   const whatOptions: SheetOption[] = useMemo(
     () => [
@@ -130,6 +131,18 @@ export function CreateSheet({
         description: t("create.noteHint"),
         onPress: () => {
           onKind("note");
+          onStep("details");
+        },
+      },
+      {
+        // Una coleccion de enlaces es un elemento mas del espacio o la carpeta, y
+        // se crea desde el mismo sitio que una lista, una carpeta o una nota.
+        key: "collection",
+        label: t("collections.create"),
+        icon: "bookmarks-outline",
+        description: t("collections.createHint"),
+        onPress: () => {
+          onKind("collection");
           onStep("details");
         },
       },
@@ -214,7 +227,9 @@ export function CreateSheet({
             ? t("folders.create")
             : isNote
               ? t("create.note")
-              : t("lists.create")
+              : isCollection
+                ? t("collections.create")
+                : t("lists.create")
       }
       subtitle={subtitle}
       scrollable={false}
@@ -288,7 +303,9 @@ export function CreateSheet({
                 ? t("folders.nameLabel")
                 : isNote
                   ? t("note.titleLabel")
-                  : t("lists.titleLabel")
+                  : isCollection
+                    ? t("share.save.collectionName")
+                    : t("lists.titleLabel")
             }
             value={title}
             onChangeText={onTitle}
@@ -297,7 +314,9 @@ export function CreateSheet({
                 ? t("folders.namePlaceholder")
                 : isNote
                   ? t("note.titlePlaceholder")
-                  : t("lists.titlePlaceholder")
+                  : isCollection
+                    ? t("share.save.collectionNamePlaceholder")
+                    : t("lists.titlePlaceholder")
             }
             autoCapitalize="sentences"
             autoFocus
@@ -309,7 +328,9 @@ export function CreateSheet({
                 ? FIELD_LIMITS["folder.name"]
                 : isNote
                   ? FIELD_LIMITS["note.title"]
-                  : FIELD_LIMITS["list.title"]
+                  : isCollection
+                    ? 120 // `collection.name` es varchar(120) en el servidor
+                    : FIELD_LIMITS["list.title"]
             }
             onSubmitEditing={onCreate}
           />

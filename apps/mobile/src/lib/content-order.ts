@@ -1,4 +1,4 @@
-import type { Folder, IconRef, List, ListOrderMode, Note } from "@orbit-hub/contracts";
+import type { Collection, Folder, IconRef, List, ListOrderMode, Note } from "@orbit-hub/contracts";
 import { normaliseToCompare } from "@/lib/lists/done-match";
 
 /**
@@ -21,6 +21,10 @@ export type ContentRow = {
   /** Only on a list, and only the filter reads it. */
   listKind?: List["kind"];
   itemCount?: number;
+  /** Solo una coleccion: cuantos enlaces tiene, para el subtitulo de la fila. */
+  bookmarkCount?: number;
+  /** Solo una coleccion: el emoji que se le puso, que es su dibujo. */
+  emoji?: string | null;
   notePreview?: string;
   /**
    * The icon somebody chose for it, or null. It travels in the row because the
@@ -50,6 +54,24 @@ export const toRow = {
     listKind: list.kind,
     itemCount: list.itemCount,
     icon: list.icon ?? null,
+  }),
+  /**
+   * Una coleccion de enlaces, como una fila mas del nivel donde esta.
+   *
+   * Sin `icon`: una coleccion no lleva el icono del selector, lleva su emoji, y la
+   * fila lo dibuja si lo hay. El recuento lo pone quien llama porque sale de los
+   * bookmarks y no de la coleccion.
+   */
+  collection: (collection: Collection, bookmarkCount: number): ContentRow => ({
+    kind: "collection",
+    id: collection.id,
+    name: collection.name,
+    position: collection.position ?? 0,
+    createdAt: String(collection.createdAt ?? ""),
+    folderId: collection.folderId ?? null,
+    bookmarkCount,
+    emoji: collection.emoji ?? null,
+    icon: null,
   }),
   note: (note: Note): ContentRow => ({
     kind: "note",
