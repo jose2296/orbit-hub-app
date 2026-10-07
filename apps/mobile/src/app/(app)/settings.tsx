@@ -179,14 +179,6 @@ export default function SettingsScreen() {
             onPress={() => router.push('/(app)/devices')}
           />
           <Divider inset={50} />
-          <ListRow
-            icon="albums-outline"
-            title={t('settings.sheetDemo')}
-            subtitle={t('settings.sheetDemo.body')}
-            chevron
-            onPress={() => router.push('/sheet-demo')}
-          />
-          <Divider inset={50} />
           {/*
             The one row here that does the thing instead of going somewhere, and the
             two props that say so are the ones this component already has: disabled

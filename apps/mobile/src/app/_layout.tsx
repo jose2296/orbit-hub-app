@@ -182,7 +182,6 @@ function Navigation() {
             and turns the page a store sends somebody into the sign-up form. */}
         <Stack.Screen name="privacy" options={{ title: t('legal.privacy.title') }} />
         <Stack.Screen name="terms" options={{ title: t('legal.terms.title') }} />
-        <Stack.Screen name="sheet-demo" options={{ title: "Morphing tray" }} />
       </Stack>
       {/*
         Something to look at while the session is being restored.

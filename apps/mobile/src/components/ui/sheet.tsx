@@ -1330,7 +1330,7 @@ export const MARGEN = 18;
 /** How long the panel takes to arrive, and the net under the animation is this. */
 const DURACION = 180;
 
-/** The "smooth" preset of the tray demo: near critical damping, no visible bounce. */
+/** Near critical damping, so the morph settles without a visible bounce. */
 const MORPH_SPRING = { damping: 26, stiffness: 190, mass: 1 } as const;
 /**
  * The same feel for the body height, so a change of step is a spring and not a
