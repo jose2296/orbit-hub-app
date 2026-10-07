@@ -1,0 +1,359 @@
+import { useEffect, useState } from "react";
+import { View } from "react-native";
+
+import type { IconRef } from "@orbit-hub/contracts";
+
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetOptions, useLastValue } from "@/components/ui/sheet";
+import type { SheetOption } from "@/components/ui/sheet";
+import { AppText } from "@/components/ui/text";
+import { useTranslation } from "@/lib/i18n";
+import type { TranslationKey } from "@/lib/i18n/dictionaries";
+import { accionesPara, resuelveLabel } from "@/lib/menus/registry";
+import type { MenuAccion, MenuContext, MenuHandlerName, MenuPageId } from "@/lib/menus/registry";
+import { useTheme } from "@/theme";
+
+import { DeletePage } from "./pages/delete-page";
+import { RenamePage } from "./pages/rename-page";
+
+/**
+ * Lo que el call site sabe hacer con esta entidad.
+ *
+ * Todo opcional y **a proposito**: el registro decide que filas se ofrecen
+ * leyendo `role`, `shared` y `caps`, asi que un handler que falta no es una fila
+ * que se esconde —eso lo decide el registro— sino una fila que se ofrece y no
+ * tiene a quien ejecutarla, que es un fallo de desarrollo.
+ */
+export interface MenuHandlers {
+  rename?: (title: string) => void | Promise<void>;
+  icon?: (icon: IconRef | null) => void | Promise<void>;
+  borrar?: () => void | Promise<void>;
+  duplicar?: () => void | Promise<void>;
+  alternarPin?: () => void | Promise<void>;
+  editarEstados?: () => void | Promise<void>;
+  guardarComoPlantilla?: () => void | Promise<void>;
+}
+
+export interface EntityMenuSheetProps {
+  /** La entidad sobre la que se actua, o `null` con el menu cerrado. */
+  ctx: MenuContext | null;
+  handlers: MenuHandlers;
+  onClose: () => void;
+}
+
+/** La primera pagina y las de `EntityMenuSheet`. */
+type Pagina = "options" | MenuPageId;
+
+/**
+ * Que se puede hacer con una entidad, y **solo una lista de filas por hoja**.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE ESTA HOJA NO DECIDE NADA
+ * ------------------------------------------------------------------
+ *
+ * Porque hay ocho hojas de menu escritas a mano y el mismo predicado —"solo el
+ * dueno comparte", "lo compartido no se borra"— estaba escrito cuatro veces con
+ * cuatro comentarios distintos, y lo que decidia la ultima que se escribio era
+ * lo que corria. Esa lista, que es justo lo duplicado, ya vive en
+ * `lib/menus/registry.tsx` y aca no se reescribe: se pide `accionesPara(ctx)` y
+ * se pinta lo que venga, en el orden en que venga.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE UN `Sheet` CON `step` Y NO SEIS HOJAS HERMANAS
+ * ------------------------------------------------------------------
+ *
+ * Porque `Sheet` ya monta `SheetStep` por su cuenta en cuanto le pasan `step`
+ * (`sheet.tsx:174`), o sea que el multi-pagina esta resuelto en la base; y
+ * porque `Sheet` es un `Modal`, asi que las seis hojas hermanas de
+ * `folder-menu-sheet.tsx` son **`Modal` sobre `Modal`**: dos fondos sobre una
+ * pantalla y un toque que llega a la de arriba cerrando la de abajo.
+ */
+export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSheetProps) {
+  // La ultima, y no la del llamador: el llamador la pone a `null` para cerrar y la
+  // hoja tiene que seguir pintando mientras baja. `useLastValue` es la razon por
+  // la que el menu no desaparece a mitad del gesto de salida.
+  const ctx = useLastValue(pedido);
+
+  const theme = useTheme();
+  const t = useTranslation();
+
+  const [pagina, setPagina] = useState<Pagina>("options");
+  const [nombre, setNombre] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [reintento, setReintento] = useState<(() => void) | null>(null);
+  const [trabajando, setTrabajando] = useState(false);
+
+  /*
+    Cada apertura arranca en el menu, con el nombre de esta entidad y sin error.
+
+    Y cuelga de **la arista de apertura y no de `ctx`**: `ctx` es
+    `useLastValue(pedido)`, que se congela mientras `pedido` es `null` —de eso
+    vive—, asi que su identidad solo cambia cuando llega *otra* entidad. Reabrir
+    la misma devuelve el mismo objeto y el efecto no correria, y el menu abriria
+    en la pagina en la que se lo dejo con el nombre del otro. Es el mismo bug que
+    `list-menu-sheet.tsx:184-208` ya fijo por escrito.
+  */
+  const abierto = pedido !== null;
+  useEffect(() => {
+    if (!abierto) return;
+    setPagina("options");
+    setNombre(pedido?.entity.title ?? "");
+    setError(null);
+    setReintento(null);
+    setTrabajando(false);
+  }, [abierto]);
+
+  /*
+    ------------------------------------------------------------------
+    LA REGLA DE ERROR, Y POR QUE ESTA ACA
+    ------------------------------------------------------------------
+
+    Un handler que lanza o rechaza **no cierra el menu**. La hoja se queda, el
+    error se muestra y hay un `common.retry` que corre **la misma llamada otra
+    vez**, no una parecida: un reintento que rehace el pedido con otra cosa no es
+    un reintento.
+
+    Y cerrar va *despues* del `await`, no antes. Las hojas viejas hacen
+    `onClose(); void hacer();` —el panel se va y el trabajo sigue detras—, que
+    esta bien para pinear o duplicar y esta **muy mal** para lo que escribe: si
+    el renombrar falla, no hay donde mostrar nada y la persona se queda creyendo
+    que guardo. Es la Review Focus #2.
+  */
+  const correr = async (hecho: () => void | Promise<void>, otraVez: () => void) => {
+    if (trabajando) return;
+    setTrabajando(true);
+    setError(null);
+    try {
+      await hecho();
+      onClose();
+    } catch (problema) {
+      setError(problema instanceof Error ? problema.message : t("errors.unknown"));
+      // El `(() => ...)` es necesario: sin el, React toma la funcion como el
+      // updater del estado y guarda otra cosa.
+      setReintento(() => otraVez);
+    } finally {
+      setTrabajando(false);
+    }
+  };
+
+  /**
+   * El handler de una accion de hoja, **o `null` si no llego**.
+   *
+   * `null` es un fallo de desarrollo y no un caso de quien esta usando la app:
+   * el registro ofrece la fila porque el `ctx` dice que puede, asi que un handler
+   * ausente es un call site que se olvido de pasarlo. Se muestra el error y se
+   * deja el menu abierto —para que se note— en vez de fingir que la fila no
+   * hace nada.
+   */
+  const handlerDe = (nombre: MenuHandlerName): (() => void | Promise<void>) | null => {
+    const handler = handlers[nombre];
+
+    return handler ? () => handler() : null;
+  };
+
+  /** El aviso de un handler que no llego, y nada de reintentar. */
+  const sinHandler = () => {
+    setError(t("errors.unknown"));
+    // Sin `Reintentar`: repetir algo que no se puede hacer no es un reintento,
+    // es un error con un boton encima.
+    setReintento(null);
+  };
+
+  const correrHoja = (handler: MenuHandlerName) => {
+    const otraVez = () => correrHoja(handler);
+    const hecho = handlerDe(handler);
+
+    if (!hecho) {
+      sinHandler();
+      return;
+    }
+    void correr(hecho, otraVez);
+  };
+
+  const renombrar = (titulo: string) => {
+    const otraVez = () => renombrar(titulo);
+    const handler = handlers.rename;
+
+    if (!handler) {
+      sinHandler();
+      return;
+    }
+    void correr(() => handler(titulo), otraVez);
+  };
+
+  const borrar = () => {
+    const otraVez = () => borrar();
+    const hecho = handlerDe("borrar");
+
+    if (!hecho) {
+      sinHandler();
+      return;
+    }
+    void correr(hecho, otraVez);
+  };
+
+  if (!ctx) return null;
+
+  const opciones: SheetOption[] = accionesPara(ctx)
+    .filter(puedeOfrecerse)
+    .map((accion) => {
+      const etiqueta = resuelveLabel(accion, ctx);
+      /*
+        El motivo va a `description` porque `SheetOption` no tiene campo de motivo
+        (`sheet.tsx:1098`) y esta base no se toca en este trabajo. Y va con
+        `disabled` puesto: son las dos caras de la misma regla, y sin el
+        `disabled` la fila diria "no lo puedes eliminar" con el boton vivo.
+      */
+      const motivo = accion.motivo?.(ctx) ?? null;
+
+      return {
+        key: accion.id,
+        /*
+          Con `{ name }` siempre, aunque hoy ninguna etiqueta de fila lo use. Es
+          lo que hace que `share.title` —"Compartir {name}"— entre sin un segundo
+          formato por accion, y lo que evita que la proxima etiqueta con un hueco
+          salga con el `{name}` crudo en pantalla.
+        */
+        label: t(etiqueta, { name: ctx.entity.title }),
+        icon: accion.icon,
+        tone: accion.tone ?? "default",
+        description: motivo ? t(motivo as TranslationKey) : undefined,
+        disabled: accion.disponible?.(ctx) === false,
+        onPress: () => {
+          const destino = destinoDe(accion);
+
+          if (destino) {
+            setError(null);
+            setReintento(null);
+            setPagina(destino);
+            return;
+          }
+          if (accion.destino.tipo === "hoja") correrHoja(accion.destino.handler);
+        },
+      };
+    });
+
+  const limpio = nombre.trim();
+  const subtitulo = SUBTITULO_POR_PAGINA[pagina];
+
+  return (
+    <Sheet
+      step={pagina}
+      visible={pedido !== null}
+      onClose={onClose}
+      title={ctx.entity.title}
+      subtitle={subtitulo ? t(subtitulo) : undefined}
+      scrollable={false}
+      onBack={pagina === "options" ? undefined : () => setPagina("options")}
+    >
+      <View
+        style={{
+          gap: theme.spacing.md,
+          paddingHorizontal: theme.spacing.lg,
+          paddingBottom: theme.spacing.sm,
+        }}
+      >
+        {pagina === "options" ? <SheetOptions options={opciones} /> : null}
+
+        {pagina === "rename" ? (
+          <RenamePage
+            ctx={ctx}
+            nombre={nombre}
+            onChange={setNombre}
+            onRename={() => {
+              if (limpio.length === 0 || trabajando) return;
+              renombrar(limpio);
+            }}
+            trabajando={trabajando}
+          />
+        ) : null}
+
+        {pagina === "delete" ? (
+          <DeletePage ctx={ctx} onBorrar={borrar} trabajando={trabajando} />
+        ) : null}
+
+        {/*
+          El fallo, **en la hoja y no en un toast**: un toast se va solo y a la
+          pagina de borrar hay que volver a entrar para volver a leerlo. Y el
+          reintento va al lado del error, que es donde se lo busca.
+        */}
+        {error ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <AppText variant="caption" style={{ color: theme.colors.danger }}>
+              {error}
+            </AppText>
+            {reintento ? (
+              <Button
+                label={t("common.retry")}
+                variant="secondary"
+                fullWidth
+                onPress={() => reintento()}
+              />
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    </Sheet>
+  );
+}
+
+/**
+ * Las paginas que esta hoja monta hoy, y **la lista completa de las que puede
+ * montar**.
+ *
+ * El registro declara siete (`MenuPageId`) y las cinco entidades las necesitan
+ * todas. Los componentes llegan de a una: la de renombrar y la de
+ * borrar estan, la de icono llega con la tarea siguiente, la de acceso con la
+ * que sube `useShareReach`, la de exportar con el endpoint, y la de crear
+ * cuando la carpeta deje de montar sus propias hojas.
+ *
+ * La lista esta escrita aqui y no armandola en el JSX para que se pueda leer sin
+ * renderizar, que es la unica forma de comprobar en este repo que no se ofrece
+ * una fila que lleva a un hueco.
+ */
+const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "delete"];
+
+/** El subtitulo de la cabecera, y el de la primera pagina es ninguno. */
+const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
+  rename: "common.rename",
+  delete: "common.delete",
+};
+
+/**
+ * A donde va la fila al tocarla, y **la unica excepcion al registro**.
+ *
+ * `ACCIONES.delete` declara `destino: { tipo: "hoja", handler: "borrar" }`, o sea
+ * "corre en la hoja y cierra", y el comentario del registro incluso dice que
+ * borrar es "una pagina, la que pregunta". Las dos cosas no pueden ser verdad: si
+ * se cumple la segunda mitad, un toque en "Eliminar" borra una coleccion sin
+ * preguntar, y hoy `collection-menu-sheet.tsx` **pregunta**.
+ *
+ * O sea que el destino de borrar se resuelve aca. Es una linea y esta escrita
+ * para que se vea: la correccion de verdad es una linea en el registro
+ * (`destino: { tipo: "pagina", page: "delete" }`), que esta tarea no toca porque
+ * `lib/menus` es de la anterior. Cuando esa linea cambie, esta se borra.
+ */
+function destinoDe(accion: MenuAccion): MenuPageId | null {
+  if (accion.id === "delete") return "delete";
+
+  return accion.destino.tipo === "pagina" ? accion.destino.page : null;
+}
+
+/**
+ * Si la fila se ofrece, y **el filtro no es de disponibilidad**.
+ *
+ * El registro ya decidio que la accion existe y si se puede: eso no se vuelve a
+ * preguntar aca. Lo que se pregunta es otra cosa, mas chica: si esta version de
+ * la hoja tiene el componente de esa pagina. Una fila que lleva a una pagina que
+ * todavia no se escribio es "una opcion que se dibuja y no hace nada al tocarla",
+ * que es exactamente lo que `registry.tsx` dice que es peor que una opcion que no
+ * esta —y por eso el filtro no es silencioso: `test/entity-menu-sheet.test.ts`
+ * tiene escritos, de a uno, los ids de pagina que quedan sin montar, asi que
+ * filtrar por capacidad de la hoja y perder una fila por otra causa no se
+ * confunden.
+ */
+function puedeOfrecerse(accion: MenuAccion): boolean {
+  const destino = destinoDe(accion);
+
+  return destino === null || PAGINAS_MONTADAS.includes(destino);
+}

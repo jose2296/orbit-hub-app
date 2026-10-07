@@ -7,7 +7,11 @@ import type { Collection, Folder, List, Note } from "@orbit-hub/contracts";
 import { CreateSheet } from "@/components/folders/create-sheet";
 import type { SheetOrigin } from "@/components/ui/sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
-import { CollectionMenuSheet } from "@/components/collections/collection-menu-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
+import {
+  handlersDeColeccion,
+  menuCtxDeColeccion,
+} from "@/components/menus/coleccion";
 import { ContentList } from "@/components/content/content-list";
 import { FolderMenuSheet } from "@/components/folders/folder-menu-sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
@@ -299,8 +303,9 @@ export default function WorkspaceScreen() {
         onClose={closeSheets}
         onDeleted={() => router.replace("/(app)/workspaces")}
       />
-      <CollectionMenuSheet
-        collection={collectionFor}
+      <EntityMenuSheet
+        ctx={menuCtxDeColeccion(collectionFor)}
+        handlers={handlersDeColeccion(collectionFor)}
         onClose={() => setCollectionFor(null)}
       />
       <NoteMenuSheet
