@@ -1,6 +1,5 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
 import type { Bookmark, BookmarkExtractionState } from "@orbit-hub/contracts";
 
@@ -8,15 +7,22 @@ import {
   AssignSheet,
   type BookmarkAClasificar,
 } from "@/components/bookmarks/assign-sheet";
-import { BookmarkDeleteSheet } from "@/components/bookmarks/delete-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow, SectionHeader } from "@/components/ui/list-row";
+import { MenuButton } from "@/components/ui/menu-button";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { useBookmarks, useUnclassifiedCount } from "@/hooks/use-bookmarks";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n";
+import {
+  handlersDeBookmark,
+  hostDe,
+  menuCtxDeBookmark,
+  tituloDeBookmark,
+} from "@/lib/menus/bookmark";
 import { useTheme } from "@/theme";
 import type { Theme } from "@/theme";
 
@@ -70,7 +76,11 @@ export default function UnclassifiedScreen() {
   const total = useUnclassifiedCount();
 
   const [aClasificar, setAClasificar] = useState<BookmarkAClasificar | null>(null);
-  const [aBorrar, setABorrar] = useState<Bookmark | null>(null);
+  // El enlace cuyo menu esta abierto. Mismo reloj que la lista y que las
+  // colecciones: lo que se guarda es la entidad y lo que se pasa es `null` al
+  // cerrar, porque la hoja congela lo que recibe para seguir pintando mientras
+  // baja.
+  const [menuAbierto, setMenuAbierto] = useState<Bookmark | null>(null);
 
   const nombres = useMemo(() => {
     const mapa = new Map<string, string>();
@@ -83,11 +93,13 @@ export default function UnclassifiedScreen() {
   const filas = useMemo(() => {
     const porId = new Map<string, { titulo: string; subtitulo: string }>();
     for (const bookmark of bookmarks) {
-      const host = hostDe(bookmark.url);
+      // El nombre sale de `lib/menus/bookmark`, igual que en la lista: la regla
+      // del host vive una vez y las dos pantallas no pueden diferir en que
+      // nombran al mismo enlace —sobre todo porque ahora las dos abren la misma
+      // hoja y el nombre de la cabecera sale de ahi.
       porId.set(bookmark.id, {
-        titulo:
-          bookmark.title.length > 0 ? bookmark.title : host || bookmark.url,
-        subtitulo: [host, t(CLAVE_ESTADO[bookmark.extractionState])]
+        titulo: tituloDeBookmark(bookmark),
+        subtitulo: [hostDe(bookmark.url), t(CLAVE_ESTADO[bookmark.extractionState])]
           .filter((parte) => parte.length > 0)
           .join(" · "),
       });
@@ -124,13 +136,26 @@ export default function UnclassifiedScreen() {
               {grupo.bookmarks.map((bookmark) => {
                 const fila = filas.get(bookmark.id);
                 if (!fila) return null;
+                /*
+                  La caja de la fila y no un boton suelto al lado: `MenuButton` es
+                  `position: absolute` y sin un padre relativo se ancla al
+                  contenedor equivocado. El requisito lo pide la cabecera del
+                  boton y lo cumple quien lo monta.
+                */
                 return (
                   <View
                     key={bookmark.id}
+                    testID={`inbox-menu-${bookmark.id}`}
                     style={{
+                      position: "relative",
                       flexDirection: "row",
                       alignItems: "center",
                       gap: theme.spacing.sm,
+                      // El ancho que el boton ocupa: su `minWidth` mas su margen
+                      // derecho. Sin este hueco se monta encima del chevron.
+                      // El guard de `bookmark-menu.test.ts` lee el ancho del
+                      // boton en vez de repetirlo aca.
+                      paddingRight: theme.spacing.xxxl,
                     }}
                   >
                     <ListRow
@@ -165,21 +190,13 @@ export default function UnclassifiedScreen() {
                       Al lado de la fila y no dentro: un `Pressable` dentro del
                       de la fila es `<button>` dentro de `<button>` en web, y el
                       navegador lo desarma (aviso de `place-share-sheet`).
+
+                      Los tres puntitos en vez de la papelera: borrar paso a ser
+                      una fila del menu, y esa fila **pregunta** antes de
+                      hacerlo. Es la misma hoja que la lista abre, sin una
+                      confirmacion propia en el medio.
                     */}
-                    <Pressable
-                      testID={`inbox-delete-${bookmark.id}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={t("bookmarks.delete.title")}
-                      hitSlop={8}
-                      onPress={() => setABorrar(bookmark)}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={20}
-                        color={theme.colors.textMuted}
-                      />
-                    </Pressable>
+                    <MenuButton label={fila.titulo} onPress={() => setMenuAbierto(bookmark)} />
                   </View>
                 );
               })}
@@ -188,9 +205,17 @@ export default function UnclassifiedScreen() {
         </View>
       )}
       <AssignSheet bookmark={aClasificar} onClose={() => setAClasificar(null)} />
-      {/* La misma confirmacion que la lista: vive en el componente para que no
-          derive en dos copias. */}
-      <BookmarkDeleteSheet bookmark={aBorrar} onClose={() => setABorrar(null)} />
+      {/*
+        La misma hoja que la lista, y sin confirmacion propia: la de borrar es
+        una pagina de `EntityMenuSheet`, que es donde vivio `BookmarkDeleteSheet`.
+        Las dos pantallas pasan por `lib/menus/bookmark`, asi que el menu del
+        inbox y el de la lista no pueden empezar a diferir.
+      */}
+      <EntityMenuSheet
+        ctx={menuCtxDeBookmark(menuAbierto)}
+        handlers={handlersDeBookmark(menuAbierto)}
+        onClose={() => setMenuAbierto(null)}
+      />
     </Screen>
   );
 }
@@ -216,12 +241,3 @@ const COLOR_ESTADO: Record<BookmarkExtractionState, (theme: Theme) => string> = 
   metadata_only: (theme) => theme.colors.info,
   failed: (theme) => theme.colors.danger,
 };
-
-/** El host de una URL, o vacio si no hay nada que ensenar. */
-function hostDe(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
-  }
-}

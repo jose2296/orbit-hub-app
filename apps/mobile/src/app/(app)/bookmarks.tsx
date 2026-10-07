@@ -1,19 +1,25 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
 import type { Bookmark, BookmarkExtractionState } from "@orbit-hub/contracts";
 
-import { BookmarkDeleteSheet } from "@/components/bookmarks/delete-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow } from "@/components/ui/list-row";
+import { MenuButton } from "@/components/ui/menu-button";
 import { Screen } from "@/components/ui/screen";
 import { useBookmarks } from "@/hooks/use-bookmarks";
 import { useCollections } from "@/hooks/use-collections";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n";
+import {
+  handlersDeBookmark,
+  hostDe,
+  menuCtxDeBookmark,
+  tituloDeBookmark,
+} from "@/lib/menus/bookmark";
 import { useTheme } from "@/theme";
 import type { Theme } from "@/theme";
 
@@ -39,9 +45,18 @@ export default function BookmarksListScreen() {
   const theme = useTheme();
   const t = useTranslation();
 
-  // La papelera de cada fila, con la misma confirmacion que el inbox: el
-  // patron vive en `BookmarkDeleteSheet` para que no derive en dos copias.
-  const [aBorrar, setABorrar] = useState<Bookmark | null>(null);
+  /*
+    El enlace cuyo menu esta abierto, y no el menu en si: la hoja congela lo
+    que recibe con `useLastValue` para seguir pintando mientras baja, y lo que
+    espera del llamador al cerrarse es `null`. Es el mismo reloj que usan las
+    colecciones, y el que hace que un toque que llega tarde no caiga en un
+    handler que ya no esta.
+
+    Guardo el `Bookmark` entero y no su id porque el menu necesita el titulo, el
+    rol y la version para montar el ctx y los handlers, y volver a buscarlo en
+    `bookmarks` seria una segunda fuente de verdad para el mismo enlace.
+  */
+  const [menuAbierto, setMenuAbierto] = useState<Bookmark | null>(null);
 
   // Dentro de una coleccion, la cabecera lleva su nombre: sin esto dice
   // "Bookmarks" en todas y no se sabe en cual se esta.
@@ -75,16 +90,19 @@ export default function BookmarksListScreen() {
   const items = useMemo(
     () =>
       bookmarks.map((bookmark) => {
-        const host = hostDe(bookmark.url);
-        const subtitulo = [host, t(CLAVE_ESTADO[bookmark.extractionState])]
+        const subtitulo = [hostDe(bookmark.url), t(CLAVE_ESTADO[bookmark.extractionState])]
           .filter((parte) => parte.length > 0)
           .join(" · ");
         return {
           id: bookmark.id,
-          // Sin titulo todavia (pendiente de extraer): el host dice mas que
-          // una fila vacia, y la URL cruda dice mas que nada.
-          titulo:
-            bookmark.title.length > 0 ? bookmark.title : host || bookmark.url,
+          // El enlace entero viaja en la fila porque el menu lo necesita entero
+          // —titulo, rol y version— y buscarlo otra vez por id seria una
+          // segunda fuente para lo mismo.
+          bookmark,
+          // El nombre sale de `lib/menus/bookmark` y no de una regla escrita
+          // aca: la misma regla que titula la cabecera de la hoja, y por eso las
+          // dos tienen que decir lo mismo para el mismo enlace.
+          titulo: tituloDeBookmark(bookmark),
           subtitulo,
           punto: COLOR_ESTADO[bookmark.extractionState](theme),
           sitio: bookmark.siteName ?? undefined,
@@ -105,13 +123,29 @@ export default function BookmarksListScreen() {
         />
       ) : (
         <View style={{ gap: theme.spacing.xs }}>
+          {/*
+            Cada fila es su caja relativa, porque `MenuButton` es `position:
+            absolute` y sin un padre relativo se ancla al contenedor equivocado.
+            El requisito lo dice la cabecera del boton y lo cumple quien lo
+            monta; `icon-page.test.ts` lo deriva de todos los que lo montan.
+          */}
           {items.map((item) => (
             <View
               key={item.id}
+              testID={`list-menu-${item.id}`}
               style={{
+                position: "relative",
                 flexDirection: "row",
                 alignItems: "center",
                 gap: theme.spacing.sm,
+                // El ancho que el boton ocupa: su `minWidth` mas el margen que el
+                // boton se pone a la derecha. Sin este hueco el boton se monta
+                // encima del chevron y de la etiqueta de sitio, y las dos cosas
+                // se pisan sin que nada falle. El guard de
+                // `bookmark-menu.test.ts` lo lee del boton en vez de repetirlo
+                // aca, para que cambiar el ancho del boton no deje esta cuenta
+                // vieja.
+                paddingRight: theme.spacing.xxxl,
               }}
             >
               <ListRow
@@ -138,30 +172,29 @@ export default function BookmarksListScreen() {
               {/*
                 Al lado de la fila y no dentro: un `Pressable` dentro del de la
                 fila es `<button>` dentro de `<button>` en web, y el navegador
-                lo desarma (aviso de `place-share-sheet`). Misma forma que el
-                inbox, misma papelera, misma confirmacion.
+                lo desarma (aviso de `place-share-sheet`).
+
+                Y los tres puntitos en vez de una papelera suelta: borrar paso a
+                ser una fila del menu, y esa fila **pregunta** antes de hacerlo
+                —`DeletePage`—, que es lo unico que distingue un trabajo que no
+                se puede deshacer de uno que sale con un toque.
               */}
-              <Pressable
-                testID={`list-delete-${item.id}`}
-                accessibilityRole="button"
-                accessibilityLabel={t("bookmarks.delete.title")}
-                hitSlop={8}
-                onPress={() =>
-                  setABorrar(bookmarks.find((b) => b.id === item.id) ?? null)
-                }
-                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-              >
-                <Ionicons
-                  name="trash-outline"
-                  size={20}
-                  color={theme.colors.textMuted}
-                />
-              </Pressable>
+              <MenuButton label={item.titulo} onPress={() => setMenuAbierto(item.bookmark)} />
             </View>
           ))}
         </View>
       )}
-      <BookmarkDeleteSheet bookmark={aBorrar} onClose={() => setABorrar(null)} />
+      {/*
+        Una sola hoja para las dos pantallas y para las cinco entidades: el
+        `ctx` sale de `lib/menus/bookmark` y las dos llamadas derivan, asi que
+        no hay una lista de opciones escrita aca —esa vive en el registro— ni
+        una confirmacion propia: `DeletePage` absorbio a `BookmarkDeleteSheet`.
+      */}
+      <EntityMenuSheet
+        ctx={menuCtxDeBookmark(menuAbierto)}
+        handlers={handlersDeBookmark(menuAbierto)}
+        onClose={() => setMenuAbierto(null)}
+      />
     </Screen>
   );
 }
@@ -191,12 +224,3 @@ const COLOR_ESTADO: Record<BookmarkExtractionState, (theme: Theme) => string> = 
   metadata_only: (theme) => theme.colors.info,
   failed: (theme) => theme.colors.danger,
 };
-
-/** El host de una URL, o vacio si no hay nada que ensenar. */
-function hostDe(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
-  }
-}

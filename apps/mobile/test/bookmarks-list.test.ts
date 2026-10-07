@@ -69,14 +69,15 @@ describe("la lista sigue el molde sin inventar patrones", () => {
     expect(pantalla).toContain('t("bookmarks.empty.body")');
   });
 
-  it("cada fila lleva papelera al lado, con la hoja compartida", () => {
-    // El brief pedia borrar desde el inbox y desde la lista: la confirmacion
-    // vive en `BookmarkDeleteSheet` y la lista solo abre y cierra, igual que
-    // el inbox. La papelera va al lado de la fila y no dentro (un `Pressable`
-    // dentro del de la fila es `<button>` en `<button>` en web).
-    expect(pantalla).toContain("BookmarkDeleteSheet");
-    expect(pantalla).toContain("list-delete-");
-    expect(pantalla).toContain("setABorrar");
+  it("cada fila lleva su menu al lado, y el boton es el compartido", () => {
+    // Lo mismo que el triage y que el resto de la app: tres puntitos que abren
+    // `EntityMenuSheet`, y la lista solo pasa el enlace y cierra. Lo que la
+    // pantalla **no** decide es que acciones salen, asi que no escribe ninguna:
+    // eso vive en el registro.
+    expect(pantalla).toContain("MenuButton");
+    expect(pantalla).toContain("EntityMenuSheet");
+    expect(pantalla).toContain("setMenuAbierto");
+    expect(pantalla).toContain("list-menu-");
   });
 });
 

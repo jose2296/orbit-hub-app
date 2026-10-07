@@ -84,6 +84,23 @@ export function paginasEnElDirectorio(): string[] {
     .map((nombre) => nombre.replace(/-page\.tsx$/, ""));
 }
 
+/**
+ * El fuente de un archivo **sin sus comentarios**.
+ *
+ * Existe por una sola razon, y es una que se paga cada vez que un guard afirma
+ * que un nombre **no** aparece: un archivo suele explicar en un comentario por
+ * que se fue algo, y asi el `not.toContain` que viene a comprobar que se fue se
+ * encuentra con su propia prosa y falla. Lo que uno quiere afirmar es que esta
+ * hoja ya no monta `BookmarkDeleteSheet`, no que la palabra no este en el archivo.
+ *
+ * Vive aca y no en cada test porque `task-row-layout.test.ts` ya tenia una copia
+ * identica —la misma razon por la que este archivo existe— y porque el patron de
+ * un guard que afirma una ausencia es justo el que se desincroniza en silencio:
+ * el que se rompe es el que nadie prueba.
+ */
+export const sinComentarios = (texto: string): string =>
+  texto.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+
 /** Todos los `.tsx` de la app, como rutas relativas a `src`. */
 export function tsxDeLaApp(): string[] {
   return readdirSync(join(RAIZ, "src"), { recursive: true, encoding: "utf8" }).filter((nombre) =>
