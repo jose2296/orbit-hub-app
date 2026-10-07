@@ -21,7 +21,6 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import type { LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 
@@ -516,22 +515,6 @@ export function Sheet({
     [fijarAltoCuerpo],
   );
 
-  /**
-   * The same measure for a sheet that does not scroll but **has pages** (`step`).
-   *
-   * What made the fixed body unsafe to animate was measuring the box that is being
-   * given a height. This measures a wrapper *inside* it that has no height of its
-   * own, so what it reports is the content's and does not depend on the box: the
-   * loop has nothing to feed on. The box clips (`overflow: hidden`) while it is
-   * between two sizes.
-   */
-  const alMedirLaPagina = useCallback(
-    // Plus the box's own top padding, which its height includes and the page does not.
-    (event: LayoutChangeEvent) =>
-      fijarAltoCuerpo(event.nativeEvent.layout.height + theme.spacing.sm),
-    [fijarAltoCuerpo, theme.spacing.sm],
-  );
-
   /** And on a step change the height starts again, or a short sheet stays short. */
   useEffect(() => {
     if (!visible) return;
@@ -933,7 +916,6 @@ export function Sheet({
           <Animated.View
             style={[
               estiloCuerpo,
-              !scrollable && step !== undefined ? { overflow: "hidden" } : null,
               {
                 paddingTop: theme.spacing.sm,
                 paddingHorizontal: MARGEN,
@@ -986,13 +968,7 @@ export function Sheet({
               ocultar.
             */
             <View style={styles.cuerpoLleno}>
-              {step !== undefined ? (
-                <View onLayout={alMedirLaPagina} collapsable={false}>
-                  <Animated.View style={estiloContenido}>{contenido}</Animated.View>
-                </View>
-              ) : (
-                <Animated.View style={estiloContenido}>{contenido}</Animated.View>
-              )}
+              <Animated.View style={estiloContenido}>{contenido}</Animated.View>
             </View>
           )}
           </Animated.View>
