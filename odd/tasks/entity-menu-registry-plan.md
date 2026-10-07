@@ -39,7 +39,7 @@ Cinco clases de fallo que la spec implica y que ningun test de esta lista ejerci
 
 ---
 
-### Tarea 1: El registro
+### Task 1: El registro
 
 **Archivos:**
 - Crear: `apps/mobile/src/lib/menus/registry.tsx`
@@ -138,7 +138,7 @@ git commit -m "feat(menus): el registro de acciones, puro y testeable"
 
 ---
 
-### Tarea 2: El sheet y las dos paginas que todo menu tiene
+### Task 2: El sheet y las dos paginas que todo menu tiene
 
 **Archivos:**
 - Crear: `apps/mobile/src/components/menus/entity-menu-sheet.tsx`
@@ -167,7 +167,32 @@ export interface EntityMenuSheetProps {
   onClose: () => void;
 }
 ```
-`RenamePage` y `DeletePage` reciben `{ ctx, onClose }` mas el handler de su accion.
+
+**Firmas de las paginas (ratificadas en T2, corregidas aqui):**
+
+```ts
+// El borrador vive en la HOJA, no en la pagina: `Sheet` lee `sucio` y no puede
+// leer el estado de una pagina que todavia no existe. Por eso `RenamePage` no
+// recibe `ctx` ni `onClose`.
+export interface RenamePageProps {
+  nombre: string;              // `borrador ?? titulo`, resuelto por la hoja
+  onChange: (nombre: string) => void;
+  onRename: (nombre: string) => void | Promise<void>;
+  trabajando: boolean;
+}
+
+export interface DeletePageProps {
+  ctx: MenuContext;            // lo si necesita: SharedBadge y el cuerpo por kind
+  onBorrar: () => void;
+  trabajando: boolean;
+  conteo?: number;             // solo lista; lo resuelve T6
+}
+```
+
+El borrador del plan decia `{ ctx, onClose }` para las dos. `onClose` en este arbol
+significa "cerrar la hoja entera", y una pagina que lo recibe cierra el menu entero
+desde adentro. La version implementada esta mejor: el estado que la pagina necesita
+se lo pasa la hoja.
 
 - [ ] **Paso 1: test de texto fuente que falla**
 
@@ -210,7 +235,7 @@ git commit -m "feat(menus): un solo EntityMenuSheet, con la coleccion migrada"
 
 ---
 
-### Tarea 3: La pagina de icono, y sacar `BotonMenu` de su archivo
+### Task 3: La pagina de icono, y sacar `BotonMenu` de su archivo
 
 **Archivos:**
 - Crear: `apps/mobile/src/components/menus/pages/icon-page.tsx`
@@ -236,7 +261,7 @@ git commit -m "feat(menus): la pagina de icono y el boton de menu compartido"
 
 ---
 
-### Tarea 4: El menu de fila de bookmark
+### Task 4: El menu de fila de bookmark
 
 **Archivos:**
 - Modificar: `apps/mobile/src/app/(app)/bookmarks.tsx`
@@ -258,7 +283,7 @@ git commit -m "feat(bookmarks): menu de fila con las mismas opciones que una lis
 
 ---
 
-### Tarea 5: La pantalla de coleccion
+### Task 5: La pantalla de coleccion
 
 **Archivos:**
 - Crear: `apps/mobile/src/app/(app)/collection/[collectionId].tsx`
@@ -278,7 +303,7 @@ git commit -m "feat(collections): pantalla propia con header y menu completo"
 
 ---
 
-### Tarea 6: Migrar `ListMenuSheet`
+### Task 6: Migrar `ListMenuSheet`
 
 **Archivos:**
 - Modificar y borrar: `apps/mobile/src/components/lists/list-menu-sheet.tsx`
@@ -297,7 +322,7 @@ git commit -m "refactor(menus): ListMenuSheet pasa al registro, sin perder una f
 
 ---
 
-### Tarea 7: Migrar nota y carpeta
+### Task 7: Migrar nota y carpeta
 
 **Archivos:**
 - Modificar y borrar: `apps/mobile/src/components/notes/note-menu-sheet.tsx`
@@ -316,7 +341,7 @@ git commit -m "refactor(menus): nota y carpeta al registro, y carpeta pierde sei
 
 ---
 
-### Tarea 8: `AccessPage`
+### Task 8: `AccessPage`
 
 **Archivos:**
 - Crear: `apps/mobile/src/components/menus/pages/access-page.tsx`
@@ -338,7 +363,7 @@ git commit -m "feat(menus): la pagina de acceso, con quien mas lo tenes"
 
 ---
 
-### Tarea 9: Exportar coleccion
+### Task 9: Exportar coleccion
 
 **Archivos:**
 - Modificar: `packages/contracts/src/export.ts` (el sobre)
@@ -360,7 +385,7 @@ git commit -m "feat(export): exportar una coleccion, con su sobre en el contrato
 
 ---
 
-### Tarea 10: Compartir coleccion y bookmark
+### Task 10: Compartir coleccion y bookmark
 
 **Archivos:**
 - Modificar: `packages/contracts/src/workspace.ts:943` (el enum)
