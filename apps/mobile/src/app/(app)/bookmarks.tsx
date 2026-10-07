@@ -7,7 +7,7 @@ import type { Bookmark, BookmarkExtractionState } from "@orbit-hub/contracts";
 import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow } from "@/components/ui/list-row";
-import { MenuButton } from "@/components/ui/menu-button";
+import { ANCHO_RESERVADO, MenuButton } from "@/components/ui/menu-button";
 import { Screen } from "@/components/ui/screen";
 import { useBookmarks } from "@/hooks/use-bookmarks";
 import { useCollections } from "@/hooks/use-collections";
@@ -138,14 +138,13 @@ export default function BookmarksListScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 gap: theme.spacing.sm,
-                // El ancho que el boton ocupa: su `minWidth` mas el margen que el
-                // boton se pone a la derecha. Sin este hueco el boton se monta
-                // encima del chevron y de la etiqueta de sitio, y las dos cosas
-                // se pisan sin que nada falle. El guard de
-                // `bookmark-menu.test.ts` lo lee del boton en vez de repetirlo
-                // aca, para que cambiar el ancho del boton no deje esta cuenta
-                // vieja.
-                paddingRight: theme.spacing.xxxl,
+                // El ancho que el boton ocupa, mas el margen que el boton se
+                // pone a la derecha y el `hitSlop` que agranda su area de toque
+                // mas alla de la caja. Los tres los trae el boton —`ANCHO_RESERVADO`—
+                // porque son sus numeros y porque sin el `hitSlop` el area de toque
+                // del boton se mete en la de la fila y los ultimos pixeles abren el
+                // menu en vez del enlace.
+                paddingRight: ANCHO_RESERVADO,
               }}
             >
               <ListRow
@@ -162,6 +161,14 @@ export default function BookmarksListScreen() {
                     }}
                   />
                 }
+                /*
+                  Y este `flex: 1` es lo que hace que la reserva sirva: sin el,
+                  el `paddingRight` de la caja no encoge la fila —en RN el
+                  `flexShrink` por defecto es `0`— y un titulo largo se sale de la
+                  caja con el boton encima. Un guard de
+                  `bookmark-menu.test.ts` lo afirma, porque es la clase de cosa
+                  que se rompe en un movil y no en un typecheck.
+                */
                 rightLabel={item.sitio}
                 chevron
                 style={{ flex: 1 }}

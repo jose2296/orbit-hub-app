@@ -3,6 +3,67 @@ import { Pressable, StyleSheet } from "react-native";
 
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
+import { SPACING } from "@/theme/tokens";
+
+/**
+ * Los tres numeros que deciden donde termina la fila y donde empieza el boton.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE SON CONSTANTES Y NO PROSA
+ * ------------------------------------------------------------------
+ *
+ * Porque los tres forman la misma cuenta: la caja que el boton ocupa, el hueco que
+ * deja a la derecha y el `hitSlop`, que **agranda el area de toque mas alla de la
+ * caja**. Los tres se suman y de esa suma depende la fila que lo monta
+ * (`ANCHO_RESERVADO`, abajo). Con numeros sueltos en el JSX, quien monta tiene que
+ * adivinar la suma, y el que cambia uno despues no se entera de que rompio las
+ * filas que ya lo montaban.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE `HIT_SLOP` ESTA TAMBIEN COMO LITERAL EN EL JSX
+ * ------------------------------------------------------------------
+ *
+ * Porque `icon-page.test.ts` lee la linea `hitSlop={8}` del fuente: es el guard
+ * que dice que el area tactil no se perdio cuando el boton salio de
+ * `content-list.tsx`. Dejar de escribir el literal seria escribir un componente
+ * cuyo requisito nadie comprueba, asi que el numero vive en los dos lugares y
+ * `bookmark-menu.test.ts` afirma que los dos digan lo mismo.
+ */
+
+/** El ancho minimo de la caja del boton, y por que no es mas chico. */
+const MIN_ANCHO = 40;
+
+/** De que token de espaciado sale el margen que el boton se pone a la derecha. */
+const MARGEN_DERECHA = "sm";
+
+/** Cuanto se agranda el area de toque mas alla de la caja, en cada lado. */
+const HIT_SLOP = 8;
+
+/**
+ * Lo que la fila tiene que reservar a la derecha para montar este boton.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE TAMBIEN CUENTA EL `hitSlop`
+ * ------------------------------------------------------------------
+ *
+ * Porque el `hitSlop` **no** se queda dentro de la caja: lo agranda hacia los
+ * cuatro lados. El area de toque del boton llega `HIT_SLOP` pixeles mas alla de
+ * su borde izquierdo, y si la fila no reserva esos pixeles, el area del boton se
+ * mete dentro de la del `Pressable` de la fila. En nativo el toque va al hermano
+ * dibujado despues —el boton—, asi que los ultimos ocho pixeles de la fila
+ * abrian el menu en vez del enlace, y no habia forma de verlo: las dos cosas se
+ * dibujan bien y se pisan solo en el toque.
+ *
+ * Por eso el orden es `minWidth + margen + hitSlop` y no `minWidth + margen`: el
+ * margen es donde esta el boton, y el `hitSlop` es lo que se sale de ahi.
+ *
+ * Y vive **aca** y no en la fila que lo monta, por la misma razon que el resto del
+ * componente: es una exigencia del boton, asi que la cumple —y la anuncia— el
+ * boton. La fila de los enlaces y la del inbox la toman de esta constante;
+ * `content-list.tsx` todavia reserva un `44` escrito a mano, y por eso ese archivo
+ * es una excepcion que queda anotada en el reporte de T4.
+ */
+export const ANCHO_RESERVADO = MIN_ANCHO + SPACING[MARGEN_DERECHA] + HIT_SLOP;
 
 /**
  * Los tres puntitos de una fila, y la unica forma de dibujarlos.
@@ -57,11 +118,17 @@ export function MenuButton({ label, onPress }: { label: string; onPress: () => v
           // El asa de arrastrar de la fila es `right: 8` y de unos 32 de ancho,
           // asi que moverse por su ancho mas su propio margen deja el menu
           // despejado de ella y no a unos pixeles del costado.
-          right: theme.spacing.sm,
-          // 40 de blanco y el icono dentro: media 26, por debajo de lo que un
-          // dedo alcanza con fiabilidad. Con `hitSlop` el blanco crecia hacia el
-          // asa de arrastrar, que esta al lado.
-          minWidth: 40,
+          right: theme.spacing[MARGEN_DERECHA],
+          /*
+            40 de blanco y el icono dentro: media 26, por debajo de lo que un
+            dedo alcanza con fiabilidad.
+
+            Y el margen de la derecha mas este ancho mas el `hitSlop` es lo que
+            la fila reserva: el detalle esta en `ANCHO_RESERVADO`, y el
+            `hitSlop` entra en la cuenta porque el area de toque se sale de esta
+            caja.
+          */
+          minWidth: MIN_ANCHO,
           minHeight: 40,
           alignItems: "center",
           justifyContent: "center",

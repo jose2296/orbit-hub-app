@@ -8,7 +8,7 @@ import type { Bookmark } from "@orbit-hub/contracts";
 import { ACCIONES, ORDEN_POR_KIND, accionesPara } from "@/lib/menus/registry";
 import { SPACING } from "@/theme/tokens";
 
-import { RAIZ, paginasMontadas, sinComentarios, src } from "./menus-test-helpers";
+import { RAIZ, paginasMontadas, sinComentarios, src, tsxDeLaApp } from "./menus-test-helpers";
 
 /*
   ------------------------------------------------------------------
@@ -42,10 +42,18 @@ const PANTALLAS = [
   ["el inbox", INBOX],
 ] as const;
 
-/** Los `.test.ts` del paquete, para el guard que busca quien mira un `testID`. */
-const TESTS = readdirSync(join(RAIZ, "test"))
+/**
+ * Los `.test.ts` del paquete, para el guard que busca quien mira un `testID`.
+ *
+ * `recursive` y no el listado de una carpeta: sin el, el dia que caiga un
+ * `.test.ts` en un subdirectorio este guard deja de mirarlo **sin avisar**, que es
+ * justo el modo de fallo que el archivo de helpers existe para cazar. Y por eso el
+ * `join("/")`: `readdirSync` con `recursive` devuelve el caminho relativo con
+ * separador de plataforma, y en Windows no seria un `test/...` que se pueda abrir.
+ */
+const TESTS = readdirSync(join(RAIZ, "test"), { recursive: true, encoding: "utf8" })
   .filter((nombre) => nombre.endsWith(".test.ts"))
-  .map((nombre) => src(`test/${nombre}`))
+  .map((nombre) => src(join("test", nombre)))
   .join("\n");
 
 const BASE: Bookmark = {
@@ -120,7 +128,7 @@ describe("las dos pantallas abren el menu del registro y no una hoja propia", ()
       // copias del boton son dos areas tactiles distintas, y la que se copia es
       // la que pierde el `hitSlop` sin que nadie lo note.
       expect(pantalla, nombre).toMatch(
-        /import \{ MenuButton \} from "@\/components\/ui\/menu-button"/,
+        /import \{[^}]*\bMenuButton\b[^}]*\} from "@\/components\/ui\/menu-button"/,
       );
       expect(pantalla, nombre).toMatch(/<MenuButton\b/);
       expect(pantalla, nombre).toMatch(/<EntityMenuSheet\b/);
@@ -336,54 +344,211 @@ describe("el testID de la fila no se pierde en silencio", () => {
   });
 });
 
-describe("el ancho que se le reserva al boton sale de donde el boton lo dice", () => {
+describe("el ancho que la fila le reserva al boton", () => {
   /*
-    `MenuButton` es `position: absolute` con un `minWidth` propio y su propio
-    margen a la derecha: si la fila no reserva ese ancho, el boton se monta
-    encima del chevron y de la etiqueta de la derecha, y las dos cosas se pisan
-    sin que nada falle. La reserva sale de leer al boton y no de una lista escrita
-    aca, porque es el unico valor que cambia cuando el boton cambia de tamano y
-    nadie se acuerda de volver a las dos pantallas.
+    ------------------------------------------------------------------
+    LOS TRES NUMEROS DEL BOTON, LEIDOS DE SU FUENTE
+    ------------------------------------------------------------------
+
+    `MenuButton` es `position: absolute` y tiene tres numeros que se suman: la caja
+    que ocupa, el margen que se pone a la derecha y el `hitSlop`, que **agranda el
+    area de toque mas alla de la caja**. Los tres se leen del archivo del boton y
+    no se escriben aca, porque son suyos: el que cambia uno no se entera de que
+    rompio las filas que ya lo montan, y un numero repetido en el guard es un
+    numero que va a quedar viejo.
   */
+  const boton = src(BOTON);
 
-  it("la reserva de cada pantalla cubre el ancho que el boton ocupa", () => {
-    const boton = src(BOTON);
-    const ancho = Number(boton.match(/minWidth:\s*(\d+)/)?.[1]);
-    const margen = String(boton.match(/right:\s*theme\.spacing\.(\w+)/)?.[1]);
+  const MIN = Number(boton.match(/const MIN_ANCHO = (\d+);/)?.[1]);
+  const MARGEN = boton.match(/const MARGEN_DERECHA = "(\w+)";/)?.[1];
+  const SLOP = Number(boton.match(/hitSlop=\{(\d+)\}/)?.[1]);
 
-    expect(ancho, "el boton tiene que declarar su minWidth").toBeGreaterThan(0);
-    expect(margen, "el boton tiene que declarar su margen a la derecha").toBeTruthy();
+  it("el boton declara los tres, y el estilo los usa", () => {
+    expect(MIN, "el boton tiene que declarar su ancho minimo").toBeGreaterThan(0);
+    /*
+      El `toMatch` y no un `toBeTruthy`: `String(undefined)` es la cadena
+      `"undefined"`, que es truthy, asi que un `toBeTruthy` pasa con el margen
+      ausente y la cuenta se queda sin un termino sin que nadie lo note.
+    */
+    expect(MARGEN, "el margen tiene que ser el nombre de un token de espaciado").toMatch(
+      /^[a-z]+$/,
+    );
+    expect(SLOP, "el boton tiene que declarar su hitSlop").toBeGreaterThan(0);
+    // Y no son numeros muertos: el estilo se sirve de ellos.
+    expect(boton).toContain("minWidth: MIN_ANCHO");
+    expect(boton).toContain("right: theme.spacing[MARGEN_DERECHA]");
+  });
 
-    const ocupa = ancho + (SPACING[margen as keyof typeof SPACING] ?? 0);
+  it("el hitSlop del JSX y el de la cuenta son el mismo numero", () => {
+    /*
+      El numero vive en los dos lugares por una razon que esta escrita en el
+      componente —`icon-page.test.ts` lee la linea `hitSlop={8}` del JSX—, y por
+      eso hace falta alguien que afirme que los dos digan lo mismo. Sin este
+      guard, cambiar el literal del JSX deja la cuenta vieja y el boton se come
+      la fila otra vez, en silencio.
+    */
+    expect(boton.match(/const HIT_SLOP = (\d+);/)?.[1], "HIT_SLOP y el JSX").toBe(String(SLOP));
+  });
 
+  it("la reserva cubre los tres, y no solo la caja", () => {
+    /*
+      La cuenta se resuelve leyendo los nombres que aparecen en la expresion del
+      `export`, uno por uno: si `HIT_SLOP` saliera de la suma, el valor caeria por
+      debajo de lo que el boton ocupa y el guard tendria que verlo.
+    */
+    const expresion = boton.match(/export const ANCHO_RESERVADO = ([^;]+);/)?.[1] ?? "";
+    const terminos = expresion.split("+").map((t) => t.trim());
+
+    expect(terminos.length, `la reserva se compone de ${terminos.join(" + ")}`).toBe(3);
+
+    /** Un token de `SPACING` a pixeles, y `undefined` si no lo es. */
+    const pixeles = (token: string | undefined): number | undefined =>
+      token ? SPACING[token as keyof typeof SPACING] : undefined;
+
+    const valorDe = (termino: string): number => {
+      if (termino === "MIN_ANCHO") return MIN;
+      if (termino === "HIT_SLOP") return SLOP;
+
+      // El token puede venir por la constante del boton o escrito alii. Con un
+      // termino que no sea ninguno de los dos, `pixeles` devuelve `undefined`, la
+      // suma queda `NaN` y el `toBeGreaterThanOrEqual` de abajo falla: un nombre
+      // nuevo en la cuenta no se cuela como un cero.
+      return pixeles(termino.match(/SPACING\[(?:MARGEN_DERECHA|"(\w+)")\]/)?.[1]) ?? pixeles(MARGEN) ?? 0;
+    };
+
+    const reserva = terminos.reduce((suma, termino) => suma + valorDe(termino), 0);
+    const margenPx = pixeles(MARGEN);
+    const ocupa = MIN + (margenPx ?? 0) + SLOP;
+
+    expect(
+      reserva,
+      `la reserva es ${reserva} y el boton ocupa ${ocupa} (caja ${MIN} + margen ${margenPx} + hitSlop ${SLOP})`,
+    ).toBeGreaterThanOrEqual(ocupa);
+  });
+
+  it("las dos filas reservan la constante del boton, no un numero suyo", () => {
+    // El nombre viene del boton porque la exigencia es del boton. Un
+    // `paddingRight` con un numero aca compila igual y se desincroniza en
+    // silencio, que es la forma exacta del fallo que este bloque evita.
     for (const [nombre, ruta] of PANTALLAS) {
-      const token = String(src(ruta).match(/paddingRight:\s*theme\.spacing\.(\w+)/)?.[1]);
-      expect(token, `${nombre} no reserva ancho`).toBeTruthy();
+      expect(sinComentarios(src(ruta)), nombre).toMatch(/paddingRight: ANCHO_RESERVADO/);
+      expect(sinComentarios(src(ruta)), nombre).toMatch(
+        /import \{[^}]*ANCHO_RESERVADO[^}]*\} from "@\/components\/ui\/menu-button"/,
+      );
+    }
+  });
 
-      const reservado = SPACING[token as keyof typeof SPACING] ?? 0;
-      expect(
-        reservado,
-        `${nombre} reserva ${reservado} y el boton ocupa ${ocupa}`,
-      ).toBeGreaterThanOrEqual(ocupa);
+  it("y la fila se encoge, porque sin `flex: 1` la reserva no hace nada", () => {
+    /*
+      La otra mitad del contrato, y la que mas facilmente se rompe sola: en RN el
+      `flexShrink` por defecto es `0`, asi que una fila sin `flex: 1` **ignora** el
+      `paddingRight` de la caja y un titulo largo se sale con el boton encima. No
+      hay typecheck que lo note —el numero esta bien escrito— y con un ancho fijo
+      tampoco se ve.
+
+      Se afirma por **orden** y no con una ventana de caracteres: el `leading` que
+      va en medio de la fila del inbox mide mas que cualquier `{0,600}` que se le
+      ponga, asi que un rango fijo daria verde con la fila sin `flex`.
+    */
+    for (const [nombre, ruta] of PANTALLAS) {
+      const codigo = sinComentarios(src(ruta));
+      const abre = codigo.indexOf("<ListRow");
+      // La busqueda arranca en la fila: `if (isLoading) return <View style={{ flex:
+      // 1 }} />` tambien usa esa cadena, y sin el arranque finds la del
+      // esqueleto de carga y da verde con la fila sin encogerse.
+      const encoge = codigo.indexOf("style={{ flex: 1 }}", abre);
+      const menu = codigo.indexOf("<MenuButton", abre);
+
+      expect(abre, `${nombre} no tiene fila`).toBeGreaterThan(-1);
+      expect(encoge, `${nombre}: la fila sin flex se sale de la caja`).toBeGreaterThan(abre);
+      expect(encoge, `${nombre}: el flex tiene que ser el de la fila, no el del menu`).toBeLessThan(menu);
     }
   });
 });
 
-describe("la normalizacion del enlace vive en un archivo, no en dos pantallas", () => {
-  it("las dos pantallas importan de ahi y ninguna define su propio host", () => {
-    // `hostDe` estaba escrito identico en las dos pantallas, y el nombre del
-    // enlace —el titulo o, si esta vacio, el host— tambien. Con la hoja encima
-    // el nombre se lee por lo menos tres veces por fila, asi que tres copias de
-    // la regla son tres reglas que pueden diferir sin que nada falle: el menu
-    // de la lista diria una cosa y el del inbox otra, del mismo enlace.
-    for (const [nombre, ruta] of PANTALLAS) {
-      const pantalla = sinComentarios(src(ruta));
-      expect(pantalla, nombre).toMatch(/from "@\/lib\/menus\/bookmark"/);
-      expect(pantalla, nombre).not.toMatch(/function hostDe/);
+describe("la regla del nombre de un enlace tiene una casa", () => {
+  /*
+    ------------------------------------------------------------------
+    POR QUE LA LISTA SE DERIVA Y NO SE ESCRIBE
+    ------------------------------------------------------------------
+
+    Porque `tituloDeBookmark` no es la unica forma de nombrar un enlace y la
+    lista de quien mas lo hace se Agranda: hoy son la fila del detalle y el
+    subtitulo del triage, y la proxima pantalla nueva vuelve a escribir el
+    `title.length > 0 ? ... : host || url`. Una lista escrita aca pasaria en
+    verde el dia que la quinta copia se colara, y esa es exactamente la clase de
+    deuda que T5 y T10 van a pagar si este guard no la ve.
+
+    El marcador es la **regla entera**, no una parte: el ternario que cae al
+    `url`. La forma corta —`.title.length > 0`— no sirve, porque las notas, las
+    carpetas y el encabezado de la app la escriben tambien y con otra caida
+    (`t("note.untitled")`): un guard que contara esas como copias de la regla del
+    enlace estaria describiendo otra cosa, y el dia que se arreglara una de ellas
+    fallaria por la razon equivocada.
+  */
+  const calculanElNombre = (): string[] =>
+    tsxDeLaApp().filter((nombre) =>
+      /\.title\.length > 0 \? [\w.]+\.title : [^;\n]*\.url/.test(src(`src/${nombre}`)),
+    );
+
+  /**
+   * Las copias que quedan, con el motivo y con el trabajo que las cierra.
+   *
+   * No es una lista de archivos que "estan bien asi": es una lista de deudas, y
+   * por eso cada entrada dice por que sigue ahi. El guard de abajo falla si una
+   * de estas **deja** de ser una copia —porque alguien la.unifico y nadie borro la
+   * entrada—, asi que la lista no puede quedarse vieja en silencio.
+   */
+  const COPIAS_PENDIENTES: Record<string, string> = {
+    "app/(app)/bookmark/[bookmarkId].tsx":
+      "el detalle escribe la misma regla y su propio `hostDe`; unificarla es unificar su fila con la de la lista.",
+    "components/bookmarks/assign-sheet.tsx":
+      "el triage ya diverge hoy: no cae al host. Recibe `BookmarkAClasificar`, un subconjunto de `Bookmark`, asi que la firma no encaja sin ensancharla.",
+  };
+
+  it("el marcador encuentra los archivos, y son los que se declaran", () => {
+    // Sin esto el bloque pasa en verde con la lista vacia, que es como pasaban
+    // los guards de T2 que se olvidaron un elemento.
+    expect(calculanElNombre().length, "el marcador tiene que encontrar copias").toBeGreaterThan(0);
+  });
+
+  it("ninguna copia se escribe a mano fuera de las declaradas", () => {
+    for (const archivo of calculanElNombre()) {
+      if (archivo in COPIAS_PENDIENTES) continue;
+
+      expect(
+        src(`src/${archivo}`),
+        `${archivo} escribe la regla del nombre del enlace en vez de tomarla de lib/menus/bookmark`,
+      ).toMatch(/from "@\/lib\/menus\/bookmark"/);
     }
   });
 
-  it("el archivo existe, que es lo que el guard de arriba supone", () => {
-    expect(existsSync(join(RAIZ, LIB))).toBe(true);
+  it("las declaradas siguen siendo copias, para que la lista no mienta", () => {
+    for (const [archivo, motivo] of Object.entries(COPIAS_PENDIENTES)) {
+      expect(
+        calculanElNombre(),
+        `${archivo} ya no calcula el nombre por su cuenta — ${motivo} Sacalo de la lista.`,
+      ).toContain(archivo);
+    }
+  });
+
+  it("la fila de la lista y la del inbox toman la regla del archivo", () => {
+    // Derivado del arbol, y no de las dos pantallas de arriba: asi una tercera
+    // que migre queda atada al mismo hecho sin que este test se toque.
+    const tomanLaRegla = tsxDeLaApp().filter((nombre) =>
+      src(`src/${nombre}`).includes('from "@/lib/menus/bookmark"'),
+    );
+
+    for (const [, ruta] of PANTALLAS) {
+      expect(tomanLaRegla, ruta).toContain(ruta.replace(/^src\//, ""));
+    }
+  });
+
+  it("el archivo que tiene la regla no se cuenta como copia", () => {
+    // `tituloDeBookmark` escribe la regla con esas palabras y no es una copia de
+    // si mismo: esta ahi justamente porque es `lib/menus/bookmark.ts` y no un
+    // `.tsx`, asi que el recorrido de arriba ni lo mira.
+    expect(calculanElNombre()).not.toContain("lib/menus/bookmark.ts");
+    expect(src(LIB)).toContain(".title.length > 0");
   });
 });

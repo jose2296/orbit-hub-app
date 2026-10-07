@@ -10,7 +10,7 @@ import {
 import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow, SectionHeader } from "@/components/ui/list-row";
-import { MenuButton } from "@/components/ui/menu-button";
+import { ANCHO_RESERVADO, MenuButton } from "@/components/ui/menu-button";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { useBookmarks, useUnclassifiedCount } from "@/hooks/use-bookmarks";
@@ -151,11 +151,11 @@ export default function UnclassifiedScreen() {
                       flexDirection: "row",
                       alignItems: "center",
                       gap: theme.spacing.sm,
-                      // El ancho que el boton ocupa: su `minWidth` mas su margen
-                      // derecho. Sin este hueco se monta encima del chevron.
-                      // El guard de `bookmark-menu.test.ts` lee el ancho del
-                      // boton en vez de repetirlo aca.
-                      paddingRight: theme.spacing.xxxl,
+                      // El ancho que el boton ocupa, mas su margen y el
+                      // `hitSlop` que le agranda el area de toque: los tres los
+                      // trae el boton, en `ANCHO_RESERVADO`. Sin el `hitSlop` en la
+                      // cuenta, el area del boton entra en la de la fila.
+                      paddingRight: ANCHO_RESERVADO,
                     }}
                   >
                     <ListRow
@@ -175,6 +175,12 @@ export default function UnclassifiedScreen() {
                         />
                       }
                       chevron
+                      /*
+                        El `flex: 1` es lo que hace que la reserva de la caja sirva:
+                        sin el, el `paddingRight` no encoge la fila y un titulo largo
+                        se sale con el boton encima. Lo afirma un guard de
+                        `bookmark-menu.test.ts`.
+                      */
                       style={{ flex: 1 }}
                       onPress={() =>
                         setAClasificar({
