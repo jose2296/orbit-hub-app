@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect } from "vitest";
+
+import { PAGINAS_MONTADAS } from "@/lib/menus/paginas";
+import type { MenuPageId } from "@/lib/menus/registry";
 
 /**
  * ------------------------------------------------------------------
@@ -58,16 +60,20 @@ export function hojasMontadas(fuente: string): number {
 }
 
 /**
- * Los ids de `PAGINAS_MONTADAS`, leidos del fuente.
+ * Los ids de `PAGINAS_MONTADAS`, **importados y no leidos del fuente**.
  *
- * Es una lista en el `.tsx` y no un `Record` de componentes porque lo que
- * importa poder leer sin renderizar es **cuales son**, no que se pinten: es la
- * lista de las paginas que existen hoy, y la que T8 y T9 van haciendo crecer.
+ * Antes se parseaba la lista con un regex sobre `entity-menu-sheet.tsx`, y eso
+ * funcionaba porque la lista estaba ahi. Se movio a `lib/menus/paginas.ts` —que no
+ * tiene React ni `expo`, a proposito— y en ese momento parsearla dejo de tener
+ * sentido: el valor se importa, y un `import` no se puede desincronizar con el
+ * fuente que se esta probando, que es justo lo que hacia un regex.
+ *
+ * Se devuelve una **copia** y no el array del modulo: los guards lo tratan como si
+ * fuera suyo —lo ordenan, lo filtran— y mutar el de la app desde un test es una
+ * forma de pasar sin que el codigo este bien.
  */
-export function paginasMontadas(): string[] {
-  const declarada = hoja.match(/PAGINAS_MONTADAS[^=]*=\s*\[([^\]]*)\]/);
-  expect(declarada, "la hoja tiene que declarar que paginas monta").not.toBeNull();
-  return [...(declarada![1] ?? "").matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1]!);
+export function paginasMontadas(): MenuPageId[] {
+  return [...PAGINAS_MONTADAS];
 }
 
 /**

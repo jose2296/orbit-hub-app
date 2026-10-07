@@ -5,10 +5,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Bookmark } from "@orbit-hub/contracts";
 
+import { puedeOfrecerse } from "@/lib/menus/paginas";
 import { ACCIONES, ORDEN_POR_KIND, accionesPara } from "@/lib/menus/registry";
 import { SPACING } from "@/theme/tokens";
 
-import { RAIZ, paginasMontadas, sinComentarios, src, tsxDeLaApp } from "./menus-test-helpers";
+import {
+  HOJA,
+  RAIZ,
+  paginasMontadas,
+  sinComentarios,
+  src,
+  tsxDeLaApp,
+} from "./menus-test-helpers";
 
 /*
   ------------------------------------------------------------------
@@ -215,33 +223,53 @@ describe("el ctx de un enlace sale del contrato, normalizado una sola vez", () =
 
 describe("el menu de un enlace ofrece lo que la hoja sabe montar, y nada mas", () => {
   /*
-    La lista sale **derivada**, de `paginasMontadas()`: la del registro menos las
-    paginas que esta version de la hoja no monta. Escribirla aca seria una lista
-    mas que se desincroniza en silencio —que es el fallo que
-    `menus-test-helpers` existe para evitar—, asi que cuando T8 entregue la
-    pagina de acceso este guard tiene que decir "tres" sin que nadie lo edite.
+    ------------------------------------------------------------------
+    POR QUE EL FILTRO SE IMPORTA Y NO SE ESCRIBE ACA
+    ------------------------------------------------------------------
+
+    Porque esta funcion ya estaba escrita aqui character por character, y era la
+    unica razon por la que este bloque podia mentir: si `puedeOfrecerse` ganaba una
+    regla —y ya gano una, el caso especial de borrar que salio en la T2—, el test
+    seguia afirmando la version vieja y pasaba en verde mientras la pantalla
+    ofrecia otra cosa.
+
+    Vive en `lib/menus/paginas.ts` y se importa, asi que **no hay segunda fuente**:
+    lo que se prueba aca es el filtro que corre en la hoja, no una idea de el. Es el
+    mismo arreglo que el registro le hizo a las ocho hojas de menu, aplicado al
+    filtro que las nueve tareas siguientes van a reutilizar.
   */
-  const ofrecibles = (): string[] => {
-    const montadas = paginasMontadas();
-    return accionesPara(menuCtxDeBookmark(BASE)!)
-      .filter(
-        (accion) => accion.destino.tipo === "hoja" || montadas.includes(accion.destino.page),
-      )
-      .map((accion) => accion.id);
-  };
+  const ofrecibles = (): string[] =>
+    accionesPara(menuCtxDeBookmark(BASE)!).filter(puedeOfrecerse).map((accion) => accion.id);
 
   it("hoy son renombrar y eliminar", () => {
     expect(ofrecibles()).toEqual(["rename", "delete"]);
   });
 
   it("acceso no se ofrece porque su pagina todavia no se monta", () => {
-    // No por una fila apagada —eso seria ofrecer algo que no se puede hacer—
-    // sino por el filtro de `puedeOfrecerse`, que saca la fila entera. Y sale
-    // sola en cuanto `PAGINAS_MONTADAS` la incluya, sin tocar el registro.
+    // No por una fila apagada —eso seria ofrecer algo que no se puede hacer— sino
+    // por el filtro, que saca la fila entera. Y sale sola en cuanto
+    // `PAGINAS_MONTADAS` la incluya, sin tocar el registro.
     expect(ORDEN_POR_KIND.bookmark).toContain("access");
     expect(ACCIONES.access?.destino).toEqual({ tipo: "pagina", page: "access" });
     expect(paginasMontadas()).not.toContain("access");
     expect(ofrecibles()).not.toContain("access");
+  });
+
+  it("el filtro es el de la hoja, y el de la hoja esta en un archivo sin React", () => {
+    // La mitad del arreglo: que el filtro se pueda importar es lo que permite no
+    // reescribirlo. Y que este en `lib/menus/paginas.ts` es lo que lo permite —
+    // dentro de `entity-menu-sheet.tsx` el `import` revienta en Node por
+    // `@expo/vector-icons`.
+    expect(ofrecibles().length).toBeGreaterThan(0);
+
+    const fuente = sinComentarios(src(HOJA));
+    expect(fuente, "la hoja tiene que usar el filtro, no el suyo").toMatch(
+      /import \{ puedeOfrecerse \} from "@\/lib\/menus\/paginas"/,
+    );
+    // Y que la hoja **no** tenga su propia copia, que es lo que dejaria de ser un
+    // filtro y volveria a ser dos.
+    expect(fuente).not.toMatch(/function puedeOfrecerse/);
+    expect(fuente).not.toMatch(/PAGINAS_MONTADAS\s*[:=]/);
   });
 
   it("el registro manda en el orden: la hoja filtra filas, no las mueve", () => {
@@ -435,6 +463,41 @@ describe("el ancho que la fila le reserva al boton", () => {
       expect(sinComentarios(src(ruta)), nombre).toMatch(
         /import \{[^}]*ANCHO_RESERVADO[^}]*\} from "@\/components\/ui\/menu-button"/,
       );
+    }
+  });
+
+  it("todo el que lo monta toma el ancho de ahi, y no un numero suyo", () => {
+    /*
+      Derivado de quien monta `MenuButton`, y no de las dos pantallas de arriba: asi
+      entra solo `content-list.tsx` —que reserva un `44` escrito a mano, cuatro
+      pixeles corto de la caja del boton y sin contarle el `hitSlop`— y entra la
+      fila que se agregue manana sin que este test se toque.
+
+      Y no mira el `paddingRight` sino el **import**, porque el sintoma de este
+      bug no es un numero equivocado en la fila: es un numero que la fila se
+      inventa. Un `paddingRight: ANCHO_RESERVADO` en el codigo pero sin importarlo
+      no compila, asi que el import es la costura real.
+    */
+    const queLoMantan = tsxDeLaApp().filter((nombre) => src(`src/${nombre}`).includes("<MenuButton"));
+
+    expect(
+      queLoMantan.length,
+      "sin archivos que lo monten el guard no comprobaria nada",
+    ).toBeGreaterThan(0);
+
+    for (const archivo of queLoMantan) {
+      expect(sinComentarios(src(`src/${archivo}`)), `${archivo} reserva el ancho por su cuenta`).toMatch(
+        /ANCHO_RESERVADO/,
+      );
+    }
+
+    // Y el numero en crudo, que es como se colaba el `44`: un `paddingRight` con
+    // un entero a secas, en cualquier archivo que monte el boton.
+    for (const archivo of queLoMantan) {
+      expect(
+        sinComentarios(src(`src/${archivo}`)),
+        `${archivo} tiene un paddingRight escrito a mano junto al boton`,
+      ).not.toMatch(/paddingRight:[^,}]*\b\d+\b/);
     }
   });
 

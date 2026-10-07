@@ -8,7 +8,7 @@ import type { Collection, Folder, List, ListOrderMode, Note } from "@orbit-hub/c
 import { ContentToolbar } from "@/components/content/content-toolbar";
 import { AppIcon } from "@/components/ui/app-icon";
 import { EmptyState } from "@/components/ui/empty-state";
-import { MenuButton } from "@/components/ui/menu-button";
+import { ANCHO_RESERVADO, MenuButton } from "@/components/ui/menu-button";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
 import { LIST_KIND_ICON } from "@/lib/lists/kind";
@@ -362,12 +362,26 @@ function ContentRowView({
             /*
               El hueco de la derecha, y **solo del menu**: el menu de la fila se
               dibuja encima de este rectangulo, asi que el cuerpo tiene que terminar
-              antes que el. El otro hueco que hubo aqui era para el asa de arrastrar
-              y ya no hace falta —la fila no se arrastra, se ordena en una hoja— asi
-              que el nombre tiene cuarenta y cuatro puntos mas de ancho, que es
-              justo lo que un nombre largo necesita.
+              antes que el.
+
+              Son dos numeros con dos oficios, y antes eran uno que no hacia
+              ninguno de los dos bien:
+
+              - `ANCHO_RESERVADO` es el espacio **del boton**: su caja, su margen y
+                el `hitSlop` que le agranda el area de toque. Lo trae el boton
+                porque la exigencia es suya; el `44` de antes era un numero escrito
+                aca que se quedo **cuatro pixeles corto** de la caja, sin el
+                `hitSlop` —que se sale de la caja— el boton se montaba encima del
+                nombre, igual que en las filas de los enlaces.
+              - El `spacing.md` de al lado es la **holgura del nombre**: el area de
+                toque del boton es invisible, asi que un nombre que termina
+                exactamente donde empieza queda pegado a algo que no se ve. El
+                nombre largo necesita aire, y eso no lo resuelve el ancho del boton.
+
+              Y el hueco del asa de arrastrar no vuelve: la fila no se arrastra, se
+              ordena en una hoja.
             */
-            paddingRight: onMenu ? 44 : theme.spacing.md,
+            paddingRight: onMenu ? ANCHO_RESERVADO + theme.spacing.md : theme.spacing.md,
           },
         ]}
       >

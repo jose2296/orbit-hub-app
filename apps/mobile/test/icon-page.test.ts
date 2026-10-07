@@ -195,7 +195,15 @@ describe("sin icono es null, y null llega hasta el handler", () => {
 
 describe("el boton de menu de una fila vive en un archivo", () => {
   it("la lista lo importa y ya no lo declara", () => {
-    expect(lista).toMatch(/import \{ MenuButton \} from "@\/components\/ui\/menu-button"/);
+    /*
+      El import trae dos simbolos y no uno: `MenuButton` y `ANCHO_RESERVADO`, el
+      ancho que el boton necesita que le reserven. Por eso el patron admite los
+      que.nlista dentro de las llaves en vez de exactamente uno — lo que el guard
+      afirma es de donde sale el boton, no cuantos nombres viajan en la linea.
+    */
+    expect(lista).toMatch(
+      /import \{[^}]*\bMenuButton\b[^}]*\} from "@\/components\/ui\/menu-button"/,
+    );
     expect(lista).toMatch(/<MenuButton\b/);
     expect(lista, "la copia local es lo que esta tarea vino a sacar").not.toMatch(
       /function BotonMenu/,

@@ -11,7 +11,8 @@ import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n/dictionaries";
 import { accionesPara, resuelveLabel } from "@/lib/menus/registry";
-import type { MenuAccion, MenuContext, MenuHandlerName, MenuPageId } from "@/lib/menus/registry";
+import { puedeOfrecerse } from "@/lib/menus/paginas";
+import type { MenuContext, MenuHandlerName, MenuPageId } from "@/lib/menus/registry";
 import { useTheme } from "@/theme";
 
 import { DeletePage } from "./pages/delete-page";
@@ -380,6 +381,14 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
 
   if (!ctx) return null;
 
+  /*
+    `puedeOfrecerse` viene de `lib/menus/paginas` y no de mas abajo: el filtro dice
+    que filas se ofrecen, y si viviera aca no se podria importar en ningun test
+    —esta hoja arrastra `IconPage` y de ahi `@expo/vector-icons`, que en Node no se
+    parsea—, con lo que lo unico que se podia hacer era reescribirlo a mano en el
+    test y esperar a que divergiera. Que la lista de paginas montadas este en un
+    archivo sin React es lo que hace que esto sea un filtro y no una copia.
+  */
   const opciones: SheetOption[] = accionesPara(ctx)
     .filter(puedeOfrecerse)
     .map((accion) => {
@@ -513,21 +522,6 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
   );
 }
 
-/**
- * Las paginas que esta hoja monta hoy, y **la lista completa de las que puede
- * montar**.
- *
- * El registro declara siete (`MenuPageId`) y las cinco entidades las necesitan
- * todas. Los componentes llegan de a uno: la de renombrar, la de icono y la de
- * borrar estan; la de acceso con la que sube `useShareReach`, la de exportar con
- * el endpoint, y la de crear cuando la carpeta deje de montar sus propias hojas.
- *
- * La lista esta escrita aqui y no armandola en el JSX para que se pueda leer sin
- * renderizar, que es la unica forma de comprobar en este repo que no se ofrece
- * una fila que lleva a un hueco.
- */
-const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "icon", "delete"];
-
 /** El subtitulo de la cabecera, y el de la primera pagina es ninguno. */
 const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
   rename: "common.rename",
@@ -535,19 +529,3 @@ const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
   delete: "common.delete",
 };
 
-/**
- * Si la fila se ofrece, y **el filtro no es de disponibilidad**.
- *
- * El registro ya decidio que la accion existe y si se puede: eso no se vuelve a
- * preguntar aca. Lo que se pregunta es otra cosa, mas chica: si esta version de
- * la hoja tiene el componente de esa pagina. Una fila que lleva a una pagina que
- * todavia no se escribio es "una opcion que se dibuja y no hace nada al tocarla",
- * que es exactamente lo que `registry.tsx` dice que es peor que una opcion que no
- * esta —y por eso el filtro no es silencioso: `test/entity-menu-sheet.test.ts`
- * tiene escritos, de a uno, los ids de pagina que quedan sin montar, asi que
- * filtrar por capacidad de la hoja y perder una fila por otra causa no se
- * confunden.
- */
-function puedeOfrecerse(accion: MenuAccion): boolean {
-  return accion.destino.tipo !== "pagina" || PAGINAS_MONTADAS.includes(accion.destino.page);
-}
