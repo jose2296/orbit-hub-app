@@ -1286,6 +1286,18 @@ const es = {
   "errors.timeout": "La solicitud ha tardado demasiado",
   "errors.unauthorized": "Tu sesión ha caducado",
   "errors.unknown": "Error inesperado",
+
+  /*
+    El menu de entidad, y solo la fila que hoy no existe en ninguna hoja.
+
+    Las demas (renombrar, icono, borrar, compartir, panel, exportar) reusan el
+    copy que cada hoja ya tenia, y por eso estan todas en `es` desde antes de que
+    hubiera un registro. Esta es la que hay que escribir de nuevo: "acceso" es el
+    nombre de la pagina que responde "quien mas lo tiene", que es una pregunta
+    que el menu no hacia y que solo se podia ver en el peor momento —justo antes
+    de borrar— (Review Focus de la spec, la pagina de acceso).
+  */
+  "menus.access": "Quién más lo tiene",
 } as const;
 
 export type TranslationKey = keyof typeof es;
@@ -2454,6 +2466,8 @@ const en: Record<TranslationKey, string> = {
   "errors.timeout": "The request took too long",
   "errors.unauthorized": "Your session has expired",
   "errors.unknown": "Unexpected error",
+
+  "menus.access": "Who else has it",
 };
 
 export const dictionaries: Record<Locale, Record<TranslationKey, string>> = {
