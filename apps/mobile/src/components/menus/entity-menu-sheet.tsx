@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
 import type { IconRef } from "@orbit-hub/contracts";
@@ -6,6 +6,7 @@ import type { IconRef } from "@orbit-hub/contracts";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetOptions, useLastValue } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n/dictionaries";
@@ -74,14 +75,38 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
   // la que el menu no desaparece a mitad del gesto de salida.
   const ctx = useLastValue(pedido);
 
+  /*
+    ------------------------------------------------------------------
+    LOS HANDLERS, CON EL MISMO RELOJ QUE `ctx`
+    ------------------------------------------------------------------
+
+    Porque `Sheet` mantiene el `Modal` montado `SALIDA + 90` —330 ms— despues de
+    `visible === false` (`sheet.tsx:631`), o sea **por diseno** esa hoja sigue
+    visible e interactiva con el `ctx` viejo. Si los handlers no se congelaran con
+    el mismo reloj, en esa ventana el call site ya habria devuelto `{}` —que es lo
+    que devuelve `handlersDeColeccion(null)`— y un toque en "Eliminar" caeria en
+    `sinHandler()`: un "Error inesperado" en una hoja que ya se esta yendo, por un
+    toque que llego tarde.
+
+    Y el congelado va **aca y no en cada call site**: que el que tiene que acordarse
+    sea el componente es la diferencia entre un menu que aguanta la salida y nueve
+    call sites que hay que arreglar cada vez que se abre uno nuevo.
+  */
+  const abierto = pedido !== null;
+  const handlersVivos = useLastValue(abierto ? handlers : null) ?? {};
+
   const theme = useTheme();
   const t = useTranslation();
+  const { setSucio } = useSheetSucio();
 
   const [pagina, setPagina] = useState<Pagina>("options");
-  const [nombre, setNombre] = useState("");
+  const [borrador, setBorrador] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reintento, setReintento] = useState<(() => void) | null>(null);
   const [trabajando, setTrabajando] = useState(false);
+
+  const titulo = ctx?.entity.title ?? "";
+  const nombre = borrador ?? titulo;
 
   /*
     Cada apertura arranca en el menu, con el nombre de esta entidad y sin error.
@@ -93,15 +118,66 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
     en la pagina en la que se lo dejo con el nombre del otro. Es el mismo bug que
     `list-menu-sheet.tsx:184-208` ya fijo por escrito.
   */
-  const abierto = pedido !== null;
   useEffect(() => {
     if (!abierto) return;
     setPagina("options");
-    setNombre(pedido?.entity.title ?? "");
     setError(null);
     setReintento(null);
     setTrabajando(false);
   }, [abierto]);
+
+  /*
+    El borrador se vacia **durante el render** y no en el efecto de arriba, y es la
+    unica pieza de estado que se vacia ahi.
+
+    Porque el borrador es lo unico de este bloque que alimenta una **pregunta**:
+    vaciandolo en un efecto, el calculo de "sucio" de abajo leeria todavia el
+    borrador abandonado de la apertura anterior, armaria "¿salir sin guardar?" por un
+    texto que ya no existe, y solo el render siguiente lo desarmaria. Un frame de
+    una hoja recien abierta preguntando por algo que nadie escribio.
+
+    Un `setState` durante el render es el patron documentado de React para
+    ajustar estado a una prop que cambio, y el `useRef` es lo que evita el
+    bucle: React descarta la salida de este render y vuelve a renderizar con
+    `borrador` ya en `null`, antes de montar nada y antes de correr un solo
+    efecto.
+  */
+  const abiertoAnterior = useRef(abierto);
+  if (abierto !== abiertoAnterior.current) {
+    abiertoAnterior.current = abierto;
+    if (abierto) setBorrador(null);
+  }
+
+  /*
+    ------------------------------------------------------------------
+    EL BORRADOR Y "SUCIO": LA VERDAD EN UN SOLO SITIO
+    ------------------------------------------------------------------
+
+    El borrador vive en la hoja y `sucio` se **deriva** de el, no al reves. La
+    razon es que el borrador sobrevive a la flecha: entrar en renombrar, escribir y
+    tocar ← desmonta la pagina **con el texto escrito todavia ahi**. Si la pregunta
+    de "salir sin guardar" la pusiera la pagina, se desarmaria en ese mismo toque,
+    y cerrar el menu despues se iria sin preguntar: edicion perdida en silencio,
+    que es el peor resultado posible de una hoja y el que nadie ve.
+
+    La variante que descarto es la simetrica —que el cleanup de la pagina borre el
+    borrador— porque convierte la flecha en "descartar lo escrito" sin decirlo, y
+    la flecha esta escrita como "Volver". Que la verdad este en un solo sitio
+    importa mas que la simetria de los archivos.
+
+    Y por eso `borrador` es `string | null` y no `string`: `null` es "todavia no se
+    escribio nada" —el menu recien abierto— y `""` es "se borro el campo a mano".
+    Con un solo string, un menu recien abierto arrancaba con `""` contra un titulo
+    no vacio y por lo tanto ya "sucio" antes de que nadie tocara nada.
+
+    Y la condicion **no mira en que pagina estamos**: el borrador sobrevive a la
+    flecha, asi que la pregunta tiene que sobrevivir tambien. Si dijera
+    `pagina === "rename"`, volver con ← desarmaria la pregunta con el texto
+    escrito ahi, que es el bug.
+  */
+  useEffect(() => {
+    setSucio(abierto && borrador !== null && borrador.trim() !== titulo.trim());
+  }, [abierto, borrador, titulo, setSucio]);
 
   /*
     ------------------------------------------------------------------
@@ -146,7 +222,7 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
    * hace nada.
    */
   const handlerDe = (nombre: MenuHandlerName): (() => void | Promise<void>) | null => {
-    const handler = handlers[nombre];
+    const handler = handlersVivos[nombre];
 
     return handler ? () => handler() : null;
   };
@@ -170,15 +246,15 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
     void correr(hecho, otraVez);
   };
 
-  const renombrar = (titulo: string) => {
-    const otraVez = () => renombrar(titulo);
-    const handler = handlers.rename;
+  const renombrar = (tituloNuevo: string) => {
+    const otraVez = () => renombrar(tituloNuevo);
+    const handler = handlersVivos.rename;
 
     if (!handler) {
       sinHandler();
       return;
     }
-    void correr(() => handler(titulo), otraVez);
+    void correr(() => handler(tituloNuevo), otraVez);
   };
 
   const borrar = () => {
@@ -217,6 +293,17 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
         label: t(etiqueta, { name: ctx.entity.title }),
         icon: accion.icon,
         tone: accion.tone ?? "default",
+        /*
+          El galon va **solo en las filas que llevan a otro lado**, y esa es la
+          unica senal de que la fila no hace la cosa al toque: "Eliminar" abre una
+          pantalla que pregunta y "Pinear en el panel" hace la cosa, y sin galon
+          las dos se ven igual. La fila que borra en el momento tiene que **dirse**
+          antes de apretarla, no despues.
+
+          Y va con la fila apagada tambien: la fila grisada sigue siendo una puerta
+          —esta cerrada—, y `description` dice por que.
+        */
+        chevron: accion.destino.tipo === "pagina",
         description: motivo ? t(motivo) : undefined,
         disabled: accion.disponible?.(ctx) === false,
         onPress: () => {
@@ -238,7 +325,6 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
       };
     });
 
-  const limpio = nombre.trim();
   const subtitulo = SUBTITULO_POR_PAGINA[pagina];
 
   return (
@@ -262,12 +348,11 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
 
         {pagina === "rename" ? (
           <RenamePage
-            ctx={ctx}
             nombre={nombre}
-            onChange={setNombre}
+            onChange={setBorrador}
             onRename={() => {
-              if (limpio.length === 0 || trabajando) return;
-              renombrar(limpio);
+              if (nombre.trim().length === 0 || trabajando) return;
+              renombrar(nombre.trim());
             }}
             trabajando={trabajando}
           />

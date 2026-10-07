@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { accionesPara } from "@/lib/menus/registry";
+import { ACCIONES, accionesPara } from "@/lib/menus/registry";
 import type { MenuContext } from "@/lib/menus/registry";
 
 /**
@@ -94,6 +94,73 @@ describe("una sola hoja, y con una pila de paginas adentro", () => {
   });
 });
 
+describe("la fila que lleva a otro lado lo dice antes de que la toquen", () => {
+  it("el galon va en las filas cuya accion es una pagina, y solo en esas", () => {
+    /*
+      `SheetOption.chevron` existe en la base para "esta fila lleva a otro lado"
+      (`sheet.tsx:1115-1123`), y sin el "Eliminar" —la fila donde tocar PREGUNTA— se
+      ve igual que "Pinear en el panel", que hace la cosa en el momento. La senal
+      de seguridad tiene que estar en la fila, no en un tutorial.
+    */
+    expect(hoja).toMatch(/chevron: accion\.destino\.tipo === "pagina"/);
+  });
+});
+
+describe("la hoja aguanta los 330 ms en que todavia se puede tocar", () => {
+  /*
+    `Sheet` mantiene el `Modal` montado `SALIDA + 90` despues de `visible === false`
+    (`sheet.tsx:631`). Esos 330 ms son por diseno y no se tocan: durante ellos la
+    hoja esta en pantalla y toma toques. Las dos reglas de abajo son sobre esa
+    ventana, y las dos se rompieron a la vez.
+  */
+
+  it("los handlers se congelan con el mismo reloj que el ctx", () => {
+    // `ctx` es `useLastValue(pedido)`. Si los handlers no pasan por el mismo reloj,
+    // el call site ya devolvio `{}` —`handlersDeColeccion(null)`— y un toque que
+    // llega tarde cae en `sinHandler()`: un "Error inesperado" en una hoja que ya
+    // se esta yendo.
+    expect(hoja).toMatch(/useLastValue\(abierto \? handlers : null\)/);
+  });
+
+  it("y el que se acorda es el componente, no el call site", () => {
+    // Si el congelado estuviera en cada pantalla, abrir un menu nuevo en T4 a T10
+    // seria una oportunidad mas de olvidarse.
+    for (const pantalla of [
+      "src/app/(app)/workspace/[workspaceId].tsx",
+      "src/app/(app)/workspace/[workspaceId]/folder/[folderId].tsx",
+    ]) {
+      expect(src(pantalla), pantalla).not.toContain("useLastValue");
+    }
+  });
+});
+
+describe("el borrador y la pregunta de salir sin guardar son la misma verdad", () => {
+  it("la hoja arma 'sucio', derivandolo del borrador", () => {
+    expect(hoja).toMatch(/\{\s*setSucio\s*\}\s*=\s*useSheetSucio\(\)/);
+    expect(hoja).toMatch(/setSucio\(abierto && borrador !== null/);
+  });
+
+  it("y la pagina de renombrar no lo arma", () => {
+    /*
+      La pagina se desmonta al tocar ← y su cleanup desarmaba la pregunta **con el
+      texto escrito todavia ahi**: cerrar despues se iba sin preguntar y la
+      edicion se perdia en silencio. Si la pregunta vuelve a la pagina, el bug
+      vuelve con ella.
+
+      El guard mira **la llamada**, no la palabra: la pagina explica en un comentario
+      por que no la usa, y un `not.toContain("useSheetSucio")` pasaria por encima
+      de esa explicacion y dejaria de comprobar justo cuando el comentario esta.
+    */
+    expect(src(RENOMBRAR)).not.toMatch(/\{\s*setSucio\s*\}\s*=\s*useSheetSucio\(\)/);
+  });
+
+  it("el borrador se distingue de 'nada escrito', o el menu abre sucio", () => {
+    // `borrador: string` arrancaba en `""` contra un titulo no vacio, o sea
+    // "sucio" en un menu que nadie habia tocado.
+    expect(hoja).toMatch(/useState<string \| null>\(null\)/);
+  });
+});
+
 describe("la lista de filas sale del registro y no de un array escrito a mano", () => {
   it("pregunta al registro", () => {
     expect(hoja).toContain("accionesPara(ctx)");
@@ -101,21 +168,20 @@ describe("la lista de filas sale del registro y no de un array escrito a mano", 
   });
 
   it("no reimplementa el catalogo de acciones", () => {
-    // Ningun icono del registro puede aparecer aca: si aparece, la hoja esta
-    // escribiendo su propia lista y el registro deja de ser la unica fuente.
-    const iconos = [
-      "trash-outline",
-      "create-outline",
-      "people-outline",
-      "download-outline",
-      "apps-outline",
-      "image-outline",
-      "options-outline",
-      "bookmark-outline",
-      "remove-circle-outline",
-      "eye-outline",
-      "add-circle-outline",
-    ];
+    /*
+      Los iconos salen de `ACCIONES`, y **no de una lista escrita aca**. La
+      version anterior de este test listaba once iconos a mano y se le olvidaba
+      `copy-outline`, el de `duplicate`: la misma duplicacion que la tarea vino a
+      matar, pero puesta en el test, y con la misma falla —un guard que no
+      comprueba lo que dice comprobar—.
+
+      Y son los iconos y no las etiquetas lo que se puede forbidding: la hoja usa
+      `common.rename` y `common.delete` legitimamente en `SUBTITULO_POR_PAGINA`,
+      mientras que ningun icono tiene un uso legitimo fuera del registro.
+    */
+    const iconos = [...new Set(Object.values(ACCIONES).map((accion) => accion.icon))];
+
+    expect(iconos.length, "sin iconos el guard no comprobaria nada").toBeGreaterThan(5);
 
     for (const icono of iconos) {
       expect(hoja, `la hoja no decide el icono de "${icono}"`).not.toContain(icono);

@@ -1,16 +1,12 @@
-import { useEffect } from "react";
 import { View } from "react-native";
 
 import { Button } from "@/components/ui/button";
-import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
-import type { MenuContext } from "@/lib/menus/registry";
 import { useTheme } from "@/theme";
 
 export interface RenamePageProps {
-  ctx: MenuContext;
   /**
    * El nombre editado, y **lo escribe la hoja y no la pagina**.
    *
@@ -18,6 +14,12 @@ export interface RenamePageProps {
    * se desmonte cada vez que se vuelve y se entra, y quien decide cuando se abre
    * el menu es la hoja. Una pagina que guardara el borrador en su propio estado
    * lo perderia en el frame en que `Sheet` cambia de `step`.
+   *
+   * Y por eso esta pagina **no recibe `ctx`**: antes lo recibia para comparar el
+   * borrador con el titulo y armar "sucio", y esa comparacion ahora vive en la
+   * hoja. Lo que le queda no depende del tipo de entidad —renombrar es renombrar en
+   * los cinco—, asi que un `ctx` sin usar seria una firma que miente sobre lo que
+   * la pagina necesita.
    */
   nombre: string;
   onChange: (valor: string) => void;
@@ -45,41 +47,32 @@ export interface RenamePageProps {
  * dentro de la pagina deja que la hoja decida cuando queda sucio, y esa es la
  * unica decision que importa aca.
  *
- * Y por eso el borrador es de la hoja: "sucio" lo lee el `Sheet`, y el `Sheet` no
- * puede leer el estado de una pagina que todavia no existe.
+ * ------------------------------------------------------------------
+ * POR QUE ACA NO HAY `useSheetSucio`
+ * ------------------------------------------------------------------
+ *
+ * Porque "sucio" no es de esta pagina. El borrador vive en la hoja y sobrevive a
+ * la flecha: escribir, tocar ← y cerrar se iba sin preguntar si el aviso lo
+ * guardara la pagina, porque el aviso se desarmaba en el mismo toque que dejaba el
+ * texto escrito. La verdad esta en la hoja, derivando `sucio` del borrador, y esta
+ * pagina solo dibuja el campo.
+ *
+ * Y por la misma razon el boton de "descartar" no esta: la flecha se llama
+ * "Volver", no "Descartar", y si de verdad quiere descartar lo escrito lo dice y
+ * lo pregunta. Ese boton es de otra tarea.
  */
-export function RenamePage({ ctx, nombre, onChange, onRename, trabajando }: RenamePageProps) {
+export function RenamePage({ nombre, onChange, onRename, trabajando }: RenamePageProps) {
   const theme = useTheme();
   const t = useTranslation();
-  const { setSucio } = useSheetSucio();
 
-  const limpio = nombre.trim();
-  const vacio = limpio.length === 0;
-
-  /*
-    Sucio es "el nombre es distinto del que tenia" y no "hay algo escrito":
-    abrir el menu, tocar el campo y volver a poner lo mismo no es un cambio, y
-    preguntar por eso es como se enseña a ignorar el aviso.
-  */
-  const cambiar = (valor: string) => {
-    onChange(valor);
-    setSucio(valor.trim() !== ctx.entity.title.trim());
-  };
-
-  /*
-    Y se desarma al salir de la pagina. El aviso de "salir sin guardar" es de
-    **esta** pagina y no del menu entero: en la lista de opciones no hay nada
-    escrito todavia, y una hoja que pregunta con el menu abierto no esta
-    preguntando por nada.
-  */
-  useEffect(() => () => setSucio(false), [setSucio]);
+  const vacio = nombre.trim().length === 0;
 
   return (
     <View style={{ gap: theme.spacing.md }}>
       <TextField
         label={t("rename.field")}
         value={nombre}
-        onChangeText={cambiar}
+        onChangeText={onChange}
         autoFocus
         selectTextOnFocus
         returnKeyType="done"
