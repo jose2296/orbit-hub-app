@@ -56,6 +56,20 @@ function paginasMontadas(): string[] {
   return [...(declarada![1] ?? "").matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1]!);
 }
 
+/**
+ * Las paginas que hay, del directorio.
+ *
+ * Derivado y no escrito a mano: una lista aca se queda sin mirar cuando llega una
+ * pagina nueva —en T3 se sumo `icon-page.tsx` y el guard de "ninguna pagina monta
+ * su propia hoja" la iba a dejar de mirar sin decir nada—. Los dos guards que
+ * comparan el directorio con `PAGINAS_MONTADAS` salen de aca.
+ */
+function paginasEnElDirectorio(): string[] {
+  return readdirSync(join(RAIZ, PAGINAS))
+    .filter((nombre) => nombre.endsWith(".tsx"))
+    .map((nombre) => nombre.replace(/-page\.tsx$/, ""));
+}
+
 const COLECCION: MenuContext = {
   kind: "collection",
   entity: { id: "c1", title: "Recetas", role: "owner", shared: false },
@@ -223,21 +237,22 @@ describe("un handler que falla deja la hoja abierta", () => {
   });
 });
 
-describe("las dos paginas que todo menu tiene", () => {
+describe("las paginas que la hoja monta hoy", () => {
   it("la lista de paginas montadas y los archivos que hay son lo mismo", () => {
     // Si se declara una pagina que no existe, la fila lleva a un hueco; si existe
     // un archivo que nadie declara, la pagina esta muerta. Las dos cosas son
     // fallos de escritura y las dos se ven aca.
-    const archivos = readdirSync(join(RAIZ, PAGINAS))
-      .filter((nombre) => nombre.endsWith(".tsx"))
-      .map((nombre) => nombre.replace(/-page\.tsx$/, ""));
-
-    expect([...paginasMontadas()].sort()).toEqual(archivos.sort());
+    expect([...paginasMontadas()].sort()).toEqual(paginasEnElDirectorio().sort());
   });
 
   it("ninguna pagina monta su propia hoja", () => {
-    for (const pagina of [RENOMBRAR, BORRAR]) {
-      expect(hojasMontadas(src(pagina)), `${pagina} monta un Sheet`).toBe(0);
+    // El directorio entero y no la lista de arriba: cuando se agrego `icon-page`
+    // esta lista manual seguia diciendo "ninguna" y no miraba la pagina nueva.
+    for (const pagina of paginasEnElDirectorio()) {
+      expect(
+        hojasMontadas(src(`${PAGINAS}/${pagina}-page.tsx`)),
+        `${pagina} monta un Sheet`,
+      ).toBe(0);
     }
   });
 

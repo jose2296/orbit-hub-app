@@ -15,6 +15,7 @@ import type { MenuAccion, MenuContext, MenuHandlerName, MenuPageId } from "@/lib
 import { useTheme } from "@/theme";
 
 import { DeletePage } from "./pages/delete-page";
+import { IconPage } from "./pages/icon-page";
 import { RenamePage } from "./pages/rename-page";
 
 /**
@@ -38,6 +39,19 @@ export interface MenuHandlers {
 export interface EntityMenuSheetProps {
   /** La entidad sobre la que se actua, o `null` con el menu cerrado. */
   ctx: MenuContext | null;
+  /**
+   * El icono que tiene la entidad ahora, **si tiene**.
+   *
+   * Entra por props y no dentro del `ctx` porque `MenuEntity` no lo trae: el
+   * registro normaliza el nombre y nada mas —el comentario de `title` lo dice—
+   * y porque el campo de icono no es el mismo en todas: una coleccion guarda un
+   * `emoji` que es texto plano y un enlace no tiene campo. Meterlo en el
+   * registro seria elegir la forma de una y fingir que las otras son iguales.
+   *
+   * Opcional por lo mismo: los kinds sin `IconRef` no pasan nada y su fila de
+   * icono no se ofrece, que es lo que decide `CON_ICON_REF`.
+   */
+  icon?: IconRef | null;
   handlers: MenuHandlers;
   onClose: () => void;
 }
@@ -69,7 +83,7 @@ type Pagina = "options" | MenuPageId;
  * `folder-menu-sheet.tsx` son **`Modal` sobre `Modal`**: dos fondos sobre una
  * pantalla y un toque que llega a la de arriba cerrando la de abajo.
  */
-export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSheetProps) {
+export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: EntityMenuSheetProps) {
   // La ultima, y no la del llamador: el llamador la pone a `null` para cerrar y la
   // hoja tiene que seguir pintando mientras baja. `useLastValue` es la razon por
   // la que el menu no desaparece a mitad del gesto de salida.
@@ -94,6 +108,19 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
   */
   const abierto = pedido !== null;
   const handlersVivos = useLastValue(abierto ? handlers : null) ?? {};
+
+  /*
+    El icono se congela con el mismo reloj, y con un envoltorio porque `null` aca
+    es un valor de verdad.
+
+    `useLastValue` guarda lo que no es `null` ni `undefined`, asi que
+    `useLastValue(abierto ? icon : null)` devolveria para siempre el icono de la
+    entidad anterior en cuanto una entidad no tuviera icono: "sin icono" se
+    congela como si fuera "cerrado". El envoltorio es siempre un objeto —con
+    `icon` adentro, que si puede valer `null`— y por eso el reloj funciona y el
+    valor llega entero.
+  */
+  const iconoVivo = useLastValue(abierto ? { icon } : null)?.icon ?? null;
 
   const theme = useTheme();
   const t = useTranslation();
@@ -194,7 +221,30 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
     esta bien para pinear o duplicar y esta **muy mal** para lo que escribe: si
     el renombrar falla, no hay donde mostrar nada y la persona se queda creyendo
     que guardo. Es la Review Focus #2.
+
+    Y de los dos corredores de abajo solo uno cierra: `correr` es el de las
+    acciones que terminan el menu, y `correrEnLaPagina` el de las que se quedan.
+    Lo que se comparte —el mensaje y el reintento— esta en `fallar`, para que la
+    parte que decide si el menu se va no arrastre la que decide como se avisa.
   */
+  /**
+   * Que se avisa cuando algo fallo, y **una sola vez para todas las acciones**.
+   *
+   * Vive aca y no dentro de cada `catch` porque hay dos corredores —el que cierra
+   * y el que deja la hoja abierta— y el que decide si la persona se queda con el
+   * menu abierto o sin el, nunca es el que escribe el error ni el que arma el
+   * reintento. Si cada corredor trajera su propio `catch`, el mensaje y el
+   * `common.retry` serian dos implementaciones que se pueden desincronizar, y la
+   * que se desincroniza es la que nadie prueba.
+   */
+  const fallar = (problema: unknown, otraVez: () => void) => {
+    setError(problema instanceof Error ? problema.message : t("errors.unknown"));
+    // El `(() => ...)` es necesario: sin el, React toma la funcion como el
+    // updater del estado y guarda otra cosa.
+    setReintento(() => otraVez);
+  };
+
+  /** Una accion que **termina el menu**: pinear, duplicar, renombrar, borrar. */
   const correr = async (hecho: () => void | Promise<void>, otraVez: () => void) => {
     if (trabajando) return;
     setTrabajando(true);
@@ -203,10 +253,37 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
       await hecho();
       onClose();
     } catch (problema) {
-      setError(problema instanceof Error ? problema.message : t("errors.unknown"));
-      // El `(() => ...)` es necesario: sin el, React toma la funcion como el
-      // updater del estado y guarda otra cosa.
-      setReintento(() => otraVez);
+      fallar(problema, otraVez);
+    } finally {
+      setTrabajando(false);
+    }
+  };
+
+  /**
+   * Una escritura que **deja el menu abierto**, que es la regla de la pagina de
+   * icono y no la de las acciones de hoja.
+   *
+   * No es un `correr` con un parametro porque la diferencia no es de timing sino
+   * de contrato: una accion de hoja termina el menu cuando va bien, y elegir un
+   * icono no —se elige, se cambia de color, se quita y se vuelve a poner, y con
+   * el menu cerrandose en cada celda habria que reabrirlo para cada intento—. Lo
+   * que **si** es el mismo esta en `fallar`, y por eso el error y el reintento se
+   * escribieron una vez sola.
+   *
+   * Y mantiene el `if (trabajando) return`: dos celdas tocadas seguidas con una
+   * escritura todavia en vuelo pierden la segunda. Es lo que hacen las cuatro
+   * hojas que esta pagina reemplaza —`note-menu-sheet.tsx:181` es el
+   * `if (!note || busy) return` de esta misma regla—, y el boton de reintentar
+   * queda a la vista para repetirla.
+   */
+  const correrEnLaPagina = async (hecho: () => void | Promise<void>, otraVez: () => void) => {
+    if (trabajando) return;
+    setTrabajando(true);
+    setError(null);
+    try {
+      await hecho();
+    } catch (problema) {
+      fallar(problema, otraVez);
     } finally {
       setTrabajando(false);
     }
@@ -266,6 +343,31 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
       return;
     }
     void correr(hecho, otraVez);
+  };
+
+  /**
+   * Poner el icono, y **el `null` pasa de largo**.
+   *
+   * El `null` no es "no me llego nada": es lo que dice "sin icono", y lo manda la
+   * fila `icon-cell-none` del selector (`icon-picker-sheet.tsx:499`). Si esta
+   * funcion lo filtrara por verdadismo, quitar el icono desde el menu dejaria de
+   * existir sin ningun error en ninguna parte —la fila desaparece, el handler
+   * nunca corre— y por eso el `icon` va al handler tal cual.
+   *
+   * Y corre con `correrEnLaPagina` y no con `correr` porque elegir un icono no
+   * termina el menu: el panel sigue abierto para probar otro, cambiar el color o
+   * quitarlo. El error se muestra igual, con su reintento, porque va por el
+   * `fallar` que los dos corredores comparten.
+   */
+  const ponerIcono = (icon: IconRef | null) => {
+    const otraVez = () => ponerIcono(icon);
+    const handler = handlersVivos.icon;
+
+    if (!handler) {
+      sinHandler();
+      return;
+    }
+    void correrEnLaPagina(() => handler(icon), otraVez);
   };
 
   if (!ctx) return null;
@@ -363,6 +465,18 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
         ) : null}
 
         {/*
+          El icono se escribe al elegir y la hoja **no** se cierra: el panel
+          sigue abierto para cambiar de opinion, y el error —si el handler
+          falla— se muestra mas abajo, con su reintento, igual que en las otras
+          paginas. Por eso esta recibe `onSelect` y no un boton de guardar: en el
+          registro, `icon` es una pagina que se entra, no una fila que dispara una
+          cosa y se va.
+        */}
+        {pagina === "icon" ? (
+          <IconPage icon={iconoVivo} onSelect={ponerIcono} />
+        ) : null}
+
+        {/*
           El fallo, **en la hoja y no en un toast**: un toast se va solo y a la
           pagina de borrar hay que volver a entrar para volver a leerlo. Y el
           reintento va al lado del error, que es donde se lo busca.
@@ -392,20 +506,20 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
  * montar**.
  *
  * El registro declara siete (`MenuPageId`) y las cinco entidades las necesitan
- * todas. Los componentes llegan de a una: la de renombrar y la de
- * borrar estan, la de icono llega con la tarea siguiente, la de acceso con la
- * que sube `useShareReach`, la de exportar con el endpoint, y la de crear
- * cuando la carpeta deje de montar sus propias hojas.
+ * todas. Los componentes llegan de a uno: la de renombrar, la de icono y la de
+ * borrar estan; la de acceso con la que sube `useShareReach`, la de exportar con
+ * el endpoint, y la de crear cuando la carpeta deje de montar sus propias hojas.
  *
  * La lista esta escrita aqui y no armandola en el JSX para que se pueda leer sin
  * renderizar, que es la unica forma de comprobar en este repo que no se ofrece
  * una fila que lleva a un hueco.
  */
-const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "delete"];
+const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "icon", "delete"];
 
 /** El subtitulo de la cabecera, y el de la primera pagina es ninguno. */
 const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
   rename: "common.rename",
+  icon: "icons.title",
   delete: "common.delete",
 };
 

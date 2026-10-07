@@ -8,6 +8,7 @@ import type { Collection, Folder, List, ListOrderMode, Note } from "@orbit-hub/c
 import { ContentToolbar } from "@/components/content/content-toolbar";
 import { AppIcon } from "@/components/ui/app-icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MenuButton } from "@/components/ui/menu-button";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
 import { LIST_KIND_ICON } from "@/lib/lists/kind";
@@ -396,9 +397,7 @@ function ContentRowView({
         could order but whose menu you could never open, which is the worst of
         both, and it looked fine because one of the two glyphs was showing.
       */}
-      {onMenu ? (
-        <BotonMenu label={row.name} onPress={onMenu} />
-      ) : null}
+      {onMenu ? <MenuButton label={row.name} onPress={onMenu} /> : null}
     </View>
   );
 }
@@ -424,50 +423,6 @@ function subtitulo(row: ContentRow, t: ReturnType<typeof useTranslation>): strin
   return t("content.itemsIn", { count: row.itemCount ?? 0, kind: clase });
 }
 
-function BotonMenu({ label, onPress }: { label: string; onPress: () => void }) {
-  const theme = useTheme();
-  const t = useTranslation();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={t("rowActions.menuOf", { name: label })}
-      onPress={onPress}
-      hitSlop={8}
-      style={({ pressed }) => [
-        styles.menu,
-        {
-          /*
-            Centrado en vertical, y no pegado arriba con un `top` fijo.
-
-            El alto de una fila no es un numero —cambia con el titulo en dos
-            lineas, con el numero de elementos y con la escala de letra— y un
-            `top` de ocho puntos acertaba en unas filas y dejaba el icono por
-            encima del centro en las demas. Con `top: 0` y `bottom: 0` el centro lo
-            pone la propia fila y no hay ningun alto que adivinar.
-          */
-          top: 0,
-          bottom: 0,
-          // The handle is `right: 8` and about 32 wide, so stepping by its width
-          // plus its own margin puts the menu clear of it rather than a few
-          // pixels to the side of it.
-          right: theme.spacing.sm,
-          // 40 de blanco y el icono dentro: media 26, por debajo de lo que un
-          // dedo alcanza con fiabilidad. Con `hitSlop` el blanco crecia hacia el
-          // asa de arrastrar, que esta al lado.
-          minWidth: 40,
-          minHeight: 40,
-          alignItems: "center",
-          justifyContent: "center",
-          borderRadius: theme.radius.sm,
-          backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
-        },
-      ]}
-    >
-      <Ionicons name="ellipsis-horizontal" size={18} color={theme.colors.textSubtle} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   caja: {
     position: "relative",
@@ -484,9 +439,6 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: "center",
     justifyContent: "center",
-  },
-  menu: {
-    position: "absolute",
   },
   asa: {
     position: "absolute",
