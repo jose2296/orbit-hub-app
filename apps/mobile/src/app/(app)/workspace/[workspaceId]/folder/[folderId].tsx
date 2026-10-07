@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 
-import type { IconRef, List } from "@orbit-hub/contracts";
+import type { Collection, IconRef, List } from "@orbit-hub/contracts";
 
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
@@ -9,6 +9,7 @@ import { CreateSheet } from "@/components/folders/create-sheet";
 import type { SheetOrigin } from "@/components/ui/sheet";
 import { ShareNodeSheet } from "@/components/shares/share-node-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
+import { CollectionMenuSheet } from "@/components/collections/collection-menu-sheet";
 import { ContentList } from "@/components/content/content-list";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
@@ -16,7 +17,9 @@ import type { SheetOption } from "@/components/ui/sheet";
 import { Screen } from "@/components/ui/screen";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { useLists } from "@/hooks/use-lists";
+import { useCollections } from "@/hooks/use-collections";
 import { useNotes } from "@/hooks/use-notes";
+import { createCollectionAction } from "@/lib/collections/actions";
 import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenTitle } from "@/hooks/use-screen-title";
@@ -41,6 +44,8 @@ export default function FolderScreen() {
   const { folders, isLoading, createFolder } = useFolders(workspaceId);
   const { lists, createList } = useLists({ workspaceId });
   const { notes, createNote } = useNotes({ workspaceId, folderId });
+  const { collections, bookmarkCounts } = useCollections(workspaceId);
+  const [collectionFor, setCollectionFor] = useState<Collection | null>(null);
   const router = useRouter();
 
   const [menuFor, setMenuFor] = useState<
@@ -161,6 +166,12 @@ export default function FolderScreen() {
       closeSheets();
       router.push({ pathname: "/note/[noteId]", params: { noteId } });
       return;
+    } else if (createKind === "collection") {
+      await createCollectionAction({
+        workspaceId,
+        folderId: folderId,
+        name: trimmed,
+      });
     } else if (createKind) {
       await createList({
         workspaceId,
@@ -313,11 +324,18 @@ export default function FolderScreen() {
         folders={folders}
         lists={lists}
         notes={notes}
+          collections={collections}
+          bookmarkCounts={bookmarkCounts}
+          onCollectionMenu={(collection) => setCollectionFor(collection)}
         isLoading={isLoading}
         onFolderMenu={(target) =>
           setMenuFor({ kind: "folder", folder: target })
         }
         onListMenu={(target) => setMenuFor({ kind: "list", list: target })}
+      />
+      <CollectionMenuSheet
+        collection={collectionFor}
+        onClose={() => setCollectionFor(null)}
       />
       {/* The menu of a thing. A long press opens it on a phone, which is where
           the action is not a button anyone sees all the time. */}

@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
-import type { Folder, List, ListOrderMode, Note } from "@orbit-hub/contracts";
+import type { Collection, Folder, List, ListOrderMode, Note } from "@orbit-hub/contracts";
 
 import { ContentToolbar } from "@/components/content/content-toolbar";
 import { AppIcon } from "@/components/ui/app-icon";
@@ -35,8 +35,16 @@ export interface ContentListProps {
   folders: Folder[];
   lists: List[];
   notes: Note[];
+  /**
+   * Las colecciones de enlaces del espacio, **como una fila mas**: se crean desde
+   * el mismo `+` y se abren y gestionan como una lista, una carpeta o una nota.
+   */
+  collections?: Collection[];
+  /** Cuantos enlaces tiene cada coleccion, por id, para el subtitulo de su fila. */
+  bookmarkCounts?: Record<string, number>;
   isLoading: boolean;
   onFolderMenu?: (folder: Folder) => void;
+  onCollectionMenu?: (collection: Collection) => void;
   onListMenu?: (list: List) => void;
   /**
    * A note's menu, and the reason it is a prop.
@@ -78,8 +86,11 @@ export function ContentList({
   folders,
   lists,
   notes,
+  collections = [],
+  bookmarkCounts = {},
   isLoading,
   onFolderMenu,
+  onCollectionMenu,
   onListMenu,
   onNoteMenu,
 }: ContentListProps) {
@@ -130,8 +141,11 @@ export function ContentList({
         ...folders.map(toRow.folder),
         ...lists.map(toRow.list),
         ...notes.map(toRow.note),
+        ...collections.map((collection) =>
+          toRow.collection(collection, bookmarkCounts[collection.id] ?? 0),
+        ),
       ].filter((row) => enAlcance(row, alcance, folderId)),
-    [alcance, folderId, folders, lists, notes],
+    [alcance, bookmarkCounts, collections, folderId, folders, lists, notes],
   );
 
   const visible = useMemo(
@@ -155,6 +169,14 @@ export function ContentList({
         // a row assembled by hand: it is where a list used to open, so a row that
         // arrives without a kind still goes to the screen it always went to.
         router.push(routeForList({ id: row.id, kind: row.listKind ?? "tasks" }));
+        return;
+      }
+      if (row.kind === "collection") {
+        // La pantalla de enlaces ya sabe filtrar por coleccion y pone ella el titulo.
+        router.push({
+          pathname: "/(app)/bookmarks",
+          params: { workspaceId, collectionId: row.id },
+        });
         return;
       }
       router.push(`/(app)/note/${row.id}`);
@@ -239,6 +261,13 @@ export function ContentList({
                     ? onFolderMenu
                       ? () => onFolderMenu(folders.find((f) => f.id === row.id) as Folder)
                       : undefined
+                    : row.kind === "collection"
+                      ? onCollectionMenu
+                        ? () =>
+                            onCollectionMenu(
+                              collections.find((c) => c.id === row.id) as Collection,
+                            )
+                        : undefined
                     : row.kind === "list"
                       ? onListMenu
                         ? () => onListMenu(lists.find((l) => l.id === row.id) as List)
@@ -307,6 +336,8 @@ function ContentRowView({
   const respaldo =
     row.kind === "folder"
       ? ("folder-outline" as const)
+      : row.kind === "collection"
+        ? ("bookmarks-outline" as const)
       : row.kind === "note"
         ? ("document-text-outline" as const)
         : ((LIST_KIND_ICON[(row.listKind ?? "tasks") as keyof typeof LIST_KIND_ICON] ??
@@ -342,7 +373,11 @@ function ContentRowView({
         <View
           style={[styles.icono, { borderRadius: theme.radius.md, backgroundColor: iconTint }]}
         >
-          <AppIcon icon={row.icon} size={16} inheritColor={foreground} fallback={respaldo} />
+          {row.kind === "collection" && row.emoji ? (
+            <AppText variant="bodyStrong">{row.emoji}</AppText>
+          ) : (
+            <AppIcon icon={row.icon} size={16} inheritColor={foreground} fallback={respaldo} />
+          )}
         </View>
         <View style={[styles.crece, { gap: 2 }]}>
           <AppText variant="bodyStrong" numberOfLines={1}>
@@ -379,6 +414,11 @@ function ContentRowView({
  */
 function subtitulo(row: ContentRow, t: ReturnType<typeof useTranslation>): string {
   if (row.kind === "note") return t("content.kind.note");
+  if (row.kind === "collection") {
+    const enlaces = row.bookmarkCount ?? 0;
+    if (enlaces === 0) return t("collections.empty");
+    return enlaces === 1 ? t("collections.count.one") : t("collections.count.other", { count: enlaces });
+  }
   if (row.kind === "folder") return t("content.kind.folder");
   const clase = t(`content.kind.${row.listKind ?? "tasks"}` as never);
   return t("content.itemsIn", { count: row.itemCount ?? 0, kind: clase });

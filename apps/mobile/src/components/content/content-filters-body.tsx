@@ -58,6 +58,7 @@ export function ContentFiltersBody({
       folder: cuentaDe({ ...filter, kind: "folder", listKind: undefined }),
       list: cuentaDe({ ...filter, kind: "list", listKind: undefined }),
       note: cuentaDe({ ...filter, kind: "note", listKind: undefined }),
+      collection: cuentaDe({ ...filter, kind: "collection", listKind: undefined }),
       listKind: new Map(
         listKindSchema.options.map((kind) => [
           kind as string,
@@ -129,6 +130,19 @@ export function ContentFiltersBody({
               })
             }
             testID="content-filter-note"
+          />
+          <Chip
+            label={t("content.filter.collections")}
+            selected={filter.kind === "collection"}
+            count={cuenta.collection}
+            onPress={() =>
+              onFilterChange({
+                ...filter,
+                kind: filter.kind === "collection" ? "all" : "collection",
+                listKind: undefined,
+              })
+            }
+            testID="content-filter-collection"
           />
         </View>
       </View>

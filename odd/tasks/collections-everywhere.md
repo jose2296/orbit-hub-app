@@ -25,13 +25,13 @@ Que una colección de bookmarks sea un elemento más de un espacio o carpeta, co
 
 ## Tareas
 
-- [ ] **T1** Lector: los hijos de `InlineView` heredan color y tipografía; enlace con acento y subrayado. Test.
-- [ ] **T2** `triggerExtract` reintenta ante 404 (el create aún no llegó al servidor). Test.
-- [ ] **T3** `deleteCollectionAction` (deja los bookmarks sin clasificar) + `CollectionMenuSheet` (renombrar, borrar). Test de la acción.
-- [ ] **T4** Colecciones en `ContentList`: `toRow.collection`, fila con recuento de bookmarks, abre la lista de bookmarks filtrada, menú. Workspace y carpeta. Test de ordenación/filtro.
-- [ ] **T5** Crear colección desde el `+` (`CreateSheet`, kind `collection`) en espacio y carpeta, y desde "crear dentro" del menú de carpeta.
-- [ ] **T6** Pantalla de bookmarks: título de la colección y estado vacío con su contexto.
-- [ ] **T7** Verificación en el emulador (claro/oscuro) y `npm run check`.
+- [x] **T1** Lector: los hijos de `InlineView` heredan color y tipografía; enlace con acento y subrayado. Test.
+- [x] **T2** `triggerExtract` reintenta ante 404 (el create aún no llegó al servidor). Test.
+- [x] **T3** `deleteCollectionAction` (deja los bookmarks sin clasificar) + `CollectionMenuSheet` (renombrar, borrar). Test de la acción.
+- [x] **T4** Colecciones en `ContentList`: `toRow.collection`, fila con recuento de bookmarks, abre la lista de bookmarks filtrada, menú. Workspace y carpeta. Test de ordenación/filtro.
+- [x] **T5** Crear colección desde el `+` (`CreateSheet`, kind `collection`) en espacio y carpeta, y desde "crear dentro" del menú de carpeta.
+- [x] **T6** Pantalla de bookmarks: título de la colección y estado vacío con su contexto.
+- [x] **T7** Verificación en el emulador (crear, listar, menú, abrir; claro) y `npm run check` (1548 tests). Sin ver: borrar una colección con enlaces dentro, y la lista de enlaces extraídos con enlaces en el artículo (hace falta la API desplegada).
 
 ## Respuesta (sin código) sobre "Bookmarks" del drawer
 
@@ -51,8 +51,8 @@ Todas inline: ninguna toca 2+ archivos no triviales a la vez sin ser acotada; la
 
 ## Progreso
 
-Rama `jose2296/collections-everywhere`. Nada hecho todavía.
+Rama `jose2296/collections-everywhere`. T1-T7 hechas. Commits: fdf7bd5 (lector), T2 (reintento 404), T3+fila de colección, T4-T6 (lista, crear, título).
 
 ## Siguiente paso
 
-T1.
+Abrir PR y, tras el merge, redesplegar la API (jsdom ya está fuera del bundle) para que la extracción funcione en producción.

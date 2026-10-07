@@ -10,6 +10,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ListRow } from "@/components/ui/list-row";
 import { Screen } from "@/components/ui/screen";
 import { useBookmarks } from "@/hooks/use-bookmarks";
+import { useCollections } from "@/hooks/use-collections";
+import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n";
 import { useTheme } from "@/theme";
@@ -40,6 +42,15 @@ export default function BookmarksListScreen() {
   // La papelera de cada fila, con la misma confirmacion que el inbox: el
   // patron vive en `BookmarkDeleteSheet` para que no derive en dos copias.
   const [aBorrar, setABorrar] = useState<Bookmark | null>(null);
+
+  // Dentro de una coleccion, la cabecera lleva su nombre: sin esto dice
+  // "Bookmarks" en todas y no se sabe en cual se esta.
+  const { collections } = useCollections(workspaceId);
+  const coleccion =
+    collectionId && collectionId !== "unclassified"
+      ? (collections.find((item) => item.id === collectionId) ?? null)
+      : null;
+  useScreenTitle(coleccion?.name ?? t("bookmarks.title"));
 
   const { bookmarks, isLoading } = useBookmarks({
     workspaceId,
