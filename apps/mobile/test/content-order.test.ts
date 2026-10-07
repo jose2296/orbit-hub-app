@@ -299,3 +299,41 @@ describe('toRow lleva el icono', () => {
     expect(nota.icon).toBeNull();
   });
 });
+
+describe('una coleccion es otra fila del nivel', () => {
+  const coleccion = {
+    id: 'c1',
+    name: 'Recetas',
+    emoji: '🍝',
+    folderId: 'f1',
+    position: 2,
+    createdAt: '2026-02-01T00:00:00.000Z',
+  } as never;
+
+  it('se convierte en una fila de tipo coleccion con su carpeta, su emoji y su recuento', () => {
+    const row = toRow.collection(coleccion, 4);
+    expect(row).toMatchObject({
+      kind: 'collection',
+      id: 'c1',
+      name: 'Recetas',
+      folderId: 'f1',
+      position: 2,
+      emoji: '🍝',
+      bookmarkCount: 4,
+    });
+    expect(row.icon).toBeNull();
+  });
+
+  it('el filtro de tipo la separa de listas y notas, y la busqueda la encuentra por nombre', () => {
+    const row = toRow.collection(coleccion, 0);
+    expect(matchesFilter(row, { ...EMPTY_FILTER, kind: 'collection' })).toBe(true);
+    expect(matchesFilter(row, { ...EMPTY_FILTER, kind: 'list' })).toBe(false);
+    expect(matchesFilter(row, { ...EMPTY_FILTER, query: 'recetas' })).toBe(true);
+  });
+
+  it('solo aparece en el nivel donde esta: la de una carpeta no sale en la raiz', () => {
+    const row = toRow.collection(coleccion, 0);
+    expect(enAlcance(row, { tipo: 'nivel' }, 'f1')).toBe(true);
+    expect(enAlcance(row, { tipo: 'nivel' }, null)).toBe(false);
+  });
+});

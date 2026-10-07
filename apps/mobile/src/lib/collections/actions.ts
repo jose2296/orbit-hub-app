@@ -2,7 +2,8 @@ import * as Crypto from "expo-crypto";
 
 import type { Collection } from "@orbit-hub/contracts";
 
-import { enqueueOperation, localUpdate } from "@/lib/offline";
+import { updateBookmarkAction } from "@/lib/bookmarks/actions";
+import { enqueueOperation, getLocalStoreReady, localUpdate } from "@/lib/offline";
 
 /**
  * Escribir una coleccion.
@@ -99,4 +100,77 @@ export async function updateCollectionAction(
   // que numero esta la fila: la que trae el input es la que habia en pantalla
   // cuando se abrio el editor, y ya puede ir por detras.
   await localUpdate("collection", input.id, cambios);
+}
+
+/** Una fila de la cache, con lo unico que hace falta para decidir si es de la coleccion. */
+interface FilaDeBookmark {
+  entityId: string;
+  version: number;
+  deletedAt: string | null;
+  payload: string;
+}
+
+/**
+ * Los bookmarks vivos de una coleccion, y la version de cada uno.
+ *
+ * Pura y exportada para probarla: es la decision que importa al borrar. Un
+ * payload que no se lee se salta, porque una fila rota no puede impedir borrar la
+ * coleccion; y los ya borrados no se tocan.
+ */
+export function bookmarksDeLaColeccion(
+  filas: FilaDeBookmark[],
+  collectionId: string,
+): { id: string; version: number }[] {
+  const salida: { id: string; version: number }[] = [];
+  for (const fila of filas) {
+    if (fila.deletedAt !== null) continue;
+    try {
+      const registro = JSON.parse(fila.payload) as { collectionId?: unknown };
+      if (registro.collectionId === collectionId) {
+        salida.push({ id: fila.entityId, version: fila.version });
+      }
+    } catch {
+      continue;
+    }
+  }
+  return salida;
+}
+
+/**
+ * Borra una coleccion **sin llevarse sus bookmarks**.
+ *
+ * Los enlaces pasan a "sin clasificar" antes de que la coleccion desaparezca: el
+ * borrado del servidor es un tombstone y no toca los bookmarks, asi que sin este
+ * paso se quedarian apuntando a una coleccion que ya no existe, fuera de su sitio
+ * y tambien fuera de la bandeja de sin clasificar. Despues, el tombstone local y
+ * la operacion, igual que una nota.
+ */
+export async function deleteCollectionAction(collectionId: string): Promise<void> {
+  const store = await getLocalStoreReady();
+
+  const filas = await store.listCached("bookmark");
+  for (const { id, version } of bookmarksDeLaColeccion(filas, collectionId)) {
+    await updateBookmarkAction({ id, baseVersion: version, collectionId: null });
+  }
+
+  const cached = await store.getCached("collection", collectionId);
+  const baseVersion = cached?.version ?? 0;
+  const now = new Date().toISOString();
+  await store.upsertCached([
+    {
+      entity: "collection",
+      entityId: collectionId,
+      version: baseVersion,
+      updatedAt: now,
+      deletedAt: now,
+      payload: cached?.payload ?? JSON.stringify({ id: collectionId }),
+      pending: null,
+    },
+  ]);
+  await enqueueOperation({
+    kind: "delete",
+    entity: "collection",
+    entityId: collectionId,
+    baseVersion,
+  });
 }
