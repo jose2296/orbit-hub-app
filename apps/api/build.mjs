@@ -9,6 +9,7 @@ import * as esbuild from 'esbuild';
  */
 const external = [
   '@electric-sql/pglite',
+  '@mozilla/readability',
   '@node-rs/argon2',
   'cors',
   'dotenv',
@@ -16,6 +17,9 @@ const external = [
   'express',
   'helmet',
   'jose',
+  // jsdom lee su hoja de estilos por defecto con `__dirname` y usa top-level
+  // await: dentro del bundle ESM el servidor no arranca.
+  'jsdom',
   'pg',
   'pino',
   'pino-http',
