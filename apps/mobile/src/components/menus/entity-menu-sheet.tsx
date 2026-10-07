@@ -271,10 +271,18 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
    * escribieron una vez sola.
    *
    * Y mantiene el `if (trabajando) return`: dos celdas tocadas seguidas con una
-   * escritura todavia en vuelo pierden la segunda. Es lo que hacen las cuatro
+   * escritura todavia en vuelo, la segunda no corre. Es lo que hacen las cuatro
    * hojas que esta pagina reemplaza —`note-menu-sheet.tsx:181` es el
-   * `if (!note || busy) return` de esta misma regla—, y el boton de reintentar
-   * queda a la vista para repetirla.
+   * `if (!note || busy) return` de esta misma regla—, y lo que hace que esa
+   * segunda se vea en vez de desaparecer es que `IconPage` recibe `trabajando` y
+   * deja el panel sin toques mientras dura la primera.
+   *
+   * Lo que **no** hay es una recuperacion para esa segunda celda, y no se
+   * promete: el `common.retry` es del error, y cuando la escritura va bien no hay
+   * error que reintentar. Perder un toque que llega durante una escritura que si
+   * funciono es lo correcto —queria decir "cambiar a este", y ese cambio ya se
+   * guardo—. Durante una que fallo, en cambio, se ve: el error queda con su boton
+   * y `otraVez` repite la llamada exacta.
    */
   const correrEnLaPagina = async (hecho: () => void | Promise<void>, otraVez: () => void) => {
     if (trabajando) return;
@@ -471,9 +479,13 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
           paginas. Por eso esta recibe `onSelect` y no un boton de guardar: en el
           registro, `icon` es una pagina que se entra, no una fila que dispara una
           cosa y se va.
+
+          Y por eso recibe `trabajando`: es lo que apaga el panel mientras se
+          escribe, que sin el el grid entero sigue tappable y el segundo toque se
+          pierde sin decir nada.
         */}
         {pagina === "icon" ? (
-          <IconPage icon={iconoVivo} onSelect={ponerIcono} />
+          <IconPage icon={iconoVivo} onSelect={ponerIcono} trabajando={trabajando} />
         ) : null}
 
         {/*

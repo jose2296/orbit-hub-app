@@ -1,6 +1,11 @@
+import { View } from "react-native";
+
 import type { IconRef } from "@orbit-hub/contracts";
 
 import { IconPickerPanel } from "@/components/ui/icon-picker-sheet";
+import { AppText } from "@/components/ui/text";
+import { useTranslation } from "@/lib/i18n";
+import { useTheme } from "@/theme";
 
 /**
  * ------------------------------------------------------------------
@@ -53,6 +58,14 @@ export interface IconPageProps {
    * handler del call site.
    */
   onSelect: (icon: IconRef | null) => void;
+  /**
+   * Que hay una escritura en vuelo, y por eso **el panel deja de tomar toques**.
+   *
+   * Es la misma convencion que las otras dos paginas —`RenamePage` apaga su boton
+   * y lo pone en `common.saving`, `DeletePage` calcula `puedeBorrar` con
+   * `!trabajando`— y sin ella el grid entero queda tappable mientras se escribe.
+   */
+  trabajando: boolean;
 }
 
 /**
@@ -77,7 +90,42 @@ export interface IconPageProps {
  * ofrecen, ni abre ni cierra nada. Que la fila exista o no lo dice el registro
  * (`CON_ICON_REF` en `registry.tsx`: solo lista, nota y carpeta tienen un
  * `IconRef`), y quien corre el guardado es el handler que le pasa la hoja.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE `pointerEvents` Y NO "NO MONTAR EL PANEL"
+ * ------------------------------------------------------------------
+ *
+ * Porque `IconPickerBody` guarda su estado adentro —la pestana abierta, lo que
+ * se esta buscando en el buscador y los emojis recientes—, y la pagina se
+ * desmonta cada vez que se vuelve con la flecha. Sacar el panel mientras se
+ * escribe lo desmontaria otra vez: escribir "pan", tocar un resultado y volver al
+ * principio con el buscador vacio es peor que un toque que no hace nada, y es un
+ * fallo que se ve. El panel se queda montado y lo que se le corta es el toque.
+ *
+ * Y el corte es con `pointerEvents="none"`, que es la forma que tiene react-native
+ * de decir "este subtree no recibe toques" y la que ya usan veinte lugares de este
+ * arbol —`sheet.tsx:714` entre ellos—. No es un cartel inventado ni un
+ * `disabled` que el panel no tiene: es la plataforma diciendo que mientras hay una
+ * escritura en vuelo, todavia no se elige.
+ *
+ * La regla de verdad sigue estando en la hoja —`correrEnLaPagina` no corre dos
+ * escrituras a la vez—; el `pointerEvents` es lo que hace que el toque que llega
+ * durante la segunda se vea en vez de desaparecer.
  */
-export function IconPage({ icon, onSelect }: IconPageProps) {
-  return <IconPickerPanel current={icon} onSelect={onSelect} />;
+export function IconPage({ icon, onSelect, trabajando }: IconPageProps) {
+  const theme = useTheme();
+  const t = useTranslation();
+
+  return (
+    <View style={{ gap: theme.spacing.sm }}>
+      <View pointerEvents={trabajando ? "none" : "auto"}>
+        <IconPickerPanel current={icon} onSelect={onSelect} />
+      </View>
+      {trabajando ? (
+        <AppText variant="caption" tone="muted">
+          {t("common.saving")}
+        </AppText>
+      ) : null}
+    </View>
+  );
 }

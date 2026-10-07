@@ -1,9 +1,19 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ACCIONES, accionesPara } from "@/lib/menus/registry";
 import type { MenuContext } from "@/lib/menus/registry";
+
+import {
+  PAGINAS,
+  RAIZ,
+  hojasMontadas,
+  hoja,
+  paginasEnElDirectorio,
+  paginasMontadas,
+  src,
+} from "./menus-test-helpers";
 
 /**
  * `EntityMenuSheet`, por fuente.
@@ -23,52 +33,16 @@ import type { MenuContext } from "@/lib/menus/registry";
  * Lo que no se puede comprobar aqui, y no se va a prometer: que al apretar una
  * fila aparezcan cuatro filas. Eso se mira en la pantalla.
  *
- * El patron es el de `sheet-back.test.ts`.
+ * El patron es el de `sheet-back.test.ts`. Lo que se lee del fuente de la hoja y
+ * del directorio de paginas **no vive aca**: esta en `menus-test-helpers.ts`, que
+ * es de donde `icon-page.test.ts` lo toma tambien, porque eran la misma funcion
+ * escrita dos veces.
  */
 
-const RAIZ = join(import.meta.dirname, "..");
-const src = (ruta: string) => readFileSync(join(RAIZ, ruta), "utf8");
 const hay = (ruta: string) => existsSync(join(RAIZ, ruta));
 
-const HOJA = "src/components/menus/entity-menu-sheet.tsx";
-const PAGINAS = "src/components/menus/pages";
 const RENOMBRAR = `${PAGINAS}/rename-page.tsx`;
 const BORRAR = `${PAGINAS}/delete-page.tsx`;
-
-const hoja = src(HOJA);
-
-/** Cuantas `<Sheet ...>` monta un archivo. `<SheetOptions` no cuenta. */
-function hojasMontadas(fuente: string): number {
-  return (fuente.match(/<Sheet[\s/>]/g) ?? []).length;
-}
-
-/**
- * Los ids de `PAGINAS_MONTADAS`, leidos del fuente.
- *
- * Es una lista en el `.tsx` y no un `Record` de componentes porque lo que
- * importa poder leer sin renderizar es **cuales son**, no que se pinten: es la
- * lista de las paginas que existen hoy, y la que T3, T8 y T9 van haciendo
- * crecer.
- */
-function paginasMontadas(): string[] {
-  const declarada = hoja.match(/PAGINAS_MONTADAS[^=]*=\s*\[([^\]]*)\]/);
-  expect(declarada, "la hoja tiene que declarar que paginas monta").not.toBeNull();
-  return [...(declarada![1] ?? "").matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1]!);
-}
-
-/**
- * Las paginas que hay, del directorio.
- *
- * Derivado y no escrito a mano: una lista aca se queda sin mirar cuando llega una
- * pagina nueva —en T3 se sumo `icon-page.tsx` y el guard de "ninguna pagina monta
- * su propia hoja" la iba a dejar de mirar sin decir nada—. Los dos guards que
- * comparan el directorio con `PAGINAS_MONTADAS` salen de aca.
- */
-function paginasEnElDirectorio(): string[] {
-  return readdirSync(join(RAIZ, PAGINAS))
-    .filter((nombre) => nombre.endsWith(".tsx"))
-    .map((nombre) => nombre.replace(/-page\.tsx$/, ""));
-}
 
 const COLECCION: MenuContext = {
   kind: "collection",

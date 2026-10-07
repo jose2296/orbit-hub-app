@@ -1,10 +1,17 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { dictionaries } from "@/lib/i18n/dictionaries";
 import { ORDEN_POR_KIND, accionesPara } from "@/lib/menus/registry";
 import type { MenuContext, MenuKind } from "@/lib/menus/registry";
+
+import {
+  PAGINAS,
+  hojasMontadas,
+  hoja,
+  paginasMontadas,
+  src,
+  tsxDeLaApp,
+} from "./menus-test-helpers";
 
 /**
  * `IconPage` y `MenuButton`, por fuente.
@@ -18,16 +25,19 @@ import type { MenuContext, MenuKind } from "@/lib/menus/registry";
  * react-native. Asi que lo que se afirma aca es lo mecanico y lo que se puede
  * leer: que la pagina monta el **panel** y no una hoja, que la accion `icon` del
  * registro llega a una pagina que esta version monta, que el `null` de "sin
- * icono" llega al handler sin filtrarse, y que el boton de menu de una fila vive
- * en un archivo en vez de en la pantalla que lo usa.
+ * icono" llega al handler sin filtrarse, que el panel no toma toques mientras se
+ * escribe, y que el boton de menu de una fila vive en un archivo en vez de en la
+ * pantalla que lo usa.
  *
  * Lo que no se puede comprobar aca, y no se va a prometer: que al tocar una
  * celda del grid se guarde el icono. Eso se mira en la pantalla.
  *
- * El patron es el de `entity-menu-sheet.test.ts` y el de `sheet-back.test.ts`.
+ * El patron es el de `entity-menu-sheet.test.ts` y el de `sheet-back.test.ts`, y
+ * lo que se lee del fuente de la hoja y del directorio de paginas sale de
+ * `menus-test-helpers.ts` en vez de estar escrito otra vez aca.
  *
  * ------------------------------------------------------------------
- * POR QUE NADA DE ESTO ESTA ESCRITO A MANO
+ * POR QUE LAS AFIRMACIONES DE ESTE TEST NO ESTAN ESCRITAS A MANO
  * ------------------------------------------------------------------
  *
  * Porque un guard que copia la fuente se desincroniza en silencio: en T2 el
@@ -36,38 +46,19 @@ import type { MenuContext, MenuKind } from "@/lib/menus/registry";
  * los kinds vienen de `Object.keys(ORDEN_POR_KIND)`, las paginas montadas del
  * fuente de la hoja, la etiqueta del boton de la linea que la usa, y la clave
  * del subtitulo de la accion `icon` del registro.
+ *
+ * Lo que **si** estaba escrito a mano era el andamiaje: `RAIZ`, `src` y las dos
+ * listas de paginas eran copia de `entity-menu-sheet.test.ts`, y esa duplicacion
+ * fue el hallazgo de la revision. Ahora esta en un modulo.
  */
 
-const RAIZ = join(import.meta.dirname, "..");
-const src = (ruta: string) => readFileSync(join(RAIZ, ruta), "utf8");
-
-const HOJA = "src/components/menus/entity-menu-sheet.tsx";
-const PAGINAS = "src/components/menus/pages";
 const ICONO = `${PAGINAS}/icon-page.tsx`;
 const SELECTOR = "src/components/ui/icon-picker-sheet.tsx";
 const BOTON = "src/components/ui/menu-button.tsx";
 const LISTA = "src/components/content/content-list.tsx";
 
-const hoja = src(HOJA);
 const boton = src(BOTON);
 const lista = src(LISTA);
-
-/** Cuantas `<Sheet ...>` monta un archivo. `<SheetOptions` no cuenta. */
-function hojasMontadas(fuente: string): number {
-  return (fuente.match(/<Sheet[\s/>]/g) ?? []).length;
-}
-
-/**
- * Los ids de `PAGINAS_MONTADAS`, leidos del fuente.
- *
- * Es una lista en el `.tsx` y no un `Record` de componentes porque lo que
- * importa poder leer sin renderizar es **cuales son**.
- */
-function paginasMontadas(): string[] {
-  const declarada = hoja.match(/PAGINAS_MONTADAS[^=]*=\s*\[([^\]]*)\]/);
-  expect(declarada, "la hoja tiene que declarar que paginas monta").not.toBeNull();
-  return [...(declarada![1] ?? "").matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1]!);
-}
 
 /**
  * La clave de i18n que la hoja le pone de subtitulo a una pagina.
@@ -235,9 +226,9 @@ describe("el boton de menu de una fila vive en un archivo", () => {
     // Derivado del arbol entero, no de una lista de archivos: por eso T4 puede
     // usar `MenuButton` en las filas de los enlaces sin que este guard haya
     // que enterarse, y por eso una segunda copia si se cuela, falla.
-    const conLaEtiqueta = readdirSync(join(RAIZ, "src"), { recursive: true, encoding: "utf8" })
-      .filter((nombre) => nombre.endsWith(".tsx"))
-      .filter((nombre) => src(`src/${nombre}`).includes("rowActions.menuOf"));
+    const conLaEtiqueta = tsxDeLaApp().filter((nombre) =>
+      src(`src/${nombre}`).includes("rowActions.menuOf"),
+    );
 
     expect(conLaEtiqueta).toEqual(["components/ui/menu-button.tsx"]);
   });
@@ -248,5 +239,72 @@ describe("el boton de menu de una fila vive en un archivo", () => {
     // parece que funciona.
     expect(boton).toMatch(/position: "absolute"/);
     expect(lista, "el estilo se mudo con el componente").not.toContain("styles.menu");
+  });
+
+  it("y todo archivo que lo monta tiene la caja relativa que el boton necesita", () => {
+    /*
+      La otra mitad del contrato, y la que se pierde en silencio: `absolute` sin
+      un padre relativo se posiciona contra el contenedor equivocado. El boton
+      dice en su comentario que lo necesita y `content-list.tsx` lo tiene
+      (`caja: { position: "relative" }`), pero "lo tiene hoy" no es un guard: T4
+      monta `MenuButton` en las filas de los enlaces y ese archivo tendria que
+      acordarse solo.
+
+      Por eso la lista sale de **quien lo monta**, y no de una lista escrita aca:
+      con T4 usando el boton, este guard empieza a mirar ese archivo sin que
+      nadie tenga que actualizarlo. Y el `toBeGreaterThan(0)` es para que una
+      lista vacia no pase en verde por no tener nada que comprobar.
+    */
+    const queLoMantan = tsxDeLaApp().filter((nombre) => src(`src/${nombre}`).includes("<MenuButton"));
+
+    expect(
+      queLoMantan.length,
+      "sin archivos que lo monten el guard no comprobaria nada",
+    ).toBeGreaterThan(0);
+
+    for (const archivo of queLoMantan) {
+      expect(src(`src/${archivo}`), `${archivo} monta MenuButton sin caja relativa`).toMatch(
+        /position: "relative"/,
+      );
+    }
+  });
+});
+
+describe("mientras se escribe, el panel no toma toques", () => {
+  /*
+    `IconPickerPanel` es `Pick<IconPickerSheetProps, "current" | "onSelect">`: no
+    tiene `disabled` ni ningun otro prop por el que avisarle de una escritura en
+    vuelo. Y `correrEnLaPagina` corta el segundo toque con `if (trabajando)
+    return`, o sea que sin algo mas **el toque se pierde sin que nada lo diga**:
+    el grid entero sigue tappable, la pagina no se apaga y la persona toca dos
+    veces sin que pase nada. Con T6 y T7 entregando esta pagina a lista, nota y
+    carpeta, tocar dos celdas seguidas es lo normal y no el caso raro.
+
+    Y por que no "no montar el panel": `IconPickerBody` guarda su estado adentro
+    —la pestana, lo escrito en el buscador y los emojis recientes—, y la pagina
+    se desmonta al volver con la flecha, asi que sacarlo mientras se escribe
+    perderia el buscador y la pestana en cada eleccion. El guard no comprueba ese
+    motivo (aca no se renderiza nada), pero esta escrito en la pagina.
+  */
+  it("la pagina recibe que se esta escribiendo y apaga el panel, no lo saca", () => {
+    // El regex junta las dos cosas a proposito: el panel tiene que estar **dentro**
+    // del `View` que se apaga, y no al lado. `{trabajando ? null : <IconPickerPanel
+    // ... />}` compila, pasa el conteo de `<Sheet` y pierde el buscador en cada
+    // eleccion, asi que la forma importa y no solo que el `pointerEvents` exista.
+    expect(src(ICONO)).toMatch(/trabajando: boolean/);
+    expect(src(ICONO)).toMatch(
+      /pointerEvents=\{trabajando \? "none" : "auto"\}>\s*<IconPickerPanel current=\{icon\} onSelect=\{onSelect\} \/>/,
+    );
+  });
+
+  it("la hoja se lo pasa", () => {
+    expect(hoja).toMatch(/<IconPage[\s\S]{0,120}trabajando=\{trabajando\}/);
+  });
+
+  it("y avisa que esta guardando, como las otras dos paginas", () => {
+    // `RenamePage` y `DeletePage` ya tienen la convencion de la palabra
+    // "Guardando"; esta se suma al mismo grupo y no queda como la unica que no
+    // dice nada mientras trabaja.
+    expect(src(ICONO)).toContain('t("common.saving")');
   });
 });
