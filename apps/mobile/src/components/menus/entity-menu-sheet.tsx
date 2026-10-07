@@ -217,18 +217,23 @@ export function EntityMenuSheet({ ctx: pedido, handlers, onClose }: EntityMenuSh
         label: t(etiqueta, { name: ctx.entity.title }),
         icon: accion.icon,
         tone: accion.tone ?? "default",
-        description: motivo ? t(motivo as TranslationKey) : undefined,
+        description: motivo ? t(motivo) : undefined,
         disabled: accion.disponible?.(ctx) === false,
         onPress: () => {
-          const destino = destinoDe(accion);
-
-          if (destino) {
+          /*
+            El destino se lee tal cual lo declaro el registro, sin excepciones: si
+            dice `pagina`, se empuja esa pagina; si dice `hoja`, corre el handler.
+            Borrar entra por la primera rama —es una pagina, la que pregunta— y
+            por eso no hay ningun caso especial que pueda quedar viejo cuando el
+            registro cambie.
+          */
+          if (accion.destino.tipo === "pagina") {
             setError(null);
             setReintento(null);
-            setPagina(destino);
+            setPagina(accion.destino.page);
             return;
           }
-          if (accion.destino.tipo === "hoja") correrHoja(accion.destino.handler);
+          correrHoja(accion.destino.handler);
         },
       };
     });
@@ -320,26 +325,6 @@ const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
 };
 
 /**
- * A donde va la fila al tocarla, y **la unica excepcion al registro**.
- *
- * `ACCIONES.delete` declara `destino: { tipo: "hoja", handler: "borrar" }`, o sea
- * "corre en la hoja y cierra", y el comentario del registro incluso dice que
- * borrar es "una pagina, la que pregunta". Las dos cosas no pueden ser verdad: si
- * se cumple la segunda mitad, un toque en "Eliminar" borra una coleccion sin
- * preguntar, y hoy `collection-menu-sheet.tsx` **pregunta**.
- *
- * O sea que el destino de borrar se resuelve aca. Es una linea y esta escrita
- * para que se vea: la correccion de verdad es una linea en el registro
- * (`destino: { tipo: "pagina", page: "delete" }`), que esta tarea no toca porque
- * `lib/menus` es de la anterior. Cuando esa linea cambie, esta se borra.
- */
-function destinoDe(accion: MenuAccion): MenuPageId | null {
-  if (accion.id === "delete") return "delete";
-
-  return accion.destino.tipo === "pagina" ? accion.destino.page : null;
-}
-
-/**
  * Si la fila se ofrece, y **el filtro no es de disponibilidad**.
  *
  * El registro ya decidio que la accion existe y si se puede: eso no se vuelve a
@@ -353,7 +338,5 @@ function destinoDe(accion: MenuAccion): MenuPageId | null {
  * confunden.
  */
 function puedeOfrecerse(accion: MenuAccion): boolean {
-  const destino = destinoDe(accion);
-
-  return destino === null || PAGINAS_MONTADAS.includes(destino);
+  return accion.destino.tipo !== "pagina" || PAGINAS_MONTADAS.includes(accion.destino.page);
 }

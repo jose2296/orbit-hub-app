@@ -81,13 +81,19 @@ export type MenuCap =
   | "export";
 
 /**
- * Que corre **en la hoja**, sin cambiar de pagina.
+ * El handler de una accion que corre **en la hoja**, sin cambiar de pagina.
  *
  * Compartir NO va aqui y es a proposito: compartir es una pagina con su propio
- * formulario y su propio boton de guardar, no una fila que dispara un toast. Y
- * borrar tambien es una pagina —la que pregunta— aunque su `handler` se llame
- * desde ahi; lo que decide si algo es `hoja` o `pagina` es si cabe en la misma
- * pantalla, no si escribe.
+ * formulario y su propio boton de guardar, no una fila que dispara un toast. Lo
+ * que decide si algo es `hoja` o `pagina` es si cabe en la misma pantalla, no si
+ * escribe.
+ *
+ * Y `"borrar"` sigue en la union **aunque ninguna accion lo declare ya como
+ * `hoja`**: borrar es una pagina, y desde adentro de esa pagina la hoja lo corre
+ * por su nombre —`DeletePage` recibe `onBorrar` y `MenuHandlers.borrar` es lo que
+ * la app llama de verdad—. Sacarlo de aqui obligaria a la hoja a manejar el
+ * handler de borrar con un tipo distinto al del resto, que es precisamente la
+ * excepcion que esta vez se quiere evitar.
  */
 export type MenuHandlerName =
   | "borrar"
@@ -143,8 +149,16 @@ export interface MenuAccion {
    *   no es suya.
    */
   disponible?: (ctx: MenuContext) => boolean;
-  /** El texto de por que no se puede. A `SheetOption.description`. */
-  motivo?: (ctx: MenuContext) => string | null;
+  /**
+   * Por que no se puede, y **la clave de i18n de ese por que**.
+   *
+   * Una `TranslationKey` y no un `string` porque el consumidor lo mete tal cual
+   * en `t(...)`: con el tipo abierto, el unico filtro es un `as TranslationKey`
+   * en cada lado, y un cast es exactamente donde se cuela una clave que no esta
+   * en `dictionaries.en` —que es el unico sitio donde se puede comprobar, y
+   * solo si el tipo obliga.
+   */
+  motivo?: (ctx: MenuContext) => TranslationKey | null;
   destino:
     | { tipo: "hoja"; handler: MenuHandlerName }
     | { tipo: "pagina"; page: MenuPageId };
@@ -320,6 +334,29 @@ export const ACCIONES: Record<string, MenuAccion> = {
 
     Y `motivo` devuelve `null` cuando si se puede, no una cadena vacia: `null` es
     "no hay motivo" y "" es un motivo que no explica nada.
+
+    ------------------------------------------------------------------
+    POR QUE BORRAR ES `pagina` Y NO `hoja`
+    ------------------------------------------------------------------
+
+    Porque es la unica accion del registro que **escribe y no se puede deshacer**,
+    y "no se puede deshacer" en la app significa siempre lo mismo: una pantalla
+    que pregunta. Las ocho hojas lo vienen haciendo asi —`CollectionMenuSheet` lo
+    tenia como `Paso = "menu" | "rename" | "delete"`, y `list-menu-sheet` tiene su
+    pagina— y declararlo `hoja` hacia que `destino: { tipo: "hoja", handler:
+    "borrar" }` significara "tocar la fila borra". Eso no es una fila sin
+    confirmacion: es un toque que tira trabajo de otra gente.
+
+    Estuvo declarado asi y lo corrigio `EntityMenuSheet` con un caso especial
+    mientras ninguna otra tarea lo usaba. **Un trabajo destructivo no puede
+    quedar en un parche local**: el parche esta en un archivo y el registro se
+    consume en nueve, y T4 a T10 no heredan el parche porque no se copian
+    codigos: leen el registro. Ademas `MenuPageId` declaraba `"delete"` sin que
+    ninguna accion lo apuntara, que es el sintoma de un destino mal escrito.
+
+    El `handler: "borrar"` no desaparece del contrato: lo llama `DeletePage` desde
+    adentro de la pagina, que es lo que el comentario de `MenuHandlerName` dice
+    ahora con otras palabras.
   */
   delete: {
     id: "delete",
@@ -331,7 +368,7 @@ export const ACCIONES: Record<string, MenuAccion> = {
     tone: "danger",
     disponible: (ctx) => !ctx.entity.shared,
     motivo: (ctx) => (ctx.entity.shared ? "common.deleteNotYoursHint" : null),
-    destino: { tipo: "hoja", handler: "borrar" },
+    destino: { tipo: "pagina", page: "delete" },
   },
 };
 

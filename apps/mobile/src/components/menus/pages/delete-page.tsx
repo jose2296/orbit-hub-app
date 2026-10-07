@@ -79,10 +79,10 @@ export function DeletePage({ ctx, onBorrar, trabajando, conteo }: DeletePageProp
     unica forma de que no se rompa en silencio es que la regla tenga una sola
     casa.
 
-    El `as TranslationKey` es el precio de que `MenuAccion.motivo` este declarado
-    como `string | null` y no como clave: las doce implementaciones devuelven
-    claves, y el cast no esconde nada: solo no obliga a reescribir la firma que
-    las nueve tareas siguientes ya importan.
+    Y sale **sin cast** porque `MenuAccion.motivo` esta declarado como
+    `TranslationKey | null`: si el registro devolviera una clave que no existe,
+    el error lo da el compilador y no una pantalla con `{clave}` en vez de una
+    frase.
   */
   const motivo = ACCIONES.delete?.motivo?.(ctx) ?? null;
   const puedeBorrar = motivo === null && !trabajando;
@@ -109,7 +109,7 @@ export function DeletePage({ ctx, onBorrar, trabajando, conteo }: DeletePageProp
 
       {motivo ? (
         <AppText variant="callout" style={{ color: theme.colors.danger }}>
-          {t(motivo as TranslationKey)}
+          {t(motivo)}
         </AppText>
       ) : null}
 
