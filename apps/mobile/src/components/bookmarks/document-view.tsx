@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Image, Linking, View } from "react-native";
+import { Image, Linking, Text, View } from "react-native";
 
 import { noteDocumentSchema } from "@orbit-hub/contracts";
 
@@ -550,49 +550,58 @@ const HEADING_VARIANTS: Record<number, TextVariant> = {
   6: "caption",
 };
 
+/*
+  Los textos de dentro **heredan** color y tipografia del bloque que los contiene,
+  y por eso son `Text` y no `AppText`.
+
+  `AppText` fija color y variante en cada texto que pinta. Anidado, el hijo gana
+  siempre: el enlace perdia su acento (se veia como el resto del parrafo y parecia
+  que no habia enlaces) y el texto de un titulo se pintaba con el tamano del
+  cuerpo. El bloque (`BlockView`) es quien pone la variante; aqui solo se anade lo
+  propio de cada marca: negrita, cursiva, acento y subrayado del enlace...
+*/
 function InlineView({ inline }: { inline: ViewInline }) {
   const theme = useTheme();
   switch (inline.kind) {
     case "text":
-      return <AppText variant="body">{inline.text}</AppText>;
+      return <Text>{inline.text}</Text>;
     case "break":
-      return <AppText variant="body">{"\n"}</AppText>;
+      return <Text>{"\n"}</Text>;
     case "bold":
       return (
-        <AppText variant="body" style={{ fontWeight: "700" }}>
+        <Text style={{ fontWeight: "700" }}>
           {inline.children.map((child, index) => (
             <InlineView key={index} inline={child} />
           ))}
-        </AppText>
+        </Text>
       );
     case "italic":
       return (
-        <AppText variant="body" style={{ fontStyle: "italic" }}>
+        <Text style={{ fontStyle: "italic" }}>
           {inline.children.map((child, index) => (
             <InlineView key={index} inline={child} />
           ))}
-        </AppText>
+        </Text>
       );
     case "underline":
       return (
-        <AppText variant="body" style={{ textDecorationLine: "underline" }}>
+        <Text style={{ textDecorationLine: "underline" }}>
           {inline.children.map((child, index) => (
             <InlineView key={index} inline={child} />
           ))}
-        </AppText>
+        </Text>
       );
     case "strike":
       return (
-        <AppText variant="body" style={{ textDecorationLine: "line-through" }}>
+        <Text style={{ textDecorationLine: "line-through" }}>
           {inline.children.map((child, index) => (
             <InlineView key={index} inline={child} />
           ))}
-        </AppText>
+        </Text>
       );
     case "code":
       return (
-        <AppText
-          variant="body"
+        <Text
           style={{
             backgroundColor: theme.colors.surfaceSunken,
             borderRadius: theme.radius.sm,
@@ -602,7 +611,7 @@ function InlineView({ inline }: { inline: ViewInline }) {
           {inline.children.map((child, index) => (
             <InlineView key={index} inline={child} />
           ))}
-        </AppText>
+        </Text>
       );
     case "link": {
       const target = safeLinkTarget(inline.href);
@@ -610,17 +619,16 @@ function InlineView({ inline }: { inline: ViewInline }) {
       // y no lleva `onPress`, asi que no hay toque que probar.
       if (target === null) {
         return (
-          <AppText variant="body">
+          <Text>
             {inline.children.map((child, index) => (
               <InlineView key={index} inline={child} />
             ))}
-          </AppText>
+          </Text>
         );
       }
       return (
-        <AppText
-          variant="body"
-          style={{ color: theme.colors.accent }}
+        <Text
+          style={{ color: theme.colors.accent, textDecorationLine: "underline" }}
           onPress={() =>
             pressLink(inline.href, (url) => {
               void Linking.openURL(url);
@@ -630,7 +638,7 @@ function InlineView({ inline }: { inline: ViewInline }) {
           {inline.children.map((child, index) => (
             <InlineView key={index} inline={child} />
           ))}
-        </AppText>
+        </Text>
       );
     }
   }
