@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
+import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { Pick, PlacePicker } from "@/components/workspace/place-picker";
@@ -86,6 +86,19 @@ export function ShareSaveSheet({
   const tieneUrl = payload.url.trim().length > 0;
   const hayEspacios = tree.spaces().length > 0;
 
+  const { setSucio } = useSheetSucio();
+
+  // Sucio es haber tocado algo: el titulo que cambia, un sitio elegido o una
+  // coleccion a medio escribir. Abrir y salir sin tocar nada no pregunta.
+  useEffect(() => {
+    setSucio(
+      titulo !== (payload.title ?? "") ||
+        destino.workspaceId !== null ||
+        nombre.trim().length > 0 ||
+        emoji.trim().length > 0,
+    );
+  }, [titulo, destino.workspaceId, nombre, emoji, payload.title, setSucio]);
+
   const guardar = async () => {
     if (!destino.workspaceId || saving || !tieneUrl) return;
     setSaving(true);
@@ -137,23 +150,68 @@ export function ShareSaveSheet({
 
   const host = hostDe(payload.url);
 
-  if (pagina === 2) {
-    return (
-      <Sheet
-        visible={visible}
-        onClose={onClose}
-        onBack={() => setPagina(1)}
-        title={t("share.save.createCollection")}
-        subtitle={host}
-        scrollable={false}
-      >
-        <View style={{ gap: theme.spacing.md }}>
+  // Por que el Guardar del pie no se puede pulsar, dicho en voz alta: un boton
+  // gris sin explicacion es un boton que se pulsa dos veces para averiguarlo.
+  const razonGuardar = !tieneUrl
+    ? t("share.save.noUrl")
+    : !destino.workspaceId
+      ? t("share.save.chooseSpace")
+      : undefined;
+  const razonCrear =
+    nombre.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined;
+
+  /*
+    Una sola hoja con dos paginas (`step`), y no dos hojas que se desmontan una a
+    la otra: asi el panel cambia de alto con el muelle en vez de cerrarse y
+    abrirse. El cuerpo **scrollea** y el Guardar vive en el pie, fuera de lo que
+    scrollea: el titulo, el selector de sitio y la coleccion no caben juntos en
+    un movil, y con `scrollable={false}` lo de debajo del primer campo quedaba
+    cortado e imposible de tocar.
+  */
+  return (
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      step={pagina === 1 ? "guardar" : "coleccion"}
+      title={
+        pagina === 1 ? t("share.save.title") : t("share.save.createCollection")
+      }
+      subtitle={pagina === 1 ? payload.url : host}
+      onBack={pagina === 2 ? () => setPagina(1) : undefined}
+      onSave={() => (pagina === 1 ? guardar() : crearColeccion())}
+      saveDisabledReason={
+        pagina === 1 ? razonGuardar : razonCrear
+      }
+      artwork={
+        pagina === 1 ? (
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: theme.radius.md,
+              backgroundColor: theme.colors.accentSoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <AppText variant="bodyStrong" style={{ color: theme.colors.accent }}>
+              {host.slice(0, 1).toUpperCase()}
+            </AppText>
+          </View>
+        ) : undefined
+      }
+    >
+      {pagina === 2 ? (
+        <View
+          style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
+        >
           <TextField
             label={t("share.save.collectionName")}
             placeholder={t("share.save.collectionNamePlaceholder")}
             value={nombre}
             onChangeText={setNombre}
             returnKeyType="next"
+            autoFocus
           />
           <TextField
             label={t("share.save.emojiLabel")}
@@ -166,102 +224,50 @@ export function ShareSaveSheet({
               {error}
             </AppText>
           ) : null}
-          <View style={{ gap: theme.spacing.sm }}>
-            <Button
-              label={creando ? t("common.saving") : t("common.create")}
-              disabled={nombre.trim().length === 0 || creando}
-              fullWidth
-              onPress={() => void crearColeccion()}
-            />
-            <Button
-              label={t("common.cancel")}
-              variant="ghost"
-              fullWidth
-              onPress={onClose}
-            />
-          </View>
         </View>
-      </Sheet>
-    );
-  }
-
-  return (
-    <Sheet
-      visible={visible}
-      onClose={onClose}
-      title={t("share.save.title")}
-      subtitle={payload.url}
-      scrollable={false}
-      artwork={
+      ) : (
         <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: theme.radius.md,
-            backgroundColor: theme.colors.accentSoft,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+          style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
         >
-          <AppText variant="bodyStrong" style={{ color: theme.colors.accent }}>
-            {host.slice(0, 1).toUpperCase()}
-          </AppText>
+          {tieneUrl ? (
+            <TextField
+              label={t("share.save.titleLabel")}
+              placeholder={t("share.save.titlePlaceholder")}
+              value={titulo}
+              onChangeText={setTitulo}
+              returnKeyType="done"
+            />
+          ) : (
+            <AppText variant="body" tone="muted">
+              {t("share.save.noUrl")}
+            </AppText>
+          )}
+          {hayEspacios ? null : (
+            <AppText variant="caption" tone="muted">
+              {t("share.save.noSpaces")}
+            </AppText>
+          )}
+          <PlacePicker
+            workspaceId={destino.workspaceId}
+            folderId={destino.folderId}
+            collectionId={destino.collectionId}
+            onChange={setDestino}
+            showCollections
+          />
+          <Pick
+            icon="add-outline"
+            label={t("share.save.newCollection")}
+            selected={false}
+            disabled={!destino.workspaceId}
+            onPress={() => setPagina(2)}
+          />
+          {error ? (
+            <AppText variant="caption" style={{ color: theme.colors.danger }}>
+              {error}
+            </AppText>
+          ) : null}
         </View>
-      }
-    >
-      <View style={{ gap: theme.spacing.md }}>
-        {tieneUrl ? (
-          <TextField
-            label={t("share.save.titleLabel")}
-            placeholder={t("share.save.titlePlaceholder")}
-            value={titulo}
-            onChangeText={setTitulo}
-            returnKeyType="done"
-          />
-        ) : (
-          <AppText variant="body" tone="muted">
-            {t("share.save.noUrl")}
-          </AppText>
-        )}
-        {hayEspacios ? null : (
-          <AppText variant="caption" tone="muted">
-            {t("share.save.noSpaces")}
-          </AppText>
-        )}
-        <PlacePicker
-          workspaceId={destino.workspaceId}
-          folderId={destino.folderId}
-          collectionId={destino.collectionId}
-          onChange={setDestino}
-          showCollections
-        />
-        <Pick
-          icon="add-outline"
-          label={t("share.save.newCollection")}
-          selected={false}
-          disabled={!destino.workspaceId}
-          onPress={() => setPagina(2)}
-        />
-        {error ? (
-          <AppText variant="caption" style={{ color: theme.colors.danger }}>
-            {error}
-          </AppText>
-        ) : null}
-        <View style={{ gap: theme.spacing.sm }}>
-          <Button
-            label={saving ? t("common.saving") : t("common.save")}
-            disabled={!destino.workspaceId || saving || !tieneUrl}
-            fullWidth
-            onPress={() => void guardar()}
-          />
-          <Button
-            label={t("common.cancel")}
-            variant="ghost"
-            fullWidth
-            onPress={onClose}
-          />
-        </View>
-      </View>
+      )}
     </Sheet>
   );
 }
