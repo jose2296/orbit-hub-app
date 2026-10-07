@@ -772,8 +772,19 @@ export function Sheet({
                 un `maxHeightRatio` de eso. Es la unica forma de que el limite y el
                 relleno hablen del mismo sitio.
               */
+              /*
+                Ojo con la cuenta: `maxHeight` incluye el `paddingBottom`, y el
+                `paddingBottom` ya lleva `teclado` dentro. Si el tope fuera solo
+                `(ventana - teclado) * ratio`, el teclado se comeria el tope entero
+                y sobre el teclado quedaria apenas una cabecera con un campo. El
+                tope es el teclado **mas** el ratio de lo que queda libre encima.
+              */
               ...(teclado > 0
-                ? { maxHeight: Math.round(altoVentana * (1 - teclado / altoVentana) * maxHeightRatio) }
+                ? {
+                    maxHeight: Math.round(
+                      teclado + (altoVentana - teclado) * maxHeightRatio,
+                    ),
+                  }
                 : { maxHeight: `${Math.round(maxHeightRatio * 100)}%` }),
             },
             estiloPanel,
@@ -967,7 +978,17 @@ export function Sheet({
               todas. Una hoja que no cambia de pagina tampoco tiene un salto que
               ocultar.
             */
-            <View style={styles.cuerpoLleno}>
+            /*
+              Sin `flex: 1`, **a proposito**: el cuerpo toma su alto natural.
+
+              Con `flex: 1` dentro de una caja de alto automatico —el panel solo
+              tiene `maxHeight`— el cuerpo mide cero en Android: Yoga reparte un
+              espacio que nadie ha fijado. Se veia el titulo y el Guardar y nada
+              entre los dos, en todas las hojas que no scrollean (crear, editar un
+              elemento, carpeta, lista…). En web el motor de layout lo resuelve
+              distinto y no se notaba.
+            */
+            <View style={styles.cuerpoNatural}>
               <Animated.View style={estiloContenido}>{contenido}</Animated.View>
             </View>
           )}
@@ -998,8 +1019,9 @@ export function Sheet({
                   // El teclado se come el borde inferior, y un boton debajo del
                   // teclado es un boton que no se puede pulsar. Mismo relleno que
                   // el panel, por el mismo motivo y con la misma cuenta.
-                  paddingBottom:
-                    teclado + (wide ? theme.spacing.lg : theme.spacing.lg),
+                  // Sin `teclado` aqui: el panel ya lo lleva en su `paddingBottom`,
+                  // y sumarlo dos veces dejaba el Guardar bajo el teclado.
+                  paddingBottom: theme.spacing.lg,
                 },
               ]}
             >
@@ -1432,6 +1454,10 @@ const styles = StyleSheet.create({
    */
   cuerpoLleno: {
     flex: 1,
+  },
+  /** El cuerpo que no scrollea: su alto es el del contenido, y solo encoge si no cabe. */
+  cuerpoNatural: {
+    flexShrink: 1,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,

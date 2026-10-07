@@ -62,6 +62,10 @@ export function ShareSaveSheet({
     folderId: null,
     collectionId: null,
   });
+  // Elegir colección (o "Sin clasificar") es obligatorio y explicito: `null` solo
+  // es lo que hay antes de tocar nada, y guardaba el enlace sin clasificar sin
+  // que nadie lo hubiera decidido.
+  const [eligioColeccion, setEligioColeccion] = useState(false);
   const [nombre, setNombre] = useState("");
   const [emoji, setEmoji] = useState("");
   const [saving, setSaving] = useState(false);
@@ -75,6 +79,7 @@ export function ShareSaveSheet({
     setPagina(1);
     setTitulo(payload.title ?? "");
     setDestino({ workspaceId: null, folderId: null, collectionId: null });
+    setEligioColeccion(false);
     setNombre("");
     setEmoji("");
     setSaving(false);
@@ -94,13 +99,22 @@ export function ShareSaveSheet({
     setSucio(
       titulo !== (payload.title ?? "") ||
         destino.workspaceId !== null ||
+        eligioColeccion ||
         nombre.trim().length > 0 ||
         emoji.trim().length > 0,
     );
-  }, [titulo, destino.workspaceId, nombre, emoji, payload.title, setSucio]);
+  }, [
+    titulo,
+    destino.workspaceId,
+    eligioColeccion,
+    nombre,
+    emoji,
+    payload.title,
+    setSucio,
+  ]);
 
   const guardar = async () => {
-    if (!destino.workspaceId || saving || !tieneUrl) return;
+    if (!destino.workspaceId || !eligioColeccion || saving || !tieneUrl) return;
     setSaving(true);
     setError(null);
     try {
@@ -136,6 +150,7 @@ export function ShareSaveSheet({
         folderId: destino.folderId,
         collectionId: id,
       });
+      setEligioColeccion(true);
       setNombre("");
       setEmoji("");
       setPagina(1);
@@ -156,7 +171,9 @@ export function ShareSaveSheet({
     ? t("share.save.noUrl")
     : !destino.workspaceId
       ? t("share.save.chooseSpace")
-      : undefined;
+      : !eligioColeccion
+        ? t("share.save.chooseCollection")
+        : undefined;
   const razonCrear =
     nombre.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined;
 
@@ -251,7 +268,15 @@ export function ShareSaveSheet({
             workspaceId={destino.workspaceId}
             folderId={destino.folderId}
             collectionId={destino.collectionId}
-            onChange={setDestino}
+            collectionChosen={eligioColeccion}
+            onChange={(place) => {
+              setDestino({
+                workspaceId: place.workspaceId,
+                folderId: place.folderId,
+                collectionId: place.collectionId,
+              });
+              setEligioColeccion(place.collectionChosen);
+            }}
             showCollections
           />
           <Pick

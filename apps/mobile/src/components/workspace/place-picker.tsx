@@ -11,12 +11,27 @@ export interface PlacePickerPlace {
   workspaceId: string;
   folderId: string | null;
   collectionId: string | null;
+  /**
+   * Si la persona **eligio** colección (o "Sin clasificar") en este sitio.
+   *
+   * `collectionId: null` solo no basta: es lo que hay antes de tocar nada y
+   * tambien lo que hay tras elegir "Sin clasificar". Cambiar de espacio o de
+   * carpeta lo vuelve a poner en `false`, porque la colección es de otro sitio.
+   */
+  collectionChosen: boolean;
 }
 
 export interface PlacePickerProps {
   workspaceId: string | null;
   folderId: string | null;
   collectionId: string | null;
+  /**
+   * Si ya se eligio colección. Sin esto, "Sin clasificar" aparece marcada de
+   * entrada y se puede guardar sin haber decidido nada; con `false` no hay nada
+   * marcado hasta que se toca una. Por defecto `true`, el comportamiento de
+   * siempre para quien no pide una eleccion explicita.
+   */
+  collectionChosen?: boolean;
   onChange: (place: PlacePickerPlace) => void;
   /** WhereNoteSheet lo usa en false: alla no hay colecciones. */
   showCollections?: boolean;
@@ -37,6 +52,7 @@ export function PlacePicker({
   workspaceId,
   folderId,
   collectionId,
+  collectionChosen = true,
   onChange,
   showCollections = true,
 }: PlacePickerProps) {
@@ -84,6 +100,7 @@ export function PlacePicker({
                       workspaceId: space.id,
                       folderId: null,
                       collectionId: null,
+                      collectionChosen: false,
                     })
                   }
                 />
@@ -115,6 +132,7 @@ export function PlacePicker({
                     workspaceId: effectiveWorkspaceId,
                     folderId: null,
                     collectionId: null,
+                    collectionChosen: false,
                   })
                 }
               />
@@ -129,6 +147,7 @@ export function PlacePicker({
                       workspaceId: effectiveWorkspaceId,
                       folderId: folder.id,
                       collectionId: null,
+                      collectionChosen: false,
                     })
                   }
                 />
@@ -148,12 +167,13 @@ export function PlacePicker({
               <Pick
                 icon="ellipsis-horizontal-circle-outline"
                 label={t("place.unclassified")}
-                selected={collectionId === null}
+                selected={collectionChosen && collectionId === null}
                 onPress={() =>
                   onChange({
                     workspaceId: effectiveWorkspaceId,
                     folderId,
                     collectionId: null,
+                    collectionChosen: true,
                   })
                 }
               />
@@ -168,6 +188,7 @@ export function PlacePicker({
                       workspaceId: effectiveWorkspaceId,
                       folderId,
                       collectionId: collection.id,
+                      collectionChosen: true,
                     })
                   }
                 />
@@ -224,7 +245,9 @@ export function Pick({
       <AppText
         variant="body"
         numberOfLines={1}
-        style={{ flex: 1, color: selected ? theme.colors.accent : undefined }}
+        // El color solo cuando esta marcada: un `color: undefined` pisa el del
+        // tema y en oscuro el texto cae al negro por defecto.
+        style={selected ? { flex: 1, color: theme.colors.accent } : { flex: 1 }}
       >
         {label}
       </AppText>

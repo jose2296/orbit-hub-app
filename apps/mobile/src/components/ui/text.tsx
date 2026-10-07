@@ -1,4 +1,4 @@
-import { Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import type { TextProps, TextStyle } from 'react-native';
 
 import { useTheme } from '@/theme';
@@ -34,15 +34,21 @@ export function AppText({
     inverse: theme.colors.onAccent,
   };
 
+  // El color de quien llama solo gana si **existe**. `color: cond ? x : undefined`
+  // es un patron corriente, y un `undefined` posterior pisa el color del tema:
+  // en oscuro el texto caia al negro por defecto de la plataforma. Por eso el
+  // color va el ultimo, resuelto aqui, y no antes de `style`.
+  const colorPropio = StyleSheet.flatten(style)?.color;
+
   return (
     <Text
       {...rest}
       style={[
         theme.typography[variant],
-        { color: toneColor[tone] },
         align ? { textAlign: align } : null,
         uppercase ? { textTransform: 'uppercase' } : null,
         style,
+        { color: colorPropio ?? toneColor[tone] },
       ]}
     />
   );
