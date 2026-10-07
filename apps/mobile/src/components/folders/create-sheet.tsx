@@ -203,7 +203,9 @@ export function CreateSheet({
         abajo se ha ido, y con el una fila de cuarenta puntos de algo que el pie ya
         hace en las veinticuatro hojas.
       */
-      onSave={onCreate}
+      // Solo en los detalles: en "qué crear" y en el tipo no hay nada que guardar,
+      // y un Guardar gris ahi enseña que el boton es decoracion.
+      onSave={step === "details" ? onCreate : undefined}
       saveDisabledReason={title.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined}
       title={
         step === "what"
