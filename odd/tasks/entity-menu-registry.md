@@ -305,7 +305,7 @@ Cada una es un work unit y cierra con su commit.
   `DeletePage`, y migrar `CollectionMenuSheet` a esa version. La migracion es la
   prueba de que el patron anda: si reproduce la hoja mas chica, el registro
   alcanza.
-- [ ] **T3** `IconPage`, y extraer `BotonMenu` de `content-list.tsx` a un
+- [x] **T3** `IconPage`, y extraer `BotonMenu` de `content-list.tsx` a un
   componente compartido exportado.
 - [ ] **T4** Menu de fila de bookmark. **Esto es lo primero que se ve.**
 - [ ] **T5** Pantalla de coleccion.
