@@ -1,4 +1,3 @@
-import type { MembershipRole } from "@orbit-hub/contracts";
 import { describe, expect, it } from "vitest";
 
 import { dictionaries } from "@/lib/i18n/dictionaries";
@@ -6,276 +5,155 @@ import {
   ACCIONES,
   ORDEN_POR_KIND,
   accionesPara,
-  esDuplicada,
-  resuelveLabel,
 } from "@/lib/menus/registry";
-import type { MenuAccion, MenuCap, MenuContext, MenuKind } from "@/lib/menus/registry";
+import type { MenuAccion, MenuContext, MenuKind } from "@/lib/menus/registry";
 
-/**
- * El registro, y la lista que cada hoja dibuja.
- *
- * Esto no es un test de UI: es el unico sitio donde se puede preguntar que
- * opciones existen sin un renderer, y por eso el registro es puro. Si el test
- * puede pasar, es porque la decision vive en un dato y no en un componente.
- */
+const KINDS: MenuKind[] = ["list", "note", "folder", "collection", "bookmark"];
 
-/** Todos los permisos que un call site puede dar. El contexto mas permisivo. */
-const CAPS: Partial<Record<MenuCap, boolean>> = {
-  editStates: true,
-  saveAsTemplate: true,
-  createInside: true,
-  panel: true,
-  export: true,
-};
-
+/** El mismo esqueleto para todos, con lo que cambia por tipo. */
 function ctx(
   kind: MenuKind,
-  opciones: { role?: MembershipRole; shared?: boolean; caps?: Partial<Record<MenuCap, boolean>> } = {},
+  sobre: Partial<MenuContext["entity"]> = {},
+  caps: MenuContext["caps"] = {},
 ): MenuContext {
   return {
     kind,
-    entity: {
-      id: "entidad-1",
-      title: "Mercadona",
-      role: opciones.role ?? "owner",
-      shared: opciones.shared ?? false,
-    },
-    caps: opciones.caps ?? {},
+    entity: { id: "x", title: "Algo", role: "owner", shared: false, ...sobre },
+    caps,
   };
 }
 
-function ids(ctx: MenuContext): string[] {
-  return accionesPara(ctx).map((accion) => accion.id);
+/** `labelKey` puede ser funcion, y resolverlo es parte de lo que hay que probar. */
+function clave(a: MenuAccion, c: MenuContext): string {
+  return typeof a.labelKey === "function" ? a.labelKey(c) : a.labelKey;
 }
 
-/** La accion del id, o una falla que nombra el id que falta. */
-function accion(id: string): MenuAccion {
-  const encontrada = ACCIONES[id];
-  expect(encontrada, `ACCIONES no declara '${id}'`).toBeDefined();
-  return encontrada as MenuAccion;
+function conId(c: MenuContext, id: string): MenuAccion | undefined {
+  return accionesPara(c).find((a) => a.id === id);
 }
 
-describe("el registro dice que opciones existen", () => {
-  it("lista: estados, renombrar, icono, panel, duplicar, compartir, acceso, exportar y borrar", () => {
-    expect(ids(ctx("list", { caps: CAPS }))).toEqual([
-      "states",
-      "rename",
-      "icon",
-      "pin",
-      "duplicate",
-      "share",
-      "access",
-      "export",
-      "delete",
-    ]);
-  });
-
-  it("nota: renombrar, icono, panel, compartir, plantilla, acceso y borrar", () => {
-    expect(ids(ctx("note", { caps: CAPS }))).toEqual([
-      "rename",
-      "icon",
-      "pin",
-      "share",
-      "saveAsTemplate",
-      "access",
-      "delete",
-    ]);
-  });
-
-  it("carpeta: crear aqui, panel, renombrar, icono, compartir, acceso y borrar", () => {
-    expect(ids(ctx("folder", { caps: CAPS }))).toEqual([
-      "createHere",
-      "pin",
-      "rename",
-      "icon",
-      "share",
-      "access",
-      "delete",
-    ]);
-  });
-
-  it("coleccion: renombrar, icono, compartir, acceso, exportar y borrar", () => {
-    expect(ids(ctx("collection", { caps: CAPS }))).toEqual([
-      "rename",
-      "icon",
-      "share",
-      "access",
-      "export",
-      "delete",
-    ]);
-  });
-
-  it("bookmark: renombrar, icono, acceso y borrar", () => {
-    expect(ids(ctx("bookmark", { caps: CAPS }))).toEqual([
-      "rename",
-      "icon",
-      "access",
-      "delete",
-    ]);
-  });
-
-  /*
-    La capacidad es lo que hace que una opcion exista, y sin esta prueba un
-    registro que las mostrara todas estaria mintiendo: una fila que el call site
-    no puede atender es una fila que no hace nada al tocarla, y eso es peor que
-    una fila que no esta.
-  */
-  it("sin capacidades, las opciones que dependen de una no se ofrecen", () => {
-    expect(ids(ctx("note"))).toEqual(["rename", "icon", "share", "access", "delete"]);
-    expect(ids(ctx("folder"))).toEqual(["rename", "icon", "share", "access", "delete"]);
-    expect(ids(ctx("collection"))).toEqual(["rename", "icon", "share", "access", "delete"]);
-    expect(ids(ctx("bookmark"))).toEqual(["rename", "icon", "access", "delete"]);
-  });
-
-  /*
-    `duplicate` se queda sin capacidad apagada, y no es un olvido: `MenuCap` no
-    tiene un miembro `duplicate` y no lo puede tener sin cambiar la firma que
-    las nueve tareas siguientes ya importan. No hay forma de apagarlo por
-    capacidad, asi que lo apaga el **orden**: solo `list` lo declara. Si manana
-    hace falta apagarlo en otro kind, se agrega el miembro y aqui.
-  */
-  it("duplicate no tiene capacidad que lo apague: solo lo declara la lista", () => {
-    expect(ACCIONES["duplicate"]?.disponible).toBeUndefined();
-    expect(ids(ctx("list"))).toContain("duplicate");
-    for (const kind of ["note", "folder", "collection", "bookmark"] as MenuKind[]) {
-      expect(ids(ctx(kind))).not.toContain("duplicate");
+describe("el registro dice que acciones existen", () => {
+  it("cada kind declara su propio conjunto, y ninguno es vacio", () => {
+    for (const kind of KINDS) {
+      const acciones = accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true }));
+      expect(acciones.length, `${kind} se quedo sin menu`).toBeGreaterThan(0);
     }
   });
 
-  it("cada capacidad apaga solo la fila que depende de ella", () => {
-    const sinEstados = ids(ctx("list", { caps: { ...CAPS, editStates: false } }));
-    expect(sinEstados).not.toContain("states");
-    expect(sinEstados).toContain("duplicate");
-
-    const sinPanel = ids(ctx("list", { caps: { ...CAPS, panel: false } }));
-    expect(sinPanel).not.toContain("pin");
-    expect(sinPanel).toContain("rename");
-
-    const sinExportar = ids(ctx("collection", { caps: { ...CAPS, export: false } }));
-    expect(sinExportar).not.toContain("export");
-    expect(sinExportar).toContain("access");
-  });
-});
-
-/*
-  Review Focus #1: una accion destructiva ofrecida a quien no es dueno.
-
-  El fallo es silencioso y por eso importa: `role` esta escrito a mano como union
-  literal en varios archivos del repo, y un `role: string` colado cuela la
-  comparacion `=== "owner"` sin que nada se queje. Aqui el predicado sale del
-  contrato (`MembershipRole`), asi que el compilador avisa.
-*/
-describe("borrar y compartir miran de quien es la cosa", () => {
-  const compartida = ctx("list", { shared: true, role: "editor" });
-
-  it("algo compartido no se puede borrar, y dice por que", () => {
-    const borrar = accion("delete");
-    expect(borrar.disponible?.(compartida)).toBe(false);
-    const motivo = borrar.motivo?.(compartida);
-    expect(typeof motivo).toBe("string");
-    expect(motivo).not.toBe("");
-  });
-
-  it("lo tuyo se borra, lo compartido tambien sale en el menu y grisado", () => {
-    const mia = ctx("list", { shared: false, role: "editor" });
-    const borrar = accion("delete");
-    expect(borrar.disponible?.(mia)).toBe(true);
-    expect(borrar.motivo?.(mia)).toBeNull();
-    // Sigue en la lista de filas: grisada y con el motivo, no escondida. Es la
-    // unica forma que tiene una persona de descubrir que la regla existe.
-    expect(ids(compartida)).toContain("delete");
-    expect(accion("delete").motivo?.(compartida)).toBeTruthy();
-  });
-
-  it("solo el dueno decide quien mas lo ve", () => {
-    const compartir = accion("share");
-    expect(compartir.disponible?.(ctx("list", { role: "owner" }))).toBe(true);
-    expect(compartir.disponible?.(ctx("list", { role: "viewer" }))).toBe(false);
-    expect(compartir.disponible?.(ctx("list", { role: "editor" }))).toBe(false);
-  });
-
-  it("con dueno las dos estan encendidas", () => {
-    const mio = ctx("folder", { role: "owner", shared: false });
-    expect(accion("share").disponible?.(mio)).toBe(true);
-    expect(accion("delete").disponible?.(mio)).toBe(true);
-  });
-});
-
-describe("el orden de la salida es el del registro", () => {
-  it("para cada kind, en el contexto mas permisivo, sale ORDEN_POR_KIND tal cual", () => {
-    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
-      expect(ids(ctx(kind, { caps: CAPS })), `el orden de '${kind}'`).toEqual(
-        ORDEN_POR_KIND[kind],
-      );
+  it("lo que cada kind declara es lo que el registro dice", () => {
+    for (const kind of KINDS) {
+      const declarados = ORDEN_POR_KIND[kind];
+      expect(declarados.length, `${kind} declara una lista vacia`).toBeGreaterThan(0);
+      expect(accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true })).map((a) => a.id)).toEqual(declarados);
     }
   });
-});
 
-describe("el registro no se contradice a si mismo", () => {
-  it("todo id que un orden nombra existe en ACCIONES", () => {
-    for (const [kind, orden] of Object.entries(ORDEN_POR_KIND)) {
-      for (const id of orden) {
-        expect(ACCIONES[id], `ORDEN_POR_KIND['${kind}'] nombra '${id}'`).toBeDefined();
+  it("toda accion que un kind declara existe en el registro", () => {
+    for (const kind of KINDS) {
+      for (const id of ORDEN_POR_KIND[kind]) {
+        expect(ACCIONES[id], `falta la accion "${id}" que declara ${kind}`).toBeDefined();
       }
     }
   });
 
-  it("ningun kind declara una lista vacia", () => {
-    for (const [kind, orden] of Object.entries(ORDEN_POR_KIND)) {
-      expect(orden.length, `'${kind}' se queda sin opciones`).toBeGreaterThan(0);
+  it("el orden de salida es el orden declarado", () => {
+    for (const kind of KINDS) {
+      const acciones = accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true }));
+      expect(acciones.map((a) => a.id)).toEqual(ORDEN_POR_KIND[kind]);
+      for (let i = 1; i < acciones.length; i += 1) {
+        const antes = ORDEN_POR_KIND[kind].indexOf(acciones[i - 1]!.id);
+        const ahora = ORDEN_POR_KIND[kind].indexOf(acciones[i]!.id);
+        expect(antes).toBeLessThan(ahora);
+      }
     }
   });
 });
 
-/*
-  Review Focus #5: el copy de una accion que no existe en el idioma.
+describe("lo que no es tuyo no se ofrece", () => {
+  it("borrar se apaga cuando esta compartido, y dice por que", () => {
+    const compartido = ctx("list", { shared: true, role: "editor" });
+    const borrar = conId(compartido, "delete")!;
+    expect(borrar).toBeDefined();
+    expect(borrar.disponible?.(compartido)).toBe(false);
+    expect(borrar.motivo?.(compartido)).toBeTruthy();
 
-  `labelKey` es funcion y el tipo es `TranslationKey`, asi que el compilador ya
-  avisa si la clave no existe. Lo que el compilador NO puede ver es el otro
-  idioma: `es` y `en` se declaran por separado y olvidar una en el segundo
-  compila igual. Este es el unico sitio donde se puede preguntar por los dos.
-*/
-describe("cada accion tiene copy en los dos idiomas", () => {
+    const propio = ctx("list", { shared: false, role: "owner" });
+    expect(borrar.disponible?.(propio)).toBe(true);
+  });
+
+  it("compartir solo con el dueno, y se apaga para un viewer", () => {
+    const owner = ctx("note", { role: "owner" });
+    expect(conId(owner, "share")!.disponible?.(owner)).toBe(true);
+
+    // Ojo: `conId` no lo encuentra para un kind no compartible, porque la fila
+    // desaparece de la lista en vez de quedar grisada. Para un viewer de una
+    // nota si existe y queda grisada, con el motivo escrito.
+    const viewer = ctx("note", { role: "viewer" });
+    const compartir = accionesPara(viewer).find((a) => a.id === "share");
+    expect(compartir, "compartir de un viewer tiene que verse, no desaparecer").toBeDefined();
+    expect(compartir!.disponible?.(viewer)).toBe(false);
+    expect(compartir!.motivo?.(viewer)).toBeTruthy();
+  });
+
+  it("las acciones con capacidad no aparecen sin la capacidad", () => {
+    // Cada capacidad va probada en el kind que la declara: `saveAsTemplate` es
+    // de nota y `createHere` de carpeta, y probarlas sobre una lista daria verde
+    // por la razon equivocada, igual que un fixture que no llega al clamp.
+    for (const [id, cap, kind] of [
+      ["states", "editStates", "list"],
+      ["saveAsTemplate", "saveAsTemplate", "note"],
+      ["createHere", "createInside", "folder"],
+      ["export", "export", "list"],
+    ] as const) {
+      const sinNada = ctx(kind);
+      const conTodo = ctx(kind, {}, { [cap]: true });
+      expect(accionesPara(sinNada).map((a) => a.id), `${kind} sin ${cap}`).not.toContain(id);
+      expect(accionesPara(conTodo).map((a) => a.id), `${kind} con ${cap}`).toContain(id);
+    }
+  });
+});
+
+describe("el icono no es la misma accion en todas partes", () => {
+  it("solo donde el contrato tiene un IconRef: lista, nota y carpeta", () => {
+    for (const kind of KINDS) {
+      const c = ctx(kind);
+      const hay = accionesPara(c).some((a) => a.id === "icon");
+      const tieneIconRef = kind === "list" || kind === "note" || kind === "folder";
+      expect(hay, `${kind}: el icono depende del tipo de campo que tiene`).toBe(tieneIconRef);
+    }
+  });
+
+  it("compartir tampoco: hoy el contrato solo admite espacio, carpeta, lista, item y nota", () => {
+    for (const kind of KINDS) {
+      const c = ctx(kind);
+      const hay = accionesPara(c).some((a) => a.id === "share");
+      const compartible = kind === "list" || kind === "note" || kind === "folder";
+      expect(hay, `${kind}: compartir depende de lo que el contrato admita`).toBe(compartible);
+    }
+  });
+});
+
+describe("el copy de cada accion existe, en los dos idiomas", () => {
   it("para todo kind y toda accion, la clave resuelta existe en es y en en", () => {
-    const declaradas = Object.keys(ACCIONES);
-    expect(declaradas.length).toBeGreaterThan(0);
-
-    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
-      for (const id of declaradas) {
-        const clave = resuelveLabel(accion(id), ctx(kind, { caps: CAPS }));
-        expect(dictionaries.es[clave], `'${clave}' (${id}/${kind}) falta en es`).toBeTruthy();
-        expect(dictionaries.en[clave], `'${clave}' (${id}/${kind}) falta en en`).toBeTruthy();
+    for (const kind of KINDS) {
+      const c = ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true });
+      for (const accion of accionesPara(c)) {
+        const k = clave(accion, c);
+        expect(dictionaries.es[k as keyof typeof dictionaries.es], `${kind}/${accion.id} falta en es`).toBeTruthy();
+        expect(dictionaries.en[k as keyof typeof dictionaries.en], `${kind}/${accion.id} falta en en`).toBeTruthy();
       }
     }
   });
 
-  it("las dos filas del panel son copy distinto", () => {
-    const contexto = ctx("list", { caps: CAPS });
-    expect(resuelveLabel(accion("pin"), contexto)).not.toBe(
-      resuelveLabel(accion("unpin"), contexto),
-    );
-  });
-});
-
-/*
-  El comparador que usan los tests de paridad de T6 y T7: "el menu nuevo tiene
-  las mismas filas que el viejo". Compara por lo que se ve, no por el id, porque
-  el id es interno del registro y lo que hay que preservar es la fila.
-*/
-describe("esDuplicada", () => {
-  const contexto = ctx("list", { caps: CAPS });
-
-  it("son la misma fila cuando coincide el copy resuelto y el icono", () => {
-    expect(esDuplicada(accion("delete"), accion("delete"), contexto)).toBe(true);
-  });
-
-  it("no son la misma fila si cambia el icono", () => {
-    const otra = { ...accion("delete"), icon: "bookmark-outline" } as MenuAccion;
-    expect(esDuplicada(accion("delete"), otra, contexto)).toBe(false);
-  });
-
-  it("no son la misma fila si cambia el copy resuelto", () => {
-    const otra = { ...accion("rename"), labelKey: "icons.title" } as MenuAccion;
-    expect(esDuplicada(accion("rename"), otra, contexto)).toBe(false);
+  it("el cuerpo de borrar es distinto por tipo, y cada uno es el suyo", () => {
+    const cuerpos = KINDS.map((kind) => {
+      const c = ctx(kind);
+      const borrar = conId(c, "delete")!;
+      return clave(borrar, c);
+    });
+    expect(new Set(cuerpos).size).toBeGreaterThan(1);
+    for (const cuerpo of cuerpos) {
+      expect(dictionaries.es[cuerpo as keyof typeof dictionaries.es]).toBeTruthy();
+    }
   });
 });

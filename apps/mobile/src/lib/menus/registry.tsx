@@ -157,6 +157,42 @@ export interface MenuAccion {
  * siguientes van a hablar de esto, y un id descolocado es un error de escritura
  * en vez de un error de orden.
  */
+/**
+ * Los kinds cuyo campo de icono es un `IconRef`, y por lo tanto los unicos que
+ * pueden usar el `IconPickerPanel`.
+ *
+ * **Esto no es una preferencia, es lo que dice el contrato**, y es la razon de
+ * que `icon` no sea una accion universal:
+ *
+ * - `listSchema` (`workspace.ts:410`), `noteSchema` (`:540`) y `folderSchema`
+ *   (`:275`) tienen `icon: iconRefSchema.default(null)`, que acepta las dos
+ *   mitades del selector: vector con biblioteca y estilo, o emoji.
+ * - `collectionSchema` (`bookmarks.ts:82`) tiene **`emoji: z.string().max(16)`**.
+ *   Es una cadena, no un `IconRef`: el `emoji` del contrato es texto plano, sin
+ *   `library`, sin `style`, sin `color`. A una coleccion **no se le puede guardar
+ *   un icono vectorial**, y offeringle el selector entero es ofrecerle media
+ *   opcion que al tocarla se pierde.
+ * - `bookmarkSchema` (`bookmarks.ts:89`) **no tiene campo de icono**. Ponerle uno
+ *   es un cambio de contrato y de la base, no un menu.
+ *
+ * O sea que "poner icono" en una coleccion es un emoji, y en un enlace todavia
+ * no existe. Las tres cosas las resuelve la tarea T10 o una posterior; aqui la
+ * fila simplemente no aparece donde no se puede cumplir.
+ */
+const CON_ICON_REF: MenuKind[] = ["list", "note", "folder"];
+
+/**
+ * Los kinds que `shareNodeTypeSchema` (`workspace.ts:943`) admite hoy:
+ * `workspace`, `folder`, `list`, `list_item`, `note`. De los cinco de aqui,
+ * tres.
+ *
+ * `ShareNodeSheetProps.target.nodeType` esta atado a ese enum, asi que ofrecer
+ * compartir en una coleccion o en un enlace es pintar una fila que al tocarla
+ * manda un `nodeType` que el contrato no admite. T10 amplia el enum y esta
+ * lista con el.
+ */
+const COMPARTIBLE: MenuKind[] = ["list", "note", "folder"];
+
 export const ACCIONES: Record<string, MenuAccion> = {
   states: {
     id: "states",
@@ -185,6 +221,7 @@ export const ACCIONES: Record<string, MenuAccion> = {
     id: "icon",
     labelKey: "icons.title",
     icon: "image-outline",
+    disponible: (ctx) => CON_ICON_REF.includes(ctx.kind),
     destino: { tipo: "pagina", page: "icon" },
   },
 
@@ -236,7 +273,9 @@ export const ACCIONES: Record<string, MenuAccion> = {
     id: "share",
     labelKey: "share.pickSomeone",
     icon: "people-outline",
-    disponible: (ctx) => ctx.entity.role === "owner",
+    disponible: (ctx) => COMPARTIBLE.includes(ctx.kind) && ctx.entity.role === "owner",
+    motivo: (ctx) =>
+      COMPARTIBLE.includes(ctx.kind) && ctx.entity.role !== "owner" ? "share.onlyOwner" : null,
     destino: { tipo: "pagina", page: "share" },
   },
 
@@ -304,6 +343,18 @@ export const ACCIONES: Record<string, MenuAccion> = {
  *
  * Borrar va ultimo en los cinco, y por el motivo de siempre: es lo unico que no
  * se deshace volviendo a abrir el menu.
+ *
+ * **Ningun kind declara `icon` o `share` sin poder cumplirlas.** Los cinco ordenes
+ * estan escritos uno por uno y no por combinacion, porque lo que decide es que el
+ * conjunto de cada uno es el que el contrato y la app pueden cumplir hoy:
+ *
+ * - `note` **no declara `pin`**: `note/[noteId].tsx` no tiene `isPinned`, ni
+ *   `onTogglePin`, ni una entrada de pinear. Las notas no se pinean al panel.
+ * - `collection` **no declara `icon`**: su campo es `emoji`, una cadena
+ *   (ver `CON_ICON_REF`).
+ * - `collection` y `bookmark` **no declaran `share`**: el enum del contrato no
+ *   los admite (ver `COMPARTIBLE`).
+ * - `bookmark` **no declara `icon`**: no tiene campo (ver `CON_ICON_REF`).
  */
 export const ORDEN_POR_KIND: Record<MenuKind, string[]> = {
   list: [
@@ -317,10 +368,10 @@ export const ORDEN_POR_KIND: Record<MenuKind, string[]> = {
     "export",
     "delete",
   ],
-  note: ["rename", "icon", "pin", "share", "saveAsTemplate", "access", "delete"],
+  note: ["rename", "icon", "share", "saveAsTemplate", "access", "delete"],
   folder: ["createHere", "pin", "rename", "icon", "share", "access", "delete"],
-  collection: ["rename", "icon", "share", "access", "export", "delete"],
-  bookmark: ["rename", "icon", "access", "delete"],
+  collection: ["rename", "access", "export", "delete"],
+  bookmark: ["rename", "access", "delete"],
 };
 
 /** La clave de i18n de una accion, resuelta para un contexto concreto. */
