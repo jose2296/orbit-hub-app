@@ -113,3 +113,26 @@ export function tsxDeLaApp(): string[] {
     nombre.endsWith(".tsx"),
   );
 }
+
+/**
+ * Los `.test.ts` del paquete, con su texto, pegados en un solo bloque.
+ *
+ * Existe para el guard que afirma que **algo mira un `testID`**: un `testID` que
+ * nadie mira es poder de verificar que se perdio en silencio, y la unica forma de
+ * saber si se perdio es leer los tests del disco. Se lee el archivo entero y no
+ * solo el nombre porque lo que se busca es una cadena dentro del codigo —el
+ * prefijo con su comilla—, que es donde un guard escribe la referencia.
+ *
+ * `recursive` y no el listado de una carpeta: sin el, el dia que caiga un
+ * `.test.ts` en un subdirectorio el guard deja de mirarlo **sin avisar**, que es
+ * justo el modo de fallo que este archivo existe para cazar. Y el `join("/")`
+ * porque `readdirSync` con `recursive` devuelve el caminho relativo con el
+ * separador de la plataforma, y en Windows no seria un `test/...` que se pueda
+ * abrir.
+ */
+export function fuentesDeLosTests(): string {
+  return readdirSync(join(RAIZ, "test"), { recursive: true, encoding: "utf8" })
+    .filter((nombre) => nombre.endsWith(".test.ts"))
+    .map((nombre) => src(join("test", nombre)))
+    .join("\n");
+}
