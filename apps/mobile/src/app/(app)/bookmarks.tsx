@@ -9,7 +9,6 @@ import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Screen } from "@/components/ui/screen";
 import { useBookmarks } from "@/hooks/use-bookmarks";
-import { useCollections } from "@/hooks/use-collections";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useTranslation } from "@/lib/i18n";
 import { handlersDeBookmark, menuCtxDeBookmark } from "@/lib/menus/bookmark";
@@ -50,14 +49,35 @@ export default function BookmarksListScreen() {
   */
   const [menuAbierto, setMenuAbierto] = useState<Bookmark | null>(null);
 
-  // Dentro de una coleccion, la cabecera lleva su nombre: sin esto dice
-  // "Bookmarks" en todas y no se sabe en cual se esta.
-  const { collections } = useCollections(workspaceId);
-  const coleccion =
-    collectionId && collectionId !== "unclassified"
-      ? (collections.find((item) => item.id === collectionId) ?? null)
-      : null;
-  useScreenTitle(coleccion?.name ?? t("bookmarks.title"));
+  /*
+    ------------------------------------------------------------------
+    EL TITULO ES SIEMPRE "BOOKMARKS", Y POR QUE
+    ------------------------------------------------------------------
+
+    Antes decia `coleccion?.name ?? t("bookmarks.title")`, resolviendo la
+    coleccion del `collectionId` de la ruta para poner su nombre en la cabecera.
+    **Esa rama se fue**, y por dos razones que la dejaron muerta y ademas mala:
+
+    - **Muerta**: desde que `content-list.tsx:186` empuja a
+      `/(app)/collection/[collectionId]`, el unico `push` a esta pantalla es el del
+      drawer (`drawer.tsx:99`), y va sin parametros. Escribiendo la URL a mano se
+      llegaba, y lo que se veia era la lista de una coleccion **sin menu de
+      coleccion** —justo lo que la T5 vino a arreglar, reachable por el unico
+      camino que la T5 cerro—.
+    - **Mala ademas de muerta**: era la **segunda copia de "como se llama una
+      coleccion"**, y ninguna de las dos la cubria un guard. La primera es
+      `menuCtxDeColeccion` (`components/menus/coleccion.ts`), que la normaliza a
+      `MenuEntity.title`. Leyendo `collection.name` aca, el nombre de una
+      coleccion tenia dos reglas y ningun guard las comparaba, que es la forma
+      exacta de que difieran: el dia que una aprenda a algo —un prefijo, un
+      recorte— la otra se queda.
+
+    La coleccion tiene pantalla propia, y ahi el titulo sale de `coleccion.name`
+    que es lo que dice el contrato. Si mañana la lista de enlaces necesita el
+    nombre de una coleccion, lo que tiene que existir es un helper junto a la
+    normalizacion, no una segunda lectura del campo.
+  */
+  useScreenTitle(t("bookmarks.title"));
 
   const { bookmarks, isLoading } = useBookmarks({
     workspaceId,
@@ -65,9 +85,15 @@ export default function BookmarksListScreen() {
     // `null` es "en ninguna". Juntarlos esconderia los sueltos, que al
     // principio son casi todos.
     ...(folderId === undefined ? {} : { folderId: folderId || null }),
-    // `unclassified` pide los que no estan en ninguna coleccion, que es
-    // distinto de no filtrar. Es lo que permite reusar esta lista dentro de
-    // una coleccion y lo que el drawer usa para el inbox.
+    /*
+      El filtro por coleccion **se queda**, y no por lo mismo: `unclassified` lo
+      sigue usando el drawer para el inbox, y `undefined` es "no filtrar", que es
+      lo que hace el boton "Bookmarks" del menu lateral —esta lista es la vista de
+      todos los enlaces guardados, que no es lo mismo que la de una coleccion—.
+
+      Lo que **no** puede volver es la rama del titulo: que el filtro exista no
+      significa que esta pantalla sepa que coleccion esta mirando.
+    */
     ...(collectionId === undefined
       ? {}
       : {

@@ -27,8 +27,12 @@ describe("la lista sigue el molde sin inventar patrones", () => {
     expect(pantalla).toContain("useBookmarks({");
     expect(pantalla).toContain("workspaceId");
     expect(pantalla).toContain("folderId");
-    // El filtro por coleccion opcional, para reusar la lista dentro de una
-    // coleccion —incluido el "unclassified" del inbox.
+    // El filtro por coleccion **sigue existiendo** y es lo que usa el drawer
+    // para el inbox. Lo que se fue es la rama que resolvia la coleccion para
+    // poner su nombre en la cabecera: una coleccion tiene pantalla propia desde
+    // la T5, y la lista no sabe de colecciones. El filtro y el nombre son dos
+    // cosas: que el filtro exista no significa que esta pantalla sepa que
+    // coleccion esta mirando. Lo afirma `collection-screen.test.ts`.
     expect(pantalla).toContain("collectionId");
     expect(pantalla).toContain('"unclassified"');
   });

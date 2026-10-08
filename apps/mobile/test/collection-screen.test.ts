@@ -6,7 +6,7 @@ import { dictionaries } from "@/lib/i18n/dictionaries";
 import { ACCIONES, ORDEN_POR_KIND, accionesPara } from "@/lib/menus/registry";
 import { puedeOfrecerse } from "@/lib/menus/paginas";
 
-import { fuentesDeLosTests, sinComentarios, src, tsxDeLaApp } from "./menus-test-helpers";
+import { sinComentarios, src, tsxDeLaApp } from "./menus-test-helpers";
 
 /*
   ------------------------------------------------------------------
@@ -44,6 +44,12 @@ const RUTA = "app/(app)/collection/[collectionId].tsx";
 
 /** Quien manda una fila de coleccion a donde se abre. */
 const CONTENT_LIST = "src/components/content/content-list.tsx";
+
+/** La lista de enlaces, que ya no sabe de colecciones. */
+const LISTA = "src/app/(app)/bookmarks.tsx";
+
+/** Donde vive la normalizacion de una coleccion, y la unica que la aplica. */
+const COLECCION_LIB = "src/components/menus/coleccion.ts";
 
 /** La cabecera de la pila, que declara las pantallas con nombre de datos. */
 const LAYOUT = "src/app/(app)/_layout.tsx";
@@ -238,6 +244,46 @@ describe("el esqueleto es el de una pantalla con cabecera, no uno nuevo", () => 
     // declara y no se traduce sale en la pantalla como la propia clave.
     expect(dictionaries.es["collections.menu"]).toBeTruthy();
     expect(dictionaries.en["collections.menu"]).toBeTruthy();
+  });
+
+  it("la rama muerta se fue, y con ella la segunda copia de la regla del nombre", () => {
+    /*
+      ------------------------------------------------------------------
+      LA REGLA DE "COMO SE LLAMA UNA COLECCION" TIENE UNA SOLA CASA
+      ------------------------------------------------------------------
+
+      Antes de entregar la T5, `bookmarks.tsx` resolvia la coleccion del
+      `collectionId` de la ruta y ponia `coleccion?.name` en la cabecera. Con eso
+      el nombre de una coleccion lo leian **dos** archivos —el adaptador que la
+      normaliza a `MenuEntity.title` y esa rama— y **ningun guard los comparaba**,
+      que es la forma exacta de que difieran sin que nada falle: el dia que una
+      aprenda a algo, la otra se queda.
+
+      Y la rama era peor que muerta: se alcanzaba escribiendo la URL a mano, y lo
+      que se veia era la lista de una coleccion **sin menu de coleccion** —
+      justo lo que esta tarea vino a arreglar, por el unico camino que quedaba
+      abierto.
+
+      Asi que el guard afirma las dos mitades por separado, porque son dos
+      hechos: que la lista **no** resuelve una coleccion, y que la regla del
+      nombre vive en el adaptador.
+    */
+    const lista = sinComentarios(src(LISTA));
+
+    // La mitad que se puede equivocar otra vez: la lista no vuelve a buscar una
+    // coleccion. Sin `useCollections` no puede, y sin `coleccion?.name` no puede
+    // mirar su nombre aunque la tenga.
+    expect(lista, "la lista vuelve a resolver una coleccion por la ruta").not.toContain(
+      "useCollections",
+    );
+    expect(lista, "la lista vuelve a poner el nombre de una coleccion").not.toMatch(/\?\.name/);
+    // Y el titulo es el de la lista, sin condicion: una pantalla cuyo titulo
+    // depende de un parametro que nadie manda es una pantalla con dos nombres.
+    expect(lista).toMatch(/useScreenTitle\(t\("bookmarks\.title"\)\)/);
+
+    // La mitad positiva, y la que de verdad importa: la regla vive en el
+    // adaptador, y es el unico archivo que la aplica.
+    expect(sinComentarios(src(COLECCION_LIB))).toMatch(/title: collection\.name/);
   });
 
   it("y el layout declara la pantalla, como las demas de la pila", () => {
@@ -463,29 +509,117 @@ describe("la lista de enlaces es la de T4, con su menu de fila", () => {
     }
   });
 
-  it("la fila lleva un id propio, y algo del paquete lo mira", () => {
+  it("la fila lleva un id propio, y los tres son distintos", () => {
     /*
-      El `testID` es poder verificar: sin el, un conteo de filas no puede ser por
-      fila. Y "algo lo mira" se afirma leyendo los `.test.ts` **del disco** —con
-      `recursive`, para que un test nuevo en un subdirectorio no se quede sin
-      mirar sin avisar— y no con una lista: asi el guard se entera cuando alguien
-      deje de mirarlo, que es el fallo que importa.
-      *
-      * Y el prefijo lo pone **la pantalla**, no la fila: es lo que dice de donde
-      * se esta la fila —`list-`, `inbox-`, `collection-`—, y si viviera en el
-      * componente las tres pantallas compartirian un id y el conteo volveria a
-      * ser el total.
-    */
-    const prefijo = codigo().match(/testID=\{`([a-z-]+)-\$\{[a-z]+\.id\}`\}/)?.[1];
+      ------------------------------------------------------------------
+      LO QUE ESTE GUARD YA NO PROMETE
+      ------------------------------------------------------------------
 
-    expect(prefijo, "la fila no lleva un id propio").toBeTruthy();
-    // Con la comilla delante, que es como lo escribe un guard: lo que se busca es
-    // la cadena del prefijo, no la palabra.
-    expect(fuentesDeLosTests(), `nada del paquete mira el testID ${prefijo}-*`).toContain(
-      `"${prefijo}-`,
-    );
+      Antes decia: "el `testID` es poder verificar, y algo del paquete lo mira",
+      y lo segundo se afirmaba buscando el prefijo en los `.test.ts` del disco.
+      Recorri eso con el algoritmo del helper y el unico archivo del paquete que
+      tenia `"collection-menu-` era **este mismo**, en una asercion sobre otro
+      boton. O sea que el guard se pasaba a si mismo y el poder de verificar que
+      prometia no existia.
+
+      Y el falso verde era facil: `list-menu-` **si** esta en el paquete, asi que
+      si el prefijo de esta pantalla se hubiera copiado del de la lista —que es el
+      error mas probable, porque las tres son la misma fila— el guard pasaba en
+      verde y nadie miraba la fila. Un guard que se satisface con su propia prosa
+      no es un guard: es una asercion de que el repositorio contiene una cadena.
+
+      ------------------------------------------------------------------
+      LO QUE AFIRMA EN SU LUGAR
+      ------------------------------------------------------------------
+
+      Lo que si se puede comprobar, y es lo que hace que el prefijo exista: **las
+      tres pantallas dan un prefijo distinto**. El prefijo esta para que un conteo
+      de filas sea de *una* pantalla, y dos pantallas con el mismo prefijo lo
+      rompen —un `match(/list-menu-\d+/)` contaria tambien las filas de la
+      coleccion—. Y esa distincion se deriva del arbol, no de una lista: el
+      prefijo se lee de quien monta `LinkRow`, asi que una cuarta pantalla que se
+      colara sin prefijo, o con el de otra, falla.
+
+      Y el `testID` lo pone **la pantalla**, no la fila, y eso tambien se afirma
+      aca: si viviera en el componente las tres compartirian un id por definicion
+      y la distincion de arriba seria imposible de tener.
+    */
+    const prefijos = prefijosDeLasFilas();
+
+    expect(prefijos.length, "sin pantallas que monten la fila, el guard no comprobaria nada").toBe(3);
+    // Y lo que hace que un `testID` por fila sirva: que sean distintos.
+    expect(
+      new Set(prefijos.map(([, prefijo]) => prefijo)).size,
+      `las tres pantallas comparten prefijo: ${prefijos
+        .map(([pantalla, prefijo]) => `${pantalla}=${prefijo}`)
+        .join(", ")}`,
+    ).toBe(prefijos.length);
+  });
+
+  it("el punto del estado sale de los tokens del tema, no de numeros a dos lineas del gap", () => {
+    /*
+      ------------------------------------------------------------------
+      POR QUE ESTO TIENE UN GUARD Y NO ES COSMETICO
+      ------------------------------------------------------------------
+
+      El punto venia escrito a mano —`width: 8, height: 8, borderRadius: 4`— de
+      las tres copias de la fila, y ahi la excepcion era defendible: eran tres
+      archivos con el tema a la vista en otro lado del imports. Al extraer la fila
+      los tres numeros quedaron **en un solo archivo, con `gap: theme.spacing.sm`
+      a cuatro lineas**, y un `8` al lado de un `theme.spacing.sm` es el numero
+      que se desincroniza sin avisar: nadie cambia el token, se cambia el `8`.
+
+      Y los valores **son** los del token (`sm` es 8, `xs` es 4), asi que el cambio
+      no se ve: el typecheck pasa, el render es identico, y el guard es lo unico
+      que puede distinguir "el numero coincide con el token hoy" de "el numero
+      quedo viejo cuando cambiaron los tokens". Ese es el mismo motivo por el que
+      `bottom-cluster.test.ts` fija su `56`: un numero que nadie comprueba no es un
+      numero, es una suposicion.
+    */
+    const fila = codigoDeLaFila();
+    const punto = fila.match(/leading=\{[\s\S]*?style=\{\{([\s\S]*?)\}\}/)?.[1] ?? "";
+
+    expect(punto, "el punto no se encontro: la fila cambio de forma").not.toBe("");
+    expect(punto, "el ancho del punto sale del tema").toContain("width: theme.spacing.sm");
+    expect(punto, "el alto del punto sale del tema").toContain("height: theme.spacing.sm");
+    expect(punto, "el radio sale del tema").toContain("borderRadius: theme.spacing.xs");
+    // Y ningun numero a secas en el punto, que es lo que vuelve.
+    expect(punto, "el punto vuelve a numeros sueltos").not.toMatch(/:\s*\d+,/);
+  });
+
+  it("y la fila no decide el prefijo: lo recibe", () => {
+    // El prefijo dice **donde** se esta la fila —`list-`, `inbox-`, `collection-`—,
+    // y por eso es de quien la monta. Ademas el `testID` es una prop y no algo que
+    // la fila se calcule: si la fila lo compusiera con su propio nombre, las tres
+    // pantallas tendrian el mismo y el conteo volveria a ser el total.
+    const fila = codigoDeLaFila();
+
+    expect(fila).toMatch(/testID: string/);
+    expect(fila).toMatch(/testID=\{testID\}/);
   });
 });
+
+/**
+ * Los prefijos de `testID` de las filas, de **quien monta `LinkRow`**.
+ *
+ * Se deriva del arbol por dos razones: una lista escrita aca pasaria en verde el
+ * dia que la cuarta pantalla se colara sin prefijo —que es exactamente lo que
+ * paso con `bookmark-menu.test.ts`, que nominaba dos pantallas y la tercera se
+ * colo sin que las mirara—, y porque el prefijo **es** la identidad de la fila
+ * dentro de su pantalla, asi que tiene que salir de ahi.
+ */
+function prefijosDeLasFilas(): [string, string][] {
+  return tsxDeLaApp()
+    .map((nombre): [string, string] | null => {
+      const codigo = sinComentarios(src(`src/${nombre}`));
+      if (!codigo.includes("<LinkRow")) return null;
+
+      const prefijo = codigo.match(/testID=\{`([a-z-]+)-\$\{[a-z]+\.[a-z]+\}`\}/)?.[1];
+
+      return prefijo ? [nombre, prefijo] : null;
+    })
+    .filter((entrada): entrada is [string, string] => entrada !== null);
+}
 
 describe("la fila de un enlace es una sola en todo el repo", () => {
   /*
@@ -510,21 +644,36 @@ describe("la fila de un enlace es una sola en todo el repo", () => {
   /**
    * Las piezas que **solo juntas** son una fila de enlace.
    *
-   * El icono solo no sirve, y se ve en el repo: `icon="bookmark-outline"` aparece
-   * tambien en los `EmptyState` de la lista y de la coleccion, y en el `Pick` del
-   * selector de destino —que es una fila de **coleccion**, no de enlace—. Con ese
-   * icono como marcador, el guard tendria que confiar en que ningun otro
-   * `EmptyState` dibuja un `MenuButton` al lado, y esa es exactamente la clase de
-   * confianza que un guard derivado no necesita.
+   * ------------------------------------------------------------------
+   * POR QUE LAS CUATRO SON ESTRUCTURALES Y NO UNA LLAMADA
+   * ------------------------------------------------------------------
    *
-   * Las cuatro juntas no admiten confusion: la caja de la fila, el nombre que sale
-   * de la regla, el ancho reservado y el boton.
+   * La cuarta pieza era `tituloDeBookmark(bookmark)`, y esa ata el guard a un
+   * **nombre local**: el `bookmark` es el nombre que el archivo le da a su
+   * parametro, y cambiarlo —a `b`, a `enlace`, a desestructurar— deja al guard
+   * sin encontrar ninguna fila y lo hace fallar. Eso es ruido, no seguridad: el
+   * guard no pierde una capacidad, pierde la fila entera, y el mensaje que deja
+   * —"sin fila, el guard no comprobaria nada"— dice que hay un problema donde
+   * solo cambio una variable.
+   *
+   * Un marcador de fila tiene que ser **estructura**: JSX y estilos, que son lo
+   * que hace que esto sea una fila y no un `useMemo`. Por eso las cuatro son
+   * `<ListRow` (la caja), `paddingRight: ANCHO_RESERVADO` (la reserva que solo
+   * una fila con boton necesita), `<MenuButton` (el boton) y `leading={` (el
+   * punto del estado, que solo esta fila pone). Las cuatro aguantan un cambio de
+   * nombres sin romperse, y las cuatro juntas no admiten confusion.
+   *
+   * Y el icono **no** entra: `icon="bookmark-outline"` aparece tambien en los
+   * `EmptyState` de la lista y de la coleccion, y en el `Pick` del selector de
+   * destino —que es una fila de **coleccion**, no de enlace—. Como marcador
+   * suelto obligaria a confiar en que ningun otro dibuja un `MenuButton` al lado,
+   * y esa es la confianza que un guard derivado no necesita.
    */
   const PIEZAS = [
     "<ListRow",
-    "tituloDeBookmark(bookmark)",
     "paddingRight: ANCHO_RESERVADO",
     "<MenuButton",
+    "leading={",
   ] as const;
 
   const dibujanUnaFilaDeEnlace = (): string[] =>

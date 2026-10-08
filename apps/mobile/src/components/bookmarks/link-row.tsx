@@ -101,9 +101,18 @@ export function LinkRow({ bookmark, onPress, onMenu, testID }: LinkRowProps) {
         leading={
           <View
             style={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
+              /*
+                El punto, con los **tokens del tema** y no con numeros: `sm` es 8 y
+                `xs` es 4, asi que la caja es de ocho y el circulo de cuatro. Venia
+                escrito a mano de las tres copias de la fila, y ahi la excepcion
+                era defendible porque eran tres archivos con el tema a la vista en
+                otro lado; ahora estan en uno solo, con `theme.spacing` a dos lineas
+                de `gap: theme.spacing.sm`, y un `8` al lado de un `theme.spacing.sm`
+                es el tipo de numero que se desincroniza sin avisar.
+              */
+              width: theme.spacing.sm,
+              height: theme.spacing.sm,
+              borderRadius: theme.spacing.xs,
               backgroundColor: COLOR_ESTADO[bookmark.extractionState](theme),
             }}
           />
