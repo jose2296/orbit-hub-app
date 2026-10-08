@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { AppText } from "@/components/ui/text";
 import { Sheet } from "@/components/ui/sheet";
@@ -15,8 +15,6 @@ type CalendarView = "days" | "months" | "years";
 
 /** How many years one page of the year picker shows. */
 const YEARS_PER_PAGE = 12;
-/** How far a swipe over the days has to go before the month turns. */
-const SWIPE_DISTANCE = 48;
 
 /**
  * A day to pick from.
@@ -57,7 +55,6 @@ export function CalendarSheet({
     }
   }, [visible, selectedDay]);
 
-  const weeks = useMemo(() => monthGrid(shown.year, shown.monthIndex), [shown]);
 
   const stepMonth = useCallback((delta: number) => {
     setShown((current) => {
@@ -66,19 +63,46 @@ export function CalendarSheet({
     });
   }, []);
 
-  // A horizontal swipe over the days turns the month. Stable, so the gesture is not
-  // rebuilt on every render.
+  // The days swipe like the journal itself: the month before or after comes in with the
+  // finger, and a short drag springs back. Built once per width.
+  const { width: screenWidth } = useWindowDimensions();
+  const gridWidth = Math.max(0, screenWidth - theme.spacing.lg * 2 - 16);
+  const offset = useSharedValue(0);
+  const turn = useCallback(
+    (direction: -1 | 1) => {
+      stepMonth(direction);
+      offset.value = 0;
+    },
+    [stepMonth, offset],
+  );
   const swipe = useMemo(
     () =>
       Gesture.Pan()
         .activeOffsetX([-14, 14])
         .failOffsetY([-14, 14])
+        .onUpdate((event) => {
+          offset.value = event.translationX;
+        })
         .onEnd((event) => {
-          if (event.translationX <= -SWIPE_DISTANCE) runOnJS(stepMonth)(1);
-          else if (event.translationX >= SWIPE_DISTANCE) runOnJS(stepMonth)(-1);
+          const past = Math.abs(event.translationX) > gridWidth * 0.25;
+          const flick = Math.abs(event.velocityX) > 700;
+          if (event.translationX < 0 && (past || (flick && event.velocityX < 0))) {
+            offset.value = withTiming(-gridWidth, { duration: 180 }, (finished) => {
+              if (finished) runOnJS(turn)(1);
+            });
+          } else if (event.translationX > 0 && (past || (flick && event.velocityX > 0))) {
+            offset.value = withTiming(gridWidth, { duration: 180 }, (finished) => {
+              if (finished) runOnJS(turn)(-1);
+            });
+          } else {
+            offset.value = withTiming(0, { duration: 160 });
+          }
         }),
-    [stepMonth],
+    [gridWidth, turn, offset],
   );
+  const strip = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value - gridWidth }] }));
+  const previous = monthAround(shown, -1);
+  const next = monthAround(shown, 1);
 
   const back = () => {
     if (view === "days") stepMonth(-1);
@@ -90,6 +114,8 @@ export function CalendarSheet({
     else if (view === "months") setShown((current) => ({ ...current, year: current.year + 1 }));
     else setYearPage((current) => current + YEARS_PER_PAGE);
   };
+
+  const gridProps = { selectedDay, today, daysWithText, onPick };
 
   const title = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}>
@@ -150,8 +176,8 @@ export function CalendarSheet({
 
         {view === "days" ? (
           <GestureDetector gesture={swipe}>
-            <View style={{ gap: theme.spacing.md }}>
-              <View style={{ flexDirection: "row" }}>
+            <View style={{ width: gridWidth, overflow: "hidden" }}>
+              <View style={{ flexDirection: "row", marginBottom: theme.spacing.md }}>
                 {Array.from({ length: 7 }, (_, index) => (
                   <View key={index} style={{ flex: 1, alignItems: "center" }}>
                     <AppText variant="caption" tone="subtle">
@@ -160,53 +186,11 @@ export function CalendarSheet({
                   </View>
                 ))}
               </View>
-              {weeks.map((week, row) => (
-                <View key={row} style={{ flexDirection: "row" }}>
-                  {week.map((day, column) => {
-                    if (day === null) return <View key={column} style={{ flex: 1, height: 44 }} />;
-                    const selected = day === selectedDay;
-                    const isToday = day === today;
-                    return (
-                      <Pressable
-                        key={column}
-                        accessibilityRole="button"
-                        accessibilityLabel={day}
-                        accessibilityState={{ selected }}
-                        onPress={() => onPick(day)}
-                        style={{
-                          flex: 1,
-                          height: 44,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          borderRadius: theme.radius.sm,
-                          backgroundColor: selected ? theme.colors.accent : "transparent",
-                          borderWidth: isToday ? 2 : 0,
-                          borderColor: isToday && !selected ? theme.colors.accent : "transparent",
-                        }}
-                      >
-                        <AppText
-                          variant={isToday || selected ? "bodyStrong" : "body"}
-                          style={{ color: selected ? theme.colors.onAccent : theme.colors.text }}
-                        >
-                          {Number(day.slice(8, 10))}
-                        </AppText>
-                        {daysWithText.has(day) ? (
-                          <View
-                            style={{
-                              position: "absolute",
-                              bottom: 4,
-                              width: 4,
-                              height: 4,
-                              borderRadius: 2,
-                              backgroundColor: selected ? theme.colors.onAccent : theme.colors.accent,
-                            }}
-                          />
-                        ) : null}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ))}
+              <Animated.View style={[{ flexDirection: "row", width: gridWidth * 3 }, strip]}>
+                <MonthGrid width={gridWidth} month={previous} {...gridProps} />
+                <MonthGrid width={gridWidth} month={shown} {...gridProps} />
+                <MonthGrid width={gridWidth} month={next} {...gridProps} />
+              </Animated.View>
             </View>
           </GestureDetector>
         ) : null}
@@ -240,6 +224,83 @@ export function CalendarSheet({
         ) : null}
       </View>
     </Sheet>
+  );
+}
+
+/** The month a number of months away from `month`. */
+function monthAround(month: { year: number; monthIndex: number }, delta: number) {
+  const index = month.year * 12 + month.monthIndex + delta;
+  return { year: Math.floor(index / 12), monthIndex: index % 12 };
+}
+
+/** One month of days, drawn as a page of the calendar's day strip. */
+function MonthGrid({
+  width,
+  month,
+  selectedDay,
+  today,
+  daysWithText,
+  onPick,
+}: {
+  width: number;
+  month: { year: number; monthIndex: number };
+  selectedDay: string;
+  today: string;
+  daysWithText: Set<string>;
+  onPick: (day: string) => void;
+}) {
+  const theme = useTheme();
+  const weeks = useMemo(() => monthGrid(month.year, month.monthIndex), [month.year, month.monthIndex]);
+  return (
+    <View style={{ width, gap: theme.spacing.md }}>
+      {weeks.map((week, row) => (
+        <View key={row} style={{ flexDirection: "row" }}>
+          {week.map((day, column) => {
+            if (day === null) return <View key={column} style={{ flex: 1, height: 44 }} />;
+            const selected = day === selectedDay;
+            const isToday = day === today;
+            return (
+              <Pressable
+                key={column}
+                accessibilityRole="button"
+                accessibilityLabel={day}
+                accessibilityState={{ selected }}
+                onPress={() => onPick(day)}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: theme.radius.sm,
+                  backgroundColor: selected ? theme.colors.accent : "transparent",
+                  borderWidth: isToday ? 2 : 0,
+                  borderColor: isToday && !selected ? theme.colors.accent : "transparent",
+                }}
+              >
+                <AppText
+                  variant={isToday || selected ? "bodyStrong" : "body"}
+                  style={{ color: selected ? theme.colors.onAccent : theme.colors.text }}
+                >
+                  {Number(day.slice(8, 10))}
+                </AppText>
+                {daysWithText.has(day) ? (
+                  <View
+                    style={{
+                      position: "absolute",
+                      bottom: 4,
+                      width: 4,
+                      height: 4,
+                      borderRadius: 2,
+                      backgroundColor: selected ? theme.colors.onAccent : theme.colors.accent,
+                    }}
+                  />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      ))}
+    </View>
   );
 }
 

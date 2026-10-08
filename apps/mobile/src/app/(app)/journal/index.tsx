@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -78,27 +78,36 @@ export default function JournalScreen() {
     [day, offset],
   );
 
-  const gesture = Gesture.Pan()
-    .activeOffsetX([-12, 12])
-    .failOffsetY([-16, 16])
-    .onUpdate((event) => {
-      offset.value = event.translationX;
-    })
-    .onEnd((event) => {
-      const past = Math.abs(event.translationX) > width * TURN_FRACTION;
-      const flick = Math.abs(event.velocityX) > FLICK_VELOCITY;
-      if (event.translationX < 0 && (past || (flick && event.velocityX < 0))) {
-        offset.value = withTiming(-width, { duration: 180 }, (finished) => {
-          if (finished) runOnJS(turn)(1);
-        });
-      } else if (event.translationX > 0 && (past || (flick && event.velocityX > 0))) {
-        offset.value = withTiming(width, { duration: 180 }, (finished) => {
-          if (finished) runOnJS(turn)(-1);
-        });
-      } else {
-        offset.value = withTiming(0, { duration: 160 });
-      }
-    });
+  /**
+   * The gesture is built once per width and not on every render. This screen renders
+   * again each time the cache changes, which is every save; a gesture rebuilt on each
+   * of those lost the drag that was in progress, so typing stopped the swipe.
+   */
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-12, 12])
+        .failOffsetY([-16, 16])
+        .onUpdate((event) => {
+          offset.value = event.translationX;
+        })
+        .onEnd((event) => {
+          const past = Math.abs(event.translationX) > width * TURN_FRACTION;
+          const flick = Math.abs(event.velocityX) > FLICK_VELOCITY;
+          if (event.translationX < 0 && (past || (flick && event.velocityX < 0))) {
+            offset.value = withTiming(-width, { duration: 180 }, (finished) => {
+              if (finished) runOnJS(turn)(1);
+            });
+          } else if (event.translationX > 0 && (past || (flick && event.velocityX > 0))) {
+            offset.value = withTiming(width, { duration: 180 }, (finished) => {
+              if (finished) runOnJS(turn)(-1);
+            });
+          } else {
+            offset.value = withTiming(0, { duration: 160 });
+          }
+        }),
+    [width, turn, offset],
+  );
 
   const centre = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value }] }));
   const before = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value - width }] }));

@@ -100,20 +100,39 @@ export type MentionType = (typeof MENTION_TYPES)[number];
 const MENTION_INDICATOR = '@';
 
 /**
- * The indicator a chip carries: the trigger, and for a chip inside a space the
- * colour of that space, as `@teal`. The colour is what the chip is painted with, so
- * a chip reads as the space it belongs to. Anything else is refused.
+ * The indicator a chip carries, which is what the editor paints it by.
+ *
+ * A chip inside a space is painted in that space's colour, so each colour has its own
+ * indicator. The indicator is a single character on purpose: the library names the
+ * style it paints a chip with after the indicator's first character, so `@teal` and
+ * `@` would share one style and the last one written would win. A chip with no space
+ * keeps the trigger `@`.
  */
-export function mentionIndicatorFor(colour: string | null | undefined): string {
-  return colour !== undefined && colour !== null && (WORKSPACE_COLORS as readonly string[]).includes(colour)
-    ? `${MENTION_INDICATOR}${colour}`
-    : MENTION_INDICATOR;
+const COLOUR_INDICATORS = ["§", "¤", "¶", "†", "‡", "•", "◆", "■", "▲", "●", "★", "✚"] as const;
+
+/**
+ * Worked out when it is asked for, not when this module loads: the colours come from
+ * another contract module, and reading them while loading can run before they exist.
+ */
+function colourIndicator(colour: string): string | undefined {
+  const index = (WORKSPACE_COLORS as readonly string[]).indexOf(colour);
+  return index === -1 ? undefined : COLOUR_INDICATORS[index];
 }
 
+export function mentionIndicatorFor(colour: string | null | undefined): string {
+  if (colour === undefined || colour === null) return MENTION_INDICATOR;
+  return colourIndicator(colour) ?? MENTION_INDICATOR;
+}
+
+const LEGACY_COLOUR_INDICATOR = /^@[a-z]+$/;
+
 function isMentionIndicator(value: string | undefined): boolean {
+  if (value === undefined) return false;
   if (value === MENTION_INDICATOR) return true;
-  if (value === undefined || !value.startsWith(MENTION_INDICATOR)) return false;
-  return (WORKSPACE_COLORS as readonly string[]).includes(value.slice(MENTION_INDICATOR.length));
+  if ((COLOUR_INDICATORS as readonly string[]).includes(value)) return true;
+  // Chips made while the colour was carried as `@teal` are still valid; the app
+  // writes them back with the character on their next save.
+  return LEGACY_COLOUR_INDICATOR.test(value) && (WORKSPACE_COLORS as readonly string[]).includes(value.slice(1));
 }
 /** The name is a copy for when the target cannot be resolved; it is not the truth. */
 const MENTION_TEXT_MAX = 120;

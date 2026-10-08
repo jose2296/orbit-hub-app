@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   JOURNAL_NAMESPACE,
+  mentionIndicatorFor,
   isRealJournalDay,
   journalDaySchema,
   journalEntryIdFor,
@@ -93,6 +94,13 @@ describe('mention in a note document', () => {
 
   it('accepts a chip without its copy of the name', () => {
     expect(reasons(mention(`indicator="@" type="note" id="${id}"`))).toEqual([]);
+  });
+
+  it('gives each space colour its own single-character indicator, which a chip can carry', () => {
+    expect(mentionIndicatorFor('teal')).not.toBe('@');
+    expect(mentionIndicatorFor('teal')).not.toBe(mentionIndicatorFor('rose'));
+    expect(mentionIndicatorFor(null)).toBe('@');
+    expect(reasons(mention(`indicator="${mentionIndicatorFor('teal')}" type="list" id="${id}"`))).toEqual([]);
   });
 
   it('accepts the colour of a space as the indicator, and nothing else', () => {

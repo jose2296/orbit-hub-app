@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppState, View } from "react-native";
+import { AppState, Platform, View } from "react-native";
+import { useRouter } from "expo-router";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
 
 import { MentionPickerSheet } from "@/components/mentions/mention-picker-sheet";
@@ -60,6 +61,40 @@ export function JournalDayPage({
       }),
     );
   }, [initialDocument, loaded, record, targets, t]);
+
+  const router = useRouter();
+
+  /**
+   * Pressing a chip goes to what it points at. The editor takes the press itself, and
+   * the library gives no event for a press on a chip inside it, so on the web the
+   * click is read from the page. A phone has no such hook in this library.
+   */
+  useEffect(() => {
+    if (Platform.OS !== "web" || targets === null || typeof document === "undefined") return;
+    // Where the press started. A press that travelled is a drag, which belongs to the
+    // day swipe, and must not also open the chip it began on.
+    let start: { x: number; y: number } | null = null;
+    const onDown = (event: MouseEvent) => {
+      start = { x: event.clientX, y: event.clientY };
+    };
+    const onClick = (event: MouseEvent) => {
+      const moved =
+        start === null ? 0 : Math.hypot(event.clientX - start.x, event.clientY - start.y);
+      start = null;
+      if (moved > 8) return;
+      const element = event.target instanceof Element ? event.target : null;
+      const chip = element?.closest("mention");
+      if (!chip || !chip.closest(".eti-editor")) return;
+      const found = targets.get(`${chip.getAttribute("type")}:${chip.getAttribute("id")}`);
+      if (found) router.push(found.route as never);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("click", onClick);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("click", onClick);
+    };
+  }, [targets, router]);
 
   const autosave = useMemo(
     () =>
