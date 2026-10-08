@@ -416,6 +416,31 @@ git commit -m "refactor(menus): nota y carpeta al registro, y carpeta pierde sei
 
 ---
 
+### Task 12: `CreatePage` — la segunda regresion que T7 abrio
+
+**Archivos:**
+- Crear: `apps/mobile/src/components/menus/pages/create-page.tsx`
+- Test: `apps/mobile/test/create-page.test.ts`
+
+**Va en el PR 3, con T6, T7 y T11. No es opcional.**
+
+`ACCIONES.createHere` declara `destino: { tipo: "pagina", page: "create" }` y
+`MenuPageId` tiene `"create"`, pero **ninguna tarea escribia la pagina**, igual que
+paso con `share`. `PAGINAS_MONTADAS` no la tiene, asi que **crear una lista dentro de
+una carpeta deja de existir**: la hoja vieja lo hacia con `onCreateInside(kind)` y
+`creatingKind`, y `ListKind` del contrato.
+
+**Lo que ya existe y alcanza**: `components/folders/create-sheet.tsx` exporta
+`CreateSheet`, con `CreateKind = ListKind | "folder" | "note" | "collection"` — o sea
+que ya ofrece los cuatro tipos de lista y tres cosas mas. La hoja vieja lo montaba con
+`visible={creatingKind !== null}`. La pagina es un envoltorio delgado, y **no** hay que
+reescribir el selector de tipos.
+
+Ojo: `CreateSheet` se usaba como hoja hermana. Aqui va como **pagina** de la hoja que
+ya esta montada, que es justo el panel-sobre-panel que la migracion vino a matar.
+
+---
+
 ### Task 8: `AccessPage`
 
 **Archivos:**

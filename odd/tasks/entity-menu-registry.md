@@ -311,7 +311,7 @@ Cada una es un work unit y cierra con su commit.
 - [x] **T5** Pantalla de coleccion.
 - [x] **T6** Migrar `ListMenuSheet`. Es la hoja mas completa: si el registro la
   reproduce entera, el registro alcanza.
-- [ ] **T7** Migrar `NoteMenuSheet` y `FolderMenuSheet`. El de carpeta ademas
+- [x] **T7** Migrar `NoteMenuSheet` y `FolderMenuSheet`. El de carpeta ademas
   pierde los seis paneles hermanos.
 - [ ] **T8** `AccessPage`: `SharedBadge` en todas las superficies por defecto, y
   `useShareReach` subido de la pagina de borrar a una pagina propia. Ojo:
