@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 
 import type { IconRef } from "@orbit-hub/contracts";
 
+import { ShareFormContexto, type ShareFormPublicado } from "@/components/shares/share-form-publicado";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetOptions, useLastValue } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
@@ -17,6 +18,7 @@ import { useTheme } from "@/theme";
 import { DeletePage } from "./pages/delete-page";
 import { IconPage } from "./pages/icon-page";
 import { RenamePage } from "./pages/rename-page";
+import { SharePage } from "./pages/share-page";
 
 /**
  * Lo que el call site sabe hacer con esta entidad.
@@ -175,6 +177,27 @@ export function EntityMenuSheet({
   const [error, setError] = useState<string | null>(null);
   const [reintento, setReintento] = useState<(() => void) | null>(null);
   const [trabajando, setTrabajando] = useState(false);
+
+  /*
+    ------------------------------------------------------------------
+    EL CANAL DE COMPARTIR, Y POR QUE EL GUARDAR DEL PIE LO PIDE EL FORMULARIO
+    ------------------------------------------------------------------
+
+    El boton de enviar vive en `ShareNodeForm` —que es quien tiene el estado del
+    formulario— y el Guardar del pie vive **arriba**, en el `Sheet` que esta misma
+    hoja pinta. Un contexto no fluye hacia arriba, asi que el hijo no puede leer
+    nada del padre: lo que hace es **publicar** y el padre lo pinta. Es el mismo
+    reparto que `ShareNodeSheet` y `note-menu-sheet.tsx:99-112`, y el que
+    `share-form-publicado.ts` explica desde antes de que existiera esta pagina.
+
+    Y el estado va **aca** y no en `SharePage` por la misma razon que el borrador
+    de renombrar vive en la hoja: entrar y salir de la pagina desmonta el
+    formulario con lo escrito ahi, asi que lo que el pie tiene que pintar tiene que
+    estar en un sitio que sobreviva a eso. Un `useState` dentro de la pagina se
+    pierde con ella.
+  */
+  const [sharePublicado, setSharePublicado] = useState<ShareFormPublicado | null>(null);
+  const shareCanal = useMemo(() => ({ publicar: setSharePublicado }), []);
 
   const titulo = ctx?.entity.title ?? "";
   const nombre = borrador ?? titulo;
@@ -533,101 +556,184 @@ export function EntityMenuSheet({
     pasa por `t` solo cuando lo que hay es una clave. Un `t()` sobre un texto ya
     traducido imprimiria la frase con las llaves puesta.
   */
+  /*
+    ------------------------------------------------------------------
+    EL GUARDAR DEL PIE, Y POR QUE ES **DE UNA PAGINA A LA VEZ**
+    ------------------------------------------------------------------
+
+    El pie es del `Sheet`, que es de toda la hoja: hay **un solo** Guardar y cinco
+    paginas, asi que la pregunta es de quien es. Aca es de la de compartir y solo
+    mientras estamos en ella, y el corte lo hace `pagina === "share"` y no el
+    estado del formulario.
+
+    Por que no alcanza con `sharePublicado` a secas, que ya es `null` cuando el
+    formulario no esta montado: porque ese `null` lo produce el **cleanup** del
+    efecto del hijo, o sea que la hoja estaria heredando de la pagina una decision
+    que es de ella. Hoy coincide, y el que llegue en T9 con un formulario que
+    limpia distinto encontraria un Guardar en una pagina sin formulario —"Guardar"
+    que no hace nada, que es decoracion— sin que nada se rompiera. El corte por
+    pagina no depende de que la pagina sea educada.
+
+    Y las tres props van juntas por el mismo corte, porque son la misma pregunta:
+    que dice el boton, cuando esta apagado y por que. `saveLabel` va con
+    `share.send` —"Compartir"— y no con el `common.save` por defecto, porque el
+    boton **manda un correo**: "Guardar" en un formulario que escribe el grant de
+    otra persona es la palabra equivocada, y el error sale en el correo de la otra
+    persona.
+
+    ------------------------------------------------------------------
+    Y POR QUE RENOMBRAR NO COMPITE POR EL PIE
+    ------------------------------------------------------------------
+
+    Porque `RenamePage` **no usa** el Guardar del pie: tiene su boton adentro, y es
+    una decision escrita (`rename-page.tsx:54-63`). El `onSave` del `Sheet` se apaga
+    solo cuando su promesa resuelve, y `onSave` no puede rechazar sin dejar una
+    promesa sin manejar, asi que un renombrar que falla por ahi apagaria la pregunta
+    de "salir sin guardar" y el nombre escrito se iria sin avisar.
+
+    O sea que hoy las dos mitades no se pisan por casualidad sino porque **solo
+    compartir publica**. Cuando otra pagina quiera el pie, el corte por `pagina` es
+    lo que las separa, y por eso el corte esta escrito en la hoja y no se deja que
+    el ultimo `onSave` que se escriba gane.
+  */
+  const enCompartir = pagina === "share";
+
   const claveDeSubtitulo = SUBTITULO_POR_PAGINA[pagina];
-  const subtituloDeCabecera = claveDeSubtitulo ? t(claveDeSubtitulo) : subtitulo;
+  const subtituloDeCabecera = claveDeSubtitulo ? t(claveDeSubtitulo, { name: titulo }) : subtitulo;
 
+  /*
+    El `Provider` envuelve **el `Sheet` entero**, no solo el contenido, y por la
+    misma razon que en `ShareNodeSheet` y `note-menu-sheet.tsx`: el canal tiene que
+    estar por encima del formulario que lo usa, y el formulario se pinta dentro
+    del `Sheet`. Que el `Modal` de `Sheet` se dibuje en otra rama del arbol —por
+    eso es un portal— no cambia de quien es padre: en React el arbol de nodos y el
+    lugar de la pantalla son dos cosas, y el contexto sigue siguiendo al arbol.
+  */
   return (
-    <Sheet
-      step={pagina}
-      visible={pedido !== null}
-      onClose={onClose}
-      title={ctx.entity.title}
-      subtitle={subtituloDeCabecera}
-      scrollable={false}
-      onBack={pagina === "options" ? undefined : () => setPagina("options")}
-    >
-      <View
-        style={{
-          gap: theme.spacing.md,
-          paddingHorizontal: theme.spacing.lg,
-          paddingBottom: theme.spacing.sm,
-        }}
+    <ShareFormContexto.Provider value={shareCanal}>
+      <Sheet
+        step={pagina}
+        visible={pedido !== null}
+        onClose={onClose}
+        title={ctx.entity.title}
+        subtitle={subtituloDeCabecera}
+        scrollable={false}
+        onBack={pagina === "options" ? undefined : () => setPagina("options")}
+        onSave={enCompartir ? sharePublicado?.enviar : undefined}
+        saveDisabledReason={enCompartir ? sharePublicado?.motivo : undefined}
+        saveLabel={enCompartir ? t("share.send") : undefined}
       >
-        {pagina === "options" ? <SheetOptions options={opciones} /> : null}
+        <View
+          style={{
+            gap: theme.spacing.md,
+            paddingHorizontal: theme.spacing.lg,
+            paddingBottom: theme.spacing.sm,
+          }}
+        >
+          {pagina === "options" ? <SheetOptions options={opciones} /> : null}
 
-        {pagina === "rename" ? (
-          <RenamePage
-            nombre={nombre}
-            /*
-              Los dos datos de los que se deriva "sucio", y **los dos van por
-              props** porque la pagina no puede leerlos: `borrador` es estado de
-              esta hoja y el `MenuContext` no lo lleva —el registro no conoce
-              borradores—. El titulo si esta en el `ctx`, asi que la pagina
-              compararia contra lo que se le pasa y no contra el `ctx` entero.
-            */
-            borrador={borrador}
-            titulo={titulo}
-            onChange={setBorrador}
-            onRename={() => {
-              if (nombre.trim().length === 0 || trabajando) return;
-              renombrar(nombre.trim());
-            }}
-            trabajando={trabajando}
-          />
-        ) : null}
+          {pagina === "rename" ? (
+            <RenamePage
+              nombre={nombre}
+              /*
+                Los dos datos de los que se deriva "sucio", y **los dos van por
+                props** porque la pagina no puede leerlos: `borrador` es estado de
+                esta hoja y el `MenuContext` no lo lleva —el registro no conoce
+                borradores—. El titulo si esta en el `ctx`, asi que la pagina
+                compararia contra lo que se le pasa y no contra el `ctx` entero.
+              */
+              borrador={borrador}
+              titulo={titulo}
+              onChange={setBorrador}
+              onRename={() => {
+                if (nombre.trim().length === 0 || trabajando) return;
+                renombrar(nombre.trim());
+              }}
+              trabajando={trabajando}
+            />
+          ) : null}
 
-        {pagina === "delete" ? (
-          // El `conteo` lo pasa el call site y solo una lista lo tiene: las otras
-          // cuatro no llenan el campo, y `DeletePage` ya sabe que sin numero no
-          // dice nada en vez de pintar un `{count}` crudo en pantalla.
-          <DeletePage ctx={ctx} onBorrar={borrar} trabajando={trabajando} conteo={conteo} />
-        ) : null}
+          {pagina === "delete" ? (
+            // El `conteo` lo pasa el call site y solo una lista lo tiene: las otras
+            // cuatro no llenan el campo, y `DeletePage` ya sabe que sin numero no
+            // dice nada en vez de pintar un `{count}` crudo en pantalla.
+            <DeletePage ctx={ctx} onBorrar={borrar} trabajando={trabajando} conteo={conteo} />
+          ) : null}
 
-        {/*
-          El icono se escribe al elegir y la hoja **no** se cierra: el panel
-          sigue abierto para cambiar de opinion, y el error —si el handler
-          falla— se muestra mas abajo, con su reintento, igual que en las otras
-          paginas. Por eso esta recibe `onSelect` y no un boton de guardar: en el
-          registro, `icon` es una pagina que se entra, no una fila que dispara una
-          cosa y se va.
+          {/*
+            Compartir, y **la fila vuelve a existir con esto**.
 
-          Y por eso recibe `trabajando`: es lo que apaga el panel mientras se
-          escribe, que sin el el grid entero sigue tappable y el segundo toque se
-          pierde sin decir nada.
-        */}
-        {pagina === "icon" ? (
-          <IconPage icon={iconoVivo} onSelect={ponerIcono} trabajando={trabajando} />
-        ) : null}
+            `ACCIONES.share` declara `destino: { tipo: "pagina", page: "share" }` desde
+            la T1 y la hoja lo filtra con `puedeOfrecerse` mientras su pagina no exista:
+            sin este bloque, compartir una lista deja de estar en el menu, que es
+            exactamente lo que paso con la hoja de lista cuando paso al registro.
 
-        {/*
-          El fallo, **en la hoja y no en un toast**: un toast se va solo y a la
-          pagina de borrar hay que volver a entrar para volver a leerlo. Y el
-          reintento va al lado del error, que es donde se lo busca.
-        */}
-        {error ? (
-          <View style={{ gap: theme.spacing.sm }}>
-            <AppText variant="caption" style={{ color: theme.colors.danger }}>
-              {error}
-            </AppText>
-            {reintento ? (
-              <Button
-                label={t("common.retry")}
-                variant="secondary"
-                fullWidth
-                onPress={() => reintento()}
-              />
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-    </Sheet>
+            Y el `onClose` es el de la hoja, no uno de la pagina: al enviar bien se
+            cierra **el menu entero**. La hoja vieja hacia lo mismo —`onDone={() =>
+            onClose()}`— y la razon esta en `SharePage`: el estado del formulario se
+            pierde al desmontar, asi que "quedarse para mandar a otro" no es una
+            opcion que exista.
+          */}
+          {pagina === "share" ? <SharePage ctx={ctx} onClose={onClose} /> : null}
+
+          {/*
+            El icono se escribe al elegir y la hoja **no** se cierra: el panel
+            sigue abierto para cambiar de opinion, y el error —si el handler
+            falla— se muestra mas abajo, con su reintento, igual que en las otras
+            paginas. Por eso esta recibe `onSelect` y no un boton de guardar: en el
+            registro, `icon` es una pagina que se entra, no una fila que dispara una
+            cosa y se va.
+
+            Y por eso recibe `trabajando`: es lo que apaga el panel mientras se
+            escribe, que sin el el grid entero sigue tappable y el segundo toque se
+            pierde sin decir nada.
+          */}
+          {pagina === "icon" ? (
+            <IconPage icon={iconoVivo} onSelect={ponerIcono} trabajando={trabajando} />
+          ) : null}
+
+          {/*
+            El fallo, **en la hoja y no en un toast**: un toast se va solo y a la
+            pagina de borrar hay que volver a entrar para volver a leerlo. Y el
+            reintento va al lado del error, que es donde se lo busca.
+          */}
+          {error ? (
+            <View style={{ gap: theme.spacing.sm }}>
+              <AppText variant="caption" style={{ color: theme.colors.danger }}>
+                {error}
+              </AppText>
+              {reintento ? (
+                <Button
+                  label={t("common.retry")}
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => reintento()}
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      </Sheet>
+    </ShareFormContexto.Provider>
   );
 }
 
-/** El subtitulo de la cabecera, y el de la primera pagina es ninguno. */
+/**
+ * El subtitulo de la cabecera, y el de la primera pagina es ninguno.
+ *
+ * `share` esta aca y no sale de `SharePage` porque el subtitulo lo pinta el `Sheet`,
+ * que es el padre, y una pagina no puede dictarselo a quien lo contiene. Es el
+ * mismo reparto que el borrador de renombrar, del otro lado del arbol.
+ *
+ * Y el `{ name }` lo pone la hoja para todas, no solo para esta: el titulo de la
+ * cabecera ya es el nombre de la entidad y es el unico `{name}` que tiene sentido en
+ * cualquier pagina. Una clave sin el hueco lo ignora —`formatTranslation` solo
+ * reemplaza lo que encuentra (`dictionaries.ts:2485`)—, asi que el resto no cambia.
+ */
 const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
   rename: "common.rename",
   icon: "icons.title",
   delete: "common.delete",
+  share: "share.subtitle",
 };
 

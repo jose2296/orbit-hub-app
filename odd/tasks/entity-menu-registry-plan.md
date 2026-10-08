@@ -352,6 +352,23 @@ diferenciaba; nota y carpeta decian `share.pickSomeone` y no cambia nada para el
 
 Ojo con `onClose`: la hoja vieja, al compartir, **no cerraba el menu**.
 
+> **CERRADA (T11).**
+>
+> **Dos premisas de arriba estaban mal**, verificadas sobre `caf0027^`:
+>
+> - **`onClose`**: la hoja vieja **si** cerraba, con `onDone={() => onClose()}`
+>   (`list-menu-sheet.tsx:611`). El codigo es el que corria.
+> - **"la hoja vieja lo tenia funcionando"**: montaba el formulario, pero **no**
+>   pasaba `onSave` al `Sheet` ni montaba `ShareFormContexto.Provider`, y
+>   `ShareNodeForm` no tiene ningun boton desde antes de T6. O sea que **en la hoja de
+>   lista no habia forma de enviar** —solo el `onSubmitEditing` del teclado—. El
+>   "Guardar" del pie es una cosa que T11 escribio, no que se copio de alla.
+>
+> Y el `onSave` por pagina: **el `Sheet` de `EntityMenuSheet` no tenia ninguno** antes
+> de T11, asi que la colision a evitar no es con `RenamePage` —que no usa el pie a
+> proposito, `rename-page.tsx:54-63`— sino con la pagina que llegue en T8 o T9. Se
+> resuelve con un corte `pagina === "share"` en la hoja, no con un `??` encadenado.
+
 ---
 
 ### Task 6: Migrar `ListMenuSheet`

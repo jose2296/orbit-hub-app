@@ -48,7 +48,21 @@ import type { MenuAccion, MenuPageId } from "@/lib/menus/registry";
  * `readdirSync` es de Node y la app corre en un runtime que no lo tiene. La
  * derivacion va del lado del test, que si puede leer el disco.
  */
-export const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "icon", "delete"];
+/*
+  `share` se sumo con la pagina que la monta (`menus/pages/share-page.tsx`, la T11).
+
+  Y no es una fila mas: `ACCIONES.share` declara `destino: { tipo: "pagina",
+  page: "share" }` **desde la T1**, y `ORDEN_POR_KIND` la lista para `list`, `note`
+  y `folder`. Sin esta entrada el filtro saca la fila entera, y **compartir deja de
+  existir en el menu** —que es exactamente lo que paso con la hoja de lista cuando
+  paso al registro en la T6, y nadie lo noto porque "una fila que no esta" y "una
+  fila que todavia no se escribio" se ven igual desde el menu.
+
+  Por eso el orden de la lista es el orden en que llegaron las paginas y no el
+  del registro: el registro dice que acciones existen, esta dice cuales puede
+  pintar **esta** version de la hoja.
+*/
+export const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "icon", "delete", "share"];
 
 /**
  * Si la accion se ofrece, y **el filtro no es de disponibilidad**.

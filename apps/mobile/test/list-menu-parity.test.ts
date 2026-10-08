@@ -209,8 +209,12 @@ describe("cada fila de la hoja vieja sigue declarada", () => {
       guard de arriba afirma que la fila **sigue existiendo** —que es lo que no se
       puede perder— y este dice que el copy cambio y por que.
 
-      Y mientras tanto la fila no se ve: `share` es una pagina y la pagina la
-      escribe una tarea que **no existe en el plan** (abajo esta escrito).
+      Y la fila de compartir, que era el unico caso en que la perdida se **veia**:
+      mientras la pagina no existia el filtro la sacaba entera, y entonces compartir
+      una lista dejo de estar en el menu sin error en ninguna parte. La T11 escribio
+      la pagina. Igualar las tres etiquetas necesita `registry.tsx`, que sigue
+      estando fuera de la superficie: la divergencia de copy queda, la **fila** ya
+      no.
 
       La comparacion es de **conjuntos y no etiqueta por etiqueta**, y eso no es un
       detalle: `pin` y `delete` son dos filas con dos etiquetas cada una, porque su
@@ -274,7 +278,23 @@ describe("el orden y lo que se ofrece", () => {
   const pintadas = (ctx: MenuContext) => accionesPara(ctx).filter(puedeOfrecerse).map((a) => a.id);
 
   it("un tablero ofrece las filas que ofrecia, mas la de icono", () => {
-    expect(pintadas(LISTA)).toEqual(["states", "rename", "icon", "pin", "duplicate", "delete"]);
+    /*
+      Las siete de la hoja vieja y la de icono, y **`share` esta entre ellas desde
+      la T11**: `PAGINAS_MONTADAS` la inclui, o sea que el filtro ya no la saca. Esta
+      linea estuvo diciendo seis, con un comentario al lado que explicaba por que
+      faltaba una —"la pagina la escribe una tarea que no existe en el plan"—, y la
+      perdida se veía **igual que el filtro**: por eso quedo escrita con nombre en el
+      bloque de abajo en vez de solo anotada aca.
+    */
+    expect(pintadas(LISTA)).toEqual([
+      "states",
+      "rename",
+      "icon",
+      "pin",
+      "duplicate",
+      "share",
+      "delete",
+    ]);
   });
 
   it("una lista que no es tablero no ofrece la fila de estados", () => {
@@ -364,7 +384,7 @@ describe("las paginas que el filtro saca, con nombre", () => {
 
     /*
       ------------------------------------------------------------------
-      LOS TRES HUECOS, Y POR QUE ESTAN ESCRITOS Y NO OCULTOS
+      LOS DOS HUECOS, Y POR QUE ESTAN ESCRITOS Y NO OCULTOS
       ------------------------------------------------------------------
 
       La hoja vieja **si** ofrecia las dos ultimas, y las ofrecia de verdad.
@@ -378,16 +398,25 @@ describe("las paginas que el filtro saca, con nombre", () => {
         hermana de resultados (`:698`), con los dos formatos y el reintento.
         **Exportar una lista deja de estar disponible con esta tarea**, y queda
         escrito para que nadie lo lea como un olvido. Lo cierra la T9.
-      - `share`: la hoja vieja montaba `ShareNodeForm` en su pagina (`:610`) y el
-        registro declara la accion, pero **ninguna de las diez tareas escribe la
-        pagina que la monte**: no hay `SharePage` en ningun brief del plan, y T7 no
-        lo cierra tampoco porque nota y carpeta usan esta misma pagina. Es un hueco
-        **sin dueno**, y por eso esta aca y no en una nota al pie del reporte.
+
+      ------------------------------------------------------------------
+      Y `share` ESTUVO ACA, Y POR QUE NO ESTA MAS
+      ------------------------------------------------------------------
+
+      El tercer hueco no era de este bloque: era **sin dueno**. `ACCIONES.share`
+      declara su destino como una pagina desde la T1 y las diez tareas del plan
+      ninguna escribia el componente que la monte, asi que el filtro sacaba la fila
+      entera y **compartir una lista dejo de existir** —sin error, sin test rojo, y
+      con la lista de este archivo diciendo que la fila seguia ahi.
+
+      Lo cierra la T11, con `SharePage`. Por eso este bloque tiene dos entradas y no
+      tres: `share` sale del mapa y del `toEqual` cuando su pagina entra en
+      `PAGINAS_MONTADAS`, y ese mismo `toEqual` es lo que va a fallar el dia que
+      aparezcan dos huecos nuevos sin escribir.
     */
     const PENDIENTES: Record<string, string> = {
       access: "T8: AccessPage, con SharedBadge y useShareReach",
       export: "T9: ExportPage, con los dos formatos y ExportResultSheet",
-      share: "SIN TAREA EN EL PLAN: hace falta SharePage, y ShareNodeForm ya existe",
     };
 
     for (const page of sinMontar) {
@@ -395,9 +424,9 @@ describe("las paginas que el filtro saca, con nombre", () => {
     }
 
     // Y el conjunto es exactamente este, no un subconjunto: cuando T8 y T9 monten
-    // las suyas hay que sacar sus entradas de aca, y `share` tiene que quedar sola
-    // en el mapa hasta que alguien la escriba.
-    expect(sinMontar.sort()).toEqual(["access", "export", "share"]);
+    // las suyas hay que sacar sus entradas de aca, y el conjunto tiene que quedar
+    // vacio.
+    expect(sinMontar.sort()).toEqual(["access", "export"]);
   });
 });
 
