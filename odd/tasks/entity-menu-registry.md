@@ -326,10 +326,16 @@ Cada una es un work unit y cierra con su commit.
 - [x] **T12** `CreatePage`: los tipos de `LIST_KIND_ORDER` delegando en el call
       site. **En el PR 3.** Sin esta pagina, `ACCIONES.createHere` —que declara su
       destino como una pagina desde la T1— no se ofrecia y **crear una lista dentro
-      de una carpeta no existia**. Ojo: el handler (`MenuHandlers.crearDentro`, que
-      `menuDeCarpeta` reenvia desde `AccionesDeCarpeta.createInside`) **no lo pasa
-      ninguna pantalla todavia**, asi que la fila se ofrece y el toque avisa con
-      `sinHandler()`. Cerrarlo es de la pantalla, no del menu.
+      de una carpeta no existia**. Cerrada en dos commits: la pagina, y despues el
+      cableado de la pantalla.
+
+      **Y el cableado era la mitad importante**: `folderId: null` en `onCreate` no era
+      "sin carpeta", era **"la carpeta raiz"** — asi lo dice el contrato de
+      `createList`—. O sea que la lista se creaba, **aparecia** en el espacio, que es
+      donde se ven las listas, y parecia haber funcionado. Un exito visible en el sitio
+      equivocado, que es peor que un error. Las cuatro ramas leen ahora
+      `createFolderId`, y cada puerta dice la suya: el "+" pone `null` explicito y
+      "crear aqui" pone `carpetaDelMenu.id`.
 - [ ] **T10** Compartir coleccion y bookmark: los dos valores del enum, las ramas
   de `resolveTarget`, y los permisos de `:220` y `:235`. Sin migracion de base.
 
