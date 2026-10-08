@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 
-import type { IconRef } from "@orbit-hub/contracts";
+import type { IconRef, ListKind } from "@orbit-hub/contracts";
 
 import { ShareFormContexto, type ShareFormPublicado } from "@/components/shares/share-form-publicado";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { puedeOfrecerse } from "@/lib/menus/paginas";
 import type { MenuContext, MenuHandlerName, MenuPageId } from "@/lib/menus/registry";
 import { useTheme } from "@/theme";
 
+import { CreatePage } from "./pages/create-page";
 import { DeletePage } from "./pages/delete-page";
 import { IconPage } from "./pages/icon-page";
 import { RenamePage } from "./pages/rename-page";
@@ -36,6 +37,24 @@ export interface MenuHandlers {
   alternarPin?: () => void | Promise<void>;
   editarEstados?: () => void | Promise<void>;
   guardarComoPlantilla?: () => void | Promise<void>;
+  /*
+    ------------------------------------------------------------------
+    `crearDentro`, Y POR QUE NO ES UN `MenuHandlerName`
+    ------------------------------------------------------------------
+
+    Porque `ACCIONES.createHere` declara `destino: { tipo: "pagina", page:
+    "create" }`: el handler no corre **en la hoja**, se usa **desde adentro** de la
+    pagina `create`, igual que `MenuHandlers.borrar` se usa desde adentro de
+    `DeletePage`. Los dos estan en esta interfaz y ninguno en el union de
+    `registry.tsx`, y por eso este no va ahi: `MenuHandlerName` son las acciones que
+    el registro apunta con `destino.tipo === "hoja"`, y `createHere` no es una.
+
+    Y devuelve `void`, no `void | Promise<void>` como las de escritura, porque aqui
+    **no se escribe nada**: la pagina elige un tipo y lo devuelve, y quien escribe —
+    la hoja de creacion con su campo de nombre— es la pantalla. No hay nada que
+    esperar, nada que reintentar y nada que dejar abierto.
+  */
+  crearDentro?: (kind: ListKind) => void;
 }
 
 export interface EntityMenuSheetProps {
@@ -463,6 +482,39 @@ export function EntityMenuSheet({
     void correrEnLaPagina(() => handler(icon), otraVez);
   };
 
+  /*
+    ------------------------------------------------------------------
+    PONER UNA LISTA ADENTRO, Y POR QUE NO ES UN CORREDOR
+    ------------------------------------------------------------------
+
+    Delegar y listo. La hoja vieja llamaba `onCreateInside(kind)` desde el `Sheet` de
+    los tipos y no cerraba nada: el menu se iba porque la pantalla que lo abrio abria
+    su propia hoja de creacion con el tipo ya puesto, y esa pantalla es la que sabe
+    donde va la lista nueva.
+
+    Por eso esta pagina **no cierra el menu** y por eso no usa `correr` ni
+    `correrEnLaPagina`: los dos corredores son para escrituras —esperan, avisan el
+    fallo sin cerrar y cierran o dejan abierta segun la accion—, y aqui no hay
+    escritura. La decision de si el menu se va la toma el call site, y es suya porque
+    el `kind` es lo unico que la pagina le devuelve.
+
+    Y lo que si hay es el `sinHandler()`, con la misma razon que en el resto: la fila
+    se ofrece porque el `ctx` dice que puede, asi que un handler ausente es un call
+    site que se olvido de pasarlo. Se avisa y el menu se queda abierto, para que se
+    note; una fila que al tocarse no hace nada en silencio es peor que una fila que
+    no esta.
+  */
+  const crearDentro = (kind: ListKind) => {
+    const handler = handlersVivos.crearDentro;
+
+    if (!handler) {
+      sinHandler();
+      return;
+    }
+
+    handler(kind);
+  };
+
   if (!ctx) return null;
 
   /*
@@ -693,6 +745,23 @@ export function EntityMenuSheet({
           ) : null}
 
           {/*
+            Poner una lista **adentro**, y la fila vuelve a existir con esto.
+
+            `ACCIONES.createHere` declara `destino: { tipo: "pagina", page: "create" }`
+            desde la T1 y `ORDEN_POR_KIND.folder` la lista para la carpeta. Sin este
+            bloque el filtro la saca entera y **crear una lista dentro de una carpeta
+            deja de existir**, que es lo que hacia la hoja vieja con `onCreateInside`.
+
+            Y el `onSelect` es el `crearDentro` de la hoja —el handler congelado, no
+            el de las props—, por la misma razon que `ponerIcono`: durante los 330 ms
+            de la salida el call site ya devolvio `{}` y un toque que llega tarde no
+            puede caer en un handler vivo. Y **no** es `correr` ni `correrEnLaPagina`
+            porque elegir el tipo no escribe: la pagina devuelve el `kind` y el call
+            site decide, que es lo que hacia la hoja vieja.
+          */}
+          {pagina === "create" ? <CreatePage onSelect={crearDentro} /> : null}
+
+          {/*
             El fallo, **en la hoja y no en un toast**: un toast se va solo y a la
             pagina de borrar hay que volver a entrar para volver a leerlo. Y el
             reintento va al lado del error, que es donde se lo busca.
@@ -735,5 +804,13 @@ const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
   icon: "icons.title",
   delete: "common.delete",
   share: "share.subtitle",
+  /*
+    `create` dice "Crear una lista aqui" porque eso es lo que la hoja vieja tenia
+    **escrito como titulo** del panel de los tipos, y el titulo de esta hoja es el
+    nombre de la entidad —la carpeta—, que no dice de que va el panel. Sin esta
+    entrada la cabecera de la pagina sale con el nombre de la carpeta y nada mas, y
+    las seis filas de tipos no dicen donde van a parar.
+  */
+  create: "lists.createHere",
 };
 

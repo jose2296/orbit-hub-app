@@ -89,27 +89,27 @@ describe('los selectores de tipo leen la misma fuente', () => {
    * what a picker offers. None of them is rendered here, and a test that imports a
    * component to read its props is testing the component rather than the agreement.
    *
-   * **El tercero se fue en la T7**: el menu de una carpeta ofrecia "Crear una lista
-   * aqui", y al bloque de tipos lo abria con `LIST_KIND_ORDER` dentro de una hoja
-   * hermana. Ese menu ahora es la hoja unica del registro, y la fila va a la pagina
-   * `create`, que todavia no esta escrita —`MenuPageId` la declara y ningun
-   * componente de `components/menus/pages/` la monta—, asi que `puedeOfrecerse` la
-   * filtra entera.
+   * **El tercero se fue en la T7 y volvio en la T12**: el menu de una carpeta ofrecia
+   * "Crear una lista aqui", y al bloque de tipos lo abria con `LIST_KIND_ORDER` dentro
+   * de una hoja hermana. Ese menu ahora es la hoja unica del registro, y la fila
+   * sigue existiendo —la declara `ACCIONES.createHere` desde la T1—, pero mientras la
+   * pagina `create` no estaba escrita `puedeOfrecerse` la filtraba entera. Con
+   * `menus/pages/create-page.tsx` la vuelve a abrir.
    *
-   * O sea que **la fila existe en el registro y todavia no se pinta**, y el
-   * selector de tipos vuelve con la pagina. Esta escrito con nombre en
-   * `test/note-folder-menu-parity.test.ts`, porque un selector que se perdio y uno
-   * que todavia no se escribio se ven igual: los dos son un menu sin la fila.
-   * Cuando la pagina `create` llegue, este archivo tiene que tener **tres** otra
-   * vez, y el `toHaveLength` de abajo es el que lo dice.
+   * Los tres leen la misma fuente, que es el unico modo de que agregar un tipo no
+   * aparezca en una puerta y desaparezca de las otras dos.
    */
-  const PICKERS = ['app/(app)/lists.tsx', 'components/folders/create-sheet.tsx'];
+  const PICKERS = [
+    'app/(app)/lists.tsx',
+    'components/folders/create-sheet.tsx',
+    'components/menus/pages/create-page.tsx',
+  ];
 
   it('cada uno saca sus tipos de lib/lists/kind, y no de una copia suya', () => {
-    // The count is part of the claim: two files today, and a guard that quietly read
-    // one of them would be green and wrong. Subirlo a tres es trabajo de la pagina
-    // `create`.
-    expect(PICKERS).toHaveLength(2);
+    // The count is part of the claim: three files today, and a guard that quietly read
+    // one of them would be green and wrong. Es el numero que la T7 dejo en dos y la
+    // pagina `create` devolvio a tres.
+    expect(PICKERS).toHaveLength(3);
 
     for (const fichero of PICKERS) {
       const texto = readFileSync(join(SRC, fichero), 'utf8');
@@ -130,6 +130,17 @@ describe('los selectores de tipo leen la misma fuente', () => {
     // and then read **the record's keys** for its options, which is the same data
     // twice with the two copies free to disagree. It reads the order now.
     const texto = readFileSync(join(SRC, 'app/(app)/lists.tsx'), 'utf8');
+    expect(texto).not.toContain('Object.keys(LIST_KIND_ICON)');
+    expect(texto).not.toContain('Object.keys(KIND_META)');
+  });
+
+  it('la pagina del menu tampoco', () => {
+    // El mismo error posible en el tercer selector, y por el mismo motivo: si la
+    // pagina del menu de una carpeta leyera `Object.keys(LIST_KIND_ICON)` estaria
+    // ofreciendo los tipos en el orden del mapa de iconos —que pone
+    // `movies_and_series` al final— en vez de en el de `LIST_KIND_ORDER`, que es el
+    // orden que la persona ve en las otras dos puertas.
+    const texto = readFileSync(join(SRC, 'components/menus/pages/create-page.tsx'), 'utf8');
     expect(texto).not.toContain('Object.keys(LIST_KIND_ICON)');
     expect(texto).not.toContain('Object.keys(KIND_META)');
   });

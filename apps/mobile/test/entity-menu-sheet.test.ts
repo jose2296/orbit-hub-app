@@ -264,8 +264,20 @@ describe("la lista de filas sale del registro y no de un array escrito a mano", 
   });
 
   it("no ordena por su cuenta", () => {
-    expect(hoja).not.toContain("ORDEN_POR_KIND");
-    expect(hoja).not.toContain("ACCIONES[");
+    /*
+      El **codigo sin los comentarios**, y no el archivo entero. La hoja explica en un
+      bloque por que cada pagina se monta como se monta, y esos comentarios nombran el
+      registro —`ORDEN_POR_KIND.folder` en el de la pagina `create`—, asi que un
+      `not.toContain` sobre el fuente entero se encuentra con su propia prosa y falla
+      por la razon equivocada: no es que la hoja ordene, es que la hoja lo explique.
+
+      Lo que se afirma es que no **usa** el orden: sin la llamada no hay lectura, y
+      `ACCIONES[` es la forma de indexar el catalogo, que tampoco puede aparecer.
+    */
+    const codigo = sinComentarios(hoja);
+
+    expect(codigo, "la hoja lee el orden del registro").not.toContain("ORDEN_POR_KIND");
+    expect(codigo, "la hoja indexa el catalogo de acciones").not.toContain("ACCIONES[");
   });
 });
 

@@ -323,6 +323,13 @@ Cada una es un work unit y cierra con su commit.
   `ExportPage`.
 - [x] **T11** `SharePage`: la pagina que faltaba y hacia falta. Comparte con
       lista, nota y carpeta. **En el PR 3.**
+- [x] **T12** `CreatePage`: los tipos de `LIST_KIND_ORDER` delegando en el call
+      site. **En el PR 3.** Sin esta pagina, `ACCIONES.createHere` —que declara su
+      destino como una pagina desde la T1— no se ofrecia y **crear una lista dentro
+      de una carpeta no existia**. Ojo: el handler (`MenuHandlers.crearDentro`, que
+      `menuDeCarpeta` reenvia desde `AccionesDeCarpeta.createInside`) **no lo pasa
+      ninguna pantalla todavia**, asi que la fila se ofrece y el toque avisa con
+      `sinHandler()`. Cerrarlo es de la pantalla, no del menu.
 - [ ] **T10** Compartir coleccion y bookmark: los dos valores del enum, las ramas
   de `resolveTarget`, y los permisos de `:220` y `:235`. Sin migracion de base.
 

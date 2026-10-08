@@ -399,49 +399,54 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
     expect(borrar.disponible?.(NOTA)).toBe(true);
   });
 
-  it("una carpeta ofrece las cinco que se pueden pintar, y la sexta esta pendiente con nombre", () => {
+  it("una carpeta ofrece las seis que la hoja puede pintar, y la de acceso sigue pendiente con nombre", () => {
     /*
       ------------------------------------------------------------------
-      "CREAR UNA LISTA AQUI": LA FILA EXISTE Y TODAVIA NO SE PINTA
+      "CREAR UNA LISTA AQUI": LA FILA VUELVE, Y POR QUE ERA UNA PERDIDA
       ------------------------------------------------------------------
 
       La hoja vieja la ofrecia de verdad: abria una hoja hermana con los tipos de
       `LIST_KIND_ORDER` y llamaba a `onCreateInside(kind)`. El registro la declara
-      (`ACCIONES.createHere`) y la lista para `folder` (`ORDEN_POR_KIND`), y
+      (`ACCIONES.createHere`), la lista para `folder` (`ORDEN_POR_KIND`) y
       `menuDeCarpeta` pone `createInside: true` porque la pantalla si sabe crearla.
 
-      Lo que la saca es `puedeOfrecerse`: `MenuPageId` declara `"create"` y **ningun
-      componente de `components/menus/pages/` monta esa pagina**. Sin el filtro, la
-      fila llevaria a un hueco; con el, la fila **no esta** —y una fila que no esta y
-      una fila que se perdio se ven igual desde el menu—.
+      Lo que la sacaba era `puedeOfrecerse`: `MenuPageId` declaraba `"create"` y
+      **ningun componente de `components/menus/pages/` montaba esa pagina**, asi que el
+      filtro se la comia entera. Con la pagina escrita —`create-page.tsx`, y
+      `"create"` en `PAGINAS_MONTADAS`— la fila sale. **Es la segunda vez que este
+      patron aparece en el plan** —la primera fue `share`, en la T11—, y las dos
+      veces una accion existed en el registro sin que ninguna tarea escribiera su
+      pagina, que es una capacidad que se pierde sin error ni test rojo.
 
-      Por eso esta escrito con nombre y no como una perdida silenciosa, y por eso la
-      fila que **no** sale es una decision y no un olvido. Y el `onCreateInside` que
-      esta pantalla tenia tampoco se puede reponer aca: `EntityMenuSheet` no tiene
-      prop para el, y escribir una esta fuera de la superficie de esta tarea.
+      Queda una sola pendiente, `access`, que la cierra la T8.
+
+      Y lo que **no** se repone aca es el `onCreateInside` de la pantalla:
+      `EntityMenuSheet` ya tiene por donde (`MenuHandlers.crearDentro`) y
+      `menuDeCarpeta` lo reenvia, pero `[workspaceId].tsx` no lo pasa todavia y
+      escribirlo ahi esta fuera de la superficie de esta tarea. Hasta que lo pase, la
+      fila se ofrece y el toque cae en `sinHandler()`, que avisa en vez de fallar en
+      silencio —esta escrito con nombre en `test/create-page.test.ts`.
     */
     const montadas = paginasMontadas();
     const sinMontar = accionesPara(CARPETA)
       .flatMap((accion) => (accion.destino.tipo === "pagina" ? [accion.destino.page] : []))
       .filter((page) => !montadas.includes(page));
 
-    expect(pintadas(CARPETA)).toEqual(["pin", "rename", "icon", "share", "delete"]);
+    expect(pintadas(CARPETA)).toEqual(["createHere", "pin", "rename", "icon", "share", "delete"]);
     expect(accionesPara(CARPETA).map((accion) => accion.id)).toContain("createHere");
-    expect(sinMontar.sort()).toEqual(["access", "create"]);
+    expect(sinMontar.sort()).toEqual(["access"]);
   });
 
   it("cada pagina sin montar tiene alguien anotado para escribirla", () => {
     const montadas = paginasMontadas();
+    /*
+      `create` **estuvo aca** y sale con la T12: decia "nadie en este plan" con esas
+      palabras precisamente para que el hueco se notara antes de que alguien lo cerrara
+      por su cuenta, y no con un nombre de tarea inventado. Lo que se reemplaza es la
+      entrada, no el mapa entero, asi que `access` sigue siendo la unica que hay.
+    */
     const PENDIENTES: Record<string, string> = {
       access: "T8: AccessPage, con SharedBadge y useShareReach",
-      /*
-        `create` **no** es de ninguna tarea de este plan, y por eso esta escrito
-        con esas palabras y no con un nombre de tarea: decir "T8" cuando no es la T8
-        seria una promesa que el plan no tiene. Lo escribe quien sepa si la fila
-        vuelve: hace falta una pagina que ofrezca los tipos de `LIST_KIND_ORDER` y
-        un handler para crear la lista en la carpeta.
-      */
-      create: "nadie en este plan: CreatePage, con LIST_KIND_ORDER y el onCreateInside de la pantalla",
     };
 
     for (const ctx of [NOTA, CARPETA]) {

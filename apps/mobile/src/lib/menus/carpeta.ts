@@ -1,4 +1,4 @@
-import type { DashboardWidget, Folder, IconRef } from "@orbit-hub/contracts";
+import type { DashboardWidget, Folder, IconRef, ListKind } from "@orbit-hub/contracts";
 
 import {
   isFolderPinned,
@@ -25,12 +25,12 @@ import type { MenuHandlers } from "@/components/menus/entity-menu-sheet";
  *
  * Lo de "poner una lista dentro" esta aca porque **la hoja vieja lo ofrecia de
  * verdad**: abria una hoja hermana con los tipos de `LIST_KIND_ORDER` y llamaba a
- * `onCreateInside(kind)`. O sea que la fila existe en el modelo y **todavia no se
- * pinte**: `ACCIONES.createHere` la declara, `ORDEN_POR_KIND.folder` la lista, y lo
- * que la saca es `puedeOfrecerse`, porque la pagina `create` no esta escrita. Eso
- * esta escrito con nombre en `test/note-folder-menu-parity.test.ts`, porque
- * "una fila que todavia no se escribio" y "una fila que se perdio" se ven igual
- * desde el menu.
+ * `onCreateInside(kind)`. La fila existe en el modelo, en `ORDEN_POR_KIND.folder` y
+ * **se vuelve a pintar** con la pagina `create` —`components/menus/pages/
+ * create-page.tsx`—, que devuelve el tipo a la pantalla. Lo que no se puede reponer
+ * aca es el `onCreateInside` de la pantalla: eso es un prop de `AccionesDeCarpeta` que
+ * la pantalla tiene que pasar, y el comportamiento —abrir su propia hoja de creacion
+ * con el tipo puesto— es suyo y no de este archivo.
  *
  * ------------------------------------------------------------------
  * POR QUE ESTE ARCHIVO NORMALIZA Y NO LO HACE LA PANTALLA
@@ -82,6 +82,24 @@ export interface AccionesDeCarpeta {
    */
   listCount: number;
   t: Translate;
+  /**
+   * Poner una lista de cierto tipo **adentro** de esta carpeta.
+   *
+   * ------------------------------------------------------------------
+   * POR QUE ESTA ACA Y NO DENTRO DEL ARCHIVO
+   * ------------------------------------------------------------------
+   *
+   * Porque elegir el tipo **no** crea la lista: la lista tiene nombre, y el nombre lo
+   * escribe una hoja que la pantalla tiene abierta con su propio borrador —el paso de
+   * "el nombre" de `CreateSheet`—. Lo que esta pantalla decide es a donde va esa hoja
+   * y con que tipo ya puesto, y eso es comportamiento de pantalla, no del registro:
+   * el registro guarda descriptores puros y el call site sigue pasando los handlers.
+   *
+   * Asi que lo unico que se reenvia es el `kind`, tal cual. Es el mismo reparto que
+   * `AccionesDeNota.onSaveAsTemplate`: la capacidad y el handler son las dos mitades
+   * de la misma fila, y por eso salen del mismo parametro en vez de en dos.
+   */
+  createInside?: (kind: ListKind) => void;
 }
 
 /** Las props de `EntityMenuSheet` que salen de aca, y solo de aca. */
@@ -147,10 +165,16 @@ function subtituloDeCarpeta(
  *   el call site le hubiera pasado `onTogglePin`. Lo que cambia aca es que la fila
  *   existe para el kind —`ORDEN_POR_KIND.folder` la declara— y es la capacidad la
  *   que decide si se ofrece. Hoy solo llama una pantalla y siempre lo ofrece.
- * - `createInside`: la hoja vieja **no** lo condicionaba, porque `onCreateInside`
- *   era un prop obligatorio. Ponerlo en `false` seria mentir: esa pantalla si sabe
- *   crear una lista adentro, y el filtro que saca la fila no es de capacidad sino
- *   de pagina montada.
+ * - `createInside`: va **siempre** en `true` y no sale de `acciones.createInside`, y
+ *   esa es la decision incomoda de este archivo. La capacidad contesta "este call
+ *   site pone listas dentro de carpetas", no "llego el callback en este render".
+ *   Atarla al callback haria que la fila **desapareciera sola** en el call site que
+ *   todavia no lo pasa —el filtro de `puedeOfrecerse` ya no la saca, la pagina
+ *   `create` existe—, y una fila que se va porque nadie le paso una funcion es
+ *   exactamente el modo de fallo que esta tarea vino a cerrar dos veces.
+ *
+ *   Lo que si hay es que la fila sin handler **avisa**: `crearDentro` cae en
+ *   `sinHandler()`, que muestra el error y deja el menu abierto. Se nota a proposito.
  */
 function menuCtxDeCarpeta(folder: Folder | null): MenuContext | null {
   if (!folder) return null;
@@ -210,5 +234,18 @@ function handlersDeCarpeta(
     */
     alternarPin: () =>
       save(pinned ? withoutPinnedFolder(layout, folder.id) : withPinnedFolder(layout, folder)),
+    /*
+      Reenviado tal cual, y **sin envolver en nada**: la pagina `create` devuelve el
+      tipo y la pantalla decide —abrir su hoja de creacion con el tipo puesto, que es
+      lo que hacia `onCreateInside`—. Aca no se escribe nada, asi que no hay nada que
+      esperar ni que reintentar, y envolverlo en un corredor de la hoja seria una
+      segunda politica de error para la unica accion que no escribe.
+
+      Y opcional a proposito: la fila se ofrece por `caps.createInside` y no por esto,
+      asi que un call site que todavia no lo pasa ofrece la fila y recibe el
+      `sinHandler()` al tocarla, que se ve. Lo contrario —esconder la fila— es lo que
+      esta tarea vino a arreglar.
+    */
+    crearDentro: acciones.createInside,
   };
 }

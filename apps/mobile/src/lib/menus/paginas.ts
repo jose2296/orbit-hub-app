@@ -62,7 +62,7 @@ import type { MenuAccion, MenuPageId } from "@/lib/menus/registry";
   del registro: el registro dice que acciones existen, esta dice cuales puede
   pintar **esta** version de la hoja.
 */
-export const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "icon", "delete", "share"];
+export const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "icon", "delete", "share", "create"];
 
 /**
  * Si la accion se ofrece, y **el filtro no es de disponibilidad**.

@@ -149,6 +149,51 @@ export const PANELES_DE_LA_HOJA_VIEJA = [
 ].join("\n");
 
 /**
+ * El bloque de los tipos, **con la forma que tenia**.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE ESTE BLOQUE Y NO UNO DERIVADO DEL DE ARRIBA
+ * ------------------------------------------------------------------
+ *
+ * Porque `createOptions` esta **antes** de `options` en el archivo viejo, asi que la
+ * extraccion documentada mas arriba —"entre `const options` y `if (!folder) return
+ * null;`"— no lo toma: queda fuera. Y queda congelado aparte porque es el bloque que
+ * la pagina `create` tiene que reponer, y la fila de "crear una lista aqui" sin el no
+ * es una perdida con nombre: el menu de una carpeta ofrecia de verdad esta eleccion.
+ *
+ * ------------------------------------------------------------------
+ * COMO SE EXTRAJO, PARA QUE SE PUEDA REHACER
+ * ------------------------------------------------------------------
+ *
+ * Del archivo, entre `const createOptions: SheetOption[]` y el
+ * `const options: SheetOption[]` que la sigue, con el mismo filtro de comentarios:
+ *
+ *     const i = f.indexOf("const createOptions: SheetOption[]");
+ *     const j = f.indexOf("const options: SheetOption[]", i);
+ *     f.slice(i, j)
+ *       .replace(/\/\*[\s\S]*?\*\//g, "")
+ *       .replace(/(^|[^:])\/\/.*$/gm, "$1")
+ *
+ * Y las tres cosas que el guard de `create-page.test.ts` le pregunta al bloque
+ * estan todas aca, sin interpretar: que las filas salen de `LIST_KIND_ORDER` —la
+ * misma lista que leen el formulario de listas y `CreateSheet`—, que la etiqueta es
+ * `t(LIST_KIND_LABEL[kind])`, y que al tocarse **delega el tipo y no cierra nada**:
+ * `onCreateInside(kind)` y ni una palabra de cerrar.
+ */
+export const TIPOS_DE_LA_HOJA_VIEJA =
+  'const createOptions: SheetOption[] = useMemo(\n' +
+  '    () =>\n' +
+  '      LIST_KIND_ORDER.map((kind): SheetOption => ({\n' +
+  '        key: kind,\n' +
+  '        label: t(LIST_KIND_LABEL[kind]),\n' +
+  '        onPress: () => {\n' +
+  '          onCreateInside(kind);\n' +
+  '        },\n' +
+  '      })),\n' +
+  '    [onCreateInside, t],\n' +
+  '  );';
+
+/**
  * El flag que los conmutaba, y **la fila que lo llevaba**.
  *
  * `inside` era `renaming || confirmDelete || creatingKind !== null || sharing ||
