@@ -86,7 +86,7 @@ describe('journal entries through sync', () => {
     expect(result.error).toMatch(/does not belong to this day/);
   });
 
-  it('treats a second create of the same day as the same entry, not a second one', async () => {
+  it('keeps one entry per day when a second device creates it, and shows the clash', async () => {
     const phone = await createVerifiedUser(api);
     const id = journalEntryIdFor(phone.userId, '2026-10-09');
 
@@ -108,7 +108,14 @@ describe('journal entries through sync', () => {
     ]);
 
     expect(first.status).toBe('applied');
-    expect(second.status).toBe('duplicate');
+    // Other words for the same day are a conflict the person chooses from, never a
+    // second row and never a silent overwrite.
+    expect(second.status).toBe('conflict');
+
+    const pulled = await api.post('/sync/pull', { cursor: null, limit: 200 }, phone.accessToken);
+    const rows = (pulled.body.data.changes as Array<{ entity: string; record: Record<string, unknown> }>)
+      .filter((item) => item.entity === 'journal_entry' && item.record['day'] === '2026-10-09');
+    expect(rows).toHaveLength(1);
   });
 
   it('refuses a document outside the note format, on create', async () => {
@@ -335,5 +342,55 @@ describe('the journal in the account export', () => {
     expect(journal.map((entry) => entry.day)).toEqual([day]);
     expect(journal[0]?.document).toBe('<p>Para la copia</p>');
     expect(exported.counts.journal).toBe(1);
+  });
+});
+
+describe('two devices writing the same day before they have met', () => {
+  it('absorbs a create that carries the same words', async () => {
+    const user = await createVerifiedUser(api);
+    const id = journalEntryIdFor(user.userId, '2026-10-17');
+    await firstResult(user, [
+      operation({
+        entity: 'journal_entry',
+        kind: 'create',
+        entityId: id,
+        payload: { day: '2026-10-17', document: '<p>Igual</p>' },
+      }),
+    ]);
+
+    const again = await firstResult(user, [
+      operation({
+        entity: 'journal_entry',
+        kind: 'create',
+        entityId: id,
+        payload: { day: '2026-10-17', document: '<p>Igual</p>' },
+      }),
+    ]);
+
+    expect(again.status).toBe('duplicate');
+  });
+
+  it('turns a create with other words into a conflict, so nothing is dropped in silence', async () => {
+    const user = await createVerifiedUser(api);
+    const id = journalEntryIdFor(user.userId, '2026-10-18');
+    await firstResult(user, [
+      operation({
+        entity: 'journal_entry',
+        kind: 'create',
+        entityId: id,
+        payload: { day: '2026-10-18', document: '<p>Del móvil</p>' },
+      }),
+    ]);
+
+    const fromTablet = await firstResult(user, [
+      operation({
+        entity: 'journal_entry',
+        kind: 'create',
+        entityId: id,
+        payload: { day: '2026-10-18', document: '<p>De la tablet</p>' },
+      }),
+    ]);
+
+    expect(fromTablet.status).toBe('conflict');
   });
 });

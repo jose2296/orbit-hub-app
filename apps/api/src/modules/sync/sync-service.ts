@@ -120,6 +120,17 @@ function noteFieldsForWrite(
 }
 
 /**
+ * Whether a journal create carries the document the day already has.
+ *
+ * A payload that does not parse is not the same document, so it is not absorbed
+ * either: it goes on to the merge, which refuses what it cannot read.
+ */
+function mismoDocumentoDeDiario(operation: SyncOperation, existing: StoredEntity): boolean {
+  const parsed = journalEntryPayloadSchema.safeParse(operation.payload);
+  return parsed.success && parsed.data.document === existing['document'];
+}
+
+/**
  * Keeps only the fields the sync protocol owns, coerced to the column types.
  * Anything else in the payload is dropped instead of being written.
  */
@@ -786,7 +797,19 @@ export class SyncService {
       throw HttpError.notFound('Journal entry not found');
     }
 
-    if (operation.kind === 'create') {
+    // A create for a day that already has an entry is the retry of the same
+    // write, and then it is absorbed. It is not that when the document differs:
+    // a phone that wrote the day before it had the other device's entry sends a
+    // create that the server would otherwise drop, and the words in it with it.
+    // That case is merged as an edit with no common base, so it comes back as a
+    // conflict the person can see and choose from.
+    const diarioDistinto =
+      entity === 'journal_entry' &&
+      operation.kind === 'create' &&
+      existing !== null &&
+      !mismoDocumentoDeDiario(operation, existing);
+
+    if (operation.kind === 'create' && !diarioDistinto) {
       if (existing) {
         // A workspace whose owner membership went missing is a row nobody can
         // reach: every read of it joins on the membership and 404s, every child
