@@ -12,6 +12,7 @@ export const syncEntitySchema = z.enum([
   'dashboard',
   'collection',
   'bookmark',
+  'journal_entry',
 ]);
 export type SyncEntity = z.infer<typeof syncEntitySchema>;
 
