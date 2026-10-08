@@ -5,6 +5,10 @@ import type { Locale } from "@orbit-hub/contracts";
  * dictionary, so adding a key without translating it is a type error.
  */
 const es = {
+  "journal.previousYears": "Años anteriores",
+  "journal.nextYears": "Años siguientes",
+  "mention.back": "Volver",
+  "mention.pickThis": "Enlazar esto",
   "journal.edit": "Editar",
   "journal.done": "Listo",
   "journal.previousYear": "Año anterior",
@@ -1312,6 +1316,10 @@ const es = {
 export type TranslationKey = keyof typeof es;
 
 const en: Record<TranslationKey, string> = {
+  "journal.previousYears": "Earlier years",
+  "journal.nextYears": "Later years",
+  "mention.back": "Back",
+  "mention.pickThis": "Link this",
   "journal.edit": "Edit",
   "journal.done": "Done",
   "journal.previousYear": "Previous year",

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { MentionTarget } from '@/lib/journal/mentions';
 import { mentionNameFor, mentionsIn, nameOfRecord, renderMentions, routeForMention } from '@/lib/journal/mentions';
-import { buildMentionTree } from '@/lib/journal/mention-tree';
+import { levelRows } from '@/lib/journal/mention-tree';
 import type { MentionRecord } from '@/lib/journal/mention-model';
 
 const LIST_ID = '6f1c0a2e-3b8d-4c1e-9a7f-2d5e8b9c0a11';
@@ -24,7 +24,7 @@ describe('renderMentions', () => {
 
     const shown = renderMentions(html, lookup, { mode: 'reading', unavailableLabel: 'no disponible' });
 
-    expect(shown).toContain('>📋 Lista de la compra (nueva)</mention>');
+    expect(shown).toContain('>\u2002📋 Lista de la compra (nueva)\u2002</mention>');
   });
 
   it('keeps the attributes exactly as stored, so a chip still points where it did', () => {
@@ -128,15 +128,17 @@ describe('nameOfRecord', () => {
   });
 });
 
-describe('buildMentionTree', () => {
+describe('levelRows', () => {
   const rec = (type: MentionRecord['type'], id: string, name: string, extra: Partial<MentionRecord> = {}): MentionRecord => ({
     type, id, name, workspaceId: null, folderId: null, kind: null, emoji: null, colour: null, ...extra,
   });
   const SPACE = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const OTHER = 'aaaaaaaa-0000-4000-8000-000000000004';
   const FOLDER = 'aaaaaaaa-0000-4000-8000-000000000002';
   const SUB = 'aaaaaaaa-0000-4000-8000-000000000003';
   const records: MentionRecord[] = [
     rec('workspace', SPACE, 'WorkspaceX', { workspaceId: SPACE, colour: 'teal' }),
+    rec('workspace', OTHER, 'Casa', { workspaceId: OTHER }),
     rec('list', 'l1', 'Lista de la compra', { workspaceId: SPACE }),
     rec('folder', FOLDER, 'Cine', { workspaceId: SPACE }),
     rec('folder', SUB, 'Marvel', { workspaceId: SPACE, folderId: FOLDER }),
@@ -144,33 +146,31 @@ describe('buildMentionTree', () => {
     rec('note', 'n1', 'Apuntes', { workspaceId: SPACE }),
   ];
 
-  it('shows a space, then what is in it, and a folder with its own contents under it', () => {
-    expect(buildMentionTree(records, '').map((row) => `${row.depth}:${row.name}`)).toEqual([
-      '0:WorkspaceX',
-      '1:Cine',
-      '2:Marvel',
-      '3:Películas de Marvel',
-      '1:Lista de la compra',
-      '1:Apuntes',
+  it('starts with the spaces only, in name order, and every one is entered rather than picked', () => {
+    const rows = levelRows(records, null);
+    expect(rows.map((row) => row.name)).toEqual(['Casa', 'WorkspaceX']);
+    expect(rows.every((row) => row.enters)).toBe(true);
+  });
+
+  it('opens one space at its top level: folders, then lists, notes and bookmarks', () => {
+    expect(levelRows(records, `space:${SPACE}`).map((row) => [row.name, row.enters])).toEqual([
+      ['Cine', true],
+      ['Lista de la compra', false],
+      ['Apuntes', false],
     ]);
   });
 
-  it('keeps the path to a hit, so a loose match never appears without its space and folders', () => {
-    expect(buildMentionTree(records, 'películas').map((row) => row.name)).toEqual([
-      'WorkspaceX',
-      'Cine',
-      'Marvel',
-      'Películas de Marvel',
-    ]);
+  it('goes into a folder and shows only what is inside it', () => {
+    expect(levelRows(records, `folder:${FOLDER}`).map((row) => row.name)).toEqual(['Marvel']);
+    expect(levelRows(records, `folder:${SUB}`).map((row) => row.name)).toEqual(['Películas de Marvel']);
   });
 
-  it('draws a board with its own icon, and a list with the emoji it was given', () => {
-    const rows = buildMentionTree(records, 'película');
-    expect(rows.at(-1)?.icon).toBe('🗂️');
+  it('draws a board with its own icon', () => {
+    expect(levelRows(records, `folder:${SUB}`)[0]?.icon).toBe('🗂️');
   });
 
-  it('puts a thing whose folder is gone at the top of its space', () => {
+  it('shows a thing whose folder is gone at the top of its space', () => {
     const orphan = [...records, rec('list', 'l3', 'Huérfana', { workspaceId: SPACE, folderId: 'no-existe' })];
-    expect(buildMentionTree(orphan, 'huérfana').map((row) => row.name)).toEqual(['WorkspaceX', 'Huérfana']);
+    expect(levelRows(orphan, `space:${SPACE}`).map((row) => row.name)).toContain('Huérfana');
   });
 });

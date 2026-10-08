@@ -6,12 +6,13 @@ import type {
 } from "react-native-enriched-html";
 import { EnrichedTextInput } from "react-native-enriched-html";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { mentionStyleMap } from "@/lib/journal/mention-style";
+import { installMentionChipStyle } from "@/lib/journal/mention-web-style";
 import { NOTE_SANITIZATION } from "@/lib/notes/sanitization";
 import { NOTE_BODY_FONT } from "@/theme/tokens";
 import { useTheme } from "@/theme";
@@ -233,6 +234,9 @@ export function NoteEditor({
   // being drawn is reported as a trigger too, and only a `@` typed while focused
   // should open the picker.
   const focused = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === "web") installMentionChipStyle();
+  }, []);
   const { htmlStyle, bodyStyle } = useNoteHtmlStyle();
 
   const command = useCallback(

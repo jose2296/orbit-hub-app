@@ -2,14 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
 
+import { ListRow } from "@/components/ui/list-row";
 import { AppText } from "@/components/ui/text";
 import { Sheet } from "@/components/ui/sheet";
-import { TextField } from "@/components/ui/text-field";
 import { useTranslation } from "@/lib/i18n";
-import { buildMentionTree } from "@/lib/journal/mention-tree";
-import type { TreeRow } from "@/lib/journal/mention-tree";
 import { readMentionRecords } from "@/lib/journal/mention-records";
 import type { MentionRecord } from "@/lib/journal/mention-model";
+import { levelOf, levelRows } from "@/lib/journal/mention-tree";
+import type { LevelRow, PickerLevel } from "@/lib/journal/mention-tree";
 import { subscribeToLocalStore } from "@/lib/offline";
 import { colorOf } from "@/lib/workspace/color";
 import { useTheme } from "@/theme";
@@ -23,15 +23,13 @@ export interface MentionPick {
   name: string;
 }
 
-/** Indentation for each level of the tree, so a folder reads as inside its space. */
-const INDENT = 18;
-
 /**
  * The picker a note opens to mention something.
  *
- * It shows the app the way the person keeps it: a space, the folders in it, and
- * what is filed there, with the path kept for every hit. It reads the cache when
- * it opens and again when the cache changes, so it works without a connection.
+ * It opens on the spaces, all of them closed. Pressing a space or a folder goes into
+ * it, with a way back up the path, the way the create sheets of the dashboard do.
+ * Only the level on screen is open, so there is never more than one path showing.
+ * Picking a thing closes the picker; the caller puts the cursor back in the note.
  */
 export function MentionPickerSheet({
   visible,
@@ -44,12 +42,13 @@ export function MentionPickerSheet({
 }) {
   const theme = useTheme();
   const t = useTranslation();
-  const [query, setQuery] = useState("");
   const [records, setRecords] = useState<MentionRecord[]>([]);
+  // The path into the picker. Empty is the list of spaces.
+  const [path, setPath] = useState<PickerLevel[]>([]);
 
   useEffect(() => {
     if (!visible) {
-      setQuery("");
+      setPath([]);
       return;
     }
     let active = true;
@@ -67,65 +66,106 @@ export function MentionPickerSheet({
     };
   }, [visible]);
 
-  const rows = useMemo(() => buildMentionTree(records, query), [records, query]);
+  const level: PickerLevel = path.length === 0 ? null : (path[path.length - 1] ?? null);
+  const rows = useMemo(() => levelRows(records, level), [records, level]);
+  const here = useMemo(
+    () => records.find((record) => `${record.type === "workspace" ? "space" : "folder"}:${record.id}` === level),
+    [records, level],
+  );
+
+  const enter = (row: LevelRow) => {
+    const next = levelOf(row);
+    if (next !== null) setPath((current) => [...current, next]);
+  };
+  const up = () => setPath((current) => current.slice(0, -1));
 
   return (
-    <Sheet visible={visible} onClose={onClose} title={t("mention.pickerTitle")} scrollable={false}>
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title={t("mention.pickerTitle")}
+      scrollable={false}
+    >
       <View style={{ gap: theme.spacing.sm, paddingBottom: theme.spacing.md }}>
-        <TextField
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t("mention.searchPlaceholder")}
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoFocus
-        />
-        <FlatList
-          data={rows}
-          keyExtractor={(item: TreeRow) => item.key}
-          keyboardShouldPersistTaps="handled"
-          initialNumToRender={20}
-          ListEmptyComponent={
-            query.trim().length > 0 ? (
-              <AppText variant="caption" tone="subtle">
-                {t("mention.empty")}
-              </AppText>
-            ) : null
-          }
-          renderItem={({ item }: { item: TreeRow }) => (
+        {level === null ? null : (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: theme.spacing.xs,
+              minHeight: 44,
+            }}
+          >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={item.name}
-              onPress={() => onPick({ type: item.type, id: item.id, name: item.name })}
-              style={({ pressed }) => ({
-                flexDirection: "row",
-                alignItems: "center",
-                gap: theme.spacing.sm,
-                minHeight: 46,
-                paddingLeft: theme.spacing.md + item.depth * INDENT,
-                paddingRight: theme.spacing.md,
-                borderRadius: theme.radius.sm,
-                backgroundColor: pressed ? theme.colors.surfaceSunken : "transparent",
-              })}
+              accessibilityLabel={t("mention.back")}
+              onPress={up}
+              hitSlop={8}
+              style={{ width: 36, height: 36, alignItems: "center", justifyContent: "center" }}
             >
-              {item.colour ? (
-                <View
-                  style={{
-                    width: 4,
-                    alignSelf: "stretch",
-                    borderRadius: 2,
-                    backgroundColor: colorOf(item.colour),
-                  }}
-                />
-              ) : null}
-              <AppText variant={item.type === "workspace" ? "bodyStrong" : "body"}>{item.icon}</AppText>
-              <AppText numberOfLines={1} style={{ flex: 1 }} variant={item.type === "workspace" ? "bodyStrong" : "body"}>
-                {item.name}
-              </AppText>
-              {item.type === "folder" ? (
-                <Ionicons name="chevron-forward" size={14} color={theme.colors.textSubtle} />
-              ) : null}
+              <Ionicons name="chevron-back" size={20} color={theme.colors.textMuted} />
             </Pressable>
+            <AppText variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>
+              {here?.name ?? ""}
+            </AppText>
+            {here ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("mention.pickThis")}
+                onPress={() =>
+                  onPick({
+                    type: here.type,
+                    id: here.id,
+                    name: here.name,
+                  })
+                }
+                style={{
+                  paddingHorizontal: theme.spacing.sm,
+                  height: 32,
+                  borderRadius: theme.radius.pill,
+                  justifyContent: "center",
+                  backgroundColor: theme.colors.accentSoft,
+                }}
+              >
+                <AppText variant="caption" style={{ color: theme.colors.accentSoftText }}>
+                  {t("mention.pickThis")}
+                </AppText>
+              </Pressable>
+            ) : null}
+          </View>
+        )}
+
+        <FlatList
+          data={rows}
+          keyExtractor={(item: LevelRow) => item.key}
+          initialNumToRender={20}
+          ListEmptyComponent={
+            <AppText variant="caption" tone="subtle">
+              {t("mention.empty")}
+            </AppText>
+          }
+          renderItem={({ item }: { item: LevelRow }) => (
+            <ListRow
+              title={`${item.icon} ${item.name}`}
+              chevron={item.enters}
+              onPress={() =>
+                item.enters
+                  ? enter(item)
+                  : onPick({ type: item.type, id: item.id, name: item.name })
+              }
+              leading={
+                item.colour ? (
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: colorOf(item.colour),
+                    }}
+                  />
+                ) : undefined
+              }
+            />
           )}
         />
       </View>

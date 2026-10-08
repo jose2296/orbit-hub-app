@@ -49,6 +49,9 @@ export type MentionMode =
   /** Being read: a chip whose target is gone says so, instead of pretending. */
   | "reading";
 
+/** Half an em of space at each end of a chip, which the chip's background covers. */
+export const CHIP_PAD = "\u2002";
+
 const MENTION_PATTERN = /<mention\b([^>]*)>([\s\S]*?)<\/mention>/g;
 const ATTRIBUTE_PATTERN = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*"([^"]*)"/g;
 
@@ -102,7 +105,9 @@ export function renderMentions(
         /indicator\s*=\s*"[^"]*"/,
         `indicator="${indicator}"`,
       );
-      return `<mention${attributesNow}>${escapeText(`${target.icon} ${target.name}`)}</mention>`;
+      // The en spaces at each end are the chip's padding: the library paints a chip's
+      // background behind its text only, and it has no padding of its own.
+      return `<mention${attributesNow}>${escapeText(`${CHIP_PAD}${target.icon} ${target.name}${CHIP_PAD}`)}</mention>`;
     }
     if (options.mode === "reading") {
       return `<mention${rawAttributes}>${escapeText(options.unavailableLabel)}</mention>`;
