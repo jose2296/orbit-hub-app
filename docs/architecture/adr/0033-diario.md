@@ -102,3 +102,13 @@ Cada fase es un commit, con sus pruebas, y se verifica antes de pasar a la sigui
    nombre en vivo (ADR 0034).
 7. **Verificación**: `npm run check`; web en claro y oscuro; emulador Android para el gesto del
    pager y el selector.
+
+## Segunda revisión: el gesto de la pantalla
+
+- **El gesto de deslizar es de toda la pantalla, no de la cabecera.** El día se mueve con el
+  dedo y el día vecino entra por el lado que corresponde. Un arrastre corto vuelve a su sitio;
+  pasa de día a partir de un cuarto del ancho o de un gesto rápido. Un arrastre horizontal dentro
+  del texto también pasa de día, lo que compite con seleccionar palabras: queda por comprobar en
+  el emulador.
+- **El calendario está en la cabecera.** Tocar el mes y el año abre la vista de meses del año,
+  con el año a cambiar.

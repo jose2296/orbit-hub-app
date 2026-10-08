@@ -1,37 +1,34 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, ScrollView, View } from "react-native";
+import { AppState, Pressable, View } from "react-native";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
 
 import { MentionPickerSheet } from "@/components/mentions/mention-picker-sheet";
 import type { MentionPick } from "@/components/mentions/mention-picker-sheet";
 import { NoteEditor } from "@/components/notes/note-editor";
+import { JournalDayView } from "@/components/journal/journal-day-view";
 import { AppText } from "@/components/ui/text";
 import { useJournalEntry, useMentionTargets } from "@/hooks/use-journal";
 import { lookupIn, writeJournalEntry } from "@/lib/journal/entries";
-import {
-  mentionNameFor,
-  mentionsIn,
-  renderMentions,
-} from "@/lib/journal/mentions";
-import type { MentionTarget } from "@/lib/journal/mentions";
+import { mentionNameFor, renderMentions } from "@/lib/journal/mentions";
 import { useTranslation } from "@/lib/i18n";
 import { createAutosave } from "@/lib/notes/autosave";
 import type { JournalDay } from "@orbit-hub/contracts";
 import { noteDocumentToPlainText } from "@orbit-hub/contracts";
 import { useTheme } from "@/theme";
 
+type Mode = "read" | "edit";
+
 /**
- * One day of the journal, as an editor.
+ * One day of the journal.
  *
- * The page is keyed by its day, so moving to another day is a new page and the
- * editor of the old one is gone. Its pending save is flushed through
- * `registerFlush` before the move, while the editor is still on screen to be read.
+ * A day with words opens as it reads, with its chips pressable. A day without any
+ * opens in the editor, and so does a day someone asks to edit. Leaving the editor
+ * saves what is pending before the page reads again.
  *
- * Opening a day writes nothing. Only typing schedules a save, and a save of an
- * empty day with no entry yet is skipped, so swiping through a month does not
- * leave a month of empty rows behind.
+ * Keyed by its day, so moving to another day is a new page. Its pending save is
+ * flushed through `registerFlush` before the move, while the editor is still there.
+ *
+ * Opening a day writes nothing. A save that changes nothing is not a write.
  */
 export function JournalDayPage({
   userId,
@@ -44,42 +41,35 @@ export function JournalDayPage({
 }) {
   const theme = useTheme();
   const t = useTranslation();
-  const router = useRouter();
   const { record, loaded } = useJournalEntry(userId, day);
   const targets = useMentionTargets();
   const editorRef = useRef<EnrichedTextInputInstance | null>(null);
   const recordRef = useRef(record);
   recordRef.current = record;
 
-  const [initialDocument, setInitialDocument] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode | null>(null);
+  // Each entry into the editor is a new editor, drawn from what is stored then.
+  const [session, setSession] = useState(0);
+  const [editorDocument, setEditorDocument] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   // The body as it was loaded or last written, to tell a real change from an echo.
   const savedRef = useRef<string>("");
-  const [pickerOpen, setPickerOpen] = useState(false);
   // Where the picker was asked for. A `@` typed by hand has already started the
   // mention in the editor; the toolbar button has not, and must start it itself.
   const mentionSource = useRef<"toolbar" | "typed">("toolbar");
 
-  // The text is drawn once, when the entry and the names it links to are both in
-  // the cache. After that the editor owns the text and the cache does not reset it.
+  // A day with words opens as it reads; an empty one opens for writing.
   useEffect(() => {
-    if (initialDocument !== null || !loaded || targets === null) return;
-    savedRef.current = record?.document ?? "";
-    setInitialDocument(
-      renderMentions(record?.document ?? "", lookupIn(targets), {
-        mode: "editing",
-        unavailableLabel: t("mention.unavailable"),
-      }),
-    );
-  }, [initialDocument, loaded, record, targets, t]);
+    if (mode !== null || !loaded || targets === null) return;
+    const hasWords = (record?.plainText ?? "").trim().length > 0;
+    setMode(hasWords ? "read" : "edit");
+  }, [mode, loaded, record, targets]);
 
   const autosave = useMemo(
     () =>
       createAutosave({
         read: async () => (editorRef.current ? editorRef.current.getHTML() : ""),
         save: async (document) => {
-          // The editor reports a change when it is given its text, as well as when
-          // somebody types. A save that changes nothing is not a write: without this
-          // every day a person looked at would be saved on the way out.
           if (document === savedRef.current) return;
           if (recordRef.current === null && noteDocumentToPlainText(document).length === 0) {
             savedRef.current = document;
@@ -104,6 +94,26 @@ export function JournalDayPage({
     };
   }, [autosave, registerFlush]);
 
+  const lookup = useMemo(() => (targets === null ? null : lookupIn(targets)), [targets]);
+
+  const edit = () => {
+    if (lookup === null) return;
+    savedRef.current = record?.document ?? "";
+    setEditorDocument(
+      renderMentions(record?.document ?? "", lookup, {
+        mode: "editing",
+        unavailableLabel: t("mention.unavailable"),
+      }),
+    );
+    setSession((value) => value + 1);
+    setMode("edit");
+  };
+
+  const done = async () => {
+    await autosave.flush();
+    setMode("read");
+  };
+
   const onPick = (pick: MentionPick) => {
     setPickerOpen(false);
     const input = editorRef.current;
@@ -113,67 +123,48 @@ export function JournalDayPage({
     autosave.schedule();
   };
 
-  const links = useMemo(() => {
-    if (targets === null || !record) return [];
-    const found: Array<{ key: string; target: MentionTarget }> = [];
-    for (const mention of mentionsIn(record.document)) {
-      const target = targets.get(`${mention.type}:${mention.id}`);
-      if (target) found.push({ key: `${mention.type}:${mention.id}`, target });
-    }
-    return found;
-  }, [record, targets]);
-
-  if (initialDocument === null) {
+  if (mode === null || targets === null || lookup === null) {
     return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
+  }
+
+  if (mode === "read") {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <JournalDayView
+          document={record?.document ?? ""}
+          lookup={lookup}
+          targets={targets}
+          onEdit={edit}
+        />
+      </View>
+    );
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      {links.length > 0 ? (
-        <View
-          style={{
-            borderBottomWidth: 1,
-            borderBottomColor: theme.colors.border,
-            paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.sm,
-            gap: theme.spacing.xs,
-          }}
-        >
-          <AppText variant="caption" tone="subtle">
-            {t("journal.links")}
-          </AppText>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={{ flexDirection: "row", gap: theme.spacing.xs }}>
-              {links.map(({ key, target }) => (
-                <Pressable
-                  key={key}
-                  accessibilityRole="link"
-                  accessibilityLabel={`${t("journal.openLink")}: ${target.name}`}
-                  onPress={() => router.push(target.route as never)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                    paddingHorizontal: theme.spacing.sm,
-                    height: 32,
-                    borderRadius: theme.radius.pill,
-                    backgroundColor: theme.colors.accentSoft,
-                  }}
-                >
-                  <Ionicons name="at" size={14} color={theme.colors.accentSoftText} />
-                  <AppText variant="caption" style={{ color: theme.colors.accentSoftText }}>
-                    {target.name}
-                  </AppText>
-                </Pressable>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-      ) : null}
-
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("journal.done")}
+        onPress={() => void done()}
+        style={{
+          alignSelf: "flex-end",
+          marginHorizontal: theme.spacing.lg,
+          marginTop: theme.spacing.xs,
+          paddingHorizontal: theme.spacing.md,
+          height: 30,
+          borderRadius: theme.radius.pill,
+          justifyContent: "center",
+          backgroundColor: theme.colors.accent,
+        }}
+      >
+        <AppText variant="bodyStrong" style={{ color: theme.colors.onAccent }}>
+          {t("journal.done")}
+        </AppText>
+      </Pressable>
       <NoteEditor
+        key={session}
         editorRef={editorRef}
-        defaultValue={initialDocument}
+        defaultValue={editorDocument}
         placeholder={t("journal.placeholder")}
         onChanged={() => autosave.schedule()}
         onMentionRequest={(source) => {
@@ -181,12 +172,7 @@ export function JournalDayPage({
           setPickerOpen(true);
         }}
       />
-
-      <MentionPickerSheet
-        visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onPick={onPick}
-      />
+      <MentionPickerSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} onPick={onPick} />
     </View>
   );
 }

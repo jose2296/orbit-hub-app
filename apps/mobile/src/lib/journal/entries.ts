@@ -11,12 +11,11 @@ import {
   journalEntryIdFor,
   noteDocumentToPlainText,
   type JournalDay,
-  type ListKind,
-  type MentionType,
 } from "@orbit-hub/contracts";
 
 import type { MentionLookup, MentionTarget } from "./mentions";
-import { nameOfRecord, routeForMention } from "./mentions";
+import { routeForMention } from "./mentions";
+import { iconTextOf, readMentionRecords } from "./mention-records";
 import {
   enqueueOperation,
   getLocalStoreReady,
@@ -123,14 +122,6 @@ export async function journalDaysWithText(userId: string): Promise<Set<string>> 
   return days;
 }
 
-const MENTION_ENTITIES: readonly MentionType[] = [
-  "workspace",
-  "folder",
-  "list",
-  "note",
-  "bookmark",
-];
-
 /**
  * Every target a chip could point at, as the cache knows them, keyed by
  * `type:id`.
@@ -139,26 +130,17 @@ const MENTION_ENTITIES: readonly MentionType[] = [
  * dozen chips would otherwise read the cache a dozen times while it draws.
  */
 export async function mentionTargetIndex(): Promise<Map<string, MentionTarget>> {
-  const store = await getLocalStoreReady();
   const index = new Map<string, MentionTarget>();
-
-  for (const type of MENTION_ENTITIES) {
-    const rows = await store.listCached(type);
-    for (const row of rows) {
-      if (row.deletedAt !== null) continue;
-      const payload = JSON.parse(row.payload) as Record<string, unknown>;
-      const pending = row.pending ? (JSON.parse(row.pending) as Record<string, unknown>) : {};
-      const merged = { ...payload, ...pending };
-      const name = nameOfRecord(type, merged);
-      if (name.length === 0) continue;
-      index.set(`${type}:${row.entityId}`, {
-        name,
-        route: routeForMention(type, row.entityId, {
-          workspaceId: (merged["workspaceId"] as string | null | undefined) ?? null,
-          kind: (merged["kind"] as ListKind | undefined) ?? null,
-        }),
-      });
-    }
+  for (const record of await readMentionRecords()) {
+    index.set(`${record.type}:${record.id}`, {
+      name: record.name,
+      route: routeForMention(record.type, record.id, {
+        workspaceId: record.workspaceId,
+        kind: record.kind,
+      }),
+      icon: iconTextOf(record),
+      colour: record.colour,
+    });
   }
   return index;
 }

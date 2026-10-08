@@ -91,3 +91,19 @@ porque es una lista con `kind: board`, y la ruta se resuelve con `routeForList`.
   nadie. Quien no tiene acceso ve "no disponible".
 - Colecciones quedan fuera. No hay pantalla de colección a la que enlazar. Entrarían como un tipo
   más cuando exista esa ruta.
+
+## Segunda revisión: color, icono y lectura con chips pulsables
+
+- **El color del chip es el del espacio al que pertenece.** El chip lleva como indicador
+  `@` seguido del color del espacio (`@teal`), y la librería le aplica el estilo que corresponde
+  a ese indicador. El validador acepta `@` o `@<color de espacio>` y nada más. Al dibujar, el
+  indicador se vuelve a leer del espacio, así que un cambio de color se ve sin reescribir la
+  nota; se guarda en la siguiente escritura.
+- **El icono va delante del nombre.** Si el elemento tiene un emoji configurado, ese emoji; si
+  su icono es un vector, el emoji de su tipo (un vector no se puede dibujar dentro de un texto).
+  Un tablero tiene su propio emoji, para distinguirlo de una lista.
+- **El día se lee con los chips pulsables.** El editor no recibe pulsaciones sobre un chip, así
+  que un día con texto se abre en la vista de lectura, donde pulsar un chip lleva directamente a
+  su destino. El botón "Editar" abre el editor. La franja de enlaces se quita.
+- **El selector muestra el árbol de la cuenta.** Un espacio, las carpetas y lo que hay en ellas,
+  con la ruta de cada coincidencia.

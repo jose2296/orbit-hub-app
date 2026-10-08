@@ -11,6 +11,7 @@ import { Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
+import { mentionStyleMap } from "@/lib/journal/mention-style";
 import { NOTE_SANITIZATION } from "@/lib/notes/sanitization";
 import { NOTE_BODY_FONT } from "@/theme/tokens";
 import { useTheme } from "@/theme";
@@ -502,11 +503,12 @@ export function useNoteHtmlStyle() {
       },
       // A chip is drawn in the accent, on the soft accent, and is never underlined:
       // it is a control, and a link-shaped word would look like one that is not.
-      mention: {
+      // One style per space colour, keyed by the chip's indicator, so a chip is painted
+      // as the space it belongs to. See lib/journal/mention-style.ts.
+      mention: mentionStyleMap({
         color: theme.colors.accentSoftText,
-        backgroundColor: theme.colors.accentSoft,
-        textDecorationLine: "none" as const,
-      },
+        background: theme.colors.accentSoft,
+      }),
       ul: { bulletColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },
       ol: { markerColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },
       /**

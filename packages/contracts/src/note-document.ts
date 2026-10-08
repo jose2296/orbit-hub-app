@@ -19,6 +19,8 @@
 
 import { z } from 'zod';
 
+import { WORKSPACE_COLORS } from './workspace';
+
 /** The most HTML a note may hold. Roughly a hundred thousand words. */
 export const NOTE_DOCUMENT_MAX_BYTES = 512_000;
 
@@ -94,8 +96,25 @@ const MAX_IMAGE_ATTRIBUTES = 4;
 export const MENTION_TYPES = ['workspace', 'folder', 'list', 'note', 'bookmark'] as const;
 export type MentionType = (typeof MENTION_TYPES)[number];
 
-/** The only trigger a mention may be opened with. */
+/** The trigger a mention is opened with. */
 const MENTION_INDICATOR = '@';
+
+/**
+ * The indicator a chip carries: the trigger, and for a chip inside a space the
+ * colour of that space, as `@teal`. The colour is what the chip is painted with, so
+ * a chip reads as the space it belongs to. Anything else is refused.
+ */
+export function mentionIndicatorFor(colour: string | null | undefined): string {
+  return colour !== undefined && colour !== null && (WORKSPACE_COLORS as readonly string[]).includes(colour)
+    ? `${MENTION_INDICATOR}${colour}`
+    : MENTION_INDICATOR;
+}
+
+function isMentionIndicator(value: string | undefined): boolean {
+  if (value === MENTION_INDICATOR) return true;
+  if (value === undefined || !value.startsWith(MENTION_INDICATOR)) return false;
+  return (WORKSPACE_COLORS as readonly string[]).includes(value.slice(MENTION_INDICATOR.length));
+}
 /** The name is a copy for when the target cannot be resolved; it is not the truth. */
 const MENTION_TEXT_MAX = 120;
 const MENTION_ATTRIBUTES = ['text', 'indicator', 'type', 'id'] as const;
@@ -330,8 +349,12 @@ function checkMention(
   if (insideLink) {
     fail(context, path, 'a mention cannot sit inside a link; the editor does not allow both');
   }
-  if (attributes['indicator'] !== MENTION_INDICATOR) {
-    fail(context, path, `<mention> has to use the indicator "${MENTION_INDICATOR}"`);
+  if (!isMentionIndicator(attributes['indicator'])) {
+    fail(
+      context,
+      path,
+      `<mention> has to use the indicator "${MENTION_INDICATOR}", optionally with a space colour`,
+    );
   }
   const type = attributes['type'];
   if (type === undefined || !(MENTION_TYPES as readonly string[]).includes(type)) {

@@ -5,6 +5,12 @@ import type { Locale } from "@orbit-hub/contracts";
  * dictionary, so adding a key without translating it is a type error.
  */
 const es = {
+  "journal.edit": "Editar",
+  "journal.done": "Listo",
+  "journal.previousYear": "Año anterior",
+  "journal.nextYear": "Año siguiente",
+  "journal.pickMonth": "Elegir mes",
+  "journal.pickYear": "Elegir año",
   "note.mention": "Mencionar algo de la app",
   "mention.pickerTitle": "Enlazar",
   "mention.searchPlaceholder": "Buscar listas, notas, carpetas…",
@@ -1306,6 +1312,12 @@ const es = {
 export type TranslationKey = keyof typeof es;
 
 const en: Record<TranslationKey, string> = {
+  "journal.edit": "Edit",
+  "journal.done": "Done",
+  "journal.previousYear": "Previous year",
+  "journal.nextYear": "Next year",
+  "journal.pickMonth": "Pick a month",
+  "journal.pickYear": "Pick a year",
   "note.mention": "Mention something from the app",
   "mention.pickerTitle": "Link",
   "mention.searchPlaceholder": "Search lists, notes, folders…",

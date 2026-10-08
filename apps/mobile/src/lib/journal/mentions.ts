@@ -10,6 +10,7 @@
  * device and the same code serves the editor and the reader.
  */
 
+import { mentionIndicatorFor } from "@orbit-hub/contracts";
 import type { ListKind, MentionType } from "@orbit-hub/contracts";
 
 import { routeForList } from "@/lib/lists/route";
@@ -20,6 +21,14 @@ export interface MentionTarget {
   name: string;
   /** Where pressing it goes. */
   route: string;
+  /**
+   * What is drawn before the name: the emoji the element was given, or the emoji
+   * of its type when it has no emoji. A vector icon cannot be drawn inside text,
+   * so it is replaced by the type's emoji rather than left out.
+   */
+  icon: string;
+  /** The colour of the space the element belongs to, or null when it has none. */
+  colour: string | null;
 }
 
 /**
@@ -86,7 +95,14 @@ export function renderMentions(
 
     const target = lookup(type as MentionType, id);
     if (target !== null) {
-      return `<mention${rawAttributes}>${escapeText(target.name)}</mention>`;
+      // The indicator is re-read from the target, so a chip follows its space's
+      // colour as it is now and not as it was when the chip was made.
+      const indicator = mentionIndicatorFor(target.colour);
+      const attributesNow = rawAttributes.replace(
+        /indicator\s*=\s*"[^"]*"/,
+        `indicator="${indicator}"`,
+      );
+      return `<mention${attributesNow}>${escapeText(`${target.icon} ${target.name}`)}</mention>`;
     }
     if (options.mode === "reading") {
       return `<mention${rawAttributes}>${escapeText(options.unavailableLabel)}</mention>`;

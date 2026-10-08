@@ -95,6 +95,11 @@ describe('mention in a note document', () => {
     expect(reasons(mention(`indicator="@" type="note" id="${id}"`))).toEqual([]);
   });
 
+  it('accepts the colour of a space as the indicator, and nothing else', () => {
+    expect(reasons(mention(`indicator="@teal" type="list" id="${id}"`))).toEqual([]);
+    expect(reasons(mention(`indicator="@nope" type="list" id="${id}"`)).length).toBeGreaterThan(0);
+  });
+
   it('refuses a trigger other than @', () => {
     expect(reasons(mention(`indicator="#" type="list" id="${id}"`)).length).toBeGreaterThan(0);
   });
