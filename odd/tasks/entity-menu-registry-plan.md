@@ -303,7 +303,7 @@ git commit -m "feat(collections): pantalla propia con header y menu completo"
 
 ---
 
-> **PRERREQUISITO QUE T6 DESCUBRIO T5, Y NO ES OPCIONAL**: el bug de `useSheetSucio`
+> **CORRECCION (T5 la puso en T6 y era T7, o nadie)**: el bug de `useSheetSucio`
 > no es de una hoja, es de **nueve**. `SheetSucioContexto.Provider` vive en
 > `sheet.tsx:630`, adentro del `<Modal>`, asi que el componente que pinta el
 > `<Sheet>` esta **fuera** del Provider y su `setSucio` es `() => {}`.
@@ -317,6 +317,13 @@ git commit -m "feat(collections): pantalla propia con header y menu completo"
 > existe**: `task-row-layout.test.ts:1236,1315,1426,1855,1908`. T6 no tiene que
 > arreglar solo lo suyo: tiene que **dar vuelta la senal de esos cinco guards**.
 > Deuda previa, no regresion de este plan.
+>
+> **Y aqui me equivoque una vez**: lo puse como prerrequisito de T6. No lo es.
+> `ListMenuSheet` **no usa `useSheetSucio`** — por eso su renombrar usa un `Button`
+> propio. De los cinco guards, **ninguno es de una lista**: son de `rename-sheet`,
+> `note-menu-sheet` (que es **T7**), `workspace-create-sheet`, y dos mas. Los otros
+> ocho de las nueve hojas **no estan en este plan**: son un corte propio. T7 tiene que
+> dar vuelta la senal del suyo; los otros cuatro quedan como deuda registrada.
 
 ### Task 6: Migrar `ListMenuSheet`
 
