@@ -30,12 +30,16 @@ const DICCIONARIO = src('src/lib/i18n/dictionaries.ts');
  * (`options`, `rename`, `icon`, `share`, `export`, `delete`) son ahora `step` de un
  * solo `Sheet`, y el `onBack` que se le comprueba abajo es el que evita que entrar
  * en una de ellas deje solo la ✕ como salida.
+ *
+ * En T7 se fue `notes/note-menu-sheet.tsx` por el mismo camino: el renombrar, el
+ * icono, compartir y borrar de una nota son `step` de la hoja única. No hace falta
+ * añadirla otra vez, y una hoja que se borro en esta lista rompe el `readFileSync`
+ * de los dos guards de abajo sin avisar.
  */
 const CON_PASOS = [
   'src/components/lists/item-edit-sheet.tsx',
   'src/components/menus/entity-menu-sheet.tsx',
   'src/components/workspace/workspace-menu-sheet.tsx',
-  'src/components/notes/note-menu-sheet.tsx',
   'src/components/notes/template-menu-sheet.tsx',
   'src/components/folders/create-sheet.tsx',
 ];

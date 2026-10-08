@@ -1855,20 +1855,30 @@ describe('compartir y plantillas: el Guardar del pie', () => {
     expect(hoja, 'el sucio es el nombre').toContain('setSucio(name.trim()');
   });
 
-  it('renombrar nota y plantilla usan el pie, sin Volver que no pregunte', () => {
-    for (const [quien, ruta] of [
-      ['la nota', 'src/components/notes/note-menu-sheet.tsx'],
-      ['la plantilla', 'src/components/notes/template-menu-sheet.tsx'],
-    ] as const) {
-      const hoja = sin(ruta);
-      expect(hoja, `${quien}: delega en onSave`).toContain('onSave={() => void');
-      expect(hoja, `${quien}: sin guardar dentro`).not.toMatch(
-        /key: "save",\n(?:.*\n)*?.*onPress/,
-      );
-    }
+  it('renombrar plantilla usa el pie, sin Volver que no pregunte', () => {
+    /*
+      La nota se fue de esta lista en la T7: su hoja (`note-menu-sheet.tsx`) ya no
+      existe y su renombrar es `menus/pages/rename-page.tsx`, que **no** usa el pie
+      del `Sheet` —tiene su boton adentro— por una razon escrita en su cabecera: el
+      `onSave` del pie se apaga solo cuando su promesa resuelve, y `onSave` no puede
+      rechazar sin dejar una promesa sin manejar, asi que un renombrar que fallara
+      por ahi apagaria la pregunta de "salir sin guardar" y el nombre escrito se
+      iria sin avisar.
+
+      O sea que la afirmacion de este guard **cambio de sujeto**, no se weakens: la
+      hoja de la nota no existe y el renombrar compartido tiene su boton por
+      decision. Lo que sigueAFFirmando es que la plantilla —que si tiene hoja propia
+      y la va a seguir teniendo— no trae un segundo guardar ni una salida que no
+      pregunte.
+    */
+    const plantilla = sin('src/components/notes/template-menu-sheet.tsx');
+
+    expect(plantilla, 'delega en onSave').toContain('onSave={() => void');
+    expect(plantilla, 'sin guardar dentro').not.toMatch(
+      /key: "save",\n(?:.*\n)*?.*onPress/,
+    );
     // El Volver se fue con el guardar de dentro: la flecha de arriba hace lo
     // mismo, y la de abajo era la salida que no preguntaba.
-    const plantilla = sin('src/components/notes/template-menu-sheet.tsx');
     expect(plantilla, 'sin Volver propio').not.toContain('t("common.back")');
   });
 
@@ -1981,13 +1991,19 @@ describe('#2: el foco va al primer campo sin pedir un toque', () => {
       Abrir "crear tarea" y tener que tocar el campo antes de escribir es un paso
       por nada: lo primero que se hace al crear es escribir el nombre.
     */
+    /*
+      `renombrar en el menu` es `menus/pages/rename-page.tsx` y no la hoja vieja de
+      la nota: esa se borro en la T7 y su renombrar paso a ser la pagina compartida,
+      que es la que tiene el `autoFocus`. Es el mismo foco y la misma hoja, asi que
+      este guard sigue afirmandolo donde el foco ahora vive.
+    */
     for (const [quien, ruta] of [
       ['guardar plantilla', 'src/components/notes/save-template-sheet.tsx'],
       ['compartir', 'src/components/shares/share-node-sheet.tsx'],
       ['crear espacio', 'src/components/workspace/workspace-create-sheet.tsx'],
       ['crear cosa', 'src/components/folders/create-sheet.tsx'],
       ['renombrar', 'src/components/ui/rename-sheet.tsx'],
-      ['renombrar nota', 'src/components/notes/note-menu-sheet.tsx'],
+      ['renombrar en el menu', 'src/components/menus/pages/rename-page.tsx'],
       ['renombrar plantilla', 'src/components/notes/template-menu-sheet.tsx'],
     ] as const) {
       expect(sin(ruta), `${quien}: enfoca al abrir`).toContain('autoFocus');

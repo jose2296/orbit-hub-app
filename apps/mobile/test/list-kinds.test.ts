@@ -78,27 +78,38 @@ describe('la lista de tipos de lista es una sola', () => {
   });
 });
 
-describe('los tres selectores de tipo leen la misma fuente', () => {
+describe('los selectores de tipo leen la misma fuente', () => {
   const SRC = join(import.meta.dirname, '..', 'src');
 
   /**
-   * The three, by file: the form of the lists screen, the sheet that creates inside
-   * a folder and the menu of a folder.
+   * The two, by file: the form of the lists screen and the sheet that creates inside
+   * a folder.
    *
    * They are read **out of the source** because that is the only thing that can tell
    * what a picker offers. None of them is rendered here, and a test that imports a
    * component to read its props is testing the component rather than the agreement.
+   *
+   * **El tercero se fue en la T7**: el menu de una carpeta ofrecia "Crear una lista
+   * aqui", y al bloque de tipos lo abria con `LIST_KIND_ORDER` dentro de una hoja
+   * hermana. Ese menu ahora es la hoja unica del registro, y la fila va a la pagina
+   * `create`, que todavia no esta escrita —`MenuPageId` la declara y ningun
+   * componente de `components/menus/pages/` la monta—, asi que `puedeOfrecerse` la
+   * filtra entera.
+   *
+   * O sea que **la fila existe en el registro y todavia no se pinta**, y el
+   * selector de tipos vuelve con la pagina. Esta escrito con nombre en
+   * `test/note-folder-menu-parity.test.ts`, porque un selector que se perdio y uno
+   * que todavia no se escribio se ven igual: los dos son un menu sin la fila.
+   * Cuando la pagina `create` llegue, este archivo tiene que tener **tres** otra
+   * vez, y el `toHaveLength` de abajo es el que lo dice.
    */
-  const PICKERS = [
-    'app/(app)/lists.tsx',
-    'components/folders/create-sheet.tsx',
-    'components/folders/folder-menu-sheet.tsx',
-  ];
+  const PICKERS = ['app/(app)/lists.tsx', 'components/folders/create-sheet.tsx'];
 
   it('cada uno saca sus tipos de lib/lists/kind, y no de una copia suya', () => {
-    // The count is part of the claim: three files, and a guard that quietly read
-    // two of them would be green and wrong.
-    expect(PICKERS).toHaveLength(3);
+    // The count is part of the claim: two files today, and a guard that quietly read
+    // one of them would be green and wrong. Subirlo a tres es trabajo de la pagina
+    // `create`.
+    expect(PICKERS).toHaveLength(2);
 
     for (const fichero of PICKERS) {
       const texto = readFileSync(join(SRC, fichero), 'utf8');

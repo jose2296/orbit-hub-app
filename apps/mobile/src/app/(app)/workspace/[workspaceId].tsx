@@ -13,22 +13,17 @@ import {
   menuCtxDeColeccion,
 } from "@/components/menus/coleccion";
 import { ContentList } from "@/components/content/content-list";
-import { FolderMenuSheet } from "@/components/folders/folder-menu-sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
-import { NoteMenuSheet } from "@/components/notes/note-menu-sheet";
 import { SaveTemplateSheet } from "@/components/notes/save-template-sheet";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { useFolders, useWorkspaces } from "@/hooks/use-workspaces";
 import { WorkspaceMenuSheet } from "@/components/workspace/workspace-menu-sheet";
 import { useDashboard } from "@/hooks/use-dashboard";
-import {
-  isFolderPinned,
-  withPinnedFolder,
-  withoutPinnedFolder,
-} from "@/lib/dashboard/pin";
 import { useLists } from "@/hooks/use-lists";
 import { menuDeLista } from "@/lib/menus/lista";
+import { menuDeCarpeta } from "@/lib/menus/carpeta";
+import { menuDeNota } from "@/lib/menus/nota";
 import { useCollections } from "@/hooks/use-collections";
 import { useNotes } from "@/hooks/use-notes";
 import { createCollectionAction } from "@/lib/collections/actions";
@@ -53,14 +48,10 @@ export default function WorkspaceScreen() {
   const { workspaceId } = useLocalSearchParams<{ workspaceId: string }>();
 
   const { workspaces } = useWorkspaces();
-  const { folders, isLoading, createFolder } = useFolders(workspaceId);
+  const { folders, isLoading, createFolder, updateFolder, deleteFolder } =
+    useFolders(workspaceId);
   const { layout, save } = useDashboard();
 
-  /** Whether a folder already has a card, so the menu can say "take it off". */
-  const folderOnPanel = useCallback(
-    (folderId: string) => isFolderPinned(layout, folderId),
-    [layout],
-  );
   const { lists, createList, updateList, deleteList, duplicateList } = useLists({ workspaceId });
   const { notes, createNote } = useNotes({ workspaceId });
   const { collections, bookmarkCounts } = useCollections(workspaceId);
@@ -119,14 +110,12 @@ export default function WorkspaceScreen() {
     folders.find((folder) => folder.id === list.folderId) ?? null;
 
   /**
-   * The list menu, and the **only** one of this screen's sheets that opens on a
-   * row of the content rather than on the space.
+   * The three menus of a row, and **the three salen del mismo registro**.
    *
-   * `menuFor` is shared with the folder and the note menus, so the list arrives
-   * wrapped in a discriminated union and the other two are still sheets of their
-   * own. That is a pending cut and not this one: unifying those three menus is
-   * T7, and doing it here would have meant migrating folder and note inside the
-   * task whose whole point is that the list alone is enough to prove the registry.
+   * `menuFor` es la union discriminada de lista y carpeta porque las dos se abren
+   * desde el mismo `ContentList`, y la nota va aparte porque su fila abre otra
+   * vez. Lo que las tres tienen en comun no es el estado sino el menu: cada una
+   * le pide su normalizacion a `lib/menus/` y monta el mismo `EntityMenuSheet`.
    */
   const listaDelMenu = menuFor?.kind === "list" ? menuFor.list : null;
   const menuLista = menuDeLista(listaDelMenu, {
@@ -140,9 +129,38 @@ export default function WorkspaceScreen() {
     // No states row: this is the space, not a board.
   });
 
-  /** How many lists are inside a folder, for the delete to say what it takes. */
+  /** How many lists are inside a folder, for the menu to say what it holds. */
   const folderListCount = (folder: Folder | null) =>
     folder ? lists.filter((list) => list.folderId === folder.id).length : 0;
+
+  const carpetaDelMenu = menuFor?.kind === "folder" ? menuFor.folder : null;
+  const menuCarpeta = menuDeCarpeta(carpetaDelMenu, {
+    layout,
+    save,
+    updateFolder,
+    deleteFolder,
+    listCount: folderListCount(carpetaDelMenu),
+    t,
+  });
+
+  /*
+    La nota, y lo unico que esta pantalla decide del menu: que puede leer el
+    documento para la plantilla. La capacidad y el handler son la misma fila, asi
+    que el adaptador contesta las dos mitades leyendo este callback —si las dos
+    pantallas que abren el menu de una nota lo pasan, la fila sale en las dos; si
+    una dejara de pasarlo, su menu pierde la fila sin error en ninguna parte—.
+
+    El `setNoteFor(null)` de abajo esta ademas del `onClose` de la hoja, que es el
+    que corre `EntityMenuSheet` cuando la accion termina bien. Es redundante a
+    proposito: el menu se cierra igual si el handler llegara a fallar, y una fila
+    que abre una hoja y deja el menu abierto encima no es un detalle de copy.
+  */
+  const menuNota = menuDeNota(noteFor, {
+    onSaveAsTemplate: (target) => {
+      setNoteFor(null);
+      setTemplateFor(target);
+    },
+  });
 
   const closeSheets = useCallback(() => {
     setMenuOpen(false);
@@ -330,13 +348,12 @@ export default function WorkspaceScreen() {
         handlers={handlersDeColeccion(collectionFor)}
         onClose={() => setCollectionFor(null)}
       />
-      <NoteMenuSheet
-        note={noteFor}
+
+      <EntityMenuSheet
+        ctx={menuNota.ctx}
+        icon={menuNota.icon}
+        handlers={menuNota.handlers}
         onClose={() => setNoteFor(null)}
-        onSaveAsTemplate={(target) => {
-          setNoteFor(null);
-          setTemplateFor(target);
-        }}
       />
 
       <SaveTemplateSheet
@@ -357,35 +374,30 @@ export default function WorkspaceScreen() {
         onClose={closeSheets}
       />
 
-      <FolderMenuSheet
-        folder={menuFor?.kind === "folder" ? menuFor.folder : null}
-        workspaceId={workspaceId}
-        listCount={folderListCount(
-          menuFor?.kind === "folder" ? menuFor.folder : null,
-        )}
-        onPanel={
-          menuFor?.kind === "folder" ? folderOnPanel(menuFor.folder.id) : false
-        }
-        onTogglePin={() => {
-          const folder =
-            menuFor?.kind === "folder"
-              ? (folders.find((row) => row.id === menuFor.folder.id) ?? null)
-              : null;
-          if (!folder) return;
-          void save(
-            isFolderPinned(layout, folder.id)
-              ? withoutPinnedFolder(layout, folder.id)
-              : withPinnedFolder(layout, folder),
-          );
-        }}
+      {/*
+        La carpeta, y **la fila de "crear una lista aqui" todavia no sale**.
+
+        `ACCIONES.createHere` la declara y `ORDEN_POR_KIND.folder` la lista, con la
+        capacidad `createInside` que `menuDeCarpeta` pone en `true`: la pantalla si
+        sabe crearla. Lo que la saca es `puedeOfrecerse`, porque la pagina `create`
+        no esta escrita —es un `MenuPageId` sin componente que la monte—. Esta
+        escrito con nombre en `test/note-folder-menu-parity.test.ts`, porque una
+        fila que no se pinto todavia y una fila que se perdio se ven igual desde el
+        menu.
+
+        Y lo que **no** se puede recuperar aqui es el `onCreateInside` que esta
+        pantalla tenia: `EntityMenuSheet` no tiene prop para el y escribirla esta
+        fuera de la superficie de esta tarea. Cuando la pagina `create` exista, el
+        boton de abajo —`CreateSheet`— es el que recibe el tipo, y el salto directo
+        a "details" con el tipo ya puesto vuelve con ella.
+      */}
+      <EntityMenuSheet
+        ctx={menuCarpeta.ctx}
+        icon={menuCarpeta.icon}
+        pinned={menuCarpeta.pinned}
+        subtitulo={menuCarpeta.subtitulo}
+        handlers={menuCarpeta.handlers}
         onClose={closeSheets}
-        onCreateInside={(kind) => {
-          setMenuFor(null);
-          setCreateKind(kind);
-          setCreateStep("details");
-          setCreateOrigin(null);
-          setCreateOpen(true);
-        }}
       />
 
       <CreateSheet

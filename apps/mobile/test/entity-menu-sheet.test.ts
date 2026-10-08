@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { ACCIONES, accionesPara } from "@/lib/menus/registry";
 import type { MenuContext } from "@/lib/menus/registry";
 
+import { PANELES_DE_LA_HOJA_VIEJA as PANELES_DE_LA_CARPETA_VIEJA } from "./fixtures/folder-menu-sheet-options";
 import {
   PAGINAS,
   RAIZ,
@@ -56,13 +57,19 @@ describe("una sola hoja, y con una pila de paginas adentro", () => {
     expect(hojasMontadas(hoja), "mas de un Sheet es panel sobre panel").toBe(1);
   });
 
-  it("la hoja de carpeta, que es lo que se esta reemplazando, monta varios", () => {
-    // El contraste tiene que estar en el test, o "un solo Sheet" no dice nada:
-    // es una afirmacion sobre un numero que el archivo nuevo podria cumplir por
-    // tener menos contenido.
-    const carpeta = src("src/components/folders/folder-menu-sheet.tsx");
+  it("la hoja de carpeta, que es lo que se esta reemplazando, montaba varios", () => {
+    /*
+      El contraste tiene que estar en el test, o "un solo Sheet" no dice nada: es
+      una afirmacion sobre un numero que el archivo nuevo podria cumplir por tener
+      menos contenido.
 
-    expect(hojasMontadas(carpeta)).toBeGreaterThan(1);
+      Y el numero sale de un **fixture**, no de leer la hoja vieja: esa se borro en
+      la T7, y un guard que lee un archivo que se guardo se queda comprobando nada
+      sin avisar. Los paneles congelados estan en
+      `fixtures/folder-menu-sheet-options.ts`, que es donde vive la razon de por que
+      eran seis.
+    */
+    expect(hojasMontadas(PANELES_DE_LA_CARPETA_VIEJA)).toBeGreaterThan(1);
   });
 
   it("la pagina se cambia con step, y no con otra hoja", () => {
