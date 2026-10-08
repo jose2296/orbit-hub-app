@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MentionTarget } from '@/lib/journal/mentions';
-import { renderMentions, routeForMention } from '@/lib/journal/mentions';
+import { mentionNameFor, mentionsIn, renderMentions, routeForMention } from '@/lib/journal/mentions';
 
 const LIST_ID = '6f1c0a2e-3b8d-4c1e-9a7f-2d5e8b9c0a11';
 const NOTE_ID = '0b9e8d7c-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
@@ -88,5 +88,26 @@ describe('routeForMention', () => {
     expect(routeForMention('note', NOTE_ID)).toBe(`/(app)/note/${NOTE_ID}`);
     expect(routeForMention('bookmark', NOTE_ID)).toBe(`/(app)/bookmark/${NOTE_ID}`);
     expect(routeForMention('workspace', NOTE_ID)).toBe(`/(app)/workspace/${NOTE_ID}`);
+  });
+});
+
+describe('mentionsIn', () => {
+  it('lists the chips of a document once each, in the order they were written', () => {
+    const html = `<p>${chip('list', LIST_ID, 'A')} y ${chip('note', NOTE_ID, 'B')} y ${chip('list', LIST_ID, 'A')}</p>`;
+    expect(mentionsIn(html)).toEqual([
+      { type: 'list', id: LIST_ID },
+      { type: 'note', id: NOTE_ID },
+    ]);
+  });
+
+  it('ignores a chip of a type it does not know', () => {
+    expect(mentionsIn(`<p>${chip('reminder', LIST_ID, 'R')}</p>`)).toEqual([]);
+  });
+});
+
+describe('mentionNameFor', () => {
+  it('drops the characters a chip cannot carry, and keeps it within the limit', () => {
+    expect(mentionNameFor('Lista "de" <la> compra')).toBe('Lista de la compra');
+    expect(mentionNameFor('x'.repeat(200))).toHaveLength(120);
   });
 });

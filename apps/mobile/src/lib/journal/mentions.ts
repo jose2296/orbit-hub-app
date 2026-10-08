@@ -119,3 +119,35 @@ export function routeForMention(
       return `/(app)/bookmark/${id}`;
   }
 }
+
+/**
+ * The chips in a document, in the order they are written, without repeats.
+ *
+ * What the day's "links" row is made of. Only the attributes are read: the name
+ * a chip carries is not what it points at.
+ */
+export function mentionsIn(html: string): Array<{ type: MentionType; id: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ type: MentionType; id: string }> = [];
+  for (const match of html.matchAll(MENTION_PATTERN)) {
+    const attributes = attributesOf(match[1] ?? "");
+    const type = attributes["type"];
+    const id = attributes["id"];
+    if (type === undefined || id === undefined || !MENTION_TYPE_SET.has(type)) continue;
+    const key = `${type}:${id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ type: type as MentionType, id });
+  }
+  return out;
+}
+
+/**
+ * A name short enough to be stored in a chip. The validator refuses a longer one,
+ * and a chip whose name is refused would make the whole note refused.
+ */
+export const MENTION_NAME_MAX = 120;
+
+export function mentionNameFor(name: string): string {
+  return name.replace(/["<>]/g, "").trim().slice(0, MENTION_NAME_MAX);
+}

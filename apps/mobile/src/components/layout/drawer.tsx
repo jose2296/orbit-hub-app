@@ -91,6 +91,16 @@ const DESTINATIONS = [
   },
   {
     /*
+     * El diario va junto a las notas por la misma razon: es de la cuenta y no de
+     * un espacio. Una entrada por dia, y la vista abre siempre en hoy.
+     */
+    route: "/(app)/journal",
+    path: "/journal",
+    icon: "today-outline",
+    labelKey: "journal.title",
+  },
+  {
+    /*
      * Bookmarks, junto a las notas y por la misma razon: no estan dentro de
      * ningun espacio, son todos los enlaces guardados. La lista filtra por
      * coleccion cuando se la pide, asi que esta entrada es la vista sin

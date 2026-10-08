@@ -116,3 +116,18 @@ export function formatMonthTitle(year: number, monthIndex: number, locale: strin
     return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
   }
 }
+
+/**
+ * The short name of a weekday, for the top of a calendar. `index` 0 is Monday.
+ *
+ * 2024-01-01 was a Monday, so the labels come from a known week and not from the
+ * phone's own calendar setting, which could start a week on another day.
+ */
+export function weekdayLabel(index: number, locale: string): string {
+  const date = new Date(Date.UTC(2024, 0, 1 + index));
+  try {
+    return new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(date);
+  } catch {
+    return String(index + 1);
+  }
+}

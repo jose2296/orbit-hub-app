@@ -5,6 +5,21 @@ import type { Locale } from "@orbit-hub/contracts";
  * dictionary, so adding a key without translating it is a type error.
  */
 const es = {
+  "note.mention": "Mencionar algo de la app",
+  "mention.pickerTitle": "Enlazar",
+  "mention.searchPlaceholder": "Buscar listas, notas, carpetas…",
+  "mention.empty": "No hay nada con ese nombre",
+  "mention.unavailable": "no disponible",
+  "journal.title": "Diario",
+  "journal.today": "Hoy",
+  "journal.pickDay": "Elegir un día",
+  "journal.previousDay": "Día anterior",
+  "journal.nextDay": "Día siguiente",
+  "journal.previousMonth": "Mes anterior",
+  "journal.nextMonth": "Mes siguiente",
+  "journal.placeholder": "Escribe lo que quieras de este día…",
+  "journal.links": "Enlaces de este día",
+  "journal.openLink": "Abrir",
   "content.filter.listKind": "Tipo de lista",
   "fullTitle.title": "Título completo",
   "fullTitle.hint": "Mantén pulsado para leer el título entero",
@@ -1291,6 +1306,21 @@ const es = {
 export type TranslationKey = keyof typeof es;
 
 const en: Record<TranslationKey, string> = {
+  "note.mention": "Mention something from the app",
+  "mention.pickerTitle": "Link",
+  "mention.searchPlaceholder": "Search lists, notes, folders…",
+  "mention.empty": "Nothing with that name",
+  "mention.unavailable": "unavailable",
+  "journal.title": "Journal",
+  "journal.today": "Today",
+  "journal.pickDay": "Pick a day",
+  "journal.previousDay": "Previous day",
+  "journal.nextDay": "Next day",
+  "journal.previousMonth": "Previous month",
+  "journal.nextMonth": "Next month",
+  "journal.placeholder": "Write whatever you want about this day…",
+  "journal.links": "Links in this day",
+  "journal.openLink": "Open",
   "content.filter.listKind": "Kind of list",
   "fullTitle.title": "Full title",
   "fullTitle.hint": "Press and hold to read the whole title",

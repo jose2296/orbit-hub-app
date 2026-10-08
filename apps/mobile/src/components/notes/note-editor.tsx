@@ -77,6 +77,15 @@ export interface NoteEditorProps extends Pick<
    * report, so a read-only editor has no toolbar to press.
    */
   readOnly?: boolean;
+  /**
+   * Asks the screen to choose something to mention: a list, a note, a folder.
+   *
+   * Called from the `@` button and from typing `@`, which the editor reports the
+   * same way. The screen opens its picker and, when something is picked, puts the
+   * mention in with `setMention` on the editor ref. Leaving it out means the editor
+   * has no mentions at all: no button, and typing `@` is just a character.
+   */
+  onMentionRequest?: () => void;
 }
 
 /** A style the toolbar can turn on and off over the current selection. */
@@ -94,7 +103,8 @@ type StyleKey =
   | "codeblock"
   | "ul"
   | "ol"
-  | "checkbox";
+  | "checkbox"
+  | "mention";
 
 interface ToolbarButton {
   key: StyleKey;
@@ -114,7 +124,8 @@ interface ToolbarButton {
     | "note.codeBlock"
     | "note.bulletList"
     | "note.numberedList"
-    | "note.checkList";
+    | "note.checkList"
+    | "note.mention";
   /**
    * A letter drawn at this size, for the three headings.
    *
@@ -160,6 +171,12 @@ const IMAGE_BUTTON: ToolbarButton = {
   labelKey: "note.insertImage",
 };
 
+const MENTION_BUTTON: ToolbarButton = {
+  key: "mention",
+  icon: "at-outline",
+  labelKey: "note.mention",
+};
+
 /**
  * Typing `- ` at the start of a line makes a bullet, and so on.
  *
@@ -191,6 +208,7 @@ export function NoteEditor({
   textShortcuts = NOTE_TEXT_SHORTCUTS,
   onChanged,
   onInsertImage,
+  onMentionRequest,
   editorRef,
   readOnly = false,
   sanitizationConfig = NOTE_SANITIZATION,
@@ -209,6 +227,12 @@ export function NoteEditor({
           // Not a style, and not something the editor can be told to do on its own:
           // a picture has to be chosen, sent and put somewhere first.
           onInsertImage?.();
+          return;
+        case "mention":
+          // Opens the mention flow at the cursor. The editor reports it through
+          // `onStartMention`, which is the one place the screen is asked for a
+          // picker, so the button and typing `@` cannot open two.
+          input.startMention("@");
           return;
         case "bold":
           input.toggleBold();
@@ -291,7 +315,16 @@ export function NoteEditor({
             backgroundColor: theme.colors.background,
           }}
         >
-          {[INLINE_BUTTONS, BLOCK_BUTTONS, [IMAGE_BUTTON]].map(
+          {[
+            INLINE_BUTTONS,
+            BLOCK_BUTTONS,
+            [
+              ...(onInsertImage ? [IMAGE_BUTTON] : []),
+              ...(onMentionRequest ? [MENTION_BUTTON] : []),
+            ],
+          ]
+            .filter((buttons) => buttons.length > 0)
+            .map(
             (buttons, rowIndex) => (
               <ScrollView
                 key={rowIndex}
@@ -378,6 +411,8 @@ export function NoteEditor({
         textShortcuts={textShortcuts}
         onChangeText={onChanged}
         onChangeState={(event) => setState(event.nativeEvent)}
+        mentionIndicators={onMentionRequest ? ["@"] : undefined}
+        onStartMention={onMentionRequest ? () => onMentionRequest() : undefined}
         style={{
           flex: 1,
           paddingHorizontal: theme.spacing.lg,
@@ -445,6 +480,13 @@ export function useNoteHtmlStyle() {
       a: {
         color: theme.colors.accent,
         textDecorationLine: "underline" as const,
+      },
+      // A chip is drawn in the accent, on the soft accent, and is never underlined:
+      // it is a control, and a link-shaped word would look like one that is not.
+      mention: {
+        color: theme.colors.accentSoftText,
+        backgroundColor: theme.colors.accentSoft,
+        textDecorationLine: "none" as const,
       },
       ul: { bulletColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },
       ol: { markerColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },

@@ -521,6 +521,7 @@ describe('entregar la exportacion en la web', () => {
       lists: 3,
       items: 4,
       notes: 5,
+      journal: 0,
       attachments: 6,
       templates: 7,
     });

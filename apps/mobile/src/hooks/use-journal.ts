@@ -21,14 +21,19 @@ import { subscribeToLocalStore } from "@/lib/offline";
 /** The entry of one day, or null when nothing was written for it. */
 export function useJournalEntry(userId: string | undefined, day: string) {
   const [record, setRecord] = useState<JournalEntryRecord | null>(null);
+  // False until the cache has been read once. An editor opened before that would
+  // start empty and then be asked to show text it has already been drawn without.
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) {
       setRecord(null);
+      setLoaded(true);
       return;
     }
     const next = await readJournalEntry(userId, day as JournalDay);
     setRecord(next);
+    setLoaded(true);
   }, [userId, day]);
 
   useEffect(() => {
@@ -38,7 +43,7 @@ export function useJournalEntry(userId: string | undefined, day: string) {
     });
   }, [load]);
 
-  return { record, reload: load };
+  return { record, loaded, reload: load };
 }
 
 /** The days that have words in them, for the dots on the calendar. */
@@ -75,8 +80,9 @@ export function useJournalDaysWithText(userId: string | undefined): Set<string> 
  * to be ready before the text is. The index is rebuilt when the cache changes and
  * not per chip.
  */
-export function useMentionTargets(): Map<string, MentionTarget> {
-  const [index, setIndex] = useState<Map<string, MentionTarget>>(() => new Map());
+export function useMentionTargets(): Map<string, MentionTarget> | null {
+  // Null until the first read, so a screen can tell "not read yet" from "nothing to link".
+  const [index, setIndex] = useState<Map<string, MentionTarget> | null>(null);
 
   useEffect(() => {
     let active = true;
