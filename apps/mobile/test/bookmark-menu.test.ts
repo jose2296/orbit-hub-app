@@ -255,18 +255,19 @@ describe("el menu de un enlace ofrece lo que la hoja sabe montar, y nada mas", (
   const ofrecibles = (): string[] =>
     accionesPara(menuCtxDeBookmark(BASE)!).filter(puedeOfrecerse).map((accion) => accion.id);
 
-  it("hoy son renombrar y eliminar", () => {
-    expect(ofrecibles()).toEqual(["rename", "delete"]);
+  it("hoy son renombrar, acceso y eliminar", () => {
+    expect(ofrecibles()).toEqual(["rename", "access", "delete"]);
   });
 
-  it("acceso no se ofrece porque su pagina todavia no se monta", () => {
-    // No por una fila apagada —eso seria ofrecer algo que no se puede hacer— sino
-    // por el filtro, que saca la fila entera. Y sale sola en cuanto
-    // `PAGINAS_MONTADAS` la incluya, sin tocar el registro.
+  it("acceso se ofrece desde que su pagina existe, y sin tocar el registro", () => {
+    // T8 la monto. Esta asercion existia al reves —"no se ofrece porque la pagina
+    // no esta"— y la dio vuelta la tarea sin que nadie la buscara: el registro no
+    // cambio, lo que cambio es `PAGINAS_MONTADAS`. Esa es la gracia de que el
+    // filtro se importe y no se copie.
     expect(ORDEN_POR_KIND.bookmark).toContain("access");
     expect(ACCIONES.access?.destino).toEqual({ tipo: "pagina", page: "access" });
-    expect(paginasMontadas()).not.toContain("access");
-    expect(ofrecibles()).not.toContain("access");
+    expect(paginasMontadas()).toContain("access");
+    expect(ofrecibles()).toContain("access");
   });
 
   it("el filtro es el de la hoja, y el de la hoja esta en un archivo sin React", () => {

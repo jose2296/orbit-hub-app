@@ -313,7 +313,7 @@ Cada una es un work unit y cierra con su commit.
   reproduce entera, el registro alcanza.
 - [x] **T7** Migrar `NoteMenuSheet` y `FolderMenuSheet`. El de carpeta ademas
   pierde los seis paneles hermanos.
-- [ ] **T8** `AccessPage`: `SharedBadge` en todas las superficies por defecto, y
+- [x] **T8** `AccessPage`: `SharedBadge` en todas las superficies por defecto, y
   `useShareReach` subido de la pagina de borrar a una pagina propia. Ojo:
   `useShareReach` devuelve `null` cuando falla el request, y un fallo nunca
   puede pintar "nadie mas lo tiene".

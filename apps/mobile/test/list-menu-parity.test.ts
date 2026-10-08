@@ -293,6 +293,7 @@ describe("el orden y lo que se ofrece", () => {
       "pin",
       "duplicate",
       "share",
+      "access",
       "delete",
     ]);
   });
@@ -391,9 +392,9 @@ describe("las paginas que el filtro saca, con nombre", () => {
       Perder una fila es lo peor que puede pasar en una migracion asi, asi que cada
       hueco lleva escrito quien lo cierra:
 
-      - `access`: la declara el registro desde la T1 y la cierra la T8. **No** es una
-        perdida: la hoja vieja no la tenia, es una fila de mas que todavia no se
-        puede pintar.
+      - `access`: **estuvo aca** y la cerro la T8. La hoja vieja no la tenia —era una
+        fila de mas que el registro declaraba y que todavia no se podia pintar—, y se
+        ofrecio sola cuando la pagina entro en `PAGINAS_MONTADAS`.
       - `export`: la hoja vieja montaba la pagina de formatos (`:616`) y la hoja
         hermana de resultados (`:698`), con los dos formatos y el reintento.
         **Exportar una lista deja de estar disponible con esta tarea**, y queda
@@ -415,7 +416,6 @@ describe("las paginas que el filtro saca, con nombre", () => {
       aparezcan dos huecos nuevos sin escribir.
     */
     const PENDIENTES: Record<string, string> = {
-      access: "T8: AccessPage, con SharedBadge y useShareReach",
       export: "T9: ExportPage, con los dos formatos y ExportResultSheet",
     };
 
@@ -423,10 +423,11 @@ describe("las paginas que el filtro saca, con nombre", () => {
       expect(PENDIENTES[page], `la pagina "${page}" no se monta y nadie la escribe`).toBeTruthy();
     }
 
-    // Y el conjunto es exactamente este, no un subconjunto: cuando T8 y T9 monten
-    // las suyas hay que sacar sus entradas de aca, y el conjunto tiene que quedar
-    // vacio.
-    expect(sinMontar.sort()).toEqual(["access", "export"]);
+    // Y el conjunto es exactamente este, no un subconjunto. `access` **estuvo aca** y
+    // salio cuando la T8 monto su pagina: la fila se empezo a ofrecer sin que nadie
+    // cambiara el registro. Queda `export` sola, con la T9 detras, y el dia que
+    // tambien se monte el conjunto tiene que quedar vacio.
+    expect(sinMontar.sort()).toEqual(["export"]);
   });
 });
 

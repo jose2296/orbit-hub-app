@@ -15,6 +15,7 @@ import { puedeOfrecerse } from "@/lib/menus/paginas";
 import type { MenuContext, MenuHandlerName, MenuPageId } from "@/lib/menus/registry";
 import { useTheme } from "@/theme";
 
+import { AccessPage } from "./pages/access-page";
 import { CreatePage } from "./pages/create-page";
 import { DeletePage } from "./pages/delete-page";
 import { IconPage } from "./pages/icon-page";
@@ -727,6 +728,9 @@ export function EntityMenuSheet({
             opcion que exista.
           */}
           {pagina === "share" ? <SharePage ctx={ctx} onClose={onClose} /> : null}
+          {pagina === "access" ? (
+            <AccessPage ctx={ctx} />
+          ) : null}
 
           {/*
             El icono se escribe al elegir y la hoja **no** se cierra: el panel

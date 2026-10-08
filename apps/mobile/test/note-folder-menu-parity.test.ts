@@ -361,12 +361,21 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
   */
   const pintadas = (ctx: MenuContext) => accionesPara(ctx).filter(puedeOfrecerse).map((a) => a.id);
 
-  it("una nota ofrece las cinco que ofrecia, mas la de acceso cuando exista su pagina", () => {
+  it("una nota ofrece las cinco que ofrecia, mas la de acceso desde que existe", () => {
     /*
-      Las cinco de la hoja vieja, en el orden del registro, y `access` sale porque
-      su pagina todavia no existe —abajo esta escrito quien la escribe—.
+      Las cinco de la hoja vieja, en el orden del registro, mas `access`. La fila
+      empezo a salir cuando la T8 monto su pagina: el registro no cambio, lo que
+      cambio fue `PAGINAS_MONTADAS`. Es la razon por la que el filtro se importa y
+      no se copia.
     */
-    expect(pintadas(NOTA)).toEqual(["rename", "icon", "share", "saveAsTemplate", "delete"]);
+    expect(pintadas(NOTA)).toEqual([
+      "rename",
+      "icon",
+      "share",
+      "saveAsTemplate",
+      "access",
+      "delete",
+    ]);
   });
 
   it("una nota sin plantilla no ofrece esa fila, porque no hay quien la ejecute", () => {
@@ -399,7 +408,7 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
     expect(borrar.disponible?.(NOTA)).toBe(true);
   });
 
-  it("una carpeta ofrece las seis que la hoja puede pintar, y la de acceso sigue pendiente con nombre", () => {
+  it("una carpeta ofrece las siete que la hoja puede pintar, con acceso incluida", () => {
     /*
       ------------------------------------------------------------------
       "CREAR UNA LISTA AQUI": LA FILA VUELVE, Y POR QUE ERA UNA PERDIDA
@@ -418,7 +427,7 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
       veces una accion existed en el registro sin que ninguna tarea escribiera su
       pagina, que es una capacidad que se pierde sin error ni test rojo.
 
-      Queda una sola pendiente, `access`, que la cierra la T8.
+      No queda ninguna pendiente: `access` la cerro la T8. Quedaba sola.
 
       Y el `onCreateInside` de la pantalla tambien: `EntityMenuSheet` tiene por donde
       (`MenuHandlers.crearDentro`), `menuDeCarpeta` lo reenvia y `[workspaceId].tsx` lo
@@ -431,9 +440,17 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
       .flatMap((accion) => (accion.destino.tipo === "pagina" ? [accion.destino.page] : []))
       .filter((page) => !montadas.includes(page));
 
-    expect(pintadas(CARPETA)).toEqual(["createHere", "pin", "rename", "icon", "share", "delete"]);
+    expect(pintadas(CARPETA)).toEqual([
+      "createHere",
+      "pin",
+      "rename",
+      "icon",
+      "share",
+      "access",
+      "delete",
+    ]);
     expect(accionesPara(CARPETA).map((accion) => accion.id)).toContain("createHere");
-    expect(sinMontar.sort()).toEqual(["access"]);
+    expect(sinMontar.sort()).toEqual([]);
   });
 
   it("cada pagina sin montar tiene alguien anotado para escribirla", () => {
@@ -442,10 +459,9 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
       `create` **estuvo aca** y sale con la T12: decia "nadie en este plan" con esas
       palabras precisamente para que el hueco se notara antes de que alguien lo cerrara
       por su cuenta, y no con un nombre de tarea inventado. Lo que se reemplaza es la
-      entrada, no el mapa entero, asi que `access` sigue siendo la unica que hay.
+      entrada, no el mapa entero, asi que `export` sigue siendo la unica que hay.
     */
     const PENDIENTES: Record<string, string> = {
-      access: "T8: AccessPage, con SharedBadge y useShareReach",
     };
 
     for (const ctx of [NOTA, CARPETA]) {

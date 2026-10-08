@@ -145,6 +145,7 @@ describe("la fila de crear una lista aqui vuelve a estar en el menu", () => {
       "rename",
       "icon",
       "share",
+      "access",
       "delete",
     ]);
   });
@@ -221,18 +222,17 @@ describe("ninguna pagina declarada y no escrita se pierde en silencio", () => {
     const sinMontar = [...new Set(Object.values(huecosPorKind()).flat())];
 
     /*
-      Los dos que quedan son **filas de mas** que el registro declara y que todavia no
-      se pueden pintar:
+      Queda **una** fila de mas que el registro declara y que todavia no se puede
+      pintar:
 
-      - `access` la declara el registro desde la T1 y la cierra la T8.
-      - `export` la declara el mismo y la cierra la T9.
+      - `export` la declara el registro desde la T1 y la cierra la T9.
 
-      `create` **estuvo aca** y sale con esta tarea, que es el segundo caso del patron.
-      Cuando T8 y T9 monten las suyas hay que sacar sus entradas y el conjunto tiene
-      que quedar vacio; ese `toEqual` es el que avisa del tercero.
+      `create` y `access` **estuvieron aca** y salieron: eran el segundo y el tercer
+      caso del patron, los dos encontrados por sus implementadores y no por el plan.
+      Cuando T9 monte la suya hay que sacar su entrada y el conjunto tiene que
+      quedar vacio; ese `toEqual` es el que avisa del cuarto.
     */
     const PENDIENTES: Record<string, string> = {
-      access: "T8: AccessPage, con SharedBadge y useShareReach",
       export: "T9: ExportPage, con los dos formatos y ExportResultSheet",
     };
 
@@ -240,7 +240,7 @@ describe("ninguna pagina declarada y no escrita se pierde en silencio", () => {
       expect(PENDIENTES[page], `la pagina "${page}" no se monta y nadie la escribe`).toBeTruthy();
     }
 
-    expect(sinMontar.sort()).toEqual(["access", "export"]);
+    expect(sinMontar.sort()).toEqual(["export"]);
   });
 
   it("el guard mira de verdad, y no aprueba porque no recorra nada", () => {
@@ -266,11 +266,11 @@ describe("ninguna pagina declarada y no escrita se pierde en silencio", () => {
       "note",
     ]);
     expect(huecosPorKind()).toEqual({
-      list: ["access", "export"],
-      note: ["access"],
-      folder: ["access"],
-      collection: ["access", "export"],
-      bookmark: ["access"],
+      list: ["export"],
+      note: [],
+      folder: [],
+      collection: ["export"],
+      bookmark: [],
     });
   });
 });

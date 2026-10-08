@@ -358,24 +358,24 @@ describe("la coleccion se maneja con el menu del registro", () => {
     expect(ids).toContain("delete");
   });
 
-  it("la fila de acceso esta pendiente y con nombre, no perdida", () => {
+  it("la fila de acceso ya no esta pendiente, y el hueco quedo vacio", () => {
     /*
       ------------------------------------------------------------------
-      EL HUECO ENTRE T2 Y T8, POR QUE ESTA ESCRITO Y NO OCULTO
+      EL HUECO QUE T8 CERRO, Y POR QUE EL TEST NO SE BORRO
       ------------------------------------------------------------------
 
-      `ORDEN_POR_KIND.collection` declara `access` ("quien mas lo tiene") desde
-      la T1, y `EntityMenuSheet` **la filtra**: la hoja no la puede montar
-      todavia porque `AccessPage` es de la T8, y una fila que al tocarse no abre
-      nada es peor que una fila que no esta —lo dice el propio `registry.tsx` al
-      explicar `disponible` sin `motivo`—.
+      Este test existia al reves: decia que `access` se filtraba porque su pagina
+      era de la T8, y enumeraba el hueco como una perdida declarada. T8 la monto y
+      el hueco se cerro, asi que **ahora** lo que se afirma es que no quedo nada.
 
-      O sea que entre la T2 y la T8 el menu de una coleccion tiene **menos** de lo
-      que el registro dice, y eso es una perdida. Se escribe aca para que sea una
-      decision y no un olvido, y el nombre es el de la tarea que la cierra.
+      El valor de haberlo tenido escrito es que la perdida fue una decision con
+      nombre y no un olvido — que es exactamente como se encontro `share` y `create`,
+      las otras dos. La diferencia es que esa la agarro el implementador de la T8 y
+      no el plan.
 
-      `export` no aparece en la lista porque es una capacidad: sin `caps.export`
-      la fila ni se ofrece, y el endpoint llega en la T9.
+      `export` sigue sin aparecer en la lista porque es una capacidad: sin
+      `caps.export` la fila ni se ofrece, y el endpoint llega en la T9. Es el unico
+      hueco que queda, y sigue anotado con su nombre.
     */
     const montadas = paginasMontadas();
     const sinMontar = accionesPara(COLECCION)
@@ -384,7 +384,7 @@ describe("la coleccion se maneja con el menu del registro", () => {
 
     // El conjunto de pendientes declarados, con la tarea que cierra cada hueco.
     const PENDIENTES: Record<string, string> = {
-      access: "T8: AccessPage, con SharedBadge y useShareReach",
+      export: "T9: ExportPage, con los dos formatos y ExportResultSheet",
     };
 
     for (const page of sinMontar) {
@@ -394,9 +394,10 @@ describe("la coleccion se maneja con el menu del registro", () => {
       ).toBeTruthy();
     }
 
-    // Y hoy el hueco es exactamente ese, no un subconjunto: cuando la T8 monte la
-    // suya, esta linea hay que borrarla y el conjunto tiene que quedar vacio.
-    expect(sinMontar).toEqual(["access"]);
+    // Y hoy el hueco esta vacio: `access` se monto en la T8 y `export` es una
+    // capacidad, asi que ni se ofrece. Cuando la T9 monte la suya, el mapa de
+    // arriba se queda con una sola entrada y el conjunto sigue vacio.
+    expect(sinMontar).toEqual([]);
   });
 
   it("la hoja vieja de coleccion no existe mas", () => {

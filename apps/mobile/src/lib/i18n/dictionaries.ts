@@ -383,6 +383,8 @@ const es = {
   "lists.deleteConfirm": "Eliminar la lista",
   "lists.deleteFolderBody":
     "Se elimina la carpeta. Las listas que había dentro se quedan, sin carpeta.",
+  "share.reachFailed": "No he podido preguntar a quien mas le llega esto.",
+  "share.reachNotYet": "Todavia no se puede saber a quien mas le llega.",
   "share.reachTitle": "A cuántas personas afecta",
   "share.reachBody":
     "Esta lista también la tienen {count} personas. Si la eliminas, desaparece de sus móviles sin aviso previo.",
@@ -1643,6 +1645,8 @@ const en: Record<TranslationKey, string> = {
   "lists.deleteConfirm": "Delete the list",
   "lists.deleteFolderBody":
     "The folder is deleted. The lists inside it are kept, with no folder.",
+  "share.reachFailed": "I could not ask who else this reaches.",
+  "share.reachNotYet": "It is not known yet who else this reaches.",
   "share.reachTitle": "How many people this affects",
   "share.reachBody":
     "{count} other people have this list too. If you delete it, it disappears from their phones without warning.",

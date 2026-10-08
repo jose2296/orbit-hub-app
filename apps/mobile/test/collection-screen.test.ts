@@ -430,13 +430,13 @@ describe("el menu de la cabecera es el del registro y no una hoja propia", () =>
         .filter(puedeOfrecerse)
         .map((accion) => accion.id);
 
-    expect(ofrecibles()).toEqual(["rename", "delete"]);
-    // `access` esta en el orden del registro desde la T1 y la hoja la filtra
-    // porque `AccessPage` es de la T8; `export` no sale porque es una capacidad y
-    // no hay endpoint. Las dos ausencias estan anotadas con su tarea en
-    // `entity-menu-sheet.test.ts`, asi que aca no se repiten.
+    expect(ofrecibles()).toEqual(["rename", "access", "delete"]);
+    // `access` se ofrece desde que T8 monto su pagina: el registro no cambio, lo
+    // que cambio es `PAGINAS_MONTADAS`. `export` sigue sin salir porque es una
+    // capacidad y no hay endpoint; esa ausencia esta anotada con su tarea en
+    // `entity-menu-sheet.test`.
     expect(ORDEN_POR_KIND.collection).toEqual(["rename", "access", "export", "delete"]);
-    expect(ofrecibles()).not.toContain("access");
+    expect(ofrecibles()).toContain("access");
     expect(ofrecibles()).not.toContain("export");
 
     // Lo compartido sale sin borrar y con el motivo a la vista: la misma regla
