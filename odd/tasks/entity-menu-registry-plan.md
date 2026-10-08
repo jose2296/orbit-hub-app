@@ -325,6 +325,35 @@ git commit -m "feat(collections): pantalla propia con header y menu completo"
 > ocho de las nueve hojas **no estan en este plan**: son un corte propio. T7 tiene que
 > dar vuelta la senal del suyo; los otros cuatro quedan como deuda registrada.
 
+### Task 11: `SharePage` — la regresion que T6 abrio
+
+**Archivos:**
+- Crear: `apps/mobile/src/components/menus/pages/share-page.tsx`
+- Test: `apps/mobile/test/share-page.test.ts`
+
+**Interfaces — produce:** `SharePage({ ctx, onClose }: SharePageProps)`.
+
+**Va en el PR 3, con T6 y T7. No es opcional.**
+
+`MenuPageId` declara `"share"` y `ACCIONES.share` declara `destino: { tipo: "pagina",
+page: "share" }`, pero **ninguna de las diez tareas escribia el componente que la
+monte**. `PAGINAS_MONTADAS` es `["rename", "icon", "delete"]`, asi que el filtro saca
+la fila y **compartir una lista deja de existir**. No es una omision: la hoja vieja lo
+tenia funcionando, con `ShareNodeForm` montado en `page === "share"`. T6 lo perdio, y
+T7 va a perder el de nota y el de carpeta.
+
+`ShareNodeForm` (`components/shares/share-node-sheet.tsx:59`) **ya existe y anda**. Lo
+que falta es la pagina que lo monte dentro del `Sheet` de la hoja, y el `onSave` con su
+`saveDisabledReason`, leyendo `ShareFormPublicado` como hacen las hojas viejas.
+
+Tambien hay que **recuperar el copy**: la lista decia `share.title` ("Compartir
+{name}") y el registro usa `share.pickSomeone`. La lista era la unica que se
+diferenciaba; nota y carpeta decian `share.pickSomeone` y no cambia nada para ellas.
+
+Ojo con `onClose`: la hoja vieja, al compartir, **no cerraba el menu**.
+
+---
+
 ### Task 6: Migrar `ListMenuSheet`
 
 **Archivos:**
