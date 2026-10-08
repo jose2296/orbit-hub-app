@@ -420,12 +420,11 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
 
       Queda una sola pendiente, `access`, que la cierra la T8.
 
-      Y lo que **no** se repone aca es el `onCreateInside` de la pantalla:
-      `EntityMenuSheet` ya tiene por donde (`MenuHandlers.crearDentro`) y
-      `menuDeCarpeta` lo reenvia, pero `[workspaceId].tsx` no lo pasa todavia y
-      escribirlo ahi esta fuera de la superficie de esta tarea. Hasta que lo pase, la
-      fila se ofrece y el toque cae en `sinHandler()`, que avisa en vez de fallar en
-      silencio —esta escrito con nombre en `test/create-page.test.ts`.
+      Y el `onCreateInside` de la pantalla tambien: `EntityMenuSheet` tiene por donde
+      (`MenuHandlers.crearDentro`), `menuDeCarpeta` lo reenvia y `[workspaceId].tsx` lo
+      pasa —con el destino y todo, en el fix 1 de la T12—. Que el destino no fuera solo
+      el handler era la mitad mas grave: `onCreate` tenia `folderId: null` en las cuatro
+      ramas, y `null` es **la raiz del espacio**, no un default.
     */
     const montadas = paginasMontadas();
     const sinMontar = accionesPara(CARPETA)

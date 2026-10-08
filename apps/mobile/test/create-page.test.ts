@@ -63,7 +63,7 @@ const CARPETA = {
   position: 0,
 } as Folder;
 
-/** Lo que el adaptador necesita, sin el callback que la pantalla todavia no pasa. */
+/** Lo que el adaptador necesita; el callback va en el test que lo exercise. */
 const accionesDePrueba: AccionesDeCarpeta = {
   layout: [],
   save: () => {},
@@ -400,10 +400,12 @@ describe("lo que hace la hoja con el tipo, y lo que no hace", () => {
       quien esta usando la app—. `sinHandler()` lo muestra y no cierra, y **sin**
       `Reintentar`: repetir algo que no se puede hacer no es un reintento.
 
-      Y esto importa mas de lo que parece: hoy ninguna pantalla pasa `createInside`, asi
-      que el camino real es este. La fila se ofrece y el toque avisa. Lo contrario —
+      Y esto **no** es decoracion: cuando la pagina se escribio, ninguna pantalla pasaba
+      `createInside`, asi que el camino real era este —la fila se ofrecia y el toque
+      avisa—, y por eso la red estaba. Despues lo paso `[workspaceId].tsx` (fix 1 de la
+      T12), asi que hoy es el camino de un call site que se olvidara. El contrario —
       esconder la fila porque no hay handler— es el modo de fallo que esta tarea vino a
-      cerrar.
+      cerrar, y por eso el handler **no** decide si la fila se ofrece.
     */
     const bloque = bloqueDe("crearDentro");
 
@@ -437,26 +439,26 @@ describe("lo que hace la hoja con el tipo, y lo que no hace", () => {
     expect(menu.handlers.crearDentro).toBe(createInside);
   });
 
-  it("hoy la capacidad va puesta y el handler no llega, y las dos mitades se afirman juntas", () => {
+  it("la capacidad va puesta aunque no haya handler, y las dos mitades se afirman juntas", () => {
     /*
       ------------------------------------------------------------------
-      EL HUECO QUE ESTA TAREA DEJA ESCRITO, Y POR QUE SE AFIRMA
+      POR QUE ESTE GUARD SIGUE VALIENDO CON LA PANTALLA YA CABLEADA
       ------------------------------------------------------------------
 
-      `menuDeCarpeta` reenvia `acciones.createInside` a `handlers.crearDentro`, y la
-      unica pantalla que monta el menu de una carpeta —`[workspaceId].tsx`— **no lo
-      pasa**: eso es comportamiento de pantalla, y escribirlo esta fuera de la
-      superficie de esta tarea.
+      Porque afirma el contrato del **adaptador**, no el estado de un call site: aqui se
+      construye `accionesDeCarpeta` sin `createInside` a proposito, y el adaptador tiene
+      que devolver la capacidad puesta y el handler ausente.
 
-      Lo que se afirma aca es el estado honesto de las dos mitades: la capacidad va en
-      `true` —la fila se ofrece— y el handler llega `undefined` —el toque avisa—. Las
-      dos se comprueban juntas a proposito, porque la tentacion de atar la capacidad al
-      callback —que es lo que hace `nota.ts` con `saveAsTemplate`— haria que la fila
-      **desapareciera sola**, sin error y sin test rojo, que es el mismo modo de fallo
-      que esta tarea cierra.
+      Eso no es lo que hace la app —`[workspaceId].tsx` si lo pasa, desde el fix 1 de la
+      T12— sino lo que haria **cualquier** call site que se olvide. Y es justo el caso
+      que hay que fijar: si la capacidad dependiera del callback, un call site que se
+      olvidara perderia la fila **sin error y sin test rojo**, que es el modo de fallo
+      que esta tarea vino a cerrar dos veces. La fila se ofrece y el toque avisa con
+      `sinHandler()`, y eso se decide en la hoja, no aqui.
 
-      Y en cuanto una pantalla lo pase, este test sigue valiendo: lo que cambia es que
-      habra que **borrar este bloque**, no el codigo.
+      Y la razon por la que la tentacion existe: es lo que hace `nota.ts` con
+      `saveAsTemplate`, y ahi tiene sentido porque no hay ninguna otra pantalla que abra
+      ese menu. Para "crear aqui" si la hay.
     */
     const menu = menuDeCarpeta(CARPETA, accionesDePrueba);
 
