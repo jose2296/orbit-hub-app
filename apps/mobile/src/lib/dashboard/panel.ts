@@ -148,21 +148,109 @@ export const CARD_SIZES: readonly { w: number; h: number }[] = [
  * first size that happens to be wide enough. The `columns`/`rows` arguments are
  * there so that a small grid in a test only offers sizes that fit it, and a
  * card is never snapped to something the screen cannot hold.
+ *
+ * **Los defaults de `columns` y `rows` son `4` y `6` escritos a mano, y no
+ * `PANEL_COLUMNS` ni `PANEL_ROWS`.** Esa diferencia de dos letras es un crash:
+ * redimensionar una tarjeta pineada cerraba la app en Android con
+ * `Property 'PANEL_COLUMNS' doesn't exist`, en esta linea, sin que haya nada que
+ * leer de raro en ella.
+ *
+ * **Un parametro por defecto se evalua antes de entrar al cuerpo, y el cuerpo de un
+ * worklet corre en el hilo de interfaz.** El plugin de Babel de Reanimated compila
+ * un binding de modulo `export`ado como un acceso al namespace del modulo, y en ese
+ * hilo el namespace viaja serializado como `{}` — de ahi que el error diga "no
+ * existe" un nombre que esta cien lineas mas arriba en el mismo archivo. Que el
+ * stack apunte a la linea de la firma y no a la primera sentencia es justamente lo
+ * que hace que este bug se lea como un error de typescript y no como lo que es.
+ *
+ * **Un parametro por defecto que lee el scope de modulo no viaja al hilo de
+ * interfaz.** Ese es el hallazgo, y conviene que quede escrito porque la nota de
+ * arriba — la de por que el `'worklet'` es obligatorio — ya estaba y no alcanzaba:
+ * esa es la misma clase de fallo pero por otra razon, y la diferencia es que aqui el
+ * default se evalua *antes* del cuerpo, que es lo que lo hace invisible en una
+ * lectura.
+ *
+ * **Y en la web no se ve, que es lo que lo hace caro de encontrar:** los dos hilos
+ * son el mismo y todo resuelve. Los 117 archivos de test tampoco lo ven, porque en
+ * Node el scope de modulo resuelve normal: `test/panel-grid.test.ts` llama
+ * `snapSize(w, h)` con los defaults y pasa. Esta clase de bug es estructuralmente
+ * invisible al test suite de comportamiento, asi que el unico RED posible es un
+ * guard estatico — `test/worklet-module-scope.test.ts` — y ese es el que lo caza.
+ *
+ * **Lo que se descarto, y por que:** quitarle el `export` a `PANEL_COLUMNS` hacia
+ * desaparecer la referencia sin tocar la firma, pero el nombre lo importan
+ * `panel-grid.tsx`, `layout.ts`, `pin.ts` y tres archivos de test, asi que el
+ * arreglo habria sido desarmar el modulo para tapar un sintoma. Pasarlo por
+ * argumento desde el gesto lo arregla para el llamado de hoy y deja el mismo
+ * default leyendo el modulo en el proximo que se escriba. **Un literal no depende
+ * de ninguna de las dos cosas**, y el costo — el numero repetido — es el unico que
+ * se puede pagar con un test, y esta funcion tiene tests de comportamiento que
+ * siguen en verde sin cambiar una sola expectation.
  */
 export function snapSize(
   w: number,
   h: number,
-  columns: number = PANEL_COLUMNS,
-  rows: number = PANEL_ROWS,
+  columns: number = 4,
+  rows: number = 6,
 ): { w: number; h: number } {
   'worklet';
-  const wantedW = Number.isFinite(w) ? w : MIN_CARD_COLUMNS;
-  const wantedH = Number.isFinite(h) ? h : MIN_CARD_ROWS;
+  /**
+   * **El catalogo de los dieciseis tamanos y los minimos, repetidos adentro del
+   * worklet a proposito.**
+   *
+   * Lo de arriba alcanza para los defaults — un literal no necesita el scope de
+   * modulo — pero el cuerpo si leia cuatro cosas de mas: los minimos, por el
+   * `Number.isFinite` y por el `best` inicial, y `CARD_SIZES` dos veces en el
+   * recorrido. **Todas estan aqui por la misma razon y por el mismo motivo:** un
+   * binding de modulo `export`ado llega al hilo de interfaz como un acceso a un
+   * namespace que es `{}`.
+   *
+   * **El costo del catalogo es real y esta anotado para que no se lea como un
+   * descuido:** son dieciseis pares de numeros reasignados en **cada llamada**, y
+   * `snapSize` se llama en cada frame de un resize — hasta sesenta veces por
+   * segundo con el dedo en la esquina. Es memoria de joven generacion y el
+   * recolector se la lleva sin que nadie la espere; la alternativa seria una
+   * constante de modulo, que es exactamente el crash. **Un array de dieciseis
+   * entradas por frame es un precio que se paga sin drama; el otro precio era la
+   * app cerrandose.**
+   *
+   * **Por que no se van a despegar del `export`:** `test/panel-grid.test.ts` corre
+   * los dieciseis tamanos del catalogo con los defaults — `snapSize(size.w, size.h)`
+   * sin columnas ni filas — y `test/worklet-module-scope.test.ts` compara ademas lo
+   * que los defaults responden contra lo que responden con los exports de punta a
+   * punta. **El `rows` de la firma es el unico que queda fuera de las dos
+   * comparaciones:** la tarjeta mas alta del catalogo es de cuatro filas, asi que un
+   * default de cinco y uno de seis contestan lo mismo y ningun test de
+   * comportamiento los puede distinguir. Queda anotado como limite conocido en
+   * `test/worklet-module-scope.test.ts`, que es el archivo que anota los limites.
+   */
+  const minima = { w: 1, h: 1 };
+  const catalogo: { w: number; h: number }[] = [
+    // 1, 2, 2, 3, 3, 4, 4, 4, 6, 6, 8, 8, 9, 12, 12, 16 celdas.
+    { w: 1, h: 1 },
+    { w: 1, h: 2 },
+    { w: 2, h: 1 },
+    { w: 1, h: 3 },
+    { w: 3, h: 1 },
+    { w: 1, h: 4 },
+    { w: 2, h: 2 },
+    { w: 4, h: 1 },
+    { w: 2, h: 3 },
+    { w: 3, h: 2 },
+    { w: 2, h: 4 },
+    { w: 4, h: 2 },
+    { w: 3, h: 3 },
+    { w: 3, h: 4 },
+    { w: 4, h: 3 },
+    { w: 4, h: 4 },
+  ];
+  const wantedW = Number.isFinite(w) ? w : minima.w;
+  const wantedH = Number.isFinite(h) ? h : minima.h;
 
-  let best = { w: MIN_CARD_COLUMNS, h: MIN_CARD_ROWS };
+  let best = minima;
   let bestDistance = Number.MAX_VALUE;
-  for (let index = 0; index < CARD_SIZES.length; index += 1) {
-    const size = CARD_SIZES[index]!;
+  for (let index = 0; index < catalogo.length; index += 1) {
+    const size = catalogo[index]!;
     if (size.w > columns || size.h > rows) continue;
     const dw = size.w - wantedW;
     const dh = size.h - wantedH;
@@ -383,11 +471,18 @@ function nearestFreeSpot(
  * fits. Positions are cells and never pixels, so the same arrangement is the same
  * panel on a phone and on a laptop — the arrangement belongs to the person and
  * not to the screen they made it on.
+ *
+ * **Los defaults de `columns` y `rows` son `4` y `6` escritos, y no `PANEL_COLUMNS`
+ * ni `PANEL_ROWS`, por lo mismo que en `snapSize`:** un parametro por defecto se
+ * evalua antes de entrar al cuerpo y un binding de modulo `export`ado no llega al
+ * hilo de interfaz. La cuenta completa — por que el namespace llega como `{}`, por
+ * que la web no lo ve y por que los 117 archivos de test tampoco — esta en la nota
+ * de `snapSize`, que es el mismo bug en la misma linea.
  */
 export function placeCards(
   cards: WantedCard[],
-  columns: number = PANEL_COLUMNS,
-  rows: number = PANEL_ROWS,
+  columns: number = 4,
+  rows: number = 6,
   holdId: string | null = null,
 ): PlacedCard[] {
   'worklet';
@@ -952,6 +1047,15 @@ export function sizeFromDrag(
  * from one column to three rows is not a thing the finger did, and a card that
  * leaps three rows for a sideways movement is a card whose height is not the
  * person's to decide.
+ *
+ * **El `4` de los dos lados es `MAX_CARD_COLUMNS` y `MAX_CARD_ROWS` escrito, y el
+ * `1` del piso es el mismo `MIN_CARD_COLUMNS` de siempre.** Estas dos referencias
+ * vivian en el cuerpo y no en la firma, asi que este caso es **distinto** del de
+ * `snapSize`: no se rompia al entrar a la funcion sino en la primera sentencia que
+ * las usaba, y solo si el gesto llegaba hasta esta linea. El motivo de moverlas es el
+ * mismo — un binding de modulo `export`ado llega al hilo de interfaz como un acceso
+ * a un namespace que es `{}`, que es un crash con el dedo en una esquina — y la
+ * nota de `snapSize` cuenta el resto, incluido por que la web nunca lo ve.
  */
 export function oneStepTowards(
   from: { w: number; h: number },
@@ -960,7 +1064,11 @@ export function oneStepTowards(
   'worklet';
   const w = from.w + Math.sign(to.w - from.w);
   const h = from.h + Math.sign(to.h - from.h);
-  return { w: Math.min(Math.max(w, 1), MAX_CARD_COLUMNS), h: Math.min(Math.max(h, 1), MAX_CARD_ROWS) };
+  const tope = 4;
+  return {
+    w: Math.min(Math.max(w, 1), tope),
+    h: Math.min(Math.max(h, 1), tope),
+  };
 }
 
 /**
@@ -1027,13 +1135,18 @@ export function resizeStartSize(
  * the screen never sees the edge. Which is exactly what happened here — a card that
  * could never be pushed against the right of the panel, on a panel whose whole
  * point is being pushed against the right of the panel.
+ *
+ * **Los defaults de `columns` y `rows` son `4` y `6` escritos, y no `PANEL_COLUMNS`
+ * ni `PANEL_ROWS`, por lo mismo y por el mismo motivo que en `snapSize`.** Sin la
+ * directiva el error salia en la linea de la firma; con ella, en el hilo de
+ * interfaz, donde los defaults ya se evaluaron.
  */
 export function heldSpot(
   size: { w: number; h: number },
   center: { x: number; y: number },
   cell: { width: number; height: number; gap: number },
-  columns: number = PANEL_COLUMNS,
-  rows: number = PANEL_ROWS,
+  columns: number = 4,
+  rows: number = 6,
 ): { x: number; y: number } {
   'worklet';
   const limit = snapSize(size.w, size.h);
@@ -1058,13 +1171,18 @@ export function heldSpot(
   };
 }
 
+/**
+ * **`4` y `6` escritos y no `PANEL_COLUMNS` ni `PANEL_ROWS` en los defaults**, por lo
+ * mismo que en `heldSpot` y `snapSize`: un parametro por defecto se evalua antes de
+ * entrar al cuerpo de un worklet, y ahi un binding de modulo `export`ado no existe.
+ */
 export function dropSpot(
   others: PlacedCard[],
   size: { w: number; h: number },
   center: { x: number; y: number },
   cell: { width: number; height: number; gap: number },
-  columns: number = PANEL_COLUMNS,
-  rows: number = PANEL_ROWS,
+  columns: number = 4,
+  rows: number = 6,
 ): { x: number; y: number } {
   'worklet';
   const limit = snapSize(size.w, size.h);
