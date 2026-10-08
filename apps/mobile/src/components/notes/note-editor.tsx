@@ -6,7 +6,7 @@ import type {
 } from "react-native-enriched-html";
 import { EnrichedTextInput } from "react-native-enriched-html";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
@@ -85,7 +85,7 @@ export interface NoteEditorProps extends Pick<
    * mention in with `setMention` on the editor ref. Leaving it out means the editor
    * has no mentions at all: no button, and typing `@` is just a character.
    */
-  onMentionRequest?: () => void;
+  onMentionRequest?: (source: "toolbar" | "typed") => void;
 }
 
 /** A style the toolbar can turn on and off over the current selection. */
@@ -178,6 +178,18 @@ const MENTION_BUTTON: ToolbarButton = {
 };
 
 /**
+ * The rows of the toolbar, for what this editor can do.
+ *
+ * A row with only one button in it looks like a stray control, so the mention
+ * joins the block row when there is no picture row for it to share.
+ */
+function toolbarRows({ image, mention }: { image: boolean; mention: boolean }): ToolbarButton[][] {
+  const tail = [...(image ? [IMAGE_BUTTON] : []), ...(mention && image ? [MENTION_BUTTON] : [])];
+  const block = [...BLOCK_BUTTONS, ...(mention && !image ? [MENTION_BUTTON] : [])];
+  return [INLINE_BUTTONS, block, tail].filter((row) => row.length > 0);
+}
+
+/**
  * Typing `- ` at the start of a line makes a bullet, and so on.
  *
  * This was an open question in `notes-editor.md`: the library has no markdown of
@@ -216,6 +228,10 @@ export function NoteEditor({
   const theme = useTheme();
   const t = useTranslation();
   const [state, setState] = useState<OnChangeStateEvent | null>(null);
+  // Whether the person is typing in the editor. A `@` in a document that is merely
+  // being drawn is reported as a trigger too, and only a `@` typed while focused
+  // should open the picker.
+  const focused = useRef(false);
   const { htmlStyle, bodyStyle } = useNoteHtmlStyle();
 
   const command = useCallback(
@@ -229,10 +245,10 @@ export function NoteEditor({
           onInsertImage?.();
           return;
         case "mention":
-          // Opens the mention flow at the cursor. The editor reports it through
-          // `onStartMention`, which is the one place the screen is asked for a
-          // picker, so the button and typing `@` cannot open two.
-          input.startMention("@");
+          // Nothing is inserted here. The `@` is put in when something is picked,
+          // so cancelling the picker leaves no stray indicator behind for the
+          // editor to take as a mention the next time the page opens.
+          onMentionRequest?.("toolbar");
           return;
         case "bold":
           input.toggleBold();
@@ -275,7 +291,7 @@ export function NoteEditor({
           break;
       }
     },
-    [editorRef, onInsertImage],
+    [editorRef, onInsertImage, onMentionRequest],
   );
 
   /**
@@ -315,16 +331,7 @@ export function NoteEditor({
             backgroundColor: theme.colors.background,
           }}
         >
-          {[
-            INLINE_BUTTONS,
-            BLOCK_BUTTONS,
-            [
-              ...(onInsertImage ? [IMAGE_BUTTON] : []),
-              ...(onMentionRequest ? [MENTION_BUTTON] : []),
-            ],
-          ]
-            .filter((buttons) => buttons.length > 0)
-            .map(
+          {toolbarRows({ image: !!onInsertImage, mention: !!onMentionRequest }).map(
             (buttons, rowIndex) => (
               <ScrollView
                 key={rowIndex}
@@ -412,7 +419,19 @@ export function NoteEditor({
         onChangeText={onChanged}
         onChangeState={(event) => setState(event.nativeEvent)}
         mentionIndicators={onMentionRequest ? ["@"] : undefined}
-        onStartMention={onMentionRequest ? () => onMentionRequest() : undefined}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onBlur={() => {
+          focused.current = false;
+        }}
+        onStartMention={
+          onMentionRequest
+            ? () => {
+                if (focused.current) onMentionRequest("typed");
+              }
+            : undefined
+        }
         style={{
           flex: 1,
           paddingHorizontal: theme.spacing.lg,

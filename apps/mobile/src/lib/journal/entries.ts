@@ -16,7 +16,7 @@ import {
 } from "@orbit-hub/contracts";
 
 import type { MentionLookup, MentionTarget } from "./mentions";
-import { routeForMention } from "./mentions";
+import { nameOfRecord, routeForMention } from "./mentions";
 import {
   enqueueOperation,
   getLocalStoreReady,
@@ -149,12 +149,7 @@ export async function mentionTargetIndex(): Promise<Map<string, MentionTarget>> 
       const payload = JSON.parse(row.payload) as Record<string, unknown>;
       const pending = row.pending ? (JSON.parse(row.pending) as Record<string, unknown>) : {};
       const merged = { ...payload, ...pending };
-      const name =
-        type === "note"
-          ? String(merged["title"] ?? "")
-          : type === "bookmark"
-            ? String(merged["title"] ?? "")
-            : String(merged["name"] ?? "");
+      const name = nameOfRecord(type, merged);
       if (name.length === 0) continue;
       index.set(`${type}:${row.entityId}`, {
         name,

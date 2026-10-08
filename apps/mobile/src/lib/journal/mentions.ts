@@ -151,3 +151,15 @@ export const MENTION_NAME_MAX = 120;
 export function mentionNameFor(name: string): string {
   return name.replace(/["<>]/g, "").trim().slice(0, MENTION_NAME_MAX);
 }
+
+/**
+ * The name a record of this type is known by.
+ *
+ * Not the same field everywhere: a space and a folder are `name`, and a list, a
+ * note and a bookmark are `title`. Reading `name` for all of them made every list
+ * a chip could not name, which is the kind of mistake a single shared field hides.
+ */
+export function nameOfRecord(type: MentionType, record: Record<string, unknown>): string {
+  const field = type === "workspace" || type === "folder" ? "name" : "title";
+  return String(record[field] ?? "");
+}

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
@@ -34,6 +34,11 @@ export function CalendarSheet({
   // The month on screen is its own state: moving through months must not move
   // the day the journal is showing.
   const [shown, setShown] = useState(() => monthOfDay(selectedDay));
+  // Each opening starts on the month of the day that is selected now, not on the
+  // month the last opening was left on.
+  useEffect(() => {
+    if (visible) setShown(monthOfDay(selectedDay));
+  }, [visible, selectedDay]);
   const weeks = useMemo(() => monthGrid(shown.year, shown.monthIndex), [shown]);
   const today = todayKey();
 

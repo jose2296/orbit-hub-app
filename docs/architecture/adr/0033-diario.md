@@ -1,6 +1,24 @@
 # ADR 0033 — Diario: una nota por día, de la cuenta y no de un espacio
 
-**Estado:** Propuesta
+**Estado:** Aceptada
+
+## Lo que cambió al construirlo
+
+- **Un `create` sobre un día que ya tiene otro texto no se descarta.** Si un teléfono escribe
+  un día sin haber recibido la entrada que otro dispositivo ya creó, el servidor la trata como una
+  fusión sin base común, y sale como **conflicto** que la persona elige. Descartarla en silencio
+  habría perdido palabras; un duplicado habría roto la regla de una entrada por día.
+- **Guardar solo lo que cambia.** El editor avisa de un cambio también cuando recibe su texto al
+  abrir el día. Sin una comparación con lo último cargado o guardado, cada día que se abría se
+  escribía en el servidor (la versión subía sin que nadie escribiera).
+- **El servidor valida el documento en toda escritura, no solo en la creación.** Al revisar esto
+  se encontró que un `update` de una nota no validaba el documento. Se corrigió para las notas
+  también; hay una prueba que falla sin el cambio.
+- **La exportación incluye el diario** (`journal`, con su contador). Un campo nuevo es opcional al
+  leer, para que las exportaciones anteriores sigan siendo válidas.
+- **El gesto de deslizar vive en la cabecera.** Un arrastre que empieza en el título cambia de día.
+  Un arrastre que empieza en un botón de la cabecera no se ha conseguido en la web y queda por
+  probar en el emulador. Las flechas y el calendario hacen lo mismo en cualquier caso.
 
 ## Contexto
 

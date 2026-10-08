@@ -1,6 +1,20 @@
 # ADR 0034 — Mención: un elemento de la app dentro de una nota, como chip
 
-**Estado:** Propuesta
+**Estado:** Aceptada
+
+## Lo que cambió al construirlo
+
+- **El `@` no se inserta hasta que se elige algo.** El botón solo abre el selector. Insertar el
+  `@` al pulsar el botón dejaba un `@` suelto si la persona cancelaba, y el editor lo tomaba como
+  disparador cada vez que se abría el día, con el selector tapando la pantalla.
+- **Un `@` escrito a mano solo abre el selector con el editor enfocado.** Sin esa guarda, cargar un
+  día que contiene un `@` al final lo reabría.
+- **Los chips del editor no navegan.** En esta versión de la librería `onMentionPress` solo existe
+  en la vista de lectura. El diario muestra debajo de la barra una franja "Enlaces de este día" con
+  los mismos chips como botones, que sí llevan a la ruta.
+- **El nombre se toma del campo que tiene cada tipo.** Una lista, una nota y un marcador usan
+  `title`; un espacio y una carpeta usan `name`. Leer `name` para todos dejaba sin nombre a cada
+  lista. Un test fija la regla.
 
 ## Contexto
 

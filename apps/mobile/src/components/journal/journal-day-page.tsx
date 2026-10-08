@@ -52,12 +52,18 @@ export function JournalDayPage({
   recordRef.current = record;
 
   const [initialDocument, setInitialDocument] = useState<string | null>(null);
+  // The body as it was loaded or last written, to tell a real change from an echo.
+  const savedRef = useRef<string>("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Where the picker was asked for. A `@` typed by hand has already started the
+  // mention in the editor; the toolbar button has not, and must start it itself.
+  const mentionSource = useRef<"toolbar" | "typed">("toolbar");
 
   // The text is drawn once, when the entry and the names it links to are both in
   // the cache. After that the editor owns the text and the cache does not reset it.
   useEffect(() => {
     if (initialDocument !== null || !loaded || targets === null) return;
+    savedRef.current = record?.document ?? "";
     setInitialDocument(
       renderMentions(record?.document ?? "", lookupIn(targets), {
         mode: "editing",
@@ -71,10 +77,16 @@ export function JournalDayPage({
       createAutosave({
         read: async () => (editorRef.current ? editorRef.current.getHTML() : ""),
         save: async (document) => {
+          // The editor reports a change when it is given its text, as well as when
+          // somebody types. A save that changes nothing is not a write: without this
+          // every day a person looked at would be saved on the way out.
+          if (document === savedRef.current) return;
           if (recordRef.current === null && noteDocumentToPlainText(document).length === 0) {
+            savedRef.current = document;
             return;
           }
           await writeJournalEntry(userId, day as JournalDay, document);
+          savedRef.current = document;
         },
       }),
     [userId, day],
@@ -96,6 +108,7 @@ export function JournalDayPage({
     setPickerOpen(false);
     const input = editorRef.current;
     if (!input) return;
+    if (mentionSource.current === "toolbar") input.startMention("@");
     input.setMention("@", mentionNameFor(pick.name), { type: pick.type, id: pick.id });
     autosave.schedule();
   };
@@ -163,7 +176,10 @@ export function JournalDayPage({
         defaultValue={initialDocument}
         placeholder={t("journal.placeholder")}
         onChanged={() => autosave.schedule()}
-        onMentionRequest={() => setPickerOpen(true)}
+        onMentionRequest={(source) => {
+          mentionSource.current = source;
+          setPickerOpen(true);
+        }}
       />
 
       <MentionPickerSheet

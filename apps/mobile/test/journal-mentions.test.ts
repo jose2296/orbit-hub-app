@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MentionTarget } from '@/lib/journal/mentions';
-import { mentionNameFor, mentionsIn, renderMentions, routeForMention } from '@/lib/journal/mentions';
+import { mentionNameFor, mentionsIn, nameOfRecord, renderMentions, routeForMention } from '@/lib/journal/mentions';
 
 const LIST_ID = '6f1c0a2e-3b8d-4c1e-9a7f-2d5e8b9c0a11';
 const NOTE_ID = '0b9e8d7c-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
@@ -109,5 +109,19 @@ describe('mentionNameFor', () => {
   it('drops the characters a chip cannot carry, and keeps it within the limit', () => {
     expect(mentionNameFor('Lista "de" <la> compra')).toBe('Lista de la compra');
     expect(mentionNameFor('x'.repeat(200))).toHaveLength(120);
+  });
+});
+
+describe('nameOfRecord', () => {
+  it('reads a space and a folder by name, and a list, a note and a bookmark by title', () => {
+    expect(nameOfRecord('workspace', { name: 'Casa' })).toBe('Casa');
+    expect(nameOfRecord('folder', { name: 'Compras' })).toBe('Compras');
+    expect(nameOfRecord('list', { title: 'Lista de la compra' })).toBe('Lista de la compra');
+    expect(nameOfRecord('note', { title: 'Receta' })).toBe('Receta');
+    expect(nameOfRecord('bookmark', { title: 'Artículo' })).toBe('Artículo');
+  });
+
+  it('gives an empty name rather than inventing one', () => {
+    expect(nameOfRecord('list', { name: 'Lo que no es su campo' })).toBe('');
   });
 });
