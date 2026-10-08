@@ -321,6 +321,8 @@ Cada una es un work unit y cierra con su commit.
   `collectionJson` / `collectionCsv` en `exportService`,
   `GET /collections/:id/export` por `sendFile` (bytes, no envelope), y
   `ExportPage`.
+- [x] **T11** `SharePage`: la pagina que faltaba y hacia falta. Comparte con
+      lista, nota y carpeta. **En el PR 3.**
 - [ ] **T10** Compartir coleccion y bookmark: los dos valores del enum, las ramas
   de `resolveTarget`, y los permisos de `:220` y `:235`. Sin migracion de base.
 
