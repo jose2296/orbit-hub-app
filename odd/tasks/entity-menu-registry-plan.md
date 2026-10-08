@@ -303,6 +303,21 @@ git commit -m "feat(collections): pantalla propia con header y menu completo"
 
 ---
 
+> **PRERREQUISITO QUE T6 DESCUBRIO T5, Y NO ES OPCIONAL**: el bug de `useSheetSucio`
+> no es de una hoja, es de **nueve**. `SheetSucioContexto.Provider` vive en
+> `sheet.tsx:630`, adentro del `<Modal>`, asi que el componente que pinta el
+> `<Sheet>` esta **fuera** del Provider y su `setSucio` es `() => {}`.
+>
+> Las nueve con la forma rota: `rename-sheet.tsx:43`, `note-menu-sheet.tsx:97`
+> (ademas con la variante que desarma al salir de la pagina), `template-menu-sheet.tsx:102`,
+> `save-template-sheet.tsx:95`, `where-note-sheet.tsx:33`, `item-edit-sheet.tsx:495`,
+> `create-sheet.tsx:195`, `workspace-create-sheet.tsx:62` y `share-save-sheet.tsx:94`.
+>
+> Y **cinco de ellas estan fijadas por guards de fuente que afirman la forma rota
+> existe**: `task-row-layout.test.ts:1236,1315,1426,1855,1908`. T6 no tiene que
+> arreglar solo lo suyo: tiene que **dar vuelta la senal de esos cinco guards**.
+> Deuda previa, no regresion de este plan.
+
 ### Task 6: Migrar `ListMenuSheet`
 
 **Archivos:**

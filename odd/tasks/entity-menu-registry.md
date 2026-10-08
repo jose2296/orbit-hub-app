@@ -308,7 +308,7 @@ Cada una es un work unit y cierra con su commit.
 - [x] **T3** `IconPage`, y extraer `BotonMenu` de `content-list.tsx` a un
   componente compartido exportado.
 - [x] **T4** Menu de fila de bookmark. **Esto es lo primero que se ve.**
-- [ ] **T5** Pantalla de coleccion.
+- [x] **T5** Pantalla de coleccion.
 - [ ] **T6** Migrar `ListMenuSheet`. Es la hoja mas completa: si el registro la
   reproduce entera, el registro alcanza.
 - [ ] **T7** Migrar `NoteMenuSheet` y `FolderMenuSheet`. El de carpeta ademas
