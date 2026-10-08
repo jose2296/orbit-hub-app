@@ -15,7 +15,6 @@ import {
 import { ContentList } from "@/components/content/content-list";
 import { FolderMenuSheet } from "@/components/folders/folder-menu-sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
-import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
 import { NoteMenuSheet } from "@/components/notes/note-menu-sheet";
 import { SaveTemplateSheet } from "@/components/notes/save-template-sheet";
 import { Screen } from "@/components/ui/screen";
@@ -29,6 +28,7 @@ import {
   withoutPinnedFolder,
 } from "@/lib/dashboard/pin";
 import { useLists } from "@/hooks/use-lists";
+import { menuDeLista } from "@/lib/menus/lista";
 import { useCollections } from "@/hooks/use-collections";
 import { useNotes } from "@/hooks/use-notes";
 import { createCollectionAction } from "@/lib/collections/actions";
@@ -61,7 +61,7 @@ export default function WorkspaceScreen() {
     (folderId: string) => isFolderPinned(layout, folderId),
     [layout],
   );
-  const { lists, createList } = useLists({ workspaceId });
+  const { lists, createList, updateList, deleteList, duplicateList } = useLists({ workspaceId });
   const { notes, createNote } = useNotes({ workspaceId });
   const { collections, bookmarkCounts } = useCollections(workspaceId);
   const [collectionFor, setCollectionFor] = useState<Collection | null>(null);
@@ -117,6 +117,28 @@ export default function WorkspaceScreen() {
   /** The folder a list lives in, for the menu to say where it is. */
   const folderOf = (list: List) =>
     folders.find((folder) => folder.id === list.folderId) ?? null;
+
+  /**
+   * The list menu, and the **only** one of this screen's sheets that opens on a
+   * row of the content rather than on the space.
+   *
+   * `menuFor` is shared with the folder and the note menus, so the list arrives
+   * wrapped in a discriminated union and the other two are still sheets of their
+   * own. That is a pending cut and not this one: unifying those three menus is
+   * T7, and doing it here would have meant migrating folder and note inside the
+   * task whose whole point is that the list alone is enough to prove the registry.
+   */
+  const listaDelMenu = menuFor?.kind === "list" ? menuFor.list : null;
+  const menuLista = menuDeLista(listaDelMenu, {
+    folder: listaDelMenu ? folderOf(listaDelMenu) : null,
+    t,
+    layout,
+    save,
+    updateList,
+    deleteList,
+    duplicateList,
+    // No states row: this is the space, not a board.
+  });
 
   /** How many lists are inside a folder, for the delete to say what it takes. */
   const folderListCount = (folder: Folder | null) =>
@@ -325,9 +347,13 @@ export default function WorkspaceScreen() {
         onClose={() => setTemplateFor(null)}
       />
 
-      <ListMenuSheet
-        list={menuFor?.kind === "list" ? menuFor.list : null}
-        folder={menuFor?.kind === "list" ? folderOf(menuFor.list) : null}
+      <EntityMenuSheet
+        ctx={menuLista.ctx}
+        icon={menuLista.icon}
+        conteo={menuLista.conteo}
+        pinned={menuLista.pinned}
+        subtitulo={menuLista.subtitulo}
+        handlers={menuLista.handlers}
         onClose={closeSheets}
       />
 

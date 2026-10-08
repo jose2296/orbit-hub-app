@@ -18,11 +18,13 @@ import {
   VerticalMediaCarousel,
   type VerticalMediaItem,
 } from "@/components/media/vertical-media-carousel";
-import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { Screen } from "@/components/ui/screen";
+import { useDashboard } from "@/hooks/use-dashboard";
 import { useLists } from "@/hooks/use-lists";
 import { useTranslation } from "@/lib/i18n";
+import { menuDeLista } from "@/lib/menus/lista";
 import { canReorder, orderItems } from "@/lib/lists/item-presentation";
 import { mediaCardOf } from "@/lib/lists/media-card";
 import { useIsWide } from "@/lib/layout/width";
@@ -122,7 +124,28 @@ export function MediaListScreen({
    * lives on the list, and a screen that only reads it is a screen that shows the
    * order and cannot change it.
    */
-  const { setOrderMode } = useLists({});
+  const { setOrderMode, updateList, deleteList, duplicateList } = useLists({});
+  const { layout, save } = useDashboard();
+  /*
+    The list menu, and **the same one the task screen and the space mount**.
+
+    This component takes its props from the screen above it and it is also mounted
+    from two other places, so the normalization is not written here either: what
+    this screen contributes is the folder it was handed and the three writes of
+    `useLists`. What it used to hand over instead was the whole `list`, and what the
+    sheet used to do with it —count the items for the delete, ask the dashboard
+    whether it is pinned, normalize the name— is now one function in
+    `lib/menus/lista.ts`.
+  */
+  const menuLista = menuDeLista(listOpen ? list : null, {
+    folder: list?.folderId ? (folders.find((f) => f.id === list.folderId) ?? null) : null,
+    t,
+    layout,
+    save,
+    updateList,
+    deleteList,
+    duplicateList,
+  });
 
   const [pestana, setPestana] = useState<MediaTab>("pending");
   const [filtro, setFiltro] = useState<MediaFilter>(EMPTY_MEDIA_FILTER);
@@ -360,24 +383,24 @@ export function MediaListScreen({
         It was `list ? ... : null`, and a list on this screen is never null, so
         the sheet came up on its own the moment the screen opened — and could not
         be closed, because the thing it showed was not state anybody could set
-        back. `ListMenuSheet` takes the list or nothing as its "is it open" signal,
+        back. `menuDeLista` takes the list or nothing as its "is it open" signal,
         which is a trap: the same prop means "which list" and "is it open", and
         passing a real one says yes for ever.
 
-        So the gate is the state, **and it stays mounted**: pressing a format calls
-        `onClose()` before asking for the file, and under a conditional mount that
-        would unmount this and take the export with it — the sheet of results would
-        arrive at a component that is not there. Mounted always and gated by `null`,
-        the panel travels down and the outcome has somewhere to land.
+        So the gate is the state, **and it stays mounted**: a menu that unmounts on
+        close takes whatever write is in flight down with it, and that write has
+        nowhere left to report a failure. Mounted always and gated by `null`, the
+        panel travels down whole.
        */}
-      <ListMenuSheet
-        list={listOpen && list ? list : null}
-        folder={list?.folderId ? (folders.find((f) => f.id === list.folderId) ?? null) : null}
+      <EntityMenuSheet
+        ctx={menuLista.ctx}
+        icon={menuLista.icon}
+        conteo={menuLista.conteo}
+        pinned={menuLista.pinned}
+        subtitulo={menuLista.subtitulo}
+        handlers={menuLista.handlers}
         onClose={onCloseListMenu}
       />
-
-
-
 
       {/*
         The **whole list**, and not the current tab's rows.

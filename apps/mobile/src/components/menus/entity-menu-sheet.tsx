@@ -9,7 +9,7 @@ import type { SheetOption } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n/dictionaries";
-import { accionesPara, resuelveLabel } from "@/lib/menus/registry";
+import { accionesPara, resuelveLabel, ACCIONES } from "@/lib/menus/registry";
 import { puedeOfrecerse } from "@/lib/menus/paginas";
 import type { MenuContext, MenuHandlerName, MenuPageId } from "@/lib/menus/registry";
 import { useTheme } from "@/theme";
@@ -52,6 +52,43 @@ export interface EntityMenuSheetProps {
    * icono no se ofrece, que es lo que decide `CON_ICON_REF`.
    */
   icon?: IconRef | null;
+  /**
+   * Cuantos elementos tiene la lista, **solo para `list`**.
+   *
+   * El mismo caso que `icon` y por la misma razon: `lists.deleteBody` cuenta y
+   * `MenuEntity` no puede llevar el numero —el registro no le pide el numero a
+   * nadie, es un dato de la entidad y no una decision de menu—, asi que lo pasa
+   * el call site que ya lo tiene a mano. `DeletePage` decide que sin numero no
+   * dice nada, en vez de pintar un `{count}` crudo.
+   *
+   * Por eso el numero no se le agrega a `MenuEntity`: las cinco entidades
+   * llevarian un campo y cuatro no lo llenarian, y el registro dejaria de ser el
+   * lugar donde vive lo que el menu necesita para decidir **que fila se ofrece**.
+   */
+  conteo?: number;
+  /**
+   * Si la entidad **ya esta** en el panel, y por eso el slot `pin` se pinta
+   * `unpin`.
+   *
+   * El registro declara las dos etiquetas porque el copy es distinto y reserva
+   * **un solo lugar** en el orden del registro: el estado de "ya esta ahi" lo sabe la
+   * pantalla (`isPinned(layout, id)`) y no la entidad, asi que meterlo en el
+   * `ctx` seria meter en el contexto un dato de la pantalla.
+   *
+   * Entra por props y no en el `ctx` por lo mismo que el icono: es de la pantalla
+   * y lo decide quien la abre.
+   */
+  pinned?: boolean;
+  /**
+   * El subtitulo de la cabecera en la primera pagina, **si esta entidad lo
+   * necesita**.
+   *
+   * Es lo que hace que una lista siga diciendo donde vive —"Peliculas · Films"—:
+   * `entity.title` es el nombre, y el nombre no dice la carpeta. Opcional porque
+   * las otras cuatro entidades no tienen esa segunda mitad y su subtitulo sale de
+   * `SUBTITULO_POR_PAGINA`.
+   */
+  subtitulo?: string;
   handlers: MenuHandlers;
   onClose: () => void;
 }
@@ -83,7 +120,15 @@ type Pagina = "options" | MenuPageId;
  * `folder-menu-sheet.tsx` son **`Modal` sobre `Modal`**: dos fondos sobre una
  * pantalla y un toque que llega a la de arriba cerrando la de abajo.
  */
-export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: EntityMenuSheetProps) {
+export function EntityMenuSheet({
+  ctx: pedido,
+  icon,
+  conteo,
+  pinned,
+  subtitulo,
+  handlers,
+  onClose,
+}: EntityMenuSheetProps) {
   // La ultima, y no la del llamador: el llamador la pone a `null` para cerrar y la
   // hoja tiene que seguir pintando mientras baja. `useLastValue` es la razon por
   // la que el menu no desaparece a mitad del gesto de salida.
@@ -407,7 +452,25 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
   */
   const opciones: SheetOption[] = accionesPara(ctx)
     .filter(puedeOfrecerse)
-    .map((accion) => {
+    .map((declarada) => {
+      /*
+        ------------------------------------------------------------------
+        EL SLOT `pin`, Y POR QUE ACA SE ELIGE UNA DE LAS DOS
+        ------------------------------------------------------------------
+
+        `pin` y `unpin` son **una fila en dos estados**, y el registro los declara
+        a los dos con un solo lugar en el orden: el estado de "ya esta en el
+        panel" no lo sabe el `ctx` sino la pantalla, y por eso viaja en la prop
+        `pinned`.
+
+        Lo que se hace aca es **leer el registro y no escribir una fila**: se toma
+        el descriptor que el registro declaro para el otro estado. Si el registro
+        dejara de declarar `unpin`, `ACCIONES.unpin` seria `undefined` y la hoja
+        reventaria en el primer render; por eso el `?? declarada`, que es peor que
+        la fila que falta pero no es una pantalla rota.
+      */
+      const pineada = ACCIONES.pin?.id === declarada.id && pinned === true;
+      const accion = pineada ? (ACCIONES.unpin ?? declarada) : declarada;
       const etiqueta = resuelveLabel(accion, ctx);
       /*
         El motivo va a `description` porque `SheetOption` no tiene campo de motivo
@@ -460,7 +523,18 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
       };
     });
 
-  const subtitulo = SUBTITULO_POR_PAGINA[pagina];
+  /*
+    El subtitulo de la cabecera, y **las dos mitades estan en el mismo lugar**.
+
+    La tabla gana cuando tiene entrada, y son las paginas que el registro conoce:
+    una lista no dice nada en su pagina de renombrar y si su tipo y su carpeta en la
+    primera. La prop `subtitulo` llena solo ese hueco, y llega **ya resuelta** —la
+    lista concatena el tipo y el nombre de la carpeta antes de pasarlo—, asi que
+    pasa por `t` solo cuando lo que hay es una clave. Un `t()` sobre un texto ya
+    traducido imprimiria la frase con las llaves puesta.
+  */
+  const claveDeSubtitulo = SUBTITULO_POR_PAGINA[pagina];
+  const subtituloDeCabecera = claveDeSubtitulo ? t(claveDeSubtitulo) : subtitulo;
 
   return (
     <Sheet
@@ -468,7 +542,7 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
       visible={pedido !== null}
       onClose={onClose}
       title={ctx.entity.title}
-      subtitle={subtitulo ? t(subtitulo) : undefined}
+      subtitle={subtituloDeCabecera}
       scrollable={false}
       onBack={pagina === "options" ? undefined : () => setPagina("options")}
     >
@@ -503,7 +577,10 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
         ) : null}
 
         {pagina === "delete" ? (
-          <DeletePage ctx={ctx} onBorrar={borrar} trabajando={trabajando} />
+          // El `conteo` lo pasa el call site y solo una lista lo tiene: las otras
+          // cuatro no llenan el campo, y `DeletePage` ya sabe que sin numero no
+          // dice nada en vez de pintar un `{count}` crudo en pantalla.
+          <DeletePage ctx={ctx} onBorrar={borrar} trabajando={trabajando} conteo={conteo} />
         ) : null}
 
         {/*

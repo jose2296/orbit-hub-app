@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
-import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { ColumnMenuSheet } from "@/components/lists/column-menu-sheet";
 import { StateEditSheet } from "@/components/lists/state-edit-sheet";
 import { ReorderSheet } from "@/components/ui/reorder-sheet";
@@ -29,7 +29,9 @@ import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useHeaderAction } from "@/components/ui/header-action";
+import { useDashboard } from "@/hooks/use-dashboard";
 import { useListItems, useLists } from "@/hooks/use-lists";
+import { menuDeLista } from "@/lib/menus/lista";
 import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useWorkspaces } from "@/hooks/use-workspaces";
@@ -148,6 +150,8 @@ export default function BoardScreen() {
     isLoading: isLoadingLists,
     setTagColor,
     updateList,
+    deleteList,
+    duplicateList,
   } = useLists({});
   const list = useMemo(
     () => lists.find((item) => item.id === listId) ?? null,
@@ -673,18 +677,50 @@ export default function BoardScreen() {
     The menu, **behind a `···` like every other list screen, and not a button
     straight to the states editor.**
 
-    `list/[listId].tsx` mounts its `ListMenuSheet` behind a ghost `iconOnly`
-    button at `useHeaderAction` — same call, same icon, same `testID` convention
+    `list/[listId].tsx` mounts the same menu behind a ghost `iconOnly` button at
+    `useHeaderAction` — same call, same icon, same `testID` convention
     (`board-menu-button` for this screen's one) — so the board's menu is the same
     menu: rename, pin, duplicate, share, export, delete, and **the board's states
-    editor as its first row** (`onEditStates`). A menu that reads differently
-    here than there is two menus to learn, and this screen had a button straight
-    to the editor because when it was drawn there was no menu to hang it from.
+    editor as its first row**. A menu that reads differently here than there is two
+    menus to learn, and this screen had a button straight to the editor because
+    when it was drawn there was no menu to hang it from.
+
+    Sharing that menu used to mean sharing a component that had the editor's row
+    inside it, written by hand. Now it means sharing the **registry**: this screen
+    passes `editarEstados` and the row appears because the capability is there, and
+    a screen with no editor behind it simply does not pass it.
 
     The states button it replaces stays reachable twice over: this row, and the
     row inside the state sheet of a task.
   */
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const { layout, save } = useDashboard();
+  /*
+    The board's menu, and the only one of the four that passes `editarEstados`.
+
+    It is also the only one that can: `menuDeLista` turns that argument into the
+    `editStates` capability, and the registry reads that capability —not the screen
+    —to decide whether the row is offered. The old sheet took `onEditStates` and
+    spread it into the array by hand, which is the same predicate written a fourth
+    time.
+
+    And `readOnly` still decides it here, not inside the adapter: **a viewer cannot
+    open this menu's states editor because there is no editor mounted for them**,
+    and that is a fact about this screen. The adapter does not know about roles of
+    the screen, and a `readOnly` derived from the list's `role` would be the same
+    predicate otra vez, escrito donde no se lee.
+  */
+  const menuLista = menuDeLista(menuAbierto ? list : null, {
+    folder: null,
+    t,
+    layout,
+    save,
+    updateList,
+    deleteList,
+    duplicateList,
+    editarEstados: readOnly ? undefined : abrirEditorDeEstados,
+    onDeleted: () => router.back(),
+  });
   useHeaderAction(
     () =>
       list ? (
@@ -2142,26 +2178,28 @@ export default function BoardScreen() {
         The menu of the list, **and it is the same menu every other list screen
         opens.**
 
-        `list/[listId].tsx` mounts it behind its own `···` with the list and the
-        folder; here it is the same call, with the board's states editor as one
-        more row (`onEditStates`). `folder` is `null` and not the list's folder
-        because this screen does not read folders at all, and the only thing the
-        panel uses it for is the second half of its subtitle — the board's menu
-        says the kind without saying where it lives, which is honest about what
-        this screen knows.
+        `list/[listId].tsx` mounts it behind its own `···`; here it is the same
+        call, with the board's states editor as one more row. `folder` is `null` and
+        not the list's folder because this screen does not read folders at all, and
+        the only thing the panel uses it for is the second half of its subtitle —
+        the board's menu says the kind without saying where it lives, which is
+        honest about what this screen knows.
 
         It mounts for viewers too (`readOnly` does not gate it): the panel draws
         itself read-only from the list's role, and a viewer who cannot open the
         menu cannot see what can be done with the board either. What a viewer does
         not get is the states row — the editor behind it is not mounted for them,
-        so the row would be a press that closes the menu and opens nothing.
+        so the row would be a press that closes the menu and opens nothing. That
+        is decided above, where `menuLista` se arma, y no aca.
       */}
-      <ListMenuSheet
-        list={menuAbierto && list ? list : null}
-        folder={null}
+      <EntityMenuSheet
+        ctx={menuLista.ctx}
+        icon={menuLista.icon}
+        conteo={menuLista.conteo}
+        pinned={menuLista.pinned}
+        subtitulo={menuLista.subtitulo}
+        handlers={menuLista.handlers}
         onClose={() => setMenuAbierto(false)}
-        onDeleted={() => router.back()}
-        onEditStates={readOnly ? undefined : abrirEditorDeEstados}
       />
 
       {/*

@@ -15,7 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MediaListScreen } from "@/components/media/media-list-screen";
-import { ListMenuSheet } from "@/components/lists/list-menu-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { FiltersBody } from "@/components/lists/item-picker";
 import { ListControls } from "@/components/lists/list-controls";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
@@ -41,6 +41,8 @@ import {
   tagsByFrequency,
 } from "@/lib/lists/item-presentation";
 import { isMediaList, mediaCardOf } from "@/lib/lists/media-card";
+import { menuDeLista } from "@/lib/menus/lista";
+import { useDashboard } from "@/hooks/use-dashboard";
 import { routeForList } from "@/lib/lists/route";
 import { providerRefOf } from "@/lib/lists/provider-ref";
 import { useTheme } from "@/theme";
@@ -82,7 +84,8 @@ export default function ListScreen() {
   const router = useRouter();
   const { listId } = useLocalSearchParams<{ listId: string }>();
 
-  const { lists, setOrderMode, setTagColor } = useLists({});
+  const { lists, setOrderMode, setTagColor, updateList, deleteList, duplicateList } = useLists({});
+  const { layout, save } = useDashboard();
   const list = useMemo(
     () => lists.find((item) => item.id === listId) ?? null,
     [lists, listId],
@@ -212,6 +215,27 @@ export default function ListScreen() {
     ? (items.find((row) => row.id === editing.itemId) ?? null)
     : null;
   const [menuOpen, setMenuOpen] = useState(false);
+
+  /**
+   * The list the menu is open on, **or nothing when it is closed**.
+   *
+   * It is computed here and not in the JSX because it is what decides three of the
+   * six things the menu needs: which list it is, how many items it has, and the
+   * folder its subtitle names. All three come out of the same `menuDeLista` call,
+   * so a screen cannot end up with the menu on one list and the count of another.
+   */
+  const menuLista = menuDeLista(menuOpen ? list : null, {
+    folder: list?.folderId ? (folders.find((f) => f.id === list.folderId) ?? null) : null,
+    t,
+    layout,
+    save,
+    updateList,
+    deleteList,
+    duplicateList,
+    // This screen does not read boards: `routeForList` sends them to `/board/:id`,
+    // so there is no states editor behind this menu and the row must not offer one.
+    onDeleted: () => router.back(),
+  });
 
   /**
    * Tasks are split into pending and completed rather than filtered, so the
@@ -990,22 +1014,24 @@ export default function ListScreen() {
       {/*
         The menu is mounted for good and opens by its prop, **which is what
         `useLastValue` was written for** — and not for tidiness: a menu that
-        unmounts on close takes the export down with it. Pressing a format calls
-        `onClose()` before asking for the file, so the panel leaves and the work
-        goes on behind it, and under a conditional mount that `onClose()` unmounts
-        this on the same frame the download starts. The sheet of results would then
-        arrive at a component that is not there, and the failure goes unpainted
-        again — which is the whole thing it exists to stop.
+        unmounts on close takes whatever write is in flight down with it, and that
+        write has nowhere left to report a failure. Mounted always and switched off
+        with `null`, the panel travels down whole and the work carries on behind it.
+
+        And the six props are not six things this screen decides: `menuDeLista`
+        (`lib/menus/lista.ts`) builds them. The `kind`, the title, the icon, the
+        count, whether it is pinned and the subtitle **with the folder** are one
+        single rule in the four screens that open this menu, and written here it
+        would be the fourth copy of it.
       */}
-      <ListMenuSheet
-        list={menuOpen && list ? list : null}
-        folder={
-          list?.folderId
-            ? (folders.find((f) => f.id === list.folderId) ?? null)
-            : null
-        }
+      <EntityMenuSheet
+        ctx={menuLista.ctx}
+        icon={menuLista.icon}
+        conteo={menuLista.conteo}
+        pinned={menuLista.pinned}
+        subtitulo={menuLista.subtitulo}
+        handlers={menuLista.handlers}
         onClose={() => setMenuOpen(false)}
-        onDeleted={() => router.back()}
       />
 
 
