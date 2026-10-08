@@ -4,6 +4,7 @@ import {
   stateOf,
   type AccountExport,
   type ExportedAttachment,
+  type JournalEntry,
   type Folder,
   type List,
   type ListExport,
@@ -33,6 +34,7 @@ export interface AccountExportRows {
   notes: Note[];
   attachments: ExportedAttachment[];
   templates: NoteTemplate[];
+  journal: JournalEntry[];
 }
 
 /**
@@ -55,6 +57,7 @@ export function accountExportEnvelope(rows: AccountExportRows): AccountExport {
       notes: rows.notes.length,
       attachments: rows.attachments.length,
       templates: rows.templates.length,
+      journal: rows.journal.length,
     },
     workspaces: rows.workspaces,
     folders: rows.folders,
@@ -63,6 +66,7 @@ export function accountExportEnvelope(rows: AccountExportRows): AccountExport {
     notes: rows.notes,
     attachments: rows.attachments,
     templates: rows.templates,
+    journal: rows.journal,
   };
 }
 

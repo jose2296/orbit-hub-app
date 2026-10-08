@@ -426,3 +426,37 @@ describe('notes through sync', () => {
     expect(read.body.data.version).toBe(1);
   });
 });
+
+describe('a note document is checked on every write, not only on create', () => {
+  /**
+   * The create path validated the document and the update path did not. An edit
+   * could carry any markup and the server stored it, and the editor on iOS and
+   * Android does not sanitise what it reads back.
+   */
+  it('refuses an edit whose document is outside the format', async () => {
+    const user = await createVerifiedUser(api);
+    const workspace = await createWorkspace(user, 'Edicion');
+    const noteId = randomUUID();
+    await push(user, [
+      operation({
+        entity: 'note',
+        kind: 'create',
+        entityId: noteId,
+        payload: { workspaceId: workspace.id, title: 'Nota', document: DOC },
+      }),
+    ]);
+
+    const response = await push(user, [
+      operation({
+        entity: 'note',
+        kind: 'update',
+        entityId: noteId,
+        baseVersion: 1,
+        base: { document: DOC },
+        payload: { document: '<p>ok</p><script>alert(1)</script>' },
+      }),
+    ]);
+
+    expect(response.body.data.results[0].status).toBe('rejected');
+  });
+});

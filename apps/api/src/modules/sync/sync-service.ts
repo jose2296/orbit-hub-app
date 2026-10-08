@@ -14,6 +14,8 @@ import {
   MAX_BOARD_STATES,
   NOTE_DOCUMENT_MAX_BYTES,
   isKnownStateId,
+  journalEntryIdFor,
+  journalEntryPayloadSchema,
   normalizaColor,
   noteDocumentSchema,
   noteDocumentToPlainText,
@@ -106,8 +108,15 @@ function noteFieldsForWrite(
   entity: SyncEntityName,
   values: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (entity !== 'note' || typeof values['document'] !== 'string') return values;
-  return { ...values, plainText: noteDocumentToPlainText(values['document']) };
+  if ((entity !== 'note' && entity !== 'journal_entry') || typeof values['document'] !== 'string') {
+    return values;
+  }
+  // Checked on every write that carries a document, not only on the create. The
+  // create checked it and the update did not: an edit of an existing note could
+  // carry any markup and the server stored it, and the editor on iOS and Android
+  // does not sanitise what it reads back. The merge path comes through here too.
+  const document = noteDocumentSchema.parse(values['document']);
+  return { ...values, document, plainText: noteDocumentToPlainText(document) };
 }
 
 /**
@@ -770,6 +779,13 @@ export class SyncService {
 
     const existing = await syncRepository.findEntity(entity, operation.entityId);
 
+    // A journal entry belongs to one account. Another account's entry is the same
+    // answer as a missing one: a 404, so an id cannot be used to find out which
+    // days somebody else has written.
+    if (entity === 'journal_entry' && existing !== null && existing['userId'] !== userId) {
+      throw HttpError.notFound('Journal entry not found');
+    }
+
     if (operation.kind === 'create') {
       if (existing) {
         // A workspace whose owner membership went missing is a row nobody can
@@ -931,6 +947,27 @@ export class SyncService {
             // Named by hand because this `create` does not spread: it is the same
             // one that dropped the icon of a list item once.
             icon: (payload['icon'] as IconRef | null) ?? null,
+          });
+          return { status: 'applied', version: row.version };
+        }
+
+        case 'journal_entry': {
+          // The id is checked against the account and the day before anything is
+          // written: a client that sends a different id for a day is either broken
+          // or trying to write a day that is not the one it named.
+          const parsed = journalEntryPayloadSchema.safeParse(operation.payload);
+          if (!parsed.success) {
+            throw HttpError.validation('A journal entry needs a day and a document');
+          }
+          if (journalEntryIdFor(userId, parsed.data.day) !== operation.entityId) {
+            throw HttpError.validation('The id does not belong to this day');
+          }
+          const row = await syncRepository.insertEntity('journal_entry', {
+            id: operation.entityId,
+            userId,
+            day: parsed.data.day,
+            document: parsed.data.document,
+            plainText: noteDocumentToPlainText(parsed.data.document),
           });
           return { status: 'applied', version: row.version };
         }
@@ -1337,7 +1374,11 @@ export class SyncService {
         return { status: 'applied', version: existing.version };
       }
       // The client had stale data but touched nothing that changed: a safe merge.
-      const row = await syncRepository.updateEntity(entity, operation.entityId, values);
+      const row = await syncRepository.updateEntity(
+        entity,
+        operation.entityId,
+        noteFieldsForWrite(entity, values),
+      );
       await this.seguirCarpetaDeColeccion(entity, existing, row);
       return { status: 'applied', version: row.version };
     }

@@ -385,6 +385,7 @@ describe('GET /account/export', () => {
       notes: 0,
       attachments: 0,
       templates: 0,
+      journal: 0,
     });
     expect(sobre.workspaces).toEqual([]);
     expect(sobre.folders).toEqual([]);
@@ -493,6 +494,7 @@ describe('GET /account/export', () => {
       notes: 1,
       attachments: 1,
       templates: 0,
+      journal: 0,
     });
     expect(sobre.workspaces.map((w) => w.id)).toEqual([fix.workspaceId]);
     expect(sobre.folders.map((f) => f.id)).toEqual([fix.folderId]);

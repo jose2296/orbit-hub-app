@@ -2,6 +2,7 @@ import { exportFilename, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
   ExportedAttachment,
   Folder,
+  JournalEntry,
   List,
   ListExport,
   ListItem,
@@ -16,6 +17,7 @@ import type { Database } from '../../db/client.js';
 import {
   attachments,
   folders,
+  journalEntries,
   listItems,
   lists,
   memberships,
@@ -176,6 +178,19 @@ function toAttachment(row: typeof attachments.$inferSelect): ExportedAttachment 
   return {
     ...resto,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toJournalEntry(row: typeof journalEntries.$inferSelect): JournalEntry {
+  return {
+    id: row.id,
+    day: row.day,
+    document: row.document,
+    plainText: row.plainText,
+    version: row.version,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
 }
 
@@ -406,6 +421,15 @@ export class ExportService {
           : eq(noteTemplates.createdBy, userId),
       );
 
+    // 8. El diario de la persona. No cuelga de ningun espacio: es suyo, asi que
+    //    se filtra por el dueño y no por los espacios, igual que las plantillas
+    //    personales. Sin filtro de `deletedAt`, como en las notas.
+    const journalRows = await db
+      .select()
+      .from(journalEntries)
+      .where(eq(journalEntries.userId, userId))
+      .orderBy(asc(journalEntries.day));
+
     const roleOf = (workspaceId: string): MembershipRoleName =>
       roles.get(workspaceId) ?? 'viewer';
 
@@ -433,6 +457,7 @@ export class ExportService {
       notes: noteRows.map((row) => toNote(row, roleOf(row.workspaceId))),
       attachments: attachmentRows.map(toAttachment),
       templates: templateRows.map(toTemplate),
+      journal: journalRows.map(toJournalEntry),
     });
 
     return {
