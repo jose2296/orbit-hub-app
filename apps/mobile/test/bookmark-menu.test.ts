@@ -43,6 +43,16 @@ const INBOX = "src/app/(app)/unclassified.tsx";
 const HOJA_VIEJA = "src/components/bookmarks/delete-sheet.tsx";
 const BOTON = "src/components/ui/menu-button.tsx";
 const LIB = "src/lib/menus/bookmark.ts";
+/**
+ * La fila de enlace, y **la unica**: el boton, la caja relativa, la reserva del
+ * ancho, el `flex: 1`, el nombre que cae al host y los dos mapas de estado.
+ *
+ * Antes vivia en las dos pantallas de `PANTALLAS` y se copio a una tercera, asi
+ * que los guards de esta fila las nombraban a ellas —y la tercera paso sin que
+ * ninguno la mirara—. Con un solo archivo los guards miran **este**, y las tres
+ * pantallas quedan cubiertas por el hecho de no tener fila propia.
+ */
+const LINK_ROW = "src/components/bookmarks/link-row.tsx";
 
 /** Las dos pantallas del enlace, con el nombre que usan los mensajes del fallo. */
 const PANTALLAS = [
@@ -128,18 +138,22 @@ describe("las dos pantallas abren el menu del registro y no una hoja propia", ()
   for (const [nombre, ruta] of PANTALLAS) {
     const pantalla = src(ruta);
 
-    it(`${nombre} monta la hoja unica con el boton compartido`, () => {
+    it(`${nombre} monta la hoja unica y la fila compartida`, () => {
       expect(pantalla, nombre).toMatch(
         /import \{ EntityMenuSheet \} from "@\/components\/menus\/entity-menu-sheet"/,
       );
-      // El boton sale del archivo que lo declaro y no de una copia local: dos
-      // copias del boton son dos areas tactiles distintas, y la que se copia es
-      // la que pierde el `hitSlop` sin que nadie lo note.
-      expect(pantalla, nombre).toMatch(
-        /import \{[^}]*\bMenuButton\b[^}]*\} from "@\/components\/ui\/menu-button"/,
-      );
-      expect(pantalla, nombre).toMatch(/<MenuButton\b/);
       expect(pantalla, nombre).toMatch(/<EntityMenuSheet\b/);
+      /*
+        Y la fila sale de `link-row.tsx`, que es **la misma** para las tres
+        pantallas. Antes cada una montaba su propio `MenuButton` y por eso los
+        guards de abajo las nombraban a ellas; ahora el boton, la caja relativa, la
+        reserva del ancho y los mapas de estado viven en un archivo, y lo que estas
+        pantallas tienen que decir es que lo montan.
+      */
+      expect(pantalla, nombre).toMatch(
+        /import \{ LinkRow \} from "@\/components\/bookmarks\/link-row"/,
+      );
+      expect(pantalla, nombre).toMatch(/<LinkRow\b/);
     });
 
     it(`${nombre} no declara sus propias acciones`, () => {
@@ -454,14 +468,36 @@ describe("el ancho que la fila le reserva al boton", () => {
     ).toBeGreaterThanOrEqual(ocupa);
   });
 
-  it("las dos filas reservan la constante del boton, no un numero suyo", () => {
-    // El nombre viene del boton porque la exigencia es del boton. Un
-    // `paddingRight` con un numero aca compila igual y se desincroniza en
-    // silencio, que es la forma exacta del fallo que este bloque evita.
+  it("la fila compartida reserva la constante del boton, no un numero suyo", () => {
+    /*
+      Una sola fila, una sola reserva. Antes esto iteraba `PANTALLAS` —dos
+      pantallas— y cada una tenia su copia; la tercera se sumo y el guard solo
+      miraba las dos de la lista, asi que la copia de la coleccion podia tener un
+      `44` a mano sin que nadie se enterara. Ahora que hay **un** archivo, el
+      `paddingRight` se comprueba **una vez**, y las tres pantallas quedan
+      cubiertas por el hecho de no tener fila propia.
+    */
+    const fila = sinComentarios(src(LINK_ROW));
+
+    expect(fila, "la reserva sale del boton, no de un numero").toMatch(
+      /paddingRight: ANCHO_RESERVADO/,
+    );
+    expect(fila, "y se importa de donde el boton la declara").toMatch(
+      /import \{[^}]*ANCHO_RESERVADO[^}]*\} from "@\/components\/ui\/menu-button"/,
+    );
+  });
+
+  it("y ninguna pantalla dibuja la fila por su cuenta", () => {
+    // La segunda mitad del guard de arriba, y la que lo hacia derivable: que
+    // aparezca una cuarta copia de la fila tiene que **fallar**, no pasar porque el
+    // guard ya no mira ninguna pantalla.
     for (const [nombre, ruta] of PANTALLAS) {
-      expect(sinComentarios(src(ruta)), nombre).toMatch(/paddingRight: ANCHO_RESERVADO/);
-      expect(sinComentarios(src(ruta)), nombre).toMatch(
-        /import \{[^}]*ANCHO_RESERVADO[^}]*\} from "@\/components\/ui\/menu-button"/,
+      const codigo = sinComentarios(src(ruta));
+
+      expect(codigo, `${nombre} vuelve a dibujar la fila`).not.toContain("<ListRow");
+      expect(codigo, `${nombre} vuelve a montar el boton`).not.toContain("<MenuButton");
+      expect(codigo, `${nombre} vuelve a tener los mapas de estado`).not.toContain(
+        "CLAVE_ESTADO",
       );
     }
   });
@@ -510,22 +546,18 @@ describe("el ancho que la fila le reserva al boton", () => {
       tampoco se ve.
 
       Se afirma por **orden** y no con una ventana de caracteres: el `leading` que
-      va en medio de la fila del inbox mide mas que cualquier `{0,600}` que se le
-      ponga, asi que un rango fijo daria verde con la fila sin `flex`.
+      va en medio de la fila mide mas que cualquier `{0,600}` que se le ponga, asi
+      que un rango fijo daria verde con la fila sin `flex`. Y ahora mira
+      `link-row.tsx` y no las pantallas, porque la fila es **una sola**.
     */
-    for (const [nombre, ruta] of PANTALLAS) {
-      const codigo = sinComentarios(src(ruta));
-      const abre = codigo.indexOf("<ListRow");
-      // La busqueda arranca en la fila: `if (isLoading) return <View style={{ flex:
-      // 1 }} />` tambien usa esa cadena, y sin el arranque finds la del
-      // esqueleto de carga y da verde con la fila sin encogerse.
-      const encoge = codigo.indexOf("style={{ flex: 1 }}", abre);
-      const menu = codigo.indexOf("<MenuButton", abre);
+    const codigo = sinComentarios(src(LINK_ROW));
+    const abre = codigo.indexOf("<ListRow");
+    const encoge = codigo.indexOf("style={{ flex: 1 }}", abre);
+    const menu = codigo.indexOf("<MenuButton", abre);
 
-      expect(abre, `${nombre} no tiene fila`).toBeGreaterThan(-1);
-      expect(encoge, `${nombre}: la fila sin flex se sale de la caja`).toBeGreaterThan(abre);
-      expect(encoge, `${nombre}: el flex tiene que ser el de la fila, no el del menu`).toBeLessThan(menu);
-    }
+    expect(abre, "la fila compartida no dibuja una ListRow").toBeGreaterThan(-1);
+    expect(encoge, "la fila sin flex se sale de la caja").toBeGreaterThan(abre);
+    expect(encoge, "el flex tiene que ser el de la fila, no el del menu").toBeLessThan(menu);
   });
 });
 

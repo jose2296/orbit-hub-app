@@ -6,7 +6,6 @@ import type { IconRef } from "@orbit-hub/contracts";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetOptions, useLastValue } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
-import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n/dictionaries";
@@ -125,7 +124,6 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
 
   const theme = useTheme();
   const t = useTranslation();
-  const { setSucio } = useSheetSucio();
 
   const [pagina, setPagina] = useState<Pagina>("options");
   const [borrador, setBorrador] = useState<string | null>(null);
@@ -178,20 +176,41 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
 
   /*
     ------------------------------------------------------------------
-    EL BORRADOR Y "SUCIO": LA VERDAD EN UN SOLO SITIO
+    EL BORRADOR VIVE ACA; "SUCIO" LO ARMA `RenamePage`
     ------------------------------------------------------------------
 
-    El borrador vive en la hoja y `sucio` se **deriva** de el, no al reves. La
-    razon es que el borrador sobrevive a la flecha: entrar en renombrar, escribir y
-    tocar ← desmonta la pagina **con el texto escrito todavia ahi**. Si la pregunta
-    de "salir sin guardar" la pusiera la pagina, se desarmaria en ese mismo toque,
-    y cerrar el menu despues se iria sin preguntar: edicion perdida en silencio,
-    que es el peor resultado posible de una hoja y el que nadie ve.
+    El borrador es de la hoja y no se mueve: entrar en renombrar, escribir y tocar
+    ← desmonta la pagina **con el texto escrito todavia ahi**, asi que el texto
+    tiene que estar en un sitio que sobreviva a eso, y ese sitio es este estado.
 
-    La variante que descarto es la simetrica —que el cleanup de la pagina borre el
-    borrador— porque convierte la flecha en "descartar lo escrito" sin decirlo, y
-    la flecha esta escrita como "Volver". Que la verdad este en un solo sitio
-    importa mas que la simetria de los archivos.
+    Y `sucio` se **deriva** de el —en `RenamePage`—, no al reves. Lo que cambio
+    en esta ronda no es donde vive la verdad sino **quien la escribe**: antes lo
+    hacia esta hoja, con
+
+        const { setSucio } = useSheetSucio();
+
+    y eso era un no-op silencioso. `SheetSucioContexto.Provider` esta **dentro**
+    del `<Modal>` de `Sheet` (`sheet.tsx:630`), asi que quien lo consume tiene que
+    ser **hijo** de `Sheet`, y esta hoja es su **padre**: leia el contexto por
+    defecto —`sucio: false, setSucio: () => {}`— y la red de seguridad de "¿sales
+    sin guardar?" no estaba conectada a nada. El sintoma es el peor posible: el
+    menu renombra, se cierra, y el nombre escrito se pierde sin preguntar, y
+    ningun test lo ve porque `setSucio` no hace nada y por lo tanto **no falla**.
+
+    La derivacion va en la pagina porque la pagina es hija de `Sheet` y ahi si
+    llega —es el mismo reparto que ya hacen `rename-sheet.tsx` y
+    `share-node-sheet.tsx`, y el mismo que `index.tsx` y `reorder-sheet.tsx`
+    resuelven con un componente que no pinta nada—. El contexto no fluye hacia
+    arriba, y un contexto que no llega no es un contexto.
+
+    ------------------------------------------------------------------
+    Y POR QUE ESTA HOJA NO PUEDE SEGUIR DERIVANDOLO
+    ------------------------------------------------------------------
+
+    Porque cualquier `setSucio` aca vuelve a escribir en el contexto por defecto
+    y el bug regresa sin que nada se rompa. Lo que se le pasa a la pagina son los
+    dos datos de los que se deriva —`borrador` y `titulo`— y la decision la toma
+    alla. Un guard de `entity-menu-sheet.test.ts` afirma las dos mitades.
 
     Y por eso `borrador` es `string | null` y no `string`: `null` es "todavia no se
     escribio nada" —el menu recien abierto— y `""` es "se borro el campo a mano".
@@ -203,9 +222,6 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
     `pagina === "rename"`, volver con ← desarmaria la pregunta con el texto
     escrito ahi, que es el bug.
   */
-  useEffect(() => {
-    setSucio(abierto && borrador !== null && borrador.trim() !== titulo.trim());
-  }, [abierto, borrador, titulo, setSucio]);
 
   /*
     ------------------------------------------------------------------
@@ -468,6 +484,15 @@ export function EntityMenuSheet({ ctx: pedido, icon, handlers, onClose }: Entity
         {pagina === "rename" ? (
           <RenamePage
             nombre={nombre}
+            /*
+              Los dos datos de los que se deriva "sucio", y **los dos van por
+              props** porque la pagina no puede leerlos: `borrador` es estado de
+              esta hoja y el `MenuContext` no lo lleva —el registro no conoce
+              borradores—. El titulo si esta en el `ctx`, asi que la pagina
+              compararia contra lo que se le pasa y no contra el `ctx` entero.
+            */
+            borrador={borrador}
+            titulo={titulo}
             onChange={setBorrador}
             onRename={() => {
               if (nombre.trim().length === 0 || trabajando) return;

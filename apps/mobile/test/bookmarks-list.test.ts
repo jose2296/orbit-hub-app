@@ -47,20 +47,26 @@ describe("la lista sigue el molde sin inventar patrones", () => {
   });
 
   it("cada fila abre el lector con la forma del molde", () => {
-    // La forma de `notes.tsx:170-172`, sin grupo en el string.
+    // La forma de `notes.tsx:170-172`, sin grupo en el string. El `chevron` **no**
+    // se comprueba aca: es de la fila, que ahora es `components/bookmarks/link-row`
+    // y la dibuja una sola vez para las tres pantallas.
     expect(pantalla).toContain('pathname: "/bookmark/[bookmarkId]"');
-    expect(pantalla).toContain("chevron");
   });
 
   it("la fila muestra el estado de extraccion, que es lo que la distingue", () => {
-    // Los cuatro estados, cada uno con palabra y con punto. Si el contrato
-    // anade un quinto, el `Record` de la pantalla rompe el typecheck antes
-    // que este test.
+    // Los cuatro estados, cada uno con palabra y con punto, y ahora **en la fila**:
+    // son la misma fila para la lista, el inbox y la coleccion, asi que la palabra
+    // y el color de un estado tienen un solo sitio. Si el contrato anade un quinto,
+    // el `Record` de `link-row.tsx` rompe el typecheck antes que este test.
+    const fila = fuente(join("components", "bookmarks", "link-row.tsx"));
+
     for (const estado of ["pending", "ready", "metadata_only", "failed"]) {
-      expect(pantalla).toContain(estado);
+      expect(fila, `el estado ${estado}`).toContain(estado);
     }
-    expect(pantalla).toContain("bookmarks.state.pending");
-    expect(pantalla).toContain("leading={");
+    expect(fila).toContain("bookmarks.state.pending");
+    expect(fila).toContain("leading={");
+    // Y la pantalla monta esa fila y no la suya.
+    expect(pantalla).toContain("LinkRow");
   });
 
   it("el vacio tiene copy propio", () => {
@@ -69,12 +75,12 @@ describe("la lista sigue el molde sin inventar patrones", () => {
     expect(pantalla).toContain('t("bookmarks.empty.body")');
   });
 
-  it("cada fila lleva su menu al lado, y el boton es el compartido", () => {
-    // Lo mismo que el triage y que el resto de la app: tres puntitos que abren
-    // `EntityMenuSheet`, y la lista solo pasa el enlace y cierra. Lo que la
-    // pantalla **no** decide es que acciones salen, asi que no escribe ninguna:
-    // eso vive en el registro.
-    expect(pantalla).toContain("MenuButton");
+  it("cada fila lleva su menu al lado, y la hoja la abre la pantalla", () => {
+    // La fila compartida es la que pinta los tres puntitos, y la pantalla la que
+    // pasa el enlace y cierra. Lo que la pantalla **no** decide es que acciones
+    // salen, asi que no escribe ninguna: eso vive en el registro.
+    expect(pantalla).toContain("LinkRow");
+    expect(pantalla).toContain("onMenu=");
     expect(pantalla).toContain("EntityMenuSheet");
     expect(pantalla).toContain("setMenuAbierto");
     expect(pantalla).toContain("list-menu-");

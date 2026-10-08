@@ -12,6 +12,7 @@ import {
   hoja,
   paginasEnElDirectorio,
   paginasMontadas,
+  sinComentarios,
   src,
 } from "./menus-test-helpers";
 
@@ -122,30 +123,109 @@ describe("la hoja aguanta los 330 ms en que todavia se puede tocar", () => {
   });
 });
 
-describe("el borrador y la pregunta de salir sin guardar son la misma verdad", () => {
-  it("la hoja arma 'sucio', derivandolo del borrador", () => {
-    expect(hoja).toMatch(/\{\s*setSucio\s*\}\s*=\s*useSheetSucio\(\)/);
-    expect(hoja).toMatch(/setSucio\(abierto && borrador !== null/);
+describe("la pregunta de salir sin guardar llega a la hoja", () => {
+  /*
+    ------------------------------------------------------------------
+    POR QUE ESTE BLOQUE CAMBIO DE SIGNO
+    ------------------------------------------------------------------
+
+    Antes afirmaba dos cosas: que la hoja derivaba `sucio` y que la pagina **no**
+    lo hacia. Las dos eran el bug, escritas como si fueran el acuerdo.
+
+    `SheetSucioContexto.Provider` esta **dentro** del `<Modal>` de `Sheet`
+    (`sheet.tsx:630`), asi que el que consume el contexto tiene que ser un **hijo**
+    de `Sheet`. `EntityMenuSheet` es su **padre**: su `useSheetSucio()` leia el
+    contexto por defecto y escribia a un `() => {}`. La pregunta no se armo nunca,
+    con dos propiedades que la hacen invisible: no rompe nada y `setSucio` no
+    fallando es indistinguible de `setSucio` funcionando. Un `not.toContain` en la
+    pagina era un guard que **impedia el arreglo**.
+
+    Asi que ahora hay dos mitades y las dos importan por igual:
+
+    - la pagina **si** arma, porque ahi el canal llega, y
+    - la hoja **no** arma, porque si vuelve a hacerlo el bug regresa sin que nada
+      se rompa.
+  */
+
+  it("la pagina de renombrar arma 'sucio' a traves del canal", () => {
+    // El `setSucio` de la pagina: una llamada a la `useSheetSucio`, y por eso
+    // llega. El guard mira **la llamada**, no la palabra, porque la pagina explica
+    // en un comentario por que la tiene y un `toContain` sin mas no distinguiria
+    // esa explicacion del codigo.
+    const pagina = sinComentarios(src(RENOMBRAR));
+
+    expect(pagina).toMatch(/\{\s*setSucio\s*\}\s*=\s*useSheetSucio\(\)/);
+    // Y deriva de los dos datos que se le pasan, no de un estado propio: el
+    // borrador tiene que sobrevivir a la flecha y por eso vive en la hoja.
+    expect(pagina).toMatch(/setSucio\(borrador !== null && borrador\.trim\(\) !== titulo\.trim\(\)\)/);
   });
 
-  it("y la pagina de renombrar no lo arma", () => {
+  it("la hoja NO arma 'sucio', porque ahi el canal no llega", () => {
     /*
-      La pagina se desmonta al tocar ← y su cleanup desarmaba la pregunta **con el
-      texto escrito todavia ahi**: cerrar despues se iba sin preguntar y la
-      edicion se perdia en silencio. Si la pregunta vuelve a la pagina, el bug
-      vuelve con ella.
+      La mitad que se pierde sin querer. Es tentador "dejarlo en la hoja" porque
+      la verdad —el borrador— si vive ahi, y parece el lugar natural; y el
+      `setSucio` no falla cuando escribe al valor por defecto, asi que el cambio
+      entra verde, los tres guards de esta hoja siguen pasando, y la pregunta
+      sigue sin estar conectada a nada.
 
-      El guard mira **la llamada**, no la palabra: la pagina explica en un comentario
-      por que no la usa, y un `not.toContain("useSheetSucio")` pasaria por encima
-      de esa explicacion y dejaria de comprobar justo cuando el comentario esta.
+      Se mira el **codigo sin los comentarios**, y no el archivo entero: la hoja
+      explica aca mismo por que la llamada vivio aqui y por que se fue, y un
+      `not.toMatch` sobre el fuente entero se encontraria con su propia prosa y
+      fallaria por la razon equivocada. Lo que se afirma es que el codigo no la
+      usa: sin el import no puede haber llamada.
     */
-    expect(src(RENOMBRAR)).not.toMatch(/\{\s*setSucio\s*\}\s*=\s*useSheetSucio\(\)/);
+    expect(sinComentarios(hoja), "la hoja llama a useSheetSucio").not.toMatch(/useSheetSucio/);
+    expect(sinComentarios(hoja), "la hoja llama a setSucio").not.toMatch(/setSucio/);
+  });
+
+  it("y la hoja le pasa a la pagina lo que hay que derivar", () => {
+    // El `borrador` y el `titulo` llegan por props, no por `ctx`: el `MenuContext`
+    // no lleva un borrador —el registro no conoce borradores— y la pagina no
+    // recibe el `ctx` entero desde T2.
+    expect(hoja).toMatch(/borrador=\{borrador\}/);
+    expect(hoja).toMatch(/titulo=\{titulo\}/);
   });
 
   it("el borrador se distingue de 'nada escrito', o el menu abre sucio", () => {
     // `borrador: string` arrancaba en `""` contra un titulo no vacio, o sea
-    // "sucio" en un menu que nadie habia tocado.
+    // "sucio" en un menu que nadie habia tocado. Y `null` es lo que viaja a la
+    // pagina: es el unico dato que distingue "nadie escribio" de "borro el campo".
     expect(hoja).toMatch(/useState<string \| null>\(null\)/);
+    expect(sinComentarios(src(RENOMBRAR))).toContain("borrador: string | null;");
+  });
+
+  it("la pagina NO lo resetea al desmontarse, que es el otro bug", () => {
+    /*
+      La flecha de "Volver" desmonta la pagina **con el texto escrito ahi**. Un
+      `return () => setSucio(false)` en su cleanup desarmaria la pregunta en el
+      mismo toque, y cerrar despues se iria sin preguntar: edicion perdida en
+      silencio, por el otro lado, y con el arreglo de arriba puesto para que se
+      notara.
+
+      Y el reset que hace falta **ya existe** y no hay que repetirlo: `Sheet` limpia
+      su propio "sucio" al abrir (`sheet.tsx:200-205`), que es el unico momento en
+      que "vacio" tiene que significar vacio.
+    */
+    const pagina = sinComentarios(src(RENOMBRAR));
+
+    expect(pagina).toMatch(/useEffect\(\(\) => \{\s*setSucio\(/);
+
+    /*
+      Y el marcador del reset es **`setSucio(false)` a secas**, no una forma
+      concreta de cleanup: la derivacion de arriba escribe un booleano —`true` o
+      `false` segun la comparacion— y nunca el literal, asi que cualquier
+      `setSucio(false)` escrito aqui es alguien desarmando la pregunta a mano.
+
+      Se busco esa forma primero —`return () => setSucio(false)` en un cleanup— y
+      el guard pasaba con un `useEffect(() => () => setSucio(false), [])` al lado:
+      es el mismo bug con otra sintaxis, y un guard que solo conoce una forma del
+      fallo es un guard que el proximo escribe de otra manera. El literal no
+      tiene sinaxis.
+    */
+    expect(
+      pagina,
+      "la pagina desarma la pregunta al desmontarse: el borrador sobrevive a la flecha y la pregunta tiene que sobrevivir con el",
+    ).not.toMatch(/setSucio\(false\)/);
   });
 });
 

@@ -173,10 +173,19 @@ export function ContentList({
         return;
       }
       if (row.kind === "collection") {
-        // La pantalla de enlaces ya sabe filtrar por coleccion y pone ella el titulo.
+        /*
+          La pantalla **propia** de la coleccion, y no la lista de enlaces con un
+          filtro encima.
+
+          Mandarla a `/(app)/bookmarks` con `collectionId` era el estado anterior:
+          una lista con el nombre de la coleccion pegado y **sin menu propio**, con
+          las acciones de la coleccion a la vista en otra pantalla —la que lista las
+          filas— y no en la que estas mirando. Y sin `workspaceId`: el espacio es un
+          dato de la coleccion, que se resuelve sola desde la cache.
+        */
         router.push({
-          pathname: "/(app)/bookmarks",
-          params: { workspaceId, collectionId: row.id },
+          pathname: "/(app)/collection/[collectionId]",
+          params: { collectionId: row.id },
         });
         return;
       }

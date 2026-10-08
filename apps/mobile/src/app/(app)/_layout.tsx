@@ -170,6 +170,17 @@ function AppNavigation() {
       <Stack.Screen name="lists" options={{ title: t("lists.title") }} />
       <Stack.Screen name="list/[listId]" options={{ title: "" }} />
       {/*
+        Una coleccion, **declarada como las demas pantallas de la pila y no como
+        una que este layout no menciona**.
+
+        El nombre lo pone la propia pantalla con `useScreenTitle`, asi que el
+        titulo vacio es lo unico que hay que declarar: sin esta linea la cabecera
+        muestra el nombre de la ruta —"collection/[collectionId]"— hasta que el
+        efecto de la pantalla corre, y eso es un frame con texto de desarrollo
+        arriba.
+      */}
+      <Stack.Screen name="collection/[collectionId]" options={{ title: "" }} />
+      {/*
         The board is a screen of its own and not a mode of the list screen, so it
         is declared here like the rest. A route that this layout says nothing
         about keeps the header with no title in it, which is how a screen with a

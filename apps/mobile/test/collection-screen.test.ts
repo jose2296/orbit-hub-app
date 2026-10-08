@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Collection } from "@orbit-hub/contracts";
 
+import { dictionaries } from "@/lib/i18n/dictionaries";
 import { ACCIONES, ORDEN_POR_KIND, accionesPara } from "@/lib/menus/registry";
 import { puedeOfrecerse } from "@/lib/menus/paginas";
 
@@ -41,6 +42,12 @@ import { menuCtxDeColeccion } from "@/components/menus/coleccion";
 /** La ruta, tal como queda en el arbol de `src`, y no como la declara este test. */
 const RUTA = "app/(app)/collection/[collectionId].tsx";
 
+/** Quien manda una fila de coleccion a donde se abre. */
+const CONTENT_LIST = "src/components/content/content-list.tsx";
+
+/** La cabecera de la pila, que declara las pantallas con nombre de datos. */
+const LAYOUT = "src/app/(app)/_layout.tsx";
+
 const BASE: Collection = {
   id: "c1",
   version: 4,
@@ -60,6 +67,27 @@ const BASE: Collection = {
 
 /** El codigo de la pantalla, sin la prosa: los `not.toContain` miran el codigo. */
 const codigo = (): string => sinComentarios(src(`src/${RUTA}`));
+
+/**
+ * El codigo de la fila compartida, y **no** una copia de el leida de la pantalla.
+ *
+ * La ruta sale del arbol como sale la de la pantalla: derivarla de un nombre
+ * escrito aca seria una lista, y una lista es justo lo que dejo de haber.
+ */
+const codigoDeLaFila = (): string =>
+  sinComentarios(src(`src/${tsFilaDeEnlace()}`));
+
+/** La fila de enlace, del directorio y no de una constante escrita aca. */
+function tsFilaDeEnlace(): string {
+  const candidatas = tsxDeLaApp().filter((nombre) => nombre.endsWith("bookmarks/link-row.tsx"));
+
+  expect(
+    candidatas.length,
+    "se espera una fila de enlace compartida, y el directorio no la tiene",
+  ).toBe(1);
+
+  return candidatas[0] as string;
+}
 
 describe("una coleccion es una pantalla, y la ruta existe", () => {
   it("esta en el arbol, y el arbol la encuentra solo", () => {
@@ -81,33 +109,46 @@ describe("una coleccion es una pantalla, y la ruta existe", () => {
     expect(src(`src/${RUTA}`)).toMatch(/export default function/);
   });
 
-  it("la fila de una coleccion todavia no apunta aca, y se sabe quien es", () => {
+  it("y la fila de una coleccion llega aca, y no al filtro viejo", () => {
     /*
       ------------------------------------------------------------------
-      LA DEUDA QUE ESTA TAREA DEJA ESCRITA
+      POR QUE ESTE GUARD EXISTIA Y AHORA AFIRMA LO CONTRARIO
       ------------------------------------------------------------------
 
-      `content-list.tsx` manda la fila de una coleccion a `/(app)/bookmarks` con
-      `collectionId` en los parametros, que es el filtro del que esta pantalla
-      viene a salir. Cambiarlo es una linea, y **esta fuera de la superficie de
-      esta tarea**, asi que la linea sigue ahi y queda anotada con su motivo: una
-      deuda que nadie nombra se descubre cuando alguien la vuelve a escribir.
+      Escribi la version anterior: `content-list.tsx` mandaba la fila a
+      `/(app)/bookmarks` con `collectionId` en los parametros, eso era una deuda
+      **fuera de la superficie de la T5**, y el guard la nombraba con su motivo y
+      caia el dia que alguien la pagara.
 
-      El marcador sale de leer el arbol, no de una lista de archivos, y la lista
-      de deudas se afirma en las dos direcciones: si la fila deja de apuntar al
-      filtro, este test falla diciendo que hay que borrar la entrada — que es la
-      unica forma de que la lista no se quede vieja en silencio.
+      Se pago. Y un guard que solo sabe decir "esto sigue mal" deja de ser util en
+      cuanto esta bien: ahora afirma que la fila llega **aca**, y si alguien
+      devuelve el `pathname` a `/bookmarks` —que sigue funcionando, y por eso la
+      vuelta es facil— este test falla.
+
+      Y se derivan las dos mitades: que la fila mande a la pantalla nueva, y que ya
+      no mande a la lista con un filtro.
+    */
+    /*
+      El marcador es el `pathname` del filtro y no el `collectionId: row.id`: ese
+      parametro esta en las dos versiones —la que iba a `/bookmarks` y la que va
+      aca—, asi que como marcador de "la fila todavia usa el filtro" no distingue
+      nada. Y el `pathname` es lo unico que si.
     */
     const alFiltro = tsxDeLaApp().filter((nombre) =>
-      src(`src/${nombre}`).includes("collectionId: row.id"),
+      src(`src/${nombre}`).includes('pathname: "/(app)/bookmarks"'),
     );
+    const lista = sinComentarios(src(CONTENT_LIST));
 
-    const PENDIENTES: Record<string, string> = {
-      "components/content/content-list.tsx":
-        "la fila de coleccion sigue mandando a /bookmarks con collectionId; el archivo esta fuera de la superficie de T5.",
-    };
-
-    expect(alFiltro).toEqual(Object.keys(PENDIENTES));
+    expect(
+      alFiltro,
+      "nadie manda una coleccion al filtro de /bookmarks: esa lista solo es de enlaces sin coleccion",
+    ).toEqual([]);
+    expect(lista).toMatch(/pathname: "\/\(app\)\/collection\/\[collectionId\]"/);
+    expect(lista).toMatch(/params: \{ collectionId: row\.id \}/);
+    // Y **sin `workspaceId`**: el espacio de una coleccion es un dato de la
+    // coleccion, que la pantalla resuelve sola desde la cache. Mandarlo seria una
+    // segunda fuente de verdad para el mismo dato.
+    expect(lista).not.toMatch(/pathname: "\/\(app\)\/bookmarks"/);
   });
 });
 
@@ -182,6 +223,34 @@ describe("el esqueleto es el de una pantalla con cabecera, no uno nuevo", () => 
     // de un espacio con la cabecera en el gris del tema.
     expect(codigo()).toContain("useScreenSpace(");
     expect(codigo()).toMatch(/wash=\{/);
+  });
+
+  it("el boton se llama con la frase de una coleccion, no con la de otra", () => {
+    // `collections.menu` es la frase de **este** control para **esta** entidad, y
+    // por eso se agrego al diccionario en la ronda de fix. Antes la etiqueta era
+    // `collections.kind` porque la clave no existia, y el guard lo aceptaba: un
+    // boton de tres puntitos que se anuncia como "Coleccion" en vez de como su
+    // menu es una etiqueta que no nombra lo que hace.
+    const fuente = codigo();
+
+    expect(fuente).toContain('label={t("collections.menu")}');
+    // Y la clave existe en las dos lenguas, con su palabra: una clave que se
+    // declara y no se traduce sale en la pantalla como la propia clave.
+    expect(dictionaries.es["collections.menu"]).toBeTruthy();
+    expect(dictionaries.en["collections.menu"]).toBeTruthy();
+  });
+
+  it("y el layout declara la pantalla, como las demas de la pila", () => {
+    /*
+      El nombre lo pone la pantalla con `useScreenTitle`, asi que el titulo vacio
+      es lo unico que hay que declarar. Sin la linea, la cabecera muestra
+      `"collection/[collectionId]"` hasta que el efecto de la pantalla corre: un
+      frame con texto de desarrollo, en la pantalla nueva, que es la que se
+      acaba de escribir para que no se vea.
+    */
+    expect(sinComentarios(src(LAYOUT))).toMatch(
+      /<Stack\.Screen name="collection\/\[collectionId\]" options=\{\{ title: "" \}\} \/>/,
+    );
   });
 });
 
@@ -342,57 +411,56 @@ describe("la lista de enlaces es la de T4, con su menu de fila", () => {
     expect(codigo()).not.toContain(".sort(");
   });
 
-  it("cada fila lleva el boton compartido y el ancho que el boton exige", () => {
-    // Las dos mitades del contrato de `MenuButton`, y las dos se pierden solas:
-    // la caja relativa —`absolute` sin padre relativo se ancla al contenedor
-    // equivocado— y el ancho reservado, que sin el `hitSlop` en la cuenta el
-    // area del boton entra en la de la fila.
-    const fuente = codigo();
-
-    expect(fuente).toMatch(/<MenuButton\b/);
-    expect(fuente).toMatch(
-      /import \{[^}]*ANCHO_RESERVADO[^}]*\} from "@\/components\/ui\/menu-button"/,
-    );
-    expect(fuente).toMatch(/position: "relative"/);
-    expect(fuente).toMatch(/paddingRight: ANCHO_RESERVADO/);
-  });
-
-  it("y la fila se encoge, porque sin `flex: 1` la reserva no hace nada", () => {
+  it("la fila es la compartida, y la monta sin dibujarla", () => {
     /*
-      Por **orden**, y no con una ventana de caracteres: en RN el `flexShrink` por
-      defecto es `0`, asi que una fila sin `flex: 1` **ignora** el `paddingRight`
-      de la caja y un titulo largo se sale con el boton encima. No hay typecheck
-      que lo note y con un ancho fijo tampoco se ve.
+      ------------------------------------------------------------------
+      POR QUE ESTA PANTALLA NO DIBUJA LA FILA
+      ------------------------------------------------------------------
 
-      Y el orden es la prueba: la busqueda del `flex` arranca en la fila, porque
-      `if (isLoading) return <View style={{ flex: 1 }} />` usa la misma cadena y
-      sin ese arranque el guard daria verde con la fila sin encogerse.
+      Porque la fila de un enlace es **una sola** —`components/bookmarks/link-row`—
+      y la pintan la lista, el inbox y esta. Cuando esta pantalla la copio, la
+      tercera copia vino con su caja relativa, su `ANCHO_RESERVADO`, su `flex: 1`,
+      su punto de estado y sus dos mapas: tres lugares donde arreglar lo mismo y
+      tres donde un arreglo se aplica a dos.
+
+      Asi que el guard mira **las dos mitades**: que la pantalla monte `LinkRow`, y
+      que no tenga fila propia. La segunda es la que lo hace derivable —si alguien
+      copia la fila otra vez, esto falla— y `bookmark-menu.test.ts` la repite sobre
+      las otras dos pantallas.
     */
     const fuente = codigo();
-    const abre = fuente.indexOf("<ListRow");
 
-    expect(abre, "la pantalla no tiene fila").toBeGreaterThan(-1);
-    const encoge = fuente.indexOf("style={{ flex: 1 }}", abre);
-    const menu = fuente.indexOf("<MenuButton", abre);
-
-    expect(encoge, "la fila sin flex se sale de la caja").toBeGreaterThan(abre);
-    expect(encoge, "el flex tiene que ser el de la fila, no el del menu").toBeLessThan(menu);
+    expect(fuente).toMatch(/import \{ LinkRow \} from "@\/components\/bookmarks\/link-row"/);
+    expect(fuente).toMatch(/<LinkRow\b/);
+    expect(fuente).toContain("onMenu=");
+    // Y lo que la fila se lleva con ella, para que nadie lo reescriba aca.
+    expect(fuente).not.toContain("<ListRow");
+    expect(fuente).not.toContain("<MenuButton");
+    expect(fuente).not.toContain("CLAVE_ESTADO");
+    expect(fuente).not.toContain("COLOR_ESTADO");
+    expect(fuente).not.toContain("ANCHO_RESERVADO");
   });
 
-  it("el nombre de un enlace sale del archivo que tiene la regla", () => {
-    // `tituloDeBookmark` y `hostDe` viven en `lib/menus/bookmark` porque las
-    // pantallas que nombran un enlace los toman de ahi. Una que escriba el
-    // `title.length > 0 ? ...` es una regla mas que puede diferir sin que nada
-    // falle, y el guard que deriva esa lista —`bookmark-menu.test.ts`— solo exige
-    // que la tomen las dos pantallas que nombra, asi que no obliga a esta.
+  it("y el nombre de un enlace sale del archivo que tiene la regla", () => {
+    // `tituloDeBookmark` y `hostDe` viven en `lib/menus/bookmark` porque quien
+    // nombra un enlace los toma de ahi, y ahora quien lo nombra es la fila. Esta
+    // pantalla los necesita igual —el `ctx` del menu sale del mismo archivo— asi
+    // que el import se queda, pero **la regla no se reescribe en ninguno de los
+    // dos**.
     const fuente = codigo();
+    const fila = codigoDeLaFila();
 
-    expect(fuente).toMatch(/import \{[^}]*tituloDeBookmark[^}]*\} from "@\/lib\/menus\/bookmark"/);
-    expect(fuente).toMatch(/import \{[^}]*hostDe[^}]*\} from "@\/lib\/menus\/bookmark"/);
+    expect(fila).toMatch(/import \{[^}]*tituloDeBookmark[^}]*\} from "@\/lib\/menus\/bookmark"/);
+    expect(fila).toMatch(/import \{[^}]*hostDe[^}]*\} from "@\/lib\/menus\/bookmark"/);
     expect(fuente).toMatch(/import \{[^}]*menuCtxDeBookmark[^}]*\} from "@\/lib\/menus\/bookmark"/);
     expect(fuente).toMatch(/import \{[^}]*handlersDeBookmark[^}]*\} from "@\/lib\/menus\/bookmark"/);
     // Y la regla entera, no una parte: el ternario que cae a la URL.
-    expect(fuente).not.toMatch(/\.title\.length > 0 \? [\w.]+\.title : [^;\n]*\.url/);
+    for (const [nombre, texto] of [
+      ["la pantalla", fuente],
+      ["la fila", fila],
+    ] as const) {
+      expect(texto, nombre).not.toMatch(/\.title\.length > 0 \? [\w.]+\.title : [^;\n]*\.url/);
+    }
   });
 
   it("la fila lleva un id propio, y algo del paquete lo mira", () => {
@@ -402,6 +470,11 @@ describe("la lista de enlaces es la de T4, con su menu de fila", () => {
       `recursive`, para que un test nuevo en un subdirectorio no se quede sin
       mirar sin avisar— y no con una lista: asi el guard se entera cuando alguien
       deje de mirarlo, que es el fallo que importa.
+      *
+      * Y el prefijo lo pone **la pantalla**, no la fila: es lo que dice de donde
+      * se esta la fila —`list-`, `inbox-`, `collection-`—, y si viviera en el
+      * componente las tres pantallas compartirian un id y el conteo volveria a
+      * ser el total.
     */
     const prefijo = codigo().match(/testID=\{`([a-z-]+)-\$\{[a-z]+\.id\}`\}/)?.[1];
 
@@ -411,5 +484,75 @@ describe("la lista de enlaces es la de T4, con su menu de fila", () => {
     expect(fuentesDeLosTests(), `nada del paquete mira el testID ${prefijo}-*`).toContain(
       `"${prefijo}-`,
     );
+  });
+});
+
+describe("la fila de un enlace es una sola en todo el repo", () => {
+  /*
+    ------------------------------------------------------------------
+    POR QUE ESTE BLOQUE EXISTE Y NO ES EL DE `bookmark-menu.test.ts`
+    ------------------------------------------------------------------
+
+    Porque aquel mira **las dos pantallas** que ya existian, y la tercera —esta— se
+    coló sin que las mencionara. Y el sintoma es el peor de un guard derivado: el
+    bloque sigue mirando, sigue encontrando, y su lista de archivos se quedo
+    corta sin avisar.
+
+    Asi que este deriva de **quien dibuja una fila de enlace**, y no de quien dice
+    que tiene un `ListRow`. Un `ListRow` de otra cosa —un item de lista, un ajuste,
+    un espacio— no es una fila de enlace y no debe aparecer aqui, asi que el
+    marcador tiene que ser el **conjunto** de piezas de la fila: el boton de tres
+    puntitos, el icono de enlace, el punto del estado y la reserva del ancho. Un
+    archivo que tenga las cuatro esta dibujando una fila de enlace, y solo puede
+    haber uno.
+  */
+
+  /**
+   * Las piezas que **solo juntas** son una fila de enlace.
+   *
+   * El icono solo no sirve, y se ve en el repo: `icon="bookmark-outline"` aparece
+   * tambien en los `EmptyState` de la lista y de la coleccion, y en el `Pick` del
+   * selector de destino —que es una fila de **coleccion**, no de enlace—. Con ese
+   * icono como marcador, el guard tendria que confiar en que ningun otro
+   * `EmptyState` dibuja un `MenuButton` al lado, y esa es exactamente la clase de
+   * confianza que un guard derivado no necesita.
+   *
+   * Las cuatro juntas no admiten confusion: la caja de la fila, el nombre que sale
+   * de la regla, el ancho reservado y el boton.
+   */
+  const PIEZAS = [
+    "<ListRow",
+    "tituloDeBookmark(bookmark)",
+    "paddingRight: ANCHO_RESERVADO",
+    "<MenuButton",
+  ] as const;
+
+  const dibujanUnaFilaDeEnlace = (): string[] =>
+    tsxDeLaApp().filter((nombre) => {
+      const codigo = sinComentarios(src(`src/${nombre}`));
+
+      return PIEZAS.every((pieza) => codigo.includes(pieza));
+    });
+
+  it("el marcador encuentra la fila, y son las piezas que la forman", () => {
+    // Sin esto el bloque pasa en verde con la lista vacia, que es como pasaron los
+    // guards de T2 que se olvidaron un elemento.
+    expect(dibujanUnaFilaDeEnlace().length, "sin fila, el guard no comprobaria nada").toBe(1);
+  });
+
+  it("y las tres pantallas la montan en vez de dibujarla", () => {
+    // La afirmacion en positivo de la regla: las tres la usan, y por eso hay un
+    // archivo y no tres.
+    const fila = tsFilaDeEnlace();
+
+    for (const ruta of [
+      "app/(app)/bookmarks.tsx",
+      "app/(app)/unclassified.tsx",
+      RUTA,
+    ]) {
+      expect(sinComentarios(src(`src/${ruta}`)), ruta).toMatch(/<LinkRow\b/);
+    }
+
+    expect(fila).toBeTruthy();
   });
 });

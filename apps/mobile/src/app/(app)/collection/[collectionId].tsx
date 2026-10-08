@@ -2,8 +2,9 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 
-import type { Bookmark, BookmarkExtractionState, Collection } from "@orbit-hub/contracts";
+import type { Bookmark, Collection } from "@orbit-hub/contracts";
 
+import { LinkRow } from "@/components/bookmarks/link-row";
 import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import {
   handlersDeColeccion,
@@ -12,8 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useHeaderAction } from "@/components/ui/header-action";
-import { ListRow } from "@/components/ui/list-row";
-import { ANCHO_RESERVADO, MenuButton } from "@/components/ui/menu-button";
 import { Screen } from "@/components/ui/screen";
 import { useBookmarks } from "@/hooks/use-bookmarks";
 import { useCollections } from "@/hooks/use-collections";
@@ -21,15 +20,8 @@ import { useScreenSpace } from "@/hooks/use-screen-space";
 import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useWorkspaces } from "@/hooks/use-workspaces";
 import { useTranslation } from "@/lib/i18n";
-import type { TranslationKey } from "@/lib/i18n";
-import {
-  handlersDeBookmark,
-  hostDe,
-  menuCtxDeBookmark,
-  tituloDeBookmark,
-} from "@/lib/menus/bookmark";
+import { handlersDeBookmark, menuCtxDeBookmark } from "@/lib/menus/bookmark";
 import { useTheme } from "@/theme";
-import type { Theme } from "@/theme";
 
 /**
  * Una coleccion, como pantalla y no como filtro.
@@ -143,35 +135,28 @@ export default function CollectionScreen() {
     nada son un boton sin destino.
 
     ------------------------------------------------------------------
-    Y POR QUE LA ETIQUETA ES `collections.kind` Y NO UNA PROPIA
+    Y POR QUE LA ETIQUETA ES `collections.menu`
     ------------------------------------------------------------------
 
-    Porque la frase que nombra este control para una coleccion —`collections.menu`,
-    al estilo de `lists.menu` y `folders.menu`— **no existe**, y
-    `lib/i18n/dictionaries.ts` esta fuera de la superficie de este trabajo. Las
-    tres salidas que quedan son malas y conviene tenerlas contadas:
+    Porque es la frase que nombra **este** control para **esta** entidad, al
+    estilo de `lists.menu` y `folders.menu`. Las otras dos salidas se descartaron y
+    conviene tenerlas contadas, porque cualquier tarea que monte otro tres puntitos
+    de cabecera las va a encontrar:
 
     - Pedir la de otra entidad seria **mentir en voz alta**: "Menu de la lista" en la
       cabecera de una coleccion.
     - Reusar la frase que compone el boton de la fila —"Acciones de {name}"— es la
       que mas encaja, y no se puede: `icon-page.test.ts` afirma que esa frase vive
-      **solo** dentro de `menu-button.tsx`, que es justamente el componente que la
-      compone y el que se la pide como `label`.
-    - Montar el boton de las filas en la cabecera evitaria las dos anteriores, y
-      haria que esta fuese la unica cabecera de la app cuyos tres puntitos los
-      dibuja un componente distinto del de las otras cuatro.
-
-    `collections.kind` es correcta en su propia medida —"Coleccion", el nombre de la
-    entidad— y de paso **resucita una clave que la T2 dejo huerfana** al filtrarse
-    la fila de icono, que no tenia consumidor. La clave que falta queda anotada en
-    el reporte de la tarea, y es una linea por lengua.
+      **solo** dentro de `menu-button.tsx`, que es el componente que la compone y el
+      que se la pide como `label`. Un boton de cabecera y un boton de fila son dos
+      controles distintos, y por eso tienen dos frases.
   */
   useHeaderAction(
     () =>
       coleccion ? (
         <Button
           testID="collection-menu-button"
-          label={t("collections.kind")}
+          label={t("collections.menu")}
           variant="ghost"
           size="sm"
           icon="ellipsis-horizontal"
@@ -229,29 +214,10 @@ export default function CollectionScreen() {
     El orden lo pone el hook (`updatedAt desc`: lo ultimo guardado arriba, que es
     "leer despues"). Esta pantalla no reordena: un `.sort` aca seria un segundo
     criterio compitiendo con el primero, y el molde tampoco ordena.
+
+    Y no arma una lista de "items": lo que cada fila sabe de si misma lo decide
+    `LinkRow`, que es **la misma fila** que pintan la lista y el inbox.
   */
-  const items = useMemo(
-    () =>
-      bookmarks.map((bookmark) => {
-        const subtitulo = [hostDe(bookmark.url), t(CLAVE_ESTADO[bookmark.extractionState])]
-          .filter((parte) => parte.length > 0)
-          .join(" · ");
-        return {
-          id: bookmark.id,
-          // El enlace entero viaja en la fila porque el menu lo necesita entero
-          // —titulo, rol y version— y buscarlo otra vez por id seria una segunda
-          // fuente para lo mismo.
-          bookmark,
-          // El nombre sale de `lib/menus/bookmark` y no de una regla escrita aca:
-          // es la misma regla que titula la cabecera de la hoja, y por eso las dos
-          // tienen que decir lo mismo para el mismo enlace.
-          titulo: tituloDeBookmark(bookmark),
-          subtitulo,
-          punto: COLOR_ESTADO[bookmark.extractionState](theme),
-        };
-      }),
-    [bookmarks, t, theme],
-  );
 
   if (isLoading) return <View style={{ flex: 1 }} />;
 
@@ -268,7 +234,7 @@ export default function CollectionScreen() {
           : null
       }
     >
-      {items.length === 0 ? (
+      {bookmarks.length === 0 ? (
         /*
           El vacio dice lo mismo que la lista de la que esta pantalla viene: es la
           misma lista de enlaces, con las mismas palabras. `collections.empty` —"Sin
@@ -282,73 +248,19 @@ export default function CollectionScreen() {
         />
       ) : (
         <View style={{ gap: theme.spacing.xs }}>
-          {items.map((item) => (
-            <View
-              key={item.id}
-              testID={`collection-menu-${item.id}`}
-              style={{
-                /*
-                  La caja relativa, porque `MenuButton` es `position: absolute` y sin
-                  un padre relativo se ancla al contenedor equivocado. El requisito
-                  lo pide la cabecera del boton y lo cumple quien lo monta.
-                */
-                position: "relative",
-                flexDirection: "row",
-                alignItems: "center",
-                gap: theme.spacing.sm,
-                /*
-                  El ancho que el boton ocupa, mas su margen y el `hitSlop` que le
-                  agranda el area de toque mas alla de la caja: los tres los trae
-                  el boton, en `ANCHO_RESERVADO`. Sin el `hitSlop` en la cuenta, el
-                  area del boton entra en la de la fila y los ultimos pixeles abren
-                  el menu en vez del enlace.
-                */
-                paddingRight: ANCHO_RESERVADO,
-              }}
-            >
-              <ListRow
-                title={item.titulo}
-                subtitle={item.subtitulo.length > 0 ? item.subtitulo : undefined}
-                icon="bookmark-outline"
-                leading={
-                  <View
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: item.punto,
-                    }}
-                  />
-                }
-                /*
-                  Y este `flex: 1` es lo que hace que la reserva sirva: sin el, el
-                  `paddingRight` de la caja no encoge la fila —en RN el
-                  `flexShrink` por defecto es `0`— y un titulo largo se sale con el
-                  boton encima. No hay typecheck que lo note.
-                */
-                style={{ flex: 1 }}
-                onPress={() =>
-                  router.push({
-                    pathname: "/bookmark/[bookmarkId]",
-                    params: { bookmarkId: item.id },
-                  })
-                }
-              />
-              {/*
-                Al lado de la fila y no dentro: un `Pressable` dentro del de la
-                fila es `<button>` dentro de `<button>` en web, y el navegador lo
-                desarma.
-
-                Y los tres puntitos en vez de una papelera suelta: borrar paso a ser
-                una fila del menu, y esa fila **pregunta** antes de hacerlo —`DeletePage`—,
-                que es lo unico que distingue un trabajo que no se puede deshacer de
-                uno que sale con un toque.
-              */}
-              <MenuButton
-                label={item.titulo}
-                onPress={() => setEnlaceConMenu(item.bookmark)}
-              />
-            </View>
+          {bookmarks.map((bookmark) => (
+            <LinkRow
+              key={bookmark.id}
+              bookmark={bookmark}
+              testID={`collection-menu-${bookmark.id}`}
+              onPress={() =>
+                router.push({
+                  pathname: "/bookmark/[bookmarkId]",
+                  params: { bookmarkId: bookmark.id },
+                })
+              }
+              onMenu={() => setEnlaceConMenu(bookmark)}
+            />
           ))}
         </View>
       )}
@@ -382,33 +294,3 @@ export default function CollectionScreen() {
   );
 }
 
-/**
- * Que palabra lleva cada estado en la fila, y de que color es su punto.
- *
- * Los dos mapas viven juntos porque son la misma decision dicha dos veces: si un
- * estado cambia de nombre, su color se revisa en el mismo sitio. `Record` y no un
- * `switch` con defecto, para que un quinto estado del contrato rompa el typecheck
- * aca en vez de pintarse sin palabra.
- *
- * Y estan **calcados de `bookmarks.tsx`** —mismas palabras, mismos colores— y no
- * importados de alla porque alla es una ruta y esto es otra, y una pantalla no
- * importa de otra pantalla. Es la misma deuda que la fila, escrita al lado, y las
- * dos las cierra un unico `components/bookmarks/link-row.tsx`.
- */
-const CLAVE_ESTADO: Record<BookmarkExtractionState, TranslationKey> = {
-  pending: "bookmarks.state.pending",
-  ready: "bookmarks.state.ready",
-  metadata_only: "bookmarks.state.metadata_only",
-  failed: "bookmarks.state.failed",
-};
-
-/**
- * Funciones y no valores, porque los colores salen del tema y el tema sale de un
- * hook: un mapa evaluado arriba del archivo no tendria de donde leer.
- */
-const COLOR_ESTADO: Record<BookmarkExtractionState, (theme: Theme) => string> = {
-  pending: (theme) => theme.colors.warning,
-  ready: (theme) => theme.colors.success,
-  metadata_only: (theme) => theme.colors.info,
-  failed: (theme) => theme.colors.danger,
-};
