@@ -318,12 +318,19 @@ git commit -m "feat(collections): pantalla propia con header y menu completo"
 > arreglar solo lo suyo: tiene que **dar vuelta la senal de esos cinco guards**.
 > Deuda previa, no regresion de este plan.
 >
-> **Y aqui me equivoque una vez**: lo puse como prerrequisito de T6. No lo es.
-> `ListMenuSheet` **no usa `useSheetSucio`** — por eso su renombrar usa un `Button`
-> propio. De los cinco guards, **ninguno es de una lista**: son de `rename-sheet`,
-> `note-menu-sheet` (que es **T7**), `workspace-create-sheet`, y dos mas. Los otros
-> ocho de las nueve hojas **no estan en este plan**: son un corte propio. T7 tiene que
-> dar vuelta la senal del suyo; los otros cuatro quedan como deuda registrada.
+> **Y aqui me equivoque DOS veces, y lo comprobé con las definiciones:**
+>
+> 1. Lo puse como prerrequisito de T6. No lo es: `ListMenuSheet` **no usa
+>    `useSheetSucio`** — por eso su renombrar usa un `Button` propio.
+> 2. Dije que T7 tiene que dar vuelta "la señal de su guard". **Falso.** Los cinco
+>    guards apuntan a `rename-sheet.tsx`, `item-edit-sheet.tsx` (dos),
+>    `workspace-create-sheet.tsx` y `save-template-sheet.tsx`, y **ninguno a
+>    `note-menu-sheet.tsx`**. Verificado sobre las definiciones de las variables, no
+>    sobre el numero de linea.
+>
+> O sea: **T7 arregla el de nota libre**, sin tocar ninguna senal. Los otros ocho de
+> las nueve hojas estan fuera de este plan, y cuatro de ellas tienen un guard que
+> **afirma la forma rota**: ahi hay que dar vuelta la señal, y es un corte propio.
 
 ### Task 11: `SharePage` — la regresion que T6 abrio
 
