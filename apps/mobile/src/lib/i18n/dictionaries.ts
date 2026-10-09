@@ -405,6 +405,7 @@ const es = {
   "lists.deleteConfirm": "Eliminar la lista",
   "lists.deleteFolderBody":
     "Se elimina la carpeta. Las listas que había dentro se quedan, sin carpeta.",
+  "share.reachFailed": "No he podido preguntar a quien mas le llega esto.",
   "share.reachTitle": "A cuántas personas afecta",
   "share.reachBody":
     "Esta lista también la tienen {count} personas. Si la eliminas, desaparece de sus móviles sin aviso previo.",
@@ -807,6 +808,7 @@ const es = {
   "bookmarks.state.failed": "Fallo la extraccion",
   "bookmarks.unclassifiedCount.one": "1 enlace sin clasificar",
   "bookmarks.unclassifiedCount.other": "{count} enlaces sin clasificar",
+  "bookmarks.classify": "Clasificar",
   "bookmarks.reader.openOriginal": "Abrir original",
   "bookmarks.reader.pendingBody": "Extrayendo el contenido. Aparece solo al terminar.",
   "bookmarks.reader.waitingText": "El texto completo llega con la sincronizacion.",
@@ -904,6 +906,7 @@ const es = {
   "share.save.noSpaces": "Primero necesitas un espacio: un enlace vive siempre en uno.",
   "share.save.chooseSpace": "Elige un espacio",
   "collections.kind": "Colección",
+  "collections.menu": "Menú de la colección",
   "collections.delete.hint": "Sus enlaces no se borran: pasan a «Sin clasificar».",
   "collections.delete.confirm": "¿Eliminar esta colección?",
   "collections.delete.body": "La colección desaparece, pero sus enlaces no: pasan a «Sin clasificar».",
@@ -995,6 +998,12 @@ const es = {
   // hiciera.
   "export.list.title": "Exportar esta lista",
   "export.list.body": "Los elementos de esta lista, en JSON o CSV.",
+  // Y la de una coleccion, que **no puede ser la de arriba**: "Exportar esta lista"
+  // en el menu de una coleccion es un error que se ve al abrir el menu. Vive al
+  // lado de la suya y no dentro de la familia `list.*` porque no es de la lista: lo
+  // que se exporta son enlaces, y la palabra del sobre y de la pantalla es
+  // "coleccion".
+  "export.collection.title": "Exportar esta colección",
   "export.running": "Preparando el fichero…",
   "export.done.one": "{count} elemento",
   "export.done.other": "{count} elementos",
@@ -1308,6 +1317,18 @@ const es = {
   "errors.timeout": "La solicitud ha tardado demasiado",
   "errors.unauthorized": "Tu sesión ha caducado",
   "errors.unknown": "Error inesperado",
+
+  /*
+    El menu de entidad, y solo la fila que hoy no existe en ninguna hoja.
+
+    Las demas (renombrar, icono, borrar, compartir, panel, exportar) reusan el
+    copy que cada hoja ya tenia, y por eso estan todas en `es` desde antes de que
+    hubiera un registro. Esta es la que hay que escribir de nuevo: "acceso" es el
+    nombre de la pagina que responde "quien mas lo tiene", que es una pregunta
+    que el menu no hacia y que solo se podia ver en el peor momento —justo antes
+    de borrar— (Review Focus de la spec, la pagina de acceso).
+  */
+  "menus.access": "Quién más lo tiene",
 } as const;
 
 export type TranslationKey = keyof typeof es;
@@ -1674,6 +1695,7 @@ const en: Record<TranslationKey, string> = {
   "lists.deleteConfirm": "Delete the list",
   "lists.deleteFolderBody":
     "The folder is deleted. The lists inside it are kept, with no folder.",
+  "share.reachFailed": "I could not ask who else this reaches.",
   "share.reachTitle": "How many people this affects",
   "share.reachBody":
     "{count} other people have this list too. If you delete it, it disappears from their phones without warning.",
@@ -2064,6 +2086,7 @@ const en: Record<TranslationKey, string> = {
   "bookmarks.state.failed": "Extraction failed",
   "bookmarks.unclassifiedCount.one": "1 unclassified link",
   "bookmarks.unclassifiedCount.other": "{count} unclassified links",
+  "bookmarks.classify": "Place",
   "bookmarks.reader.openOriginal": "Open original",
   "bookmarks.reader.pendingBody": "Extracting the content. It shows up when it finishes.",
   "bookmarks.reader.waitingText": "The full text arrives with the sync.",
@@ -2161,6 +2184,7 @@ const en: Record<TranslationKey, string> = {
   "share.save.noSpaces": "You need a space first: a link always lives in one.",
   "share.save.chooseSpace": "Choose a space",
   "collections.kind": "Collection",
+  "collections.menu": "Collection menu",
   "collections.delete.hint": "Its links are not deleted: they go to “Unclassified”.",
   "collections.delete.confirm": "Delete this collection?",
   "collections.delete.body": "The collection goes away, but its links do not: they move to “Unclassified”.",
@@ -2238,6 +2262,11 @@ const en: Record<TranslationKey, string> = {
   "export.title": "Export my data",
   "export.list.title": "Export this list",
   "export.list.body": "The items in this list, as JSON or CSV.",
+  // The collection's own row label: reusing the list's said "Export this list" in a
+  // collection's menu, and it is the one line anybody actually reads before
+  // choosing. Same reason it does not live under `list.*`: what gets exported is
+  // bookmarks, and the word everywhere else —envelope, screen, plural—is "links".
+  "export.collection.title": "Export this collection",
   "export.running": "Preparing the file…",
   "export.done.one": "{count} item",
   "export.done.other": "{count} items",
@@ -2498,6 +2527,8 @@ const en: Record<TranslationKey, string> = {
   "errors.timeout": "The request took too long",
   "errors.unauthorized": "Your session has expired",
   "errors.unknown": "Unexpected error",
+
+  "menus.access": "Who else has it",
 };
 
 export const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

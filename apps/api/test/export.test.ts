@@ -1,11 +1,17 @@
 import {
   accountExportSchema,
+  BOOKMARK_EXPORT_CSV_COLUMNS,
   BOARD_EXPORT_CSV_COLUMNS,
+  collectionExportSchema,
   LIST_EXPORT_CSV_COLUMNS,
   listExportSchema,
 } from '@orbit-hub/contracts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { extraerContenido } from '../src/modules/bookmarks/extract-content.js';
+import { extractBookmark } from '../src/modules/bookmarks/extract-service.js';
+import { sacarmetadata } from '../src/modules/bookmarks/extract-metadata.js';
 
 import { createVerifiedUser, espacioPropio, startTestServer } from './helpers';
 import type { TestServer, TestUser } from './helpers';
@@ -120,6 +126,172 @@ async function createNote(user: TestUser, workspaceId: string, title: string): P
 async function deleteEntity(user: TestUser, entity: string, entityId: string): Promise<void> {
   const response = await sync(user, [{ entity, kind: 'delete', entityId }]);
   expect(response.body.data.results[0].status).toBe('applied');
+}
+
+/** Una coleccion por sync, con la misma forma de payload que usa la app. */
+async function createCollection(
+  user: TestUser,
+  workspaceId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const id = randomUUID();
+  const response = await sync(user, [
+    {
+      entity: 'collection',
+      kind: 'create',
+      entityId: id,
+      payload: { workspaceId, folderId: null, name: 'Recetas', position: 0, ...overrides },
+    },
+  ]);
+  expect(response.body.data.results[0].status).toBe('applied');
+  return id;
+}
+
+/**
+ * Un enlace, y **el `collectionId` va siempre explicito**: es la clave que
+ * `bookmarks-destino.test.ts` dejo anotada —la que falta no es la que vale
+ * `null`—, y un enlace creado sin ella no lo recoge el export de una coleccion.
+ */
+async function createBookmark(
+  user: TestUser,
+  workspaceId: string,
+  collectionId: string | null,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const id = randomUUID();
+  const response = await sync(user, [
+    {
+      entity: 'bookmark',
+      kind: 'create',
+      entityId: id,
+      payload: {
+        workspaceId,
+        folderId: null,
+        collectionId,
+        url: 'https://example.com/receta',
+        title: 'Tortilla',
+        tags: [],
+        position: 0,
+        ...overrides,
+      },
+    },
+  ]);
+  expect(response.body.data.results[0].status).toBe('applied');
+  return id;
+}
+
+/**
+ * Un enlace con el articulo dentro, **pasando por la extraccion de verdad**.
+ *
+ * `document`, `plainText`, `siteName`, `description` e `imageUrl` los escribe la
+ * extraccion y **nadie mas**: el sanitizador de `sync` los tira al crear y al
+ * actualizar (`sync-service.ts`, "los siete campos del servidor"). Un fixture que
+ * los escribiera por la puerta de al lado estaria probando una fila que la base
+ * no puede tener, asi que el enlace se extrae con dependencias falsas —el mismo
+ * camino que `bookmarks-extract.test.ts`— y lo que se comprueba despues es lo que
+ * de verdad quedo guardado.
+ */
+const PAGINA_EXTRAIDA =
+  '<!doctype html><html><head><title>La pagina</title>' +
+  '<meta property="og:site_name" content="El sitio">' +
+  '<meta property="og:description" content="La descripcion del sitio">' +
+  '</head><body><article><h1>La pagina</h1><p>' +
+  'palabra '.repeat(60) +
+  '</p></article></body></html>';
+
+/**
+ * Extrae con una `og:description` propia, que es como se mete un `;` o un salto
+ * de linea en la descripcion de un enlace sin tener que falsear el sanitizador.
+ *
+ * Solo sirve sobre un enlace **sin extraer**: `extractBookmark` sale sin hacer
+ * nada cuando la fila ya esta `ready`, asi que volver a llamar sobre el enlace
+ * del fixture no cambiaria ni una celda. Por eso el test que la usa crea el suyo.
+ */
+async function extraerConDescripcion(
+  user: TestUser,
+  bookmarkId: string,
+  descripcion: string,
+): Promise<void> {
+  const html =
+    '<!doctype html><html><head><title>La pagina</title>' +
+    `<meta property="og:site_name" content="El sitio">` +
+    `<meta property="og:description" content="${descripcion.replace(/"/g, '&quot;')}">` +
+    '</head><body><article><h1>La pagina</h1><p>' +
+    'palabra '.repeat(60) +
+    '</p></article></body></html>';
+
+  await extractBookmark(user.userId, bookmarkId, {
+    traerHtml: async (url) => ({ ok: true, html, finalUrl: url, bytes: html.length }),
+    contenidoDe: (contenido, url) => extraerContenido(contenido, url),
+    metadataDe: (contenido, url) => sacarmetadata(contenido, url),
+    youtubeDe: async () => null,
+    imagenResuelveAPublica: async () => true,
+    techoMs: 5_000,
+  });
+}
+
+async function extraer(user: TestUser, bookmarkId: string): Promise<void> {
+  await extractBookmark(user.userId, bookmarkId, {
+    traerHtml: async (url) => ({ ok: true, html: PAGINA_EXTRAIDA, finalUrl: url, bytes: 1 }),
+    contenidoDe: (html, url) => extraerContenido(html, url),
+    metadataDe: (html, url) => sacarmetadata(html, url),
+    youtubeDe: async () => null,
+    imagenResuelveAPublica: async () => true,
+    techoMs: 5_000,
+  });
+}
+
+interface Coleccion {
+  user: TestUser;
+  workspaceId: string;
+  folderId: string;
+  collectionId: string;
+  bookmarkId: string;
+  deletedBookmarkId: string;
+  /** Un enlace en la misma carpeta, pero en otra coleccion. */
+  otraCollectionId: string;
+  /** Un enlace sin coleccion: es de "Sin clasificar" y no viaja. */
+  sueltaId: string;
+}
+
+/**
+ * Una coleccion con dos enlaces, uno borrado, una hermana y un enlace suelto.
+ *
+ * Los tres ultimos son los que hacen que el CSV diga algo: una coleccion sin
+ * enlaces sale igual de verde que una con ellos, y un `where(eq(...))` mal
+ * puesto —por rango de ids, o sin `collectionId`— trae lo mismo en verde con
+ * cualquier otro filtro mal puesto.
+ */
+async function coleccionConEnlaces(): Promise<Coleccion> {
+  const user = await createVerifiedUser(api);
+  const workspaceId = await espacioPropio(api, user, 'Casa');
+  const folderId = await createFolder(user, workspaceId, 'Cocina');
+
+  const collectionId = await createCollection(user, workspaceId, { folderId, name: 'Recetas' });
+  const bookmarkId = await createBookmark(user, workspaceId, collectionId, { title: 'Tortilla' });
+  // El sitio y la descripcion los pone la extraccion, que es el unico sitio que
+  // los escribe —ver `extraer`— y el CSV los saca de ahi.
+  await extraer(user, bookmarkId);
+  const deletedBookmarkId = await createBookmark(user, workspaceId, collectionId, {
+    title: 'En desuso',
+  });
+  await deleteEntity(user, 'bookmark', deletedBookmarkId);
+
+  const otraCollectionId = await createCollection(user, workspaceId, { name: 'Postres' });
+  await createBookmark(user, workspaceId, otraCollectionId, { title: 'Tarta' });
+
+  const sueltaId = await createBookmark(user, workspaceId, null, { title: 'Sin clasificar' });
+
+  return {
+    user,
+    workspaceId,
+    folderId,
+    collectionId,
+    bookmarkId,
+    deletedBookmarkId,
+    otraCollectionId,
+    sueltaId,
+  };
 }
 
 /** Una plantilla creada por REST, que es como las crea la app. */
@@ -536,6 +708,9 @@ describe('GET /lists/:id/export', () => {
     expect(sobre.workspace.id).toBe(fix.workspaceId);
     expect(sobre.folder?.id).toBe(fix.folderId);
     expect(sobre.counts.items).toBe(sobre.items.length);
+    // Y el `itemCount` de la lista cuenta **este** array, no los items vivos: los
+    // dos numeros dicen lo mismo, y por eso los dos son del mismo fichero.
+    expect(sobre.list.itemCount).toBe(sobre.items.length);
   });
 
   it('la cuenta del sobre de una lista es id y email, sin displayName', async () => {
@@ -686,5 +861,269 @@ describe('GET /lists/:id/export', () => {
     expect(ascii).not.toContain('í');
     expect(starred).not.toBe('');
     expect(decodeURIComponent(starred)).toBe(ascii);
+  });
+});
+
+/**
+ * La coleccion como fichero, y el mismo trato que una lista.
+ *
+ * Los bloques de arriba no se repiten aqui: `bajar` ya lee los bytes sin
+ * quitar el BOM —que es justo lo que uno de estos tests comprueba— y `celdas`
+ * parte una linea sabia que las celdas van citadas.
+ */
+describe('GET /collections/:id/export', () => {
+  it('en JSON da el sobre del contrato con su contexto', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(api, `/collections/${fix.collectionId}/export`, fix.user.accessToken);
+    const sobre = collectionExportSchema.parse(JSON.parse(descarga.text));
+
+    expect(descarga.status).toBe(200);
+    expect(descarga.headers.get('content-type')).toMatch(/^application\/json/);
+    expect(descarga.headers.get('content-disposition')).toMatch(/^attachment;/);
+    expect(descarga.headers.get('cache-control')).toBe('no-store');
+    expect(sobre.collection.id).toBe(fix.collectionId);
+    expect(sobre.collection.role).toBe('owner');
+    expect(sobre.workspace.id).toBe(fix.workspaceId);
+    expect(sobre.folder?.id).toBe(fix.folderId);
+    expect(sobre.counts.bookmarks).toBe(sobre.bookmarks.length);
+  });
+
+  it('la cuenta del sobre de una coleccion es id y email, sin displayName', async () => {
+    // El mismo motivo que en el sobre de una lista, y el mismo modo de mirar: el
+    // **texto crudo** y no el objeto parseado, porque `collectionExportSchema` es un
+    // `z.object` y uno quita las claves que no conoce en vez de fallar. Un
+    // `displayName` de mas pasaria el parse sin quejarse.
+    const user = await createVerifiedUser(api, { displayName: 'Nombre Que No Viaja' });
+    const workspaceId = await espacioPropio(api, user, 'Casa');
+    const collectionId = await createCollection(user, workspaceId, { name: 'Recetas' });
+
+    const descarga = await bajar(api, `/collections/${collectionId}/export`, user.accessToken);
+
+    expect(descarga.text).not.toContain('displayName');
+    expect(descarga.text).not.toContain('Nombre Que No Viaja');
+
+    const cuenta = (JSON.parse(descarga.text) as { account: Record<string, unknown> }).account;
+    expect(Object.keys(cuenta).sort()).toEqual(['email', 'id']);
+  });
+
+  it('trae sus enlaces y solo los suyos, con el borrado incluido', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(api, `/collections/${fix.collectionId}/export`, fix.user.accessToken);
+    const sobre = collectionExportSchema.parse(JSON.parse(descarga.text));
+
+    const ids = sobre.bookmarks.map((bookmark) => bookmark.id);
+    expect(ids).toContain(fix.bookmarkId);
+    // El borrado tambien: es el caso donde el fichero hace falta, y sin su
+    // `deletedAt` seria indistinguible de uno que nunca existio.
+    const borrado = sobre.bookmarks.find((bookmark) => bookmark.id === fix.deletedBookmarkId);
+    expect(borrado).toBeDefined();
+    expect(borrado?.deletedAt).not.toBeNull();
+
+    // Y los de otra coleccion, o sin coleccion, no entran. Sin esta mitad, un
+    // `inArray(bookmarks.collectionId, ...)` equivocado pasaria en verde con una
+    // coleccion de un solo enlace.
+    expect(ids).not.toContain(fix.sueltaId);
+    expect(descarga.text).not.toContain(fix.otraCollectionId);
+  });
+
+  it('el enlace del JSON lleva el articulo entero y el role del espacio', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(api, `/collections/${fix.collectionId}/export`, fix.user.accessToken);
+    const sobre = collectionExportSchema.parse(JSON.parse(descarga.text));
+
+    const enlace = sobre.bookmarks.find((bookmark) => bookmark.id === fix.bookmarkId);
+    // El JSON es la copia completa: el articulo viaja entero, porque es lo que la
+    // persona se lleva cuando exporta. Sin el, el enlace exportado seria un
+    // enlace sin contenido, que es lo mismo que no haberlo exportado.
+    expect(enlace?.document).not.toBe('');
+    expect(enlace?.plainText).toContain('palabra');
+    expect(enlace?.extractionState).toBe('ready');
+    expect(enlace?.role).toBe('owner');
+    expect(enlace?.shared).toBe(false);
+    // Y el `bookmarkCount` de la coleccion cuenta **este** array, no los vivos: un
+    // count que no cuadra con el array de al lado es un count que miente.
+    expect(sobre.collection.bookmarkCount).toBe(sobre.bookmarks.length);
+    expect(sobre.counts.bookmarks).toBe(sobre.bookmarks.length);
+  });
+
+  it('?format=csv da un CSV con BOM y la cabecera del contrato', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(
+      api,
+      `/collections/${fix.collectionId}/export?format=csv`,
+      fix.user.accessToken,
+    );
+
+    expect(descarga.status).toBe(200);
+    expect(descarga.headers.get('content-type')).toMatch(/^text\/csv/);
+    expect(descarga.text.startsWith('\uFEFF')).toBe(true);
+    expect(descarga.text.startsWith(`\uFEFF${BOOKMARK_EXPORT_CSV_COLUMNS.join(';')}\r\n`)).toBe(
+      true,
+    );
+  });
+
+  it('el CSV trae la fila con sus datos y no lo de las otras colecciones', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(
+      api,
+      `/collections/${fix.collectionId}/export?format=csv`,
+      fix.user.accessToken,
+    );
+    const lineas = descarga.text.replace(/^\uFEFF/, '').split('\r\n');
+    const fila = lineas.find((linea) => linea.includes('Tortilla'));
+
+    expect(fila).toBeDefined();
+    const columnas = celdas(fila as string);
+    expect(columnas).toHaveLength(BOOKMARK_EXPORT_CSV_COLUMNS.length);
+    expect(columnas[1]).toBe('https://example.com/receta');
+    // El sitio y la descripcion los escribio la extraccion, no el fixture: asi lo
+    // que se comprueba es una fila que la base de datos puede tener de verdad.
+    expect(columnas[3]).toBe('El sitio');
+    expect(columnas[4]).toBe('La descripcion del sitio');
+    // "Tarta" es de la otra coleccion y sin clasificar no es de ninguna: si el
+    // filtro se cayera, aqui estarian las dos.
+    expect(descarga.text).not.toContain('Tarta');
+    expect(descarga.text).not.toContain('Sin clasificar');
+  });
+
+  it('el CSV no lleva el articulo, y el motivo esta en el contrato', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(
+      api,
+      `/collections/${fix.collectionId}/export?format=csv`,
+      fix.user.accessToken,
+    );
+
+    // Es la decision que define este formato: en una celda de una hoja de
+    // calculo el HTML completo no se lee. Quien lo quiera lo pide en JSON, que
+    // si lo lleva —el test de arriba lo comprueba—. Y la columna no existe ni
+    // para cuando alguien la agregue por error.
+    expect(BOOKMARK_EXPORT_CSV_COLUMNS).not.toContain('document');
+    expect(BOOKMARK_EXPORT_CSV_COLUMNS).not.toContain('plain_text');
+    expect(descarga.text).not.toContain('palabra ');
+  });
+
+  it('el CSV cita siempre, y una descripcion con `;` no parte la fila', async () => {
+    // Su propia coleccion y su propio enlace, y no el del fixture: ese ya esta
+    // `ready` y `extractBookmark` no vuelve a extraer un enlace que lo esta
+    // (`extract-service.ts`), asi que la descripcion nueva no llegaria a existir.
+    const user = await createVerifiedUser(api);
+    const workspaceId = await espacioPropio(api, user, 'Casa');
+    const collectionId = await createCollection(user, workspaceId, { name: 'Recetas' });
+    const bookmarkId = await createBookmark(user, workspaceId, collectionId, { title: 'Tortilla' });
+    await extraerConDescripcion(user, bookmarkId, 'uno; dos y tres');
+
+    const descarga = await bajar(
+      api,
+      `/collections/${collectionId}/export?format=csv`,
+      user.accessToken,
+    );
+
+    const sobre = collectionExportSchema.parse(
+      JSON.parse((await bajar(api, `/collections/${collectionId}/export`, user.accessToken)).text),
+    );
+    // El `\r\n` final deja una ultima entrada vacia, que no es una fila: se quita
+    // para que el numero de lineas sea el de filas de verdad.
+    const lineas = descarga.text
+      .replace(/^\uFEFF/, '')
+      .split('\r\n')
+      .filter((linea) => linea !== '');
+    // Sin citar, el `;` de la descripcion partia la fila en dos y el numero de
+    // filas no cuadraba con el `counts.bookmarks` del mismo fichero en JSON. Ese
+    // count es la mitad de la comprobacion: sin el, dos filas por enlace y el
+    // test seguiria verde.
+    expect(lineas).toHaveLength(sobre.counts.bookmarks + 1);
+
+    // Y la celda sale **citada**, que es lo que un parser que respeta comillas
+    // lee como un solo campo. Se mira la linea tal cual y no con `celdas()`: ese
+    // helper parte por `;` sin mirar comillas —su propio comentario lo dice— y
+    // con un `;` dentro de la celda daria dos campos que no existen.
+    const fila = lineas.find((linea) => linea.includes('Tortilla'));
+    expect(fila).toContain('"uno; dos y tres"');
+  });
+
+  it('el nombre del fichero sale del nombre de la coleccion, no de su id', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(
+      api,
+      `/collections/${fix.collectionId}/export?format=csv`,
+      fix.user.accessToken,
+    );
+    const disposition = descarga.headers.get('content-disposition') ?? '';
+    const ascii = /filename="([^"]*)"/.exec(disposition)?.[1] ?? '';
+
+    // `collection.name` y no un `title` que no existe: el nombre que ve la
+    // persona en el menu es este, y el que sale del `Content-Disposition` tiene
+    // que ser el mismo que el que el telefono calcula con el mismo contrato.
+    expect(ascii).toMatch(/^orbit-hub-recetas-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(ascii).not.toContain(fix.collectionId);
+  });
+
+  it('sin `?format` sale el JSON, y no un error de formato', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(api, `/collections/${fix.collectionId}/export`, fix.user.accessToken);
+
+    // `collectionExportQuerySchema` trae `default('json')`, igual que el de una
+    // lista: la hoja manda siempre el formato, pero un enlace escrito a mano que
+    // no lo mande tiene que recibir el fichero y no un 422.
+    expect(descarga.status).toBe(200);
+    expect(descarga.headers.get('content-type')).toMatch(/^application\/json/);
+  });
+
+  it('?format=xml da 422 validation_failed, no un error inventado', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(
+      api,
+      `/collections/${fix.collectionId}/export?format=xml`,
+      fix.user.accessToken,
+    );
+
+    expect(descarga.status).toBe(422);
+    expect(descarga.body.error.code).toBe('validation_failed');
+  });
+
+  it('otro usuario contra una coleccion que no es suya recibe 404, no 403', async () => {
+    const fix = await coleccionConEnlaces();
+    const extrano = await createVerifiedUser(api);
+
+    const descarga = await bajar(
+      api,
+      `/collections/${fix.collectionId}/export`,
+      extrano.accessToken,
+    );
+
+    // Invisible e inexistente son la misma respuesta a proposito.
+    expect(descarga.status).toBe(404);
+    expect(descarga.body.error.code).toBe('not_found');
+  });
+
+  it('una coleccion que no existe da 404', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(
+      api,
+      `/collections/${randomUUID()}/export`,
+      fix.user.accessToken,
+    );
+
+    expect(descarga.status).toBe(404);
+    expect(descarga.body.error.code).toBe('not_found');
+  });
+
+  it('sin token da 401', async () => {
+    const fix = await coleccionConEnlaces();
+
+    const descarga = await bajar(api, `/collections/${fix.collectionId}/export`);
+
+    expect(descarga.status).toBe(401);
   });
 });

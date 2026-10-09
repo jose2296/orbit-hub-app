@@ -34,9 +34,12 @@ export interface AssignSheetProps {
  * una hoja de cien lineas que reusa `PlacePicker`. Si las dos convergen,
  * fusionarlas es borrar una.
  *
- * Sin cambio de espacio: el bookmark no se muda (`updateBookmarkAction` no
- * acepta `workspaceId`, igual que una nota), asi que el espacio queda fijo al
- * suyo y el picker solo elige carpeta y coleccion dentro de el.
+ * Con cambio de espacio: `updateBookmarkAction` acepta `workspaceId` y el
+ * servidor valida que puedes escribir en el destino. Antes no se podia, y este
+ * comentario decia "igual que una nota" — que era la razon equivocada: una nota
+ * no se mueve porque su campo tampoco estaba en la lista blanca, no porque no se
+ * debiera. Lo que cambia de espacio resetea carpeta y coleccion, que son ids del
+ * espacio viejo.
  */
 export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
   // El ultimo y no el del llamador: el llamador lo pone a null para cerrar y
@@ -48,6 +51,8 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
 
   const [pagina, setPagina] = useState<1 | 2>(1);
   const [carpetaId, setCarpetaId] = useState<string | null>(null);
+  // El espacio elegido, que arranca siendo el del bookmark y puede cambiar.
+  const [espacioId, setEspacioId] = useState<string>(pedido?.workspaceId ?? "");
   const [coleccionId, setColeccionId] = useState<string | null>(null);
   const [nombre, setNombre] = useState("");
   const [emoji, setEmoji] = useState("");
@@ -74,12 +79,24 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
     folderId: string | null;
     collectionId: string | null;
   }) => {
-    // El espacio lo pone el bookmark y no se pregunta: un toque a otro espacio
-    // en el picker vuelve al suyo en vez de preparar un cambio que el servidor
-    // no acepta.
+    /*
+      El espacio se puede cambiar, y **cambiar resetea el destino**.
+
+      Este `if` devolvia el toque al espacio del bookmark. La razon que se escribio
+      entonces era "el servidor no acepta el cambio", y era cierta: el campo no
+      estaba en `SYNC_WRITABLE_FIELDS`. Ahora si esta, con la validacion del
+      destino en `sync-service.ts`, asi que el picker puede ofrecerlo.
+
+      Pero cambiar de espacio **invalida** la carpeta y la coleccion antiguas: son
+      ids de ese espacio. Llevarlas habria dejado un bookmark archivado en una
+      carpeta que no existe donde acaba de caer — la fila que despues no se puede
+      borrar desde la app. Por eso se resetean y el servidor las resuelve contra el
+      destino, que es la mitad autoritativa.
+    */
     if (lugar.workspaceId !== bookmark.workspaceId) {
       setCarpetaId(null);
       setColeccionId(null);
+      setEspacioId(lugar.workspaceId);
       return;
     }
     setCarpetaId(lugar.folderId);
@@ -102,6 +119,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
       await updateBookmarkAction({
         id: bookmark.id,
         baseVersion: bookmark.version,
+        ...(espacioId !== bookmark.workspaceId ? { workspaceId: espacioId } : {}),
         collectionId: destinoId,
       });
       onClose();
@@ -134,6 +152,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
       await updateBookmarkAction({
         id: bookmark.id,
         baseVersion: bookmark.version,
+        ...(espacioId !== bookmark.workspaceId ? { workspaceId: espacioId } : {}),
         collectionId: id,
       });
       onClose();

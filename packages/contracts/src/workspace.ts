@@ -909,24 +909,24 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>;
 /* --------------------------------------------------------------- compartir -- */
 
 /**
- * What can be shared. Six node types, and a note is one of them.
+ * What can be shared. Seven node types, and every entity in the app is one of
+ * them.
  *
- * It used to say here that a note is the `notes` column of an item and so is
- * never a node of its own. That was a decision about sharing written as a claim
- * about the data model, and Phase 4 made it false: a note is a document, and
- * `list_items` has a short plain-text `annotation`. See
- * [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
- */
-/**
- * What can be shared. Five node types, and a note is one of them.
+ * It used to be five, and `collection` and `bookmark` were the two left out. That
+ * was not a decision, it was a leftover: the grant is generic —`shares` is
+ * `node_type` + `node_id` and nothing else—, `toEntityName` in the sync repository
+ * has had names for those two since they were created, and `montajesDe` has had
+ * their branch too. **The whole machinery was already there and the enum said no**,
+ * which is the worst way for an enum to be wrong: the menu did not offer the row,
+ * so nobody ever found out.
  *
- * It used to be six, with `note_template` at the end, and it was a promise the
- * other side of the codebase never kept — which is worse than not offering it.
+ * A note is one of them because a note is a document and not the `notes` column of
+ * an item — see [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
  *
- * **Why it goes.** A template is not shareable to a person, and three separate
- * facts say so:
+ * It used to be six, with `note_template` at the end, and that one **was** a
+ * decision, taken against three facts:
  *
- * - `toEntityName` in the sync repository returns `null` for it, so **revoking a
+ * - `toEntityName` in the sync repository returned `null` for it, so **revoking a
  *   template share produced no tombstone**: the device that had it kept showing it
  *   forever. There was no way to take it back.
  * - Templates already have their own mechanism — a `scope` of personal, workspace
@@ -936,9 +936,14 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>;
  * - And there is no answer to where the recipient files it. A note has a place
  *   because it has a space and a folder; a template is in no tree at all.
  *
- * So it is out of the enum and out of the database CHECK. If it is ever wanted it
- * is another ADR, with a tombstone and a place to put it. See
+ * So that one is out of the enum and out of the database CHECK. If it is ever
+ * wanted it is another ADR, with a tombstone and a place to put it. See
  * [ADR 0032](../../docs/architecture/adr/0032-personas.md).
+ *
+ * **Every value here is a value the database CHECK accepts**, and that is a
+ * promise with two halves: this enum and `apps/api/drizzle/`. A value added here
+ * and not there is a share that the server accepts and Postgres refuses, which
+ * arrives to the person sharing as a 500 and to nobody as a stack trace.
  */
 export const shareNodeTypeSchema = z.enum([
   'workspace',
@@ -946,6 +951,8 @@ export const shareNodeTypeSchema = z.enum([
   'list',
   'list_item',
   'note',
+  'collection',
+  'bookmark',
 ]);
 export type ShareNodeType = z.infer<typeof shareNodeTypeSchema>;
 

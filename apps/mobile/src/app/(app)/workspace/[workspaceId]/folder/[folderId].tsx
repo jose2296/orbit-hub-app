@@ -9,7 +9,11 @@ import { CreateSheet } from "@/components/folders/create-sheet";
 import type { SheetOrigin } from "@/components/ui/sheet";
 import { ShareNodeSheet } from "@/components/shares/share-node-sheet";
 import type { CreateKind } from "@/components/folders/create-sheet";
-import { CollectionMenuSheet } from "@/components/collections/collection-menu-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
+import {
+  handlersDeColeccion,
+  menuCtxDeColeccion,
+} from "@/components/menus/coleccion";
 import { ContentList } from "@/components/content/content-list";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { FloatingButton } from "@/components/ui/floating-button";
@@ -333,8 +337,9 @@ export default function FolderScreen() {
         }
         onListMenu={(target) => setMenuFor({ kind: "list", list: target })}
       />
-      <CollectionMenuSheet
-        collection={collectionFor}
+      <EntityMenuSheet
+        ctx={menuCtxDeColeccion(collectionFor)}
+        handlers={handlersDeColeccion(collectionFor)}
         onClose={() => setCollectionFor(null)}
       />
       {/* The menu of a thing. A long press opens it on a phone, which is where

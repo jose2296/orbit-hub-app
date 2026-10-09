@@ -1,24 +1,22 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { useRouter } from "expo-router";
 
-import type { Bookmark, BookmarkExtractionState } from "@orbit-hub/contracts";
+import { AssignSheet, type BookmarkAClasificar } from "@/components/bookmarks/assign-sheet";
+import { View } from "react-native";
 
-import {
-  AssignSheet,
-  type BookmarkAClasificar,
-} from "@/components/bookmarks/assign-sheet";
-import { BookmarkDeleteSheet } from "@/components/bookmarks/delete-sheet";
+import type { Bookmark } from "@orbit-hub/contracts";
+
+import { LinkRow } from "@/components/bookmarks/link-row";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ListRow, SectionHeader } from "@/components/ui/list-row";
+import { SectionHeader } from "@/components/ui/list-row";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { useBookmarks, useUnclassifiedCount } from "@/hooks/use-bookmarks";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { pluralKey, useTranslation } from "@/lib/i18n";
-import type { TranslationKey } from "@/lib/i18n";
+import { handlersDeBookmark, menuCtxDeBookmark } from "@/lib/menus/bookmark";
 import { useTheme } from "@/theme";
-import type { Theme } from "@/theme";
 
 export interface GrupoHuerfanos {
   workspaceId: string;
@@ -54,12 +52,15 @@ export function agruparHuerfanos(bookmarks: Bookmark[]): GrupoHuerfanos[] {
  * contador de arriba sale de `useUnclassifiedCount`, que es la misma fuente
  * del badge del drawer: si difieren, uno de los dos dejo de ser esa fuente.
  *
- * Tocar una fila abre el triage (`AssignSheet`) sin salir; la papelera pide
+ * Tocar una fila lleva al lector; clasificar esta en el menu de la fila; la papelera pide
  * confirmacion. Al clasificar o borrar la fila desaparece sola: la suscripcion
  * del hook relee la cache, igual que absorbe los huerfanos que deja borrar
  * una coleccion.
  */
 export default function UnclassifiedScreen() {
+  const router = useRouter();
+
+  const [aClasificar, setAClasificar] = useState<BookmarkAClasificar | null>(null);
   const theme = useTheme();
   const t = useTranslation();
   const arbol = useSpacesTree();
@@ -69,8 +70,11 @@ export default function UnclassifiedScreen() {
   // drawer cuenta con la misma llamada y sin argumento.
   const total = useUnclassifiedCount();
 
-  const [aClasificar, setAClasificar] = useState<BookmarkAClasificar | null>(null);
-  const [aBorrar, setABorrar] = useState<Bookmark | null>(null);
+  // El enlace cuyo menu esta abierto. Mismo reloj que la lista y que las
+  // colecciones: lo que se guarda es la entidad y lo que se pasa es `null` al
+  // cerrar, porque la hoja congela lo que recibe para seguir pintando mientras
+  // baja.
+  const [menuAbierto, setMenuAbierto] = useState<Bookmark | null>(null);
 
   const nombres = useMemo(() => {
     const mapa = new Map<string, string>();
@@ -80,20 +84,14 @@ export default function UnclassifiedScreen() {
 
   const grupos = useMemo(() => agruparHuerfanos(bookmarks), [bookmarks]);
 
-  const filas = useMemo(() => {
-    const porId = new Map<string, { titulo: string; subtitulo: string }>();
-    for (const bookmark of bookmarks) {
-      const host = hostDe(bookmark.url);
-      porId.set(bookmark.id, {
-        titulo:
-          bookmark.title.length > 0 ? bookmark.title : host || bookmark.url,
-        subtitulo: [host, t(CLAVE_ESTADO[bookmark.extractionState])]
-          .filter((parte) => parte.length > 0)
-          .join(" · "),
-      });
-    }
-    return porId;
-  }, [bookmarks, t]);
+  /*
+    `filas` **se fue**: el nombre que cae al host, el subtitulo que junta host y
+    estado y el punto del estado los decide `LinkRow`, que es la misma fila que
+    pintan la lista y la coleccion. Este mapa era la fila otra vez, con dos de sus
+    tres partes —le faltaba el punto y el ancho— y por eso podia divergir de la
+    lista sin que nada lo notara: el inbox ya decia el host donde la lista decia
+    otra cosa cuando el titulo venia vacio.
+  */
 
   if (isLoading) return <View style={{ flex: 1 }} />;
 
@@ -121,107 +119,73 @@ export default function UnclassifiedScreen() {
                     espacios aun no llego en este arranque. */}
                 {nombres.get(grupo.workspaceId) ?? grupo.workspaceId}
               </AppText>
-              {grupo.bookmarks.map((bookmark) => {
-                const fila = filas.get(bookmark.id);
-                if (!fila) return null;
-                return (
-                  <View
-                    key={bookmark.id}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: theme.spacing.sm,
-                    }}
-                  >
-                    <ListRow
-                      title={fila.titulo}
-                      subtitle={fila.subtitulo}
-                      icon="bookmark-outline"
-                      leading={
-                        <View
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: 4,
-                            backgroundColor: COLOR_ESTADO[
-                              bookmark.extractionState
-                            ](theme),
-                          }}
-                        />
-                      }
-                      chevron
-                      style={{ flex: 1 }}
-                      onPress={() =>
-                        setAClasificar({
-                          id: bookmark.id,
-                          version: bookmark.version,
-                          workspaceId: bookmark.workspaceId,
-                          title: bookmark.title,
-                          url: bookmark.url,
-                        })
-                      }
-                    />
-                    {/*
-                      Al lado de la fila y no dentro: un `Pressable` dentro del
-                      de la fila es `<button>` dentro de `<button>` en web, y el
-                      navegador lo desarma (aviso de `place-share-sheet`).
-                    */}
-                    <Pressable
-                      testID={`inbox-delete-${bookmark.id}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={t("bookmarks.delete.title")}
-                      hitSlop={8}
-                      onPress={() => setABorrar(bookmark)}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={20}
-                        color={theme.colors.textMuted}
-                      />
-                    </Pressable>
-                  </View>
-                );
-              })}
+              {grupo.bookmarks.map((bookmark) => (
+                <LinkRow
+                  key={bookmark.id}
+                  bookmark={bookmark}
+                  testID={`inbox-menu-${bookmark.id}`}
+                  /*
+                    Al lector, y no al sheet de clasificar.
+
+                    El pedido era literal: "que pueda entrar a dentro a verlos
+                    porque si no se que es no puedo clasificarlos". Antes la fila
+                    abria `AssignSheet` de una, y clasificar era a ciegas —no se
+                    veia el titulo, ni el sitio, ni el texto—. Ahora se entra a ver
+                    el enlace como en la lista, y clasificar esta en la cabecera
+                    del lector, que es donde se puede hacer con algo de informacion.
+
+                    Y **clasificar se mueve al menu de la fila**, que es donde
+                    estaba la informacion suficiente: la fila dice el titulo y el
+                    sitio. Clasificar desde el lector exigia montar ahi la hoja del
+                    triage, y esa cadena rompe los dos tests que renderizan el lector
+                    sin stubs de hoja — que es la senal de que no era su sitio.
+                  */
+                  onPress={() =>
+                    router.push({
+                      pathname: "/bookmark/[bookmarkId]",
+                      params: { bookmarkId: bookmark.id },
+                    })
+                  }
+                  onMenu={() => setMenuAbierto(bookmark)}
+                />
+              ))}
             </View>
           ))}
         </View>
       )}
+      {/*
+        La misma hoja que la lista, y sin confirmacion propia: la de borrar es
+        una pagina de `EntityMenuSheet`, que es donde vivio `BookmarkDeleteSheet`.
+        Las dos pantallas pasan por `lib/menus/bookmark`, asi que el menu del
+        inbox y el de la lista no pueden empezar a diferir.
+      */}
+      <EntityMenuSheet
+        ctx={menuCtxDeBookmark(menuAbierto)}
+        handlers={handlersDeBookmark(
+          menuAbierto,
+          menuAbierto
+            ? () =>
+                setAClasificar({
+                  id: menuAbierto.id,
+                  version: menuAbierto.version,
+                  workspaceId: menuAbierto.workspaceId,
+                  title: menuAbierto.title,
+                  url: menuAbierto.url,
+                })
+            : undefined,
+        )}
+        onClose={() => setMenuAbierto(null)}
+      />
       <AssignSheet bookmark={aClasificar} onClose={() => setAClasificar(null)} />
-      {/* La misma confirmacion que la lista: vive en el componente para que no
-          derive en dos copias. */}
-      <BookmarkDeleteSheet bookmark={aBorrar} onClose={() => setABorrar(null)} />
     </Screen>
   );
 }
 
-/**
- * Que palabra lleva cada estado en la fila, y de que color es su punto.
- *
- * Calcado de `bookmarks.tsx`: misma lista, mismas palabras, mismos colores.
- * Vive aqui y no importado de alla porque alla es una ruta y esto es otra, y
- * una pantalla no importa de otra pantalla: si cambian los estados, cambiarlos
- * en dos sitios es el precio de no acoplarlas.
- */
-const CLAVE_ESTADO: Record<BookmarkExtractionState, TranslationKey> = {
-  pending: "bookmarks.state.pending",
-  ready: "bookmarks.state.ready",
-  metadata_only: "bookmarks.state.metadata_only",
-  failed: "bookmarks.state.failed",
-};
-
-const COLOR_ESTADO: Record<BookmarkExtractionState, (theme: Theme) => string> = {
-  pending: (theme) => theme.colors.warning,
-  ready: (theme) => theme.colors.success,
-  metadata_only: (theme) => theme.colors.info,
-  failed: (theme) => theme.colors.danger,
-};
-
-/** El host de una URL, o vacio si no hay nada que ensenar. */
-function hostDe(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
-  }
-}
+/*
+  `CLAVE_ESTADO` y `COLOR_ESTADO` **se fueron** a `components/bookmarks/link-row.tsx`.
+  El comentario que vivia aqui decia "calcado de `bookmarks.tsx`, y vive aqui y no
+  importado de alla porque alla es una ruta": era la regla correcta —una pantalla
+  no importa de otra pantalla— aplicada al archivo equivocado. Los tres sitios que
+  dibujaban la fila no son tres pantallas que se unknown entre si: son **la misma
+  fila**, y por eso lo que la contiene no es una ruta sino un componente.
+*/

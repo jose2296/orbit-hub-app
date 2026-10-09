@@ -22,12 +22,24 @@ const src = (ruta: string) => readFileSync(join(RAIZ, ruta), 'utf8');
 const SHEET = src('src/components/ui/sheet.tsx');
 const DICCIONARIO = src('src/lib/i18n/dictionaries.ts');
 
-/** Las hojas con más de una página. */
+/**
+ * Las hojas con más de una página.
+ *
+ * `components/menus/entity-menu-sheet.tsx` entra en T6, cuando la hoja de lista —
+ * la que estaba en esta lista— se migró al registro y desapareció: sus seis páginas
+ * (`options`, `rename`, `icon`, `share`, `export`, `delete`) son ahora `step` de un
+ * solo `Sheet`, y el `onBack` que se le comprueba abajo es el que evita que entrar
+ * en una de ellas deje solo la ✕ como salida.
+ *
+ * En T7 se fue `notes/note-menu-sheet.tsx` por el mismo camino: el renombrar, el
+ * icono, compartir y borrar de una nota son `step` de la hoja única. No hace falta
+ * añadirla otra vez, y una hoja que se borro en esta lista rompe el `readFileSync`
+ * de los dos guards de abajo sin avisar.
+ */
 const CON_PASOS = [
   'src/components/lists/item-edit-sheet.tsx',
-  'src/components/lists/list-menu-sheet.tsx',
+  'src/components/menus/entity-menu-sheet.tsx',
   'src/components/workspace/workspace-menu-sheet.tsx',
-  'src/components/notes/note-menu-sheet.tsx',
   'src/components/notes/template-menu-sheet.tsx',
   'src/components/folders/create-sheet.tsx',
 ];
@@ -42,8 +54,9 @@ const CON_PASOS = [
  * mismo nivel: la flecha vuelve a las opciones del espacio, este vuelve a la lista
  * de gente. Dos niveles distintos, dos controles distintos, y por eso se queda.
  *
- * `workspace-menu-sheet.tsx` y `list-menu-sheet.tsx` montan hojas con paginas y
- * llevan `onBack`; estan en la lista de arriba.
+ * `workspace-menu-sheet.tsx` y `menus/entity-menu-sheet.tsx` montan hojas con paginas
+ * y llevan `onBack`; estan en la lista de arriba. La hoja de lista que estaba aqui
+ * se fue en T6 al registro, y `menus/entity-menu-sheet.tsx` la sustituyo.
  */
 
 describe('la cabecera del sheet sabe volver', () => {
@@ -94,9 +107,15 @@ describe('las hojas con pasos lo usan', () => {
     // entera, sin vuelta atras. La condicion no es "esta pagina tiene onBack" sino
     // "el arrow existe en cualquier pagina que no sea la primera", asi que se
     // comprueba que el onBack se calcula y no que cada pagina lo pase.
-    const hoja = src('src/components/lists/list-menu-sheet.tsx');
+    //
+    // La hoja es `menus/entity-menu-sheet.tsx` y no la de lista que estaba aqui
+    // antes de T6: la de lista migro al registro y su pagina de exportar —la que
+    // arranco este bug— todavia no existe, asi que hoy lo que se mira es la hoja
+    // unica. El patron del `onBack` es el mismo que se llevo ahi, y la razon por la
+    // que se prueba ahora es que la hoja que quedo tiene que seguir garantizandolo.
+    const hoja = src('src/components/menus/entity-menu-sheet.tsx');
 
-    expect(hoja).toMatch(/onBack=\{\s*\/\*[\s\S]{0,900}?\*\/\s*page === "options" \? undefined : \(\) => setPage\("options"\)/);
+    expect(hoja).toMatch(/pagina === "options" \? undefined : \(\) => setPagina\("options"\)/);
   });
 
   it('volver ya no dice "Cancelar"', () => {

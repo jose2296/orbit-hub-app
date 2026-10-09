@@ -52,13 +52,16 @@ describe("el inbox es una vista agrupada por espacio", () => {
     expect(pantalla).toContain("setAClasificar");
   });
 
-  it("borrar usa la hoja compartida, con su papelera por fila", () => {
-    // La confirmacion vive en `BookmarkDeleteSheet` (compartida con la
-    // lista) y no duplicada aqui: la pantalla solo abre y cierra.
-    expect(pantalla).toContain("BookmarkDeleteSheet");
-    expect(pantalla).toContain("setABorrar");
-    expect(pantalla).toContain("inbox-delete-");
-    expect(pantalla).not.toContain("deleteBookmarkAction");
+  it("borrar pasa por el menu del registro, no por una hoja propia", () => {
+    // La fila ofrece los tres puntitos y la hoja decide que sale: renombrar y
+    // eliminar, con el cuerpo de confirmacion en `DeletePage`. La pantalla solo
+    // abre y cierra el menu, asi que no escribe ninguna accion ni ninguna
+    // confirmacion —y esa es la parte que se puede duplicar sin que nadie lo note.
+    expect(pantalla).toContain("EntityMenuSheet");
+    expect(pantalla).toContain("menuCtxDeBookmark");
+    expect(pantalla).toContain("handlersDeBookmark");
+    expect(pantalla).toContain("setMenuAbierto");
+    expect(pantalla).toContain("inbox-menu-");
   });
 
   it("el vacio tiene copy propio", () => {
@@ -84,13 +87,25 @@ describe("el triage manda solo la coleccion", () => {
 
   it("ninguna llamada de clasificar menciona folderId", () => {
     // El `folderId` lo deriva el servidor de la coleccion: mandarlo y que
-    // discrepe es 422. Asi que cada `updateBookmarkAction` de esta hoja solo
+    // discrepa es 422. Asi que cada `updateBookmarkAction` de esta hoja solo
     // puede llevar `collectionId`.
-    const llamadas = hoja.match(/updateBookmarkAction\(\{[^}]*\}\)/g);
-    expect(llamadas?.length).toBeGreaterThan(0);
-    for (const llamada of llamadas ?? []) {
+    //
+    // `workspaceId` si aparece, y solo cuando el espacio cambio: no es una
+    // clasificacion, es una mudanza, y el servidor la valida en el destino.
+    // Partiendo del marcador y no con un regex sobre el objeto: `[^}]*` se corta
+    // en la primera llave, y el spread condicional de `workspaceId` tiene una
+    // dentro. Asi que se recorta hasta el `});` que cierra cada llamada.
+    const trozos = hoja.split("updateBookmarkAction({").slice(1);
+    expect(trozos.length).toBeGreaterThan(0);
+    for (const trozo of trozos) {
+      const llamada = trozo.slice(0, trozo.indexOf("});"));
       expect(llamada).toContain("collectionId");
       expect(llamada).not.toContain("folderId");
+      // Y si manda espacio, lo manda condicional —no un valor fijo—, porque un
+      // guardar que no mudara no tiene por que parecer una mudanza en el diff.
+      if (llamada.includes("workspaceId")) {
+        expect(llamada).toMatch(/espacioId !== bookmark\.workspaceId/);
+      }
     }
   });
 
@@ -100,36 +115,6 @@ describe("el triage manda solo la coleccion", () => {
 
   it("el espacio no se pregunta: lo pone el bookmark", () => {
     expect(hoja).toContain("bookmark.workspaceId");
-  });
-});
-
-describe("la confirmacion de borrado, compartida por inbox y lista", () => {
-  const hoja = fuente(join("components", "bookmarks", "delete-sheet.tsx"));
-
-  it("borra con tombstone y doble boton, sin tocar listas", () => {
-    // `deleteBookmarkAction` existe desde la Task 3: verificado en
-    // `lib/bookmarks/actions.ts`, no asumido del reporte. La fila desaparece
-    // sola al releer la suscripcion, la hoja no toca ninguna lista.
-    expect(hoja).toContain("deleteBookmarkAction");
-    expect(hoja).toContain("bookmarks.deleteConfirm");
-    expect(hoja).toContain("bookmarks.deleteBody");
-    expect(hoja).toContain('variant="danger"');
-    expect(hoja).toContain('variant="ghost"');
-    expect(hoja).toContain("common.cancel");
-    expect(hoja).toContain("useLastValue");
-  });
-
-  it("las dos pantallas la usan y ninguna duplica", () => {
-    const inbox = fuente(join("app", "(app)", "unclassified.tsx"));
-    const lista = fuente(join("app", "(app)", "bookmarks.tsx"));
-
-    for (const [nombre, pantalla] of [
-      ["inbox", inbox],
-      ["lista", lista],
-    ] as const) {
-      expect(pantalla, nombre).toContain("BookmarkDeleteSheet");
-      expect(pantalla, nombre).not.toContain("deleteBookmarkAction");
-    }
   });
 });
 

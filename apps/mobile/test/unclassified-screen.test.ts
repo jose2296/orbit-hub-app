@@ -18,6 +18,13 @@ const { estado } = vi.hoisted(() => ({
   },
 }));
 
+// La pantalla navega al lector desde la fila, y `expo-router` no existe en Node.
+// Mismo patron que `bookmark-reader.test.ts:45`: se suple el hook que la pantalla
+// usa, y nada mas. `push` y no `replace`, que es lo que esta pantalla llama.
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: () => {} }),
+}));
+
 vi.mock("react-native", async () => {
   const React = await import("react");
   const View = ({ children, testID }: any) =>
@@ -114,11 +121,17 @@ vi.mock("@/components/bookmarks/assign-sheet", () => ({
   AssignSheet: () => null,
 }));
 
-// El `Sheet` real pide `react-native-reanimated`: aqui solo importa que la
-// confirmacion de borrado exista, y eso se lee en fuente.
+// El `Sheet` real pide `react-native-reanimated`: aqui solo importa que la hoja
+// exista, y eso se lee en fuente. Y el menu de fila tampoco se abre en estos
+// tests: `EntityMenuSheet` arrastra sus paginas —y con ellas el selector de
+// iconos, que pide reanimated— a un modulo que este render no necesita.
 vi.mock("@/components/ui/sheet", () => ({
   Sheet: () => null,
   useLastValue: (valor: unknown) => valor,
+}));
+
+vi.mock("@/components/menus/entity-menu-sheet", () => ({
+  EntityMenuSheet: () => null,
 }));
 
 vi.mock("@/components/ui/button", async () => {
@@ -226,18 +239,19 @@ describe("el inbox pinta lo que le dan", () => {
     estado.bookmarks = cincuentaHuerfanos();
     estado.isLoading = true;
 
-    expect(pintar()).not.toContain("inbox-delete-");
+    expect(pintar()).not.toContain("inbox-menu-");
   });
 
-  it("50 huerfanos salen sin crash, con su papelera cada uno", () => {
+  it("50 huerfanos salen sin crash, con su menu cada uno", () => {
     estado.bookmarks = cincuentaHuerfanos();
     estado.isLoading = false;
     const html = pintar();
 
-    // Una papelera por fila: si alguna fila rompiera al pintar, el render
-    // entero cae y este numero no llega a 50.
-    const papeleras = html.match(/inbox-delete-huerfano-\d+/g) ?? [];
-    expect(papeleras).toHaveLength(50);
+    // Un menu por fila: si alguna fila rompiera al pintar, el render entero cae
+    // y este numero no llega a 50. El `testID` es lo que hace que el conteo sea
+    // por fila y no el total de filas pintadas.
+    const menus = html.match(/inbox-menu-huerfano-\d+/g) ?? [];
+    expect(menus).toHaveLength(50);
   });
 
   it("los grupos llevan el nombre del espacio y el contador su clave", () => {
@@ -258,7 +272,7 @@ describe("el inbox pinta lo que le dan", () => {
 
     expect(html).toContain("bookmarks.inbox.empty.title");
     expect(html).toContain("bookmarks.inbox.empty.body");
-    expect(html).not.toContain("inbox-delete-");
+    expect(html).not.toContain("inbox-menu-");
   });
 
   it("borrar la coleccion huerfana 50 filas y el re-render las muestra", () => {
@@ -269,7 +283,7 @@ describe("el inbox pinta lo que le dan", () => {
       collectionId: "c1",
     }));
     estado.isLoading = false;
-    expect(pintar()).not.toContain("inbox-delete-");
+    expect(pintar()).not.toContain("inbox-menu-");
 
     // Fase 2: el efecto de borrar la coleccion. Sus filas pasan a null y la
     // suscripcion del hook relee: el mismo render, con los datos nuevos, y
@@ -281,8 +295,8 @@ describe("el inbox pinta lo que le dan", () => {
     }));
     const html = pintar();
 
-    const papeleras = html.match(/inbox-delete-huerfano-\d+/g) ?? [];
-    expect(papeleras).toHaveLength(50);
+    const menus = html.match(/inbox-menu-huerfano-\d+/g) ?? [];
+    expect(menus).toHaveLength(50);
     expect(html).toContain("Casa");
     expect(html).toContain("Calle");
   });

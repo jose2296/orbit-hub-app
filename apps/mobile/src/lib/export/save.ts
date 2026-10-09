@@ -1,4 +1,4 @@
-import type { AccountExport, ExportFormat, ListExport } from '@orbit-hub/contracts';
+import type { AccountExport, CollectionExport, ExportFormat, ListExport } from '@orbit-hub/contracts';
 import { Platform } from 'react-native';
 
 import { ApiError, type PendingRequest } from '@/lib/api/client';
@@ -243,7 +243,7 @@ export async function saveExport(args: {
 export async function readSavedEnvelope(args: {
   filename: string;
   format: ExportFormat;
-}): Promise<AccountExport | ListExport | null> {
+}): Promise<AccountExport | CollectionExport | ListExport | null> {
   // Una lista en CSV son filas y punto: no hay sobre. Preguntarlo aqui y no en el
   // llamante es lo que evita el otro fallo —`JSON.parse` de un CSV, que lanza, y
   // el `catch` de abajo se lo come y devuelve `null` como si no hubiera nada.
@@ -255,7 +255,7 @@ export async function readSavedEnvelope(args: {
   try {
     const file = new fs.File(fs.Paths.cache, args.filename);
     if (!file.exists) return null;
-    return JSON.parse(await file.text()) as AccountExport | ListExport;
+    return JSON.parse(await file.text()) as AccountExport | CollectionExport | ListExport;
   } catch {
     // Un sobre ilegible no es una exportacion fallida: el fichero ya esta
     // entregado y lo que se ha perdido son los numeros de la linea de debajo.

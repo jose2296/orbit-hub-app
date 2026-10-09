@@ -27,8 +27,12 @@ describe("la lista sigue el molde sin inventar patrones", () => {
     expect(pantalla).toContain("useBookmarks({");
     expect(pantalla).toContain("workspaceId");
     expect(pantalla).toContain("folderId");
-    // El filtro por coleccion opcional, para reusar la lista dentro de una
-    // coleccion —incluido el "unclassified" del inbox.
+    // El filtro por coleccion **sigue existiendo** y es lo que usa el drawer
+    // para el inbox. Lo que se fue es la rama que resolvia la coleccion para
+    // poner su nombre en la cabecera: una coleccion tiene pantalla propia desde
+    // la T5, y la lista no sabe de colecciones. El filtro y el nombre son dos
+    // cosas: que el filtro exista no significa que esta pantalla sepa que
+    // coleccion esta mirando. Lo afirma `collection-screen.test.ts`.
     expect(pantalla).toContain("collectionId");
     expect(pantalla).toContain('"unclassified"');
   });
@@ -47,20 +51,26 @@ describe("la lista sigue el molde sin inventar patrones", () => {
   });
 
   it("cada fila abre el lector con la forma del molde", () => {
-    // La forma de `notes.tsx:170-172`, sin grupo en el string.
+    // La forma de `notes.tsx:170-172`, sin grupo en el string. El `chevron` **no**
+    // se comprueba aca: es de la fila, que ahora es `components/bookmarks/link-row`
+    // y la dibuja una sola vez para las tres pantallas.
     expect(pantalla).toContain('pathname: "/bookmark/[bookmarkId]"');
-    expect(pantalla).toContain("chevron");
   });
 
   it("la fila muestra el estado de extraccion, que es lo que la distingue", () => {
-    // Los cuatro estados, cada uno con palabra y con punto. Si el contrato
-    // anade un quinto, el `Record` de la pantalla rompe el typecheck antes
-    // que este test.
+    // Los cuatro estados, cada uno con palabra y con punto, y ahora **en la fila**:
+    // son la misma fila para la lista, el inbox y la coleccion, asi que la palabra
+    // y el color de un estado tienen un solo sitio. Si el contrato anade un quinto,
+    // el `Record` de `link-row.tsx` rompe el typecheck antes que este test.
+    const fila = fuente(join("components", "bookmarks", "link-row.tsx"));
+
     for (const estado of ["pending", "ready", "metadata_only", "failed"]) {
-      expect(pantalla).toContain(estado);
+      expect(fila, `el estado ${estado}`).toContain(estado);
     }
-    expect(pantalla).toContain("bookmarks.state.pending");
-    expect(pantalla).toContain("leading={");
+    expect(fila).toContain("bookmarks.state.pending");
+    expect(fila).toContain("leading={");
+    // Y la pantalla monta esa fila y no la suya.
+    expect(pantalla).toContain("LinkRow");
   });
 
   it("el vacio tiene copy propio", () => {
@@ -69,14 +79,15 @@ describe("la lista sigue el molde sin inventar patrones", () => {
     expect(pantalla).toContain('t("bookmarks.empty.body")');
   });
 
-  it("cada fila lleva papelera al lado, con la hoja compartida", () => {
-    // El brief pedia borrar desde el inbox y desde la lista: la confirmacion
-    // vive en `BookmarkDeleteSheet` y la lista solo abre y cierra, igual que
-    // el inbox. La papelera va al lado de la fila y no dentro (un `Pressable`
-    // dentro del de la fila es `<button>` en `<button>` en web).
-    expect(pantalla).toContain("BookmarkDeleteSheet");
-    expect(pantalla).toContain("list-delete-");
-    expect(pantalla).toContain("setABorrar");
+  it("cada fila lleva su menu al lado, y la hoja la abre la pantalla", () => {
+    // La fila compartida es la que pinta los tres puntitos, y la pantalla la que
+    // pasa el enlace y cierra. Lo que la pantalla **no** decide es que acciones
+    // salen, asi que no escribe ninguna: eso vive en el registro.
+    expect(pantalla).toContain("LinkRow");
+    expect(pantalla).toContain("onMenu=");
+    expect(pantalla).toContain("EntityMenuSheet");
+    expect(pantalla).toContain("setMenuAbierto");
+    expect(pantalla).toContain("list-menu-");
   });
 });
 

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Pressable, View } from "react-native";
 
 import { NoteAttachments } from "@/components/notes/note-attachments";
-import { NoteMenuSheet } from "@/components/notes/note-menu-sheet";
+import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { SaveTemplateSheet } from "@/components/notes/save-template-sheet";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { NoteEditor } from "@/components/notes/note-editor";
@@ -34,6 +34,7 @@ import { useNetworkStatus } from "@/hooks/use-network-status";
 import { useNote } from "@/hooks/use-notes";
 import { useTranslation } from "@/lib/i18n";
 import { deleteNoteAction, saveNoteAction } from "@/lib/notes/actions";
+import { menuDeNota } from "@/lib/menus/nota";
 import {
   AUTOSAVE_DELAY_MS,
   createAutosave,
@@ -189,6 +190,39 @@ export default function NoteScreen() {
   );
   const titleRef = useRef(title);
   titleRef.current = title;
+
+  /*
+    El menu de la nota, armado por el adaptador y no aca.
+
+    Lo unico que esta pantalla decide es **que** puede hacer —leer el editor para
+    la plantilla— y el resto lo pide a `lib/menus/nota.ts`: si esta pantalla
+    normalizara el titulo o escribiera las capacidades, el menu de la fila de la
+    lista y este serian dos menus de nota que empiezan a diferir el dia que cambie
+    algo.
+  */
+  const menuNota = menuDeNota(menuOpen ? note : null, {
+    onSaveAsTemplate: () => {
+      /*
+        Read the editor now and not when the sheet opens.
+
+        `getHTML` is a promise that asks the native layer to serialise, so a sheet
+        that went and got it for itself would either flash empty or carry an `await`
+        into a component that cannot have one. Reading it on the tap also means the
+        template is what is on screen at that moment, which is what somebody saving
+        a note as a template means.
+      */
+      void (async () => {
+        const html = editorRef.current ? await editorRef.current.getHTML() : "";
+        setTemplateFor({
+          name: titleRef.current || note?.title || "",
+          // The same conversion the note is saved with, references included:
+          // a template is a document, and a document that cannot be reopened
+          // is not one anybody wants to start from twice.
+          document: storableDocument(storedDocument(html)) ?? html,
+        });
+      })();
+    },
+  });
 
   const autosave = useMemo(
     () =>
@@ -478,30 +512,11 @@ export default function NoteScreen() {
           autosave.schedule();
         }}
       />
-      <NoteMenuSheet
-        note={menuOpen ? note : null}
+      <EntityMenuSheet
+        ctx={menuNota.ctx}
+        icon={menuNota.icon}
+        handlers={menuNota.handlers}
         onClose={() => setMenuOpen(false)}
-        onSaveAsTemplate={() => {
-          setMenuOpen(false);
-          /*
-            Read the editor now and not when the sheet opens.
-            `getHTML` is a promise that asks the native layer to serialise, so a
-            sheet that went and got it for itself would either flash empty or
-            carry an `await` into a component that cannot have one. Reading it on
-            the tap also means the template is what is on screen at that moment,
-            which is what somebody saving a note as a template means.
-          */
-          void (async () => {
-            const html = editorRef.current ? await editorRef.current.getHTML() : "";
-            setTemplateFor({
-              name: titleRef.current || note?.title || "",
-              // The same conversion the note is saved with, references included:
-              // a template is a document, and a document that cannot be reopened
-              // is not one anybody wants to start from twice.
-              document: storableDocument(storedDocument(html)) ?? html,
-            });
-          })();
-        }}
       />
 
       {/*

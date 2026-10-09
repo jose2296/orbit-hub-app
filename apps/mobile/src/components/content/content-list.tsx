@@ -8,6 +8,7 @@ import type { Collection, Folder, List, ListOrderMode, Note } from "@orbit-hub/c
 import { ContentToolbar } from "@/components/content/content-toolbar";
 import { AppIcon } from "@/components/ui/app-icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ANCHO_RESERVADO, MenuButton } from "@/components/ui/menu-button";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
 import { LIST_KIND_ICON } from "@/lib/lists/kind";
@@ -172,10 +173,19 @@ export function ContentList({
         return;
       }
       if (row.kind === "collection") {
-        // La pantalla de enlaces ya sabe filtrar por coleccion y pone ella el titulo.
+        /*
+          La pantalla **propia** de la coleccion, y no la lista de enlaces con un
+          filtro encima.
+
+          Mandarla a `/(app)/bookmarks` con `collectionId` era el estado anterior:
+          una lista con el nombre de la coleccion pegado y **sin menu propio**, con
+          las acciones de la coleccion a la vista en otra pantalla —la que lista las
+          filas— y no en la que estas mirando. Y sin `workspaceId`: el espacio es un
+          dato de la coleccion, que se resuelve sola desde la cache.
+        */
         router.push({
-          pathname: "/(app)/bookmarks",
-          params: { workspaceId, collectionId: row.id },
+          pathname: "/(app)/collection/[collectionId]",
+          params: { collectionId: row.id },
         });
         return;
       }
@@ -361,12 +371,26 @@ function ContentRowView({
             /*
               El hueco de la derecha, y **solo del menu**: el menu de la fila se
               dibuja encima de este rectangulo, asi que el cuerpo tiene que terminar
-              antes que el. El otro hueco que hubo aqui era para el asa de arrastrar
-              y ya no hace falta —la fila no se arrastra, se ordena en una hoja— asi
-              que el nombre tiene cuarenta y cuatro puntos mas de ancho, que es
-              justo lo que un nombre largo necesita.
+              antes que el.
+
+              Son dos numeros con dos oficios, y antes eran uno que no hacia
+              ninguno de los dos bien:
+
+              - `ANCHO_RESERVADO` es el espacio **del boton**: su caja, su margen y
+                el `hitSlop` que le agranda el area de toque. Lo trae el boton
+                porque la exigencia es suya; el `44` de antes era un numero escrito
+                aca que se quedo **cuatro pixeles corto** de la caja, sin el
+                `hitSlop` —que se sale de la caja— el boton se montaba encima del
+                nombre, igual que en las filas de los enlaces.
+              - El `spacing.md` de al lado es la **holgura del nombre**: el area de
+                toque del boton es invisible, asi que un nombre que termina
+                exactamente donde empieza queda pegado a algo que no se ve. El
+                nombre largo necesita aire, y eso no lo resuelve el ancho del boton.
+
+              Y el hueco del asa de arrastrar no vuelve: la fila no se arrastra, se
+              ordena en una hoja.
             */
-            paddingRight: onMenu ? 44 : theme.spacing.md,
+            paddingRight: onMenu ? ANCHO_RESERVADO + theme.spacing.md : theme.spacing.md,
           },
         ]}
       >
@@ -396,9 +420,7 @@ function ContentRowView({
         could order but whose menu you could never open, which is the worst of
         both, and it looked fine because one of the two glyphs was showing.
       */}
-      {onMenu ? (
-        <BotonMenu label={row.name} onPress={onMenu} />
-      ) : null}
+      {onMenu ? <MenuButton label={row.name} onPress={onMenu} /> : null}
     </View>
   );
 }
@@ -424,50 +446,6 @@ function subtitulo(row: ContentRow, t: ReturnType<typeof useTranslation>): strin
   return t("content.itemsIn", { count: row.itemCount ?? 0, kind: clase });
 }
 
-function BotonMenu({ label, onPress }: { label: string; onPress: () => void }) {
-  const theme = useTheme();
-  const t = useTranslation();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={t("rowActions.menuOf", { name: label })}
-      onPress={onPress}
-      hitSlop={8}
-      style={({ pressed }) => [
-        styles.menu,
-        {
-          /*
-            Centrado en vertical, y no pegado arriba con un `top` fijo.
-
-            El alto de una fila no es un numero —cambia con el titulo en dos
-            lineas, con el numero de elementos y con la escala de letra— y un
-            `top` de ocho puntos acertaba en unas filas y dejaba el icono por
-            encima del centro en las demas. Con `top: 0` y `bottom: 0` el centro lo
-            pone la propia fila y no hay ningun alto que adivinar.
-          */
-          top: 0,
-          bottom: 0,
-          // The handle is `right: 8` and about 32 wide, so stepping by its width
-          // plus its own margin puts the menu clear of it rather than a few
-          // pixels to the side of it.
-          right: theme.spacing.sm,
-          // 40 de blanco y el icono dentro: media 26, por debajo de lo que un
-          // dedo alcanza con fiabilidad. Con `hitSlop` el blanco crecia hacia el
-          // asa de arrastrar, que esta al lado.
-          minWidth: 40,
-          minHeight: 40,
-          alignItems: "center",
-          justifyContent: "center",
-          borderRadius: theme.radius.sm,
-          backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
-        },
-      ]}
-    >
-      <Ionicons name="ellipsis-horizontal" size={18} color={theme.colors.textSubtle} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   caja: {
     position: "relative",
@@ -484,9 +462,6 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: "center",
     justifyContent: "center",
-  },
-  menu: {
-    position: "absolute",
   },
   asa: {
     position: "absolute",

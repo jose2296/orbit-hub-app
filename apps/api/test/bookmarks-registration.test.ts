@@ -36,11 +36,32 @@ describe('las entidades nuevas estan registradas donde tienen que estar', () => 
       'tags',
       'title',
       'url',
+      'workspaceId',
     ]);
   });
 
-  it('un bookmark nuevo no puede mover su workspace', () => {
-    expect(SYNC_WRITABLE_FIELDS.bookmark).not.toContain('workspaceId');
+  /*
+    Este test existia al reves: decia que un bookmark **no** puede mover su
+    workspace, y no dejaba escrita ninguna razon. Asi que la ausencia del campo se
+    leyo como "no se debe" cuando era "no se puede" —`updateEntity` hace spread de
+    `values` al UPDATE y `sanitisePayload` solo filtra por esta lista, asi que
+    faltaba la entrada y nada mas.
+
+    Y el pedido era moverlo: "deberia poder moverlo luego a otro sitio si esta sin
+    clasificar". Un bookmark siempre esta en un espacio —`bookmarkSchema.workspaceId`
+    no es nullable—, asi que mover es cambiar **cual**, no si tiene.
+
+    Lo que si cambia con el campo es la superficie: un cliente podria mandar el id
+    de un espacio ajeno y filtrar ahi un enlace. Eso no se arregla quitando el campo,
+    se arregla validando el destino, que es lo que hace `sync-service.ts` con
+    `assertCanWrite` — el mismo chequeo de membresia y rol que usa el create de una
+    coleccion. El test de al lado lo afirma.
+  */
+  it('un bookmark puede mover su workspace, y el servidor valida el destino', () => {
+    expect(SYNC_WRITABLE_FIELDS.bookmark).toContain('workspaceId');
+    // Y el servidor sigue quedandose con lo suyo.
+    expect(SYNC_WRITABLE_FIELDS.bookmark).not.toContain('document');
+    expect(SYNC_WRITABLE_FIELDS.bookmark).not.toContain('extractionState');
   });
 
   it('sanitisePayload pasa la URL limpia y deja la coleccion como texto o null', () => {

@@ -187,7 +187,24 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    * es dueno de ese campo, porque un cliente que pudiera mover un bookmark entre
    * espacios lo archivaria donde el dueno nunca lo puso.
    */
-  bookmark: ['url', 'title', 'collectionId', 'folderId', 'tags', 'position'],
+  /*
+    `workspaceId`, y por que no estaba.
+
+    "Igual que una nota" era la razon que daba `assign-sheet.tsx` para no ofrecer
+    mover un bookmark de espacio: una nota no se mueve, asi que un bookmark
+    tampoco. Pero la nota no se mueve porque **tampoco esta en esta lista** — la
+    razon real era que el campo no se podia escribir, no que no se debiera.
+
+    Y un bookmark sin clasificar si necesita moverse: el pedido era literal,
+    "deberia poder moverlo luego a otro sitio si esta sin clasificar". Un bookmark
+    siempre esta en un espacio —`bookmarkSchema.workspaceId` no es nullable—, asi
+    que esto cambia **cual**, no si tiene.
+
+    Lo demas del camino ya aceptaba cualquier columna: `updateEntity`
+    (`sync-repository.ts:207`) hace spread de `values` al UPDATE, y
+    `sanitisePayload` solo filtra por esta lista. Faltaba la entrada.
+  */
+  bookmark: ['url', 'title', 'workspaceId', 'collectionId', 'folderId', 'tags', 'position'],
 };
 
 export const AUDIT_EVENTS = [
