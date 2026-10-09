@@ -732,9 +732,16 @@ export const shares = pgTable(
      * tombstone, because `toEntityName` has no name for it, so the other phone
      * kept the template forever. Templates are shared by `scope`, to a space or to
      * everybody, never to one person. See ADR 0032.
+     *
+     * `collection` and `bookmark` joined here with the enum of
+     * `shareNodeTypeSchema`, and this `$type<>` **es una copia escrita a mano de
+     * ese enum**: Drizzle no sabe leerlo del paquete, y `$type<>` no existe en
+     * Postgres, asi que no hay forma de derivarlo. Lo que evita que las dos copias
+     * se separen es `apps/api/test/shares.test.ts`, que compara este enum, el de
+     * Zod y el CHECK de la columna en la misma prueba.
      */
     nodeType: varchar('node_type', { length: 16 })
-      .$type<'workspace' | 'folder' | 'list' | 'list_item' | 'note'>()
+      .$type<'workspace' | 'folder' | 'list' | 'list_item' | 'note' | 'collection' | 'bookmark'>()
       .notNull(),
     nodeId: uuid('node_id').notNull(),
     granteeUserId: uuid('grantee_user_id')

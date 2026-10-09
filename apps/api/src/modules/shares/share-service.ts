@@ -4,7 +4,18 @@ import type { ShareNodeType } from '@orbit-hub/contracts';
 import { users } from '../../db/auth-schema.js';
 import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
-import { folders, listItems, lists, memberships, notes, shareMounts, shares, workspaces } from '../../db/content-schema.js';
+import {
+  bookmarks,
+  collections,
+  folders,
+  listItems,
+  lists,
+  memberships,
+  notes,
+  shareMounts,
+  shares,
+  workspaces,
+} from '../../db/content-schema.js';
 import { HttpError } from '../../lib/http-error.js';
 import { accessOf, canRevoke, canShare } from './access.js';
 import { descendientesDeCarpetas } from './folder-subtree.js';
@@ -123,6 +134,57 @@ export class ShareService {
       return { nodeType, nodeId, title: found.title, workspaceId: found.workspaceId };
     }
 
+    /*
+     * Una coleccion y un enlace son los dos ultimos, y llegan **despues** de la nota
+     * y antes del `else` de los items porque el `else` de abajo es el que se lleva
+     * cualquier tipo que no conozca: un `bookmark` que se colara ahi se buscaria en
+     * la tabla de items, no encontraria nada, y responderia 404. Es el mismo motivo
+     * por el que la rama de `note` esta donde esta.
+     *
+     * Los dos llevan su propio `workspace_id`, asi que resuelven en una consulta sin
+     * join, igual que una nota y que una carpeta.
+     */
+    if (nodeType === 'collection') {
+      const row = await db
+        .select({ title: collections.name, workspaceId: collections.workspaceId })
+        .from(collections)
+        .where(eq(collections.id, nodeId))
+        .limit(1);
+      const found = row[0];
+      if (!found) throw HttpError.notFound('That does not exist');
+      return { nodeType, nodeId, title: found.title, workspaceId: found.workspaceId };
+    }
+
+    if (nodeType === 'bookmark') {
+      const row = await db
+        // La `url` esta en el select por el titulo, no por gusto: mira abajo.
+        .select({ title: bookmarks.title, url: bookmarks.url, workspaceId: bookmarks.workspaceId })
+        .from(bookmarks)
+        .where(eq(bookmarks.id, nodeId))
+        .limit(1);
+      const found = row[0];
+      if (!found) throw HttpError.notFound('That does not exist');
+      /*
+        El unico nodo compartible cuyo titulo **puede estar vacio**, y no por una
+        mancada del dato: `bookmarks.title` es `varchar(300) not null default ''` y
+        se rellena con el open graph del sitio cuando se extrae. Un enlace guardado
+        hace treinta segundos tiene la cadena vacia, y `ShareTarget` promete un
+        titulo porque el otro recibe un correo y una fila en su bandeja con algo
+        escrito arriba. Mandarle `''` es un correo en blanco.
+        *
+        La `url` es lo unico de la fila que no puede estar vacio —el contrato la
+        exige http o https para poder guardarla—, asi que de ahi sale el nombre de
+        reserva. No es una invencion del copy: es el unico campo que identifica la
+        fila cuando el otro todavia no existe.
+      */
+      return {
+        nodeType,
+        nodeId,
+        title: found.title.length > 0 ? found.title : found.url,
+        workspaceId: found.workspaceId,
+      };
+    }
+
     const row = await db
       .select({ title: listItems.title, workspaceId: lists.workspaceId })
       .from(listItems)
@@ -218,18 +280,7 @@ export class ShareService {
     const ids = [target.nodeId, target.workspaceId];
 
     if (target.nodeType === 'folder') {
-      let actual: string | null = target.nodeId;
-      // Bounded by the depth anybody can actually build, and not recursive: a
-      // cycle in the folder tree would otherwise spin here forever.
-      for (let nivel = 0; nivel < 32 && actual; nivel += 1) {
-        const row = await db
-          .select({ parentId: folders.parentId })
-          .from(folders)
-          .where(eq(folders.id, actual))
-          .limit(1);
-        actual = row[0]?.parentId ?? null;
-        if (actual) ids.push(actual);
-      }
+      await this.subePorCarpetas(db, ids, target.nodeId);
     }
 
     if (target.nodeType === 'list' || target.nodeType === 'list_item') {
@@ -258,7 +309,72 @@ export class ShareService {
       }
     }
 
+    /*
+      Una coleccion y un enlace: los dos se archivan en una carpeta como cualquier
+      otro, y por eso anaden esa carpeta —**la directa y solo la directa**, igual que
+      hace la rama de `list` de arriba, que tampoco sube mas alla. Que limite lo
+      tiene una lista hoy y lo tiene tambien una coleccion: no es una decision de
+      esta rama, es la misma, y cambiarla para dos de los cinco seria tener dos
+      reglas de "que concession me alcanza" en el mismo archivo.
+
+      Sin esa carpeta, compartir una carpeta y que los enlaces archivados en ella
+      sigan sin poder verse seria el mismo modelo de fallo que una lista compartida
+      que no trae sus items.
+
+      Y lo que **no** se acumula es la `collection_id` de un enlace, y la razon es
+      que una coleccion es una etiqueta, no un contenedor: al borrar una coleccion
+      sus enlaces sobreviven —"unfiled", `content-schema.ts:470`—, o sea que la
+      relacion no es de contencion sino de clasificacion. Acumularla seria decir
+      que tener la etiqueta te da todos los enlaces que alguna vez se clasificaron
+      bajo ella, que es justo lo que **no** pasa cuando se borra una.
+
+      Que la app exporte una coleccion con sus enlaces (`export-service.ts:651`) es
+      otra pregunta y esta respondida al reves a proposito: exportar es una foto de
+      lo que hay ahora, y una concesion es una puerta que se queda abierta.
+    */
+    if (target.nodeType === 'collection' || target.nodeType === 'bookmark') {
+      const fila = await (
+        target.nodeType === 'collection'
+          ? db
+              .select({ folderId: collections.folderId })
+              .from(collections)
+              .where(eq(collections.id, target.nodeId))
+          : db
+              .select({ folderId: bookmarks.folderId })
+              .from(bookmarks)
+              .where(eq(bookmarks.id, target.nodeId))
+      ).limit(1);
+
+      const folderId = fila[0]?.folderId;
+      if (folderId) ids.push(folderId);
+    }
+
     return ids;
+  }
+
+  /**
+   * La carpeta y todas las de arriba, y por que el bucle termina.
+   *
+   * Va con tope de profundidad y no recursivo: un ciclo en el arbol de carpetas
+   * giraria aqui para siempre, y un ciclo en un arbol de carpetas no deberia ser
+   * imposible —simplemente no le ha pasado a nadie todavia—. El mismo tope y el
+   * mismo motivo que usa `descendientesDeCarpetas` bajando.
+   */
+  private async subePorCarpetas(
+    db: Database,
+    ids: string[],
+    desde: string,
+  ): Promise<void> {
+    let actual: string | null = desde;
+    for (let nivel = 0; nivel < 32 && actual; nivel += 1) {
+      const row = await db
+        .select({ parentId: folders.parentId })
+        .from(folders)
+        .where(eq(folders.id, actual))
+        .limit(1);
+      actual = row[0]?.parentId ?? null;
+      if (actual) ids.push(actual);
+    }
   }
 
   /** The facts that decide what somebody can do with a node. */
@@ -565,6 +681,29 @@ export class ShareService {
       // falling through here stamped a list row that does not exist, so the pull
       // cursor never moved and the grantee was never told anything had arrived.
       await db.update(notes).set({ updatedAt: ahora }).where(eq(notes.id, target.nodeId));
+    } else if (target.nodeType === 'collection') {
+      await db.update(collections).set({ updatedAt: ahora }).where(eq(collections.id, target.nodeId));
+      /*
+        Y los enlaces que tiene clasificados debajo.
+
+        El pull filtra por el reloj **de cada fila**: el bloque de `bookmarks` en
+        `sync-repository.ts:1208` pregunta por `bookmarks.updated_at`, no por el de
+        la coleccion. Un enlace guardado la semana pasada y clasificado hoy tiene
+        un reloj de la semana pasada, asi que la concesion no lo mueve, no llega,
+        y el otro movil recibe una coleccion con cero enlaces dentro — que es el
+        fallo exacto que el bloque de `folder` de arriba ya tuvo que arreglar para
+        las listas que lleva dentro.
+
+        No se baja por los enlaces de las colecciones de las colecciones porque no
+        las hay: `bookmarks.collection_id` no tiene nietos, y un enlace dentro de
+        una coleccion que a su vez esta dentro de otra no existe.
+      */
+      await db
+        .update(bookmarks)
+        .set({ updatedAt: ahora })
+        .where(eq(bookmarks.collectionId, target.nodeId));
+    } else if (target.nodeType === 'bookmark') {
+      await db.update(bookmarks).set({ updatedAt: ahora }).where(eq(bookmarks.id, target.nodeId));
     } else {
       await db.update(listItems).set({ updatedAt: ahora }).where(eq(listItems.id, target.nodeId));
     }

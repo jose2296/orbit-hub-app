@@ -169,6 +169,13 @@
       "when": 1791315715291,
       "tag": "0024_bookmarks",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791401836000,
+      "tag": "0025_share_collections_bookmarks",
+      "breakpoints": true
     }
   ]
 }

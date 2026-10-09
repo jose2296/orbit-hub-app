@@ -3,6 +3,8 @@ import type { Server } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { ShareNodeType } from '@orbit-hub/contracts';
+
 import { createApp } from '../src/app.js';
 import { closeDatabase, runMigrations } from '../src/db/client.js';
 
@@ -194,7 +196,7 @@ export async function compartirYColocar(
   args: {
     /** Who owns the node and where it lives. */
     dueno: TestUser;
-    nodeType: 'workspace' | 'folder' | 'list' | 'list_item' | 'note';
+    nodeType: ShareNodeType;
     nodeId: string;
     workspaceId: string;
     /** Who is given it. */
