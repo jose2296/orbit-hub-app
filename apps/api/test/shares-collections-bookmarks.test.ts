@@ -611,6 +611,78 @@ describe('el reloj del nodo y el de lo que tiene debajo', () => {
     );
   });
 
+  it('y una coleccion compartida se puede colocar en un espacio propio', async () => {
+    /*
+      La pregunta que hace el brief sobre donde va una coleccion, y la respuesta es
+      que **la pregunta ya existe y ya funciona**.
+
+      "Donde lo pongo" no es por tipo de nodo: es un espacio tuyo y una carpeta tuya
+      dentro, y `placeShare` valida exactamente eso —que el espacio sea uno donde
+      tenes rol y que la carpeta pertenezca a ese espacio—. Una coleccion se archiva en
+      un espacio y una carpeta como cualquier otra cosa, asi que el panel no necesita
+      una rama nueva y no se le dio ninguna.
+
+      Y el montaje tambien: `montajesDe` tiene su rama para `folder`, para `list` y
+      para `list_item`, y el `else` final pone el resto en
+      `${nodeType}:${nodeId}` —que es exactamente lo que hacen `collection` y
+      `bookmark`—. El comentario de ahi lo dice: "un `nodeType: 'collection'` que
+      llegara a esta fila se proyectaria igual, y proyectarlo es lo correcto".
+
+      Lo que **no** llega a esa fila era el grant, porque el enum no lo admitia. Ya
+      lo admite.
+    */
+    const { ana, beto, workspaceId, collectionId } = await anaConUnEnlace();
+    const espacioDeBeto = randomUUID();
+
+    await push(beto, [
+      { kind: 'create', entity: 'workspace', entityId: espacioDeBeto, payload: { name: 'Suyo', color: 'teal' } },
+    ]);
+
+    const creada = await api.post(
+      '/shares',
+      { workspaceId, nodeType: 'collection', nodeId: collectionId, granteeUserId: beto.userId, role: 'viewer' },
+      ana.accessToken,
+    );
+    expect(creada.status).toBe(201);
+    const shareId = creada.body.data.id as string;
+
+    const colocada = await api.post(
+      `/shares/${shareId}/place`,
+      { workspaceId: espacioDeBeto, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+    expect(colocada.status, JSON.stringify(colocada.body)).toBe(200);
+
+    // Y sale de la bandeja, que es lo que significa "colocado": `inbox` excluye lo
+    // montado por construccion.
+    const bandeja = await api.get('/shares/inbox', beto.accessToken);
+    expect(bandeja.body.data.items.some((item: any) => item.nodeId === collectionId)).toBe(false);
+  });
+
+  it('y se puede colocar en un espacio ajeno no, que es la regla de siempre', async () => {
+    const { ana, beto, workspaceId, collectionId } = await anaConUnEnlace();
+    const otra = await createVerifiedUser(api, { displayName: 'Otra' });
+    const espacioAjeno = randomUUID();
+    await push(otra, [
+      { kind: 'create', entity: 'workspace', entityId: espacioAjeno, payload: { name: 'Suyo', color: 'teal' } },
+    ]);
+
+    const creada = await api.post(
+      '/shares',
+      { workspaceId, nodeType: 'collection', nodeId: collectionId, granteeUserId: beto.userId, role: 'viewer' },
+      ana.accessToken,
+    );
+
+    const colocada = await api.post(
+      `/shares/${creada.body.data.id as string}/place`,
+      { workspaceId: espacioAjeno, folderId: null, position: 0 },
+      beto.accessToken,
+    );
+
+    // Un montaje dentro del espacio de otro es compartir por la puerta de atras.
+    expect(colocada.status).toBe(403);
+  });
+
   it.todo(
     'el pull manda al otro movil una coleccion compartida: falta la rama en ' +
       'sync-repository.ts (cadenasDeCompartido y los dos filtros de la pagina)',
