@@ -30,8 +30,10 @@ The editor's tag set is closed, so the format is closed too, and it is small:
 - Inline: `b`, `i`, `u`, `s`, `code`, `a`, `img`.
 - Paragraph: `h1`-`h6`, `ul`, `ol`, `ul[data-type="checkbox"]`, `blockquote`, `codeblock`.
 - A plain line is a `p`; an empty line is a `br`.
-- `mention` is available in the editor and deliberately **out of the format** for now, because
-  nothing in the app renders it yet.
+- `mention` is a chip that points at a list, a note, a folder, a space or a bookmark. It is in the
+  format with a closed set of attributes and no markup inside it, see
+  [ADR 0034](adr/0034-mencion-en-notas.md). Its name is a copy: what is drawn is the target's
+  current name from the local cache.
 
 Rules:
 

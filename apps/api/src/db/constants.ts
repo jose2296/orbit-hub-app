@@ -44,6 +44,7 @@ export const SYNC_ENTITIES = [
   'dashboard',
   'collection',
   'bookmark',
+  'journal_entry',
 ] as const;
 export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
 
@@ -166,6 +167,8 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    */
   note: ['title', 'document', 'folderId', 'tags', 'position', 'icon'],
   dashboard: ['layout', 'pages'],
+  // The day is set once, by the create, and never moves: its id is derived from it.
+  journal_entry: ['document'],
   /**
    * Una coleccion es una carpeta con nombre: lo que la persona elige es donde va
    * y como se llama, y nada mas.

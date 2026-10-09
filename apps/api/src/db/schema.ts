@@ -13,6 +13,7 @@ import {
   attachments,
   dashboardLayouts,
   folders,
+  journalEntries,
   listItems,
   lists,
   memberships,
@@ -40,6 +41,7 @@ export const schema = {
   notes,
   attachments,
   dashboardLayouts,
+  journalEntries,
   workspaceInvitations,
   // sync
   syncOperations,
