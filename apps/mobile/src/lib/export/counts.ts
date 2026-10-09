@@ -1,4 +1,4 @@
-import type { AccountExport, ListExport } from '@orbit-hub/contracts';
+import type { AccountExport, CollectionExport, ListExport } from '@orbit-hub/contracts';
 
 import type { Translate } from '@/lib/i18n';
 import { pluralKey } from '@/lib/i18n/plural';
@@ -20,9 +20,18 @@ import { pluralKey } from '@/lib/i18n/plural';
  * El `t` entra como argumento y no se importa del provider a proposito: la hoja
  * tiene el suyo, con el idioma que esta puesto ahora, y un modulo que Monta el
  * provider para traducir una frase es un modulo que ya no se puede probar.
+ *
+ * Y el orden de las ramas **es el orden de exclusividad**, no una jerarquia: cada
+ * `counts` pide claves que los otros no tienen, asi que un corte equivocado cae en
+ * la rama de al lado con un `undefined` en medio. Los tres cortes estan probados en
+ * `test/export.test.ts` contra el diccionario de verdad.
  */
 export function exportCountsLine(
-  counts: AccountExport['counts'] | ListExport['counts'] | null,
+  counts:
+    | AccountExport['counts']
+    | CollectionExport['counts']
+    | ListExport['counts']
+    | null,
   t: Translate,
 ): string {
   /*
@@ -39,9 +48,9 @@ export function exportCountsLine(
   /*
     De quien son los numeros, y no si los hay.
 
-    Los dos sobres traen `counts`, asi que la pregunta no es "hay cifras" sino
+    Los tres sobres traen `counts`, asi que la pregunta no es "hay cifras" sino
     "de quien son". Y la respuesta la da una clave: `lists` esta en los `counts` de
-    la cuenta y no en los de una lista, que solo lleva items.
+    la cuenta y no en los de una lista o una coleccion, que llevan una sola.
 
     La cuenta dice sus tres grupos —listas, elementos y notas— porque su frase dice
     esos tres, aunque el sobre lleve siete cifras: espacios, carpetas, adjuntos y
@@ -57,11 +66,32 @@ export function exportCountsLine(
   }
 
   /*
+    Y una coleccion son **enlaces**, con la palabra del sobre y de la pantalla.
+
+    Es el corte que se agrega con la T9 y va **antes** del de una lista, porque las
+    dos son frases contadas de una sola cifra y la confusion entre ellas no se ve
+    en el typecheck: `bookmarks` y `items` son dos numeros y ambos compilan. Al
+    revés —esta rama despues— una coleccion caeria en `export.done` y diria "7
+    elementos" de algo que son enlaces, que es un numero cierto con la palabra
+    equivocada, y esa es la clase de fallo que un panel no avisa.
+
+    El copy es `collections.count.*` y no uno nuevo de la familia `export.*`: esa
+    clave **ya existe** y es la que dice cuantos enlaces tiene una coleccion en la
+    pantalla, y una exportacion que dijera "7 elementos" mientras la lista de al
+    lado dice "7 enlaces" seria la misma cuenta con dos palabras.
+  */
+  if ('bookmarks' in counts) {
+    return t(pluralKey('collections.count', counts.bookmarks), {
+      count: counts.bookmarks,
+    });
+  }
+
+  /*
     Y una lista es items y nada mas, que es una frase contada y no una separacion
     de grupos: "7 elementos", y "1 elemento" cuando hay uno.
 
     Aqui es donde una lista se cairia en la frase de la cuenta si el orden de las
-    dos ramas se invirtiera, y se veria "listas · elementos · notas" con dos de los
+    ramas se invirtiera, y se veria "listas · elementos · notas" con dos de los
     tres grupos sin valor —`formatTranslation` deja el marcador tal cual cuando no
     le llega, con las llaves, asi que el fallo sale en la pantalla y no en el
     compilador.

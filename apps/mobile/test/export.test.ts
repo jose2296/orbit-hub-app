@@ -536,6 +536,67 @@ describe('entregar la exportacion en la web', () => {
     expect(revocados).toEqual(creados);
   });
 
+  /**
+   * El mismo camino con el sobre de una **coleccion**, que es donde el numero se
+   * perdia.
+   *
+   * Lo que se comprueba es la mitad de `countsOf`: la respuesta lleva un sobre de
+   * coleccion y el `counts` que sale del `run` tiene que ser `{ bookmarks }`. Sin
+   * la tercera rama el `safeParse` de los otros dos fallaba —el sobre de una
+   * coleccion no tiene `items`— y `counts` volvia `null`, que la hoja pinta como
+   * una linea de menos: el fichero llegaba igual y el panel no decia cuanto.
+   *
+   * Y se comprueba **contra la respuesta de verdad**, no contra un `counts` pasado a
+   * mano, porque lo que se protege es el viaje entero: el `json()` del sobre, el
+   * `safeParse` y el numero que sale. `exportCountsLine` ya tiene sus propios tests,
+   * con el diccionario de verdad.
+   */
+  it('lee los enlaces del sobre de una coleccion y los pasa tal cual', async () => {
+    globalThis.fetch = async () => {
+      peticiones += 1;
+      return new Response(
+        JSON.stringify({
+          format: 'orbit-hub.export',
+          version: 1,
+          collection: { id: 'c1', name: 'Recetas' },
+          bookmarks: [{ id: 'b1' }, { id: 'b2' }, { id: 'b3' }],
+          counts: { bookmarks: 3 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    };
+
+    const resultado = await deliverExport({
+      path: '/collections/c1/export',
+      format: 'json',
+      title: 'Recetas',
+      fallbackId: 'c1',
+    });
+
+    expect(resultado.counts).toEqual({ bookmarks: 3 });
+  });
+
+  it('y un sobre que no es de nadie da null, no los numeros de otro', async () => {
+    // La red de seguridad: un `counts` que no encaja en ninguno de los tres schemas
+    // vuelve `null` y la linea se queda sin dibujar. Devolver los de otro —leer
+    // `items` de un sobre que no los tiene— seria ensenar un numero que no salio
+    // del fichero.
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({ format: 'orbit-hub.export', version: 1, counts: { notas: 9 } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+
+    const resultado = await deliverExport({
+      path: '/collections/c1/export',
+      format: 'json',
+      title: 'Recetas',
+      fallbackId: 'c1',
+    });
+
+    expect(resultado.counts).toBeNull();
+  });
+
   it('mete el <a> en el documento y lo saca en cuanto ha hecho falta', async () => {
     const resultado = await entregar();
 
@@ -627,6 +688,76 @@ describe('los numeros de una exportacion de una lista', () => {
     // exportada sale con un cero delante, que es la verdad, y no con una linea
     // vacia que parece un fallo.
     expect(exportCountsLine({ items: 0 }, t)).toBe('0 elementos');
+  });
+});
+
+/**
+ * Una coleccion son **enlaces**, y la palabra es la del sobre y la de la pantalla.
+ *
+ * El bloque de arriba prueba la rama de una lista y el de la cuenta; este es el
+ * tercero, y el que mas se confunde porque las tres ramas son frases contadas de
+ * una sola cifra: `bookmarks` y `items` son dos numeros que compilan igual, asi que
+ * la palabra equivocada no la caza el compilador —la caza el diccionario.
+ */
+describe('los numeros de una exportacion de una coleccion', () => {
+  it('enseña los enlaces, en plural', () => {
+    expect(exportCountsLine({ bookmarks: 7 }, t)).toBe('7 enlaces');
+  });
+
+  it('enseña el singular cuando hay uno', () => {
+    expect(exportCountsLine({ bookmarks: 1 }, t)).toBe('1 enlace');
+  });
+
+  it('con la palabra del conteo de la pantalla, y no con la de una lista', () => {
+    // `collections.count.*` y no una clave nueva de la familia `export.*`: esa
+    // clave ya existe y es la que dice cuantos enlaces tiene una coleccion en la
+    // lista de al lado. Un export que dijera "7 elementos" mientras la pantalla
+    // dice "7 enlaces" seria la misma cuenta con dos palabras.
+    expect(exportCountsLine({ bookmarks: 7 }, t)).not.toContain('elemento');
+    expect(exportCountsLine({ bookmarks: 7 }, t)).toContain('enlaces');
+    // Y la palabra existe en los dos idiomas, que es lo que la hace dibujable.
+    expect(dictionaries.en['collections.count.other']).toBe('{count} links');
+  });
+
+  it('una coleccion vacia dice cero enlaces y no nada', () => {
+    expect(exportCountsLine({ bookmarks: 0 }, t)).toBe('0 enlaces');
+  });
+
+  it('no deja ningun grupo de la cuenta colgando, ni ningun numero de otra cosa', () => {
+    const linea = exportCountsLine({ bookmarks: 42 }, t);
+
+    expect(linea).toBe('42 enlaces');
+    expect(linea).not.toContain('{');
+    expect(linea).not.toContain('·');
+  });
+});
+
+/**
+ * Las tres ramas se distinguen **por sus claves**, y por eso el orden no importa.
+ *
+ * Lo que se comprueba es que una forma de `counts` no caiga en la frase de otra.
+ * Cada schema pide claves que los demas no tienen —la cuenta las siete, una lista
+ * `items`, una coleccion `bookmarks`—, asi que un corte equivocado se ve aqui como
+ * una palabra que no es la del sobre, no como un error de tipografia.
+ */
+describe('una forma de counts no se pinta como otra', () => {
+  it('la coleccion no dice elementos ni listas', () => {
+    const linea = exportCountsLine({ bookmarks: 3 }, t);
+
+    expect(linea).toBe('3 enlaces');
+    expect(linea).not.toContain('listas');
+    expect(linea).not.toContain('notas');
+  });
+
+  it('la lista no dice enlaces', () => {
+    expect(exportCountsLine({ items: 3 }, t)).toBe('3 elementos');
+  });
+
+  it('y un numero con la misma cifra en las dos formas no las vuelve indistinguibles', () => {
+    // La confusion que de verdad cuesta dinero: dos sobres con el mismo numero y
+    // frases distintas. Si las dos devolvieran lo mismo, el numero no diria de que
+    // fichero viene y el panel seria decoration.
+    expect(exportCountsLine({ items: 7 }, t)).not.toBe(exportCountsLine({ bookmarks: 7 }, t));
   });
 });
 

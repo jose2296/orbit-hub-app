@@ -976,6 +976,12 @@ const es = {
   // hiciera.
   "export.list.title": "Exportar esta lista",
   "export.list.body": "Los elementos de esta lista, en JSON o CSV.",
+  // Y la de una coleccion, que **no puede ser la de arriba**: "Exportar esta lista"
+  // en el menu de una coleccion es un error que se ve al abrir el menu. Vive al
+  // lado de la suya y no dentro de la familia `list.*` porque no es de la lista: lo
+  // que se exporta son enlaces, y la palabra del sobre y de la pantalla es
+  // "coleccion".
+  "export.collection.title": "Exportar esta colección",
   "export.running": "Preparando el fichero…",
   "export.done.one": "{count} elemento",
   "export.done.other": "{count} elementos",
@@ -2212,6 +2218,11 @@ const en: Record<TranslationKey, string> = {
   "export.title": "Export my data",
   "export.list.title": "Export this list",
   "export.list.body": "The items in this list, as JSON or CSV.",
+  // The collection's own row label: reusing the list's said "Export this list" in a
+  // collection's menu, and it is the one line anybody actually reads before
+  // choosing. Same reason it does not live under `list.*`: what gets exported is
+  // bookmarks, and the word everywhere else —envelope, screen, plural—is "links".
+  "export.collection.title": "Export this collection",
   "export.running": "Preparing the file…",
   "export.done.one": "{count} item",
   "export.done.other": "{count} items",

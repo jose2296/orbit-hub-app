@@ -1,5 +1,10 @@
-import type { AccountExport, ExportFormat, ListExport } from '@orbit-hub/contracts';
-import { accountExportSchema, exportFilename, listExportSchema } from '@orbit-hub/contracts';
+import type { AccountExport, CollectionExport, ExportFormat, ListExport } from '@orbit-hub/contracts';
+import {
+  accountExportSchema,
+  collectionExportSchema,
+  exportFilename,
+  listExportSchema,
+} from '@orbit-hub/contracts';
 import { useState } from 'react';
 import { Platform } from 'react-native';
 
@@ -25,12 +30,14 @@ export const EXPORT_TIMEOUT_MS = 120_000;
  * sobre y el mismo nombre con distinta extension. Un CSV no lleva sobre —son
  * filas— y por eso los `counts` pueden ser `null` sin que eso sea un fallo.
  */
-async function envelopeOf(response: Response): Promise<AccountExport | ListExport | null> {
+async function envelopeOf(
+  response: Response,
+): Promise<AccountExport | CollectionExport | ListExport | null> {
   try {
     // `json()` devuelve `any` en las typings de DOM, asi que el tipo lo pone el
     // contrato; lo que lo comprueba de verdad es `countsOf`, que vuelve a pasar
     // esos numeros por el schema.
-    return (await response.json()) as AccountExport | ListExport;
+    return (await response.json()) as AccountExport | CollectionExport | ListExport;
   } catch {
     return null;
   }
@@ -53,23 +60,40 @@ async function envelopeOf(response: Response): Promise<AccountExport | ListExpor
  * resto. Al reves no se puede distinguir —el schema de una lista acepta los de la
  * cuenta y se queda con el `items`— asi que el orden es lo unico que decide.
  *
- * Un sobre que no es ninguno de los dos da `null` y no un fallo: cuando se llega
+ * Los tres `counts` son **mutuamente excluyentes por sus claves**, y eso es lo que
+ * hace que un `safeParse` baste para distinguirlos: el de la cuenta pide los siete,
+ * el de una lista pide `items` y el de una coleccion pide `bookmarks`. El par de
+ * arriba **necesita** orden —por eso el de la cuenta va primero— porque el schema
+ * de una lista acepta los `counts` de la cuenta y se queda con el `items`. El
+ * tercero no lo necesita: ni `{items}` ni `{bookmarks}` se parecen al otro, asi que
+ * su rama puede ir donde sea y no es un caso especial.
+ *
+ * Un sobre que no es ninguno de los tres da `null` y no un fallo: cuando se llega
  * aqui el fichero ya esta entregado, y un `counts` que no se reconoce es una
  * linea de menos, no una exportacion perdida.
  */
-function countsOf(envelope: AccountExport | ListExport | null): AccountExport['counts'] | ListExport['counts'] | null {
+function countsOf(
+  envelope: AccountExport | CollectionExport | ListExport | null,
+): AccountExport['counts'] | CollectionExport['counts'] | ListExport['counts'] | null {
   if (!envelope) return null;
 
   const cuenta = accountExportSchema.shape.counts.safeParse(envelope.counts);
   if (cuenta.success) return cuenta.data;
 
   const lista = listExportSchema.shape.counts.safeParse(envelope.counts);
-  return lista.success ? lista.data : null;
+  if (lista.success) return lista.data;
+
+  const coleccion = collectionExportSchema.shape.counts.safeParse(envelope.counts);
+  return coleccion.success ? coleccion.data : null;
 }
 
 export interface ExportResult {
   /** Los numeros del sobre, o `null` cuando el formato no lleva sobre (un CSV). */
-  counts: AccountExport['counts'] | ListExport['counts'] | null;
+  counts:
+    | AccountExport['counts']
+    | CollectionExport['counts']
+    | ListExport['counts']
+    | null;
   /** Lo que paso de verdad: descargado en la web, compartido en un movil. */
   how: Awaited<ReturnType<typeof saveExport>>;
   /** El nombre del fichero entregado, que es lo que va en "Guardado como…". */
@@ -118,7 +142,7 @@ export async function deliverExport(args: ExportRequest): Promise<ExportResult> 
   // `pending` y no una URL. En nativo no se manda nada desde JS; los bytes los baja
   // `expo-file-system` desde la URL con las cabeceras del `pending`, y el sobre se
   // relee del cache, que es donde ha quedado.
-  let envelope: AccountExport | ListExport | null;
+  let envelope: AccountExport | CollectionExport | ListExport | null;
   let how: ExportResult['how'];
 
   if (Platform.OS === 'web') {

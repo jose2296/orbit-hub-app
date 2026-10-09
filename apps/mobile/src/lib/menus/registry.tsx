@@ -310,13 +310,28 @@ export const ACCIONES: Record<string, MenuAccion> = {
 
   /*
     Exportar depende de que exista el endpoint, y por eso es una capacidad y no
-    un `kind`: una lista exporta desde hoy y una coleccion no hasta que exista
-    `GET /collections/:id/export`. Ponerlo como capacidad hace que la fila no
-    aparezca en vez de aparecer y fallar al tocarla.
+    un `kind`: solo se ofrece donde hay una ruta que la API monta. Ponerlo como
+    capacidad hace que la fila no aparezca en vez de aparecer y fallar al tocarla.
+
+    Y el copy **es funcion del `ctx`**, por la misma razon que el de `delete`: la
+    fila dice "Exportar esta lista" o "Exportar esta coleccion" porque lo que se
+    exporta es una cosa distinta en cada caso. Con una clave fija —"esta lista" para
+    las dos— el menu de una coleccion decia "Exportar esta lista", que es un error
+    visible al alcance de un dedo y que nadie veia porque el registro no se pinta
+    solo: el label lo resuelve quien lo abre.
+
+    `list` se queda con `export.list.title`, que es la que tenia, y `collection`
+    recibe la suya. Las dos son las unicas que `ORDEN_POR_KIND` declara y las dos
+    tienen endpoint. Un kind nuevo que la declarara caeria en la rama de la lista y
+    diria "esta lista", y el typecheck no lo ve —el tipo del campo no tiene forma de
+    decir "sin clave"—, asi que lo detectan los dos guards de
+    `menu-registry.test.ts`: la clave resuelta existe en los dos diccionarios, y
+    **un kind que no sea `list` no puede resolver a la de la lista**.
   */
   export: {
     id: "export",
-    labelKey: "export.list.title",
+    labelKey: (ctx) =>
+      ctx.kind === "collection" ? "export.collection.title" : "export.list.title",
     icon: "download-outline",
     disponible: (ctx) => ctx.caps.export === true,
     destino: { tipo: "pagina", page: "export" },
