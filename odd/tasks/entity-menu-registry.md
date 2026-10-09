@@ -343,6 +343,10 @@ Cada una es un work unit y cierra con su commit.
 
 - Los cinco kinds declaran el mismo conjunto base de acciones; las diferencias
   son declaradas en el registro, no por sheets distintos.
+  **Verificado**: el base es `rename`, `share`, `access` y `delete` en los cinco.
+  Entro `share` cuando T10 hizo que el contrato la admitiera, asi que dejo de ser
+  una diferencia entre kinds. Cantidades ofrecidas con todas las capacidades:
+  lista 9, nota 6, carpeta 7, coleccion 5, bookmark 4.
 - Un bookmark tiene menu con las mismas opciones que una lista, y su borrar esta
   dentro del menu.
 - Una coleccion tiene pantalla propia con header y tres puntitos.
@@ -353,7 +357,9 @@ Cada una es un work unit y cierra con su commit.
   el espacio en el alcance, y el espacio trae su propio `SharePanel`, selector de
   color y gestion de miembros: es otro corte, no una fila de este.
 - El test de paridad falla si un kind nuevo queda sin acciones.
-- Web en claro y oscuro, y emulador.
+- Web en claro y oscuro, y emulador. **SIN CUMPLIR.** Nada de lo visible se abrio
+  en un navegador ni en un dispositivo. El export estatico pasa (68/68) y descarta
+  crash e import mal escrito, no un pixel.
 
 ## Checks
 
