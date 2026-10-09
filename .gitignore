@@ -106,3 +106,8 @@ play-service-account*.json
 # Capturas de depuracion sueltas en la raiz: se guardan en capturas/, que ya
 # esta ignorado, y estas se colaron por estar a un nivel de mas.
 web-*.png
+
+# pnpm no lee el campo "workspaces" de package.json: instalarlo aqui deja un
+# lockfile que no cubre ningun workspace y un node_modules roto. El manager es
+# npm, cuyo lock (package-lock.json) si está versionado.
+pnpm-lock.yaml

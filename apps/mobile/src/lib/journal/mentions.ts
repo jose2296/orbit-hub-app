@@ -12,6 +12,7 @@
 
 import { mentionIndicatorFor } from "@orbit-hub/contracts";
 import type { ListKind, MentionType } from "@orbit-hub/contracts";
+import { WORKSPACE_COLORS } from "@orbit-hub/contracts";
 
 import { routeForList } from "@/lib/lists/route";
 
@@ -110,8 +111,17 @@ export function renderMentions(
       return `<mention${attributesNow}>${escapeText(`${CHIP_PAD}${target.icon} ${target.name}${CHIP_PAD}`)}</mention>`;
     }
     if (options.mode === "reading") {
-      return `<mention${rawAttributes}>${escapeText(options.unavailableLabel)}</mention>`;
+      // Still normalised: a chip whose target is gone is painted with the colour it
+      // was given, and a legacy indicator would find no style for it.
+      const attributesNow = rawAttributes.replace(
+        /indicator\s*=\s*"[^"]*"/,
+        `indicator="${normaliseIndicator(attributes["indicator"] ?? "")}"`,
+      );
+      return `<mention${attributesNow}>${escapeText(options.unavailableLabel)}</mention>`;
     }
+    // While editing, a chip that cannot be resolved keeps exactly what it was
+    // written with —indicator included— so the document is not changed under the
+    // person by a cache that has not caught up.
     return whole;
   });
 }
@@ -171,6 +181,30 @@ export const MENTION_NAME_MAX = 120;
 
 export function mentionNameFor(name: string): string {
   return name.replace(/["<>]/g, "").trim().slice(0, MENTION_NAME_MAX);
+}
+
+/**
+ * The indicator a chip carries, as it is written today.
+ *
+ * The colour used to travel inside the indicator as `@teal`, and now travels as one
+ * character. A chip written before the change still carries the old one, and the
+ * style is looked up by indicator: with the old one the lookup finds nothing and
+ * the library paints its default —on a phone, an underline and no background—.
+ *
+ * So the legacy one is rewritten here, where the chip is drawn, and not in the
+ * stored document: the document keeps what it was given, and this is what it is
+ * shown as. An unknown value comes back unchanged, because a chip from a build
+ * that knows more colours than this one must still open.
+ */
+export function normaliseIndicator(value: string): string {
+  // The plain trigger is what a legacy indicator was built on, and it is the one
+  // value the contract hands out for "no colour".
+  const gatillo = mentionIndicatorFor(null);
+  if (!value.startsWith(gatillo) || value === gatillo) return value;
+  const colour = value.slice(gatillo.length);
+  return (WORKSPACE_COLORS as readonly string[]).includes(colour)
+    ? mentionIndicatorFor(colour)
+    : value;
 }
 
 /**
