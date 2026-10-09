@@ -104,6 +104,19 @@ export async function createBookmarkAction(input: NewBookmarkInput): Promise<str
 export interface BookmarkChanges {
   url?: string;
   title?: string;
+  /**
+   * El espacio, y **por que no estaba**.
+   *
+   * "Igual que una nota" era la razon que daba `assign-sheet.tsx` para no
+   * ofrecerlo: una nota no se mueve de espacio, asi que un bookmark tampoco. Pero
+   * un bookmark sin clasificar si necesita moverse —el pedido era literal, "deberia
+   * poder moverlo luego a otro sitio si esta sin clasificar"— y el motivo real era
+   * que el contrato de cambios no tenia el campo, no que no se pudiera.
+   *
+   * Y **moverlo no es quitarselo**: `bookmarkSchema.workspaceId` sigue siendo
+   * obligatorio. Un bookmark siempre esta en un espacio; esto es cual.
+   */
+  workspaceId?: string;
   folderId?: string | null;
   collectionId?: string | null;
   tags?: string[];
@@ -122,6 +135,7 @@ export async function updateBookmarkAction(
   const cambios: Record<string, unknown> = {};
   if (input.url !== undefined) cambios["url"] = input.url;
   if (input.title !== undefined) cambios["title"] = input.title;
+  if (input.workspaceId !== undefined) cambios["workspaceId"] = input.workspaceId;
   if (input.folderId !== undefined) cambios["folderId"] = input.folderId;
   if (input.collectionId !== undefined) cambios["collectionId"] = input.collectionId;
   if (input.tags !== undefined) cambios["tags"] = input.tags;

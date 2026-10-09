@@ -87,13 +87,25 @@ describe("el triage manda solo la coleccion", () => {
 
   it("ninguna llamada de clasificar menciona folderId", () => {
     // El `folderId` lo deriva el servidor de la coleccion: mandarlo y que
-    // discrepe es 422. Asi que cada `updateBookmarkAction` de esta hoja solo
+    // discrepa es 422. Asi que cada `updateBookmarkAction` de esta hoja solo
     // puede llevar `collectionId`.
-    const llamadas = hoja.match(/updateBookmarkAction\(\{[^}]*\}\)/g);
-    expect(llamadas?.length).toBeGreaterThan(0);
-    for (const llamada of llamadas ?? []) {
+    //
+    // `workspaceId` si aparece, y solo cuando el espacio cambio: no es una
+    // clasificacion, es una mudanza, y el servidor la valida en el destino.
+    // Partiendo del marcador y no con un regex sobre el objeto: `[^}]*` se corta
+    // en la primera llave, y el spread condicional de `workspaceId` tiene una
+    // dentro. Asi que se recorta hasta el `});` que cierra cada llamada.
+    const trozos = hoja.split("updateBookmarkAction({").slice(1);
+    expect(trozos.length).toBeGreaterThan(0);
+    for (const trozo of trozos) {
+      const llamada = trozo.slice(0, trozo.indexOf("});"));
       expect(llamada).toContain("collectionId");
       expect(llamada).not.toContain("folderId");
+      // Y si manda espacio, lo manda condicional —no un valor fijo—, porque un
+      // guardar que no mudara no tiene por que parecer una mudanza en el diff.
+      if (llamada.includes("workspaceId")) {
+        expect(llamada).toMatch(/espacioId !== bookmark\.workspaceId/);
+      }
     }
   });
 

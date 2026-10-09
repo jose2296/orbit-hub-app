@@ -1210,6 +1210,48 @@ export class SyncService {
       const destino = sanitisePayload(entity, operation.payload);
 
       /*
+        Mover de espacio se valida **en el destino**, no en el origen.
+
+        Cambiar el `workspaceId` de una fila es la unica escritura de este camino
+        que cambia de quien es el contenedor, y por eso la unica que necesita **dos**
+        permisos: el del espacio viejo (el de arriba, que dice que la fila es tuya) y
+        el del nuevo (este, que dice que puedes escribir ahi).
+
+        Sin el segundo, `workspaceId` seria un campo que el cliente puede poner a
+        cualquier valor: se podria mandar el id de un espacio ajeno y filtrar ahi un
+        enlace. No es robar —la fila ya es tuya— es **dejar algo en un espacio que no
+        es tuyo**, que es peor porque no hay sintoma.
+
+        El permiso se pide con `assertCanWrite`, que es el mismo chequeo de membresia
+        y rol que usa el create de una coleccion (`:950`), y sin `target` porque
+        `resolveTarget` no conoce `collection` ni `bookmark` — lo dice el comentario
+        de arriba. Mismo ayudante, misma respuesta.
+
+        Y `folderId` y `collectionId` se resuelven contra el espacio de destino:
+        llevarlos del viejo dejaria un bookmark archivado en una carpeta que no
+        existe en su espacio nuevo, que es la clase de fila que despues no se puede
+        ni borrar desde la app.
+      */
+      if (entity === 'bookmark' && 'workspaceId' in destino) {
+        const espacioDestino = destino['workspaceId'];
+        if (typeof espacioDestino !== 'string' || espacioDestino.length === 0) {
+          throw HttpError.validation('A bookmark needs a workspaceId to move to');
+        }
+        if (espacioDestino !== this.workspaceDeLaFila(existing)) {
+          await this.assertCanWrite(espacioDestino, userId);
+          const carpetaDelDestino = await this.resolveCarpetaDeEsteEspacio(
+            (destino['folderId'] as string | null | undefined) ?? null,
+            espacioDestino,
+          );
+          destino['folderId'] = carpetaDelDestino;
+          // Si la coleccion vieja no es de este espacio, el bookmark pierde la
+          // clasificacion: arrastrarla la dejaria apuntando a una carpeta de otro
+          // espacio, y un enlace sin clasificar es un estado valido.
+          destino['collectionId'] = null;
+        }
+      }
+
+      /*
         La URL se filtra tambien en un update, y no solo en el create.
 
         Filtrarla solo al crear deja la defensa a medias: un cliente que no
