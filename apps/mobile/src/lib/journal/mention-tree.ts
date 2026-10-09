@@ -8,6 +8,8 @@
  * Pure, so the rules are tested without the cache.
  */
 
+import type { IconRef } from "@orbit-hub/contracts";
+
 import type { MentionRecord } from "./mention-model";
 import { iconTextOf } from "./mention-model";
 
@@ -19,7 +21,14 @@ export interface LevelRow {
   type: MentionRecord["type"];
   id: string;
   name: string;
+  /** The emoji drawn before the name: the one given, or the type's. */
   icon: string;
+  /**
+   * The icon as it was configured, for a row to draw. A vector icon cannot go in
+   * a chip — a chip is text — but a row in this picker draws whatever the thing
+   * was given, so a thing with a vector icon no longer reads as another one.
+   */
+  iconRef: IconRef | null;
   colour: string | null;
   /** True when pressing the row goes into it, rather than picking it. */
   enters: boolean;
@@ -81,6 +90,7 @@ function rowOf(record: MentionRecord, enters: boolean): LevelRow {
     id: record.id,
     name: record.name,
     icon: iconTextOf(record),
+    iconRef: record.icon,
     colour: record.colour,
     enters,
   };

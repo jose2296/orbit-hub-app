@@ -3,10 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
 
 import { ListRow } from "@/components/ui/list-row";
+import { AppIcon } from "@/components/ui/app-icon";
 import { AppText } from "@/components/ui/text";
 import { Sheet } from "@/components/ui/sheet";
 import { useTranslation } from "@/lib/i18n";
 import { readMentionRecords } from "@/lib/journal/mention-records";
+import { iconTextOf } from "@/lib/journal/mention-model";
 import type { MentionRecord } from "@/lib/journal/mention-model";
 import { levelOf, levelRows } from "@/lib/journal/mention-tree";
 import type { LevelRow, PickerLevel } from "@/lib/journal/mention-tree";
@@ -15,12 +17,16 @@ import { colorOf } from "@/lib/workspace/color";
 import { useTheme } from "@/theme";
 import type { MentionType } from "@orbit-hub/contracts";
 
-/** What the person picked: enough to write the chip, nothing that can go stale. */
+/** What the person picked: enough to write the chip, and to paint it as it is born. */
 export interface MentionPick {
   type: MentionType;
   id: string;
   /** The name now. It becomes the copy the chip is made with. */
   name: string;
+  /** The icon the target has now: the emoji it was given, or its type's. */
+  icon: string;
+  /** The colour of the space it is in, which is what the chip is painted with. */
+  colour: string | null;
 }
 
 /**
@@ -117,6 +123,8 @@ export function MentionPickerSheet({
                     type: here.type,
                     id: here.id,
                     name: here.name,
+                    icon: iconTextOf(here),
+                    colour: here.colour,
                   })
                 }
                 style={{
@@ -146,23 +154,34 @@ export function MentionPickerSheet({
           }
           renderItem={({ item }: { item: LevelRow }) => (
             <ListRow
-              title={`${item.icon} ${item.name}`}
+              title={item.iconRef ? item.name : `${item.icon} ${item.name}`}
               chevron={item.enters}
               onPress={() =>
                 item.enters
                   ? enter(item)
-                  : onPick({ type: item.type, id: item.id, name: item.name })
+                  : onPick({
+                      type: item.type,
+                      id: item.id,
+                      name: item.name,
+                      icon: item.icon,
+                      colour: item.colour,
+                    })
               }
               leading={
-                item.colour ? (
-                  <View
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: colorOf(item.colour),
-                    }}
-                  />
+                item.iconRef || item.colour ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
+                    {item.iconRef ? <AppIcon icon={item.iconRef} size={20} /> : null}
+                    {item.colour ? (
+                      <View
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: colorOf(item.colour),
+                        }}
+                      />
+                    ) : null}
+                  </View>
                 ) : undefined
               }
             />

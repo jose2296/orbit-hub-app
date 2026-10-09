@@ -6,6 +6,7 @@
  * records as a tree; a chip only needs one of them.
  */
 
+import { iconRefSchema } from "@orbit-hub/contracts";
 import type { IconRef, ListKind, MentionType } from "@orbit-hub/contracts";
 
 import type { MentionRecord } from "./mention-model";
@@ -31,6 +32,17 @@ function emojiOf(icon: unknown): string | null {
   return value && value.type === "emoji" && typeof value.value === "string" && value.value.length > 0
     ? value.value
     : null;
+}
+
+/**
+ * The icon as it was configured, refused when the cache has something the contract
+ * does not describe. A chip cannot draw a vector — it is text — but the picker can,
+ * and a row that drew the emoji of a thing someone gave a vector icon to was a row
+ * that showed the wrong thing.
+ */
+function iconRefOf(icon: unknown): IconRef | null {
+  const parsed = iconRefSchema.safeParse(icon);
+  return parsed.success ? parsed.data : null;
 }
 
 /** Every named, live thing a chip can point at, with its space and folder. */
@@ -63,6 +75,7 @@ export async function readMentionRecords(): Promise<MentionRecord[]> {
             ? ((record["parentId"] as string | null | undefined) ?? null)
             : ((record["folderId"] as string | null | undefined) ?? null),
         kind: (record["kind"] as ListKind | undefined) ?? null,
+        icon: iconRefOf(record["icon"]),
         emoji: emojiOf(record["icon"]),
         colour:
           type === "workspace"

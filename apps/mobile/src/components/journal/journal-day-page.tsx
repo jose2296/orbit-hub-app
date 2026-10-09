@@ -8,7 +8,7 @@ import type { MentionPick } from "@/components/mentions/mention-picker-sheet";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { useJournalEntry, useMentionTargets } from "@/hooks/use-journal";
 import { lookupIn, writeJournalEntry } from "@/lib/journal/entries";
-import { mentionNameFor, renderMentions } from "@/lib/journal/mentions";
+import { mentionChipFor, renderMentions } from "@/lib/journal/mentions";
 import { useTranslation } from "@/lib/i18n";
 import { createAutosave } from "@/lib/notes/autosave";
 import type { JournalDay } from "@orbit-hub/contracts";
@@ -139,7 +139,11 @@ export function JournalDayPage({
     const needsSpace = text.length > 0 && !/\s$/.test(text);
     input.focus();
     if (mentionSource.current === "toolbar") input.startMention(needsSpace ? " @" : "@");
-    input.setMention("@", mentionNameFor(pick.name), { type: pick.type, id: pick.id });
+    // The chip is born looking like it reads: the colour of its space and the icon it
+    // has now. Writing only the name and the plain trigger here made every new chip
+    // arrive blue and icon-less, and only become what it should be on the next read.
+    const chip = mentionChipFor(pick);
+    input.setMention(chip.indicator, chip.text, { type: pick.type, id: pick.id });
     autosave.schedule();
   };
 

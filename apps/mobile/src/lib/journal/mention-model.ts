@@ -3,7 +3,7 @@
  * picker's rules can be tested without the app's storage.
  */
 
-import type { ListKind, MentionType } from "@orbit-hub/contracts";
+import type { IconRef, ListKind, MentionType } from "@orbit-hub/contracts";
 
 export interface MentionRecord {
   type: MentionType;
@@ -14,6 +14,8 @@ export interface MentionRecord {
   /** The folder it is filed in, or null when it sits at the top of its space. */
   folderId: string | null;
   kind: ListKind | null;
+  /** The icon as it was configured: an emoji, a vector, or none. */
+  icon: IconRef | null;
   /** The emoji text to draw before the name, or null when the icon is not an emoji. */
   emoji: string | null;
   /** The colour of the space, when the thing is in one. */

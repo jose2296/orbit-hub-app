@@ -174,6 +174,30 @@ export function mentionNameFor(name: string): string {
 }
 
 /**
+ * What a chip is born with, decided where it is written and not where it is drawn.
+ *
+ * The indicator is the one of the space it belongs to, so the chip is painted the
+ * colour of that space from the moment it exists. Writing the plain trigger here
+ * instead left every new chip in the accent colour until the document was read
+ * again, which is a chip that changes appearance without anyone touching it.
+ *
+ * The icon goes in with the name because a chip is read as one thing: a name on its
+ * own is a chip with no icon until the next read, and the reader is the one that
+ * used to add it. Nothing here is the truth — the reader re-reads all three from the
+ * cache, and a chip whose space changed colour follows the new one — but what is
+ * born has to look like what is read.
+ */
+export function mentionChipFor(pick: { colour: string | null; icon: string; name: string }): {
+  indicator: string;
+  text: string;
+} {
+  return {
+    indicator: mentionIndicatorFor(pick.colour),
+    text: `${CHIP_PAD}${pick.icon} ${mentionNameFor(pick.name)}${CHIP_PAD}`,
+  };
+}
+
+/**
  * The name a record of this type is known by.
  *
  * Not the same field everywhere: a space and a folder are `name`, and a list, a

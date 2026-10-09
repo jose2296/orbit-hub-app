@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { mentionIndicatorFor } from '@orbit-hub/contracts';
+
 import type { MentionTarget } from '@/lib/journal/mentions';
-import { mentionNameFor, mentionsIn, nameOfRecord, renderMentions, routeForMention } from '@/lib/journal/mentions';
+import { CHIP_PAD, mentionChipFor, mentionNameFor, mentionsIn, nameOfRecord, renderMentions, routeForMention } from '@/lib/journal/mentions';
 import { levelRows } from '@/lib/journal/mention-tree';
 import type { MentionRecord } from '@/lib/journal/mention-model';
 
@@ -74,6 +76,36 @@ describe('renderMentions', () => {
   });
 });
 
+describe('mentionChipFor', () => {
+  it('is born with the space colour, so a chip is painted as its space from the first moment', () => {
+    const chip = mentionChipFor({ colour: 'slate', icon: '📋', name: 'Lista de la compra' });
+
+    expect(chip.indicator).toBe(mentionIndicatorFor('slate'));
+    expect(chip.indicator).not.toBe('@');
+  });
+
+  it('falls back to the plain trigger when the thing is in no space', () => {
+    expect(mentionChipFor({ colour: null, icon: '🔖', name: 'Enlace' }).indicator).toBe('@');
+  });
+
+  it('is born with the icon and the name, not only the name', () => {
+    const chip = mentionChipFor({ colour: 'slate', icon: '📋', name: 'Lista' });
+
+    expect(chip.text).toContain('📋 Lista');
+    expect(chip.text.startsWith(CHIP_PAD)).toBe(true);
+  });
+
+  it('looks the same before and after a re-read, which is the whole point of carrying the colour', () => {
+    const born = mentionChipFor({ colour: 'slate', icon: '📋', name: 'Lista' });
+    const html = `<p><mention text="Lista" indicator="${born.indicator}" type="list" id="${LIST_ID}">${born.text}</mention></p>`;
+    const unchanged: MentionTarget = { name: 'Lista', route: `/list/${LIST_ID}`, icon: '📋', colour: 'slate' };
+
+    const shown = renderMentions(html, () => unchanged, { mode: 'reading', unavailableLabel: 'no disponible' });
+
+    expect(shown).toContain(`>${born.text}</mention>`);
+  });
+});
+
 describe('routeForMention', () => {
   it('opens a list as a list and a board as a board', () => {
     expect(routeForMention('list', LIST_ID, { kind: 'tasks' })).toBe(`/list/${LIST_ID}`);
@@ -130,7 +162,7 @@ describe('nameOfRecord', () => {
 
 describe('levelRows', () => {
   const rec = (type: MentionRecord['type'], id: string, name: string, extra: Partial<MentionRecord> = {}): MentionRecord => ({
-    type, id, name, workspaceId: null, folderId: null, kind: null, emoji: null, colour: null, ...extra,
+    type, id, name, workspaceId: null, folderId: null, kind: null, emoji: null, icon: null, colour: null, ...extra,
   });
   const SPACE = 'aaaaaaaa-0000-4000-8000-000000000001';
   const OTHER = 'aaaaaaaa-0000-4000-8000-000000000004';
@@ -167,6 +199,17 @@ describe('levelRows', () => {
 
   it('draws a board with its own icon', () => {
     expect(levelRows(records, `folder:${SUB}`)[0]?.icon).toBe('🗂️');
+  });
+
+  it('carries a vector icon as it is, so the row can draw it instead of the emoji', () => {
+    const vector = { type: 'vector', value: 'cart-outline', style: 'outline', library: 'ionicons', color: 'auto' } as const;
+    const withVector = [rec('list', 'l9', 'Compra verde', { workspaceId: SPACE, icon: vector })];
+
+    const row = levelRows(withVector, `space:${SPACE}`)[0];
+
+    expect(row?.iconRef).toEqual(vector);
+    // The chip still needs an emoji, so the emoji text stays available next to the icon.
+    expect(row?.icon).toBe('📋');
   });
 
   it('shows a thing whose folder is gone at the top of its space', () => {
