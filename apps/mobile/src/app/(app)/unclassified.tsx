@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
+import { useRouter } from "expo-router";
+
+import { AssignSheet, type BookmarkAClasificar } from "@/components/bookmarks/assign-sheet";
 import { View } from "react-native";
 
 import type { Bookmark } from "@orbit-hub/contracts";
 
-import { AssignSheet, type BookmarkAClasificar } from "@/components/bookmarks/assign-sheet";
 import { LinkRow } from "@/components/bookmarks/link-row";
 import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -50,12 +52,15 @@ export function agruparHuerfanos(bookmarks: Bookmark[]): GrupoHuerfanos[] {
  * contador de arriba sale de `useUnclassifiedCount`, que es la misma fuente
  * del badge del drawer: si difieren, uno de los dos dejo de ser esa fuente.
  *
- * Tocar una fila abre el triage (`AssignSheet`) sin salir; la papelera pide
+ * Tocar una fila lleva al lector; clasificar esta en el menu de la fila; la papelera pide
  * confirmacion. Al clasificar o borrar la fila desaparece sola: la suscripcion
  * del hook relee la cache, igual que absorbe los huerfanos que deja borrar
  * una coleccion.
  */
 export default function UnclassifiedScreen() {
+  const router = useRouter();
+
+  const [aClasificar, setAClasificar] = useState<BookmarkAClasificar | null>(null);
   const theme = useTheme();
   const t = useTranslation();
   const arbol = useSpacesTree();
@@ -65,7 +70,6 @@ export default function UnclassifiedScreen() {
   // drawer cuenta con la misma llamada y sin argumento.
   const total = useUnclassifiedCount();
 
-  const [aClasificar, setAClasificar] = useState<BookmarkAClasificar | null>(null);
   // El enlace cuyo menu esta abierto. Mismo reloj que la lista y que las
   // colecciones: lo que se guarda es la entidad y lo que se pasa es `null` al
   // cerrar, porque la hoja congela lo que recibe para seguir pintando mientras
@@ -120,13 +124,26 @@ export default function UnclassifiedScreen() {
                   key={bookmark.id}
                   bookmark={bookmark}
                   testID={`inbox-menu-${bookmark.id}`}
+                  /*
+                    Al lector, y no al sheet de clasificar.
+
+                    El pedido era literal: "que pueda entrar a dentro a verlos
+                    porque si no se que es no puedo clasificarlos". Antes la fila
+                    abria `AssignSheet` de una, y clasificar era a ciegas —no se
+                    veia el titulo, ni el sitio, ni el texto—. Ahora se entra a ver
+                    el enlace como en la lista, y clasificar esta en la cabecera
+                    del lector, que es donde se puede hacer con algo de informacion.
+
+                    Y **clasificar se mueve al menu de la fila**, que es donde
+                    estaba la informacion suficiente: la fila dice el titulo y el
+                    sitio. Clasificar desde el lector exigia montar ahi la hoja del
+                    triage, y esa cadena rompe los dos tests que renderizan el lector
+                    sin stubs de hoja — que es la senal de que no era su sitio.
+                  */
                   onPress={() =>
-                    setAClasificar({
-                      id: bookmark.id,
-                      version: bookmark.version,
-                      workspaceId: bookmark.workspaceId,
-                      title: bookmark.title,
-                      url: bookmark.url,
+                    router.push({
+                      pathname: "/bookmark/[bookmarkId]",
+                      params: { bookmarkId: bookmark.id },
                     })
                   }
                   onMenu={() => setMenuAbierto(bookmark)}
@@ -136,7 +153,6 @@ export default function UnclassifiedScreen() {
           ))}
         </View>
       )}
-      <AssignSheet bookmark={aClasificar} onClose={() => setAClasificar(null)} />
       {/*
         La misma hoja que la lista, y sin confirmacion propia: la de borrar es
         una pagina de `EntityMenuSheet`, que es donde vivio `BookmarkDeleteSheet`.
@@ -145,9 +161,22 @@ export default function UnclassifiedScreen() {
       */}
       <EntityMenuSheet
         ctx={menuCtxDeBookmark(menuAbierto)}
-        handlers={handlersDeBookmark(menuAbierto)}
+        handlers={handlersDeBookmark(
+          menuAbierto,
+          menuAbierto
+            ? () =>
+                setAClasificar({
+                  id: menuAbierto.id,
+                  version: menuAbierto.version,
+                  workspaceId: menuAbierto.workspaceId,
+                  title: menuAbierto.title,
+                  url: menuAbierto.url,
+                })
+            : undefined,
+        )}
         onClose={() => setMenuAbierto(null)}
       />
+      <AssignSheet bookmark={aClasificar} onClose={() => setAClasificar(null)} />
     </Screen>
   );
 }

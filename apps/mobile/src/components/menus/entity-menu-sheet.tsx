@@ -42,6 +42,7 @@ export interface MenuHandlers {
   alternarPin?: () => void | Promise<void>;
   editarEstados?: () => void | Promise<void>;
   guardarComoPlantilla?: () => void | Promise<void>;
+  clasificar?: () => void | Promise<void>;
   /*
     ------------------------------------------------------------------
     `crearDentro`, Y POR QUE NO ES UN `MenuHandlerName`

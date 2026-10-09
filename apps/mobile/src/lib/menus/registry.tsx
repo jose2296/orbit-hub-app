@@ -102,7 +102,8 @@ export type MenuHandlerName =
   | "duplicar"
   | "alternarPin"
   | "editarEstados"
-  | "guardarComoPlantilla";
+  | "guardarComoPlantilla"
+  | "clasificar";
 
 export interface MenuEntity {
   id: string;
@@ -352,6 +353,23 @@ export const ACCIONES: Record<string, MenuAccion> = {
     destino: { tipo: "hoja", handler: "guardarComoPlantilla" },
   },
 
+  /*
+    Clasificar, y **solo existe donde hay algo que clasificar**.
+
+    Es una accion de hoja —corre y cierra— y su handler lo pasa el call site, igual
+    que borrar o duplicar. La declararon los cinco kinds en `ORDEN_POR_KIND`... no:
+    la declara **solo `bookmark`**, porque es la unica entidad que puede quedar
+    fuera de un sitio. Decidirlo por kind y no por capacidad es a proposito: la
+    capacidad la decide la pantalla, y cualquier pantalla con un enlace puede
+    clasificarlo.
+  */
+  classify: {
+    id: "classify",
+    labelKey: "bookmarks.classify",
+    icon: "folder-outline",
+    destino: { tipo: "hoja", handler: "clasificar" },
+  },
+
   access: {
     id: "access",
     labelKey: "menus.access",
@@ -482,7 +500,7 @@ export const ORDEN_POR_KIND: Record<MenuKind, string[]> = {
   // declararla aca para un kind que el contrato no admitiria pintaria una fila
   // grisada para siempre — y el guard de `menu-registry.test.ts` lo comprueba.
   collection: ["rename", "share", "access", "export", "delete"],
-  bookmark: ["rename", "share", "access", "delete"],
+  bookmark: ["rename", "classify", "share", "access", "delete"],
 };
 
 /** La clave de i18n de una accion, resuelta para un contexto concreto. */

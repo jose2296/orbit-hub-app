@@ -18,6 +18,13 @@ const { estado } = vi.hoisted(() => ({
   },
 }));
 
+// La pantalla navega al lector desde la fila, y `expo-router` no existe en Node.
+// Mismo patron que `bookmark-reader.test.ts:45`: se suple el hook que la pantalla
+// usa, y nada mas. `push` y no `replace`, que es lo que esta pantalla llama.
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: () => {} }),
+}));
+
 vi.mock("react-native", async () => {
   const React = await import("react");
   const View = ({ children, testID }: any) =>

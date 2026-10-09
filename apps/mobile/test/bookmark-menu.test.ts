@@ -255,12 +255,19 @@ describe("el menu de un enlace ofrece lo que la hoja sabe montar, y nada mas", (
   const ofrecibles = (): string[] =>
     accionesPara(menuCtxDeBookmark(BASE)!).filter(puedeOfrecerse).map((accion) => accion.id);
 
-  it("hoy son renombrar, compartir, acceso y eliminar", () => {
+  it("hoy son renombrar, clasificar, compartir, acceso y eliminar", () => {
     // `share` entra con la T10. No cambio el filtro ni el call site: cambio que
     // `shareNodeTypeSchema` admita `bookmark`, y el registro decide con `nodeTypeDe`.
     // Esta asercion es una fotografia y por eso dice "hoy": la version anterior
     // listaba tres y el error de la T10 habria sido precisamente no tocarla.
-    expect(ofrecibles()).toEqual(["rename", "share", "access", "delete"]);
+    //
+    // Y `classify` entro con la pantalla de sin clasificar: la accion de
+    // clasificar vive en el menu de la fila. **Ojo con lo que esto significa**:
+    // el `ofrecibles` de este archivo arma el `ctx` a mano, y `classify` no
+    // depende de `caps` sino de un handler que el `ctx` no lleva. Asi que esta
+    // fila sale siempre para un bookmark, y es el ADAPTADOR el que decide si la
+    // ofrece — que es lo que afirma el test de al lado.
+    expect(ofrecibles()).toEqual(["rename", "classify", "share", "access", "delete"]);
   });
 
   it("acceso se ofrece desde que su pagina existe, y sin tocar el registro", () => {

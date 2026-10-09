@@ -72,13 +72,20 @@ export function menuCtxDeBookmark(bookmark: Bookmark | null): MenuContext | null
  * distinto antes de escribir— ni con el de las notas, por el mismo motivo que
  * el comentario de `handlersDeColeccion` da.
  */
-export function handlersDeBookmark(bookmark: Bookmark | null): MenuHandlers {
+export function handlersDeBookmark(
+  bookmark: Bookmark | null,
+  clasificar?: () => void,
+): MenuHandlers {
   if (!bookmark) return {};
 
   return {
     rename: (title) =>
       updateBookmarkAction({ id: bookmark.id, baseVersion: bookmark.version, title }),
     borrar: () => deleteBookmarkAction(bookmark.id),
+    // Solo si la pantalla lo pasa: la fila de la lista no clasifica porque un
+    // enlace de la lista ya esta clasificado, y una accion opcional que no llega
+    // es una fila que no se ofrece, no un boton que falla.
+    ...(clasificar ? { clasificar } : {}),
   };
 }
 
