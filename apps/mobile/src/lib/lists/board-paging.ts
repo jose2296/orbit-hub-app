@@ -126,14 +126,42 @@ const PASO_TOLERADO = 1e-9;
  * ceiling and not a floor — and the one answer that is an index below zero cannot be
  * produced here either: a drag that paged is clipped to `[0, pages - 1]` and a drag
  * that did not returns `current` as it came.
+ *
+ * **The defaults of `distance` and `minVelocity` are `56` and `420` written, and not
+ * `BOARD_SWIPE_DISTANCE` and `BOARD_SWIPE_VELOCITY`.** Dragging a card between two
+ * states closed the app on Android with
+ * `Property 'BOARD_SWIPE_DISTANCE' doesn't exist`, on the line of the signature, with
+ * nothing on that line worth a second look. **A default parameter is evaluated
+ * before the body is entered, and the body of a worklet runs on the UI thread**,
+ * where the Reanimated plugin's compilation of an exported module binding — a read
+ * of the module namespace — arrives as `{}`. So **a default parameter that reads the
+ * module scope does not travel to the UI thread**, and the error lands on the
+ * signature because that is where the default gets evaluated.
+ *
+ * **Same class of failure as the missing directive further down this file, and not
+ * the same cause**: there the callee is a function of the JavaScript thread, here the
+ * value is a property of a namespace that came across empty. Neither is visible on
+ * the web, where both threads are the same one, and neither is visible to the test
+ * suite: `test/board-paging.test.ts` calls this with the defaults and passes. So
+ * this is also the case a static guard has to catch, and the one that does is
+ * `test/worklet-module-scope.test.ts`.
+ *
+ * **What was discarded, and why:** un-exporting the two constants would have made
+ * the reference disappear without touching the signature, but this file, three other
+ * modules and the tests import them by name, so the repair would have been to
+ * dismantle the module around a symptom. Passing the thresholds in from the gesture
+ * fixes this call and leaves the same default reading the module in whichever
+ * function gets written next. **A literal depends on neither**, and the price — the
+ * number written twice — is the one price a test can pay for, and
+ * `test/board-paging.test.ts` still passes without a single changed expectation.
  */
 export function nextPageFor(
   offset: number,
   velocity: number,
   pages: number,
   current: number,
-  distance = BOARD_SWIPE_DISTANCE,
-  minVelocity = BOARD_SWIPE_VELOCITY,
+  distance = 56,
+  minVelocity = 420,
 ): number {
   /**
    * A worklet, **and that is a requirement rather than an optimisation**: the
