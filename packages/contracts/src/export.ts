@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { countSchema, emailSchema, isoDateTimeSchema, uuidSchema } from './common';
+import { journalEntrySchema } from './journal';
 import {
   attachmentSchema,
   folderSchema,
@@ -66,6 +67,8 @@ export const accountExportSchema = z.object({
     notes: countSchema,
     attachments: countSchema,
     templates: countSchema,
+    // Optional on read: an export written before the journal existed has none.
+    journal: countSchema.default(0),
   }),
   workspaces: z.array(workspaceSchema),
   folders: z.array(folderSchema),
@@ -74,6 +77,8 @@ export const accountExportSchema = z.object({
   notes: z.array(noteSchema),
   attachments: z.array(exportedAttachmentSchema),
   templates: z.array(noteTemplateSchema),
+  /** The account's own diary, tombstones included, as on notes. */
+  journal: z.array(journalEntrySchema).default([]),
 });
 export type AccountExport = z.infer<typeof accountExportSchema>;
 

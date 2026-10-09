@@ -9,6 +9,7 @@ import {
   collections,
   dashboardLayouts,
   folders,
+  journalEntries,
   listItems,
   lists,
   memberships,
@@ -118,6 +119,7 @@ export type SyncEntityTable =
   | typeof listItems
   | typeof notes
   | typeof dashboardLayouts
+  | typeof journalEntries
   | typeof collections
   | typeof bookmarks;
 
@@ -148,6 +150,8 @@ export class SyncRepository {
         return notes;
       case 'dashboard':
         return dashboardLayouts;
+      case 'journal_entry':
+        return journalEntries;
       case 'collection':
         return collections;
       case 'bookmark':
@@ -1236,6 +1240,27 @@ export class SyncRepository {
           },
         });
         remember(row.row.updatedAt);
+      }
+    }
+
+    if (changes.length < input.limit) {
+      // The journal is the account's own, like the dashboard: no membership is
+      // involved, so the only filter is the owner.
+      const journalChanges = await db
+        .select()
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.userId, input.userId),
+            gt(journalEntries.updatedAt, after),
+          ),
+        )
+        .orderBy(asc(journalEntries.updatedAt))
+        .limit(input.limit - changes.length);
+
+      for (const row of journalChanges) {
+        changes.push({ entity: 'journal_entry', record: row as Record<string, unknown> });
+        remember(row.updatedAt);
       }
     }
 

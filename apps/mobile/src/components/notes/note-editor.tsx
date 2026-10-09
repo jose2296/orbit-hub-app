@@ -6,11 +6,13 @@ import type {
 } from "react-native-enriched-html";
 import { EnrichedTextInput } from "react-native-enriched-html";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
+import { mentionStyleMap } from "@/lib/journal/mention-style";
+import { installMentionChipStyle } from "@/lib/journal/mention-web-style";
 import { NOTE_SANITIZATION } from "@/lib/notes/sanitization";
 import { NOTE_BODY_FONT } from "@/theme/tokens";
 import { useTheme } from "@/theme";
@@ -77,6 +79,15 @@ export interface NoteEditorProps extends Pick<
    * report, so a read-only editor has no toolbar to press.
    */
   readOnly?: boolean;
+  /**
+   * Asks the screen to choose something to mention: a list, a note, a folder.
+   *
+   * Called from the `@` button and from typing `@`, which the editor reports the
+   * same way. The screen opens its picker and, when something is picked, puts the
+   * mention in with `setMention` on the editor ref. Leaving it out means the editor
+   * has no mentions at all: no button, and typing `@` is just a character.
+   */
+  onMentionRequest?: (source: "toolbar" | "typed") => void;
 }
 
 /** A style the toolbar can turn on and off over the current selection. */
@@ -94,7 +105,8 @@ type StyleKey =
   | "codeblock"
   | "ul"
   | "ol"
-  | "checkbox";
+  | "checkbox"
+  | "mention";
 
 interface ToolbarButton {
   key: StyleKey;
@@ -114,7 +126,8 @@ interface ToolbarButton {
     | "note.codeBlock"
     | "note.bulletList"
     | "note.numberedList"
-    | "note.checkList";
+    | "note.checkList"
+    | "note.mention";
   /**
    * A letter drawn at this size, for the three headings.
    *
@@ -160,6 +173,24 @@ const IMAGE_BUTTON: ToolbarButton = {
   labelKey: "note.insertImage",
 };
 
+const MENTION_BUTTON: ToolbarButton = {
+  key: "mention",
+  icon: "at-outline",
+  labelKey: "note.mention",
+};
+
+/**
+ * The rows of the toolbar, for what this editor can do.
+ *
+ * A row with only one button in it looks like a stray control, so the mention
+ * joins the block row when there is no picture row for it to share.
+ */
+function toolbarRows({ image, mention }: { image: boolean; mention: boolean }): ToolbarButton[][] {
+  const tail = [...(image ? [IMAGE_BUTTON] : []), ...(mention && image ? [MENTION_BUTTON] : [])];
+  const block = [...BLOCK_BUTTONS, ...(mention && !image ? [MENTION_BUTTON] : [])];
+  return [INLINE_BUTTONS, block, tail].filter((row) => row.length > 0);
+}
+
 /**
  * Typing `- ` at the start of a line makes a bullet, and so on.
  *
@@ -191,6 +222,7 @@ export function NoteEditor({
   textShortcuts = NOTE_TEXT_SHORTCUTS,
   onChanged,
   onInsertImage,
+  onMentionRequest,
   editorRef,
   readOnly = false,
   sanitizationConfig = NOTE_SANITIZATION,
@@ -198,6 +230,13 @@ export function NoteEditor({
   const theme = useTheme();
   const t = useTranslation();
   const [state, setState] = useState<OnChangeStateEvent | null>(null);
+  // Whether the person is typing in the editor. A `@` in a document that is merely
+  // being drawn is reported as a trigger too, and only a `@` typed while focused
+  // should open the picker.
+  const focused = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === "web") installMentionChipStyle();
+  }, []);
   const { htmlStyle, bodyStyle } = useNoteHtmlStyle();
 
   const command = useCallback(
@@ -209,6 +248,12 @@ export function NoteEditor({
           // Not a style, and not something the editor can be told to do on its own:
           // a picture has to be chosen, sent and put somewhere first.
           onInsertImage?.();
+          return;
+        case "mention":
+          // Nothing is inserted here. The `@` is put in when something is picked,
+          // so cancelling the picker leaves no stray indicator behind for the
+          // editor to take as a mention the next time the page opens.
+          onMentionRequest?.("toolbar");
           return;
         case "bold":
           input.toggleBold();
@@ -251,7 +296,7 @@ export function NoteEditor({
           break;
       }
     },
-    [editorRef, onInsertImage],
+    [editorRef, onInsertImage, onMentionRequest],
   );
 
   /**
@@ -291,7 +336,7 @@ export function NoteEditor({
             backgroundColor: theme.colors.background,
           }}
         >
-          {[INLINE_BUTTONS, BLOCK_BUTTONS, [IMAGE_BUTTON]].map(
+          {toolbarRows({ image: !!onInsertImage, mention: !!onMentionRequest }).map(
             (buttons, rowIndex) => (
               <ScrollView
                 key={rowIndex}
@@ -378,6 +423,20 @@ export function NoteEditor({
         textShortcuts={textShortcuts}
         onChangeText={onChanged}
         onChangeState={(event) => setState(event.nativeEvent)}
+        mentionIndicators={onMentionRequest ? ["@"] : undefined}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onBlur={() => {
+          focused.current = false;
+        }}
+        onStartMention={
+          onMentionRequest
+            ? () => {
+                if (focused.current) onMentionRequest("typed");
+              }
+            : undefined
+        }
         style={{
           flex: 1,
           paddingHorizontal: theme.spacing.lg,
@@ -446,6 +505,14 @@ export function useNoteHtmlStyle() {
         color: theme.colors.accent,
         textDecorationLine: "underline" as const,
       },
+      // A chip is drawn in the accent, on the soft accent, and is never underlined:
+      // it is a control, and a link-shaped word would look like one that is not.
+      // One style per space colour, keyed by the chip's indicator, so a chip is painted
+      // as the space it belongs to. See lib/journal/mention-style.ts.
+      mention: mentionStyleMap({
+        color: theme.colors.accentSoftText,
+        background: theme.colors.accentSoft,
+      }),
       ul: { bulletColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },
       ol: { markerColor: theme.colors.textMuted, marginLeft: theme.spacing.lg },
       /**

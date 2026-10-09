@@ -19,6 +19,8 @@
 
 import { z } from 'zod';
 
+import { WORKSPACE_COLORS } from './workspace';
+
 /** The most HTML a note may hold. Roughly a hundred thousand words. */
 export const NOTE_DOCUMENT_MAX_BYTES = 512_000;
 
@@ -55,7 +57,7 @@ const IMAGE_DIMENSIONS = ['width', 'height'] as const;
  * that is trying to describe the size of the moon is turned away.
  */
 const MAX_IMAGE_EDGE = 16384;
-const INLINE_SET: ReadonlySet<string> = new Set<string>([...INLINE_TAGS, 'img', 'br']);
+const INLINE_SET: ReadonlySet<string> = new Set<string>([...INLINE_TAGS, 'img', 'br', 'mention']);
 const PARAGRAPH_SET: ReadonlySet<string> = new Set<string>(PARAGRAPH_TAGS);
 const LIST_SET: ReadonlySet<string> = new Set<string>([...LIST_TAGS, 'ul']);
 const VOID_SET: ReadonlySet<string> = new Set<string>(VOID_TAGS);
@@ -84,6 +86,58 @@ const ATTRIBUTE_FREE: ReadonlySet<string> = new Set<string>([
  */
 const MAX_ATTRIBUTES = 2;
 const MAX_IMAGE_ATTRIBUTES = 4;
+
+/**
+ * A mention is a chip that points at something in the app: a list, a note, a
+ * folder, a space or a bookmark. Each type is a route, so the set is closed, and
+ * a type the app cannot open is refused here rather than drawn as a dead chip.
+ * See `docs/architecture/adr/0034-mencion-en-notas.md`.
+ */
+export const MENTION_TYPES = ['workspace', 'folder', 'list', 'note', 'bookmark'] as const;
+export type MentionType = (typeof MENTION_TYPES)[number];
+
+/** The trigger a mention is opened with. */
+const MENTION_INDICATOR = '@';
+
+/**
+ * The indicator a chip carries, which is what the editor paints it by.
+ *
+ * A chip inside a space is painted in that space's colour, so each colour has its own
+ * indicator. The indicator is a single character on purpose: the library names the
+ * style it paints a chip with after the indicator's first character, so `@teal` and
+ * `@` would share one style and the last one written would win. A chip with no space
+ * keeps the trigger `@`.
+ */
+const COLOUR_INDICATORS = ["§", "¤", "¶", "†", "‡", "•", "◆", "■", "▲", "●", "★", "✚"] as const;
+
+/**
+ * Worked out when it is asked for, not when this module loads: the colours come from
+ * another contract module, and reading them while loading can run before they exist.
+ */
+function colourIndicator(colour: string): string | undefined {
+  const index = (WORKSPACE_COLORS as readonly string[]).indexOf(colour);
+  return index === -1 ? undefined : COLOUR_INDICATORS[index];
+}
+
+export function mentionIndicatorFor(colour: string | null | undefined): string {
+  if (colour === undefined || colour === null) return MENTION_INDICATOR;
+  return colourIndicator(colour) ?? MENTION_INDICATOR;
+}
+
+const LEGACY_COLOUR_INDICATOR = /^@[a-z]+$/;
+
+function isMentionIndicator(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  if (value === MENTION_INDICATOR) return true;
+  if ((COLOUR_INDICATORS as readonly string[]).includes(value)) return true;
+  // Chips made while the colour was carried as `@teal` are still valid; the app
+  // writes them back with the character on their next save.
+  return LEGACY_COLOUR_INDICATOR.test(value) && (WORKSPACE_COLORS as readonly string[]).includes(value.slice(1));
+}
+/** The name is a copy for when the target cannot be resolved; it is not the truth. */
+const MENTION_TEXT_MAX = 120;
+const MENTION_ATTRIBUTES = ['text', 'indicator', 'type', 'id'] as const;
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* ------------------------------------------------------------------ tokens -- */
 
@@ -271,7 +325,8 @@ function checkAttributes(
       ok = false;
     }
   }
-  const limit = name === 'img' ? MAX_IMAGE_ATTRIBUTES : MAX_ATTRIBUTES;
+  const limit =
+    name === 'img' || name === 'mention' ? MAX_IMAGE_ATTRIBUTES : MAX_ATTRIBUTES;
   if (Object.keys(attributes).length > limit) {
     fail(context, path, `<${name}> has more than ${limit} attributes`);
     ok = false;
@@ -284,6 +339,7 @@ function allowedAttributesFor(
   attributes: Record<string, string>,
 ): readonly string[] {
   if (name === 'a') return ['href'];
+  if (name === 'mention') return MENTION_ATTRIBUTES;
   // `width` and `height` are the picture's shape, not its presentation. The
   // editor writes them on every image it inserts — `setImage` takes both and the
   // native parser emits them on every `getHTML` — so without them a note with a
@@ -294,6 +350,47 @@ function allowedAttributesFor(
   if (name === 'li') return ['checked'];
   if (ATTRIBUTE_FREE.has(name)) return [];
   return [];
+}
+
+/**
+ * The rules a mention has over and above its attributes being allowed.
+ *
+ * `text` is copied into the attribute by the native editor without escaping, so
+ * it is checked for markup rather than trusted: a name that carries a `<` or a `>`
+ * is not a name, it is a document trying to be one.
+ */
+function checkMention(
+  context: Context,
+  path: string,
+  attributes: Record<string, string>,
+  insideLink: boolean,
+): void {
+  if (insideLink) {
+    fail(context, path, 'a mention cannot sit inside a link; the editor does not allow both');
+  }
+  if (!isMentionIndicator(attributes['indicator'])) {
+    fail(
+      context,
+      path,
+      `<mention> has to use the indicator "${MENTION_INDICATOR}", optionally with a space colour`,
+    );
+  }
+  const type = attributes['type'];
+  if (type === undefined || !(MENTION_TYPES as readonly string[]).includes(type)) {
+    fail(context, path, `<mention> type has to be one of ${MENTION_TYPES.join(', ')}`);
+  }
+  const id = attributes['id'];
+  if (id === undefined || !UUID_SHAPE.test(id)) {
+    fail(context, path, '<mention> needs the id of what it points at, as a UUID');
+  }
+  const text = attributes['text'];
+  if (text !== undefined && (text.length > MENTION_TEXT_MAX || /[<>]/.test(text))) {
+    fail(
+      context,
+      path,
+      `<mention> text is at most ${MENTION_TEXT_MAX} characters and carries no markup`,
+    );
+  }
 }
 
 /**
@@ -347,6 +444,15 @@ function walk(tokens: Token[], context: Context): void {
 
     const { name } = token;
     const here = stack.length === 0 ? 'document' : path();
+
+    // A mention is a name and nothing else. Anything opened inside it is refused,
+    // because the chip has one label and one target and no room for markup.
+    if (stack.some((frame) => frame.name === 'mention')) {
+      fail(context, here, `<${name}> cannot sit inside a mention, which holds only its name`);
+      index += 1;
+      continue;
+    }
+
     const known =
       INLINE_SET.has(name) || PARAGRAPH_SET.has(name) || LIST_SET.has(name) || name === 'li' || name === 'p';
 
@@ -361,6 +467,14 @@ function walk(tokens: Token[], context: Context): void {
       continue;
     }
 
+    if (name === 'mention') {
+      checkMention(
+        context,
+        here,
+        token.attributes,
+        stack.some((frame) => frame.name === 'a'),
+      );
+    }
     if (name === 'a' && !token.attributes['href']) {
       fail(context, here, '<a> needs an href');
     }

@@ -37,6 +37,7 @@ workspaces ──< memberships >── users
 | `notes` | `document` jsonb (portable editor format) plus denormalised `plain_text` for search |
 | `attachments` | Storage key, never a public URL; size and mime type validated server side |
 | `invitations` | Token, role, expiry, status; single use |
+| `journal_entries` | Owned by the account, not a space: one row per user and calendar day (`date`). Id derived from the account and the day, see [ADR 0033](adr/0033-diario.md) |
 
 `list_items.external_id` points at the provider record (TheMovieDB, Google Books) and
 `metadata` keeps the raw provider payload, so a list renders offline without calling the

@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -280,6 +281,44 @@ export const syncCursors = pgTable(
   },
   (table) => [
     uniqueIndex('sync_cursors_user_device_unique').on(table.userId, table.deviceId),
+  ],
+);
+
+/**
+ * The journal: one entry per person per calendar day.
+ *
+ * Owned by the account, not by a space, so there is no `workspace_id`: an entry
+ * written in a space would vanish when the person left it. The id is not generated
+ * here. The phone derives it from the account and the day, and the sync service
+ * recomputes it before it accepts the row, so a day has one id on every device and
+ * a second entry for the same day cannot be written under another id. The unique
+ * index is the backstop for that rule, not the rule itself.
+ *
+ * `day` is the calendar date of the person who wrote it, as a `date` and not a
+ * timestamp, so "the 8th" stays the 8th whichever time zone the entry is read in.
+ * See `docs/architecture/adr/0033-diario.md`.
+ */
+export const journalEntries = pgTable(
+  'journal_entries',
+  {
+    // A default like every other table, and never the one used: the sync service
+    // always supplies the derived id, and checks it against the day.
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    day: date('day', { mode: 'string' }).notNull(),
+    document: text('document').notNull().default(''),
+    /** Denormalised from the document for search, as on notes. */
+    plainText: text('plain_text').notNull().default(''),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (table) => [
+    uniqueIndex('journal_entries_user_day_unique').on(table.userId, table.day),
+    index('journal_entries_user_updated_at_idx').on(table.userId, table.updatedAt),
   ],
 );
 

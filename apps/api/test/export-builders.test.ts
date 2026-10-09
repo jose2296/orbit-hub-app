@@ -260,6 +260,7 @@ function accountRows(over: Partial<AccountExportRows> = {}): AccountExportRows {
     lists: [],
     items: [],
     notes: [],
+    journal: [],
     attachments: [],
     templates: [],
     ...over,
@@ -288,6 +289,7 @@ describe('accountExportEnvelope', () => {
       notes: 3,
       attachments: 1,
       templates: 2,
+      journal: 0,
     });
   });
 
@@ -325,6 +327,7 @@ describe('accountExportEnvelope', () => {
       notes: 0,
       attachments: 0,
       templates: 0,
+      journal: 0,
     });
     expect(envelope.workspaces).toEqual([]);
     expect(envelope.folders).toEqual([]);
