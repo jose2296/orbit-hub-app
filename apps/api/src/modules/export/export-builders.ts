@@ -1,8 +1,12 @@
 import {
+  BOOKMARK_EXPORT_CSV_COLUMNS,
   EXPORT_FORMAT_VERSION,
   exportCsvColumnsFor,
   stateOf,
   type AccountExport,
+  type Bookmark,
+  type Collection,
+  type CollectionExport,
   type ExportedAttachment,
   type Folder,
   type List,
@@ -90,6 +94,77 @@ export function listExportEnvelope(args: {
       items: args.items.length,
     },
   };
+}
+
+/**
+ * Sobre JSON de una sola coleccion, con el contexto minimo para saber de donde sale.
+ *
+ * Misma forma y misma razon que el de una lista —los dos se van a leer fuera de
+ * la cuenta—, y los `counts` se cuentan igual que alla: sobre el array que viaja
+ * en este fichero y no sobre lo que hay vivo en la base.
+ */
+export function collectionExportEnvelope(args: {
+  account: { id: string; email: string };
+  workspace: { id: string; name: string };
+  folder: { id: string; name: string } | null;
+  collection: Collection;
+  bookmarks: Bookmark[];
+  exportedAt: string;
+}): CollectionExport {
+  return {
+    format: 'orbit-hub.export',
+    version: EXPORT_FORMAT_VERSION,
+    exportedAt: args.exportedAt,
+    account: args.account,
+    workspace: args.workspace,
+    folder: args.folder,
+    collection: args.collection,
+    bookmarks: args.bookmarks,
+    counts: {
+      bookmarks: args.bookmarks.length,
+    },
+  };
+}
+
+/**
+ * CSV de una coleccion: una fila por enlace, con la cabecera del contrato.
+ *
+ * Mismo BOM y mismo CRLF que `itemsToCsv`, y por el mismo motivo —los acentos y
+ * Excel—, asi que las dos mitades de la exportacion se abren igual en cualquier
+ * lado. Y las celdas se citan siempre, con el mismo `csvCell`: una descripcion
+ * con un `;` o un salto de linea dentro no puede partir la fila.
+ *
+ * Lo que **no** viaja es `document` ni `plainText`, y la razon esta escrita en
+ * `BOOKMARK_EXPORT_CSV_COLUMNS`: en una celda de una hoja de calculo el articulo
+ * entero no se lee. Quien lo necesite lo pide en JSON.
+ */
+export function bookmarksToCsv(bookmarks: Bookmark[]): string {
+  const header = BOOKMARK_EXPORT_CSV_COLUMNS.join(';');
+  const rows = bookmarks.map(bookmarkToCsvRow);
+
+  return '\uFEFF' + [header, ...rows].join('\r\n') + '\r\n';
+}
+
+function bookmarkToCsvRow(bookmark: Bookmark): string {
+  const cells = [
+    bookmark.id,
+    bookmark.url,
+    bookmark.title,
+    bookmark.siteName ?? '',
+    bookmark.description ?? '',
+    // Los tags con pipe y no con `;`: el separador de celdas es el `;`, y un tag
+    // que lo llevara —"receta; Facil"— partiria la fila en dos. Es el mismo
+    // criterio que usa el CSV de items.
+    bookmark.tags.join('|'),
+    String(bookmark.position),
+    // El valor crudo del contrato y no una frase: una celda es un dato, y el
+    // JSON ya dice lo mismo con su propio vocabulario.
+    bookmark.extractionState,
+    bookmark.createdAt,
+    bookmark.updatedAt,
+  ];
+
+  return cells.map(csvCell).join(';');
 }
 
 /**

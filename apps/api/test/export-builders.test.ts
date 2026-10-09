@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BOARD_EXPORT_CSV_COLUMNS,
+  BOOKMARK_EXPORT_CSV_COLUMNS,
   EXPORT_FORMAT_VERSION,
   LIST_EXPORT_CSV_COLUMNS,
   exportCsvColumnsFor,
   type AccountExport,
+  type Bookmark,
+  type Collection,
   type ExportedAttachment,
   type Folder,
   type List,
@@ -17,6 +20,8 @@ import {
 
 import {
   accountExportEnvelope,
+  bookmarksToCsv,
+  collectionExportEnvelope,
   csvStateCell,
   itemsToCsv,
   listExportEnvelope,
@@ -251,6 +256,58 @@ function template(over: Partial<NoteTemplate> = {}): NoteTemplate {
   };
 }
 
+function collection(over: Partial<Collection> = {}): Collection {
+  return {
+    id: 'c1',
+    workspaceId: 'w1',
+    folderId: null,
+    name: 'Recetas',
+    description: null,
+    emoji: null,
+    position: 0,
+    bookmarkCount: 0,
+    role: 'owner',
+    shared: false,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-02T00:00:00.000Z',
+    deletedAt: null,
+    ...over,
+  };
+}
+
+/**
+ * Un enlace, y **con el articulo dentro**: el CSV lo tira y el JSON lo lleva, y
+ * un fixture con `document: ''` no distinguiria los dos formatos —el CSV pasaria
+ * el `not.toContain` con una fila que no tenia nada que tirar—.
+ */
+function bookmark(over: Partial<Bookmark> = {}): Bookmark {
+  return {
+    id: 'b1',
+    workspaceId: 'w1',
+    folderId: null,
+    collectionId: 'c1',
+    url: 'https://example.com/receta',
+    title: 'Tortilla',
+    siteName: 'El sitio',
+    description: 'La descripcion',
+    imageUrl: null,
+    document: '<p>palabra</p>',
+    plainText: 'palabra',
+    extractionState: 'ready',
+    extractionError: null,
+    tags: [],
+    position: 0,
+    role: 'owner',
+    shared: false,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-02T00:00:00.000Z',
+    deletedAt: null,
+    ...over,
+  };
+}
+
 function accountRows(over: Partial<AccountExportRows> = {}): AccountExportRows {
   return {
     account: { id: 'a1', email: 'a@example.com', displayName: 'A' },
@@ -386,6 +443,168 @@ describe('listExportEnvelope', () => {
 
     expect(envelope.folder).toBeNull();
     expect(envelope.counts.items).toBe(0);
+  });
+});
+
+describe('collectionExportEnvelope', () => {
+  it('construye el sobre con la cuenta, espacio, carpeta, coleccion y enlaces', () => {
+    const envelope = collectionExportEnvelope({
+      account: { id: 'a1', email: 'a@example.com' },
+      workspace: { id: 'w1', name: 'Personal' },
+      folder: { id: 'f1', name: 'Cocina' },
+      collection: collection(),
+      bookmarks: [bookmark(), bookmark({ id: 'b2' })],
+      exportedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(envelope.format).toBe('orbit-hub.export');
+    expect(envelope.version).toBe(EXPORT_FORMAT_VERSION);
+    expect(envelope.account).toEqual({ id: 'a1', email: 'a@example.com' });
+    expect(envelope.workspace).toEqual({ id: 'w1', name: 'Personal' });
+    expect(envelope.folder).toEqual({ id: 'f1', name: 'Cocina' });
+    expect(envelope.collection.id).toBe('c1');
+    expect(envelope.bookmarks).toHaveLength(2);
+    expect(envelope.counts.bookmarks).toBe(2);
+  });
+
+  it('acepta carpeta nula, que es la raiz y no la ausencia de carpeta', () => {
+    // `folderId: null` es "en la raiz del espacio" en el contrato, asi que el
+    // sobre lo dice con `null` en vez de inventar una carpeta que no existe.
+    const envelope = collectionExportEnvelope({
+      account: { id: 'a1', email: 'a@example.com' },
+      workspace: { id: 'w1', name: 'Personal' },
+      folder: null,
+      collection: collection(),
+      bookmarks: [],
+      exportedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(envelope.folder).toBeNull();
+    expect(envelope.counts.bookmarks).toBe(0);
+  });
+
+  it('el count se cuenta aqui, y la coleccion viaja tal cual la dio el servicio', () => {
+    // `counts` lo cuenta **este** builder, sobre el array que le pasaron: es el
+    // mismo array del sobre, y por eso no puede mentir. El `bookmarkCount` de la
+    // coleccion lo calcula el servicio —que es quien consulto los enlaces— y el
+    // builder no lo toca: inventar un numero aqui seria tapar el unico sitio que
+    // tiene el dato. Que los dos digan lo mismo lo comprueba el test del
+    // endpoint, que es donde los dos se escriben.
+    const envelope = collectionExportEnvelope({
+      account: { id: 'a1', email: 'a@example.com' },
+      workspace: { id: 'w1', name: 'Personal' },
+      folder: null,
+      collection: collection({ bookmarkCount: 99 }),
+      bookmarks: [bookmark()],
+      exportedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(envelope.counts.bookmarks).toBe(envelope.bookmarks.length);
+    expect(envelope.collection.bookmarkCount).toBe(99);
+  });
+
+  it('sobrevive a una serializacion de ida y vuelta', () => {
+    const envelope = collectionExportEnvelope({
+      account: { id: 'a1', email: 'a@example.com' },
+      workspace: { id: 'w1', name: 'Personal' },
+      folder: null,
+      collection: collection(),
+      bookmarks: [bookmark()],
+      exportedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(JSON.parse(JSON.stringify(envelope))).toEqual(envelope);
+  });
+});
+
+describe('bookmarksToCsv', () => {
+  it('empieza con la cabecera del contrato precedida del BOM, y termina en CRLF', () => {
+    const csv = bookmarksToCsv([bookmark()]);
+
+    expect(csv.startsWith(`\uFEFF${BOOKMARK_EXPORT_CSV_COLUMNS.join(';')}\r\n`)).toBe(true);
+    expect(csv.endsWith('\r\n')).toBe(true);
+  });
+
+  it('una coleccion sin enlaces sale con cabecera y nada mas', () => {
+    // Sin esto, una coleccion vacia podria salir como un fichero de cero bytes o
+    // con una fila fantasma, y las dos cosas se ven en una hoja de calculo.
+    const records = parseCsvRecords(bookmarksToCsv([]));
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toEqual([...BOOKMARK_EXPORT_CSV_COLUMNS]);
+  });
+
+  it('el articulo no viaja, y el motivo son las columnas', () => {
+    // La decision que define este formato esta en el contrato y no solo en el
+    // builder: si alguien agrega `document` a `BOOKMARK_EXPORT_CSV_COLUMNS`, esta
+    // linea falla y dice que revisar la decision, no a reescribir el test.
+    expect(BOOKMARK_EXPORT_CSV_COLUMNS).not.toContain('document');
+    expect(BOOKMARK_EXPORT_CSV_COLUMNS).not.toContain('plain_text');
+    expect(bookmarksToCsv([bookmark()])).not.toContain('palabra');
+  });
+
+  it('el estado de extraccion sale con el valor crudo del contrato', () => {
+    // Una columna es un dato: el JSON ya dice lo mismo con su vocabulario, y una
+    // traduccion en el CSV seria una segunda version de la misma palabra.
+    for (const estado of ['pending', 'ready', 'metadata_only', 'failed'] as const) {
+      const records = parseCsvRecords(bookmarksToCsv([bookmark({ extractionState: estado })]));
+
+      expect(records[1]![7], estado).toBe(estado);
+    }
+  });
+
+  it('una fila es tan ancha como la cabecera, y las columnas van en su sitio', () => {
+    const records = parseCsvRecords(bookmarksToCsv([bookmark({ tags: ['rapida', 'facil'] })]));
+
+    expect(records[1]).toHaveLength(BOOKMARK_EXPORT_CSV_COLUMNS.length);
+    expect(records[1]![1]).toBe('https://example.com/receta');
+    expect(records[1]![2]).toBe('Tortilla');
+    expect(records[1]![3]).toBe('El sitio');
+    // Los tags con pipe y no con `;`, que es el separador de celdas: un tag con
+    // el separador dentro partiria la fila en dos.
+    expect(records[1]![5]).toBe('rapida|facil');
+    expect(records[1]![6]).toBe('0');
+  });
+
+  it('sitio y descripcion ausentes salen como celdas vacias, no como "null"', () => {
+    const records = parseCsvRecords(
+      bookmarksToCsv([bookmark({ siteName: null, description: null })]),
+    );
+
+    expect(records[1]![3]).toBe('');
+    expect(records[1]![4]).toBe('');
+    expect(bookmarksToCsv([bookmark({ siteName: null, description: null })])).not.toContain('null');
+  });
+
+  it('cita una descripcion con `;` y con salto de linea sin partir la fila', () => {
+    const descripcion = 'uno; dos\ny tres';
+    const csv = bookmarksToCsv([
+      bookmark({ description: descripcion }),
+      bookmark({ id: 'b2', description: 'otra' }),
+    ]);
+
+    const records = parseCsvRecords(csv);
+    // Cabecera mas dos filas: sin las comillas, el `;` de la descripcion partia
+    // la primera en dos y el numero de filas no cuadraba con el de enlaces.
+    expect(records).toHaveLength(3);
+    expect(records[1]![4]).toBe(descripcion);
+    expect(records[1]![4]).toContain('\n');
+  });
+
+  it('duplica las comillas internas de una descripcion', () => {
+    const records = parseCsvRecords(bookmarksToCsv([bookmark({ description: 'dice "hola"' })]));
+
+    expect(records[1]![4]).toBe('dice "hola"');
+  });
+
+  it('un enlace borrado sale con su fecha, sin que se pierda la fila', () => {
+    // El export incluye los borrados a proposito —sin su `deletedAt` un borrado
+    // seria indistinguible de uno que nunca existio— y el CSV no tiene donde
+    // poner esa fecha: sale la fila, que es lo que no se pierde.
+    const csv = bookmarksToCsv([bookmark({ deletedAt: '2026-03-01T00:00:00.000Z' })]);
+
+    expect(csv).toContain('Tortilla');
+    expect(parseCsvRecords(csv)).toHaveLength(2);
   });
 });
 

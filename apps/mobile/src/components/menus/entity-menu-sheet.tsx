@@ -3,11 +3,14 @@ import { View } from "react-native";
 
 import type { IconRef, ListKind } from "@orbit-hub/contracts";
 
+import { ExportResultSheet } from "@/components/export/export-result-sheet";
 import { ShareFormContexto, type ShareFormPublicado } from "@/components/shares/share-form-publicado";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetOptions, useLastValue } from "@/components/ui/sheet";
 import type { SheetOption } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
+import { useExport } from "@/hooks/use-export";
+import type { ExportRequest } from "@/hooks/use-export";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n/dictionaries";
 import { accionesPara, resuelveLabel, ACCIONES } from "@/lib/menus/registry";
@@ -18,6 +21,7 @@ import { useTheme } from "@/theme";
 import { AccessPage } from "./pages/access-page";
 import { CreatePage } from "./pages/create-page";
 import { DeletePage } from "./pages/delete-page";
+import { ExportPage } from "./pages/export-page";
 import { IconPage } from "./pages/icon-page";
 import { RenamePage } from "./pages/rename-page";
 import { SharePage } from "./pages/share-page";
@@ -238,6 +242,14 @@ export function EntityMenuSheet({
     setError(null);
     setReintento(null);
     setTrabajando(false);
+    /*
+      Y la hoja hermana de resultados se apaga **al abrir el menu**, no al
+      cerrarlo —que es lo mismo que hacia la hoja vieja con `setShowing(false)`—.
+      Sin esto, un export que se abrio de mas tarde se saltaria encima del menu que
+      acaba de abrir otra persona, y dos hojas a la vez sobre una pantalla es justo
+      lo que el resto de este archivo existe para que no pase.
+    */
+    setMostrandoExport(false);
   }, [abierto]);
 
   /*
@@ -516,6 +528,107 @@ export function EntityMenuSheet({
     handler(kind);
   };
 
+  /*
+    ------------------------------------------------------------------
+    EXPORTAR, Y POR QUE EL RESULTADO NO ES UNA PAGINA DE ESTA HOJA
+    ------------------------------------------------------------------
+
+    Elegir el formato **si** es una pagina de esta hoja, como renombrar o
+    compartir: son dos filas y contestan en el momento. Reportar el resultado no,
+    y esa es la unica excepcion del archivo, y no es una preferencia: la respuesta
+    llega segundos despues —o no llega nunca— y para entonces la pagina que eligio
+    el formato ya esta desmontada. `ExportResultSheet` va por eso **hermana** de
+    este `Sheet`, no dentro: dos `Modal` sobre una pantalla son dos fondos y un
+    toque que llega al de arriba cerrando el de abajo, que es exactamente el
+    argumento que la cabecera de esta hoja hace contra las seis hojas hermanas de
+    la carpeta vieja.
+
+    Y el estado vive aca y no en la pagina por la misma razon que el borrador de
+    renombrar y que el canal de compartir: entrar y salir de la pagina desmonta lo
+    que hay ahi, y lo que la hoja hermana tiene que pintar —el intento que se
+    acaba de resolver y el `ExportRequest` para reenviarlo igual— tiene que
+    sobrevivir a eso.
+  */
+  const { running: exportando, error: errorDeExport, result: resultado, run: correrExport } =
+    useExport();
+
+  /*
+    El pedido del intento en curso, **en un `ref` y no en estado**.
+
+    Es la misma regla que el `exporting` de la hoja vieja y por la misma razon: el
+    reintento tiene que ser **la misma peticion** —misma ruta, mismo formato, mismo
+    titulo, mismo `fallbackId`—, y un pedido guardado en estado se reconstruye en
+    cada pulsacion. Reconstruido despues de un renombrar seria otro nombre de
+    fichero, y pasado por un formato distinto seria el otro formato: las dos cosas
+    son "reintentar" de palabra y son otra exportacion en los hechos.
+  */
+  const pedidoDeExport = useRef<ExportRequest | null>(null);
+
+  /*
+    Si hay algo en vuelo, **en un `ref`**.
+
+    Las dos filas de formato se quedan en pantalla —y se quedan pulsables— durante
+    los 330 ms que esta hoja tarda en irse, y en una pantalla ancha donde el panel
+    solo se desvanece un segundo toque cae en la misma fila. Eso es una segunda
+    descarga del mismo contenido y, en un movil, un panel de compartir encima del
+    otro. Un `ref` se lee cuando ocurre la pulsacion y no cuando se construyo el
+    manejador, que es justo lo que hace falta: el manejador lo lleva el render con
+    el que se pinto la hoja, y ese render ya tenia `exportando === false`.
+  */
+  const exportandoAhora = useRef(false);
+
+  /*
+    Si la hoja hermana de resultados esta levantada, y **lo que lleva no es estado
+    propio**: lo que se guarda es "el intento se ha resuelto", porque ese es el
+    momento en que el fichero ya esta en disco. Abrir en la pulsacion pondria un
+    panel en pantalla sin nada que decir durante los segundos que tarda un fichero
+    grande, y el error vive en `useExport`, que se limpia al empezar el intento.
+  */
+  const [mostrandoExport, setMostrandoExport] = useState(false);
+
+  /**
+   * Exportar, y **el menu se va antes de que salga el peticion**.
+   *
+   * Es lo que garantiza que las dos hojas no coexistan como dos fondos: `onClose`
+   * corre primero y el `Sheet` de esta hoja baja entero mientras el fichero baja.
+   * Al revés —exportar y cerrar al final— dejaria el panel de formatos abierto
+   * encima de una hoja hermana que ya esta respondiendo, que es el caso que la
+   * hoja vieja documentaba y que hoy no puede ocurrir.
+   *
+   * Y el `finally` sube la hoja hermana **tambien** cuando el intento fallo: un
+   * fallo que nadie ve es un bug y no un diseno, y `ExportResultSheet` es la unica
+   * pieza de la app que puede decir por que no hay fichero.
+   */
+  const exportar = async (args: ExportRequest) => {
+    if (exportandoAhora.current) return;
+    exportandoAhora.current = true;
+    pedidoDeExport.current = args;
+
+    onClose();
+    try {
+      await correrExport(args);
+    } finally {
+      exportandoAhora.current = false;
+      setMostrandoExport(true);
+    }
+  };
+
+  /**
+   * La misma peticion otra vez, y **el mismo objeto**.
+   *
+   * Se reenvia `pedidoDeExport.current` y no se reconstruye: reconstruirlo cogeria
+   * el titulo de ahora, que tras un renombrar es el nombre de otro fichero, y
+   * elegir el formato de nuevo seria elegir el que aparece primero en la lista, no
+   * el que fallo. Es la misma regla de reintento que el `otraVez` del resto de la
+   * hoja, con la diferencia de que aqui lo que se repite es una peticion y no una
+   * funcion.
+   */
+  const reintentarExport = () => {
+    const anterior = pedidoDeExport.current;
+    if (!anterior) return;
+    void exportar(anterior);
+  };
+
   if (!ctx) return null;
 
   /*
@@ -663,131 +776,187 @@ export function EntityMenuSheet({
     lugar de la pantalla son dos cosas, y el contexto sigue siguiendo al arbol.
   */
   return (
-    <ShareFormContexto.Provider value={shareCanal}>
-      <Sheet
-        step={pagina}
-        visible={pedido !== null}
-        onClose={onClose}
-        title={ctx.entity.title}
-        subtitle={subtituloDeCabecera}
-        scrollable={false}
-        onBack={pagina === "options" ? undefined : () => setPagina("options")}
-        onSave={enCompartir ? sharePublicado?.enviar : undefined}
-        saveDisabledReason={enCompartir ? sharePublicado?.motivo : undefined}
-        saveLabel={enCompartir ? t("share.send") : undefined}
-      >
-        <View
-          style={{
-            gap: theme.spacing.md,
-            paddingHorizontal: theme.spacing.lg,
-            paddingBottom: theme.spacing.sm,
-          }}
+    <>
+      <ShareFormContexto.Provider value={shareCanal}>
+        <Sheet
+          step={pagina}
+          visible={pedido !== null}
+          onClose={onClose}
+          title={ctx.entity.title}
+          subtitle={subtituloDeCabecera}
+          scrollable={false}
+          onBack={pagina === "options" ? undefined : () => setPagina("options")}
+          onSave={enCompartir ? sharePublicado?.enviar : undefined}
+          saveDisabledReason={enCompartir ? sharePublicado?.motivo : undefined}
+          saveLabel={enCompartir ? t("share.send") : undefined}
         >
-          {pagina === "options" ? <SheetOptions options={opciones} /> : null}
+          <View
+            style={{
+              gap: theme.spacing.md,
+              paddingHorizontal: theme.spacing.lg,
+              paddingBottom: theme.spacing.sm,
+            }}
+          >
+            {pagina === "options" ? <SheetOptions options={opciones} /> : null}
 
-          {pagina === "rename" ? (
-            <RenamePage
-              nombre={nombre}
-              /*
-                Los dos datos de los que se deriva "sucio", y **los dos van por
-                props** porque la pagina no puede leerlos: `borrador` es estado de
-                esta hoja y el `MenuContext` no lo lleva —el registro no conoce
-                borradores—. El titulo si esta en el `ctx`, asi que la pagina
-                compararia contra lo que se le pasa y no contra el `ctx` entero.
-              */
-              borrador={borrador}
-              titulo={titulo}
-              onChange={setBorrador}
-              onRename={() => {
-                if (nombre.trim().length === 0 || trabajando) return;
-                renombrar(nombre.trim());
-              }}
-              trabajando={trabajando}
-            />
-          ) : null}
+            {pagina === "rename" ? (
+              <RenamePage
+                nombre={nombre}
+                /*
+                  Los dos datos de los que se deriva "sucio", y **los dos van por
+                  props** porque la pagina no puede leerlos: `borrador` es estado de
+                  esta hoja y el `MenuContext` no lo lleva —el registro no conoce
+                  borradores—. El titulo si esta en el `ctx`, asi que la pagina
+                  compararia contra lo que se le pasa y no contra el `ctx` entero.
+                */
+                borrador={borrador}
+                titulo={titulo}
+                onChange={setBorrador}
+                onRename={() => {
+                  if (nombre.trim().length === 0 || trabajando) return;
+                  renombrar(nombre.trim());
+                }}
+                trabajando={trabajando}
+              />
+            ) : null}
 
-          {pagina === "delete" ? (
-            // El `conteo` lo pasa el call site y solo una lista lo tiene: las otras
-            // cuatro no llenan el campo, y `DeletePage` ya sabe que sin numero no
-            // dice nada en vez de pintar un `{count}` crudo en pantalla.
-            <DeletePage ctx={ctx} onBorrar={borrar} trabajando={trabajando} conteo={conteo} />
-          ) : null}
+            {pagina === "delete" ? (
+              // El `conteo` lo pasa el call site y solo una lista lo tiene: las otras
+              // cuatro no llenan el campo, y `DeletePage` ya sabe que sin numero no
+              // dice nada en vez de pintar un `{count}` crudo en pantalla.
+              <DeletePage ctx={ctx} onBorrar={borrar} trabajando={trabajando} conteo={conteo} />
+            ) : null}
 
-          {/*
-            Compartir, y **la fila vuelve a existir con esto**.
+            {/*
+              Compartir, y **la fila vuelve a existir con esto**.
 
-            `ACCIONES.share` declara `destino: { tipo: "pagina", page: "share" }` desde
-            la T1 y la hoja lo filtra con `puedeOfrecerse` mientras su pagina no exista:
-            sin este bloque, compartir una lista deja de estar en el menu, que es
-            exactamente lo que paso con la hoja de lista cuando paso al registro.
+              `ACCIONES.share` declara `destino: { tipo: "pagina", page: "share" }` desde
+              la T1 y la hoja lo filtra con `puedeOfrecerse` mientras su pagina no exista:
+              sin este bloque, compartir una lista deja de estar en el menu, que es
+              exactamente lo que paso con la hoja de lista cuando paso al registro.
 
-            Y el `onClose` es el de la hoja, no uno de la pagina: al enviar bien se
-            cierra **el menu entero**. La hoja vieja hacia lo mismo —`onDone={() =>
-            onClose()}`— y la razon esta en `SharePage`: el estado del formulario se
-            pierde al desmontar, asi que "quedarse para mandar a otro" no es una
-            opcion que exista.
-          */}
-          {pagina === "share" ? <SharePage ctx={ctx} onClose={onClose} /> : null}
-          {pagina === "access" ? (
-            <AccessPage ctx={ctx} />
-          ) : null}
+              Y el `onClose` es el de la hoja, no uno de la pagina: al enviar bien se
+              cierra **el menu entero**. La hoja vieja hacia lo mismo —`onDone={() =>
+              onClose()}`— y la razon esta en `SharePage`: el estado del formulario se
+              pierde al desmontar, asi que "quedarse para mandar a otro" no es una
+              opcion que exista.
+            */}
+            {pagina === "share" ? <SharePage ctx={ctx} onClose={onClose} /> : null}
+            {pagina === "access" ? (
+              <AccessPage ctx={ctx} />
+            ) : null}
 
-          {/*
-            El icono se escribe al elegir y la hoja **no** se cierra: el panel
-            sigue abierto para cambiar de opinion, y el error —si el handler
-            falla— se muestra mas abajo, con su reintento, igual que en las otras
-            paginas. Por eso esta recibe `onSelect` y no un boton de guardar: en el
-            registro, `icon` es una pagina que se entra, no una fila que dispara una
-            cosa y se va.
+            {/*
+              El icono se escribe al elegir y la hoja **no** se cierra: el panel
+              sigue abierto para cambiar de opinion, y el error —si el handler
+              falla— se muestra mas abajo, con su reintento, igual que en las otras
+              paginas. Por eso esta recibe `onSelect` y no un boton de guardar: en el
+              registro, `icon` es una pagina que se entra, no una fila que dispara una
+              cosa y se va.
 
-            Y por eso recibe `trabajando`: es lo que apaga el panel mientras se
-            escribe, que sin el el grid entero sigue tappable y el segundo toque se
-            pierde sin decir nada.
-          */}
-          {pagina === "icon" ? (
-            <IconPage icon={iconoVivo} onSelect={ponerIcono} trabajando={trabajando} />
-          ) : null}
+              Y por eso recibe `trabajando`: es lo que apaga el panel mientras se
+              escribe, que sin el el grid entero sigue tappable y el segundo toque se
+              pierde sin decir nada.
+            */}
+            {pagina === "icon" ? (
+              <IconPage icon={iconoVivo} onSelect={ponerIcono} trabajando={trabajando} />
+            ) : null}
 
-          {/*
-            Poner una lista **adentro**, y la fila vuelve a existir con esto.
+            {/*
+              Poner una lista **adentro**, y la fila vuelve a existir con esto.
 
-            `ACCIONES.createHere` declara `destino: { tipo: "pagina", page: "create" }`
-            desde la T1 y `ORDEN_POR_KIND.folder` la lista para la carpeta. Sin este
-            bloque el filtro la saca entera y **crear una lista dentro de una carpeta
-            deja de existir**, que es lo que hacia la hoja vieja con `onCreateInside`.
+              `ACCIONES.createHere` declara `destino: { tipo: "pagina", page: "create" }`
+              desde la T1 y `ORDEN_POR_KIND.folder` la lista para la carpeta. Sin este
+              bloque el filtro la saca entera y **crear una lista dentro de una carpeta
+              deja de existir**, que es lo que hacia la hoja vieja con `onCreateInside`.
 
-            Y el `onSelect` es el `crearDentro` de la hoja —el handler congelado, no
-            el de las props—, por la misma razon que `ponerIcono`: durante los 330 ms
-            de la salida el call site ya devolvio `{}` y un toque que llega tarde no
-            puede caer en un handler vivo. Y **no** es `correr` ni `correrEnLaPagina`
-            porque elegir el tipo no escribe: la pagina devuelve el `kind` y el call
-            site decide, que es lo que hacia la hoja vieja.
-          */}
-          {pagina === "create" ? <CreatePage onSelect={crearDentro} /> : null}
+              Y el `onSelect` es el `crearDentro` de la hoja —el handler congelado, no
+              el de las props—, por la misma razon que `ponerIcono`: durante los 330 ms
+              de la salida el call site ya devolvio `{}` y un toque que llega tarde no
+              puede caer en un handler vivo. Y **no** es `correr` ni `correrEnLaPagina`
+              porque elegir el tipo no escribe: la pagina devuelve el `kind` y el call
+              site decide, que es lo que hacia la hoja vieja.
+            */}
+            {pagina === "create" ? <CreatePage onSelect={crearDentro} /> : null}
 
-          {/*
-            El fallo, **en la hoja y no en un toast**: un toast se va solo y a la
-            pagina de borrar hay que volver a entrar para volver a leerlo. Y el
-            reintento va al lado del error, que es donde se lo busca.
-          */}
-          {error ? (
-            <View style={{ gap: theme.spacing.sm }}>
-              <AppText variant="caption" style={{ color: theme.colors.danger }}>
-                {error}
-              </AppText>
-              {reintento ? (
-                <Button
-                  label={t("common.retry")}
-                  variant="secondary"
-                  fullWidth
-                  onPress={() => reintento()}
-                />
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-      </Sheet>
-    </ShareFormContexto.Provider>
+            {/*
+              Exportar, y **la fila vuelve a existir con esto**.
+
+              `ACCIONES.export` declara `destino: { tipo: "pagina", page: "export" }`
+              desde la T1 y `ORDEN_POR_KIND` la lista para lista y coleccion. Sin este
+              bloque el filtro la saca entera y **exportar una lista deja de
+              existir**, que es exactamente lo que paso con la hoja de lista cuando
+              paso al registro en la T6, y nadie lo noto porque "una fila que no esta"
+              y "una fila que todavia no se escribio" se ven igual desde el menu.
+
+              La pagina **no** lleva `onClose` y no decide nada del intento: elige un
+              formato y lo devuelve. Quien corre la peticion, quien cierra el menu
+              antes de correrla y quien levanta la hoja hermana al terminar es esta
+              hoja, y el por que esta escrito en `exportar`.
+            */}
+            {pagina === "export" ? (
+              <ExportPage ctx={ctx} running={exportando} onExport={exportar} />
+            ) : null}
+
+            {/*
+              El fallo, **en la hoja y no en un toast**: un toast se va solo y a la
+              pagina de borrar hay que volver a entrar para volver a leerlo. Y el
+              reintento va al lado del error, que es donde se lo busca.
+            */}
+            {error ? (
+              <View style={{ gap: theme.spacing.sm }}>
+                <AppText variant="caption" style={{ color: theme.colors.danger }}>
+                  {error}
+                </AppText>
+                {reintento ? (
+                  <Button
+                    label={t("common.retry")}
+                    variant="secondary"
+                    fullWidth
+                    onPress={() => reintento()}
+                  />
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        </Sheet>
+      </ShareFormContexto.Provider>
+
+      {/*
+        ------------------------------------------------------------------
+        LA HOJA HERMANA DEL RESULTADO, Y POR QUE ESTA AFUERA DEL `Sheet`
+        ------------------------------------------------------------------
+
+        Es la unica hoja hermana que este archivo monta, y no es una excepcion al
+        argumento del principio —una hoja encima de otra son dos fondos— sino lo
+        contrario: **esta no se abre mientras la otra esta**. Reportar el resultado
+        llega cuando el fichero ya esta, y para entonces esta hoja ya se fue; lo
+        unico que se cruza son los 330 ms en que el `Modal` del menu sigue montado,
+        y eso lo garantiza una sola cosa: `exportar` llama a `onClose()` antes de
+        que salga el peticion. Es la misma regla que la hoja vieja de lista
+        aplicaba y escribia—"dos paneles, y uno de ellos a la vez como regla, no
+        como garantia"—, y la garantia era el mismo `onClose()` antes de `run`.
+
+        Montada **dentro** del `Sheet` —o como pagina— seria un `Modal` dentro de un
+        `Modal`: dos fondos y un toque que cierra el de abajo. Por eso el guard de
+        `entity-menu-sheet.test.ts` sigue contando un `Sheet` aqui, y por eso esta
+        hoja no la monta la pagina: `ExportPage` elige un formato y nada mas.
+
+        Y el `title` sale del **pedido**, no del `ctx` de pantalla: si el intento se
+        resolviera con otra entidad delante —se compartio el enlace, el titulo
+        cambio— un titulo leido del `ctx` seria el nombre equivocado sobre los
+        numeros correctos.
+      */}
+      <ExportResultSheet
+        attempt={
+          mostrandoExport
+            ? { result: resultado, error: errorDeExport, onRetry: reintentarExport }
+            : null
+        }
+        title={pedidoDeExport.current?.title}
+        onClose={() => setMostrandoExport(false)}
+      />
+    </>
   );
 }
 
@@ -816,5 +985,13 @@ const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
     las seis filas de tipos no dicen donde van a parar.
   */
   create: "lists.createHere",
+  /*
+    `export` dice "Formato" y no el nombre de la entidad: las dos filas de la
+    pagina son los dos formatos, y la cabecera ya dice de que se trata con el
+    titulo de la hoja —el nombre de la lista o de la coleccion—. La frase de la
+    espera (`export.running`) **no** va aqui y la pinta la pagina, porque depende
+    de si hay algo en vuelo y esta tabla es de claves fijas.
+  */
+  export: "export.format",
 };
 

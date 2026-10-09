@@ -280,11 +280,15 @@ describe("el orden y lo que se ofrece", () => {
   it("un tablero ofrece las filas que ofrecia, mas la de icono", () => {
     /*
       Las siete de la hoja vieja y la de icono, y **`share` esta entre ellas desde
-      la T11**: `PAGINAS_MONTADAS` la inclui, o sea que el filtro ya no la saca. Esta
-      linea estuvo diciendo seis, con un comentario al lado que explicaba por que
-      faltaba una —"la pagina la escribe una tarea que no existe en el plan"—, y la
-      perdida se veía **igual que el filtro**: por eso quedo escrita con nombre en el
-      bloque de abajo en vez de solo anotada aca.
+      la T11** y **`export` desde la T9**: las dos las ofrecia la hoja vieja, las
+      dos las declaraba el registro desde la T1 y las dos se perdieron al pasar la
+      hoja al registro sin que existiera la pagina que las monta.
+      `PAGINAS_MONTADAS` las incluye, o sea que el filtro ya no las saca.
+
+      Esta linea estuvo diciendo seis, con un comentario al lado que explicaba por
+      que faltaba una —"la pagina la escribe una tarea que no existe en el plan"—,
+      y la perdida se veía **igual que el filtro**: por eso quedo escrita con
+      nombre en el bloque de abajo en vez de solo anotada aca.
     */
     expect(pintadas(LISTA)).toEqual([
       "states",
@@ -294,6 +298,7 @@ describe("el orden y lo que se ofrece", () => {
       "duplicate",
       "share",
       "access",
+      "export",
       "delete",
     ]);
   });
@@ -385,49 +390,39 @@ describe("las paginas que el filtro saca, con nombre", () => {
 
     /*
       ------------------------------------------------------------------
-      LOS DOS HUECOS, Y POR QUE ESTAN ESCRITOS Y NO OCULTOS
+      LOS TRES HUECOS, Y POR QUE ESTUVIERON ESCRITOS Y NO OCULTOS
       ------------------------------------------------------------------
 
-      La hoja vieja **si** ofrecia las dos ultimas, y las ofrecia de verdad.
-      Perder una fila es lo peor que puede pasar en una migracion asi, asi que cada
-      hueco lleva escrito quien lo cierra:
+      Los tres son el mismo fallo y las tres veces la hoja vieja **si** ofrecia la
+      fila:
 
-      - `access`: **estuvo aca** y la cerro la T8. La hoja vieja no la tenia —era una
-        fila de mas que el registro declaraba y que todavia no se podia pintar—, y se
-        ofrecio sola cuando la pagina entro en `PAGINAS_MONTADAS`.
-      - `export`: la hoja vieja montaba la pagina de formatos (`:616`) y la hoja
-        hermana de resultados (`:698`), con los dos formatos y el reintento.
-        **Exportar una lista deja de estar disponible con esta tarea**, y queda
-        escrito para que nadie lo lea como un olvido. Lo cierra la T9.
+      - `access`: la cerro la T8. La hoja vieja no la tenia —era una fila de mas que
+        el registro declaraba y que todavia no se podia pintar—, y se ofrecio sola
+        cuando la pagina entro en `PAGINAS_MONTADAS`.
+      - `share`: lo cerro la T11. Lo declaro el registro desde la T1 y **ninguna** de
+        las diez tareas del plan escribia el componente que la monte, asi que el
+        filtro sacaba la fila entera y compartir una lista dejo de existir —sin
+        error, sin test rojo, y con la lista de este archivo diciendo que la fila
+        seguia ahi.
+      - `export`: lo cerro la T9. La hoja vieja montaba la pagina de formatos
+        (`:616`) y la hoja hermana de resultados (`:698`), con los dos formatos y el
+        reintento, asi que **exportar una lista dejo de estar disponible en la T6**.
 
-      ------------------------------------------------------------------
-      Y `share` ESTUVO ACA, Y POR QUE NO ESTA MAS
-      ------------------------------------------------------------------
-
-      El tercer hueco no era de este bloque: era **sin dueno**. `ACCIONES.share`
-      declara su destino como una pagina desde la T1 y las diez tareas del plan
-      ninguna escribia el componente que la monte, asi que el filtro sacaba la fila
-      entera y **compartir una lista dejo de existir** —sin error, sin test rojo, y
-      con la lista de este archivo diciendo que la fila seguia ahi.
-
-      Lo cierra la T11, con `SharePage`. Por eso este bloque tiene dos entradas y no
-      tres: `share` sale del mapa y del `toEqual` cuando su pagina entra en
-      `PAGINAS_MONTADAS`, y ese mismo `toEqual` es lo que va a fallar el dia que
-      aparezcan dos huecos nuevos sin escribir.
+      Los tres salen del mapa y del `toEqual` de abajo cuando su pagina entra en
+      `PAGINAS_MONTADAS`. Ese mismo `toEqual` es lo que va a fallar el dia que
+      aparezca un hueco nuevo sin escribir, y por eso el mapa no se borro en
+      silencio en su momento: cada uno decia quien lo cerraba.
     */
-    const PENDIENTES: Record<string, string> = {
-      export: "T9: ExportPage, con los dos formatos y ExportResultSheet",
-    };
+    const PENDIENTES: Record<string, string> = {};
 
     for (const page of sinMontar) {
       expect(PENDIENTES[page], `la pagina "${page}" no se monta y nadie la escribe`).toBeTruthy();
     }
 
-    // Y el conjunto es exactamente este, no un subconjunto. `access` **estuvo aca** y
-    // salio cuando la T8 monto su pagina: la fila se empezo a ofrecer sin que nadie
-    // cambiara el registro. Queda `export` sola, con la T9 detras, y el dia que
-    // tambien se monte el conjunto tiene que quedar vacio.
-    expect(sinMontar.sort()).toEqual(["export"]);
+    // Y el conjunto es exactamente el vacio, no un subconjunto. Con los tres
+    // cerrados, un hueco nuevo aqui no tiene a nadie anotado y el `for` de arriba
+    // lo dice nombrandolo.
+    expect(sinMontar.sort()).toEqual([]);
   });
 });
 

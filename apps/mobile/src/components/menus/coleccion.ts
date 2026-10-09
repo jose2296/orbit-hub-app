@@ -38,9 +38,13 @@ export function menuCtxDeColeccion(collection: Collection | null): MenuContext |
       role: collection.role,
       shared: collection.shared,
     },
-    // Sin `export`: no hay `GET /collections/:id/export` todavia, y por eso la
-    // fila no se ofrece en vez de ofrecerse y fallar.
-    caps: {},
+    // Con `export`: la fila existe desde la T1 y `GET /collections/:id/export`
+    // se creo con la pagina que la monta. Antes de eso la capacidad iba apagada a
+    // proposito —sin endpoint, una fila que se ofrece y falla al tocarla es peor
+    // que una fila que no esta— y por eso el comentario que habia aqui decia
+    // "todavia no hay endpoint". Ese comentario era el que hacia falta, y ahora
+    // la condicion se cumple.
+    caps: { export: true },
   };
 }
 

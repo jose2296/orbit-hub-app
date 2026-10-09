@@ -62,7 +62,24 @@ import type { MenuAccion, MenuPageId } from "@/lib/menus/registry";
   del registro: el registro dice que acciones existen, esta dice cuales puede
   pintar **esta** version de la hoja.
 */
-export const PAGINAS_MONTADAS: MenuPageId[] = ["rename", "icon", "delete", "share", "create", "access"];
+export const PAGINAS_MONTADAS: MenuPageId[] = [
+  "rename",
+  "icon",
+  "delete",
+  "share",
+  "create",
+  "access",
+  /*
+    `export` entro con la pagina que la monta (`menus/pages/export-page.tsx`), y
+    es la **tercera** vez que este archivo tiene que crecer para que una capacidad
+    que el registro declaraba desde la T1 llegue a existir: `share` en la T11,
+    `create` en la T12 y `export` en la T9. Las tres se perdieron sin error rojo,
+    porque una fila que no esta y una fila que todavia no se escribio se ven igual
+    desde el menu, y por eso el orden de esta lista es el orden en que llegaron las
+    paginas y no el del registro.
+  */
+  "export",
+];
 
 /**
  * Si la accion se ofrece, y **el filtro no es de disponibilidad**.

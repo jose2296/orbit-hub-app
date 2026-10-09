@@ -349,9 +349,10 @@ describe("las paginas que la hoja monta hoy", () => {
 describe("la coleccion se maneja con el menu del registro", () => {
   it("lo que la hoja vieja ofrecia, el registro lo ofrece tambien", () => {
     // Paridad minima de la migracion: `collection-menu-sheet.tsx:60-78` tenia
-    // `rename` y `delete`, y eso son las dos filas que tienen que seguir
-    // saliendo. `access` y `export` no salen todavia porque sus paginas no
-    // existen, y eso lo comprueba el test de abajo.
+    // `rename` y `delete`, y eso son las dos filas que tienen que seguir saliendo.
+    // `access` y `export` son filas de mas que el registro declara; `access` las
+    // ofrecio la T8 y `export` la T9, y lo que se comprueba para las dos esta
+    // abajo y en `collection-screen.test.ts`.
     const ids = accionesPara(COLECCION).map((accion) => accion.id);
 
     expect(ids).toContain("rename");
@@ -361,21 +362,24 @@ describe("la coleccion se maneja con el menu del registro", () => {
   it("la fila de acceso ya no esta pendiente, y el hueco quedo vacio", () => {
     /*
       ------------------------------------------------------------------
-      EL HUECO QUE T8 CERRO, Y POR QUE EL TEST NO SE BORRO
+      LOS HUECOS QUE ESTUVIERON ACA, Y POR QUE EL TEST NO SE BORRO
       ------------------------------------------------------------------
 
       Este test existia al reves: decia que `access` se filtraba porque su pagina
       era de la T8, y enumeraba el hueco como una perdida declarada. T8 la monto y
       el hueco se cerro, asi que **ahora** lo que se afirma es que no quedo nada.
 
-      El valor de haberlo tenido escrito es que la perdida fue una decision con
-      nombre y no un olvido — que es exactamente como se encontro `share` y `create`,
-      las otras dos. La diferencia es que esa la agarro el implementador de la T8 y
-      no el plan.
+      `export` fue el segundo, y lo cerro la T9 cuando creo
+      `GET /collections/:id/export` y monto su pagina. El `ctx` de arriba lleva
+      `caps: {}` a proposito —es el `ctx` minimo, no el que arma `coleccion.ts`— y
+      por eso `export` ni se ofrece aqui: lo que se comprueba para esa fila es que
+      **este** conjunto quedo vacio, y lo que se ofrece de verdad se mira en
+      `collection-screen.test.ts`, sobre el `ctx` del adaptador.
 
-      `export` sigue sin aparecer en la lista porque es una capacidad: sin
-      `caps.export` la fila ni se ofrece, y el endpoint llega en la T9. Es el unico
-      hueco que queda, y sigue anotado con su nombre.
+      El valor de haberlo tenido escrito es que la perdida fue una decision con
+      nombre y no un olvido — que es exactamente como se encontraron `share` y
+      `create`, las otras dos. La diferencia es que esas la agarraron sus
+      implementadores y no el plan.
     */
     const montadas = paginasMontadas();
     const sinMontar = accionesPara(COLECCION)
@@ -383,9 +387,7 @@ describe("la coleccion se maneja con el menu del registro", () => {
       .filter((page) => !montadas.includes(page));
 
     // El conjunto de pendientes declarados, con la tarea que cierra cada hueco.
-    const PENDIENTES: Record<string, string> = {
-      export: "T9: ExportPage, con los dos formatos y ExportResultSheet",
-    };
+    const PENDIENTES: Record<string, string> = {};
 
     for (const page of sinMontar) {
       expect(
@@ -394,9 +396,7 @@ describe("la coleccion se maneja con el menu del registro", () => {
       ).toBeTruthy();
     }
 
-    // Y hoy el hueco esta vacio: `access` se monto en la T8 y `export` es una
-    // capacidad, asi que ni se ofrece. Cuando la T9 monte la suya, el mapa de
-    // arriba se queda con una sola entrada y el conjunto sigue vacio.
+    // Y el conjunto sigue vacio: `access` se monto en la T8 y `export` en la T9.
     expect(sinMontar).toEqual([]);
   });
 

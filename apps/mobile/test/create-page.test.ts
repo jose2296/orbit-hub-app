@@ -222,25 +222,24 @@ describe("ninguna pagina declarada y no escrita se pierde en silencio", () => {
     const sinMontar = [...new Set(Object.values(huecosPorKind()).flat())];
 
     /*
-      Queda **una** fila de mas que el registro declara y que todavia no se puede
-      pintar:
+      Los tres huecos que hubo, y los tres **cerrados**: `create` en la T12, `access`
+      en la T8 y `export` en la T9. Los tres son el mismo patron —el registro declara
+      una fila que lleva a una pagina desde la T1 y ninguna tarea del plan escribe
+      el componente que la monta— y los dos primeros los encontraron sus
+      implementadores, no el plan.
 
-      - `export` la declara el registro desde la T1 y la cierra la T9.
-
-      `create` y `access` **estuvieron aca** y salieron: eran el segundo y el tercer
-      caso del patron, los dos encontrados por sus implementadores y no por el plan.
-      Cuando T9 monte la suya hay que sacar su entrada y el conjunto tiene que
-      quedar vacio; ese `toEqual` es el que avisa del cuarto.
+      El mapa quedo vacio en su momento, y **no se borro en silencio**: cada entrada
+      decia quien cerraba su hueco, que es lo que hacia falta para poder(actualizar
+      las cuatro filas de la paridad sin perder nada. El `for` de abajo sigue siendo
+      el guard: un hueco nuevo entra sin anotacion y falla nombrandolo.
     */
-    const PENDIENTES: Record<string, string> = {
-      export: "T9: ExportPage, con los dos formatos y ExportResultSheet",
-    };
+    const PENDIENTES: Record<string, string> = {};
 
     for (const page of sinMontar) {
       expect(PENDIENTES[page], `la pagina "${page}" no se monta y nadie la escribe`).toBeTruthy();
     }
 
-    expect(sinMontar.sort()).toEqual(["export"]);
+    expect(sinMontar.sort()).toEqual([]);
   });
 
   it("el guard mira de verdad, y no aprueba porque no recorra nada", () => {
@@ -266,10 +265,10 @@ describe("ninguna pagina declarada y no escrita se pierde en silencio", () => {
       "note",
     ]);
     expect(huecosPorKind()).toEqual({
-      list: ["export"],
+      list: [],
       note: [],
       folder: [],
-      collection: ["export"],
+      collection: [],
       bookmark: [],
     });
   });

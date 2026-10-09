@@ -1,5 +1,8 @@
 import { exportFilename, sanitiseIconRef } from '@orbit-hub/contracts';
 import type {
+  Bookmark,
+  Collection,
+  CollectionExport,
   ExportedAttachment,
   Folder,
   List,
@@ -15,6 +18,8 @@ import { getDatabase } from '../../db/client.js';
 import type { Database } from '../../db/client.js';
 import {
   attachments,
+  bookmarks,
+  collections,
   folders,
   listItems,
   lists,
@@ -29,6 +34,8 @@ import { HttpError } from '../../lib/http-error.js';
 import type { MembershipRoleName } from '../../db/constants.js';
 import {
   accountExportEnvelope,
+  bookmarksToCsv,
+  collectionExportEnvelope,
   itemsToCsv,
   listExportEnvelope,
 } from './export-builders.js';
@@ -191,6 +198,82 @@ function toTemplate(row: typeof noteTemplates.$inferSelect): NoteTemplate {
     plainText: row.plainText,
     builtInKey: row.builtInKey,
     createdBy: row.createdBy,
+    version: row.version,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
+  };
+}
+
+/**
+ * La coleccion con su `bookmarkCount`, **contado sobre los `bookmarks` que
+ * viajan en este mismo fichero** y no sobre los vivos en la base.
+ *
+ * Es el mismo criterio que `toList` con su `itemCount`, por la misma razon: un
+ * count que no cuadra con el array que tiene al lado es un count que miente, y
+ * aqui el array de al lado son los enlaces del sobre.
+ *
+ * El `emoji` va tal cual y no por `sanitiseIconRef`, porque **no es un
+ * `IconRef`**: `collectionSchema` lo tiene como `z.string().max(16)`
+ * (`packages/contracts/src/bookmarks.ts:82`). Es texto plano, y pasarlo por el
+ * saneador de iconos seria tratar un emoji como si fuera un vector con
+ * biblioteca.
+ */
+function toCollection(
+  row: typeof collections.$inferSelect,
+  bookmarkCount: number,
+  role: MembershipRoleName,
+): Collection {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    folderId: row.folderId,
+    name: row.name,
+    description: row.description,
+    emoji: row.emoji,
+    position: row.position,
+    bookmarkCount,
+    role,
+    shared: false,
+    version: row.version,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
+  };
+}
+
+/**
+ * El enlace tal cual esta en la base, con su articulo incluido.
+ *
+ * A diferencia de la superficie REST —que devuelve el enlace sin `document`
+ * para que el listado no cargue el HTML de cada fila— **aca si viaja entero**:
+ * el fichero de exportacion se lee fuera de la cuenta y el articulo es
+ * precisamente lo que la persona se lleva cuando exporta. Lo que no viaja es el
+ * CSV, y por una razon distinta, escrita en `BOOKMARK_EXPORT_CSV_COLUMNS`.
+ *
+ * El `role` es el del espacio, no uno propio: lo que se puede hacer con un
+ * enlace lo decide el espacio en el que esta, igual que el de los items de una
+ * lista.
+ */
+function toBookmark(row: typeof bookmarks.$inferSelect, role: MembershipRoleName): Bookmark {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    folderId: row.folderId,
+    collectionId: row.collectionId,
+    url: row.url,
+    title: row.title,
+    siteName: row.siteName,
+    description: row.description,
+    imageUrl: row.imageUrl,
+    document: row.document,
+    plainText: row.plainText,
+    extractionState: row.extractionState,
+    extractionError: row.extractionError,
+    tags: row.tags ?? [],
+    position: row.position,
+    role,
+    shared: false,
     version: row.version,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -544,6 +627,119 @@ export class ExportService {
       filename: exportFilename({
         title: sobre.list.title,
         fallbackId: sobre.list.id,
+        extension: 'csv',
+        date: sobre.exportedAt.slice(0, 10),
+      }),
+    };
+  }
+
+  /**
+   * Una coleccion con su contexto minimo y **todos** sus enlaces, incluidos los
+   * borrados, por la misma razon que en una lista: exportar algo que alguien borro
+   * es exactamente el caso donde el fichero hace falta, y sin su `deletedAt` un
+   * borrado seria indistinguible de uno que nunca existio.
+   *
+   * Y el filtro es por `collectionId`, no por rango de ids: los enlaces que no
+   * estan en ninguna coleccion (`collectionId: null`) **no** viajan, y no por
+   * olvido sino porque no son de esta coleccion. Un export de "Sin clasificar" es
+   * otra pregunta, y se responderia con otro endpoint.
+   *
+   * El nombre del fichero sale de `collection.name` y no de su `title`: la
+   * coleccion no tiene `title` —tiene `name`— y el nombre que ve la persona en
+   * el menu es el mismo.
+   */
+  private async collectionEnvelope(
+    userId: string,
+    collectionId: string,
+  ): Promise<CollectionExport> {
+    const db = await this.db();
+    // Sin `isNull(deletedAt)`, por lo mismo que en `listEnvelope`.
+    const [row] = await db
+      .select()
+      .from(collections)
+      .where(eq(collections.id, collectionId))
+      .limit(1);
+
+    if (!row) {
+      throw HttpError.notFound('Collection not found');
+    }
+
+    // La autorizacion va despues de la carga, igual que en una lista: una
+    // coleccion en un espacio que la persona no ve es indistinguible de una que
+    // no existe, y por eso la respuesta es 404 y no 403.
+    await this.canSeeWorkspace(userId, row.workspaceId);
+    const role = (await this.roleIn(userId, row.workspaceId)) ?? 'viewer';
+
+    // El `displayName` se queda fuera por el mismo motivo que en el sobre de una
+    // lista: `collectionExportSchema` dice que la cuenta son dos campos, y pasarlo
+    // entero haria que `displayName` viajara sin que ningun compilador protestara.
+    const { id: accountId, email: accountEmail } = await this.accountOf(userId);
+
+    const [workspaceRow] = await db
+      .select({ id: workspaces.id, name: workspaces.name })
+      .from(workspaces)
+      .where(eq(workspaces.id, row.workspaceId))
+      .limit(1);
+    if (!workspaceRow) {
+      throw HttpError.notFound('Workspace not found');
+    }
+
+    let folder: { id: string; name: string } | null = null;
+    if (row.folderId) {
+      const [folderRow] = await db
+        .select({ id: folders.id, name: folders.name })
+        .from(folders)
+        .where(eq(folders.id, row.folderId))
+        .limit(1);
+      folder = folderRow ? { id: folderRow.id, name: folderRow.name } : null;
+    }
+
+    const bookmarkRows = await db
+      .select()
+      .from(bookmarks)
+      .where(eq(bookmarks.collectionId, collectionId))
+      .orderBy(asc(bookmarks.position), asc(bookmarks.createdAt));
+
+    const susBookmarks = bookmarkRows.map((bookmarkRow) => toBookmark(bookmarkRow, role));
+
+    return collectionExportEnvelope({
+      account: { id: accountId, email: accountEmail },
+      workspace: workspaceRow,
+      folder,
+      collection: toCollection(row, susBookmarks.length, role),
+      bookmarks: susBookmarks,
+      exportedAt: new Date().toISOString(),
+    });
+  }
+
+  async collectionJson(userId: string, collectionId: string): Promise<ExportFile> {
+    const sobre = await this.collectionEnvelope(userId, collectionId);
+    return {
+      body: JSON.stringify(sobre, null, 2),
+      contentType: 'application/json',
+      filename: exportFilename({
+        title: sobre.collection.name,
+        fallbackId: sobre.collection.id,
+        extension: 'json',
+        date: sobre.exportedAt.slice(0, 10),
+      }),
+    };
+  }
+
+  /**
+   * El CSV de una coleccion. Sale del mismo sobre que el JSON —los mismos
+   * enlaces, en el mismo orden— y lo escribe `bookmarksToCsv`, que es el unico
+   * sitio donde se construye un CSV de enlaces. El nombre sale del mismo titulo
+   * que el JSON.
+   */
+  async collectionCsv(userId: string, collectionId: string): Promise<ExportFile> {
+    const sobre = await this.collectionEnvelope(userId, collectionId);
+    return {
+      body: bookmarksToCsv(sobre.bookmarks),
+      contentType: 'text/csv',
+      filename: exportFilename({
+        title: sobre.collection.name,
+        fallbackId: sobre.collection.id,
         extension: 'csv',
         date: sobre.exportedAt.slice(0, 10),
       }),

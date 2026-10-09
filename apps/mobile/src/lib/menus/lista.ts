@@ -168,9 +168,11 @@ function subtituloDeLista(
  * decision:
  *
  * - `panel`: cualquier lista se puede pinear, y las cuatro pantallas lo ofrecian.
- * - `export`: `GET /lists/:id/export` existe y la hoja vieja lo ofrecia en las
- *   cuatro. Que la fila **no salga todavia** no es de aqui: es de que la pagina
- *   `export` es de la T9, y lo filtra `puedeOfrecerse`.
+ * - `export`: `GET /lists/:id/export` existe, la hoja vieja lo ofrecia en las
+ *   cuatro, y la pagina que lo monta (`pages/export-page.tsx`) la monto la T9.
+ *   Entre la T6 y la T9 la fila **no se ofrecia**: no por falta de capacidad sino
+ *   porque `puedeOfrecerse` la sacaba al no existir la pagina, que es el mismo modo
+ *   de fallo que perdio compartir y que crear una lista dentro de una carpeta.
  * - `editStates`: la unica que depende de quien llama, y por eso es un parametro
  *   y no una constante. La hoja vieja lo resolvia con `onEditStates ? [...] : []`,
  *   que es el mismo predicado escrito a mano que el registro vino a sustituir.

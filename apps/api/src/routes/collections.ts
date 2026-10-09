@@ -1,4 +1,4 @@
-import { uuidSchema } from '@orbit-hub/contracts';
+import { collectionExportQuerySchema, uuidSchema } from '@orbit-hub/contracts';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -8,8 +8,9 @@ import {
   getCollection,
   listCollections,
 } from '../modules/collections/collection-service.js';
+import { exportService } from '../modules/export/export-service.js';
 
-import { sendData } from './respond.js';
+import { sendData, sendFile } from './respond.js';
 
 export const collectionsRouter = Router();
 
@@ -42,6 +43,32 @@ collectionsRouter.get('/', async (req, res) => {
 collectionsRouter.get('/:id', async (req, res) => {
   const { id } = collectionParams.parse(req.params);
   sendData(res, 200, await getCollection(caller(req), id));
+});
+
+/**
+ * La coleccion como fichero: JSON con su contexto o CSV de sus enlaces.
+ *
+ * Bytes por `sendFile` y no el sobre `{ data, meta }`, igual que
+ * `GET /lists/:id/export` y que el export de cuenta: son las tres rutas de
+ * fichero de la API y las tres son la excepcion. El cuerpo, el tipo y el nombre
+ * salen juntos del servicio, que es el unico sitio que ha cargado la coleccion.
+ *
+ * Va **despues** de `GET /:id` y no antes a proposito: Express empareja las
+ * rutas en orden, y `/:id` no se tragaria `/:id/export` —no son el mismo numero
+ * de segmentos—, asi que el orden es solo de lectura. Lo que si importa es que
+ * la query se parsea con `collectionExportQuerySchema` y no a mano: es el contrato
+ * el que dice que `format` admite JSON y CSV, y duplicar esa lista aca seria un
+ * segundo sitio donde el formato puede mentir.
+ */
+collectionsRouter.get('/:id/export', async (req, res) => {
+  const { id } = collectionParams.parse(req.params);
+  const { format } = collectionExportQuerySchema.parse(req.query);
+
+  const fichero =
+    format === 'csv'
+      ? await exportService.collectionCsv(caller(req), id)
+      : await exportService.collectionJson(caller(req), id);
+  sendFile(res, 200, fichero);
 });
 
 collectionsRouter.delete('/:id', async (req, res) => {

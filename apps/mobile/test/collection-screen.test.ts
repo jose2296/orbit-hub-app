@@ -430,14 +430,22 @@ describe("el menu de la cabecera es el del registro y no una hoja propia", () =>
         .filter(puedeOfrecerse)
         .map((accion) => accion.id);
 
-    expect(ofrecibles()).toEqual(["rename", "access", "delete"]);
-    // `access` se ofrece desde que T8 monto su pagina: el registro no cambio, lo
-    // que cambio es `PAGINAS_MONTADAS`. `export` sigue sin salir porque es una
-    // capacidad y no hay endpoint; esa ausencia esta anotada con su tarea en
-    // `entity-menu-sheet.test`.
+    expect(ofrecibles()).toEqual(["rename", "access", "export", "delete"]);
+    /*
+      `access` se ofrece desde que T8 monto su pagina y `export` desde que la T9
+      monto la suya **y creo `GET /collections/:id/export`**. En los dos casos el
+      registro no cambio: cambio `PAGINAS_MONTADAS`, y para `export` tambien la
+      capacidad que `coleccion.ts` le ponia al `ctx`. La fila estaba declarada desde
+      la T1 en `ORDEN_POR_KIND.collection` las dos veces.
+
+      Y la capacidad se lee **del adaptador**, no de un `ctx` escrito aca: un
+      `MenuContext` a mano aprobaria un `export: true` que `coleccion.ts` hubiera
+      dejado de poner sin que nada se enterara —que es el mismo motivo por el que
+      `create-page.test.ts` pregunta por `menuDeCarpeta` y no por un contexto.
+    */
     expect(ORDEN_POR_KIND.collection).toEqual(["rename", "access", "export", "delete"]);
     expect(ofrecibles()).toContain("access");
-    expect(ofrecibles()).not.toContain("export");
+    expect(ofrecibles()).toContain("export");
 
     // Lo compartido sale sin borrar y con el motivo a la vista: la misma regla
     // para las cinco entidades, probada en el ctx de esta pantalla.
