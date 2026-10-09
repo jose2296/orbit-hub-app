@@ -430,20 +430,32 @@ describe("el menu de la cabecera es el del registro y no una hoja propia", () =>
         .filter(puedeOfrecerse)
         .map((accion) => accion.id);
 
-    expect(ofrecibles()).toEqual(["rename", "access", "export", "delete"]);
+    expect(ofrecibles()).toEqual(["rename", "share", "access", "export", "delete"]);
     /*
-      `access` se ofrece desde que T8 monto su pagina y `export` desde que la T9
-      monto la suya **y creo `GET /collections/:id/export`**. En los dos casos el
-      registro no cambio: cambio `PAGINAS_MONTADAS`, y para `export` tambien la
-      capacidad que `coleccion.ts` le ponia al `ctx`. La fila estaba declarada desde
-      la T1 en `ORDEN_POR_KIND.collection` las dos veces.
+      `access` se ofrece desde que T8 monto su pagina, `export` desde que la T9 monto
+      la suya **y creo `GET /collections/:id/export`**, y `share` desde que la T10
+      admitio `collection` en `shareNodeTypeSchema`. En los tres casos el call site no
+      cambio: cambio `PAGINAS_MONTADAS`, la capacidad que `coleccion.ts` le ponia al
+      `ctx`, y el enum del contrato. Las tres filas estaban declaradas desde la T1 en
+      `ORDEN_POR_KIND.collection` y las tres se activaron solas.
+
+      Y `share` es el caso raro: no es ni una pagina nueva ni una capacidad. Se
+      ofrece porque el registro pregunta si el contrato admite el `nodeType` del kind
+      —`nodeTypeDe`— y hasta la T10 la respuesta era que no, sin que hubiera ningun
+      codigo en esta pantalla que lo dijera.
 
       Y la capacidad se lee **del adaptador**, no de un `ctx` escrito aca: un
       `MenuContext` a mano aprobaria un `export: true` que `coleccion.ts` hubiera
       dejado de poner sin que nada se enterara —que es el mismo motivo por el que
       `create-page.test.ts` pregunta por `menuDeCarpeta` y no por un contexto.
     */
-    expect(ORDEN_POR_KIND.collection).toEqual(["rename", "access", "export", "delete"]);
+    expect(ORDEN_POR_KIND.collection).toEqual([
+      "rename",
+      "share",
+      "access",
+      "export",
+      "delete",
+    ]);
     expect(ofrecibles()).toContain("access");
     expect(ofrecibles()).toContain("export");
 

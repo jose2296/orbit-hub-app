@@ -24,12 +24,30 @@ import {
 import type { Recorrido } from "@/lib/shares/where-it-goes";
 import { useTheme } from "@/theme";
 
+/*
+  ------------------------------------------------------------------
+  EL ICONO DE CADA COSA QUE TE PUEDEN ENVIAR
+  ------------------------------------------------------------------
+
+  `Record<Share["nodeType"], string>` y no `Partial`, por lo que el typecheck hace
+  el trabajo que antes hacia un guard: un `nodeType` nuevo en el enum rompe la
+  compilacion hasta que alguien decida que icono lleva. Es la unica de las tablas
+  de esta tarea que **si** conviene sea completa, porque aqui no hay "no aplica
+  nunca": todo lo que se puede compartir, si se puede colocar, y el icono es
+  informativo y no una decision de permisos.
+
+  El de `collection` es el de una carpeta de enlaces y el de `bookmark` el contorno
+  del enlace. Ninguno de los dos lo eligio el contrato: es una decision de esta
+  pantalla y por eso vive aca y no se deriva de nada.
+*/
 const NODE_ICON: Record<Share["nodeType"], string> = {
   workspace: "grid-outline",
   folder: "folder-outline",
   list: "list-outline",
   list_item: "checkmark-circle-outline",
   note: "document-text-outline",
+  collection: "albums-outline",
+  bookmark: "bookmark-outline",
 };
 
 export interface PlaceShareSheetProps {

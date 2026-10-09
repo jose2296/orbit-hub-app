@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import { shareNodeTypeSchema } from "@orbit-hub/contracts";
 
 import { PAGINAS_MONTADAS, puedeOfrecerse } from "@/lib/menus/paginas";
-import { ACCIONES, ORDEN_POR_KIND, accionesPara } from "@/lib/menus/registry";
+import { ACCIONES, ORDEN_POR_KIND, accionesPara, nodeTypeDe } from "@/lib/menus/registry";
 import type { MenuContext, MenuKind } from "@/lib/menus/registry";
 
 import {
   RAIZ,
+  archivosDe,
   hojasMontadas,
   hoja,
   paginasMontadas,
@@ -47,39 +48,28 @@ import {
 
 const PAGINA = "src/components/menus/pages/share-page.tsx";
 
-/**
- * El mapa de la pagina, **leido del fuente**.
- *
- * Se parsea en vez de escribirse porque el valor que hay que aprobar es el que esta
- * en el archivo: una copia en el test aprobaria una tabla que nadie esta mirando.
- * Y sale por el nombre de la constante, no por una linea fija, para que
- * renombrarla falle con un mensaje que lo diga —un guard que se desincroniza en
- * silencio es exactamente lo que este archivo no quiere ser—.
- */
-function mapaDelFuente(fuente: string): Record<string, string | null> {
-  const bloque = fuente.match(/NODE_TYPE_POR_KIND[^=]*=\s*\{([\s\S]*?)\n\}/)?.[1];
+/*
+  ------------------------------------------------------------------
+  POR QUE ACA NO SE PARSEA UNA TABLA DEL FUENTE
+  ------------------------------------------------------------------
 
-  if (bloque === undefined) {
-    throw new Error("la pagina no declara NODE_TYPE_POR_KIND, o no con esa forma");
-  }
+  Antes este archivo parseaba `NODE_TYPE_POR_KIND` del fuente de la pagina con una
+  expression regular, porque el mapa existia y un guard tiene que mirar el valor
+  real. **Ahora no hay mapa**, y esa es la razon de que estas pruebas sean distintas
+  y no mas cortas: la pregunta "¿que `nodeType` manda esta pagina?" ya no tiene una
+  tabla que leer, tiene una funcion que se llama, y a una funcion se le pregunta
+  ejecutandola.
 
-  const entradas: Record<string, string | null> = {};
+  Un guard que parsea el fuente obliga a que el fuente tenga la forma que el guard
+  espera —que es una forma escrita a mano, o sea una cuarta cosa que mantener—. Y
+  el dia que el `nodeType` dejo de estar en una tabla, el parseo dejo de encontrar
+  nada y el `throw` empezo a saltar en un archivo donde antes pasaban veinte
+  aserciones. Un guard que no puede fallar en silencio tambien se rompe ruidoso, y
+  eso no es mejor: es peor, porque el ruido no dice que se rompio.
 
-  for (const linea of bloque.split("\n")) {
-    const entrada = linea.match(/^\s*(?<kind>[a-zA-Z]+):\s*(?<valor>null|"[a-z_]+")\s*,?\s*$/);
-
-    // Los dos grupos existen si la linea entero —el `$` del patron los exige—, pero
-    // con `noUncheckedIndexedAccess` el tipo no lo sabe: se comprueban por nombre y
-    // no por posicion, asi que agregar un grupo al patron no rompe el asignar.
-    if (entrada?.groups?.kind === undefined || entrada.groups.valor === undefined) continue;
-
-    const { kind, valor } = entrada.groups;
-
-    entradas[kind] = valor === "null" ? null : valor.slice(1, -1);
-  }
-
-  return entradas;
-}
+  Lo que queda es lo que si importa: la funcion se deriva del enum del contrato, y
+  los tres que la usan —el registro, la pagina y `AccessPage`— devuelven lo mismo.
+*/
 
 /**
  * Los `nodeType` que el contrato admite, **del paquete y no de una lista del test**.
@@ -129,81 +119,188 @@ describe("la fila de compartir vuelve a existir, y con la pagina que la monta", 
     }
   });
 
-  it("los kinds que el contrato no admite no reciben la fila, ni con la pagina puesta", () => {
+  it("los cinco kinds reciben la fila, que es lo que la T10 abre", () => {
     /*
-      `collection` y `bookmark` no estan en `shareNodeTypeSchema`, y ofrecerles la
-      fila seria pintar algo que al tocarlo manda un `nodeType` que el contrato no
-      admite. No es que la pagina no sepa el valor —`SharePage` los tiene en `null`
-      y por eso pinta nada—: es que el registro no llega a ofrecer la fila, asi que
-      el `null` no es codigo alcanzable sino la red de seguridad de un hueco que se
-      cierra en la T10.
+      El otro lado del guard que sigue, y el que hace que este no sea un `for` con
+      un `continue`: **los cinco**. Antes eran tres, y la prueba de al lado probaba
+      que `collection` y `bookmark` NO recibieran la fila — una prueba que solo
+      servia mientras `if (enElContrato) continue` la hacia pasar sin mirar nada—.
+
+      Ahora el bucle no tiene `continue` porque no hay kind que quedarse fuera. Si
+      manana el enum pierde un valor, esta falla nombrando el kind, y la siguiente
+      falla por el otro lado.
     */
     for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
-      const enElContrato = TIPOS_DEL_CONTRATO.includes(kind);
-      const acciones = accionesPara(ctxDe(kind)).filter(puedeOfrecerse);
+      expect(
+        accionesPara(ctxDe(kind)).filter(puedeOfrecerse).map((accion) => accion.id),
+        `"${kind}" deberia recibir la fila de compartir`,
+      ).toContain("share");
+    }
+  });
 
-      if (enElContrato) continue;
+  it("y un kind que el contrato no admite no la recibe, por si vuelve a pasar", () => {
+    /*
+      El `continue` se fue y el `for` se queda. Es el mismo bucle y la misma regla en
+      los dos sentidos: **la fila se ofrece si y solo si el contrato admite el
+      `nodeType` de ese kind**. Una regla que solo se afirma en el sentido que hoy es
+      cierto no es una regla, es una fotografia.
+    */
+    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
+      if (TIPOS_DEL_CONTRATO.includes(kind)) continue;
 
       expect(
-        acciones.map((accion) => accion.id),
+        accionesPara(ctxDe(kind)).filter(puedeOfrecerse).map((accion) => accion.id),
         `"${kind}" no esta en shareNodeTypeSchema y no puede recibir la fila`,
       ).not.toContain("share");
     }
   });
 });
 
-describe("el nodeType sale del ctx y es uno que el contrato admite", () => {
-  it("la tabla cubre todos los kinds, y no hay kind nuevo sin decidir", () => {
-    /*
-      El `Record<MenuKind, ...>` del tipo ya obliga a esto en tiempo de compilacion;
-      el guard lo afirma en el test porque el tipocheck no corre con cada test y
-      porque **la lista de kinds sale del registro**, o sea que un kind nuevo que no
-      se escriba aca rompe el test y no un import que nadie mira.
-    */
-    const mapa = mapaDelFuente(src(PAGINA));
+describe("nodeTypeDe: una sola decision para tres lectores", () => {
+  it("devuelve el kind cuando el contrato lo admite, y null cuando no", () => {
+    // No es una tabla: es una comprobacion contra `shareNodeTypeSchema.options`. La
+    // identidad se puede comprobar kind por kind sin copiar una lista.
+    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
+      const esperado = TIPOS_DEL_CONTRATO.includes(kind) ? kind : null;
+      expect(nodeTypeDe(kind), `"${kind}"`).toBe(esperado);
+    }
 
-    expect(Object.keys(mapa).sort()).toEqual(Object.keys(ORDEN_POR_KIND).sort());
+    // Y con un kind que el enum no tiene de ninguna manera. El tipo del parametro no
+    // lo deja pasar sin un cast, que es lo que pasa cuando la respuesta es "no".
+    expect(nodeTypeDe("galaxia" as MenuKind)).toBeNull();
   });
 
-  it("cada valor que no es null es un nodeType del contrato", () => {
-    const mapa = mapaDelFuente(src(PAGINA));
+  it("el registro, la pagina y AccessPage leen la misma funcion", () => {
+    /*
+      El punto entero de la tarea. Antes habia **tres** copias del enum —
+      `COMPARTIBLE` en el registro, `NODE_TYPE_POR_KIND` en la pagina y `NODE_TYPE`
+      en `AccessPage`— y tres mecanismos distintos para decir lo mismo: la primera
+      era una lista, la segunda un `Record` con `null` y la tercera un `Partial`, que
+      no puede ni distinguir "no aplica nunca" de "no se".
 
-    for (const [kind, nodeType] of Object.entries(mapa)) {
+      Y ninguna se comparaba con las otras. Se desactualizaron las tres a la vez y no
+      se rompio nada, porque un `null` en el `Partial` y una lista de tres producen
+      el mismo menu que ayer. Eso es justo lo que un guard escrito a mano no agarra:
+      dos tablas pueden coincidir durante meses sin que nadie las mire.
+
+      Ahora hay una funcion. El guard ya no necesita decir "los dos lados coinciden"
+      —no hay dos lados— y lo que comprueba es lo unico que queda: que cada lector
+      llame a la misma.
+    */
+    for (const pagina of [PAGINA, "src/components/menus/pages/access-page.tsx"]) {
+      expect(sinComentarios(src(pagina)), `${pagina} no lee nodeTypeDe`).toContain(
+        "nodeTypeDe(ctx.kind)",
+      );
+      // Y que no tenga su propio mapa: un `Record<...MenuKind...>` en cualquiera de
+      // las dos pantallas seria una copia nueva, y la copia nueva es el problema.
+      expect(sinComentarios(src(pagina)), `${pagina} declara su propio mapa`).not.toMatch(
+        /Record<[^>]*MenuKind/,
+      );
+    }
+
+    // El registro tampoco.
+    const registro = sinComentarios(src("src/lib/menus/registry.tsx"));
+    expect(registro, "el registro todavia tiene la lista COMPARTIBLE").not.toMatch(/COMPARTIBLE/);
+    expect(registro, "el registro no define la funcion que las tres pantallas usan").toMatch(
+      /nodeTypeDe/,
+    );
+  });
+
+  it("y no queda ninguna copia del enum escrita a mano en la app", () => {
+    /*
+      El guard que de verdad se lleva el problema, y el mas burdo de los tres a
+      proposito.
+
+      Se recorre **`src/**` entero** buscando el nombre del enum del contrato
+      escrito al lado de una lista de kinds. La lista de `shareNodeTypeSchema` es
+      larga y distinta en cada archivo —con `|`, con comas, con el enum entero—, asi
+      que la busqueda es por el **nombre del tipo** y no por sus valores: un archivo
+      que declara `ShareNodeType` y una lista de kinds al lado es una tabla, diga lo
+      que diga la lista. Un guard que buscase los valores tendria que mantener su
+      propia copia de como se escribe el enum, que es una cuarta cosa que
+      desincronizarse.
+
+      Y el rango es todo `src` y no las dos pantallas, porque una copia nueva puede
+      aparecer en cualquier archivo —una hoja, un hook— y un guard que solo mira dos
+      no la ve. Se prefiere un falso positivo a una tabla limpia que nadie nota. Por
+      eso el unico archivo excluido es el que **declara** la funcion.
+    */
+    const conTabla = archivosDe("src")
+      .filter((ruta) => !ruta.endsWith("lib/menus/registry.tsx"))
+      .filter((ruta) => {
+        // `archivosDe` devuelve rutas relativas a `src` y `src` las resuelve desde la
+        // raiz del paquete. Es el mismo prefijo que las de mas de este archivo.
+        const codigo = sinComentarios(src(`src/${ruta}`));
+        return (
+          /ShareNodeType|Share\["nodeType"\]/.test(codigo) &&
+          /MenuKind/.test(codigo) &&
+          /=\s*\{[^}]*:\s*"[a-z_]+"/.test(codigo)
+        );
+      });
+
+    expect(conTabla, `copias del enum escritas a mano: ${conTabla.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("el nodeType sale del ctx y es uno que el contrato admite", () => {
+  it("todo kind del registro tiene respuesta, y es la del contrato", () => {
+    /*
+      Antes esta prueba comparaba las claves de la tabla del fuente contra las de
+      `ORDEN_POR_KIND`: que la tabla no se hubiera quedado sin un kind. Sin tabla, lo
+      que se comprueba es lo mismo de otra manera —que `nodeTypeDe` responde para
+      todos— y la garantia real cambio de sitio: ya no hay una tabla que quedarse
+      corta, hay una funcion que lee el enum.
+    */
+    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
+      expect(nodeTypeDe(kind), `"${kind}"`).toBe(
+        TIPOS_DEL_CONTRATO.includes(kind) ? kind : null,
+      );
+    }
+  });
+
+  it("cada valor que sale es un nodeType del contrato, por construccion", () => {
+    /*
+      Esta prueba antes recorria la tabla y comparaba cada valor. Ahora mira lo mismo
+      y solo puede fallar si `nodeTypeDe` devuelve algo que no es el kind —o sea, si
+      alguien le agrega un `switch` con una renombra—.
+
+      Y ese es el punto: **la garantia cambio de sitio**. Con la tabla, "el valor es
+      del contrato" era un hecho que alguien podia volver a romper escribiendo `"list"`
+      donde tocaba `"folder"`, y el test lo cazaba porque comparaba contra una lista
+      escrita en el test. Sin tabla, el valor **es** el kind y el enum lo admite: no
+      hay codigo donde meter la renombra.
+    */
+    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
+      const nodeType = nodeTypeDe(kind);
       if (nodeType === null) continue;
-
-      expect(
-        TIPOS_DEL_CONTRATO,
-        `"${kind}" manda el nodeType "${nodeType}", que shareNodeTypeSchema no admite`,
-      ).toContain(nodeType);
+      expect(TIPOS_DEL_CONTRATO, nodeType).toContain(nodeType);
+      expect(nodeType, `"${kind}" se renombro a si mismo`).toBe(kind);
     }
   });
 
   it("un kind que el contrato admite con su propio nombre no se renombra solo", () => {
     /*
-      `MenuKind` y `shareNodeTypeSchema` comparten `list`, `note` y `folder` **con el
-      mismo nombre**, asi que para esos tres la respuesta no se inventa: es el kind.
-      Un cuarto valor —digamos mandar `"folder"` para una nota— pasaria el guard de
-      arriba —es un valor valido del enum— y mandaria el grant al tipo equivocado, que
-      es el fallo que no se ve. Por eso la regla se afirma en los dos sentidos: lo que
-      se manda es el kind, y lo que no esta en el enum no manda nada.
+      El fallo que este guard atrapa, y que sigue siendo real: mandar `"folder"` para
+      una nota es un valor **valido** del enum, asi que pasa cualquier comprobacion de
+      "el contrato lo admite" y mandaria el grant al tipo equivocado — que es el
+      fallo que no se ve, porque nada falla: se comparte otra cosa.
+
+      Con la tabla eso se comparaba contra una copia del enum escrita en el test. Sin
+      tabla no hay nada que renombrar. La prueba se queda por documento, y porque el
+      typecheck mira el tipo y no el valor.
     */
-    const mapa = mapaDelFuente(src(PAGINA));
-
-    for (const [kind, nodeType] of Object.entries(mapa)) {
+    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuKind[]) {
       const esperado = TIPOS_DEL_CONTRATO.includes(kind) ? kind : null;
-
-      expect(nodeType, `la fila "${kind}" manda "${nodeType}" y deberia mandar "${esperado}"`).toBe(
-        esperado,
-      );
+      expect(nodeTypeDe(kind), `la fila "${kind}" deberia mandar "${esperado}"`).toBe(esperado);
     }
   });
 
   it("y lo que la pagina pinta sale de ahi, no de un switch escrito aparte", () => {
-    // Un `ctx.kind === "list" ? "list" : ...` al lado de la tabla seria una segunda
+    // Un `ctx.kind === "list" ? "list" : ...` al lado de la funcion seria una segunda
     // fuente para lo mismo, y las dos se pueden desincronizar sin romper nada.
     const codigo = sinComentarios(src(PAGINA));
 
-    expect(codigo).toContain("NODE_TYPE_POR_KIND[ctx.kind]");
+    expect(codigo).toContain("nodeTypeDe(ctx.kind)");
     expect(codigo).not.toMatch(/kind === "[a-z]+"\s*\?/);
   });
 });

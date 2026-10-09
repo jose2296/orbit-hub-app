@@ -1,5 +1,7 @@
 import type { Ionicons } from "@expo/vector-icons";
 import type { MembershipRole } from "@orbit-hub/contracts";
+import { shareNodeTypeSchema } from "@orbit-hub/contracts";
+import type { ShareNodeType } from "@orbit-hub/contracts";
 
 import type { TranslationKey } from "@/lib/i18n/dictionaries";
 
@@ -196,16 +198,63 @@ export interface MenuAccion {
 const CON_ICON_REF: MenuKind[] = ["list", "note", "folder"];
 
 /**
- * Los kinds que `shareNodeTypeSchema` (`workspace.ts:943`) admite hoy:
- * `workspace`, `folder`, `list`, `list_item`, `note`. De los cinco de aqui,
- * tres.
+ * ------------------------------------------------------------------
+ * EL `nodeType` DE CADA KIND, Y POR QUE NO HAY UNA TABLA
+ * ------------------------------------------------------------------
  *
- * `ShareNodeSheetProps.target.nodeType` esta atado a ese enum, asi que ofrecer
- * compartir en una coleccion o en un enlace es pintar una fila que al tocarla
- * manda un `nodeType` que el contrato no admite. T10 amplia el enum y esta
- * lista con el.
+ * Hubo dos. `SharePage` tenia `NODE_TYPE_POR_KIND: Record<MenuKind, ShareNodeType |
+ * null>` y `AccessPage` tenia `NODE_TYPE: Partial<Record<MenuKind, ShareNodeType>>`,
+ * y las dos decidian lo mismo con dos mecanismos distintos: una podia decir "no
+ * aplica nunca" con su `null` y la otra **no**, porque un `Partial` solo sabe decir
+ * "no se". Dos mapas del mismo hecho con capacidades distintas es el momento en que
+ * uno de los dos queda mintiendo, y el que miente es el que nadie prueba.
+ *
+ * Y la lista que las dos copiaban —`["list", "note", "folder"]`, y `COMPARTIBLE`
+ * aqui al lado— era una **tercera** copia del mismo enum del contrato.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE NO HAY NADA QUE ESCRIBIR: LA RESPUESTA ES EL NOMBRE
+ * ------------------------------------------------------------------
+ *
+ * Porque los dos vocabularios, para las cinco entidades, dicen lo mismo:
+ *
+ * | `MenuKind` | `shareNodeTypeSchema` |
+ * | --- | --- |
+ * | `list` | `list` |
+ * | `note` | `note` |
+ * | `folder` | `folder` |
+ * | `collection` | `collection` |
+ * | `bookmark` | `bookmark` |
+ *
+ * El enum tiene dos valores mas —`workspace` y `list_item`— que **no son kinds de
+ * menu**: un espacio no tiene menu de entidad y un elemento de lista tiene el suyo.
+ * Los dos sobran, no faltan.
+ *
+ * O sea que la funcion que falta no es una tabla sino una comprobacion: "¿el
+ * contrato admite un `nodeType` con este nombre?". Y esa se **deriva** de
+ * `shareNodeTypeSchema.options`, que sale del paquete y no de una constante escrita
+ * aca. Ampliar el enum en el contrato amplia esto solo, y el typecheck avisa si
+ * someday un kind deja de caber.
+ *
+ * ------------------------------------------------------------------
+ * POR QUE DEVUELVE `null` Y NO UN `ERROR`
+ * ------------------------------------------------------------------
+ *
+ * Porque la pregunta tiene una respuesta negativa de verdad —un kind que el
+ * contrato no admite no se puede compartir, y la fila no se ofrece— y eso es
+ * `null`, no una excepcion en medio de un render. El que lo llama decide: el
+ * registro no ofrece la fila, `SharePage` pinta nada, `AccessPage` no pregunta.
+ * Las tres son **la misma decision leida desde tres sitios**, y por eso las tres
+ * leen esta funcion en vez de una tabla propia.
+ *
+ * Y si un dia un kind de menu se llamara distinto de su `nodeType`, esta funcion
+ * devuelve `null` y la fila no se ofrece. Se ve antes en el menu que en un POST.
  */
-const COMPARTIBLE: MenuKind[] = ["list", "note", "folder"];
+export function nodeTypeDe(kind: MenuKind): ShareNodeType | null {
+  return (shareNodeTypeSchema.options as readonly string[]).includes(kind)
+    ? (kind as ShareNodeType)
+    : null;
+}
 
 export const ACCIONES: Record<string, MenuAccion> = {
   states: {
@@ -287,9 +336,11 @@ export const ACCIONES: Record<string, MenuAccion> = {
     id: "share",
     labelKey: "share.pickSomeone",
     icon: "people-outline",
-    disponible: (ctx) => COMPARTIBLE.includes(ctx.kind) && ctx.entity.role === "owner",
+    // `nodeTypeDe` y no una lista: la lista es una copia del enum del contrato y
+    // se desincroniza sola. Ver el bloque de arriba.
+    disponible: (ctx) => nodeTypeDe(ctx.kind) !== null && ctx.entity.role === "owner",
     motivo: (ctx) =>
-      COMPARTIBLE.includes(ctx.kind) && ctx.entity.role !== "owner" ? "share.onlyOwner" : null,
+      nodeTypeDe(ctx.kind) !== null && ctx.entity.role !== "owner" ? "share.onlyOwner" : null,
     destino: { tipo: "pagina", page: "share" },
   },
 
@@ -404,9 +455,13 @@ export const ACCIONES: Record<string, MenuAccion> = {
  *   `onTogglePin`, ni una entrada de pinear. Las notas no se pinean al panel.
  * - `collection` **no declara `icon`**: su campo es `emoji`, una cadena
  *   (ver `CON_ICON_REF`).
- * - `collection` y `bookmark` **no declaran `share`**: el enum del contrato no
- *   los admite (ver `COMPARTIBLE`).
  * - `bookmark` **no declara `icon`**: no tiene campo (ver `CON_ICON_REF`).
+ *
+ * Y los cinco declaran `share`, porque los cinco nombres caben en
+ * `shareNodeTypeSchema` (ver `nodeTypeDe`). Cuando no cabian eran tres, y la razon
+ * estaba escrita aqui como "el enum del contrato no los admite": era una verdad
+ * sobre el enum, puesta en un archivo que no lo lee, y por eso nadie se entero
+ * cuando el enum cambio.
  */
 export const ORDEN_POR_KIND: Record<MenuKind, string[]> = {
   list: [
@@ -422,8 +477,12 @@ export const ORDEN_POR_KIND: Record<MenuKind, string[]> = {
   ],
   note: ["rename", "icon", "share", "saveAsTemplate", "access", "delete"],
   folder: ["createHere", "pin", "rename", "icon", "share", "access", "delete"],
-  collection: ["rename", "access", "export", "delete"],
-  bookmark: ["rename", "access", "delete"],
+  // `share` entra en las dos con la T10, entre `rename` y `access`: es donde esta
+  // en las otras tres. Que la fila se ofrezca lo decide `nodeTypeDe`, asi que
+  // declararla aca para un kind que el contrato no admitiria pintaria una fila
+  // grisada para siempre — y el guard de `menu-registry.test.ts` lo comprueba.
+  collection: ["rename", "share", "access", "export", "delete"],
+  bookmark: ["rename", "share", "access", "delete"],
 };
 
 /** La clave de i18n de una accion, resuelta para un contexto concreto. */

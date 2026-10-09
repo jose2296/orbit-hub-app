@@ -238,6 +238,9 @@ const COPY = {
     shareNodeFolder: 'una carpeta',
     shareNodeList: 'una lista',
     shareNodeItem: 'un elemento',
+    shareNodeNote: 'una nota',
+    shareNodeCollection: 'una colección',
+    shareNodeBookmark: 'un enlace',
     shareRoleEditor: 'puedes editarlo',
     shareRoleViewer: 'solo puedes verlo',
   },
@@ -268,6 +271,9 @@ const COPY = {
     shareNodeFolder: 'a folder',
     shareNodeList: 'a list',
     shareNodeItem: 'an item',
+    shareNodeNote: 'a note',
+    shareNodeCollection: 'a collection',
+    shareNodeBookmark: 'a bookmark',
     shareRoleEditor: 'you can edit it',
     shareRoleViewer: 'you can only look at it',
   },
@@ -395,7 +401,37 @@ export function sharedWithYouEmail(input: {
   const copy = COPY[input.locale] ?? COPY.es;
   const href = absoluteLink('/shared');
 
-  const nodeKind = copy[`shareNode${cap(input.nodeType)}` as keyof typeof copy];
+  /*
+    El nombre del nodo, y **por que hay una tabla y no un `cap()`**.
+
+    Se armaba la clave con `cap(nodeType)`: `cap('workspace')` da `Workspace` y la
+    clave se llamaba `shareNodeSpace`, asi que salia `undefined` interpolado —"Ana ha
+    compartido undefined «Casa» contigo"—. Lo mismo con `list_item` y con `note`, que
+    tampoco tienen clave: **tres de los cinco tipos que ya funcionaban mandaban un
+    correo con la palabra `undefined` adentro**, y nadie lo vio porque un `undefined`
+    en una cadena no lanza, no rompe el test del correo y se ve en el correo.
+
+    La tabla es `Record<ShareNodeType, keyof typeof COPY.es>`, y ese tipo es lo que
+    hace que un `nodeType` nuevo rompa el **typecheck** en vez de producir un
+    `undefined` en silencio. Un `cap()` no puede fallar asi: siempre produce una
+    cadena, y una cadena que no existe como clave es `undefined` sin que nadie lo
+    note hasta que lo lee alguien.
+
+    Y no es una decision de copy cual es el nombre de la clave: el enum no dice si un
+    espacio es "space" o "workspace", asi que esa traduccion tiene que existir en
+    algun sitio. Lo que si se deriva es que la lista sea completa.
+  */
+const CLAVE_DE_NODO: Record<ShareNodeType, keyof typeof COPY.es> = {
+  workspace: 'shareNodeSpace',
+  folder: 'shareNodeFolder',
+  list: 'shareNodeList',
+  list_item: 'shareNodeItem',
+  note: 'shareNodeNote',
+  collection: 'shareNodeCollection',
+  bookmark: 'shareNodeBookmark',
+};
+
+const nodeKind = copy[CLAVE_DE_NODO[input.nodeType]];
   const node = `${nodeKind} «${input.nodeTitle}»`;
 
   const fill = (value: string) =>
@@ -427,9 +463,7 @@ export function sharedWithYouEmail(input: {
   };
 }
 
-function cap(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
+
 
 export function passwordResetEmail(input: TemplateInput): EmailMessage {
   const copy = COPY[input.locale] ?? COPY.es;

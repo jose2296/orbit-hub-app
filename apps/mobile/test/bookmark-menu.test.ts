@@ -255,8 +255,12 @@ describe("el menu de un enlace ofrece lo que la hoja sabe montar, y nada mas", (
   const ofrecibles = (): string[] =>
     accionesPara(menuCtxDeBookmark(BASE)!).filter(puedeOfrecerse).map((accion) => accion.id);
 
-  it("hoy son renombrar, acceso y eliminar", () => {
-    expect(ofrecibles()).toEqual(["rename", "access", "delete"]);
+  it("hoy son renombrar, compartir, acceso y eliminar", () => {
+    // `share` entra con la T10. No cambio el filtro ni el call site: cambio que
+    // `shareNodeTypeSchema` admita `bookmark`, y el registro decide con `nodeTypeDe`.
+    // Esta asercion es una fotografia y por eso dice "hoy": la version anterior
+    // listaba tres y el error de la T10 habria sido precisamente no tocarla.
+    expect(ofrecibles()).toEqual(["rename", "share", "access", "delete"]);
   });
 
   it("acceso se ofrece desde que su pagina existe, y sin tocar el registro", () => {

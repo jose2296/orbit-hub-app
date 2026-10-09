@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { shareNodeTypeSchema } from "@orbit-hub/contracts";
+
 import { dictionaries } from "@/lib/i18n/dictionaries";
 import {
   ACCIONES,
@@ -8,7 +10,19 @@ import {
 } from "@/lib/menus/registry";
 import type { MenuAccion, MenuContext, MenuKind } from "@/lib/menus/registry";
 
-const KINDS: MenuKind[] = ["list", "note", "folder", "collection", "bookmark"];
+/*
+  Los cinco kinds, **del registro y no de una lista escrita aca**.
+
+  `["list", "note", "folder", "collection", "bookmark"]` estaba aqui y en el tipo
+  `MenuKind`, o sea dos copias mas de lo mismo. `ORDEN_POR_KIND` es un `Record` sobre
+  todos los kinds, asi que sus claves **son** los kinds: leerlos de ahi no puede
+  quedarse viejo, que es lo que le pasa a una constante.
+
+  Y sale ordenado porque el `Record` del fuente lo esta y el orden hace legible el
+  fallo: un guard que recorre `KINDS` en orden alfabetico dice "collection" antes que
+  "folder" sin que nadie lo note.
+*/
+const KINDS: MenuKind[] = (Object.keys(ORDEN_POR_KIND) as MenuKind[]).sort();
 
 /** El mismo esqueleto para todos, con lo que cambia por tipo. */
 function ctx(
@@ -123,12 +137,40 @@ describe("el icono no es la misma accion en todas partes", () => {
     }
   });
 
-  it("compartir tampoco: hoy el contrato solo admite espacio, carpeta, lista, item y nota", () => {
+  it("compartir: la fila depende del contrato, no de una lista escrita aca", () => {
+    /*
+      Este guard tiene dos mitades y **las dos** se derivan del enum, que es la parte
+      que no existed antes.
+
+      La de arriba —"donde hay `IconRef`"— se deriva de `CON_ICON_REF`, una lista
+      escrita a mano, porque no hay forma de preguntarle a los contratos "que campos
+      tiene cada schema" en tiempo de compilacion. Y la razon de que sea aceptable es
+      que la lista esta **al lado** de la accion que la usa, en el archivo de la
+      accion: hay un solo lugar donde se puede desincronizar del codigo que la usa, y
+      el typecheck obliga a que el `Record` siga cuadrando.
+
+      Compartir era lo contrario: la lista estaba en `registry.tsx`, el enum esta en
+      el paquete, y nadie los comparaba. Asi que esta prueba **no puede decir "son estos
+      tres"** —eso seria una copia mas—: dice "los que el contrato admita", y el
+      contrato se lee de `shareNodeTypeSchema`.
+    */
     for (const kind of KINDS) {
       const c = ctx(kind);
       const hay = accionesPara(c).some((a) => a.id === "share");
-      const compartible = kind === "list" || kind === "note" || kind === "folder";
-      expect(hay, `${kind}: compartir depende de lo que el contrato admita`).toBe(compartible);
+      const admitido = shareNodeTypeSchema.options.includes(kind);
+
+      expect(
+        hay,
+        `${kind}: el contrato ${admitido ? "lo admite y la fila no esta" : "no lo admite y hay fila"}`,
+      ).toBe(admitido);
+    }
+  });
+
+  it("y los cinco la reciben, que es lo que la T10 abre", () => {
+    // El otro lado, en el sentido positivo: sin esta, "todos los que el contrato
+    // admite" podria ser un conjunto vacio y el guard de arriba pasaria.
+    for (const kind of KINDS) {
+      expect(accionesPara(ctx(kind)).map((a) => a.id), kind).toContain("share");
     }
   });
 });

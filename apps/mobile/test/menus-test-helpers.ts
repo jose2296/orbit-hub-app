@@ -115,6 +115,26 @@ export function tsxDeLaApp(): string[] {
 }
 
 /**
+ * Todo lo que hay bajo una carpeta de la app, con extension o sin ella, como rutas
+ * relativas a `src`. **Del disco y no de una lista.**
+ *
+ * Existe para el guard que recorre la app entera buscando una tabla escrita a mano:
+ * preguntar "esta copia nueva aparecio en algun archivo" no se puede responder con
+ * una lista de archivos, porque la lista es justamente la que hay que vigilar. Y un
+ * guard que mira dos archivos concretos no lo vigila.
+ *
+ * `.ts` y `.tsx` y nada mas: lo que se busca es una tabla de tipos, que no vive en
+ * un `.json` ni en un `.css`. Y `recursive: true` por el mismo motivo que en
+ * `fuentesDeLosTests`: sin el, el dia que caiga un archivo en un subdirectorio el
+ * guard deja de mirarlo **sin avisar**.
+ */
+export function archivosDe(carpeta: string): string[] {
+  return readdirSync(join(RAIZ, carpeta), { recursive: true, encoding: "utf8" }).filter(
+    (nombre) => nombre.endsWith(".ts") || nombre.endsWith(".tsx"),
+  );
+}
+
+/**
  * Los `.test.ts` del paquete, con su texto, pegados en un solo bloque.
  *
  * Existe para el guard que afirma que **algo mira un `testID`**: un `testID` que

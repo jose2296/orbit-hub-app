@@ -1,4 +1,3 @@
-import type { ShareNodeType } from "@orbit-hub/contracts";
 import { View } from "react-native";
 
 import { SharedBadge } from "@/components/shares/shared-badge";
@@ -7,6 +6,7 @@ import { useTranslation } from "@/lib/i18n";
 import { AppText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 
+import { nodeTypeDe } from "@/lib/menus/registry";
 import type { MenuContext } from "@/lib/menus/registry";
 import { useAlcanceDeAcceso } from "@/lib/menus/alcance";
 
@@ -28,17 +28,33 @@ export interface AccessPageProps {
  * sea que la pregunta de si es tuyo se contesta completa, y la de con quien mas
  * lo tenes todavia no tiene de donde salir. Se dice, no se omite.
  */
-const NODE_TYPE: Partial<Record<MenuContext["kind"], ShareNodeType>> = {
-  list: "list",
-  note: "note",
-  folder: "folder",
-};
+/*
+  ------------------------------------------------------------------
+  POR QUE NO HAY UNA LISTA DE KINDS ACA
+  ------------------------------------------------------------------
+
+  Habia una: `NODE_TYPE`, un `Partial<Record<MenuKind, ShareNodeType>>` con tres
+  claves. Y era peor que la de `SharePage`, no igual de mala: el `Partial` **no
+  puede decir "no aplica nunca"**, solo "no se", asi que un kind ausente era
+  indistinguible de uno que se olvido agregar. Con la T10 el enum del contrato
+  admite los cinco y la pregunta ya tiene respuesta para todos, asi que la linea
+  `share.reachNotYet` —que solo decia "todavia no se puede saber"— queda sin uso y
+  se borro de los dos diccionarios.
+
+  Y lo que se puso en su lugar no es otra lista sino **la misma funcion que usa el
+  registro** para decidir si ofrece la fila de compartir: `nodeTypeDe`. Dos
+  pantallas, una decision, y ninguna copia del enum del contrato en ningun archivo
+  de esta pantalla.
+
+  La insignia de arriba —`SharedBadge`, con `shared` y `role`— no cambio nunca y no
+  depende de esto: las cinco entidades traen los dos campos por `nodeAccessSchema`.
+*/
 
 export function AccessPage({ ctx }: AccessPageProps) {
   const theme = useTheme();
   const t = useTranslation();
 
-  const nodeType = NODE_TYPE[ctx.kind];
+  const nodeType = nodeTypeDe(ctx.kind);
   const alcance = useAlcanceDeAcceso(
     nodeType ? { nodeType, nodeId: ctx.entity.id } : null,
   );
@@ -108,9 +124,22 @@ export function AccessPage({ ctx }: AccessPageProps) {
           <AppText variant="body">{t("common.loading")}</AppText>
         )
       ) : (
-        <AppText variant="caption" tone="muted">
-          {t("share.reachNotYet")}
-        </AppText>
+        /*
+          La rama de un kind que el contrato no admite. Con los cinco de hoy no se
+          llega, y **no es decoracion**: es lo que hace que `nodeTypeDe` pueda
+          devolver `null` sin que el typecheck lo llame mentira.
+
+          Lo que se borro de aca es la frase. Decir "todavia no se puede saber" es
+          una afirmacion sobre el mundo —falta informacion— y con el enum completo
+          es mentira: la informacion esta ahi y no se esta pidiendo. Una pagina que
+          dice "no se" cuando si se, teaches a la gente a no creerse el "si".
+
+          Asi que en vez de una frase que no aplica a nadie, esta el silencio de un
+          caso que el registro no deja llegar. Y si un dia un kind vuelve a quedarse
+          fuera del enum, lo que sale es la insignia de arriba y nada mas, que es
+          exactamente lo que se sabia: de quien es y si podes cambiarlo.
+        */
+        null
       )}
     </View>
   );

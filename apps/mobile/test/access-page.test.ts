@@ -4,9 +4,10 @@ import { dictionaries } from "@/lib/i18n/dictionaries";
 import {
   ORDEN_POR_KIND,
   accionesPara,
+  nodeTypeDe,
   type MenuContext,
 } from "@/lib/menus/registry";
-import { src } from "./menus-test-helpers";
+import { sinComentarios, src } from "./menus-test-helpers";
 
 const HOJA = "src/components/menus/pages/access-page.tsx";
 
@@ -74,17 +75,55 @@ describe("la pagina de acceso", () => {
     expect(hoja).toMatch(/common\.retry/);
   });
 
-  it("no pregunta el reach de lo que el contrato no alcanza", () => {
+  it("pregunta el reach de los cinco, y no con un mapa suyo", () => {
+    /*
+      Esta prueba decia que `NODE_TYPE` tenia **exactamente** `folder`, `list` y
+      `note`, y que los otros dos kinds no estaban. Eso era una afirmacion sobre la
+      copia del enum del contrato que la pagina tenia escrita a mano, y la copia era
+      lo unico que se comprobaba: si alguien agraba `collection` ahi, el mapa tendria
+      cuatro claves y esta prueba fallaria — lo cual esta bien— pero la pagina
+      seguiria mandando un `nodeType` que el servidor no entiende, que es lo que de
+      verdad importaba.
+
+      Ahora no hay mapa. Hay `nodeTypeDe`, que lee `shareNodeTypeSchema.options`, y la
+      pregunta es si los cinco se preguntan. Que es lo que la T10 abre, y lo que
+      permite borrar `share.reachNotYet`: una pagina que dice "todavia no se puede
+      saber" cuando si se puede es una pagina que enseña a no creerse el "si".
+    */
     const hoja = src(HOJA);
-    // `NODE_TYPE` tiene exactamente los tres que el enum de Share admite. Los otros
-    // dos kinds no estan, y esa es la razon por la que la pagina no pregunta: no es
-    // una decision de copy, es que `GET /shares/:nodeType/:id/reach` no los entiende.
-    // Y afirmar el mapa entero es mejor que afirmar la ausencia de dos claves: si
-    // alguien agrega `collection` aca, el enum del contrato sigue sin tenerlo.
-    const mapa = hoja.match(/const NODE_TYPE[^=]*= \{([\s\S]*?)\};/)?.[1] ?? "";
-    const claves = [...mapa.matchAll(/\s*(\w+):/g)].map((m) => m[1]!);
-    expect(claves.sort()).toEqual(["folder", "list", "note"]);
-    expect(hoja).not.toMatch(/nodeType: "(collection|bookmark)"/);
+
+    for (const kind of Object.keys(ORDEN_POR_KIND) as MenuContext["kind"][]) {
+      expect(nodeTypeDe(kind), `${kind}: el contrato lo admite y la pagina no lo pregunta`).not.toBeNull();
+    }
+
+    // Y que la pagina no tenga ni un mapa propio ni la frase que ya no aplica.
+    expect(hoja, "la pagina declara su propio mapa de nodeType").not.toMatch(/const NODE_TYPE/);
+    expect(hoja, "la pagina no usa la funcion compartida").toContain("nodeTypeDe(ctx.kind)");
+    // Sin comentarios: la pagina explica arriba por que se borro la frase, asi que un
+    // `not.toMatch` sobre el fuente entero se encontraria con su propia prosa — que es
+    // exactamente para lo que existe `sinComentarios`.
+    expect(sinComentarios(hoja)).not.toMatch(/reachNotYet/);
+    expect(
+      dictionaries.es["share.reachNotYet" as keyof typeof dictionaries.es],
+      "la clave quedo en el diccionario sin que nadie la use",
+    ).toBeUndefined();
+    expect(
+      dictionaries.en["share.reachNotYet" as keyof typeof dictionaries.en],
+      "la clave quedo en el diccionario sin que nadie la use",
+    ).toBeUndefined();
+  });
+
+  it("y sigue sin montando su propia idea de cuando se puede preguntar", () => {
+    /*
+      El `nodeType` sale de una funcion compartida y el corte de la pagina es por
+      el. Lo que **no** puede haber es un segundo corte escrito aqui: un
+      `ctx.kind === "collection" && <algo>` seria la copia de vuelta, y por lo mismo
+      que la tabla no habia que mantenerla: no se desincroniza visible, se pierde.
+    */
+    const hoja = sinComentarios(src(HOJA));
+
+    expect(hoja).not.toMatch(/kind === "[a-z]+"/);
+    expect(hoja).toMatch(/\{nodeType \?/);
   });
 
   it("el copy de los tres estados existe en los dos idiomas", () => {

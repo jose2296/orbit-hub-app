@@ -1,8 +1,7 @@
-import type { Share } from "@orbit-hub/contracts";
-
 import { ShareNodeForm } from "@/components/shares/share-node-sheet";
 
-import type { MenuContext, MenuKind } from "@/lib/menus/registry";
+import { nodeTypeDe } from "@/lib/menus/registry";
+import type { MenuContext } from "@/lib/menus/registry";
 
 export interface SharePageProps {
   ctx: MenuContext;
@@ -18,43 +17,26 @@ export interface SharePageProps {
 }
 
 /**
- * Que `nodeType` le manda a `ShareNodeForm` por cada kind, **y por que el mapa es
- * exhaustivo y tiene nulos**.
- *
  * ------------------------------------------------------------------
- * POR QUE ESTA TABLA Y NO UNA CONVERSION DE UNA LINEA
+ * POR QUE ACA NO HAY UNA TABLA DE `nodeType`
  * ------------------------------------------------------------------
  *
- * Porque el `nodeType` no sale de `MenuKind` por regla: son dos vocabularios que
- * hoy se parecen y no son el mismo. `MenuKind` tiene cinco y `shareNodeTypeSchema`
- * (`packages/contracts/src/workspace.ts:943`) tiene `workspace | folder | list |
- * list_item | note`. Tres de los cinco se traducen y dos **no tienen valor todavia**:
+ * Habia una, y se llamaba `NODE_TYPE_POR_KIND`: un `Record<MenuKind, Share["nodeType"]
+ * | null>` escrito a mano con tres valores y dos `null`. `AccessPage` tenia su copia,
+ * `NODE_TYPE`, y el registro tenia la suya, `COMPARTIBLE`. **Tres copias del enum del
+ * contrato**, con tres mecanismos distintos para decir lo mismo, y las tres se
+ * desactualizaron en el mismo commit sin que nada se rompiera.
  *
- * - `collection` y `bookmark` no estan en el enum del contrato, y no se les inventa
- *   uno. Mandar `"list_item"` para una coleccion seria un POST que el servidor
- *   acepta —el enum lo admite— y grants sobre una tabla que no es esa, que es la
- *   peor falla posible: **no se ve**. Lo amplia la T10.
- * - `workspace` y `list_item` son del enum y no de `MenuKind`: un espacio no tiene
- *   menu de entidad y un elemento de lista tiene el suyo. Ninguno de los dos llega
- *   aca, asi que el mapa no los tiene.
+ * La razon de fondo era buena y la conclusion estaba mal: los dos vocabularios—"que
+ * cosas tienen menu" y "que cosas se comparten"— se parecian pero no eran el mismo,
+ * y de ahi la conclusion de que hacia falta traducirlos. Ahora que el enum del
+ * contrato admite los cinco, **la traduccion es la identidad** y no hay nada que
+ * escribir: lo decide `nodeTypeDe`, que se deriva de `shareNodeTypeSchema.options`.
  *
- * Y el tipo es `Record<MenuKind, ...>` y no `Partial<Record<...>>` a proposito: con
- * un `Partial` un sexto kind entra sin que el compilador pregunte nada, y la fila
- * se ofrece con un `nodeType` que nadie escribio —el mismo modo de fallo que un
- * `ctx` con un rol que el contrato no admite—. Con el `Record` completo, agregar un
- * kind al registro rompe el typecheck hasta que alguien decida que pasa con el.
- *
- * El guard esta en `test/share-page.test.ts` y **deriva** los dos lados: el mapa
- * del fuente contra el enum del contrato, y los kinds con `nodeType` contra los
- * kinds a los que el registro les ofrece la fila.
+ * Asi que esta pagina no tiene un mapa propio: llama a la misma funcion que el
+ * registro usa para saber si ofrece la fila y que `AccessPage` usa para saber si
+ * puede preguntar el alcance. Tres lectores, una decision.
  */
-const NODE_TYPE_POR_KIND: Record<MenuKind, Share["nodeType"] | null> = {
-  list: "list",
-  note: "note",
-  folder: "folder",
-  collection: null,
-  bookmark: null,
-};
 
 /**
  * Compartir, y la misma pagina para una lista, una nota y una carpeta.
@@ -103,19 +85,22 @@ const NODE_TYPE_POR_KIND: Record<MenuKind, Share["nodeType"] | null> = {
  * el bug entra en verde.
  */
 export function SharePage({ ctx, onClose }: SharePageProps) {
-  const nodeType = NODE_TYPE_POR_KIND[ctx.kind];
+  const nodeType = nodeTypeDe(ctx.kind);
 
   /*
-    Un kind sin `nodeType` es uno que el registro **no le ofrece** la fila
-    (`ACCIONES.share.disponible` es `COMPARTIBLE.includes(...)`, y `collection` y
-    `bookmark` no estan en `COMPARTIBLE`), asi que entrar aca con uno seria un
-    fallo de escritura y no un caso de quien esta usando la app.
+    Un kind sin `nodeType` es uno que el contrato no admite, y entonces el registro
+    **no le ofrece la fila** (`ACCIONES.share.disponible` es `nodeTypeDe(...) !== null`),
+    asi que entrar aca con uno seria un fallo de escritura y no un caso de quien esta
+    usando la app.
 
     Y se pinta `null` en vez de un error porque **la fila no llega a existir**: no
     hay ningun toque que pueda traerla, y un aviso que nadie puede ver es ruido.
-    El guard que lo sostiene esta en `test/share-page.test.ts` y deriva los dos
-    lados —la fila y el mapa— para que el `null` no se vuelva cierto por una
-    razon que nadie miro.
+
+    Con los cinco kinds admitidos hoy el `null` es inalcanzable, y esa es la
+    respuesta a la pregunta que hacia falta preguntar: el hueco de la T10 no era "el
+    mapa no tiene valor", era "el contrato no tiene valor". Arreglado el segundo, el
+    `null` sigue aqui como la red que avisa de un kind nuevo que el contrato todavia
+    no conoce.
   */
   if (!nodeType) return null;
 

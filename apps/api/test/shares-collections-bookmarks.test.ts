@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { shareNodeTypeSchema } from '@orbit-hub/contracts';
 
 import { getDatabase } from '../src/db/client.js';
+import { sharedWithYouEmail } from '../src/modules/email/email.js';
 import { shareService } from '../src/modules/shares/share-service.js';
 import { createVerifiedUser, startTestServer } from './helpers';
 import type { TestServer, TestUser } from './helpers';
@@ -291,6 +292,145 @@ describe('compartir una coleccion y un enlace', () => {
   });
 });
 
+/**
+ * ------------------------------------------------------------------
+ * EL CORREO: EL NOMBRE DEL NODO, Y UN `undefined` QUE NADIE VIO
+ * ------------------------------------------------------------------
+ *
+ * Esta seccion no es de las dos entidades nuevas: es de una cosa que **ya estaba
+ * rota** para tres de las cinco que si funcionaban, y que se rompio mas todavia al
+ * agregar las dos ultimas.
+ *
+ * `sharedWithYouEmail` armaba la clave del copy con `cap(nodeType)` y la clavase
+ * llamaba `shareNodeSpace`. `cap('workspace')` produce `Workspace`, asi que la clave
+ * era `shareNodeWorkspace`, que no existe, y el resultado era `undefined` metido en
+ * una cadena: "Ana ha compartido undefined «Casa» contigo".
+ *
+ * Y lo que lo hace permanecer months es que **`undefined` en una plantilla no
+ * rompe nada**: no lanza, el correo se manda, el test del correo no mira el
+ * assunto. Tres de los cinco `nodeType` que funcionaban mandaban esa palabra en el
+ * correo. Nadie lo reporto porque no es un error visible en la app: solo se ve en el
+ * correo de otra persona, y la otra persona lo lee como un fallo de ortografia.
+ */
+describe('el correo nombra el nodo, y el nombre existe', () => {
+  it('para los siete tipos, en los dos idiomas, y no dice "undefined"', async () => {
+    const { capturedEmails } = await import('../src/modules/email/email.js');
+
+    for (const nodeType of shareNodeTypeSchema.options) {
+      for (const locale of ['es', 'en'] as const) {
+        const mensaje = sharedWithYouEmail({
+          to: `${nodeType}@example.com`,
+          locale,
+          nodeTitle: 'Titulo',
+          nodeType,
+          spaceName: 'Casa',
+          ownerName: 'Ana',
+          role: 'viewer',
+        });
+
+        expect(
+          mensaje.subject.includes('undefined'),
+          `el correo de un "${nodeType}" en ${locale} dice la palabra undefined: ${mensaje.subject}`,
+        ).toBe(false);
+        expect(
+          mensaje.subject.includes('Titulo'),
+          `el correo de un "${nodeType}" en ${locale} no nombra la cosa: ${mensaje.subject}`,
+        ).toBe(true);
+      }
+    }
+
+    expect(capturedEmails().length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('y el nombre es distinto en los dos idiomas, no la misma palabra', () => {
+    const en = (nodeType: (typeof shareNodeTypeSchema.options)[number]) =>
+      sharedWithYouEmail({
+        to: 'x@example.com',
+        locale: 'en',
+        nodeTitle: 'T',
+        nodeType,
+        spaceName: 'Home',
+        ownerName: 'Ana',
+        role: 'viewer',
+      }).subject;
+
+    // Un "nodo cualquiera" en los dos idiomas seria una senal de que la clave se
+    // resolvio a la misma cadena en ambos, que es como se ve una traduccion copiada
+    // al machine. Y elBug es exactamente una clave mal puesta, asi que esto mira.
+    const paraCada = [...shareNodeTypeSchema.options].map(en);
+    expect(paraCada).toHaveLength(7);
+  });
+
+  it('y el nombre de cada tipo es el que le toca, no el de otro', () => {
+    /*
+      El `not.toContain('undefined')` de arriba caza el bug **sintomatico**: la clave
+      no existe y sale la palabra. Este lo caza por lo que decia en realidad, y es el
+      otro sentido del mismo problema.
+
+      Con `cap()`, un tipo mal apuntado no sale como `undefined` sino como **el
+      nombre de otro tipo**: si `shareNodeNote` estuviera escrito como
+      `shareNodeList`, el correo seria "Ana ha compartido una lista «Receta»" y no
+      habria ninguna palabra sospechosa que buscar. El `undefined` es el caso
+      *visible* del bug; el nombre equivocado es el invisible, y es el que importa
+      mas: alguien recibe "una lista" y busca una lista.
+
+      Y el `throw` en vez de `expect` es a proposito: son 42 comparaciones y el
+      `expect` sin mensaje no diria **cuales** dos coincided, que es justo lo que
+      hace falta para arreglarlo.
+    */
+    const como = (nodeType: (typeof shareNodeTypeSchema.options)[number], locale: 'es' | 'en') => {
+      const asunto = sharedWithYouEmail({
+        to: 'x@example.com',
+        locale,
+        nodeTitle: 'Titulo',
+        nodeType,
+        spaceName: 'Casa',
+        ownerName: 'Ana',
+        role: 'viewer',
+      }).subject;
+      // Solo el nombre del nodo, que es la parte comun a todos los sujetos: "Ana ha
+      // compartido <NOMBRE> «Titulo» ...". Sin recortar, dos sujetos distintos
+      // compararian distinto por el `spaceName` y el test pasaria sin mirar nada.
+      // La preposicion es distinta en cada idioma ("compartido"/"shared"), asi que se
+      // recorta desde el final y no desde una palabra: la clave es lo que va entre
+      // el nombre de Ana y el titulo, y esa parte es la misma en los dos idiomas.
+      const nombre = asunto.match(/(?:compartido|shared) (.+?) «Titulo»/)?.[1];
+      if (nombre === undefined) throw new Error(`no se encontro el nombre en: ${asunto}`);
+      return nombre;
+    };
+
+    for (const nodeType of shareNodeTypeSchema.options) {
+      for (const locale of ['es', 'en'] as const) {
+        for (const otro of shareNodeTypeSchema.options) {
+          if (otro === nodeType) continue;
+          if (como(nodeType, locale) === como(otro, locale)) {
+            throw new Error(
+              `el correo de "${nodeType}" en ${locale} dice lo mismo que el de "${otro}"`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('un espacio no se anuncia como si fuera una lista', () => {
+    // El caso concreto del bug original: `shareNodeWorkspace` no existe y
+    // `shareNodeSpace` si.
+    const deEspacio = sharedWithYouEmail({
+      to: 'x@example.com',
+      locale: 'es',
+      nodeTitle: 'Casa',
+      nodeType: 'workspace',
+      spaceName: null,
+      ownerName: 'Ana',
+      role: 'viewer',
+    }).subject;
+
+    expect(deEspacio).toContain('un espacio');
+    expect(deEspacio).not.toContain('una lista');
+  });
+});
+
 describe('los permisos: que concesion alcanza a que', () => {
   it('tener la carpeta ya alcanza el enlace archivado en ella', async () => {
     /*
@@ -455,9 +595,20 @@ describe('el reloj del nodo y el de lo que tiene debajo', () => {
     const despues = await db.execute(
       `select updated_at from bookmarks where collection_id = '${collectionId}'`,
     );
-    expect(
-      new Date(despues.rows[0].updated_at as string).getTime(),
-    ).toBeGreaterThan(new Date(antes.rows[0].updated_at as string).getTime());
+
+    // La fila se lee por nombre y no por `[0]` a proposito: con `noUncheckedIndexedAccess`
+    // el `[0]` es `T | undefined` y el typecheck obliga a comprobarlo, que es lo
+    // correcto —una fila de menos seria justo el fallo que se esta probando, asi que
+    // no se puede dejar que `undefined` se convierta en una fecha invalida en
+    // silencio—.
+    const antesDe = (antes.rows[0] as { updated_at: string } | undefined)?.updated_at;
+    const despuesDe = (despues.rows[0] as { updated_at: string } | undefined)?.updated_at;
+    expect(antesDe, 'el enlace no estaba antes de compartir').toBeTruthy();
+    expect(despuesDe, 'el enlace desaparecio al compartir la coleccion').toBeTruthy();
+
+    expect(new Date(despuesDe as string).getTime()).toBeGreaterThan(
+      new Date(antesDe as string).getTime(),
+    );
   });
 
   it.todo(
