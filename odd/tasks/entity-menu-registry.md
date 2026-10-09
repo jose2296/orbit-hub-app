@@ -317,7 +317,7 @@ Cada una es un work unit y cierra con su commit.
   `useShareReach` subido de la pagina de borrar a una pagina propia. Ojo:
   `useShareReach` devuelve `null` cuando falla el request, y un fallo nunca
   puede pintar "nadie mas lo tiene".
-- [ ] **T9** Exportar coleccion: el sobre en `packages/contracts/src/export.ts`,
+- [x] **T9** Exportar coleccion: el sobre en `packages/contracts/src/export.ts`,
   `collectionJson` / `collectionCsv` en `exportService`,
   `GET /collections/:id/export` por `sendFile` (bytes, no envelope), y
   `ExportPage`.
