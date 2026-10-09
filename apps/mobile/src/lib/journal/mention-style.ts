@@ -24,7 +24,6 @@ function chipStyle(colour: string): MentionStyleProperties {
   };
 }
 
-/** Every chip style the app can draw, keyed by its indicator. */
 export function mentionStyleMap(accent: { color: string; background: string }): Record<string, MentionStyleProperties> {
   const map: Record<string, MentionStyleProperties> = {
     [mentionIndicatorFor(null)]: {
@@ -34,6 +33,18 @@ export function mentionStyleMap(accent: { color: string; background: string }): 
     },
   };
   for (const key of WORKSPACE_COLORS) {
+    /*
+      Una clave por color, y ninguna para los indicadores viejos.
+
+      La web deriva el nombre del estilo del primer carácter del indicador, así que
+      una clave `@teal` compartiría variable con el `@` pelado y el último escrito
+      ganaría: el acento se volvería del color que fuese el último de la lista. En
+      Android el mapa se consulta con el indicador completo, y por eso añadir esas
+      claves "arreglaba" el teléfono mientras rompía el navegador.
+
+      Un chip con indicador viejo se arregla donde se pinta, no donde se buscan los
+      estilos: `normaliseIndicator` lo reescribe antes de buscar el estilo.
+    */
     map[mentionIndicatorFor(key)] = chipStyle(colorOf(key));
   }
   return map;
