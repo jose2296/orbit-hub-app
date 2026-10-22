@@ -22,7 +22,6 @@ import { Sheet } from "@/components/ui/sheet";
 import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
-import { useFieldChain } from "@/lib/forms/field-chain";
 import { useListItems } from "@/hooks/use-lists";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { FIELD_LIMITS } from "@/lib/lists/field-limit";
@@ -41,7 +40,7 @@ import type { IconColor } from "@orbit-hub/contracts";
 import { TagChip } from "./tag-chip";
 import { TagColorPicker } from "./tag-color-picker";
 
-type Page = "edit" | "icon" | "tags";
+type Page = "edit" | "icon" | "tags" | "description";
 
 const PRIORITIES: Priority[] = ["none", "low", "medium", "high"];
 
@@ -249,16 +248,6 @@ export function ItemEditSheet({
   const [page, setPage] = useState<Page>(startOn);
   const [title, setTitle] = useState(item?.title ?? "");
 
-  /*
-   * Solo dos, y no tres: el tercer `TextField` de la hoja es el de anadir una
-   * etiqueta, y vive en otra pagina con su propio boton y su propio `done`. Encadenar
-   * un campo que no esta a la vista con otro que si esta es un salto que atraviesa
-   * una pagina.
-   *
-   * Y el segundo es `multiline`: su ENTER es un salto de linea y no se encadena
-   * con nadie, que es lo correcto para un cuerpo de nota.
-   */
-  const cadena = useFieldChain(2);
   const [annotation, setAnnotation] = useState(item?.annotation ?? "");
   const [newTag, setNewTag] = useState("");
   /*
@@ -802,6 +791,8 @@ export function ItemEditSheet({
   const subtitle =
     page === "icon"
       ? t("itemEdit.iconSubtitle")
+      : page === "description"
+        ? t("itemEdit.descriptionSubtitle")
       : page === "tags"
         ? t(pluralKey("itemEdit.tagsSubtitle", shown.tags.length), {
             count: shown.tags.length,
@@ -868,14 +859,11 @@ export function ItemEditSheet({
                 "llamar al/installador", pulsabas el de abajo, y el servidor ya
                 tenia media frase.
               */
-              returnKeyType="next"
+              // Un solo campo en esta pagina: la descripcion tiene la suya, asi que no hay
+              // a donde encadenar. El nombre se queda escrito hasta que alguien pulse
+              // Guardar, que es lo unico que decide que se guarda.
+              returnKeyType="done"
               selectTextOnFocus={false}
-              ref={cadena.register(0)}
-              onSubmitEditing={() => cadena.advance(0, () => {
-                // Saltar al campo de la nota, que es a donde se sigue. Aqui ya no
-                // se guarda nada: el nombre se queda escrito hasta que alguien
-                // pulse Guardar, que es lo unico que decide que se guarda.
-              })}
               // The width the contracts will store it at, so the counter and the
               // server agree. The title of a task is 300 on purpose, and a list of
               // 300 of them is not a thing anyone writes.
@@ -886,15 +874,34 @@ export function ItemEditSheet({
               placeholder={t("items.titlePlaceholder")}
             />
 
-            <TextField
-              label={t("itemEdit.description")}
-              value={annotation}
-              onChangeText={setAnnotation}
-              limit={FIELD_LIMITS['list_item.annotation']}
-              placeholder={t("itemEdit.descriptionPlaceholder")}
-              multiline
-              ref={cadena.register(1)}
-            />
+            {/* La descripcion tiene su propia pagina, grande: un `TextField` de tres
+                lineas dentro de una hoja que ya tiene nombre, prioridad y etiquetas es
+                demasiado pequeno para escribir de verdad. Aqui solo se ve un resumen. */}
+            <Pressable
+              testID="item-description-link"
+              accessibilityRole="button"
+              accessibilityLabel={t("itemEdit.description")}
+              onPress={() => setPage("description")}
+              style={({ pressed }) => [
+                styles.link,
+                {
+                  borderColor: theme.colors.border,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
+                },
+              ]}
+            >
+              <Ionicons name="document-text-outline" size={18} color={theme.colors.textMuted} />
+              <View style={styles.flex}>
+                <AppText variant="body">{t("itemEdit.description")}</AppText>
+                <AppText variant="caption" tone="muted" numberOfLines={2}>
+                  {annotation.trim().length > 0
+                    ? annotation.trim()
+                    : t("itemEdit.descriptionPlaceholder")}
+                </AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={theme.colors.textSubtle} />
+            </Pressable>
 
             {/* The priority, as four things you can see rather than a dropdown of
                 words. And it is here, and not in a menu, because ordering a list
@@ -1216,6 +1223,21 @@ export function ItemEditSheet({
               </View>
             ) : null}
           </>
+        ) : null}
+
+        {page === "description" ? (
+          <TextField
+            testID="item-description"
+            value={annotation}
+            onChangeText={setAnnotation}
+            limit={FIELD_LIMITS["list_item.annotation"]}
+            placeholder={t("itemEdit.descriptionPlaceholder")}
+            multiline
+            autoFocus
+            // Alto de editor y no de campo: el texto arranca arriba y la pagina deja
+            // sitio para escribir con el teclado abierto. La caja crece con el contenido.
+            containerStyle={{ minHeight: 280, textAlignVertical: "top" }}
+          />
         ) : null}
 
         {page === "icon" ? (

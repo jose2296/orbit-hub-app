@@ -44,7 +44,7 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 - [ ] T7 Toolbar de notas contextual (4)
 - [ ] T8 Diario: siempre editable, enlaces vivos, swipe coherente (5 parte 2, 7)
 - [ ] T9 Diario: copiar/mover nota a otro dia (5 parte 1)
-- [ ] T10 Descripcion de tarea en bottom sheet grande (6)
+- [x] T10 Descripcion de tarea en bottom sheet grande (6)
 - [ ] T11 Buscador de la lista de tareas y botones sobre el `+` (8)
 - [ ] T12 Barrido general en web, claro y oscuro (11)
 
@@ -85,3 +85,9 @@ hace la tarea aqui") el trabajo se hace inline.
 - Cliente: `ShareSaveSheet` gana "Guardar sin espacio" (`lugarDeGuardado`, RED/GREEN en `share-intent.test.ts`); `AssignSheet` asigna/desasigna y deja de fijar el selector al espacio original (bug previo: el picker recibia `bookmark.workspaceId`); el inbox agrupa "Sin asignar".
 - Tres guards refinados con motivo: shares CHECK ("la ultima que lo menciona"), triage sin `folderId` salvo asignar, tabla nullable. API 838 passed, mobile 1909 passed, `tsc` limpio.
 - Fuera de alcance: compartir un enlace sin espacio (se rechaza con 422).
+
+### T10 (inline)
+- La descripcion (`list_items.annotation`, 2000 chars, texto plano) pasa de un `TextField` de tres lineas a una pagina propia `description` dentro de `ItemEditSheet` (mismo patron que `icon`/`tags`: morph, volver con la flecha). La pagina de edicion solo lleva una fila-resumen.
+- El titulo queda como unico campo: se quita `useFieldChain` (un "siguiente" sin destino). Guard de teclado actualizado con motivo.
+- Tests de fuente en `item-description-page.test.ts` (UI de React no montable en Node). Mobile 1912 passed, `tsc` limpio.
+- DECISION PENDIENTE DEL USUARIO: "que sea una nota" (formato rico) no se hizo. Requiere una columna `document` en `list_items` con la misma sanitizacion que las notas, y reusar el editor; queda como tarea aparte. Las imagenes dependen de S3, como se dijo.
