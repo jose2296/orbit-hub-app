@@ -41,9 +41,9 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 - [x] T4 Bookmarks sin workspace (`workspaceId` nullable) (puntos 2 y 3)
 - [x] T5 Drawer: quitar menu generico de bookmarks (9)
 - [x] T6 Sin clasificar: mostrar workspace y carpeta (10)
-- [ ] T7 Toolbar de notas contextual (4)
-- [ ] T8 Diario: siempre editable, enlaces vivos, swipe coherente (5 parte 2, 7)
-- [ ] T9 Diario: copiar/mover nota a otro dia (5 parte 1)
+- [x] T7 Toolbar de notas contextual (4)
+- [x] T8 Diario: siempre editable, enlaces vivos, swipe coherente (5 parte 2, 7)
+- [x] T9 Diario: copiar/mover nota a otro dia (5 parte 1)
 - [x] T10 Descripcion de tarea en bottom sheet grande (6)
 - [x] T11 Buscador de la lista de tareas y botones sobre el `+` (8)
 - [ ] T12 Barrido general en web, claro y oscuro (11)
@@ -99,3 +99,11 @@ hace la tarea aqui") el trabajo se hace inline.
 - Los guards de `task-row-layout.test.ts` y `bottom-cluster.test.ts` protegian la pila flotante; se reescribieron afirmando lo contrario, con el motivo. Mobile 1909 passed, `tsc` limpio.
 - No toca el tablero (`board/[listId].tsx`): su filtro sigue como estaba.
 - Entorno: Metro con `CI=1` no vigila ficheros y servia codigo viejo; hay que arrancar sin CI.
+
+### T7 + T8 + T9 (inline, verificado en web escritorio y ancho movil; NATIVO SIN VERIFICAR)
+- T7: la barra de formato ya no es fija. Existe solo con el editor enfocado: en escritorio web (>= 768) flota junto a la seleccion/cursor (`useSelectionAnchor`, se voltea debajo si arriba no cabe, `mousedown` con `preventDefault` para no quitar el foco); en movil va pegada encima del teclado (`useKeyboardOverlap`, medido contra la ventana por el `adjustPan` de Android). Verificado: pulsar B aplica `<b>`. Bugs vistos y arreglados de paso: el icono de tachado salia como `?` (nombre de otra familia) y B/I/U eran casi iguales; ahora son letras.
+- T8: sin boton Editar/Leer. Web: editor siempre y clic en el enlace por DOM. Movil: la libreria solo expone `onMentionPress` en `EnrichedText` (solo lectura), asi que un dia con texto descansa renderizado, un toque en el texto abre el editor con el cursor, y perder el foco lo devuelve (salvo que se abra el selector de menciones). El swipe de dias se apaga mientras se escribe (`Gesture.Pan().enabled(!editing)`); las flechas de la barra siguen.
+- T9: icono Copiar/Pasar en la cabecera del diario (`transferJournalDay`, `mergeJournalDocuments` puro con RED/GREEN en `journal-transfer.test.ts`): el contenido se anade detras del destino, nunca lo pisa; pasar deja el origen vacio. Verificado copiando al dia 21 en el navegador.
+- Bugs de barrido arreglados: fecha "22 De Octubre De 2026" (CSS `capitalize`), calendario de escritorio con solo 2 columnas (el ancho salia de la ventana y no de la hoja de 460).
+- Riesgo abierto: el comportamiento de teclado/foco/toque en movil nativo (enlaces en `EnrichedText`, barra sobre el teclado, swipe) no se ha podido ejecutar aqui; hay emulador Android disponible en esta maquina pero no se ha usado.
+- Mobile 1925 passed, `tsc` limpio.

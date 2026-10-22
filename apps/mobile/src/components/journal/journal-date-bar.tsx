@@ -42,7 +42,7 @@ export function JournalDateBar({
     >
       <NavButton icon="chevron-back" label={t("journal.previousDay")} onPress={onPrevious} />
       <View style={{ flex: 1, alignItems: "center", paddingVertical: theme.spacing.xs }}>
-        <AppText variant="bodyStrong" numberOfLines={1} style={{ textTransform: "capitalize" }}>
+        <AppText variant="bodyStrong" numberOfLines={1}>
           {title}
         </AppText>
         {isToday ? null : (

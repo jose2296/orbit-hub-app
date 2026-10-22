@@ -46,6 +46,12 @@ describe('journal days', () => {
     expect(formatDayTitle('2026-10-08', 'en')).toMatch(/October/);
     expect(formatDayTitle('2026-10-08', 'es')).toMatch(/octubre/);
   });
+
+  it('la fecha empieza con mayuscula y el resto va como se escribe: "de" no es un nombre propio', () => {
+    // El titulo se capitalizaba por CSS (`textTransform: capitalize`), que pone mayuscula
+    // a **cada palabra**: "Jueves, 22 De Octubre De 2026".
+    expect(formatDayTitle('2026-10-22', 'es')).toBe('Jueves, 22 de octubre de 2026');
+  });
 });
 
 describe('monthGrid', () => {

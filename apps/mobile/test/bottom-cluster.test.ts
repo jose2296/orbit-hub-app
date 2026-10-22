@@ -36,56 +36,6 @@ const src = (ruta: string) => readFileSync(join(RAIZ, ruta), 'utf8');
  */
 const sinComentarios = (texto: string) => texto.replace(/\/\*[\s\S]*?\*\//g, '');
 
-/**
- * The body of `prop={...}`, by matching braces.
- *
- * This replaced `/<Screen[\s\S]{0,2000}?overlay=\{[\s\S]{0,200}/`, which was wrong
- * twice over: the file has **two** `<Screen>` in it, so "the nearest one" is
- * ambiguous, and the props of `ListControls` are three hundred and seventy-eight
- * characters long on their own, so any distance bound was a guess dressed as a
- * check. Matching the braces says what it means: *these* props, inside *this*
- * value.
- */
-function propBody(fuente: string, prop: string): string | null {
-  const desde = fuente.indexOf(`${prop}={`);
-  if (desde === -1) return null;
-
-  let nivel = 0;
-  for (let i = desde + prop.length + 1; i < fuente.length; i++) {
-    if (fuente[i] === '{') nivel++;
-    else if (fuente[i] === '}') {
-      nivel--;
-      if (nivel === 0) return fuente.slice(desde, i + 1);
-    }
-  }
-
-  return null;
-}
-
-/**
- * The component whose opening tag is still open at `at`, or `null`.
- *
- * `null` means the `<` before the prop had already been closed by a `>`, so the
- * prop belongs to something further out — a sibling, or a different component. That
- * is the whole question here: is `overlay` a prop of the `Screen` that draws this
- * screen, or of some sheet that happens to be open inside it.
- *
- * The first version of this sliced `lastIndexOf('<', at)` up to `at` and asked
- * whether the slice contained `overlay=` — which of course it could not, because
- * the slice **ends** where `overlay=` begins. It returned `false` against a file
- * that was correct.
- */
-function padreAbiertoEn(fuente: string, at: number): string | null {
-  const antes = fuente.lastIndexOf('<', at);
-  const cerradoAntes = fuente.lastIndexOf('>', at);
-
-  if (antes === -1 || antes <= cerradoAntes) return null;
-
-  const etiqueta = fuente.slice(antes + 1, fuente.indexOf('>', antes));
-
-  return /^[A-Z][A-Za-z0-9_.]*/.exec(etiqueta)?.[0] ?? null;
-}
-
 const BUTTON = sinComentarios(src('src/components/ui/button.tsx'));
 const LISTA = sinComentarios(src('src/app/(app)/list/[listId].tsx'));
 const TRAY = sinComentarios(src('src/components/lists/done-tray.tsx'));

@@ -66,7 +66,13 @@ export function CalendarSheet({
   // The days swipe like the journal itself: the month before or after comes in with the
   // finger, and a short drag springs back. Built once per width.
   const { width: screenWidth } = useWindowDimensions();
-  const gridWidth = Math.max(0, screenWidth - theme.spacing.lg * 2 - 16);
+  // El ancho de la cuadricula es el que le da la hoja, **medido**, y no el de la pantalla
+  // menos unos margenes: en un escritorio la hoja es un dialogo de 460 y contar con la
+  // ventana entera dejaba las celdas del ancho de la ventana, con solo dos columnas a la
+  // vista. El de la pantalla queda como valor inicial, que es el de un movil.
+  const [medido, setMedido] = useState(0);
+  const gridWidth =
+    medido > 0 ? medido : Math.max(0, screenWidth - theme.spacing.lg * 2 - 16);
   const offset = useSharedValue(0);
   const turn = useCallback(
     (direction: -1 | 1) => {
@@ -176,7 +182,13 @@ export function CalendarSheet({
 
         {view === "days" ? (
           <GestureDetector gesture={swipe}>
-            <View style={{ width: gridWidth, overflow: "hidden" }}>
+            <View
+              style={{ alignSelf: "stretch", overflow: "hidden" }}
+              onLayout={(event) => {
+                const ancho = Math.round(event.nativeEvent.layout.width);
+                if (ancho > 0 && ancho !== medido) setMedido(ancho);
+              }}
+            >
               <View style={{ flexDirection: "row", marginBottom: theme.spacing.md }}>
                 {Array.from({ length: 7 }, (_, index) => (
                   <View key={index} style={{ flex: 1, alignItems: "center" }}>

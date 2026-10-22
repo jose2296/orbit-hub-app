@@ -7,7 +7,15 @@ import type {
 import { EnrichedTextInput } from "react-native-enriched-html";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import {
+  Keyboard,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import type { LayoutChangeEvent } from "react-native";
 
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
@@ -88,6 +96,11 @@ export interface NoteEditorProps extends Pick<
    * has no mentions at all: no button, and typing `@` is just a character.
    */
   onMentionRequest?: (source: "toolbar" | "typed") => void;
+  /**
+   * El editor gana o pierde el foco. Lo usa quien necesita saber si se esta escribiendo
+   * (el diario apaga el gesto de cambiar de dia mientras se escribe).
+   */
+  onFocusChange?: (focused: boolean) => void;
 }
 
 /** A style the toolbar can turn on and off over the current selection. */
@@ -137,13 +150,24 @@ interface ToolbarButton {
    * difference, and it is what every other editor does.
    */
   glyph?: number;
+  /**
+   * Una letra con el estilo que aplica (B, I, U, S): lo que se lee de un vistazo. Los
+   * iconos de Ionicons para negrita, cursiva y subrayado eran casi iguales, y para
+   * tachado no hay ninguno (`strikethrough-variant` es de otra familia y salia como `?`).
+   */
+  letter?: { text: string; style: "bold" | "italic" | "underline" | "strike" };
 }
 
 const INLINE_BUTTONS: ToolbarButton[] = [
-  { key: "bold", icon: "text", labelKey: "note.bold" },
-  { key: "italic", icon: "text-outline", labelKey: "note.italic" },
-  { key: "underline", icon: "remove-outline", labelKey: "note.underline" },
-  { key: "strike", icon: "strikethrough-variant", labelKey: "note.strike" },
+  { key: "bold", icon: "text", labelKey: "note.bold", letter: { text: "B", style: "bold" } },
+  { key: "italic", icon: "text", labelKey: "note.italic", letter: { text: "I", style: "italic" } },
+  {
+    key: "underline",
+    icon: "text",
+    labelKey: "note.underline",
+    letter: { text: "U", style: "underline" },
+  },
+  { key: "strike", icon: "text", labelKey: "note.strike", letter: { text: "S", style: "strike" } },
   { key: "code", icon: "code-slash-outline", labelKey: "note.inlineCode" },
 ];
 
@@ -223,17 +247,28 @@ export function NoteEditor({
   onChanged,
   onInsertImage,
   onMentionRequest,
+  onFocusChange,
   editorRef,
   readOnly = false,
   sanitizationConfig = NOTE_SANITIZATION,
 }: NoteEditorProps) {
   const theme = useTheme();
-  const t = useTranslation();
   const [state, setState] = useState<OnChangeStateEvent | null>(null);
   // Whether the person is typing in the editor. A `@` in a document that is merely
   // being drawn is reported as a trigger too, and only a `@` typed while focused
   // should open the picker.
   const focused = useRef(false);
+  // El mismo foco, pero como estado: es lo que decide si la barra de formato se ve.
+  const [isFocused, setIsFocused] = useState(false);
+  const { width } = useWindowDimensions();
+  // En un escritorio la barra flota junto a lo seleccionado; en un movil (o una ventana
+  // estrecha) va pegada encima del teclado. En los dos casos solo existe mientras se
+  // escribe: una barra fija arriba ocupaba pantalla siempre, tambien al leer.
+  const floating = Platform.OS === "web" && width >= FLOATING_TOOLBAR_MIN_WIDTH;
+  const containerRef = useRef<View>(null);
+  const keyboardOverlap = useKeyboardOverlap(containerRef, isFocused && !floating);
+  const anchor = useSelectionAnchor(containerRef, isFocused && floating);
+  const showToolbar = !readOnly && isFocused;
   useEffect(() => {
     if (Platform.OS === "web") installMentionChipStyle();
   }, []);
@@ -327,91 +362,7 @@ export function NoteEditor({
   );
 
   return (
-    <View style={{ flex: 1 }}>
-      {readOnly ? null : (
-        <View
-          style={{
-            borderBottomWidth: 1,
-            borderBottomColor: theme.colors.border,
-            backgroundColor: theme.colors.background,
-          }}
-        >
-          {toolbarRows({ image: !!onInsertImage, mention: !!onMentionRequest }).map(
-            (buttons, rowIndex) => (
-              <ScrollView
-                key={rowIndex}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{
-                  flexDirection: "row",
-                  gap: theme.spacing.xs,
-                  paddingHorizontal: theme.spacing.lg,
-                  paddingVertical: theme.spacing.xs,
-                  alignItems: "center",
-                }}
-              >
-                {buttons.map((button) => {
-                  const status = statusOf(button.key);
-                  const active = status === "on";
-                  const dim = status === "blocked" || status === "conflicting";
-                  return (
-                    <Pressable
-                      key={button.key}
-                      accessibilityRole="button"
-                      accessibilityState={{
-                        selected: active,
-                        disabled: status === "blocked",
-                      }}
-                      accessibilityLabel={t(button.labelKey)}
-                      onPress={() => command(button.key)}
-                      style={{
-                        minWidth: 40,
-                        height: 40,
-                        borderRadius: theme.radius.sm,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: active
-                          ? theme.colors.accentSoft
-                          : "transparent",
-                      }}
-                    >
-                      {button.glyph ? (
-                        <AppText
-                          style={{
-                            fontSize: button.glyph,
-                            lineHeight: button.glyph + 2,
-                            fontWeight: "700",
-                            color: dim
-                              ? theme.colors.textSubtle
-                              : active
-                                ? theme.colors.accentSoftText
-                                : theme.colors.textMuted,
-                          }}
-                        >
-                          A
-                        </AppText>
-                      ) : (
-                        <Ionicons
-                          name={button.icon as never}
-                          size={19}
-                          color={
-                            dim
-                              ? theme.colors.textSubtle
-                              : active
-                                ? theme.colors.accentSoftText
-                                : theme.colors.textMuted
-                          }
-                        />
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            ),
-          )}
-        </View>
-      )}
-
+    <View ref={containerRef} style={{ flex: 1 }}>
       <EnrichedTextInput
         ref={editorRef}
         defaultValue={defaultValue}
@@ -426,9 +377,13 @@ export function NoteEditor({
         mentionIndicators={onMentionRequest ? ["@"] : undefined}
         onFocus={() => {
           focused.current = true;
+          setIsFocused(true);
+          onFocusChange?.(true);
         }}
         onBlur={() => {
           focused.current = false;
+          setIsFocused(false);
+          onFocusChange?.(false);
         }}
         onStartMention={
           onMentionRequest
@@ -444,10 +399,310 @@ export function NoteEditor({
           // The type comes from the hook and not from here. Written out again it
           // would be the one place in the editor that could disagree with the
           // scale, and it would be the place nobody looks.
+          // Con la barra pegada al teclado el texto termina encima de ella.
+          marginBottom: showToolbar && !floating ? keyboardOverlap + DOCKED_TOOLBAR_HEIGHT : 0,
           ...bodyStyle,
         }}
       />
+      {showToolbar && !floating ? (
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: keyboardOverlap,
+            height: DOCKED_TOOLBAR_HEIGHT,
+            borderTopWidth: 1,
+            borderTopColor: theme.colors.border,
+            backgroundColor: theme.colors.background,
+          }}
+        >
+          <ScrollView
+            horizontal
+            // Sin esto, tocar un boton con el teclado abierto cierra el teclado en lugar de
+            // pulsar el boton, y la barra desaparece antes de que el toque llegue.
+            keyboardShouldPersistTaps="always"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: theme.spacing.xs,
+              paddingHorizontal: theme.spacing.md,
+            }}
+          >
+            {toolbarRows({ image: !!onInsertImage, mention: !!onMentionRequest })
+              .flat()
+              .map((button) => (
+                <ToolbarButtonView
+                  key={button.key}
+                  button={button}
+                  status={statusOf(button.key)}
+                  onPress={() => command(button.key)}
+                />
+              ))}
+          </ScrollView>
+        </View>
+      ) : null}
+      {showToolbar && floating && anchor ? (
+        <FloatingToolbar anchor={anchor}>
+          {floatingRows(toolbarRows({ image: !!onInsertImage, mention: !!onMentionRequest })).map(
+            (buttons, rowIndex) => (
+              <View key={rowIndex} style={{ flexDirection: "row", gap: 2 }}>
+                {buttons.map((button) => (
+                  <ToolbarButtonView
+                    key={button.key}
+                    button={button}
+                    status={statusOf(button.key)}
+                    onPress={() => command(button.key)}
+                    compact
+                  />
+                ))}
+              </View>
+            ),
+          )}
+        </FloatingToolbar>
+      ) : null}
     </View>
+  );
+}
+
+/** En la burbuja, la fila suelta de imagen/mencion se junta con la de bloques: dos filas y no tres. */
+function floatingRows(rows: ToolbarButton[][]): ToolbarButton[][] {
+  const [inline, block, tail] = rows;
+  if (!inline || !block || !tail) return rows;
+  return [inline, [...block, ...tail]];
+}
+
+/** Desde este ancho (solo en la web) la barra flota junto a la seleccion. */
+const FLOATING_TOOLBAR_MIN_WIDTH = 768;
+/** El alto de la barra pegada al teclado. */
+const DOCKED_TOOLBAR_HEIGHT = 48;
+
+/**
+ * Cuanto del contenedor tapa el teclado, para pegar la barra a su borde de arriba.
+ *
+ * Se mide contra la ventana y no se asume que el contenedor llegue al borde de la
+ * pantalla ni que `KeyboardAvoidingView` ya lo haya subido: si lo subio, el solape es 0;
+ * si el sistema solo movio la ventana (`adjustPan` en Android), el solape es el alto del
+ * teclado. Es la misma razon por la que las pantallas de lista leen el teclado a mano.
+ */
+function useKeyboardOverlap(
+  containerRef: React.RefObject<View | null>,
+  active: boolean,
+): number {
+  const [overlap, setOverlap] = useState(0);
+
+  useEffect(() => {
+    if (!active || Platform.OS === "web") {
+      setOverlap(0);
+      return;
+    }
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillChangeFrame" : "keyboardDidShow",
+      (event) => {
+        containerRef.current?.measureInWindow((_x, y, _w, height) => {
+          setOverlap(Math.max(0, y + height - event.endCoordinates.screenY));
+        });
+      },
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setOverlap(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [active, containerRef]);
+
+  return overlap;
+}
+
+interface SelectionAnchor {
+  top: number;
+  bottom: number;
+  left: number;
+}
+
+/**
+ * Donde esta lo seleccionado (o el cursor) dentro del contenedor, en la web.
+ *
+ * Con la seleccion vacia el rectangulo del rango es cero en una linea en blanco, asi que
+ * se cae al del bloque donde esta el cursor. `scroll` en captura porque el editor se
+ * desplaza por dentro y `selectionchange` no avisa de eso.
+ */
+function useSelectionAnchor(
+  containerRef: React.RefObject<View | null>,
+  active: boolean,
+): SelectionAnchor | null {
+  const [anchor, setAnchor] = useState<SelectionAnchor | null>(null);
+
+  useEffect(() => {
+    if (!active || typeof document === "undefined") {
+      setAnchor(null);
+      return;
+    }
+    const update = () => {
+      const container = containerRef.current as unknown as HTMLElement | null;
+      const selection = window.getSelection();
+      if (!container || !selection || selection.rangeCount === 0) return;
+      const range = selection.getRangeAt(0);
+      if (!container.contains(range.commonAncestorContainer)) return;
+
+      let rect = range.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        const node = range.startContainer;
+        const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
+        const block = element?.getBoundingClientRect();
+        if (block) rect = block;
+      }
+      const box = container.getBoundingClientRect();
+      const clamp = (value: number) => Math.min(Math.max(value, 0), box.height);
+      setAnchor({
+        top: clamp(rect.top - box.top),
+        bottom: clamp(rect.bottom - box.top),
+        left: Math.min(Math.max(rect.left - box.left + rect.width / 2, 0), box.width),
+      });
+    };
+    update();
+    document.addEventListener("selectionchange", update);
+    document.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      document.removeEventListener("selectionchange", update);
+      document.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [active, containerRef]);
+
+  return anchor;
+}
+
+/** La barra como burbuja sobre lo seleccionado: encima si cabe y debajo si no. */
+function FloatingToolbar({
+  anchor,
+  children,
+}: {
+  anchor: SelectionAnchor;
+  children: React.ReactNode;
+}) {
+  const theme = useTheme();
+  const [size, setSize] = useState({ width: 0, height: 96 });
+  const ref = useRef<View>(null);
+
+  // Pulsar un boton no debe quitarle el foco al editor: sin esto la barra desaparece en
+  // el `mousedown`, antes del `click`, y el boton nunca llega a ejecutarse.
+  useEffect(() => {
+    const element = ref.current as unknown as HTMLElement | null;
+    if (!element?.addEventListener) return;
+    const keepFocus = (event: Event) => event.preventDefault();
+    element.addEventListener("mousedown", keepFocus);
+    return () => element.removeEventListener("mousedown", keepFocus);
+  }, []);
+
+  const onLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setSize({ width, height });
+  };
+  const gap = 8;
+  const above = anchor.top - size.height - gap;
+  const top = above >= 0 ? above : anchor.bottom + gap;
+  const left = Math.max(0, anchor.left - size.width / 2);
+
+  return (
+    <View
+      ref={ref}
+      onLayout={onLayout}
+      style={{
+        position: "absolute",
+        top,
+        left,
+        padding: theme.spacing.xs,
+        gap: 2,
+        borderRadius: theme.radius.md,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
+        // Oculta hasta medirse, para que no salte desde (0, 0) al primer pintado.
+        opacity: size.width === 0 ? 0 : 1,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+function ToolbarButtonView({
+  button,
+  status,
+  onPress,
+  compact = false,
+}: {
+  button: ToolbarButton;
+  status: "on" | "off" | "blocked" | "conflicting";
+  onPress: () => void;
+  compact?: boolean;
+}) {
+  const theme = useTheme();
+  const t = useTranslation();
+  const active = status === "on";
+  const dim = status === "blocked" || status === "conflicting";
+  const color = dim
+    ? theme.colors.textSubtle
+    : active
+      ? theme.colors.accentSoftText
+      : theme.colors.textMuted;
+  const size = compact ? 34 : 40;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active, disabled: status === "blocked" }}
+      accessibilityLabel={t(button.labelKey)}
+      onPress={onPress}
+      style={{
+        minWidth: size,
+        height: size,
+        borderRadius: theme.radius.sm,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: active ? theme.colors.accentSoft : "transparent",
+      }}
+    >
+      {button.letter ? (
+        <AppText
+          style={{
+            fontSize: 17,
+            lineHeight: 20,
+            fontWeight: button.letter.style === "bold" ? "800" : "500",
+            fontStyle: button.letter.style === "italic" ? "italic" : "normal",
+            textDecorationLine:
+              button.letter.style === "underline"
+                ? "underline"
+                : button.letter.style === "strike"
+                  ? "line-through"
+                  : "none",
+            color,
+          }}
+        >
+          {button.letter.text}
+        </AppText>
+      ) : button.glyph ? (
+        <AppText
+          style={{
+            fontSize: button.glyph,
+            lineHeight: button.glyph + 2,
+            fontWeight: "700",
+            color,
+          }}
+        >
+          A
+        </AppText>
+      ) : (
+        <Ionicons name={button.icon as never} size={19} color={color} />
+      )}
+    </Pressable>
   );
 }
 

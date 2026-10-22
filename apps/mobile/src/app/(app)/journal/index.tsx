@@ -14,9 +14,13 @@ import { JournalDateBar } from "@/components/journal/journal-date-bar";
 import { JournalDayPage } from "@/components/journal/journal-day-page";
 import { JournalDayPreview } from "@/components/journal/journal-day-preview";
 import { useHeaderAction } from "@/components/ui/header-action";
+import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { useJournalDaysWithText } from "@/hooks/use-journal";
 import { useSession } from "@/hooks/use-session";
 import { addDays, formatDayTitle, todayKey } from "@/lib/journal/days";
+import { transferJournalDay } from "@/lib/journal/transfer";
+import type { JournalTransferMode } from "@/lib/journal/transfer";
+import type { JournalDay } from "@orbit-hub/contracts";
 import { useI18n, useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -41,6 +45,13 @@ export default function JournalScreen() {
   const { width } = useWindowDimensions();
   const [day, setDay] = useState(() => todayKey());
   const [calendarOpen, setCalendarOpen] = useState(false);
+  // Se esta escribiendo (el editor tiene el foco). Con el teclado abierto un arrastre
+  // horizontal es seleccionar texto, no cambiar de dia: el gesto se apaga y quedan las
+  // flechas de la barra, que siempre estan.
+  const [editing, setEditing] = useState(false);
+  // Pasar o copiar este dia a otro: primero se elige que, despues el dia de destino.
+  const [transferMenuOpen, setTransferMenuOpen] = useState(false);
+  const [transferMode, setTransferMode] = useState<JournalTransferMode | null>(null);
   const daysWithText = useJournalDaysWithText(user?.id);
   const flushRef = useRef<(() => Promise<void>) | null>(null);
   const offset = useSharedValue(0);
@@ -86,6 +97,7 @@ export default function JournalScreen() {
   const gesture = useMemo(
     () =>
       Gesture.Pan()
+        .enabled(!editing)
         .activeOffsetX([-12, 12])
         .failOffsetY([-16, 16])
         .onUpdate((event) => {
@@ -106,26 +118,39 @@ export default function JournalScreen() {
             offset.value = withTiming(0, { duration: 160 });
           }
         }),
-    [width, turn, offset],
+    [width, turn, offset, editing],
   );
 
   const centre = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value }] }));
   const before = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value - width }] }));
   const after = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value + width }] }));
 
+  const dayHasText = daysWithText.has(day);
+
   useHeaderAction(
     () => (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t("journal.pickDay")}
-        onPress={() => setCalendarOpen(true)}
-        hitSlop={8}
-        style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-      >
-        <Ionicons name="calendar-outline" size={22} color={theme.colors.text} />
-      </Pressable>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.md }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("journal.transfer.title")}
+          onPress={() => setTransferMenuOpen(true)}
+          hitSlop={8}
+          style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+        >
+          <Ionicons name="copy-outline" size={22} color={theme.colors.text} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("journal.pickDay")}
+          onPress={() => setCalendarOpen(true)}
+          hitSlop={8}
+          style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+        >
+          <Ionicons name="calendar-outline" size={22} color={theme.colors.text} />
+        </Pressable>
+      </View>
     ),
-    [t, theme.colors.text],
+    [t, theme.colors.text, theme.spacing.md],
   );
 
   return (
@@ -152,7 +177,13 @@ export default function JournalScreen() {
           ) : null}
           <Animated.View style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width }, centre]}>
             {user ? (
-              <JournalDayPage key={day} userId={user.id} day={day} registerFlush={registerFlush} />
+              <JournalDayPage
+                key={day}
+                userId={user.id}
+                day={day}
+                registerFlush={registerFlush}
+                onEditingChange={setEditing}
+              />
             ) : null}
           </Animated.View>
         </View>
@@ -166,6 +197,58 @@ export default function JournalScreen() {
         onPick={(picked) => {
           setCalendarOpen(false);
           void moveTo(picked);
+        }}
+      />
+
+      <Sheet
+        visible={transferMenuOpen}
+        onClose={() => setTransferMenuOpen(false)}
+        title={t("journal.transfer.title")}
+      >
+        <SheetOptions
+          options={[
+            {
+              key: "copy",
+              label: t("journal.transfer.copy"),
+              description: dayHasText ? t("journal.transfer.copyHint") : t("journal.transfer.empty"),
+              icon: "copy-outline" as const,
+              disabled: !dayHasText,
+              onPress: () => {
+                setTransferMenuOpen(false);
+                setTransferMode("copy");
+              },
+            },
+            {
+              key: "move",
+              label: t("journal.transfer.move"),
+              description: dayHasText ? t("journal.transfer.moveHint") : t("journal.transfer.empty"),
+              icon: "arrow-redo-outline" as const,
+              disabled: !dayHasText,
+              onPress: () => {
+                setTransferMenuOpen(false);
+                setTransferMode("move");
+              },
+            },
+          ]}
+        />
+      </Sheet>
+
+      {/* El mismo calendario, pidiendo el dia de destino. Lo escrito se guarda antes de
+          copiarlo, y despues se abre el dia de destino para ver donde ha quedado. */}
+      <CalendarSheet
+        visible={transferMode !== null}
+        selectedDay={day}
+        daysWithText={daysWithText}
+        onClose={() => setTransferMode(null)}
+        onPick={(picked) => {
+          const mode = transferMode;
+          setTransferMode(null);
+          if (!mode || !user || picked === day) return;
+          void (async () => {
+            await flushRef.current?.();
+            await transferJournalDay(user.id, day as JournalDay, picked as JournalDay, mode);
+            await moveTo(picked);
+          })();
         }}
       />
     </View>
