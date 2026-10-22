@@ -430,7 +430,7 @@ describe("el menu de la cabecera es el del registro y no una hoja propia", () =>
         .filter(puedeOfrecerse)
         .map((accion) => accion.id);
 
-    expect(ofrecibles()).toEqual(["rename", "share", "access", "export", "delete"]);
+    expect(ofrecibles()).toEqual(["rename", "share", "access", "export", "move", "delete"]);
     /*
       `access` se ofrece desde que T8 monto su pagina, `export` desde que la T9 monto
       la suya **y creo `GET /collections/:id/export`**, y `share` desde que la T10
@@ -454,6 +454,7 @@ describe("el menu de la cabecera es el del registro y no una hoja propia", () =>
       "share",
       "access",
       "export",
+      "move",
       "delete",
     ]);
     expect(ofrecibles()).toContain("access");

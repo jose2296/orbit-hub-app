@@ -35,6 +35,12 @@ export interface PlacePickerProps {
   onChange: (place: PlacePickerPlace) => void;
   /** WhereNoteSheet lo usa en false: alla no hay colecciones. */
   showCollections?: boolean;
+  /**
+   * Una carpeta que no se ofrece como destino: la que se esta moviendo. Meterla
+   * dentro de si misma no tiene sitio, y como no se puede entrar en ella, tampoco en
+   * nada de lo que cuelga de ella.
+   */
+  excludeFolderId?: string;
 }
 
 /**
@@ -55,6 +61,7 @@ export function PlacePicker({
   collectionChosen = true,
   onChange,
   showCollections = true,
+  excludeFolderId,
 }: PlacePickerProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -66,9 +73,9 @@ export function PlacePicker({
   // y solo la carpeta vale una pregunta.
   const effectiveWorkspaceId =
     workspaceId ?? (spaces.length === 1 ? (spaces[0]?.id ?? null) : null);
-  const folders = effectiveWorkspaceId
-    ? tree.foldersOf(effectiveWorkspaceId, folderId)
-    : [];
+  const folders = (
+    effectiveWorkspaceId ? tree.foldersOf(effectiveWorkspaceId, folderId) : []
+  ).filter((folder) => folder.id !== excludeFolderId);
   const collections =
     showCollections && effectiveWorkspaceId
       ? tree.collectionsOf(effectiveWorkspaceId, folderId)

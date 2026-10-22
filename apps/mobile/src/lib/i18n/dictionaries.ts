@@ -218,6 +218,10 @@ const es = {
   "tabs.home": "Inicio",
   "common.edit": "Editar",
   "common.rename": "Renombrar",
+  "move.title": "Mover a…",
+  "move.subtitle": "Elige a dónde va",
+  "move.confirm": "Mover aquí",
+  "move.confirmDisabled": "Elige un espacio",
   "common.share": "Compartir",
   "common.delete": "Eliminar",
   /* Cuando lo que abriste no es tuyo. Antes decia "Eliminar" y pulsarlo borraba la
@@ -1525,6 +1529,10 @@ const en: Record<TranslationKey, string> = {
   "tabs.home": "Home",
   "common.edit": "Edit",
   "common.rename": "Rename",
+  "move.title": "Move to…",
+  "move.subtitle": "Choose where it goes",
+  "move.confirm": "Move here",
+  "move.confirmDisabled": "Choose a space",
   "common.share": "Share",
   "common.delete": "Delete",
   /* When what you opened is not yours. It used to say "Delete" and pressing it erased

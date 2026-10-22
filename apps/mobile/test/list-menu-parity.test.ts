@@ -260,6 +260,7 @@ describe("cada fila de la hoja vieja sigue declarada", () => {
     expect([...delRegistro].filter((clave) => !deLaHojaVieja.has(clave)).sort()).toEqual([
       "icons.title",
       "menus.access",
+      "move.title",
       "share.pickSomeone",
     ]);
   });
@@ -299,6 +300,7 @@ describe("el orden y lo que se ofrece", () => {
       "share",
       "access",
       "export",
+      "move",
       "delete",
     ]);
   });

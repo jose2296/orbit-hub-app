@@ -65,7 +65,8 @@ export type MenuPageId =
   | "delete"
   | "export"
   | "create"
-  | "share";
+  | "share"
+  | "move";
 
 /**
  * Lo que un call site concreto puede hacer, y por lo tanto ofrece.
@@ -407,6 +408,21 @@ export const ACCIONES: Record<string, MenuAccion> = {
   },
 
   /*
+    Mover a otro sitio, y las cinco entidades la tienen.
+
+    No se ofrece a quien no puede escribir ni a lo que es de otro (`shared`): sacar un
+    nodo compartido del espacio de su dueno no es editarlo, es quitarselo. El servidor
+    lo vuelve a comprobar, que es la frontera de verdad.
+  */
+  move: {
+    id: "move",
+    labelKey: "move.title",
+    icon: "arrow-redo-outline",
+    disponible: (ctx) => !ctx.entity.shared && ctx.entity.role !== "viewer",
+    destino: { tipo: "pagina", page: "move" },
+  },
+
+  /*
     Borrar, y la unica accion destructiva del registro.
 
     El copy va en `labelKey` **y** el motivo en `motivo`, porque son dos
@@ -491,16 +507,17 @@ export const ORDEN_POR_KIND: Record<MenuKind, string[]> = {
     "share",
     "access",
     "export",
+    "move",
     "delete",
   ],
-  note: ["rename", "icon", "share", "saveAsTemplate", "access", "delete"],
-  folder: ["createHere", "pin", "rename", "icon", "share", "access", "delete"],
+  note: ["rename", "icon", "share", "saveAsTemplate", "access", "move", "delete"],
+  folder: ["createHere", "pin", "rename", "icon", "share", "access", "move", "delete"],
   // `share` entra en las dos con la T10, entre `rename` y `access`: es donde esta
   // en las otras tres. Que la fila se ofrezca lo decide `nodeTypeDe`, asi que
   // declararla aca para un kind que el contrato no admitiria pintaria una fila
   // grisada para siempre — y el guard de `menu-registry.test.ts` lo comprueba.
-  collection: ["rename", "share", "access", "export", "delete"],
-  bookmark: ["rename", "classify", "share", "access", "delete"],
+  collection: ["rename", "share", "access", "export", "move", "delete"],
+  bookmark: ["rename", "classify", "share", "access", "move", "delete"],
 };
 
 /** La clave de i18n de una accion, resuelta para un contexto concreto. */

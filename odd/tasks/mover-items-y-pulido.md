@@ -36,8 +36,8 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 ## Tareas
 
 - [x] T1 API: mover entre workspaces folder (con subarbol), list, note, collection (+test)
-- [ ] T2 Contratos + cliente: accion `move` generica y offline
-- [ ] T3 UI: sheet "Mover a..." en el menu de cada entidad (registro de menus)
+- [x] T2 Contratos + cliente: accion `move` generica y offline
+- [x] T3 UI: sheet "Mover a..." en el menu de cada entidad (registro de menus)
 - [ ] T4 Bookmarks sin workspace (`workspaceId` nullable) (puntos 2 y 3)
 - [ ] T5 Drawer: quitar menu generico de bookmarks (9)
 - [ ] T6 Sin clasificar: mostrar workspace y carpeta (10)
@@ -62,3 +62,11 @@ hace la tarea aqui") el trabajo se hace inline.
 - RED: 8/8 fallan en `apps/api/test/move-between-workspaces.test.ts`, incluido el bookmark: `workspaceId` estaba en la lista blanca pero `sanitisePayload` no lo asignaba, asi que mover un bookmark de espacio se perdia en silencio.
 - GREEN: 8/8. Suite API 830 passed, `tsc` limpio (hubo que reconstruir `packages/contracts/dist`).
 - Diseno: `prepararMudanza` valida origen y destino, resuelve el contenedor contra el destino y deja la raiz si no viene; `seguirMudanza` arrastra el subarbol de una carpeta y los bookmarks de una coleccion.
+
+### T2 + T3 (inline)
+- RED: `apps/mobile/test/move-plan.test.ts` (modulo inexistente). GREEN: 6/6.
+- `lib/move/plan.ts` (puro) decide campos y filas arrastradas; `lib/move/actions.ts` hace un `localUpdate` por la fila movida y refleja en cache lo que el servidor arrastra, sin encolar.
+- Registro: accion `move` en las cinco entidades, antes de `delete`; oculta si `shared` o `viewer`. Pagina `MovePage` (reusa `PlacePicker`, nuevo `excludeFolderId`).
+- Los tests de paridad del menu se actualizaron a mano tras leer cada diff: era solo la fila `move` y la etiqueta `move.title`.
+- Suite mobile 1905 passed, `tsc` limpio.
+- PENDIENTE: verificacion visual en web (claro/oscuro) del flujo mover; se hace en T12 con la app levantada.
