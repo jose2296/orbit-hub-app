@@ -19,7 +19,8 @@ import { handlersDeBookmark, menuCtxDeBookmark } from "@/lib/menus/bookmark";
 import { useTheme } from "@/theme";
 
 export interface GrupoHuerfanos {
-  workspaceId: string;
+  /** `null` es el grupo de los enlaces sin asignar. */
+  workspaceId: string | null;
   bookmarks: Bookmark[];
 }
 
@@ -33,7 +34,7 @@ export interface GrupoHuerfanos {
  * criterio compitiendo con el primero.
  */
 export function agruparHuerfanos(bookmarks: Bookmark[]): GrupoHuerfanos[] {
-  const grupos = new Map<string, Bookmark[]>();
+  const grupos = new Map<string | null, Bookmark[]>();
   for (const bookmark of bookmarks) {
     const grupo = grupos.get(bookmark.workspaceId);
     if (grupo) grupo.push(bookmark);
@@ -112,18 +113,28 @@ export default function UnclassifiedScreen() {
             })}
           />
           {grupos.map((grupo) => (
-            <View key={grupo.workspaceId} style={{ gap: theme.spacing.xs }}>
+            <View key={grupo.workspaceId ?? "sin-asignar"} style={{ gap: theme.spacing.xs }}>
               <AppText variant="caption" tone="subtle">
                 {/* El espacio existe si el bookmark existe: los dos salen de la
                     misma cache. El id es red y no titulo, por si la cache de
                     espacios aun no llego en este arranque. */}
-                {nombres.get(grupo.workspaceId) ?? grupo.workspaceId}
+                {grupo.workspaceId === null
+                  ? t("bookmarks.unassigned")
+                  : (nombres.get(grupo.workspaceId) ?? grupo.workspaceId)}
               </AppText>
               {grupo.bookmarks.map((bookmark) => (
                 <LinkRow
                   key={bookmark.id}
                   bookmark={bookmark}
                   testID={`inbox-menu-${bookmark.id}`}
+                  lugar={[
+                    bookmark.workspaceId === null
+                      ? t("bookmarks.unassigned")
+                      : (nombres.get(bookmark.workspaceId) ?? ""),
+                    ...(bookmark.folderId ? arbol.pathOf(bookmark.folderId).map((c) => c.name) : []),
+                  ]
+                    .filter((parte) => parte.length > 0)
+                    .join(" › ")}
                   /*
                     Al lector, y no al sheet de clasificar.
 

@@ -36,56 +36,6 @@ const src = (ruta: string) => readFileSync(join(RAIZ, ruta), 'utf8');
  */
 const sinComentarios = (texto: string) => texto.replace(/\/\*[\s\S]*?\*\//g, '');
 
-/**
- * The body of `prop={...}`, by matching braces.
- *
- * This replaced `/<Screen[\s\S]{0,2000}?overlay=\{[\s\S]{0,200}/`, which was wrong
- * twice over: the file has **two** `<Screen>` in it, so "the nearest one" is
- * ambiguous, and the props of `ListControls` are three hundred and seventy-eight
- * characters long on their own, so any distance bound was a guess dressed as a
- * check. Matching the braces says what it means: *these* props, inside *this*
- * value.
- */
-function propBody(fuente: string, prop: string): string | null {
-  const desde = fuente.indexOf(`${prop}={`);
-  if (desde === -1) return null;
-
-  let nivel = 0;
-  for (let i = desde + prop.length + 1; i < fuente.length; i++) {
-    if (fuente[i] === '{') nivel++;
-    else if (fuente[i] === '}') {
-      nivel--;
-      if (nivel === 0) return fuente.slice(desde, i + 1);
-    }
-  }
-
-  return null;
-}
-
-/**
- * The component whose opening tag is still open at `at`, or `null`.
- *
- * `null` means the `<` before the prop had already been closed by a `>`, so the
- * prop belongs to something further out — a sibling, or a different component. That
- * is the whole question here: is `overlay` a prop of the `Screen` that draws this
- * screen, or of some sheet that happens to be open inside it.
- *
- * The first version of this sliced `lastIndexOf('<', at)` up to `at` and asked
- * whether the slice contained `overlay=` — which of course it could not, because
- * the slice **ends** where `overlay=` begins. It returned `false` against a file
- * that was correct.
- */
-function padreAbiertoEn(fuente: string, at: number): string | null {
-  const antes = fuente.lastIndexOf('<', at);
-  const cerradoAntes = fuente.lastIndexOf('>', at);
-
-  if (antes === -1 || antes <= cerradoAntes) return null;
-
-  const etiqueta = fuente.slice(antes + 1, fuente.indexOf('>', antes));
-
-  return /^[A-Z][A-Za-z0-9_.]*/.exec(etiqueta)?.[0] ?? null;
-}
-
 const BUTTON = sinComentarios(src('src/components/ui/button.tsx'));
 const LISTA = sinComentarios(src('src/app/(app)/list/[listId].tsx'));
 const TRAY = sinComentarios(src('src/components/lists/done-tray.tsx'));
@@ -177,16 +127,15 @@ describe('la pila no se solapa', () => {
 });
 
 describe('la pila se usa, y no unos números escritos a mano', () => {
-  it('la pantalla cuenta la pila y no unos numeros escritos a mano', () => {
+  it('el + de la pantalla sale de la cuenta de la pila y no de un numero suelto', () => {
     expect(LISTA).toContain('bottomCluster(');
 
-    // Lo que se comprueba ahora: **el boton de buscar usa la cuenta**. Antes esto
-    // miraba que la bandeja cogiera `trayBottom`, y la bandeja ya no esta — se
-    // sustituyo por el buscador, que se mide igual de lejos del borde y por el
-    // mismo motivo. Un guard que sigue mirando la pieza que se quito no protege
+    // La lista de tareas ya no apila buscar y filtros encima del `+` (van en la barra de la
+    // cabecera), asi que lo unico que sale de la pila es el propio `+`. Antes este guard
+    // miraba `searchBottom`; un guard que sigue mirando la pieza que se quito no protege
     // la que se puso.
-    expect(LISTA, 'el boton de buscar sale de la pila, no de un numero suelto')
-      .toMatch(/bottom: pila\.searchBottom/);
+    expect(LISTA, 'el + sale de la pila, no de un numero suelto')
+      .toMatch(/bottom: pila\.fabBottom/);
   });
 
   it('la bandeja de completados no vuelve a la esquina', () => {
@@ -204,41 +153,17 @@ describe('la pila se usa, y no unos números escritos a mano', () => {
     expect(LISTA).not.toMatch(/bottomInset=\{theme\.spacing\.lg \* 2 \+ 56/);
   });
 
-  it('el botón se ancla en la esquina, no dentro del encabezado que se desplaza', () => {
-    // En el encabezado es un `ListHeaderComponent` del `FlatList`, o sea que se va
-    // con el contenido. Flotante es lo que lo deja donde se le ha pedido.
-    expect(LISTA).toContain('placement="floating"');
-    expect(LISTA).toMatch(/controlsBottom/);
-  });
-
-  it('y sale por `overlay`, no como hermano del FlatList dentro del header', () => {
+  it('los filtros de la lista ya no flotan: van en la barra de la cabecera', () => {
     /*
-     * Esta prueba no estaba, y su falta deja pasar el bug que encontró el
-     * navegador: con `placement="floating"` puesto, el botón seguía **arriba**,
-     * en `top: 5`.
-     *
-     * La razón es que `position: absolute` se ancla al **ancestro posicionado más
-     * cercano**, y dentro de un `ListHeaderComponent` ese ancestro es la propia
-     * cabecera — una caja corta cerca de arriba. Así que `bottom: 80` son 80
-     * puntos desde el borde de abajo *de la cabecera*, y el botón sale por encima
-     * de ella. Absoluto y fuera del flujo no es lo mismo que anclado a la pantalla.
-     *
-     * `Screen` ya tiene el sitio: `overlay`, un hermano del scroller en el mismo
-     * `KeyboardAvoidingView`, con su comentario explicando exactamente por qué no
-     * puede ser hijo. El botón va por ahí.
+     * Antes flotaban encima del `+` por `overlay` con `placement="floating"`, y hubo que
+     * anclarlos a la pantalla porque dentro del `ListHeaderComponent` un `absolute` se
+     * ancla a la cabecera y no a la pantalla (el boton salia en `top: 5`). Esa
+     * complicacion desaparece con el diseno nuevo, y lo que se vigila ahora es que no
+     * vuelva: un control flotante por pantalla es suficiente, y es el `+`.
      */
-    const overlay = propBody(LISTA, 'overlay');
-
-    expect(overlay).not.toBeNull();
-    expect(overlay).toContain('placement="floating"');
-    expect(overlay).toContain('ListControls');
-    expect(overlay).toContain('controlsBottom');
-  });
-
-  it('`overlay` es una prop de `Screen`, no de otra cosa', () => {
-    // Sin esto, un `overlay=` en cualquier hoja que se abra dentro de esta pantalla
-    // cumpliría la prueba de arriba y el botón seguiría dentro del encabezado.
-    expect(padreAbiertoEn(LISTA, LISTA.indexOf('overlay={'))).toBe('Screen');
+    expect(LISTA).not.toContain('placement="floating"');
+    expect(LISTA).not.toContain('overlay={');
+    expect(LISTA).toContain('<ListControls');
   });
 
   it('la bandeja sigue midiendo desde el borde, que es como la define', () => {

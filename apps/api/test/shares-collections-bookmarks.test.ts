@@ -181,10 +181,12 @@ describe('las tres copias de la lista de tipos, y que sean la misma', () => {
     // y leer la primera es comparar contra un enum de hace tres fases. El orden es
     // el del nombre y no el que devuelva el sistema de ficheros.
     const carpeta = resolve(apiRaiz, 'drizzle');
-    const ultima = readFileSync(
-      resolve(carpeta, readdirSync(carpeta).filter((n) => n.endsWith('.sql')).sort().at(-1)!),
-      'utf8',
-    );
+    const ultima = readdirSync(carpeta)
+      .filter((n) => n.endsWith('.sql'))
+      .sort()
+      .map((n) => readFileSync(resolve(carpeta, n), 'utf8'))
+      .filter((sql) => /check \(node_type in \(/.test(sql))
+      .at(-1)!;
     const delCheck = [
       ...(ultima.match(/check \(node_type in \(([^)]*)\)\)/)?.[1] ?? '').matchAll(/'([^']+)'/g),
     ]

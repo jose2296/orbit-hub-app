@@ -19,6 +19,8 @@ export interface SpacesTree {
    * only question is *where*.
    */
   parentOf: (folderId: string) => Folder | null;
+  /** De la carpeta de primer nivel hasta esta, ambas incluidas; `[]` si no existe. */
+  pathOf: (folderId: string) => Folder[];
 }
 
 /**
@@ -178,6 +180,18 @@ export function useSpacesTree(): SpacesTree {
         const parentId = foldersById.get(folderId)?.parentId;
         if (!parentId) return null;
         return foldersById.get(parentId) ?? null;
+      },
+      pathOf: (folderId) => {
+        const camino: Folder[] = [];
+        const vistas = new Set<string>();
+        let actual = foldersById.get(folderId) ?? null;
+        // `vistas` corta un ciclo: la cache puede traer uno a medio sincronizar.
+        while (actual && !vistas.has(actual.id)) {
+          vistas.add(actual.id);
+          camino.unshift(actual);
+          actual = actual.parentId ? (foldersById.get(actual.parentId) ?? null) : null;
+        }
+        return camino;
       },
     };
   }, [folders, lists, collections, spaces]);

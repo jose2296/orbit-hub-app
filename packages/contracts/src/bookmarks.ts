@@ -88,7 +88,8 @@ export type Collection = z.infer<typeof collectionSchema>;
 
 export const bookmarkSchema = syncableEntitySchema
   .extend({
-    workspaceId: uuidSchema,
+    /** `null` = sin asignar: no esta en ningun espacio y es solo de quien lo guardo. */
+    workspaceId: uuidSchema.nullable(),
     folderId: uuidSchema.nullable().default(null),
     collectionId: uuidSchema.nullable().default(null),
     url: bookmarkUrlSchema,

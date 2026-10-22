@@ -1294,9 +1294,12 @@ describe('el panel de un elemento: dos velocidades de guardado', () => {
     // Antes eran siete escrituras repartidas por el panel, y por eso perder la nota
     // al cambiar el icono no era un descuido: era la forma normal de funcionar.
     const confirmar = panel.match(/const confirmar = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
-    for (const campo of ['title', 'annotation', 'priority', 'icon', 'tags', 'completed']) {
+    // La descripcion (`annotation` + `document`) sale por `liveDescription()`, que lee el
+    // editor vivo: es una sola escritura y por eso va esparcida en el mismo objeto.
+    for (const campo of ['title', 'priority', 'icon', 'tags', 'completed']) {
       expect(confirmar, `${campo} sale en el commit`).toContain(`${campo}:`);
     }
+    expect(confirmar, 'la descripcion sale en el commit').toContain('...(await liveDescription())');
     expect(confirmar, 'y es una sola escritura').toContain('updateItem(item!, {');
   });
 
@@ -1305,7 +1308,7 @@ describe('el panel de un elemento: dos velocidades de guardado', () => {
     // que leer el borrador aqui guardaria el nombre de hace un instante.
     const confirmar = panel.match(/const confirmar = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
     expect(confirmar, 'el nombre se lee del campo').toContain('title: title.trim()');
-    expect(confirmar, 'la nota tambien').toContain('annotation: annotation.trim()');
+    expect(confirmar, 'la descripcion tambien, preguntandole al editor').toContain('...(await liveDescription())');
   });
 
   it('"sucio" es TODO el panel, cada campo con su partida', () => {
@@ -1493,108 +1496,78 @@ describe('colocar una invitation: el Guardar del pie', () => {
   });
 });
 
-describe('#5: el buscador de la lista, como loSilentaste', () => {
+describe('#5: el buscador de la lista, en la cabecera y no flotando', () => {
   const leer = (p: string) =>
     readFileSync(join(import.meta.dirname, '..', p), 'utf8');
-  const sin = sinComentarios(leer('src/app/(app)/list/[listId].tsx'));
+  const crudo = leer('src/app/(app)/list/[listId].tsx');
+  const sin = sinComentarios(crudo);
 
-  it('el campo va DENTRO de la pantalla, y no como hermano suyo', () => {
-    /*
-      Montado fuera del `Screen`, un hermano cae donde le toca en el flujo del
-      padre: se dibujaba **abajo**, debajo de todo, yendo al fondo del esqueleto. Es
-      el sitio del que mas se queja quien lo busca, y el unico que no se puede
-      deducir leyendo donde se pulsa el boton.
-    */
-    expect(sin.indexOf('styles.buscador'), 'el campo se construye')
-      .toBeGreaterThan(-1);
-    // Y se pinta dentro: el uso esta tras abrir el `Screen` y antes de cerrarlo.
-    /*
-      Y el orden es lo que lo demuestra, no la mera presencia: **dentro** del `Screen`
-      el campo va antes de la `FlatList` de la lista. Como hermano suyo —fuera— queda
-      despues, porque el `Screen` entero ya se ha cerrado.
+  /*
+    POR QUE ESTE BLOQUE CAMBIO DE FORMA
 
-      Un guard que solo comprobara "aparece `{campoBusqueda}`" pasaria en los dos
-      casos, y ese es el fallo entero.
-    */
-    const uso = sin.lastIndexOf('{campoBusqueda}');
-    const lista = sin.indexOf('<FlatList');
-    expect(uso, 'el campo se pinta').toBeGreaterThan(-1);
-    expect(lista, 'la lista se pinta').toBeGreaterThan(-1);
-    expect(uso, 'dentro del Screen, o sea ANTES de la lista').toBeLessThan(lista);
-  });
+    Antes la lista tenia tres botones apilados en la esquina (buscar, filtros, `+`) y un
+    campo que nacia de uno de ellos y se escondia al volver a pulsarlo, anclado encima
+    del teclado. Los guards de aqui protegian esa pila: que subiera con el teclado, que
+    el campo fuera absoluto, que el boton alternara.
 
-  it('el boton alterna: el mismo que abre, cierra', () => {
-    /*
-      Y no solo abre. Un campo que se cierra solo tiene que adivinar, y se cerraba
-      al vaciarse —o sea que **no se podia buscar a vacio**, que es justo cuando se
-      empieza a escribir.
-    */
-    expect(sin, 'el boto alterna').toMatch(
-      /setBuscando\(\(abierto\) => !abierto\)/,
+    Se cambio el diseno entero y no un detalle: el campo esta siempre en la cabecera,
+    filtra al escribir y comparte fila con el boton de filtros, y el unico elemento
+    flotante es el `+`. Por eso estos guards afirman lo contrario a los de antes: que
+    **no** vuelva la pila de tres, el campo que se abre y se cierra, ni el `overlay`.
+  */
+  it('el campo y el filtro van en una barra de la cabecera, antes que las filas', () => {
+    expect(sin, 'la barra se construye').toContain('styles.barra');
+    expect(sin, 'el campo esta siempre, sin un boton que lo abra').toContain(
+      'testID="item-search-field"',
     );
-    expect(sin, 'y al cerrar limpia el texto').toMatch(
-      /if \(buscando\) setTextoBusqueda\(""\)/,
+    // Dentro de la cabecera: la barra se declara antes de que se pinte la lista.
+    expect(sin.indexOf('styles.barra'), 'la barra va en `header`').toBeLessThan(
+      sin.indexOf('<FlatList'),
     );
   });
 
-  it('el campo ocupa todo el ancho util', () => {
-    /*
-      Con un boton largo al lado se quedaba en dos tercios — y el buscador, que es
-      un campo, pagaba el ancho. Un buscador estrecho es un buscador en el que se
-      escribe de menos.
-    */
-    expect(sin, 'el campo se estira').toMatch(/campoAncho: \{[\s\S]*?flex: 1/);
-    expect(sin, 'y el contenedor va de margen a margen').toMatch(
-      /left: theme\.spacing\.lg,[\s\S]*?right: theme\.spacing\.lg/,
-    );
+  it('no vuelve el boton de buscar flotante, ni el campo que se abre y se cierra', () => {
+    expect(sin, 'sin boton de buscar').not.toContain('item-search-button');
+    expect(sin, 'sin estado de abierto/cerrado').not.toContain('setBuscando');
+    expect(sin, 'sin campo absoluto').not.toMatch(/buscador: \{[\s\S]*?position: "absolute"/);
+    expect(sin, 'los filtros ya no salen por `overlay`').not.toContain('overlay={');
+    expect(sin, 'ni flotan').not.toContain('placement="floating"');
   });
 
-  it('el de crear es solo un +, y el campo NO va en el flujo', () => {
-    /*
-      Un campo en el flujo se queda donde el flujo lo pone —arriba de la pantalla—
-      mientras el teclado tapa el tercio de abajo, y los dos nunca se encuentran.
-      Quien escribe una busqueda no mira el campo: mira el teclado.
-    */
-    expect(sin, 'el campo es absoluto, en el flujo no').toMatch(
-      /buscador: \{[\s\S]*?position: "absolute"/,
-    );
-    expect(sin, 'y va anclado encima de la pila').toMatch(
-      /bottom: porTeclado \+ pila\.searchBottom \+ pila\.searchHeight/,
-    );
-    expect(sin, 'con margen a los lados').toMatch(/left: theme\.spacing\.lg/);
-  });
-
-  it('los tres botones de la esquina suben con el teclado', () => {
-    /*
-      En Android el teclado **mueve** la ventana —la app no declara
-      `android.windowSoftInputMode` y lo que hace Android por defecto es `adjustPan`,
-      que traslada el origen y no toca el alto—. Un hijo absoluto dentro de un
-      `KeyboardAvoidingView` con padding depende de que ese padding se aplique, y en
-      `adjustPan` la ventana se ha movido sin que el layout cambie: los botones se
-      quedan **debajo** del teclado.
-    */
+  it('el unico flotante es el +, y sube con el teclado', () => {
     expect(sin, 'el + sube').toMatch(/bottom: pila\.fabBottom \+ porTeclado/);
-    expect(sin, 'el buscador sube').toMatch(
-      /bottom: pila\.searchBottom \+ porTeclado/,
-    );
-    expect(sin, 'los filtros suben').toMatch(
-      /floatingBottom=\{pila\.controlsBottom \+ porTeclado\}/,
-    );
     expect(sin, 'y porTeclado sale del teclado, a mano').toMatch(
       /const porTeclado = teclado > 0 \? teclado \+ theme\.spacing\.md : 0;/,
     );
   });
 
-  it('el + de al lado abre el panel CON lo que se buscaba', () => {
+  it('crear desde la busqueda es una fila bajo el campo, y abre el panel CON el texto', () => {
     /*
       Abria el modal **en blanco**: teclear el nombre en el buscador, no encontrarlo,
       y teclearlo otra vez en un formulario que ya te habia mostrado el texto.
     */
+    expect(sin, 'la fila existe').toContain('testID="item-search-create"');
     expect(sin, 'pasa el texto al panel').toMatch(
       /setEditing\(\{ itemId: "", page: "edit", tituloInicial: texto \}\)/,
     );
-    expect(leer('src/app/(app)/list/[listId].tsx')).toContain(
-      'initialTitle={editing?.tituloInicial}',
+    expect(crudo).toContain('initialTitle={editing?.tituloInicial}');
+  });
+
+  it('buscar algo que no existe no dice "todo hecho" ni "0 pendientes"', () => {
+    /*
+      Visto en el navegador: una busqueda sin coincidencias pintaba "Todo hecho. No
+      queda nada pendiente." y el contador en 0, cuando la lista no habia cambiado. Los
+      contadores cuentan la lista con sus filtros y no la busqueda, y el "todo hecho"
+      solo sale sin busqueda.
+    */
+    expect(sin, 'los contadores salen de la lista y no de la busqueda').toContain(
+      'pendingTotal.length',
+    );
+    expect(sin, '"todo hecho" solo sin busqueda').toMatch(
+      /termino\.length === 0 &&\s*pendingTotal\.length === 0/,
+    );
+    expect(sin, 'y la busqueda sin resultados tiene su mensaje').toContain(
+      'lists.searchNoResults',
     );
   });
 });

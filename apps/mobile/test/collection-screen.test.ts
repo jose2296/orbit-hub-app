@@ -140,9 +140,12 @@ describe("una coleccion es una pantalla, y la ruta existe", () => {
       aca—, asi que como marcador de "la fila todavia usa el filtro" no distingue
       nada. Y el `pathname` es lo unico que si.
     */
-    const alFiltro = tsxDeLaApp().filter((nombre) =>
-      src(`src/${nombre}`).includes('pathname: "/(app)/bookmarks"'),
-    );
+    // `unclassified-entry.tsx` es la unica excepcion, y es del filtro de enlaces
+    // **sin coleccion** (`collectionId: "unclassified"`): lo que este guard impide es
+    // mandar una coleccion de verdad a esa lista.
+    const alFiltro = tsxDeLaApp()
+      .filter((nombre) => !nombre.endsWith("components/bookmarks/unclassified-entry.tsx"))
+      .filter((nombre) => src(`src/${nombre}`).includes('pathname: "/(app)/bookmarks"'));
     const lista = sinComentarios(src(CONTENT_LIST));
 
     expect(
@@ -430,7 +433,7 @@ describe("el menu de la cabecera es el del registro y no una hoja propia", () =>
         .filter(puedeOfrecerse)
         .map((accion) => accion.id);
 
-    expect(ofrecibles()).toEqual(["rename", "share", "access", "export", "delete"]);
+    expect(ofrecibles()).toEqual(["rename", "share", "access", "export", "move", "delete"]);
     /*
       `access` se ofrece desde que T8 monto su pagina, `export` desde que la T9 monto
       la suya **y creo `GET /collections/:id/export`**, y `share` desde que la T10
@@ -454,6 +457,7 @@ describe("el menu de la cabecera es el del registro y no una hoja propia", () =>
       "share",
       "access",
       "export",
+      "move",
       "delete",
     ]);
     expect(ofrecibles()).toContain("access");

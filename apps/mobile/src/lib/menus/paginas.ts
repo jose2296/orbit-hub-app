@@ -79,6 +79,7 @@ export const PAGINAS_MONTADAS: MenuPageId[] = [
     paginas y no el del registro.
   */
   "export",
+  "move",
 ];
 
 /**

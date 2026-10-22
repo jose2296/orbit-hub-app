@@ -6,7 +6,7 @@ import { boardStatesSchema } from "./board.js";
 import { emailSchema, isoDateTimeSchema, uuidSchema } from "./common";
 import { syncableEntitySchema } from "./api";
 import { userSchema } from "./auth";
-import { noteDocumentSchema } from "./note-document";
+import { NOTE_DOCUMENT_MAX_BYTES, noteDocumentSchema } from "./note-document";
 
 export const membershipRoleSchema = z.enum(["owner", "editor", "viewer"]);
 export type MembershipRole = z.infer<typeof membershipRoleSchema>;
@@ -518,6 +518,8 @@ export const listItemSchema = syncableEntitySchema
    * in `noteSchema`. See [ADR 0008](../../docs/architecture/adr/0008-note-entity.md).
    */
   annotation: z.string().max(LIST_ITEM_ANNOTATION_MAX).nullable().default(null),
+  /** The description as a note document. `annotation` is its plain text, derived by the server. */
+  document: z.string().max(NOTE_DOCUMENT_MAX_BYTES).default(''),
 })
   .extend(nodeAccessSchema.shape);
 export type ListItem = z.infer<typeof listItemSchema>;

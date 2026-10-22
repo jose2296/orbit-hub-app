@@ -146,6 +146,7 @@ describe("la fila de crear una lista aqui vuelve a estar en el menu", () => {
       "icon",
       "share",
       "access",
+      "move",
       "delete",
     ]);
   });

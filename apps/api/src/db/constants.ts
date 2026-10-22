@@ -48,6 +48,15 @@ export const SYNC_ENTITIES = [
 ] as const;
 export type SyncEntityName = (typeof SYNC_ENTITIES)[number];
 
+/** Lo que puede cambiar de espacio con un update de `workspaceId`: las cinco filas con columna de espacio propia que cuelgan de una carpeta o de la raiz. */
+export const SYNC_MOVABLE_ENTITIES: readonly SyncEntityName[] = [
+  'folder',
+  'list',
+  'note',
+  'collection',
+  'bookmark',
+];
+
 export const SYNC_OPERATION_KINDS = ['create', 'update', 'delete'] as const;
 export type SyncOperationKindName = (typeof SYNC_OPERATION_KINDS)[number];
 
@@ -130,12 +139,13 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
   // rejection, because a rejection at least tells the person their choice did not
   // save, and this one looked like it saved for four whole rebuilds.
   workspace: ['name', 'description', 'icon', 'color', 'colorTo', 'wash'],
-  folder: ['parentId', 'name', 'icon', 'position'],
+  folder: ['workspaceId', 'parentId', 'name', 'icon', 'position'],
   // `states` and `stateId` below are the board's two, and being on this list is
   // **half** of writing them: a key allowed here still needs its branch in
   // `sanitisePayload`, and the test that catches the missing half pushes a board
   // and reads its states back (`lists.test.ts`).
   list: [
+    'workspaceId',
     'folderId',
     'title',
     'description',
@@ -157,6 +167,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'externalId',
     'metadata',
     'annotation',
+    'document',
     'stateId',
   ],
   /**
@@ -165,7 +176,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    * just validated, so a client cannot write a body and a search string that
    * disagree. `plainText` and `attachmentCount` are absent on purpose.
    */
-  note: ['title', 'document', 'folderId', 'tags', 'position', 'icon'],
+  note: ['workspaceId', 'title', 'document', 'folderId', 'tags', 'position', 'icon'],
   dashboard: ['layout', 'pages'],
   // The day is set once, by the create, and never moves: its id is derived from it.
   journal_entry: ['document'],
@@ -173,7 +184,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
    * Una coleccion es una carpeta con nombre: lo que la persona elige es donde va
    * y como se llama, y nada mas.
    */
-  collection: ['folderId', 'name', 'description', 'emoji', 'position'],
+  collection: ['workspaceId', 'folderId', 'name', 'description', 'emoji', 'position'],
   /**
    * De un bookmark el cliente elige el enlace, el titulo, donde queda y como se
    * ordena. Lo que **no** aparece aqui es el corazon de la decision, y son siete

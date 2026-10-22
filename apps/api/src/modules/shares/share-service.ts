@@ -164,6 +164,10 @@ export class ShareService {
         .limit(1);
       const found = row[0];
       if (!found) throw HttpError.notFound('That does not exist');
+      // Sin espacio no hay a donde mandar al otro ni de donde colgar el grant.
+      if (found.workspaceId === null) {
+        throw HttpError.validation('Assign the link to a space before sharing it');
+      }
       /*
         El unico nodo compartible cuyo titulo **puede estar vacio**, y no por una
         mancada del dato: `bookmarks.title` es `varchar(300) not null default ''` y

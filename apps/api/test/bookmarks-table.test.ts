@@ -76,7 +76,11 @@ describe('la tabla bookmarks', () => {
   it('colga de workspace, carpeta y coleccion', () => {
     const columns = getTableColumns(bookmarks);
     expect(columns.workspaceId).toBeDefined();
-    expect(columns.workspaceId.notNull).toBe(true);
+    // Nullable desde que un enlace puede estar sin asignar; la pertenencia sale entonces
+    // de `ownerId`, y el CHECK de la migracion obliga a que exista una de las dos.
+    expect(columns.workspaceId.notNull).toBe(false);
+    expect(columns.ownerId).toBeDefined();
+    expect(columns.ownerId.notNull).toBe(false);
     expect(columns.folderId).toBeDefined();
     expect(columns.folderId.notNull).toBe(false);
     // La coleccion es opcional y ademas se puede quedar en null: por eso su FK

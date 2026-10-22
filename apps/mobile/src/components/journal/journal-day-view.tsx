@@ -1,11 +1,10 @@
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView } from "react-native";
 import { EnrichedText } from "react-native-enriched-html";
 import type { OnMentionPressEvent } from "react-native-enriched-html";
 
 import { useNoteHtmlStyle } from "@/components/notes/note-editor";
-import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { renderMentions } from "@/lib/journal/mentions";
 import type { MentionLookup, MentionTarget } from "@/lib/journal/mentions";
@@ -52,36 +51,27 @@ export function JournalDayView({
   return (
     <ScrollView
       contentContainerStyle={{
+        flexGrow: 1,
         paddingHorizontal: theme.spacing.lg,
         paddingTop: theme.spacing.md,
         paddingBottom: theme.spacing.xxl,
         gap: theme.spacing.lg,
       }}
     >
-      <EnrichedText htmlStyle={htmlStyle} style={bodyStyle} onMentionPress={onMentionPress}>
-        {html}
-      </EnrichedText>
-      {onEdit ? (
-      <View style={{ alignItems: "flex-start" }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("journal.edit")}
-          onPress={onEdit}
-          style={({ pressed }) => ({
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: theme.spacing.md,
-            height: 36,
-            borderRadius: theme.radius.pill,
-            backgroundColor: pressed ? theme.colors.surfaceSunken : theme.colors.surface,
-            borderWidth: 1,
-            borderColor: theme.colors.border,
-          })}
-        >
-          <AppText variant="bodyStrong">{t("journal.edit")}</AppText>
-        </Pressable>
-      </View>
-      ) : null}
+      {/* Un toque en el texto abre el editor con el cursor dentro; uno en un enlace (chip) va
+          a lo que enlaza, porque la libreria lo resuelve antes de que el toque suba hasta aqui. */}
+      <Pressable
+        accessibilityRole={onEdit ? "button" : undefined}
+        accessibilityLabel={onEdit ? t("journal.edit") : undefined}
+        disabled={!onEdit}
+        onPress={onEdit}
+      >
+        <EnrichedText htmlStyle={htmlStyle} style={bodyStyle} onMentionPress={onMentionPress}>
+          {html}
+        </EnrichedText>
+      </Pressable>
+      {/* El resto de la pagina, para que tocar debajo del texto tambien escriba. */}
+      {onEdit ? <Pressable style={{ flexGrow: 1, minHeight: 160 }} onPress={onEdit} /> : null}
     </ScrollView>
   );
 }

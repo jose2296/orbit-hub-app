@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { EnrichedTextInputInstance } from "react-native-enriched-html";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 
 import type {
@@ -9,7 +10,7 @@ import type {
   Priority,
   TagColors,
 } from "@orbit-hub/contracts";
-import { derivedTagColor, labelOf } from "@orbit-hub/contracts";
+import { derivedTagColor, labelOf, noteDocumentToPlainText } from "@orbit-hub/contracts";
 import { stateOf } from "@orbit-hub/contracts";
 
 import { AppIcon } from "@/components/ui/app-icon";
@@ -21,8 +22,9 @@ import { IconPickerPanel } from "@/components/ui/icon-picker-sheet";
 import { Sheet } from "@/components/ui/sheet";
 import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
+import { NoteEditor } from "@/components/notes/note-editor";
 import { TextField } from "@/components/ui/text-field";
-import { useFieldChain } from "@/lib/forms/field-chain";
+import { descriptionDocumentOf, descriptionIsEmpty } from "@/lib/lists/description";
 import { useListItems } from "@/hooks/use-lists";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { FIELD_LIMITS } from "@/lib/lists/field-limit";
@@ -41,7 +43,7 @@ import type { IconColor } from "@orbit-hub/contracts";
 import { TagChip } from "./tag-chip";
 import { TagColorPicker } from "./tag-color-picker";
 
-type Page = "edit" | "icon" | "tags";
+type Page = "edit" | "icon" | "tags" | "description";
 
 const PRIORITIES: Priority[] = ["none", "low", "medium", "high"];
 
@@ -249,17 +251,13 @@ export function ItemEditSheet({
   const [page, setPage] = useState<Page>(startOn);
   const [title, setTitle] = useState(item?.title ?? "");
 
-  /*
-   * Solo dos, y no tres: el tercer `TextField` de la hoja es el de anadir una
-   * etiqueta, y vive en otra pagina con su propio boton y su propio `done`. Encadenar
-   * un campo que no esta a la vista con otro que si esta es un salto que atraviesa
-   * una pagina.
-   *
-   * Y el segundo es `multiline`: su ENTER es un salto de linea y no se encadena
-   * con nadie, que es lo correcto para un cuerpo de nota.
-   */
-  const cadena = useFieldChain(2);
+  // La descripcion es un documento (como una nota). `annotation` es su texto plano: lo que
+  // enseña el resumen de esta hoja y lo que el servidor guarda como vista previa. El
+  // documento solo cambia cuando el editor emite un cambio, asi que abrir la pagina y salir
+  // sin tocar nada no ensucia el borrador aunque el editor reformatee el marcado al leerlo.
   const [annotation, setAnnotation] = useState(item?.annotation ?? "");
+  const [descDoc, setDescDoc] = useState(item ? descriptionDocumentOf(item) : "");
+  const descEditorRef = useRef<EnrichedTextInputInstance | null>(null);
   const [newTag, setNewTag] = useState("");
   /*
    * Which label has its picker open, and one at a time: two open would be two
@@ -339,6 +337,7 @@ export function ItemEditSheet({
     setPage(startOn);
     setTitle(item.title);
     setAnnotation(item.annotation ?? "");
+    setDescDoc(descriptionDocumentOf(item));
     setNewTag("");
     // Y los colores del borrador, por el mismo motivo que el resto: el panel se
     // queda montado al cerrarse, y sin esto la siguiente tarea abre con los
@@ -519,6 +518,7 @@ export function ItemEditSheet({
     return (
       title.trim() !== (isNew ? "" : base.title.trim()) ||
       annotation.trim() !== (isNew ? "" : (base.annotation ?? "").trim()) ||
+      descDoc !== (isNew ? "" : descriptionDocumentOf(item ?? {})) ||
       draft.priority !== (isNew ? "none" : base.priority) ||
       // By value and not by reference: the draft holds what was picked and the
       // row holds what it has, and two objects saying the same icon are the same
@@ -528,7 +528,7 @@ export function ItemEditSheet({
       !sameLabels(draft.tags, isNew ? [] : base.tags) ||
       !sameColors(colores, isNew ? {} : tagColors)
     );
-  }, [isNew, item, title, annotation, draft, colores, tagColors]);
+  }, [isNew, item, title, annotation, descDoc, draft, colores, tagColors]);
 
   /*
     Los hooks van **antes** del `return null` de mas abajo, y no por estetica.
@@ -601,7 +601,7 @@ export function ItemEditSheet({
           // campo no ha llegado al borrador en este mismo frame, asi que leer el
           // borrador aqui guardaria el nombre de hace un instante.
           title: title.trim(),
-          annotation: annotation.trim() || null,
+          ...(await liveDescription()),
           priority: draft.priority,
           // The whole icon in the one write: colour and drawing travel inside it,
           // and there is no second or third write that could half-land.
@@ -766,6 +766,18 @@ export function ItemEditSheet({
     setColores((previos) => ({ ...previos, [tag]: option }));
   };
 
+  /**
+   * La descripcion tal como esta **ahora**: si el editor esta en pantalla se le pregunta a
+   * el, porque el ultimo cambio puede no haber llegado al estado (leer el HTML es asincrono
+   * y Guardar se puede pulsar justo despues de teclear). Sin descripcion, no se escribe
+   * nada: ni documento vacio ni anotacion.
+   */
+  const liveDescription = async (): Promise<{ document: string; annotation: string | null }> => {
+    const doc = descEditorRef.current ? await descEditorRef.current.getHTML() : descDoc;
+    if (descriptionIsEmpty(doc)) return { document: "", annotation: null };
+    return { document: doc, annotation: noteDocumentToPlainText(doc).trim() || null };
+  };
+
   /** Writes the row for the first time, with everything the panel was given. */
   const create = async () => {
     const trimmed = title.trim();
@@ -774,7 +786,7 @@ export function ItemEditSheet({
     if (!trimmed) return;
     await addItem({
       title: trimmed,
-      annotation: annotation.trim() || null,
+      ...(await liveDescription()),
       priority: draft.priority,
       icon: draft.icon,
       tags: draft.tags,
@@ -802,6 +814,8 @@ export function ItemEditSheet({
   const subtitle =
     page === "icon"
       ? t("itemEdit.iconSubtitle")
+      : page === "description"
+        ? t("itemEdit.descriptionSubtitle")
       : page === "tags"
         ? t(pluralKey("itemEdit.tagsSubtitle", shown.tags.length), {
             count: shown.tags.length,
@@ -868,14 +882,11 @@ export function ItemEditSheet({
                 "llamar al/installador", pulsabas el de abajo, y el servidor ya
                 tenia media frase.
               */
-              returnKeyType="next"
+              // Un solo campo en esta pagina: la descripcion tiene la suya, asi que no hay
+              // a donde encadenar. El nombre se queda escrito hasta que alguien pulse
+              // Guardar, que es lo unico que decide que se guarda.
+              returnKeyType="done"
               selectTextOnFocus={false}
-              ref={cadena.register(0)}
-              onSubmitEditing={() => cadena.advance(0, () => {
-                // Saltar al campo de la nota, que es a donde se sigue. Aqui ya no
-                // se guarda nada: el nombre se queda escrito hasta que alguien
-                // pulse Guardar, que es lo unico que decide que se guarda.
-              })}
               // The width the contracts will store it at, so the counter and the
               // server agree. The title of a task is 300 on purpose, and a list of
               // 300 of them is not a thing anyone writes.
@@ -886,15 +897,34 @@ export function ItemEditSheet({
               placeholder={t("items.titlePlaceholder")}
             />
 
-            <TextField
-              label={t("itemEdit.description")}
-              value={annotation}
-              onChangeText={setAnnotation}
-              limit={FIELD_LIMITS['list_item.annotation']}
-              placeholder={t("itemEdit.descriptionPlaceholder")}
-              multiline
-              ref={cadena.register(1)}
-            />
+            {/* La descripcion tiene su propia pagina, grande: un `TextField` de tres
+                lineas dentro de una hoja que ya tiene nombre, prioridad y etiquetas es
+                demasiado pequeno para escribir de verdad. Aqui solo se ve un resumen. */}
+            <Pressable
+              testID="item-description-link"
+              accessibilityRole="button"
+              accessibilityLabel={t("itemEdit.description")}
+              onPress={() => setPage("description")}
+              style={({ pressed }) => [
+                styles.link,
+                {
+                  borderColor: theme.colors.border,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
+                },
+              ]}
+            >
+              <Ionicons name="document-text-outline" size={18} color={theme.colors.textMuted} />
+              <View style={styles.flex}>
+                <AppText variant="body">{t("itemEdit.description")}</AppText>
+                <AppText variant="caption" tone="muted" numberOfLines={2}>
+                  {annotation.trim().length > 0
+                    ? annotation.trim()
+                    : t("itemEdit.descriptionPlaceholder")}
+                </AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={theme.colors.textSubtle} />
+            </Pressable>
 
             {/* The priority, as four things you can see rather than a dropdown of
                 words. And it is here, and not in a menu, because ordering a list
@@ -1216,6 +1246,25 @@ export function ItemEditSheet({
               </View>
             ) : null}
           </>
+        ) : null}
+
+        {page === "description" ? (
+          // El mismo editor que una nota: formato, listas, enlaces. Alto de editor y no de
+          // campo; la barra de formato aparece con el foco, como en una nota.
+          <View testID="item-description" style={{ height: 360 }}>
+            <DescriptionEditor
+              initial={descDoc}
+              editorRef={descEditorRef}
+              placeholder={t("itemEdit.descriptionPlaceholder")}
+              onChanged={() => {
+                void (async () => {
+                  const doc = (await descEditorRef.current?.getHTML()) ?? descDoc;
+                  setDescDoc(doc);
+                  setAnnotation(noteDocumentToPlainText(doc).trim());
+                })();
+              }}
+            />
+          </View>
         ) : null}
 
         {page === "icon" ? (
@@ -1722,3 +1771,33 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+
+/**
+ * El editor de la descripcion, con su valor inicial **congelado**.
+ *
+ * El editor trata `defaultValue` como la carga inicial y se reinicia si cambia. El estado
+ * de la hoja cambia con cada tecla (es lo que alimenta el resumen y "sucio"), asi que
+ * pasarselo tal cual vaciaba el editor mientras se escribia en el.
+ */
+function DescriptionEditor({
+  initial,
+  editorRef,
+  placeholder,
+  onChanged,
+}: {
+  initial: string;
+  editorRef: React.RefObject<EnrichedTextInputInstance | null>;
+  placeholder: string;
+  onChanged: () => void;
+}) {
+  const [start] = useState(initial);
+  return (
+    <NoteEditor
+      editorRef={editorRef}
+      defaultValue={start}
+      placeholder={placeholder}
+      autoFocus
+      onChanged={onChanged}
+    />
+  );
+}

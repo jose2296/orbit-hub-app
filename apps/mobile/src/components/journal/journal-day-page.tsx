@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Platform, Pressable, View } from "react-native";
+import { AppState, Platform, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
 
 import { JournalDayView } from "@/components/journal/journal-day-view";
 import { MentionPickerSheet } from "@/components/mentions/mention-picker-sheet";
 import type { MentionPick } from "@/components/mentions/mention-picker-sheet";
-import { AppText } from "@/components/ui/text";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { useJournalEntry, useMentionTargets } from "@/hooks/use-journal";
 import { lookupIn, writeJournalEntry } from "@/lib/journal/entries";
@@ -18,8 +17,13 @@ import { noteDocumentToPlainText } from "@orbit-hub/contracts";
 import { useTheme } from "@/theme";
 
 /**
- * One day of the journal: read when it has words in it, open for writing when it
- * does not or when "Editar" was pressed.
+ * One day of the journal, **always editable**: there is no read/edit switch to press.
+ *
+ * On the web the editor is simply there, and a click on a chip goes to what it points
+ * at (read from the page). On a phone the editor cannot take a press on a chip, so a day
+ * with words rests as the rendered text, where a chip answers a press, and a tap on the
+ * text itself puts the cursor in; leaving the editor puts it back. Either way the person
+ * never chooses a mode: they tap, and either something opens or they are writing.
  *
  * Keyed by its day, so moving to another day is a new page. Its pending save is
  * flushed through `registerFlush` before the move, while the editor is still there.
@@ -31,10 +35,13 @@ export function JournalDayPage({
   userId,
   day,
   registerFlush,
+  onEditingChange,
 }: {
   userId: string;
   day: string;
   registerFlush: (flush: (() => Promise<void>) | null) => void;
+  /** Se esta escribiendo (el editor tiene el foco): el gesto de cambiar de dia se apaga. */
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const theme = useTheme();
   const t = useTranslation();
@@ -49,17 +56,21 @@ export function JournalDayPage({
   const [initialDocument, setInitialDocument] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   /**
-   * Whether the day is being written or read.
+   * Whether the editor is on screen, **in the platforms where it is not always**.
    *
-   * A day with words in it opens reading, and only the press of "Editar" opens the
-   * editor. The reason is not a preference: the editor cannot receive a press on a
-   * chip at all — the library gives no event for it, and on a phone there is no hook
-   * to read it from, unlike the web, where the click is read from the page. A chip
-   * that cannot be pressed is a chip that cannot take you anywhere, and taking you
-   * somewhere is the only thing a chip is for. An empty day opens writing, because
-   * there is nothing to read and the first thing one does with an empty day is write.
+   * On the web it always is. On a phone a day with words rests as rendered text because
+   * the editor gives no event for a press on a chip (the library only has
+   * `onMentionPress` on its read-only component), and a chip that cannot be pressed
+   * cannot take you anywhere. A tap on the text switches to the editor, and losing focus
+   * switches back. An empty day has nothing to read, so it is the editor from the start.
    */
   const [escribiendo, setEscribiendo] = useState(false);
+  // El editor se monta por un toque y debe nacer con el cursor dentro.
+  const [enfocarAlMontar, setEnfocarAlMontar] = useState(false);
+  // El selector de menciones es una hoja: abrirla le quita el foco al editor, y eso no es
+  // "terminar de escribir". Sin esta marca el editor se desmontaria con la hoja abierta y
+  // `onPick` se quedaria sin editor al que escribir.
+  const pickerAbierto = useRef(false);
   // The body as it was loaded or last written, to tell a real change from an echo.
   const savedRef = useRef<string>("");
   // Where the picker was asked for. A `@` typed by hand has already started the
@@ -77,6 +88,9 @@ export function JournalDayPage({
     );
   }, [initialDocument, loaded, record, targets, t]);
 
+  // La pagina se va con su dia: si estaba escribiendo, el gesto de cambiar de dia tiene
+  // que volver a encenderse.
+  useEffect(() => () => onEditingChange?.(false), [onEditingChange]);
   const router = useRouter();
 
   /**
@@ -151,6 +165,7 @@ export function JournalDayPage({
    * the person carries on writing where they were. The picker has already closed.
    */
   const onPick = async (pick: MentionPick) => {
+    pickerAbierto.current = false;
     setPickerOpen(false);
     const input = editorRef.current;
     if (!input) return;
@@ -175,14 +190,18 @@ export function JournalDayPage({
   // Reading: the day as it reads, with its chips drawn and pressable. The chips in the
   // editor are not pressable on a phone, so this is where a chip works.
   const entrada = record;
-  if (!escribiendo && entrada !== null && entrada.plainText.trim().length > 0) {
+  const tieneTexto = entrada !== null && entrada.plainText.trim().length > 0;
+  if (Platform.OS !== "web" && !escribiendo && tieneTexto) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <JournalDayView
           document={entrada.document}
           lookup={lookupIn(targets ?? new Map())}
           targets={targets ?? new Map()}
-          onEdit={() => setEscribiendo(true)}
+          onEdit={() => {
+            setEnfocarAlMontar(true);
+            setEscribiendo(true);
+          }}
         />
       </View>
     );
@@ -194,41 +213,30 @@ export function JournalDayPage({
         editorRef={editorRef}
         defaultValue={initialDocument}
         placeholder={t("journal.placeholder")}
+        autoFocus={enfocarAlMontar}
         onChanged={() => autosave.schedule()}
+        onFocusChange={(focused) => {
+          onEditingChange?.(focused);
+          // Terminar de escribir devuelve el dia a su lectura, donde un enlace responde a un
+          // toque. Solo en el movil, y no si el foco se fue porque se abrio el selector.
+          if (!focused && Platform.OS !== "web" && !pickerAbierto.current && tieneTexto) {
+            void autosave.flush();
+            setEnfocarAlMontar(false);
+            setEscribiendo(false);
+          }
+        }}
         onMentionRequest={(source) => {
           mentionSource.current = source;
+          pickerAbierto.current = true;
           setPickerOpen(true);
         }}
       />
-      {/* Back to reading, where a chip answers a press. Only once there is something
-          to go back to: an empty day stays writing, because an empty day has nothing
-          to read. */}
-      {entrada !== null && entrada.plainText.trim().length > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("journal.read")}
-          onPress={() => {
-            void autosave.flush();
-            setEscribiendo(false);
-          }}
-          style={({ pressed }) => ({
-            alignSelf: "center",
-            marginBottom: theme.spacing.md,
-            paddingHorizontal: theme.spacing.lg,
-            height: 36,
-            justifyContent: "center",
-            borderRadius: theme.radius.pill,
-            backgroundColor: pressed ? theme.colors.surfaceSunken : theme.colors.surface,
-            borderWidth: 1,
-            borderColor: theme.colors.border,
-          })}
-        >
-          <AppText variant="bodyStrong">{t("journal.read")}</AppText>
-        </Pressable>
-      ) : null}
       <MentionPickerSheet
         visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}
+        onClose={() => {
+          pickerAbierto.current = false;
+          setPickerOpen(false);
+        }}
         onPick={(pick) => void onPick(pick)}
       />
     </View>

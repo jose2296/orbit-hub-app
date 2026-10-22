@@ -91,13 +91,16 @@ export function formatDayTitle(day: string, locale: string): string {
   const { year, monthIndex } = monthOfDay(day);
   const date = new Date(Date.UTC(year, monthIndex, Number(day.slice(8, 10))));
   try {
-    return new Intl.DateTimeFormat(locale, {
+    const title = new Intl.DateTimeFormat(locale, {
       weekday: "long",
       day: "numeric",
       month: "long",
       year: "numeric",
       timeZone: "UTC",
     }).format(date);
+    // Solo la primera letra: `Intl` da "jueves, 22 de octubre de 2026" y la pantalla lo
+    // capitalizaba con CSS, que lo hace palabra a palabra ("22 De Octubre De 2026").
+    return title.charAt(0).toLocaleUpperCase(locale) + title.slice(1);
   } catch {
     return day;
   }

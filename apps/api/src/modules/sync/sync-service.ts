@@ -34,6 +34,7 @@ import {
   WORKSPACE_WASHES,
   MEMBERSHIP_ROLE_RANK,
   SYNC_ENTITIES,
+  SYNC_MOVABLE_ENTITIES,
   SYNC_WRITABLE_FIELDS,
 } from '../../db/constants.js';
 import type {
@@ -108,7 +109,10 @@ function noteFieldsForWrite(
   entity: SyncEntityName,
   values: Record<string, unknown>,
 ): Record<string, unknown> {
-  if ((entity !== 'note' && entity !== 'journal_entry') || typeof values['document'] !== 'string') {
+  if (
+    (entity !== 'note' && entity !== 'journal_entry' && entity !== 'list_item') ||
+    typeof values['document'] !== 'string'
+  ) {
     return values;
   }
   // Checked on every write that carries a document, not only on the create. The
@@ -116,7 +120,14 @@ function noteFieldsForWrite(
   // carry any markup and the server stored it, and the editor on iOS and Android
   // does not sanitise what it reads back. The merge path comes through here too.
   const document = noteDocumentSchema.parse(values['document']);
-  return { ...values, document, plainText: noteDocumentToPlainText(document) };
+  const plainText = noteDocumentToPlainText(document);
+  if (entity === 'list_item') {
+    // A task has no `plain_text` column: its plain text is `annotation`, capped like it.
+    // Whatever `annotation` the client sent alongside is replaced, so the two cannot
+    // disagree. An empty document clears it (null, not '').
+    return { ...values, document, annotation: plainText.length > 0 ? plainText.slice(0, 2000) : null };
+  }
+  return { ...values, document, plainText };
 }
 
 /**
@@ -256,6 +267,14 @@ export function sanitisePayload(
     }
 
     if (key === 'parentId') {
+      clean[key] = value === null ? null : String(value);
+      continue;
+    }
+
+    // Sin esta rama el bucle tira `workspaceId` aunque la lista blanca lo permita, y
+    // el push responde `applied` sin haber movido nada. Quien decide si el destino es
+    // valido es `prepararMudanza`, no el sanitizador: aqui solo se castea.
+    if (key === 'workspaceId') {
       clean[key] = value === null ? null : String(value);
       continue;
     }
@@ -595,6 +614,19 @@ export class SyncService {
     }
   }
 
+  /**
+   * Un enlace sin asignar es de quien lo creo y de nadie mas.
+   *
+   * `assertCanWrite(null)` devuelve sin mirar nada --workspaces y dashboards son del
+   * usuario--, asi que un bookmark sin espacio entraria por ahi **sin ningun chequeo**.
+   * Es un 404 y no un 403 por la misma razon que en el resto: no confirmar que el id existe.
+   */
+  private assertOwnsUnassigned(row: StoredEntity, userId: string): void {
+    if ((row['ownerId'] as string | null) !== userId) {
+      throw HttpError.notFound('Bookmark not found');
+    }
+  }
+
   private async assertCanWrite(
     workspaceId: string | null,
     userId: string,
@@ -773,6 +805,113 @@ export class SyncService {
     await syncRepository.moveBookmarksToFolder(despues.id, carpetaAhora);
   }
 
+  /**
+   * Un update que cambia el `workspaceId` de una fila: la mudanza.
+   *
+   * Se valida **en los dos extremos**. El permiso del origen dice que la fila es tuya
+   * (membresia completa: un grant sobre un nodo suelto deja editarlo, no sacarlo del
+   * espacio de su dueno), y el del destino dice que puedes dejar algo ahi. Sin el
+   * segundo, `workspaceId` seria un campo que el cliente puede poner a cualquier valor.
+   *
+   * El contenedor (`parentId` de una carpeta, `folderId` del resto) se resuelve contra el
+   * **destino** y, si no viene, es la raiz: heredar el del origen dejaria una fila
+   * colgando de una carpeta de otro espacio. Un bookmark ademas pierde su coleccion, que
+   * tambien es del espacio viejo.
+   *
+   * Devuelve la operacion reescrita para que los dos caminos de escritura --version al
+   * dia y merge-- guarden lo mismo, o `null` si no hay mudanza.
+   */
+  private async prepararMudanza(
+    entity: SyncEntityName,
+    existing: StoredEntity,
+    operation: SyncOperation,
+    userId: string,
+  ): Promise<{
+    operacion: SyncOperation;
+    espacio: string | null;
+    /** Columnas que el cliente no puede escribir y la mudanza si: hoy, `ownerId`. */
+    extras: Record<string, unknown>;
+  } | null> {
+    if (!SYNC_MOVABLE_ENTITIES.includes(entity)) return null;
+
+    const limpio = sanitisePayload(entity, operation.payload);
+    if (!('workspaceId' in limpio)) return null;
+
+    const destino = limpio['workspaceId'];
+    // `null` es "sin asignar" y solo existe para un bookmark.
+    const aSinAsignar = destino === null && entity === 'bookmark';
+    if (!aSinAsignar && (typeof destino !== 'string' || destino.length === 0)) {
+      throw HttpError.validation('A workspaceId is needed to move to');
+    }
+    const espacioDestino = aSinAsignar ? null : (destino as string);
+    const origen = this.workspaceDeLaFila(existing);
+    if (espacioDestino === origen) return null;
+
+    if (origen === null) this.assertOwnsUnassigned(existing, userId);
+    else await this.assertCanWrite(origen, userId);
+    if (espacioDestino !== null) await this.assertCanWrite(espacioDestino, userId);
+
+    const campo = entity === 'folder' ? 'parentId' : 'folderId';
+    const contenedor =
+      espacioDestino === null
+        ? null
+        : await this.resolveCarpetaDeEsteEspacio(
+            (limpio[campo] as string | null | undefined) ?? null,
+            espacioDestino,
+          );
+
+    const payload: Record<string, unknown> = {
+      ...(operation.payload ?? {}),
+      workspaceId: espacioDestino,
+      [campo]: contenedor,
+    };
+    if (entity === 'bookmark') {
+      // La coleccion de origen es del espacio viejo y se pierde. Pero quien mueve puede
+      // pedir una del **destino** (la hoja de clasificar manda las dos cosas a la vez), y
+      // entonces la carpeta sale de ella, como en cualquier otra clasificacion.
+      const pedida = (limpio['collectionId'] as string | null | undefined) ?? null;
+      if (pedida !== null && espacioDestino !== null) {
+        const coleccion = await this.findColeccionDeEsteEspacio(pedida, espacioDestino);
+        payload['collectionId'] = pedida;
+        payload[campo] = (coleccion?.['folderId'] as string | null) ?? null;
+      } else {
+        payload['collectionId'] = null;
+      }
+    }
+
+    // Un enlace sin asignar es de quien lo suelta ahi; en cuanto tiene espacio, la
+    // pertenencia vuelve a salir de el. Va en el mismo UPDATE porque el CHECK de la tabla
+    // exige una de las dos cosas en cada fila.
+    const extras: Record<string, unknown> =
+      entity === 'bookmark' ? { ownerId: espacioDestino === null ? userId : null } : {};
+
+    return { operacion: { ...operation, payload }, espacio: espacioDestino, extras };
+  }
+
+  /**
+   * Lo que arrastra una mudanza ya escrita: una carpeta, todo su subarbol; una
+   * coleccion, sus bookmarks. Se compara la fila escrita con la que habia y no el
+   * payload, por la misma razon que `seguirCarpetaDeColeccion`: cubre los dos caminos
+   * que escriben sin razonar dos veces.
+   */
+  private async seguirMudanza(
+    entity: SyncEntityName,
+    antes: StoredEntity,
+    despues: StoredEntity,
+  ): Promise<void> {
+    await this.seguirCarpetaDeColeccion(entity, antes, despues);
+
+    const espacioAhora = this.workspaceDeLaFila(despues);
+    if (espacioAhora === null || espacioAhora === this.workspaceDeLaFila(antes)) return;
+
+    if (entity === 'folder') {
+      const ids = await syncRepository.carpetaYDescendientes(despues.id);
+      await syncRepository.moveFolderContentsToWorkspace(despues.id, ids, espacioAhora);
+    } else if (entity === 'collection') {
+      await syncRepository.moveCollectionContentsToWorkspace(despues.id, espacioAhora);
+    }
+  }
+
   private async apply(operation: SyncOperation, userId: string): Promise<AppliedResult> {
     // Narrowed once: this build stores a subset of the entities in the contract.
     const entity = assertSupportedEntity(operation.entity);
@@ -928,7 +1067,7 @@ export class SyncService {
           }
 
           const row = await syncRepository.insertEntity('list_item', {
-            ...payload,
+            ...noteFieldsForWrite('list_item', payload),
             id: operation.entityId,
             listId,
             title: (payload['title'] as string) ?? 'Item',
@@ -1048,12 +1187,15 @@ export class SyncService {
         }
 
         case 'bookmark': {
-          if (workspaceId.length === 0) {
+          // `workspaceId: null` es explicito: un enlace sin asignar. Una clave ausente
+          // sigue siendo un error, que es lo que decia el contrato antes de esto.
+          const sinEspacio = operation.payload?.['workspaceId'] === null;
+          if (workspaceId.length === 0 && !sinEspacio) {
             throw HttpError.validation('A bookmark needs a workspaceId');
           }
           // Mismo criterio que la coleccion: sin `target`, porque compartir un enlace no
           // es parte de esta fase.
-          await this.assertCanWrite(workspaceId, userId);
+          if (!sinEspacio) await this.assertCanWrite(workspaceId, userId);
 
           // El destino se resuelve **antes** de validar nada, y en este orden.
           //
@@ -1068,6 +1210,11 @@ export class SyncService {
           const collectionId = (payload['collectionId'] as string | null | undefined) ?? null;
           const folderIdDelPayload = (payload['folderId'] as string | null | undefined) ?? null;
           let folderId = folderIdDelPayload;
+
+          // Carpeta y coleccion son de un espacio: sin espacio no hay donde buscarlas.
+          if (sinEspacio && (collectionId !== null || folderIdDelPayload !== null)) {
+            throw HttpError.validation('A link without a space cannot be in a folder or collection');
+          }
 
           if (collectionId !== null) {
             const coleccion = await this.findColeccionDeEsteEspacio(collectionId, workspaceId);
@@ -1138,7 +1285,7 @@ export class SyncService {
           const valida = bookmarkSchema.safeParse({
             ...fila,
             id: operation.entityId,
-            workspaceId,
+            workspaceId: sinEspacio ? null : workspaceId,
             version: 1,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -1152,7 +1299,8 @@ export class SyncService {
           const row = await syncRepository.insertEntity('bookmark', {
             ...fila,
             id: operation.entityId,
-            workspaceId,
+            workspaceId: sinEspacio ? null : workspaceId,
+            ownerId: sinEspacio ? userId : null,
           });
           return { status: 'applied', version: row.version };
         }
@@ -1205,6 +1353,8 @@ export class SyncService {
         await this.assertCanDelete(await this.workspaceOfListItem(existing, userId), userId);
       } else if (entity === 'note') {
         await this.assertCanDelete(this.workspaceDeLaFila(existing), userId);
+      } else if (entity === 'bookmark' && this.workspaceDeLaFila(existing) === null) {
+        this.assertOwnsUnassigned(existing, userId);
       } else if (entity === 'collection' || entity === 'bookmark') {
         // Las dos tienen su propia `workspace_id`, igual que una nota: no hace
         // falta cruzarlas con nada para saber de quien son. Sin esta rama un
@@ -1227,6 +1377,9 @@ export class SyncService {
      * abajo --la coincidencia de version y el merge-- escriban lo mismo.
      */
     let operacion: SyncOperation = operation;
+
+    const mudanza = await this.prepararMudanza(entity, existing, operation, userId);
+    if (mudanza) operacion = mudanza.operacion;
 
     if (entity === 'workspace') {
       await this.assertCanWrite(operation.entityId, userId);
@@ -1265,51 +1418,13 @@ export class SyncService {
       });
     } else if (entity === 'collection' || entity === 'bookmark') {
       // Sin `target`: la puerta del grant no los conoce todavia.
-      await this.assertCanWrite(this.workspaceDeLaFila(existing), userId);
-
-      const destino = sanitisePayload(entity, operation.payload);
-
-      /*
-        Mover de espacio se valida **en el destino**, no en el origen.
-
-        Cambiar el `workspaceId` de una fila es la unica escritura de este camino
-        que cambia de quien es el contenedor, y por eso la unica que necesita **dos**
-        permisos: el del espacio viejo (el de arriba, que dice que la fila es tuya) y
-        el del nuevo (este, que dice que puedes escribir ahi).
-
-        Sin el segundo, `workspaceId` seria un campo que el cliente puede poner a
-        cualquier valor: se podria mandar el id de un espacio ajeno y filtrar ahi un
-        enlace. No es robar —la fila ya es tuya— es **dejar algo en un espacio que no
-        es tuyo**, que es peor porque no hay sintoma.
-
-        El permiso se pide con `assertCanWrite`, que es el mismo chequeo de membresia
-        y rol que usa el create de una coleccion (`:950`), y sin `target` porque
-        `resolveTarget` no conoce `collection` ni `bookmark` — lo dice el comentario
-        de arriba. Mismo ayudante, misma respuesta.
-
-        Y `folderId` y `collectionId` se resuelven contra el espacio de destino:
-        llevarlos del viejo dejaria un bookmark archivado en una carpeta que no
-        existe en su espacio nuevo, que es la clase de fila que despues no se puede
-        ni borrar desde la app.
-      */
-      if (entity === 'bookmark' && 'workspaceId' in destino) {
-        const espacioDestino = destino['workspaceId'];
-        if (typeof espacioDestino !== 'string' || espacioDestino.length === 0) {
-          throw HttpError.validation('A bookmark needs a workspaceId to move to');
-        }
-        if (espacioDestino !== this.workspaceDeLaFila(existing)) {
-          await this.assertCanWrite(espacioDestino, userId);
-          const carpetaDelDestino = await this.resolveCarpetaDeEsteEspacio(
-            (destino['folderId'] as string | null | undefined) ?? null,
-            espacioDestino,
-          );
-          destino['folderId'] = carpetaDelDestino;
-          // Si la coleccion vieja no es de este espacio, el bookmark pierde la
-          // clasificacion: arrastrarla la dejaria apuntando a una carpeta de otro
-          // espacio, y un enlace sin clasificar es un estado valido.
-          destino['collectionId'] = null;
-        }
+      if (entity === 'bookmark' && this.workspaceDeLaFila(existing) === null) {
+        this.assertOwnsUnassigned(existing, userId);
+      } else {
+        await this.assertCanWrite(this.workspaceDeLaFila(existing), userId);
       }
+
+      const destino = sanitisePayload(entity, operacion.payload);
 
       /*
         La URL se filtra tambien en un update, y no solo en el create.
@@ -1335,7 +1450,7 @@ export class SyncService {
         grande que el create: la FK se cumple porque la carpeta existe, y el
         bookmark queda colgando de una carpeta de otro espacio.
       */
-      const workspaceDeLaFila = this.workspaceDeLaFila(existing);
+      const workspaceDeLaFila = mudanza?.espacio ?? this.workspaceDeLaFila(existing);
       if (workspaceDeLaFila !== null) {
         const coleccion = await this.findColeccionDeEsteEspacio(
           (destino['collectionId'] as string | null | undefined) ?? null,
@@ -1418,12 +1533,11 @@ export class SyncService {
     }
 
     if (operacion.baseVersion === existing.version) {
-      const row = await syncRepository.updateEntity(
-        entity,
-        operacion.entityId,
-        noteFieldsForWrite(entity, sanitisePayload(entity, operacion.payload)),
-      );
-      await this.seguirCarpetaDeColeccion(entity, existing, row);
+      const row = await syncRepository.updateEntity(entity, operacion.entityId, {
+        ...noteFieldsForWrite(entity, sanitisePayload(entity, operacion.payload)),
+        ...(mudanza?.extras ?? {}),
+      });
+      await this.seguirMudanza(entity, existing, row);
       return { status: 'applied', version: row.version };
     }
 
@@ -1439,12 +1553,11 @@ export class SyncService {
         return { status: 'applied', version: existing.version };
       }
       // The client had stale data but touched nothing that changed: a safe merge.
-      const row = await syncRepository.updateEntity(
-        entity,
-        operation.entityId,
-        noteFieldsForWrite(entity, values),
-      );
-      await this.seguirCarpetaDeColeccion(entity, existing, row);
+      const row = await syncRepository.updateEntity(entity, operation.entityId, {
+        ...noteFieldsForWrite(entity, values),
+        ...(mudanza?.extras ?? {}),
+      });
+      await this.seguirMudanza(entity, existing, row);
       return { status: 'applied', version: row.version };
     }
 

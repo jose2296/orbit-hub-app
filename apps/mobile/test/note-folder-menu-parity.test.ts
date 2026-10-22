@@ -291,6 +291,7 @@ describe("cada fila de las hojas viejas sigue existiendo", () => {
 
       expect([...delRegistro].filter((clave) => !deLaHojaVieja.has(clave)).sort(), kind).toEqual([
         "menus.access",
+        "move.title",
       ]);
     }
   });
@@ -374,6 +375,7 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
       "share",
       "saveAsTemplate",
       "access",
+      "move",
       "delete",
     ]);
   });
@@ -447,6 +449,7 @@ describe("lo que se ofrece, y lo que todavia no se puede pintar", () => {
       "icon",
       "share",
       "access",
+      "move",
       "delete",
     ]);
     expect(accionesPara(CARPETA).map((accion) => accion.id)).toContain("createHere");

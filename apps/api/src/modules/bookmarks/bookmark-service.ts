@@ -48,6 +48,19 @@ async function db(): Promise<Database> {
   return (await getDatabase()).db;
 }
 
+/**
+ * El rol de quien pide sobre un bookmark. Con espacio sale de la membresia; **sin espacio
+ * es del dueno** (`ownerId`) y de nadie mas: sin este chequeo cualquiera que supiera el id
+ * podria leerlo.
+ */
+async function roleOnBookmark(
+  userId: string,
+  row: Pick<BookmarkRow, 'workspaceId' | 'ownerId'>,
+): Promise<MembershipRoleName | null> {
+  if (row.workspaceId === null) return row.ownerId === userId ? 'owner' : null;
+  return roleIn(userId, row.workspaceId);
+}
+
 async function roleIn(userId: string, workspaceId: string): Promise<MembershipRoleName | null> {
   const database = await db();
   const [row] = await database
@@ -70,7 +83,7 @@ async function readableBookmark(userId: string, id: string): Promise<BookmarkRow
   if (!row || row.deletedAt) {
     throw HttpError.notFound('Bookmark not found');
   }
-  const role = await roleIn(userId, row.workspaceId);
+  const role = await roleOnBookmark(userId, row);
   if (role === null) {
     throw HttpError.notFound('Bookmark not found');
   }
@@ -119,6 +132,6 @@ export async function listBookmarks(
 
 export async function getBookmark(userId: string, id: string): Promise<Bookmark> {
   const row = await readableBookmark(userId, id);
-  const role = (await roleIn(userId, row.workspaceId)) ?? 'viewer';
+  const role = (await roleOnBookmark(userId, row)) ?? 'viewer';
   return toBookmark(row, role);
 }

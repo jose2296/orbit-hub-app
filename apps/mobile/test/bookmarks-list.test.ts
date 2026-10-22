@@ -91,12 +91,15 @@ describe("la lista sigue el molde sin inventar patrones", () => {
   });
 });
 
-describe("el drawer lleva las dos entradas", () => {
+describe("el drawer lleva Sin clasificar y ya no el menu generico de Bookmarks", () => {
   const menu = fuente(join("components", "layout", "drawer.tsx"));
 
-  it("Bookmarks y Sin clasificar estan en DESTINATIONS con route y path", () => {
-    expect(menu).toContain('route: "/(app)/bookmarks"');
-    expect(menu).toContain('path: "/bookmarks"');
+  it("Bookmarks no esta en DESTINATIONS: se crean y se ven dentro de cada espacio", () => {
+    expect(menu).not.toContain('route: "/(app)/bookmarks"');
+    expect(menu).not.toContain('path: "/bookmarks"');
+  });
+
+  it("Sin clasificar esta en DESTINATIONS con route y path", () => {
     expect(menu).toContain('route: "/(app)/unclassified"');
     expect(menu).toContain('path: "/unclassified"');
   });

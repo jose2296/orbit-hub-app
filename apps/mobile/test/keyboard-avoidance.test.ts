@@ -91,13 +91,12 @@ describe('el teclado no tapa lo que se está escribiendo', () => {
   });
 });
 
-describe('la cadena de campos llega a los seis formularios', () => {
+describe('la cadena de campos llega a los formularios con mas de un campo', () => {
   const formularios: Array<[string, number]> = [
     ['src/app/(auth)/sign-up.tsx', 4],
     ['src/app/(auth)/sign-in.tsx', 2],
     ['src/app/(auth)/reset-password.tsx', 2],
     ['src/components/notes/template-menu-sheet.tsx', 2],
-    ['src/components/lists/item-edit-sheet.tsx', 2],
   ];
 
   it.each(formularios)('%s encadena sus campos', (ruta, n) => {

@@ -23,6 +23,9 @@ import { CreatePage } from "./pages/create-page";
 import { DeletePage } from "./pages/delete-page";
 import { ExportPage } from "./pages/export-page";
 import { IconPage } from "./pages/icon-page";
+import { moveEntityAction } from "@/lib/move/actions";
+import type { DestinoDeMudanza } from "@/lib/move/plan";
+import { MovePage } from "./pages/move-page";
 import { RenamePage } from "./pages/rename-page";
 import { SharePage } from "./pages/share-page";
 
@@ -460,6 +463,14 @@ export function EntityMenuSheet({
     void correr(() => handler(tituloNuevo), otraVez);
   };
 
+  // Mover no pasa por un handler de la pantalla: la accion es la misma para las cinco
+  // entidades (`moveEntityAction`) y la hoja ya tiene el `kind` y el `id`.
+  const mover = (destino: DestinoDeMudanza) => {
+    if (!ctx) return;
+    const { kind, entity } = ctx;
+    const otraVez = () => mover(destino);
+    void correr(() => moveEntityAction(kind, entity.id, destino), otraVez);
+  };
   const borrar = () => {
     const otraVez = () => borrar();
     const hecho = handlerDe("borrar");
@@ -821,6 +832,10 @@ export function EntityMenuSheet({
               />
             ) : null}
 
+            {pagina === "move" ? (
+              <MovePage ctx={ctx} onMover={mover} trabajando={trabajando} />
+            ) : null}
+
             {pagina === "delete" ? (
               // El `conteo` lo pasa el call site y solo una lista lo tiene: las otras
               // cuatro no llenan el campo, y `DeletePage` ya sabe que sin numero no
@@ -975,6 +990,7 @@ export function EntityMenuSheet({
  */
 const SUBTITULO_POR_PAGINA: Partial<Record<Pagina, TranslationKey>> = {
   rename: "common.rename",
+  move: "move.subtitle",
   icon: "icons.title",
   delete: "common.delete",
   share: "share.subtitle",

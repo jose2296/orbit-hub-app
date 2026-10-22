@@ -244,6 +244,7 @@ export class ContentQueryService {
       externalId: row.externalId,
       metadata: row.metadata,
       annotation: row.annotation,
+      document: row.document,
       // The list's role, not one of the row's own: what you may do to a row is
       // decided by the list it is in, and the row does not know where that is.
       role: lista.role,
