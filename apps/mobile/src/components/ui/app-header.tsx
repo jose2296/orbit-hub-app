@@ -283,7 +283,12 @@ export function AppHeader({ options, children }: AppHeaderProps) {
             { paddingRight: theme.spacing.xs + theme.spacing.lg, width: LADO },
           ]}
         >
-          {slotAccion()}
+          {/* Un envoltorio que se ajusta al contenido y se alinea a la derecha. Sin el, una
+              accion que es un `Button` (`alignSelf: flex-start`) se quedaba al principio de
+              esta caja de ancho fijo, 40 puntos antes del borde, mientras las que son un
+              `Pressable` llegaban al borde: el mismo hueco, dos posiciones. Con el envoltorio
+              del ancho del contenido, "al principio" y "al final" son el mismo sitio. */}
+          <View style={styles.accionAjustada}>{slotAccion()}</View>
         </View>
       </View>
     </View>
@@ -408,6 +413,9 @@ const styles = StyleSheet.create({
   },
   titulo: {
     fontWeight: '600',
+  },
+  accionAjustada: {
+    alignSelf: 'flex-end',
   },
   derecha: {
     alignItems: 'flex-end',
