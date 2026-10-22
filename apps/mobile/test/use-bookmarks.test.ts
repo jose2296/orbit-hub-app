@@ -211,3 +211,17 @@ describe('selectUnclassifiedBookmarks', () => {
     expect(selectUnclassifiedBookmarks(huerfanos, 'w1')).toHaveLength(50);
   });
 });
+
+describe("un bookmark sin espacio", () => {
+  it("conserva el workspaceId nulo: no lo convierte en una cadena vacia", () => {
+    // Un `""` no es ni un espacio ni "sin asignar": el inbox lo agrupaba bajo ninguna
+    // cabecera y `AssignSheet` no sabia que el enlace estaba suelto.
+    const sinEspacio = withBookmarkDefaults({ id: "b1", workspaceId: null, url: "https://a.co" });
+    expect(sinEspacio.workspaceId).toBeNull();
+    expect(withBookmarkDefaults({ id: "b2", url: "https://a.co" }).workspaceId).toBeNull();
+  });
+
+  it("y uno con espacio lo conserva tal cual", () => {
+    expect(withBookmarkDefaults({ id: "b3", workspaceId: "ws-1" }).workspaceId).toBe("ws-1");
+  });
+});

@@ -46,7 +46,7 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 - [x] T9 Diario: copiar/mover nota a otro dia (5 parte 1)
 - [x] T10 Descripcion de tarea en bottom sheet grande (6)
 - [x] T11 Buscador de la lista de tareas y botones sobre el `+` (8)
-- [ ] T12 Barrido general en web, claro y oscuro (11)
+- [x] T12 Barrido general en web, claro y oscuro (11)
 
 ## Rutas y progreso
 
@@ -107,3 +107,11 @@ hace la tarea aqui") el trabajo se hace inline.
 - Bugs de barrido arreglados: fecha "22 De Octubre De 2026" (CSS `capitalize`), calendario de escritorio con solo 2 columnas (el ancho salia de la ventana y no de la hoja de 460).
 - Riesgo abierto: el comportamiento de teclado/foco/toque en movil nativo (enlaces en `EnrichedText`, barra sobre el teclado, swipe) no se ha podido ejecutar aqui; hay emulador Android disponible en esta maquina pero no se ha usado.
 - Mobile 1925 passed, `tsc` limpio.
+
+### T12 barrido (web, claro y oscuro, movil y escritorio)
+- `npm run check` exit 0: API 838, mobile 1927, scripts 40, `expo config` OK.
+- Arnes `scripts/verify-app-regression.mjs` contra mi API/Metro: 0 errores de consola y 0 elementos fuera de ventana en todas las pantallas. 4 fallos, TODOS preexistentes: buscan pastillas `Carpetas/Listas` que la pantalla de espacio ya no tiene (un solo boton Filtrar); no tocan codigo mio (`ContentToolbar` sin cambios).
+- Verificado a mano en navegador: mover una nota a otro espacio (UI -> cola -> sync -> servidor, version 9 -> 11), inbox con enlace sin espacio, buscador de lista, barra flotante y B/I/U/S, diario siempre editable, copiar a otro dia.
+- Bugs encontrados al mirar y arreglados: `withBookmarkDefaults` convertia `workspaceId` nulo en `""` (rompia todo "sin asignar" en el cliente), fecha "De Octubre De", calendario de escritorio con 2 columnas, icono de tachado `?`, "todo hecho" al buscar algo inexistente.
+- Detalle de catalogo (`/item/<id>`): "No se pudo cargar el detalle" en mi entorno, que no tiene proveedor externo configurado; no se ha investigado mas.
+- NO VERIFICADO: movil nativo (iOS/Android). Hay emulador Android en esta maquina y no se uso.

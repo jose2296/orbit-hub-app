@@ -23,7 +23,9 @@ export function withBookmarkDefaults(value: unknown): Bookmark {
     version: typeof record.version === "number" ? record.version : 0,
     createdAt: typeof record.createdAt === "string" ? record.createdAt : "",
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : "",
-    workspaceId: typeof record.workspaceId === "string" ? record.workspaceId : "",
+    // `null` es "sin asignar" y es un valor, no un dato roto: convertirlo en `""` hacia que un
+    // enlace suelto pareciera estar en un espacio que no existe.
+    workspaceId: typeof record.workspaceId === "string" ? record.workspaceId : null,
     folderId: typeof record.folderId === "string" ? record.folderId : null,
     collectionId: typeof record.collectionId === "string" ? record.collectionId : null,
     url: typeof record.url === "string" ? record.url : "",
