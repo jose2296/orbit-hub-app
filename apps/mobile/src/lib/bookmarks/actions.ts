@@ -12,7 +12,8 @@ import { enqueueOperation, getLocalStoreReady, localUpdate } from "@/lib/offline
  */
 
 export interface NewBookmarkInput {
-  workspaceId: string;
+  /** `null` = sin asignar: no esta en ningun espacio y es solo de quien lo guarda. */
+  workspaceId: string | null;
   folderId?: string | null;
   collectionId?: string | null;
   url: string;
@@ -113,10 +114,10 @@ export interface BookmarkChanges {
    * poder moverlo luego a otro sitio si esta sin clasificar"— y el motivo real era
    * que el contrato de cambios no tenia el campo, no que no se pudiera.
    *
-   * Y **moverlo no es quitarselo**: `bookmarkSchema.workspaceId` sigue siendo
-   * obligatorio. Un bookmark siempre esta en un espacio; esto es cual.
+   * `null` lo deja **sin asignar**: sin espacio, y solo de quien lo guardo
+   * (`bookmarkSchema.workspaceId` es nullable desde que existe ese estado).
    */
-  workspaceId?: string;
+  workspaceId?: string | null;
   folderId?: string | null;
   collectionId?: string | null;
   tags?: string[];

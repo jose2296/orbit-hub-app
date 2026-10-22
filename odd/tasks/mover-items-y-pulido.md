@@ -38,7 +38,7 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 - [x] T1 API: mover entre workspaces folder (con subarbol), list, note, collection (+test)
 - [x] T2 Contratos + cliente: accion `move` generica y offline
 - [x] T3 UI: sheet "Mover a..." en el menu de cada entidad (registro de menus)
-- [ ] T4 Bookmarks sin workspace (`workspaceId` nullable) (puntos 2 y 3)
+- [x] T4 Bookmarks sin workspace (`workspaceId` nullable) (puntos 2 y 3)
 - [x] T5 Drawer: quitar menu generico de bookmarks (9)
 - [x] T6 Sin clasificar: mostrar workspace y carpeta (10)
 - [ ] T7 Toolbar de notas contextual (4)
@@ -77,3 +77,11 @@ hace la tarea aqui") el trabajo se hace inline.
 ### T6 (inline)
 - Entrada "Sin clasificar" por espacio/carpeta (`UnclassifiedEntry`, montada en `ContentList`): abre `/bookmarks` con `collectionId=unclassified`. El inbox global muestra `Espacio › Carpeta` en cada fila (`LinkRow.lugar`, `SpacesTree.pathOf`).
 - Sin RED: es UI sobre hooks de React que Node no puede montar; se cubre con typecheck, el guard de rutas refinado (`collection-screen.test.ts`) y la verificacion visual en T12. Mobile 1906 passed, `tsc` limpio.
+
+### T4 (inline)
+- Decision: opcion A de `bookmark-without-workspace.md` (nullable de verdad). `bookmarks.workspace_id` nullable + `owner_id` + CHECK (migracion 0027). La pertenencia de un enlace sin espacio sale de `owner_id`; `assertCanWrite(null)` pasa sin mirar, asi que se anade `assertOwnsUnassigned` en update y delete.
+- RED: `apps/api/test/bookmarks-unassigned.test.ts` (4 fallan). GREEN: 6/6. Mas dos tests en `move-between-workspaces.test.ts` tras ver que la mudanza de un bookmark descartaba la coleccion de destino que manda `AssignSheet`.
+- Pull: el bloque de bookmarks ya no depende de `hayAlgoQueTraer` (quien no tiene espacios tambien tiene enlaces sin asignar). No se pueden compartir ni llevar carpeta/coleccion.
+- Cliente: `ShareSaveSheet` gana "Guardar sin espacio" (`lugarDeGuardado`, RED/GREEN en `share-intent.test.ts`); `AssignSheet` asigna/desasigna y deja de fijar el selector al espacio original (bug previo: el picker recibia `bookmark.workspaceId`); el inbox agrupa "Sin asignar".
+- Tres guards refinados con motivo: shares CHECK ("la ultima que lo menciona"), triage sin `folderId` salvo asignar, tabla nullable. API 838 passed, mobile 1909 passed, `tsc` limpio.
+- Fuera de alcance: compartir un enlace sin espacio (se rechaza con 422).

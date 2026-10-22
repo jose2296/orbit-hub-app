@@ -66,6 +66,9 @@ export function ShareSaveSheet({
   // es lo que hay antes de tocar nada, y guardaba el enlace sin clasificar sin
   // que nadie lo hubiera decidido.
   const [eligioColeccion, setEligioColeccion] = useState(false);
+  // "Sin asignar": el enlace no va a ningun espacio y es solo de quien lo guarda. Cuenta
+  // como una eleccion completa: no hay colecciones donde elegir sin un espacio.
+  const [sinAsignar, setSinAsignar] = useState(false);
   const [nombre, setNombre] = useState("");
   const [emoji, setEmoji] = useState("");
   const [saving, setSaving] = useState(false);
@@ -80,6 +83,7 @@ export function ShareSaveSheet({
     setTitulo(payload.title ?? "");
     setDestino({ workspaceId: null, folderId: null, collectionId: null });
     setEligioColeccion(false);
+    setSinAsignar(false);
     setNombre("");
     setEmoji("");
     setSaving(false);
@@ -99,6 +103,7 @@ export function ShareSaveSheet({
     setSucio(
       titulo !== (payload.title ?? "") ||
         destino.workspaceId !== null ||
+        sinAsignar ||
         eligioColeccion ||
         nombre.trim().length > 0 ||
         emoji.trim().length > 0,
@@ -106,6 +111,7 @@ export function ShareSaveSheet({
   }, [
     titulo,
     destino.workspaceId,
+    sinAsignar,
     eligioColeccion,
     nombre,
     emoji,
@@ -114,11 +120,17 @@ export function ShareSaveSheet({
   ]);
 
   const guardar = async () => {
-    if (!destino.workspaceId || !eligioColeccion || saving || !tieneUrl) return;
+    if (!sinAsignar && (!destino.workspaceId || !eligioColeccion)) return;
+    if (saving || !tieneUrl) return;
     setSaving(true);
     setError(null);
     try {
-      const id = await createBookmarkFromShare(payload, destino, titulo);
+      const id = await createBookmarkFromShare(
+        payload,
+        destino,
+        titulo,
+        sinAsignar,
+      );
       onClose();
       onSaved(id);
     } catch (problem) {
@@ -169,11 +181,13 @@ export function ShareSaveSheet({
   // gris sin explicacion es un boton que se pulsa dos veces para averiguarlo.
   const razonGuardar = !tieneUrl
     ? t("share.save.noUrl")
-    : !destino.workspaceId
-      ? t("share.save.chooseSpace")
-      : !eligioColeccion
-        ? t("share.save.chooseCollection")
-        : undefined;
+    : sinAsignar
+      ? undefined
+      : !destino.workspaceId
+        ? t("share.save.chooseSpace")
+        : !eligioColeccion
+          ? t("share.save.chooseCollection")
+          : undefined;
   const razonCrear =
     nombre.trim().length === 0 ? t("itemEdit.nameNeeded") : undefined;
 
@@ -196,9 +210,7 @@ export function ShareSaveSheet({
       subtitle={pagina === 1 ? payload.url : host}
       onBack={pagina === 2 ? () => setPagina(1) : undefined}
       onSave={() => (pagina === 1 ? guardar() : crearColeccion())}
-      saveDisabledReason={
-        pagina === 1 ? razonGuardar : razonCrear
-      }
+      saveDisabledReason={pagina === 1 ? razonGuardar : razonCrear}
       artwork={
         pagina === 1 ? (
           <View
@@ -211,7 +223,10 @@ export function ShareSaveSheet({
               justifyContent: "center",
             }}
           >
-            <AppText variant="bodyStrong" style={{ color: theme.colors.accent }}>
+            <AppText
+              variant="bodyStrong"
+              style={{ color: theme.colors.accent }}
+            >
               {host.slice(0, 1).toUpperCase()}
             </AppText>
           </View>
@@ -264,26 +279,43 @@ export function ShareSaveSheet({
               {t("share.save.noSpaces")}
             </AppText>
           )}
-          <PlacePicker
-            workspaceId={destino.workspaceId}
-            folderId={destino.folderId}
-            collectionId={destino.collectionId}
-            collectionChosen={eligioColeccion}
-            onChange={(place) => {
+          <Pick
+            icon="file-tray-outline"
+            label={t("share.save.unassigned")}
+            selected={sinAsignar}
+            onPress={() => {
+              setSinAsignar((actual) => !actual);
               setDestino({
-                workspaceId: place.workspaceId,
-                folderId: place.folderId,
-                collectionId: place.collectionId,
+                workspaceId: null,
+                folderId: null,
+                collectionId: null,
               });
-              setEligioColeccion(place.collectionChosen);
+              setEligioColeccion(false);
             }}
-            showCollections
           />
+          {sinAsignar ? null : (
+            <PlacePicker
+              workspaceId={destino.workspaceId}
+              folderId={destino.folderId}
+              collectionId={destino.collectionId}
+              collectionChosen={eligioColeccion}
+              onChange={(place) => {
+                setSinAsignar(false);
+                setDestino({
+                  workspaceId: place.workspaceId,
+                  folderId: place.folderId,
+                  collectionId: place.collectionId,
+                });
+                setEligioColeccion(place.collectionChosen);
+              }}
+              showCollections
+            />
+          )}
           <Pick
             icon="add-outline"
             label={t("share.save.newCollection")}
             selected={false}
-            disabled={!destino.workspaceId}
+            disabled={!destino.workspaceId || sinAsignar}
             onPress={() => setPagina(2)}
           />
           {error ? (

@@ -97,8 +97,17 @@ describe("el triage manda solo la coleccion", () => {
     // dentro. Asi que se recorta hasta el `});` que cierra cada llamada.
     const trozos = hoja.split("updateBookmarkAction({").slice(1);
     expect(trozos.length).toBeGreaterThan(0);
-    for (const trozo of trozos) {
-      const llamada = trozo.slice(0, trozo.indexOf("});"));
+    const llamadas = trozos.map((trozo) => trozo.slice(0, trozo.indexOf("});")));
+    // Asignar un enlace sin espacio (o dejarlo sin asignar) no clasifica: manda espacio
+    // y carpeta, sin coleccion. Es la unica llamada que puede llevar `folderId`, y se
+    // reconoce porque manda `workspaceId` como valor suyo y no por el spread condicional.
+    const asignaciones = llamadas.filter((llamada) => /workspaceId: espacio,/.test(llamada));
+    expect(asignaciones.length).toBeLessThanOrEqual(1);
+    for (const llamada of llamadas) {
+      if (asignaciones.includes(llamada)) {
+        expect(llamada).not.toContain("collectionId");
+        continue;
+      }
       expect(llamada).toContain("collectionId");
       expect(llamada).not.toContain("folderId");
       // Y si manda espacio, lo manda condicional —no un valor fijo—, porque un

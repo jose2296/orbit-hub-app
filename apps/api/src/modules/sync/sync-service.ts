@@ -855,7 +855,19 @@ export class SyncService {
       workspaceId: espacioDestino,
       [campo]: contenedor,
     };
-    if (entity === 'bookmark') payload['collectionId'] = null;
+    if (entity === 'bookmark') {
+      // La coleccion de origen es del espacio viejo y se pierde. Pero quien mueve puede
+      // pedir una del **destino** (la hoja de clasificar manda las dos cosas a la vez), y
+      // entonces la carpeta sale de ella, como en cualquier otra clasificacion.
+      const pedida = (limpio['collectionId'] as string | null | undefined) ?? null;
+      if (pedida !== null && espacioDestino !== null) {
+        const coleccion = await this.findColeccionDeEsteEspacio(pedida, espacioDestino);
+        payload['collectionId'] = pedida;
+        payload[campo] = (coleccion?.['folderId'] as string | null) ?? null;
+      } else {
+        payload['collectionId'] = null;
+      }
+    }
 
     // Un enlace sin asignar es de quien lo suelta ahi; en cuanto tiene espacio, la
     // pertenencia vuelve a salir de el. Va en el mismo UPDATE porque el CHECK de la tabla

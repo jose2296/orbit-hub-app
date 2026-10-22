@@ -126,3 +126,27 @@ describe('el link de sign-up a sign-in conserva next', () => {
     expect(hrefASignIn()).toContain(`: '/(auth)/sign-in'`);
   });
 });
+
+import { lugarDeGuardado } from '../src/lib/bookmarks/share-intent';
+
+describe('lugarDeGuardado', () => {
+  const elegido = { workspaceId: 'ws-1', folderId: 'f-1', collectionId: 'c-1' };
+
+  it('con espacio elegido, es el sitio tal cual', () => {
+    expect(lugarDeGuardado(elegido, false)).toEqual(elegido);
+  });
+
+  it('sin asignar, no lleva espacio, carpeta ni coleccion aunque el picker tuviera algo', () => {
+    expect(lugarDeGuardado(elegido, true)).toEqual({
+      workspaceId: null,
+      folderId: null,
+      collectionId: null,
+    });
+  });
+
+  it('sin espacio y sin pedir sin asignar, no se adivina: falla', () => {
+    expect(() =>
+      lugarDeGuardado({ workspaceId: null, folderId: null, collectionId: null }, false),
+    ).toThrow();
+  });
+});

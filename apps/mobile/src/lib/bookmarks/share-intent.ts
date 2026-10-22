@@ -79,13 +79,25 @@ export function clearShare(): void {
 // Doble defensa contra el doble tap: la hoja deshabilita el boton con
 // `saving`, y aqui la segunda llamada devuelve el id ya creado sin volver a
 // crear. El gesto rapido atraviesa una sola, asi que hacen falta las dos.
+/**
+ * Donde queda el enlace: el sitio elegido, o **sin asignar**, que no lleva espacio,
+ * carpeta ni coleccion aunque el selector tuviera algo marcado (son de un espacio).
+ * Sin espacio y sin haber pedido "sin asignar" no se adivina: falla.
+ */
+export function lugarDeGuardado(place: SharePlace, sinAsignar: boolean): SharePlace {
+  if (sinAsignar) return { workspaceId: null, folderId: null, collectionId: null };
+  if (!place.workspaceId) throw new Error("falta el espacio donde guardar");
+  return place;
+}
+
 export async function createBookmarkFromShare(
   payload: SharedPayload,
   place: SharePlace,
   title: string,
+  sinAsignar = false,
 ): Promise<string> {
   if (savedForPayload !== null) return savedForPayload;
-  if (!place.workspaceId) throw new Error("falta el espacio donde guardar");
+  place = lugarDeGuardado(place, sinAsignar);
   // Import perezoso a proposito: este modulo tambien trae `sacarUrlDelTexto`,
   // que se prueba en Node sin nativo, y el actions tira de expo-crypto. El
   // mock del test lo sigue viendo igual.

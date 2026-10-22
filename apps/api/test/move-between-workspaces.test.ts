@@ -117,6 +117,39 @@ describe('mover a otro espacio', () => {
     expect((await pull(user))('bookmark', item.id)?.workspaceId).toBe(b.id);
   });
 
+  it('un bookmark puede llegar ya clasificado en una coleccion del espacio nuevo', async () => {
+    const user = await createVerifiedUser(api);
+    const a = await workspace(user, 'A');
+    const b = await workspace(user, 'B');
+    const destino = await folder(user, b.id);
+    const coleccionDestino = await collection(user, b.id, destino.id);
+    const item = await bookmark(user, a.id);
+
+    const result = await move(user, 'bookmark', item, {
+      workspaceId: b.id,
+      collectionId: coleccionDestino.id,
+    });
+
+    expect(result.status).toBe('applied');
+    const record = (await pull(user))('bookmark', item.id);
+    expect(record?.workspaceId).toBe(b.id);
+    expect(record?.collectionId).toBe(coleccionDestino.id);
+    // La carpeta sale de la coleccion, como en cualquier otra clasificacion.
+    expect(record?.folderId).toBe(destino.id);
+  });
+
+  it('una coleccion de otro espacio no sirve de destino', async () => {
+    const user = await createVerifiedUser(api);
+    const a = await workspace(user, 'A');
+    const b = await workspace(user, 'B');
+    const enA = await collection(user, a.id);
+    const item = await bookmark(user, a.id);
+
+    const result = await move(user, 'bookmark', item, { workspaceId: b.id, collectionId: enA.id });
+
+    expect(result.status).not.toBe('applied');
+  });
+
   it('una lista se va a la raiz del espacio nuevo y suelta la carpeta vieja', async () => {
     const user = await createVerifiedUser(api);
     const a = await workspace(user, 'A');

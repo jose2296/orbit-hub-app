@@ -15,7 +15,8 @@ import { useTheme } from "@/theme";
 export interface BookmarkAClasificar {
   id: string;
   version: number;
-  workspaceId: string;
+  /** `null` = sin asignar. */
+  workspaceId: string | null;
   title: string;
   url: string;
 }
@@ -52,7 +53,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
   const [pagina, setPagina] = useState<1 | 2>(1);
   const [carpetaId, setCarpetaId] = useState<string | null>(null);
   // El espacio elegido, que arranca siendo el del bookmark y puede cambiar.
-  const [espacioId, setEspacioId] = useState<string>(pedido?.workspaceId ?? "");
+  const [espacioId, setEspacioId] = useState<string | null>(pedido?.workspaceId ?? null);
   const [coleccionId, setColeccionId] = useState<string | null>(null);
   const [nombre, setNombre] = useState("");
   const [emoji, setEmoji] = useState("");
@@ -66,6 +67,8 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
     setPagina(1);
     setCarpetaId(null);
     setColeccionId(null);
+    // Cada apertura es otro enlace, y el espacio elegido del anterior no es el suyo.
+    setEspacioId(pedido.workspaceId);
     setNombre("");
     setEmoji("");
     setOcupado(false);
@@ -93,7 +96,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
       borrar desde la app. Por eso se resetean y el servidor las resuelve contra el
       destino, que es la mitad autoritativa.
     */
-    if (lugar.workspaceId !== bookmark.workspaceId) {
+    if (lugar.workspaceId !== espacioId) {
       setCarpetaId(null);
       setColeccionId(null);
       setEspacioId(lugar.workspaceId);
@@ -132,19 +135,43 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
     }
   };
 
-  // La coleccion nace en el espacio del bookmark y en la carpeta que el picker
+  /**
+   * Asignar a un espacio (y carpeta) sin clasificar en una coleccion, o dejarlo sin
+   * asignar con `null`. Es el camino de un enlace sin espacio, que no tiene coleccion
+   * a la que ir hasta que tiene un espacio donde buscarla.
+   */
+  const asignar = async (espacio: string | null) => {
+    if (ocupado) return;
+    setOcupado(true);
+    setError(null);
+    try {
+      await updateBookmarkAction({
+        id: bookmark.id,
+        baseVersion: bookmark.version,
+        workspaceId: espacio,
+        folderId: espacio === null ? null : carpetaId,
+      });
+      onClose();
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : t("errors.unknown"));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  // La coleccion nace en el espacio elegido y en la carpeta que el picker
   // ya tiene: la carpeta aqui solo decide donde nace, nunca se manda con el
   // bookmark. Y al crearla se clasifica sin mas toques: escribir el nombre y
   // pulsar Crear ya es la intencion, pedir Confirmar despues seria preguntar
   // dos veces lo mismo.
   const crearColeccion = async () => {
     const nombreLimpio = nombre.trim();
-    if (ocupado || nombreLimpio.length === 0) return;
+    if (ocupado || nombreLimpio.length === 0 || espacioId === null) return;
     setOcupado(true);
     setError(null);
     try {
       const id = await createCollectionAction({
-        workspaceId: bookmark.workspaceId,
+        workspaceId: espacioId,
         folderId: carpetaId,
         name: nombreLimpio,
         emoji: emoji.trim().length === 0 ? null : emoji.trim(),
@@ -228,7 +255,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
           {t("bookmarks.assign.hint")}
         </AppText>
         <PlacePicker
-          workspaceId={bookmark.workspaceId}
+          workspaceId={espacioId}
           folderId={carpetaId}
           collectionId={coleccionId}
           onChange={cambioDeLugar}
@@ -238,8 +265,17 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
           icon="add-outline"
           label={t("share.save.newCollection")}
           selected={false}
+          disabled={espacioId === null}
           onPress={() => setPagina(2)}
         />
+        {bookmark.workspaceId !== null ? (
+          <Pick
+            icon="file-tray-outline"
+            label={t("bookmarks.assign.unassign")}
+            selected={false}
+            onPress={() => void asignar(null)}
+          />
+        ) : null}
         {error ? (
           <AppText variant="caption" style={{ color: theme.colors.danger }}>
             {error}
@@ -248,10 +284,12 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
         <View style={{ gap: theme.spacing.sm }}>
           <Button
             label={ocupado ? t("common.saving") : t("bookmarks.assign.confirm")}
-            disabled={!coleccionId || ocupado}
+            // Un enlace sin espacio no tiene colecciones donde elegir hasta que tiene
+            // uno: basta con el espacio para asignarlo, y clasificar viene despues.
+            disabled={(!coleccionId && !(bookmark.workspaceId === null && espacioId)) || ocupado}
             fullWidth
             onPress={() =>
-              coleccionId ? void clasificar(coleccionId) : undefined
+              coleccionId ? void clasificar(coleccionId) : void asignar(espacioId)
             }
           />
           <Button
