@@ -256,6 +256,79 @@ export class SyncRepository {
       .where(and(eq(bookmarks.collectionId, collectionId), isNull(bookmarks.deletedAt)));
   }
 
+  /** La carpeta y todas las que cuelgan de ella, a cualquier profundidad. */
+  async carpetaYDescendientes(folderId: string): Promise<string[]> {
+    return descendientesDeCarpetas(await this.db(), [folderId]);
+  }
+
+  /**
+   * Una coleccion que cambia de espacio se lleva a sus bookmarks.
+   *
+   * Un bookmark clasificado en una coleccion vive en el espacio de esa coleccion; si la
+   * coleccion se mudara sola, quedaria clasificado en una de otro espacio, que es la
+   * fila que despues no se puede ni abrir. Cada fila suma version y `updatedAt`, asi
+   * que el siguiente pull la trae.
+   */
+  async moveCollectionContentsToWorkspace(
+    collectionId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const db = await this.db();
+    await db
+      .update(bookmarks)
+      .set({
+        workspaceId,
+        version: sql`${bookmarks.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(bookmarks.collectionId, collectionId), isNull(bookmarks.deletedAt)));
+  }
+
+  /**
+   * Todo lo que cuelga de un conjunto de carpetas pasa a otro espacio.
+   *
+   * La carpeta que el usuario movio ya la escribio `updateEntity`; aqui van sus
+   * descendientes y lo que hay dentro de cualquiera de ellas. **Solo se reescribe el
+   * `workspaceId`**: `parentId` y `folderId` se quedan como estan, porque la jerarquia
+   * interna no cambia al mudarse, y aplanarla seria perder el orden que la persona hizo.
+   *
+   * Las filas de una lista no tienen columna de espacio (cuelgan de su lista) y los
+   * adjuntos cuelgan de su nota, asi que no hay nada que tocar ahi.
+   */
+  async moveFolderContentsToWorkspace(
+    rootFolderId: string,
+    folderIds: readonly string[],
+    workspaceId: string,
+  ): Promise<void> {
+    if (folderIds.length === 0) return;
+    const db = await this.db();
+    const now = new Date();
+
+    const descendientes = folderIds.filter((id) => id !== rootFolderId);
+    if (descendientes.length > 0) {
+      await db
+        .update(folders)
+        .set({ workspaceId, version: sql`${folders.version} + 1`, updatedAt: now })
+        .where(and(inArray(folders.id, descendientes), isNull(folders.deletedAt)));
+    }
+    await db
+      .update(lists)
+      .set({ workspaceId, version: sql`${lists.version} + 1`, updatedAt: now })
+      .where(and(inArray(lists.folderId, [...folderIds]), isNull(lists.deletedAt)));
+    await db
+      .update(notes)
+      .set({ workspaceId, version: sql`${notes.version} + 1`, updatedAt: now })
+      .where(and(inArray(notes.folderId, [...folderIds]), isNull(notes.deletedAt)));
+    await db
+      .update(collections)
+      .set({ workspaceId, version: sql`${collections.version} + 1`, updatedAt: now })
+      .where(and(inArray(collections.folderId, [...folderIds]), isNull(collections.deletedAt)));
+    await db
+      .update(bookmarks)
+      .set({ workspaceId, version: sql`${bookmarks.version} + 1`, updatedAt: now })
+      .where(and(inArray(bookmarks.folderId, [...folderIds]), isNull(bookmarks.deletedAt)));
+  }
+
   /** One row per user, created on first write. */
   async upsertDashboard(
     userId: string,
