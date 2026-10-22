@@ -30,6 +30,7 @@ function item(partial: Partial<ListItem> & { id: string }): ListItem {
     externalId: null,
     metadata: null,
     annotation: null,
+    document: "",
     ...partial,
   };
 }

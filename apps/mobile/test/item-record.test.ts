@@ -40,6 +40,7 @@ describe('newListItem', () => {
       externalId: null,
       metadata: null,
       annotation: null,
+      document: "",
       deletedAt: null,
     });
   });

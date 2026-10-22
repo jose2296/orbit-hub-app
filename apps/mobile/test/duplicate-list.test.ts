@@ -50,6 +50,7 @@ const items = [
     externalId: 'movie:603',
     metadata: { provider: 'tmdb', year: '1999' },
     annotation: 'reverla',
+    document: "",
     deletedAt: null,
   },
   {
@@ -65,6 +66,7 @@ const items = [
     externalId: 'movie:329865',
     metadata: { provider: 'tmdb' },
     annotation: null,
+    document: "",
     deletedAt: null,
   },
   {
@@ -80,6 +82,7 @@ const items = [
     externalId: null,
     metadata: null,
     annotation: null,
+    document: "",
     deletedAt: '2026-01-01T00:00:00.000Z',
   },
   {
@@ -95,6 +98,7 @@ const items = [
     externalId: null,
     metadata: null,
     annotation: null,
+    document: "",
     deletedAt: null,
   },
 ];
@@ -146,6 +150,7 @@ function taskEnColumn(id: string, title: string, stateId: string | null, positio
     externalId: null,
     metadata: null,
     annotation: null,
+    document: "",
     deletedAt: null,
   };
 }

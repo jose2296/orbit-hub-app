@@ -583,6 +583,8 @@ export function useListItems(listId: string | undefined) {
       metadata?: Record<string, unknown> | null;
       /** The rest of what the item panel offers, when it created the row. */
       annotation?: string | null;
+      /** The description as a note document; `annotation` is its plain text. */
+      document?: string;
       icon?: IconRef | null;
       tags?: string[];
       /**
@@ -631,6 +633,7 @@ export function useListItems(listId: string | undefined) {
         updatedAt: now,
         priority: input.priority,
         annotation: input.annotation ?? null,
+        document: input.document ?? "",
         icon: input.icon ?? null,
         tags: input.tags,
         stateId: input.stateId ?? null,
@@ -662,6 +665,7 @@ export function useListItems(listId: string | undefined) {
           ...(input.priority ? { priority: input.priority } : {}),
           ...(input.icon ? { icon: input.icon } : {}),
           ...(input.annotation ? { annotation: input.annotation } : {}),
+          ...(input.document ? { document: input.document } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
           /*
             **Only a chosen column travels.** A row created on a board with no
@@ -782,6 +786,7 @@ export function useListItems(listId: string | undefined) {
         /** The name, the description and how urgent it is. */
         title?: string;
         annotation?: string | null;
+        document?: string;
         priority?: Priority;
         /**
          * The board column this row moves to.

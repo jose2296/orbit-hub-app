@@ -1294,9 +1294,12 @@ describe('el panel de un elemento: dos velocidades de guardado', () => {
     // Antes eran siete escrituras repartidas por el panel, y por eso perder la nota
     // al cambiar el icono no era un descuido: era la forma normal de funcionar.
     const confirmar = panel.match(/const confirmar = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
-    for (const campo of ['title', 'annotation', 'priority', 'icon', 'tags', 'completed']) {
+    // La descripcion (`annotation` + `document`) sale por `liveDescription()`, que lee el
+    // editor vivo: es una sola escritura y por eso va esparcida en el mismo objeto.
+    for (const campo of ['title', 'priority', 'icon', 'tags', 'completed']) {
       expect(confirmar, `${campo} sale en el commit`).toContain(`${campo}:`);
     }
+    expect(confirmar, 'la descripcion sale en el commit').toContain('...(await liveDescription())');
     expect(confirmar, 'y es una sola escritura').toContain('updateItem(item!, {');
   });
 
@@ -1305,7 +1308,7 @@ describe('el panel de un elemento: dos velocidades de guardado', () => {
     // que leer el borrador aqui guardaria el nombre de hace un instante.
     const confirmar = panel.match(/const confirmar = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
     expect(confirmar, 'el nombre se lee del campo').toContain('title: title.trim()');
-    expect(confirmar, 'la nota tambien').toContain('annotation: annotation.trim()');
+    expect(confirmar, 'la descripcion tambien, preguntandole al editor').toContain('...(await liveDescription())');
   });
 
   it('"sucio" es TODO el panel, cada campo con su partida', () => {

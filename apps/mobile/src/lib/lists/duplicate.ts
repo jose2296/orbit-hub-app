@@ -61,6 +61,7 @@ export interface DuplicableItem {
   externalId: string | null;
   metadata: Record<string, unknown> | null;
   annotation: string | null;
+  document: string;
   deletedAt: string | null;
 }
 
@@ -209,6 +210,7 @@ export function planDuplication(
     externalId: item.externalId,
     metadata: item.metadata ? { ...item.metadata } : null,
     annotation: item.annotation,
+    document: item.document,
     // Same as the list: the copy is in a space of yours, so it is not "shared" no
     // matter how shared the original was, and you can edit what you just made.
     role: "editor" as const,
@@ -314,6 +316,7 @@ export function duplicationPayloads(plan: DuplicationPlan): {
         ...(item.externalId ? { externalId: item.externalId } : {}),
         ...(item.metadata ? { metadata: item.metadata } : {}),
         ...(item.annotation ? { annotation: item.annotation } : {}),
+        ...(item.document ? { document: item.document } : {}),
       },
     })),
   };

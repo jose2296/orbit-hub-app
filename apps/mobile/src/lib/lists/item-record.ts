@@ -25,6 +25,8 @@ export interface NewListItemInput {
   externalId?: string | null;
   metadata?: Record<string, unknown> | null;
   annotation?: string | null;
+  /** The description as a note document; `annotation` is its plain text. */
+  document?: string;
   /**
    * The board column to create the row in.
    *
@@ -67,6 +69,7 @@ export function newListItem(input: NewListItemInput): ListItem {
     externalId: input.externalId ?? null,
     metadata: input.metadata ?? null,
     annotation: input.annotation ?? null,
+    document: input.document ?? "",
     /*
       Yours and editable, and again not a guess: a row only reaches here from a
       screen that could add it, which is only reachable where you can write. A row
@@ -127,6 +130,7 @@ export function withListItemDefaults(value: unknown): ListItem {
         ? (record.metadata as Record<string, unknown>)
         : null,
     annotation: typeof record.annotation === "string" ? record.annotation : null,
+    document: typeof record.document === "string" ? record.document : "",
     // A row cached before this existed has no answer. "Viewer" would make every
     // list in the app read-only the morning after an update; "editor" is wrong only
     // for rows somebody was lent, and the next pull fixes it. It cannot grant
