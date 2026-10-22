@@ -22,7 +22,11 @@ describe("el diario no tiene modo editar/leer", () => {
     // lee renderizado y un toque en el texto abre el editor.
     expect(pagina).toMatch(/Platform\.OS !== "web" && !escribiendo && tieneTexto/);
     expect(vista).toContain("onMentionPress");
-    expect(vista).toContain("onPress={onEdit}");
+    expect(vista).toContain("onPress={onTextPress}");
+    // Un enlace gana al toque de escribir: el contenedor decide tras un instante y mira si
+    // algun enlace aviso.
+    expect(vista).toContain("shouldEnterEdit(lastLinkPressAt.current, Date.now())");
+    expect(vista).toContain("onLinkPress={onLinkPress}");
   });
 
   it("abrir el selector de menciones no cuenta como terminar de escribir", () => {
