@@ -45,7 +45,7 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 - [ ] T8 Diario: siempre editable, enlaces vivos, swipe coherente (5 parte 2, 7)
 - [ ] T9 Diario: copiar/mover nota a otro dia (5 parte 1)
 - [x] T10 Descripcion de tarea en bottom sheet grande (6)
-- [ ] T11 Buscador de la lista de tareas y botones sobre el `+` (8)
+- [x] T11 Buscador de la lista de tareas y botones sobre el `+` (8)
 - [ ] T12 Barrido general en web, claro y oscuro (11)
 
 ## Rutas y progreso
@@ -91,3 +91,11 @@ hace la tarea aqui") el trabajo se hace inline.
 - El titulo queda como unico campo: se quita `useFieldChain` (un "siguiente" sin destino). Guard de teclado actualizado con motivo.
 - Tests de fuente en `item-description-page.test.ts` (UI de React no montable en Node). Mobile 1912 passed, `tsc` limpio.
 - DECISION PENDIENTE DEL USUARIO: "que sea una nota" (formato rico) no se hizo. Requiere una columna `document` en `list_items` con la misma sanitizacion que las notas, y reusar el editor; queda como tarea aparte. Las imagenes dependen de S3, como se dijo.
+
+### T11 (inline, verificado en web claro y oscuro)
+- Diagnostico: tres botones flotantes apilados (buscar, filtros, `+`) y un campo que nacia de uno y se escondia, anclado sobre el teclado.
+- Diseno nuevo: campo siempre visible + boton de filtros en una barra de la cabecera; crear desde la busqueda es una fila "Crear «texto»" bajo el campo; el unico flotante es el `+`.
+- Bug encontrado al verlo en el navegador: buscar algo inexistente decia "Todo hecho" y "0 pendientes". Los contadores ahora cuentan la lista con filtros (no la busqueda) y hay mensaje de "sin resultados".
+- Los guards de `task-row-layout.test.ts` y `bottom-cluster.test.ts` protegian la pila flotante; se reescribieron afirmando lo contrario, con el motivo. Mobile 1909 passed, `tsc` limpio.
+- No toca el tablero (`board/[listId].tsx`): su filtro sigue como estaba.
+- Entorno: Metro con `CI=1` no vigila ficheros y servia codigo viejo; hay que arrancar sin CI.

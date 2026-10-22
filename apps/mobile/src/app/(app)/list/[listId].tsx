@@ -273,7 +273,6 @@ export default function ListScreen() {
    * carpetas, listas y notas, y por el motivo de entonces: acentos y mayusculas no
    * pueden decidir si algo aparece.
    */
-  const [buscando, setBuscando] = useState(false);
   const [textoBusqueda, setTextoBusqueda] = useState("");
   const terminoBusqueda = textoBusqueda.trim();
 
@@ -312,6 +311,11 @@ export default function ListScreen() {
     () => visibles.filter((item) => item.completed),
     [visibles],
   );
+  // Los contadores de la cabecera cuentan la lista (con sus filtros), **no la busqueda**:
+  // buscar algo que no existe no puede decir "0 pendientes" ni "todo hecho", porque la
+  // lista no ha cambiado, solo lo que se esta mirando.
+  const pendingTotal = useMemo(() => visible.filter((item) => !item.completed), [visible]);
+  const completedTotal = useMemo(() => visible.filter((item) => item.completed), [visible]);
   const activeFilterCount =
     selectedTags.length + (filterState === "all" ? 0 : 1);
   /**
@@ -618,22 +622,101 @@ export default function ListScreen() {
 
       {items.length > 0 ? (
         <View style={styles.badges}>
-          {completed.length > 0 ? (
+          {completedTotal.length > 0 ? (
             <Badge
-              label={t(pluralKey("lists.completedCount", completed.length), {
-                count: completed.length,
+              label={t(pluralKey("lists.completedCount", completedTotal.length), {
+                count: completedTotal.length,
               })}
               tone="success"
             />
           ) : null}
           <Badge
-            label={t(pluralKey("lists.pendingCount", pending.length), {
-              count: pending.length,
+            label={t(pluralKey("lists.pendingCount", pendingTotal.length), {
+              count: pendingTotal.length,
             })}
           />
         </View>
       ) : null}
 
+      {!media && !isLoading && items.length > 0 ? (
+        <View style={[styles.barra, { gap: theme.spacing.sm }]}>
+          <View style={styles.flex}>
+            <TextField
+              value={textoBusqueda}
+              onChangeText={setTextoBusqueda}
+              placeholder={t("lists.searchItems")}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+              testID="item-search-field"
+            />
+          </View>
+          <ListControls
+                filterCount={activeFilterCount}
+                orderLabel={t(`orderShort.${orderMode}` as never)}
+                orders={opcionesDeOrden()}
+                canReorder={canReorder(orderMode)}
+                onReorder={() => setReorderOpen(true)}
+                testID="task-controls"
+                trigger={({ open, label }) => (
+                  <Button
+                    testID="task-controls"
+                    label={label}
+                    icon={activeFilterCount > 0 ? "funnel" : "funnel-outline"}
+                    variant={activeFilterCount > 0 ? "primary" : "secondary"}
+                    size="sm"
+                    fullWidth={false}
+                    iconOnly
+                    onPress={open}
+                  />
+                )}
+              >
+                <FiltersBody
+                  tags={labels}
+                  selectedTags={selectedTags}
+                  onToggleTag={(tag) =>
+                    setSelectedTags((previas) =>
+                      previas.includes(tag)
+                        ? previas.filter((x) => x !== tag)
+                        : [...previas, tag],
+                    )
+                  }
+                  completed={filterState}
+                  onCompleted={setFilterState}
+                  activeCount={activeFilterCount}
+                  onReset={() => {
+                    setSelectedTags([]);
+                    setFilterState("all");
+                  }}
+                />
+              </ListControls>
+        </View>
+      ) : null}
+      {termino.length > 0 ? (
+        <Pressable
+          testID="item-search-create"
+          accessibilityRole="button"
+          accessibilityLabel={t("lists.createFromSearch")}
+          onPress={() => {
+            const texto = termino;
+            setTextoBusqueda("");
+            setEditing({ itemId: "", page: "edit", tituloInicial: texto });
+          }}
+          style={({ pressed }) => [
+            styles.crearDesdeBusqueda,
+            {
+              borderColor: theme.colors.border,
+              borderRadius: theme.radius.md,
+              backgroundColor: pressed ? theme.colors.surfaceMuted : "transparent",
+            },
+          ]}
+        >
+          <Ionicons name="add" size={20} color={theme.colors.accent} />
+          <AppText variant="body" tone="accent" numberOfLines={1} style={styles.flex}>
+            {t("lists.createFromSearchNamed", { name: termino })}
+          </AppText>
+        </Pressable>
+      ) : null}
       {isLoading ? (
         <Card variant="muted">
           <AppText variant="callout" tone="muted" align="center">
@@ -655,7 +738,18 @@ export default function ListScreen() {
         </AppText>
       ) : null}
 
-      {!media && !isLoading && items.length > 0 && pending.length === 0 ? (
+      {!media && !isLoading && items.length > 0 && termino.length > 0 && visibles.length === 0 ? (
+        <Card variant="muted">
+          <AppText variant="callout" tone="muted" align="center">
+            {t("lists.searchNoResults", { name: termino })}
+          </AppText>
+        </Card>
+      ) : null}
+      {!media &&
+      !isLoading &&
+      items.length > 0 &&
+      termino.length === 0 &&
+      pendingTotal.length === 0 ? (
         <Card variant="muted">
           <AppText variant="callout" tone="success" align="center">
             {t("lists.allDone")}
@@ -691,134 +785,6 @@ export default function ListScreen() {
    * takes you. Two copies of a button means the one that gets the margin fixed is
    * the one somebody was looking at.
    */
-  /*
-   * El boton de buscar, encima del de filtros, y el `+` debajo de los dos.
-   *
-   * Va en la pila y no en la cabecera porque comparte sitio con el `+`: tres
-   * botones de la misma forma, alineados al mismo borde, y la pila se cuenta una
-   * vez en `bottomCluster` para que no se solapen.
-   */
-  const botonBuscar = (
-    <Pressable
-      testID="item-search-button"
-      accessibilityRole="button"
-      accessibilityLabel={t("lists.searchItems")}
-      {...pistaCreate.props}
-      /*
-        Alterna, y no solo abre.
-
-        Un boton que solo abre y un campo que se cierra solo son dos controles
-        para lo mismo, y el que se cierra solo tiene que adivinar: se cerraba al
-        vaciarse el campo, lo que significaba que **no se podia buscar a vacio** —
-        que es justo cuando uno empieza a escribir, antes de tener nada escrito.
-        Pulsar el mismo boton que lo abrio para cerrarlo es lo que se espera, y no
-        hace falta un segundo boton ni un gesto escondido.
-      */
-      onPress={() => {
-        setBuscando((abierto) => !abierto);
-        if (buscando) setTextoBusqueda("");
-      }}
-      style={({ pressed }) => [
-        styles.searchButton,
-        {
-          bottom: pila.searchBottom + porTeclado,
-          right: pila.fabBottom,
-          borderRadius: theme.radius.pill,
-          backgroundColor: theme.colors.surface,
-          opacity: pressed ? 0.8 : 1,
-        },
-      ]}
-    >
-      <Ionicons name="search" size={18} color={theme.colors.text} />
-    </Pressable>
-  );
-
-  /*
-   * El campo de busqueda, **arriba de todo** y no encima de la lista: se abre a
-   *hijo del boton, asi que tiene que aparecer donde el ojo ya esta, no donde este
-   * el item que se busca.
-   *
-   * Y al lado, un boton que crea el item con **lo que se estaba buscando dentro**.
-   * Es la accion obvia de quien no encuentra algo: no a abrir un formulario en
-   * blanco, sino a abrirlo con la palabra ya escrita. Sin eso, escribir el nombre
-   * es escribir dos veces lo mismo.
-   */
-  /*
-   * El campo, y **dentro de la pantalla y no fuera**.
-   *
-   * Estaba montado como hermano del `<Screen>`, y un hermano cae donde le toca en
-   * el flujo del padre: se dibujaba **abajo**, debajo de todo, yendo al fondo del
-   * esqueleto de la pantalla. Es el sitio del que mas se queja quien lo busca, y el
-   * unico que no se puede deducir leyendo el sitio donde se pulsa.
-   *
-   * Y va arriba de todo, dentro del area que scrollea: se abre a hijo del boton que
-   * esta en la esquina de abajo, y un campo que aparece donde el ojo ya esta no es
-   * un campo que hay que encontrar.
-   */
-  const campoBusqueda = buscando ? (
-    <View
-      style={[
-        styles.buscador,
-        {
-          gap: theme.spacing.sm,
-          // Justo encima de la pila, y la pila justa encima del teclado.
-          bottom: porTeclado + pila.searchBottom + pila.searchHeight + theme.spacing.sm,
-          left: theme.spacing.lg,
-          right: theme.spacing.lg,
-        },
-      ]}
-    >
-      <TextField
-        autoFocus
-        value={textoBusqueda}
-        onChangeText={setTextoBusqueda}
-        placeholder={t("lists.searchItems")}
-        returnKeyType="search"
-        autoCorrect={false}
-        autoCapitalize="none"
-        containerStyle={styles.campoAncho}
-        testID="item-search-field"
-      />
-      {/*
-        Y el de crear es **solo un `+`**.
-
-        Con el texto al lado el campo se quedaba en dos tercios del ancho y el
-        buscador —que es un campo, y un campo estrecho es un campo en el que se
-        escribe de menos— era la parte que pagaba el ancho. Ademas el boton largo
-        decia "Crear con ese nombre", que es una frase de confirmacion para una
-        accion de la que ya no hay duda: no estas creando otra cosa, estas creando
-        la que no encontraste.
-
-        El `+` de aqui abre **el mismo panel de crear que el de abajo**, con el
-        nombre ya escrito. Y no con el texto en blanco, que es como estaba: el
-        boton de al lado abria el modal y el campo venia vacio, o sea que habia que
-        teclear dos veces justo lo que ya se habia tecleado una.
-      */}
-      <Pressable
-        testID="item-search-create"
-        accessibilityRole="button"
-        accessibilityLabel={t("lists.createFromSearch")}
-        disabled={termino.length === 0}
-        onPress={() => {
-          const texto = termino;
-          setBuscando(false);
-          setTextoBusqueda("");
-          setEditing({ itemId: "", page: "edit", tituloInicial: texto });
-        }}
-        style={({ pressed }) => [
-          styles.botonMasBusqueda,
-          {
-            borderRadius: theme.radius.pill,
-            backgroundColor: theme.colors.accent,
-            opacity: termino.length === 0 ? 0.4 : pressed ? 0.7 : 1,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={22} color={theme.colors.onAccent} />
-      </Pressable>
-    </View>
-  ) : null;
-
   const crear = (
     <>
       <Pressable
@@ -884,72 +850,7 @@ export default function ListScreen() {
       */
       wash={{ color: workspace?.color, colorTo: workspace?.colorTo, wash: workspace?.wash }}
 
-      /*
-        The controls, through `overlay` and not from the header — and this was the
-        second attempt, because the first one was wrong in a way only the browser
-        showed.
-
-        With `placement="floating"` the button was **still at the top** (`top: 5`),
-        because `position: absolute` anchors to the nearest positioned ancestor, and
-        inside a `ListHeaderComponent` that ancestor is the header: a short box near
-        the top. So `bottom: 80` meant eighty points above the bottom of the header,
-        not of the screen. Out of the flow and not anchored to the screen are two
-        different things.
-
-        `overlay` is a sibling of the scroller inside the same
-        `KeyboardAvoidingView`, and `Screen`'s own comment explains why that is the
-        only spot that holds: on the web `react-native-web` puts an identity
-        `transform` on every `ScrollView`, and a transformed ancestor turns
-        `position: fixed` into `absolute` without saying so.
-      */
-      overlay={
-        !media && !isLoading && items.length > 0 ? (
-          <ListControls
-            filterCount={activeFilterCount}
-            orderLabel={t(`orderShort.${orderMode}` as never)}
-            orders={opcionesDeOrden()}
-            canReorder={canReorder(orderMode)}
-            onReorder={() => setReorderOpen(true)}
-            testID="task-controls"
-            placement="floating"
-            floatingBottom={pila.controlsBottom + porTeclado}
-            floatingRight={pila.fabBottom}
-          >
-            <FiltersBody
-              tags={labels}
-              selectedTags={selectedTags}
-              onToggleTag={(tag) =>
-                setSelectedTags((previas) =>
-                  previas.includes(tag)
-                    ? previas.filter((x) => x !== tag)
-                    : [...previas, tag],
-                )
-              }
-              completed={filterState}
-              onCompleted={setFilterState}
-              activeCount={activeFilterCount}
-              onReset={() => {
-                setSelectedTags([]);
-                setFilterState("all");
-              }}
-            />
-          </ListControls>
-        ) : null
-      }
     >
-      {/*
-        El campo de buscar va **dentro de la pantalla**, y no como hermano suyo.
-
-        Estaba montado fuera, y un hermano cae donde le toca en el flujo del padre:
-        se dibujaba abajo, debajo de todo, yendo al fondo del esqueleto. Es el
-        sitio del que mas se queja quien lo busca, y el unico que no se puede
-        deducir leyendo donde se pulsa el boton.
-
-        Y va **antes que la lista**, no dentro de ella: se abre a hijo de un boton
-        que esta en la esquina de abajo, y un campo que aparece donde el ojo ya
-        esta no es un campo que hay que encontrar.
-      */}
-      {campoBusqueda}
       {/*
         The list itself, **with nothing around it that expects a drag**.
 
@@ -1085,7 +986,6 @@ export default function ListScreen() {
         sitio mas donde lo de arriba no esta.
       */}
 
-      {botonBuscar}
       {crear}
 
 
@@ -1150,42 +1050,25 @@ const styles = StyleSheet.create({
    * buscador en el que se escribe de menos.
    */
   /**
-   * El campo, **anclado a la esquina de abajo** y no en el flujo.
+   * La barra de buscar y filtrar, **en la cabecera de la lista y no flotando**.
    *
-   * Was the first child of the list and it was wrong in the way that matters most
-   * on Android: a field in the flow sits where the flow puts it —top of the
-   * screen— while the keyboard covers the bottom third, and the two of them never
-   * meet. Somebody typing a search does not watch the field; they watch the
-   * keyboard.
-   *
-   * So it is pinned to the bottom, above the cluster, and the cluster is pinned
-   * above the keyboard. The field is therefore **where the fingers are**, which is
-   * where the eyes are when you are typing.
+   * Eran tres botones apilados en la esquina (buscar, filtros, `+`) mas un campo que
+   * aparecia encima de ellos: tres controles de la misma forma para dos cosas que se
+   * piden juntas, y un campo que nacia de un boton para volver a esconderse. Ahora el
+   * campo esta siempre, filtra al escribir, y la unica pieza flotante es el `+`.
    */
-  buscador: {
-    position: "absolute",
+  barra: {
     flexDirection: "row",
     alignItems: "center",
   },
-  /** El campo ocupa lo que queda del ancho, y el `+` lo que necesita. */
-  campoAncho: {
-    flex: 1,
-    minWidth: 0,
-  },
-  /** El `+` de al lado, del tamaño del `+` de la esquina. */
-  botonMasBusqueda: {
-    width: 44,
-    height: 44,
+  /** "Crear «texto»", justo bajo el campo, que es donde esta la vista al escribir. */
+  crearDesdeBusqueda: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-  },
-  /** El boton de buscar, y su tamano es el que cuenta `bottomCluster`. */
-  searchButton: {
-    position: "absolute",
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderWidth: 1,
   },
   header: {},
   headerActions: {

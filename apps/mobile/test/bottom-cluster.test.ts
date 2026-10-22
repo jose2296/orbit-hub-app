@@ -177,16 +177,15 @@ describe('la pila no se solapa', () => {
 });
 
 describe('la pila se usa, y no unos números escritos a mano', () => {
-  it('la pantalla cuenta la pila y no unos numeros escritos a mano', () => {
+  it('el + de la pantalla sale de la cuenta de la pila y no de un numero suelto', () => {
     expect(LISTA).toContain('bottomCluster(');
 
-    // Lo que se comprueba ahora: **el boton de buscar usa la cuenta**. Antes esto
-    // miraba que la bandeja cogiera `trayBottom`, y la bandeja ya no esta — se
-    // sustituyo por el buscador, que se mide igual de lejos del borde y por el
-    // mismo motivo. Un guard que sigue mirando la pieza que se quito no protege
+    // La lista de tareas ya no apila buscar y filtros encima del `+` (van en la barra de la
+    // cabecera), asi que lo unico que sale de la pila es el propio `+`. Antes este guard
+    // miraba `searchBottom`; un guard que sigue mirando la pieza que se quito no protege
     // la que se puso.
-    expect(LISTA, 'el boton de buscar sale de la pila, no de un numero suelto')
-      .toMatch(/bottom: pila\.searchBottom/);
+    expect(LISTA, 'el + sale de la pila, no de un numero suelto')
+      .toMatch(/bottom: pila\.fabBottom/);
   });
 
   it('la bandeja de completados no vuelve a la esquina', () => {
@@ -204,41 +203,17 @@ describe('la pila se usa, y no unos números escritos a mano', () => {
     expect(LISTA).not.toMatch(/bottomInset=\{theme\.spacing\.lg \* 2 \+ 56/);
   });
 
-  it('el botón se ancla en la esquina, no dentro del encabezado que se desplaza', () => {
-    // En el encabezado es un `ListHeaderComponent` del `FlatList`, o sea que se va
-    // con el contenido. Flotante es lo que lo deja donde se le ha pedido.
-    expect(LISTA).toContain('placement="floating"');
-    expect(LISTA).toMatch(/controlsBottom/);
-  });
-
-  it('y sale por `overlay`, no como hermano del FlatList dentro del header', () => {
+  it('los filtros de la lista ya no flotan: van en la barra de la cabecera', () => {
     /*
-     * Esta prueba no estaba, y su falta deja pasar el bug que encontró el
-     * navegador: con `placement="floating"` puesto, el botón seguía **arriba**,
-     * en `top: 5`.
-     *
-     * La razón es que `position: absolute` se ancla al **ancestro posicionado más
-     * cercano**, y dentro de un `ListHeaderComponent` ese ancestro es la propia
-     * cabecera — una caja corta cerca de arriba. Así que `bottom: 80` son 80
-     * puntos desde el borde de abajo *de la cabecera*, y el botón sale por encima
-     * de ella. Absoluto y fuera del flujo no es lo mismo que anclado a la pantalla.
-     *
-     * `Screen` ya tiene el sitio: `overlay`, un hermano del scroller en el mismo
-     * `KeyboardAvoidingView`, con su comentario explicando exactamente por qué no
-     * puede ser hijo. El botón va por ahí.
+     * Antes flotaban encima del `+` por `overlay` con `placement="floating"`, y hubo que
+     * anclarlos a la pantalla porque dentro del `ListHeaderComponent` un `absolute` se
+     * ancla a la cabecera y no a la pantalla (el boton salia en `top: 5`). Esa
+     * complicacion desaparece con el diseno nuevo, y lo que se vigila ahora es que no
+     * vuelva: un control flotante por pantalla es suficiente, y es el `+`.
      */
-    const overlay = propBody(LISTA, 'overlay');
-
-    expect(overlay).not.toBeNull();
-    expect(overlay).toContain('placement="floating"');
-    expect(overlay).toContain('ListControls');
-    expect(overlay).toContain('controlsBottom');
-  });
-
-  it('`overlay` es una prop de `Screen`, no de otra cosa', () => {
-    // Sin esto, un `overlay=` en cualquier hoja que se abra dentro de esta pantalla
-    // cumpliría la prueba de arriba y el botón seguiría dentro del encabezado.
-    expect(padreAbiertoEn(LISTA, LISTA.indexOf('overlay={'))).toBe('Screen');
+    expect(LISTA).not.toContain('placement="floating"');
+    expect(LISTA).not.toContain('overlay={');
+    expect(LISTA).toContain('<ListControls');
   });
 
   it('la bandeja sigue midiendo desde el borde, que es como la define', () => {
