@@ -144,6 +144,7 @@ function toItem(row: typeof listItems.$inferSelect, role: MembershipRoleName): L
     // hay almacenado es lo que viaja.
     metadata: row.metadata,
     annotation: row.annotation,
+    document: row.document,
     // El role de la lista, no uno propio: lo que se puede hacer con una fila
     // lo decide la lista en la que esta.
     role,

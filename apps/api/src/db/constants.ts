@@ -167,6 +167,7 @@ export const SYNC_WRITABLE_FIELDS: Record<SyncEntityName, readonly string[]> = {
     'externalId',
     'metadata',
     'annotation',
+    'document',
     'stateId',
   ],
   /**

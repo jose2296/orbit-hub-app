@@ -448,6 +448,12 @@ export const listItems = pgTable(
     // A short remark on the row, not a note. Renamed from `notes` so the column
     // name stops implying a note is a column. See adr/0008-note-entity.md.
     annotation: varchar('annotation', { length: 2000 }),
+    // The description as a document, in the same format and with the same checks as a note.
+    // `annotation` stays and is its plain text, derived by the server on every write: the
+    // row preview, the export and the search read that one, and two columns a client could
+    // write separately would let the row say one thing and the sheet another. Empty for a
+    // task written before this existed, whose description is only `annotation`.
+    document: text('document').notNull().default(''),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),

@@ -111,6 +111,7 @@ function item(over: Partial<ListItem> = {}): ListItem {
     externalId: null,
     metadata: null,
     annotation: null,
+    document: '',
     role: 'owner',
     shared: false,
     version: 1,

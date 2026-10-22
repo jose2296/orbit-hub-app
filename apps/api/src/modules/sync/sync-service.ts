@@ -109,7 +109,10 @@ function noteFieldsForWrite(
   entity: SyncEntityName,
   values: Record<string, unknown>,
 ): Record<string, unknown> {
-  if ((entity !== 'note' && entity !== 'journal_entry') || typeof values['document'] !== 'string') {
+  if (
+    (entity !== 'note' && entity !== 'journal_entry' && entity !== 'list_item') ||
+    typeof values['document'] !== 'string'
+  ) {
     return values;
   }
   // Checked on every write that carries a document, not only on the create. The
@@ -117,7 +120,14 @@ function noteFieldsForWrite(
   // carry any markup and the server stored it, and the editor on iOS and Android
   // does not sanitise what it reads back. The merge path comes through here too.
   const document = noteDocumentSchema.parse(values['document']);
-  return { ...values, document, plainText: noteDocumentToPlainText(document) };
+  const plainText = noteDocumentToPlainText(document);
+  if (entity === 'list_item') {
+    // A task has no `plain_text` column: its plain text is `annotation`, capped like it.
+    // Whatever `annotation` the client sent alongside is replaced, so the two cannot
+    // disagree. An empty document clears it (null, not '').
+    return { ...values, document, annotation: plainText.length > 0 ? plainText.slice(0, 2000) : null };
+  }
+  return { ...values, document, plainText };
 }
 
 /**
@@ -1057,7 +1067,7 @@ export class SyncService {
           }
 
           const row = await syncRepository.insertEntity('list_item', {
-            ...payload,
+            ...noteFieldsForWrite('list_item', payload),
             id: operation.entityId,
             listId,
             title: (payload['title'] as string) ?? 'Item',
