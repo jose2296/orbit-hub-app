@@ -1282,7 +1282,9 @@ export class SyncRepository {
       }
     }
 
-    if (hayAlgoQueTraer && changes.length < input.limit) {
+    // Sin el guard de `hayAlgoQueTraer`: un enlace sin asignar es del usuario aunque no
+    // tenga ningun espacio ni ningun grant, y es justo el caso de quien acaba de empezar.
+    if (changes.length < input.limit) {
       const bookmarkChanges = await db
         .select({ row: bookmarks })
         .from(bookmarks)
@@ -1291,6 +1293,7 @@ export class SyncRepository {
             or(
               inArray(bookmarks.workspaceId, memberWorkspaceIds),
               inArray(bookmarks.workspaceId, espaciosConcedidos),
+              and(isNull(bookmarks.workspaceId), eq(bookmarks.ownerId, input.userId)),
             ),
             gt(bookmarks.updatedAt, after),
           ),
@@ -1303,13 +1306,16 @@ export class SyncRepository {
           entity: 'bookmark',
           record: {
             ...(row.row as Record<string, unknown>),
-            ...this.accesoDe({
-              workspaceId: row.row.workspaceId,
-              folderId: row.row.folderId,
-              rolesPorEspacio,
-              cadenas,
-              carpetasConcedidas: carpetasConcedidasEn,
-            }),
+            // Sin espacio no hay rol que calcular: es del dueno y de nadie mas.
+            ...(row.row.workspaceId === null
+              ? { role: 'owner' as const, shared: false }
+              : this.accesoDe({
+                  workspaceId: row.row.workspaceId,
+                  folderId: row.row.folderId,
+                  rolesPorEspacio,
+                  cadenas,
+                  carpetasConcedidas: carpetasConcedidasEn,
+                })),
           },
         });
         remember(row.row.updatedAt);

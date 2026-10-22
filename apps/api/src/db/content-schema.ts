@@ -517,9 +517,14 @@ export const bookmarks = pgTable(
   'bookmarks',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    workspaceId: uuid('workspace_id')
-      .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /**
+     * Nullable: un enlace puede no estar en ningun espacio ("sin asignar"). Entonces la
+     * pertenencia ya no sale del espacio sino de `ownerId`, y el CHECK de abajo obliga
+     * a que exista una de las dos.
+     */
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Solo se rellena cuando no hay espacio: de quien es un enlace sin asignar. */
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
     folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
     collectionId: uuid('collection_id').references(() => collections.id, { onDelete: 'set null' }),
     url: text('url').notNull(),
@@ -548,6 +553,11 @@ export const bookmarks = pgTable(
     index('bookmarks_folder_idx').on(table.folderId),
     index('bookmarks_collection_idx').on(table.collectionId),
     index('bookmarks_deleted_at_idx').on(table.deletedAt),
+    index('bookmarks_owner_idx').on(table.ownerId),
+    check(
+      'bookmarks_owner_or_workspace',
+      sql`${table.workspaceId} is not null or ${table.ownerId} is not null`,
+    ),
     // Written by hand below: a GIN index over the tags array and a trigram index
     // over the plain text, which is what searching inside a saved article needs
     // and what a btree on a column of prose cannot answer.

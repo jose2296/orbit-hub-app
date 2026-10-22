@@ -208,7 +208,12 @@ export async function extractBookmark(
   if (!fila || fila.deletedAt) {
     throw HttpError.notFound('Bookmark not found');
   }
-  const rol = await rolEn(userId, fila.workspaceId);
+  const rol =
+    fila.workspaceId === null
+      ? fila.ownerId === userId
+        ? ('owner' as const)
+        : null
+      : await rolEn(userId, fila.workspaceId);
   if (rol === null) {
     throw HttpError.notFound('Bookmark not found');
   }
