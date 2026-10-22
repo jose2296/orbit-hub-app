@@ -124,6 +124,12 @@ export default function UnclassifiedScreen() {
                   key={bookmark.id}
                   bookmark={bookmark}
                   testID={`inbox-menu-${bookmark.id}`}
+                  lugar={[
+                    nombres.get(bookmark.workspaceId) ?? "",
+                    ...(bookmark.folderId ? arbol.pathOf(bookmark.folderId).map((c) => c.name) : []),
+                  ]
+                    .filter((parte) => parte.length > 0)
+                    .join(" › ")}
                   /*
                     Al lector, y no al sheet de clasificar.
 

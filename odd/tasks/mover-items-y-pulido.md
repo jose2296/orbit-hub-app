@@ -40,7 +40,7 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 - [x] T3 UI: sheet "Mover a..." en el menu de cada entidad (registro de menus)
 - [ ] T4 Bookmarks sin workspace (`workspaceId` nullable) (puntos 2 y 3)
 - [x] T5 Drawer: quitar menu generico de bookmarks (9)
-- [ ] T6 Sin clasificar: mostrar workspace y carpeta (10)
+- [x] T6 Sin clasificar: mostrar workspace y carpeta (10)
 - [ ] T7 Toolbar de notas contextual (4)
 - [ ] T8 Diario: siempre editable, enlaces vivos, swipe coherente (5 parte 2, 7)
 - [ ] T9 Diario: copiar/mover nota a otro dia (5 parte 1)
@@ -73,3 +73,7 @@ hace la tarea aqui") el trabajo se hace inline.
 
 ### T5 (inline)
 - RED: `bookmarks-list.test.ts` afirma que el drawer ya no declara `/bookmarks`. GREEN: quitada la entrada; la pantalla `bookmarks.tsx` se conserva porque la abren los espacios. Mobile 1906 passed, `tsc` limpio.
+
+### T6 (inline)
+- Entrada "Sin clasificar" por espacio/carpeta (`UnclassifiedEntry`, montada en `ContentList`): abre `/bookmarks` con `collectionId=unclassified`. El inbox global muestra `Espacio › Carpeta` en cada fila (`LinkRow.lugar`, `SpacesTree.pathOf`).
+- Sin RED: es UI sobre hooks de React que Node no puede montar; se cubre con typecheck, el guard de rutas refinado (`collection-screen.test.ts`) y la verificacion visual en T12. Mobile 1906 passed, `tsc` limpio.

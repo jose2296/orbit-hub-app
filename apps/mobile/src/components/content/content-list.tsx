@@ -25,6 +25,7 @@ import {
 } from "@/lib/content-order";
 import { saveContentOrder } from "@/lib/content-order-save";
 import { routeForList } from "@/lib/lists/route";
+import { UnclassifiedEntry } from "@/components/bookmarks/unclassified-entry";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -249,6 +250,8 @@ export function ContentList({
         in a sheet with a handle per row is the arrangement the films already use,
         and it leaves the row itself a thing you press to open.
       */}
+      <UnclassifiedEntry workspaceId={workspaceId} folderId={folderId} />
+
       {vacioDeFiltro ? (
         <EmptyState
           title={t("content.emptyFiltered")}

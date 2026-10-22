@@ -16,6 +16,8 @@ export interface LinkRowProps {
   onPress: () => void;
   /** Abre el menu de la fila, y la fila no sabe de que hoja se trata. */
   onMenu: () => void;
+  /** Donde vive el enlace (`Espacio › Carpeta`), para las vistas que cruzan espacios. */
+  lugar?: string;
   /**
    * El id de esta fila, con su prefijo de pantalla.
    *
@@ -59,12 +61,16 @@ export interface LinkRowProps {
  * montara la hoja, habria un `Modal` por fila —y `Sheet` es un `Modal`— que es
  * justo lo que `entity-menu-sheet.test.ts` cuenta para detectar dos fondos.
  */
-export function LinkRow({ bookmark, onPress, onMenu, testID }: LinkRowProps) {
+export function LinkRow({ bookmark, onPress, onMenu, testID, lugar }: LinkRowProps) {
   const theme = useTheme();
   const t = useTranslation();
 
   const titulo = tituloDeBookmark(bookmark);
-  const subtitulo = [hostDe(bookmark.url), t(CLAVE_ESTADO[bookmark.extractionState])]
+  const subtitulo = [
+    lugar ?? "",
+    hostDe(bookmark.url),
+    t(CLAVE_ESTADO[bookmark.extractionState]),
+  ]
     .filter((parte) => parte.length > 0)
     .join(" · ");
 
