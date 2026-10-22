@@ -460,12 +460,20 @@ export function DrawerPanel({ onNavigate }: { onNavigate?: () => void }) {
         </View>
       </View>
 
+      {/* El menu se desplaza cuando hay mas espacios de los que caben. Con el indicador
+          oculto no habia ninguna pista de que existia mas abajo (las filas simplemente se
+          cortaban en el borde), asi que se ve; `flex: 1` le da una altura acotada en nativo
+          y `nestedScrollEnabled` evita que lo peleen los contenedores de fuera. */}
       <ScrollView
+        style={{ flex: 1 }}
+        nestedScrollEnabled
+        persistentScrollbar
+        testID="drawer-scroll"
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.sm,
           paddingBottom: theme.spacing.lg,
         }}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator
       >
         {DESTINATIONS.map((destination) => {
           const focused = pathname === destination.path;
