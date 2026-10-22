@@ -27,6 +27,10 @@ describe("el diario no tiene modo editar/leer", () => {
     // algun enlace aviso.
     expect(vista).toContain("shouldEnterEdit(lastLinkPressAt.current, Date.now())");
     expect(vista).toContain("onLinkPress={onLinkPress}");
+    // Tocar un chip ofrece Abrir enlace / Editar texto, no navega de golpe.
+    expect(vista).toContain("setChipMenu({ title: event.text");
+    expect(vista).toContain('t("journal.chip.open")');
+    expect(vista).toContain('t("journal.chip.edit")');
   });
 
   it("abrir el selector de menciones no cuenta como terminar de escribir", () => {
