@@ -39,7 +39,7 @@ Entrega: todo en esta rama, commits por tarea, un solo PR al final. Verificacion
 - [x] T2 Contratos + cliente: accion `move` generica y offline
 - [x] T3 UI: sheet "Mover a..." en el menu de cada entidad (registro de menus)
 - [ ] T4 Bookmarks sin workspace (`workspaceId` nullable) (puntos 2 y 3)
-- [ ] T5 Drawer: quitar menu generico de bookmarks (9)
+- [x] T5 Drawer: quitar menu generico de bookmarks (9)
 - [ ] T6 Sin clasificar: mostrar workspace y carpeta (10)
 - [ ] T7 Toolbar de notas contextual (4)
 - [ ] T8 Diario: siempre editable, enlaces vivos, swipe coherente (5 parte 2, 7)
@@ -70,3 +70,6 @@ hace la tarea aqui") el trabajo se hace inline.
 - Los tests de paridad del menu se actualizaron a mano tras leer cada diff: era solo la fila `move` y la etiqueta `move.title`.
 - Suite mobile 1905 passed, `tsc` limpio.
 - PENDIENTE: verificacion visual en web (claro/oscuro) del flujo mover; se hace en T12 con la app levantada.
+
+### T5 (inline)
+- RED: `bookmarks-list.test.ts` afirma que el drawer ya no declara `/bookmarks`. GREEN: quitada la entrada; la pantalla `bookmarks.tsx` se conserva porque la abren los espacios. Mobile 1906 passed, `tsc` limpio.

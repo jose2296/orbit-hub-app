@@ -100,18 +100,6 @@ const DESTINATIONS = [
     labelKey: "journal.title",
   },
   {
-    /*
-     * Bookmarks, junto a las notas y por la misma razon: no estan dentro de
-     * ningun espacio, son todos los enlaces guardados. La lista filtra por
-     * coleccion cuando se la pide, asi que esta entrada es la vista sin
-     * filtro y el inbox de abajo es el filtro de sin-clasificar.
-     */
-    route: "/(app)/bookmarks",
-    path: "/bookmarks",
-    icon: "bookmark-outline",
-    labelKey: "bookmarks.title",
-  },
-  {
     route: "/(app)/search",
     path: "/search",
     icon: "search",
