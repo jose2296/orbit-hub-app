@@ -62,7 +62,7 @@ export interface ReorderSheetProps {
    * So the subtraction happens here, **where both numbers are known**: the index it
    * was dropped at and the index it was in.
    */
-  onMove: (id: string, delta: number) => void | Promise<void>;
+  onMove: (id: string, delta: number, order: string[]) => void | Promise<void>;
   onClose: () => void;
   title: string;
   /** One line under the title, and it is the title's `subtitle`. */
@@ -146,9 +146,11 @@ export function ReorderSheet({
       const id = objetivo[i] as string;
       const j = trabajo.indexOf(id);
       if (j === i) continue;
+      // El orden **antes** del movimiento, para quien cuente las posiciones de otra manera.
+      const antes = [...trabajo];
       trabajo.splice(j, 1);
       trabajo.splice(i, 0, id);
-      await onMove(id, i - j);
+      await onMove(id, i - j, antes);
     }
     onClose();
   }, [orden, rows, onMove, onClose]);

@@ -928,6 +928,10 @@ export function Sheet({
             style={[
               estiloCuerpo,
               {
+                // El alto que persigue el contenido no puede pasar del que deja el panel
+                // (`maxHeight`): sin esto una lista larga empujaba el Guardar fuera de la
+                // pantalla y el scroll no tenia hueco donde moverse.
+                flexShrink: 1,
                 paddingTop: theme.spacing.sm,
                 paddingHorizontal: MARGEN,
               },

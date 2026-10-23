@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
 import type { ListItem, ListOrderMode } from "@orbit-hub/contracts";
@@ -347,8 +347,44 @@ export default function ListScreen() {
   const pila = bottomCluster(theme);
   const canDrag = canReorder(orderMode);
 
+  /*
+    Lo que la hoja de orden ensena es **lo que ensena la lista**: los pendientes, en su orden.
+    Los completados van siempre detras en la lista, asi que ponerlos arriba aqui no se vería en
+    ninguna parte: no estan en la hoja. Antes eran todos, con los completados intercalados, y la
+    hoja no se parecia a la lista que se queria ordenar.
+  */
+  const filasDeLaHoja = useMemo(() => sorted.filter((item) => !item.completed), [sorted]);
+  /*
+    `moveItemTo` mueve por posicion en **toda** la lista, y la hoja cuenta en el orden que ensena.
+    Los dos solo coinciden si no hay completados entre medias, asi que el desplazamiento se
+    traduce aqui: la fila va al sitio que ocupa en la hoja la que tiene ahora su destino. El orden
+    de posicion se sigue a mano (`posiciones`) porque cada movimiento se espera y la lista tarda
+    un render en reflejarlo.
+  */
+  const posiciones = useRef<string[]>([]);
+  useEffect(() => {
+    if (reorderOpen) posiciones.current = sorted.map((item) => item.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reorderOpen]);
+  const moverDesdeLaHoja = useCallback(
+    async (id: string, delta: number, enLaHoja: string[]) => {
+      const destino = enLaHoja[enLaHoja.indexOf(id) + delta];
+      const orden = posiciones.current;
+      const desde = orden.indexOf(id);
+      const hasta = destino === undefined ? -1 : orden.indexOf(destino);
+      if (desde < 0 || hasta < 0 || desde === hasta) return;
+      orden.splice(desde, 1);
+      orden.splice(hasta, 0, id);
+      await moveItemTo(id, hasta - desde);
+    },
+    [moveItemTo],
+  );
+
   /** Cuanto sube **toda** la pila: lo que tapa el teclado. */
-  const porTeclado = teclado > 0 ? teclado + theme.spacing.md : 0;
+  // Solo en iOS: en Android la app usa `adjustResize` y la ventana ya se encoge con el teclado,
+  // asi que el `+` queda justo encima de el sin ayuda. Sumarle ademas la altura del teclado lo
+  // subia dos veces.
+  const porTeclado = Platform.OS === "ios" && teclado > 0 ? teclado + theme.spacing.md : 0;
 
   /*
    * El buscador de la lista, y lo que cambia con el.
@@ -664,7 +700,7 @@ export default function ListScreen() {
                     label={label}
                     icon={activeFilterCount > 0 ? "funnel" : "funnel-outline"}
                     variant={activeFilterCount > 0 ? "primary" : "secondary"}
-                    size="sm"
+                    size="md"
                     fullWidth={false}
                     iconOnly
                     onPress={open}
@@ -954,8 +990,8 @@ export default function ListScreen() {
         onClose={() => setReorderOpen(false)}
         title={t("order.reorder")}
         hint={t("order.reorderHint")}
-        onMove={(id, delta) => void moveItemTo(id, delta)}
-        rows={sorted.map((item) => ({
+        onMove={moverDesdeLaHoja}
+        rows={filasDeLaHoja.map((item) => ({
           id: item.id,
           title: item.title,
           subtitle: item.tags.length > 0 ? item.tags.join(" · ") : null,
