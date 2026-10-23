@@ -20,7 +20,9 @@ describe("el diario no tiene modo editar/leer", () => {
     // El editor no recibe pulsaciones sobre un enlace en el movil (la libreria solo tiene
     // `onMentionPress` en el componente de solo lectura), asi que ahi un dia con texto se
     // lee renderizado y un toque en el texto abre el editor.
-    expect(pagina).toMatch(/Platform\.OS !== "web" && !escribiendo && tieneTexto/);
+    expect(pagina).toMatch(/Platform\.OS !== "web" && !escribiendo\) \{/);
+    // Tambien un dia vacio: el editor nativo se queda con todos los toques y no deja hacer swipe.
+    expect(pagina).toContain('placeholder={t("journal.placeholder")}');
     expect(vista).toContain("onMentionPress");
     expect(vista).toContain("onPress={onTextPress}");
     // Un enlace gana al toque de escribir: el contenedor decide tras un instante y mira si
@@ -45,6 +47,9 @@ describe("el diario no tiene modo editar/leer", () => {
     expect(pantalla).toContain("onEditingChange={setEditing}");
     // Y la pagina avisa de que ya no escribe cuando se va con su dia.
     expect(pagina).toMatch(/useEffect\(\(\) => \(\) => onEditingChange\?\.\(false\)/);
+    // Y "escribiendo" no es solo foco: en Android el sistema enfoca el primer campo al abrir.
+    expect(pagina).toContain("isTyping({");
+    expect(pagina).toContain("onEditingChange?.(escribiendoDeVerdad);");
   });
 });
 
@@ -65,7 +70,7 @@ describe("copiar o pasar un dia a otro", () => {
 
 describe("la barra de formato de las notas ya no es fija", () => {
   it("solo existe mientras el editor tiene el foco", () => {
-    expect(editor).toContain("const showToolbar = !readOnly && isFocused;");
+    expect(editor).toContain("isTyping({ focused: isFocused, keyboardHeight, platform: Platform.OS })");
     expect(editor).toContain("showToolbar && !floating");
     expect(editor).toContain("showToolbar && floating && anchor");
   });

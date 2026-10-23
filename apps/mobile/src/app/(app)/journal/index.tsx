@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Pressable, View, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -18,6 +19,7 @@ import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { useJournalDaysWithText } from "@/hooks/use-journal";
 import { useSession } from "@/hooks/use-session";
 import { addDays, formatDayTitle, todayKey } from "@/lib/journal/days";
+import { pageTurn } from "@/lib/journal/pager";
 import { transferJournalDay } from "@/lib/journal/transfer";
 import type { JournalTransferMode } from "@/lib/journal/transfer";
 import type { JournalDay } from "@orbit-hub/contracts";
@@ -79,6 +81,25 @@ export default function JournalScreen() {
    * editor is still mounted, the new day replaces it, and the offset goes back to
    * rest in the same frame, so the new day is what the finger sees.
    */
+  // En movil el cambio de dia lo hace un desplazamiento horizontal nativo con tres paginas
+  // (anterior, hoy, siguiente). Al acabar, se cambia de dia y se vuelve a la de en medio.
+  const pagerRef = useRef<ScrollView | null>(null);
+  const onPagerEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const direction = pageTurn(event.nativeEvent.contentOffset.x, width);
+      if (direction === 0) return;
+      void flushRef.current?.();
+      setDay((current) => addDays(current, direction));
+    },
+    [width],
+  );
+  // Cada dia nuevo deja la vista en la pagina de en medio, sin animar: el dia que se ve es ya
+  // el nuevo, y las dos de los lados son sus vecinos.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    pagerRef.current?.scrollTo({ x: width, y: 0, animated: false });
+  }, [day, width]);
+
   const turn = useCallback(
     (direction: -1 | 1) => {
       const next = addDays(day, direction);
@@ -163,19 +184,53 @@ export default function JournalScreen() {
         onToday={onToday}
       />
 
-      <GestureDetector gesture={gesture}>
-        <View style={{ flex: 1, overflow: "hidden" }}>
-          {user ? (
-            <>
-              <Animated.View style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width }, before]}>
-                <JournalDayPreview userId={user.id} day={addDays(day, -1)} />
-              </Animated.View>
-              <Animated.View style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width }, after]}>
-                <JournalDayPreview userId={user.id} day={addDays(day, 1)} />
-              </Animated.View>
-            </>
-          ) : null}
-          <Animated.View style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width }, centre]}>
+      {Platform.OS === "web" ? (
+        <GestureDetector gesture={gesture}>
+          <View style={{ flex: 1, overflow: "hidden" }}>
+            {user ? (
+              <>
+                <Animated.View style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width }, before]}>
+                  <JournalDayPreview userId={user.id} day={addDays(day, -1)} />
+                </Animated.View>
+                <Animated.View style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width }, after]}>
+                  <JournalDayPreview userId={user.id} day={addDays(day, 1)} />
+                </Animated.View>
+              </>
+            ) : null}
+            <Animated.View style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width }, centre]}>
+              {user ? (
+                <JournalDayPage
+                  key={day}
+                  userId={user.id}
+                  day={day}
+                  registerFlush={registerFlush}
+                  onEditingChange={setEditing}
+                />
+              ) : null}
+            </Animated.View>
+          </View>
+        </GestureDetector>
+      ) : (
+        <ScrollView
+          ref={pagerRef}
+          horizontal
+          pagingEnabled
+          // Mientras se escribe, un arrastre horizontal es seleccionar texto y no pasar de pagina.
+          scrollEnabled={!editing}
+          bounces={false}
+          overScrollMode="never"
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentOffset={{ x: width, y: 0 }}
+          onMomentumScrollEnd={onPagerEnd}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ width: width * 3 }}
+          testID="journal-pager"
+        >
+          <View style={{ width }}>
+            {user ? <JournalDayPreview userId={user.id} day={addDays(day, -1)} /> : null}
+          </View>
+          <View style={{ width }}>
             {user ? (
               <JournalDayPage
                 key={day}
@@ -185,9 +240,12 @@ export default function JournalScreen() {
                 onEditingChange={setEditing}
               />
             ) : null}
-          </Animated.View>
-        </View>
-      </GestureDetector>
+          </View>
+          <View style={{ width }}>
+            {user ? <JournalDayPreview userId={user.id} day={addDays(day, 1)} /> : null}
+          </View>
+        </ScrollView>
+      )}
 
       <CalendarSheet
         visible={calendarOpen}
