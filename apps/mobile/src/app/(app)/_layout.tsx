@@ -213,7 +213,6 @@ function AppNavigation() {
         name="item/[itemId]"
         options={{ title: "", animation: "fade", animationDuration: 180 }}
       />
-      <Stack.Screen name="notes" options={{ title: t("notes.title") }} />
       <Stack.Screen name="journal" options={{ title: t("journal.title") }} />
       <Stack.Screen name="people" options={{ title: t("people.title") }} />
       <Stack.Screen name="templates" options={{ title: t("note.templates") }} />

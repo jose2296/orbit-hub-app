@@ -72,22 +72,17 @@ const DESTINATIONS = [
   { route: "/(app)", path: "/", icon: "home", labelKey: "tabs.home" },
   {
     /*
-     * Notes, between the panel and the search.
+     * Plantillas, entre el panel y el diario.
      *
-     * They were not here at all, and the screen existed: `/notes` was reachable
-     * by nothing, so the `+` that creates a note from a template — and the one
-     * that creates a blank one — were on a screen nobody could get to. A feature
-     * that is one tap away from a menu entry and zero taps away from any is not
-     * finished, it is filed.
-     *
-     * It is here and not inside a space because it is not inside one: it is every
-     * note the person has written, which is the same reason the templates follow
-     * them rather than sitting in a folder.
+     * Aqui estaba "Notas", y no tenia sentido: una nota siempre vive en un espacio o en una
+     * carpeta, asi que su sitio es ese, y encontrarla es cosa de la busqueda. Lo unico que no
+     * pertenece a ningun espacio son las plantillas, que siguen a la persona. Desde aqui se
+     * ven, se editan, y se crea una nota a partir de una (la pantalla pregunta donde va).
      */
-    route: "/(app)/notes",
-    path: "/notes",
-    icon: "document-text-outline",
-    labelKey: "notes.title",
+    route: "/(app)/templates",
+    path: "/templates",
+    icon: "copy-outline",
+    labelKey: "note.templates",
   },
   {
     /*

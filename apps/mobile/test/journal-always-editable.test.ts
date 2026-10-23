@@ -16,40 +16,70 @@ describe("el diario no tiene modo editar/leer", () => {
     expect(dicc).not.toContain('"journal.read"');
   });
 
-  it("en la web el editor esta siempre; solo el movil descansa en el texto renderizado", () => {
-    // El editor no recibe pulsaciones sobre un enlace en el movil (la libreria solo tiene
-    // `onMentionPress` en el componente de solo lectura), asi que ahi un dia con texto se
-    // lee renderizado y un toque en el texto abre el editor.
-    expect(pagina).toMatch(/Platform\.OS !== "web" && !escribiendo\) \{/);
-    // Tambien un dia vacio: el editor nativo se queda con todos los toques y no deja hacer swipe.
-    expect(pagina).toContain('placeholder={t("journal.placeholder")}');
-    expect(vista).toContain("onMentionPress");
-    expect(vista).toContain("onPress={onTextPress}");
-    // Un enlace gana al toque de escribir: el contenedor decide tras un instante y mira si
-    // algun enlace aviso.
-    expect(vista).toContain("shouldEnterEdit(lastLinkPressAt.current, Date.now())");
-    expect(vista).toContain("onLinkPress={onLinkPress}");
-    // Tocar un chip ofrece Abrir enlace / Editar texto, no navega de golpe.
-    expect(vista).toContain("setChipMenu({ title: event.text");
-    expect(vista).toContain('t("journal.chip.open")');
-    expect(vista).toContain('t("journal.chip.edit")');
+  it("hay un solo modo: el editor, siempre, en la web y en el movil", () => {
+    // Antes un dia con texto descansaba como texto renderizado en el movil (para poder pulsar
+    // un chip) y un toque abria el editor: dos modos. Ya no: el editor no se desmonta nunca.
+    expect(pagina).not.toContain("escribiendo &&");
+    expect(pagina).not.toContain("JournalDayView");
+    expect(pagina).not.toContain("setEscribiendo");
+    expect(pagina).toContain("<NoteEditor");
   });
 
-  it("abrir el selector de menciones no cuenta como terminar de escribir", () => {
-    // Si el foco que se va al abrir la hoja desmontara el editor, `onPick` se quedaria
-    // sin editor al que escribir el enlace.
-    expect(pagina).toContain("pickerAbierto.current");
-    expect(pagina).toMatch(/!pickerAbierto\.current/);
+  it("tocar un chip mientras se edita abre un menu: abrir, cambiar o quitar el enlace", () => {
+    expect(pagina).toContain("onMentionTap={Platform.OS === \"web\" ? undefined : onChipTouched}");
+    expect(pagina).toContain('t("journal.chip.open")');
+    expect(pagina).toContain('t("journal.chip.change")');
+    expect(pagina).toContain('t("journal.chip.unlink")');
+    // El selector de "Cambiar enlace" espera a que el menu se haya ido: dos Modal a la vez no se muestran.
+    expect(pagina).toContain("setTimeout(() => setPickerOpen(true), SHEET_EXIT_MS)");
+    // En la web el clic se lee de la pagina y abre el mismo menu, en vez de navegar de golpe.
+    expect(pagina).toContain("onChipTouched({");
+    expect(pagina).not.toMatch(/router\.push\(found\.route/);
   });
 
-  it("el gesto de cambiar de dia se apaga mientras se escribe", () => {
-    expect(pantalla).toContain(".enabled(!editing)");
+  it("el editor deduce el toque de un chip: cursor DENTRO, sin haber tecleado", () => {
+    expect(editor).toContain("chipAtCaret(html, start)");
+    expect(editor).toContain("Date.now() - lastTypedAt.current < 600");
+    // No se repite el aviso mientras el cursor siga en el mismo chip.
+    expect(editor).toContain("chipUnderCaret.current === key");
+  });
+
+  it("al cerrar el menu el cursor queda tras el chip, para poder volver a tocarlo", () => {
+    expect(pagina).toContain("editorRef.current?.setSelection(found.match.plainEnd, found.match.plainEnd)");
+  });
+
+  it("el swipe de dias funciona escribiendo o no, en toda la pagina", () => {
+    // En Android el editor nativo cancela el gesto de RNGH (`begin` y `finalize ok=false`), pero
+    // React Native entrega los toques crudos de la pagina entera: ahi se decide el swipe.
+    expect(pantalla).toContain("onTouchStart, onTouchMove, onTouchEnd, onTouchCancel");
+    expect(pantalla).toContain("classifyDrag(dx, point.pageY - start.y)");
+    expect(pantalla).toContain("swipeDirection(dx, dx / seconds, width)");
+    // No se le quita el toque a nadie: ningun responder, el editor sigue siendo del editor.
+    expect(pantalla).not.toContain("onStartShouldSetResponder");
+    expect(pantalla).not.toContain("onMoveShouldSetResponder");
+    // El editor crece a su contenido y la pagina hace el scroll, para no pedir el toque a sus padres.
+    expect(pagina).toContain("autoGrow");
+    expect(editor).toContain("scrollEnabled={autoGrow ? false : undefined}");
+  });
+
+  it("en la web sigue el gesto con el raton, que se apaga al escribir porque arrastrar es seleccionar", () => {
+    expect(pantalla).toContain('.enabled(Platform.OS === "web" && !editing)');
     expect(pantalla).toContain("onEditingChange={setEditing}");
     // Y la pagina avisa de que ya no escribe cuando se va con su dia.
     expect(pagina).toMatch(/useEffect\(\(\) => \(\) => onEditingChange\?\.\(false\)/);
-    // Y "escribiendo" no es solo foco: en Android el sistema enfoca el primer campo al abrir.
     expect(pagina).toContain("isTyping({");
-    expect(pagina).toContain("onEditingChange?.(escribiendoDeVerdad);");
+    expect(pagina).toContain("onEditingChange?.(escribiendo);");
+  });
+});
+
+describe("el drawer no tiene un menu general de notas", () => {
+  const drawer = leer("src/components/layout/drawer.tsx");
+
+  it("una nota vive en un espacio o carpeta; lo unico global son las plantillas", () => {
+    expect(drawer).not.toContain('route: "/(app)/notes"');
+    expect(drawer).not.toContain('labelKey: "notes.title"');
+    expect(drawer).toContain('route: "/(app)/templates"');
+    expect(drawer).toContain('labelKey: "note.templates"');
   });
 });
 

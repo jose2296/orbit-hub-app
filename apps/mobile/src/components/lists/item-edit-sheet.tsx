@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
 
 import type {
   BoardStates,
@@ -42,6 +42,10 @@ import { ICON_COLOR_LABEL } from "@/theme/tokens";
 import type { IconColor } from "@orbit-hub/contracts";
 import { TagChip } from "./tag-chip";
 import { TagColorPicker } from "./tag-color-picker";
+
+/** Cuanto de la pantalla ocupa la hoja de la descripcion, y lo que gastan su cabecera y su pie. */
+const DESCRIPTION_SHEET_RATIO = 0.95;
+const DESCRIPTION_CHROME = 230;
 
 type Page = "edit" | "icon" | "tags" | "description";
 
@@ -244,6 +248,7 @@ export function ItemEditSheet({
   draftStateId = null,
 }: ItemEditSheetProps) {
   const theme = useTheme();
+  const { height: altoVentana } = useWindowDimensions();
   const t = useTranslation();
   const { items, updateItem, removeItem, addItem, toggleCompleted } =
     useListItems(listId);
@@ -836,6 +841,8 @@ export function ItemEditSheet({
       // and delete, this panel is taller than a phone, and a panel that does not
       // scroll hides its own save button under the bottom of the screen.
       scrollable
+      // La descripcion es un documento y no un campo: la hoja sube casi hasta arriba.
+      maxHeightRatio={page === "description" ? DESCRIPTION_SHEET_RATIO : undefined}
       onBack={page === "edit" ? undefined : () => setPage("edit")}
       /*
         El Guardar es **el del pie**, y no el boton que estaba aqui abajo. Dos
@@ -1251,7 +1258,10 @@ export function ItemEditSheet({
         {page === "description" ? (
           // El mismo editor que una nota: formato, listas, enlaces. Alto de editor y no de
           // campo; la barra de formato aparece con el foco, como en una nota.
-          <View testID="item-description" style={{ height: 300 }}>
+          <View
+            testID="item-description"
+            style={{ height: Math.max(300, altoVentana * DESCRIPTION_SHEET_RATIO - DESCRIPTION_CHROME) }}
+          >
             <DescriptionEditor
               initial={descDoc}
               editorRef={descEditorRef}
