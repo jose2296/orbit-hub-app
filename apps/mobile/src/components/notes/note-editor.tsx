@@ -22,6 +22,7 @@ import { useTranslation } from "@/lib/i18n";
 import { mentionStyleMap } from "@/lib/journal/mention-style";
 import { installMentionChipStyle } from "@/lib/journal/mention-web-style";
 import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
+import { chipAtCaret } from "@/lib/journal/chip-edit";
 import { isTyping } from "@/lib/typing-state";
 import { NOTE_SANITIZATION } from "@/lib/notes/sanitization";
 import { NOTE_BODY_FONT } from "@/theme/tokens";
@@ -103,6 +104,20 @@ export interface NoteEditorProps extends Pick<
    * (el diario apaga el gesto de cambiar de dia mientras se escribe).
    */
   onFocusChange?: (focused: boolean) => void;
+  /**
+   * Se toco un chip (una mencion) mientras se editaba. El editor no tiene evento de pulsacion
+   * sobre un chip, asi que se deduce: un cursor que cae **dentro** de uno, sin que se acabe de
+   * teclear nada. Escribir al lado de un chip no cuenta.
+   */
+  onMentionTap?: (chip: { type: string; id: string; text: string }) => void;
+  /**
+   * El editor crece a su contenido y la pagina hace el scroll, en vez de scrollear por dentro.
+   *
+   * En Android un editor con scroll propio le pide a sus padres que no le quiten el toque, y el
+   * gesto de cambiar de dia del diario terminaba cancelado (`finalize ok=false`) en cuanto se
+   * tocaba sobre el texto. Sin scroll propio no lo pide.
+   */
+  autoGrow?: boolean;
 }
 
 /** A style the toolbar can turn on and off over the current selection. */
@@ -250,6 +265,8 @@ export function NoteEditor({
   onInsertImage,
   onMentionRequest,
   onFocusChange,
+  onMentionTap,
+  autoGrow = false,
   editorRef,
   readOnly = false,
   sanitizationConfig = NOTE_SANITIZATION,
@@ -260,6 +277,10 @@ export function NoteEditor({
   // being drawn is reported as a trigger too, and only a `@` typed while focused
   // should open the picker.
   const focused = useRef(false);
+  // Para saber si el cursor ha caido en un chip por un toque y no por teclear: cuando se escribio
+  // por ultima vez, y que chip tiene ya el cursor (para no repetir el aviso mientras siga ahi).
+  const lastTypedAt = useRef(0);
+  const chipUnderCaret = useRef<string | null>(null);
   // El mismo foco, pero como estado: es lo que decide si la barra de formato se ve.
   const [isFocused, setIsFocused] = useState(false);
   const { width } = useWindowDimensions();
@@ -365,49 +386,91 @@ export function NoteEditor({
     [state],
   );
 
+  const editorElement = (
+  <EnrichedTextInput
+    ref={editorRef}
+    defaultValue={defaultValue}
+    placeholder={placeholder}
+    autoFocus={autoFocus}
+    editable={!readOnly}
+    sanitizationConfig={sanitizationConfig}
+    htmlStyle={htmlStyle}
+    textShortcuts={textShortcuts}
+    onChangeText={() => {
+      lastTypedAt.current = Date.now();
+      onChanged();
+    }}
+    onChangeSelection={
+      onMentionTap
+        ? (event) => {
+            const { start, end } = event.nativeEvent;
+            // Una seleccion de varias letras no es un toque; y justo despues de teclear el
+            // cursor se mueve solo, y eso tampoco.
+            if (start !== end || Date.now() - lastTypedAt.current < 600) return;
+            void (async () => {
+              const html = await editorRef.current?.getHTML();
+              if (!html) return;
+              const chip = chipAtCaret(html, start);
+              if (!chip) {
+                chipUnderCaret.current = null;
+                return;
+              }
+              const key = `${chip.type}:${chip.id}:${chip.plainStart}`;
+              if (chipUnderCaret.current === key) return;
+              chipUnderCaret.current = key;
+              onMentionTap({ type: chip.type, id: chip.id, text: chip.text });
+            })();
+          }
+        : undefined
+    }
+    onChangeState={(event) => setState(event.nativeEvent)}
+    mentionIndicators={onMentionRequest ? ["@"] : undefined}
+    onFocus={() => {
+      focused.current = true;
+      setIsFocused(true);
+      onFocusChange?.(true);
+    }}
+    onBlur={() => {
+      focused.current = false;
+      setIsFocused(false);
+      onFocusChange?.(false);
+    }}
+    onStartMention={
+      onMentionRequest
+        ? () => {
+            if (focused.current) onMentionRequest("typed");
+          }
+        : undefined
+    }
+    scrollEnabled={autoGrow ? false : undefined}
+    style={{
+      ...(autoGrow ? { minHeight: GROW_MIN_HEIGHT } : { flex: 1 }),
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.md,
+      // The type comes from the hook and not from here. Written out again it
+      // would be the one place in the editor that could disagree with the
+      // scale, and it would be the place nobody looks.
+      // Con la barra pegada al teclado el texto termina encima de ella.
+      marginBottom: showToolbar && !floating ? keyboardOverlap + DOCKED_TOOLBAR_HEIGHT : 0,
+      ...bodyStyle,
+    }}
+  />
+  );
+
   return (
     <View ref={containerRef} style={{ flex: 1 }}>
-      <EnrichedTextInput
-        ref={editorRef}
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-        autoFocus={autoFocus}
-        editable={!readOnly}
-        sanitizationConfig={sanitizationConfig}
-        htmlStyle={htmlStyle}
-        textShortcuts={textShortcuts}
-        onChangeText={onChanged}
-        onChangeState={(event) => setState(event.nativeEvent)}
-        mentionIndicators={onMentionRequest ? ["@"] : undefined}
-        onFocus={() => {
-          focused.current = true;
-          setIsFocused(true);
-          onFocusChange?.(true);
-        }}
-        onBlur={() => {
-          focused.current = false;
-          setIsFocused(false);
-          onFocusChange?.(false);
-        }}
-        onStartMention={
-          onMentionRequest
-            ? () => {
-                if (focused.current) onMentionRequest("typed");
-              }
-            : undefined
-        }
-        style={{
-          flex: 1,
-          paddingHorizontal: theme.spacing.lg,
-          paddingTop: theme.spacing.md,
-          // The type comes from the hook and not from here. Written out again it
-          // would be the one place in the editor that could disagree with the
-          // scale, and it would be the place nobody looks.
-          // Con la barra pegada al teclado el texto termina encima de ella.
-          marginBottom: showToolbar && !floating ? keyboardOverlap + DOCKED_TOOLBAR_HEIGHT : 0,
-          ...bodyStyle,
-        }}
-      />
+      {autoGrow ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {editorElement}
+        </ScrollView>
+      ) : (
+        editorElement
+      )}
       {showToolbar && !floating ? (
         <View
           style={{
@@ -476,6 +539,9 @@ function floatingRows(rows: ToolbarButton[][]): ToolbarButton[][] {
   if (!inline || !block || !tail) return rows;
   return [inline, [...block, ...tail]];
 }
+
+/** El alto minimo de un editor que crece: lo bastante para que tocar bajo el texto lo enfoque. */
+const GROW_MIN_HEIGHT = 560;
 
 /** Desde este ancho (solo en la web) la barra flota junto a la seleccion. */
 const FLOATING_TOOLBAR_MIN_WIDTH = 768;
