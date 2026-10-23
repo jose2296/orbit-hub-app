@@ -26,9 +26,9 @@ describe("la descripcion de una tarea tiene su propia pagina", () => {
     // estado de la hoja cambia con cada tecla.
     expect(hoja).toContain("const [start] = useState(initial);");
     expect(hoja).toContain("<NoteEditor");
-    expect(bloque).toMatch(/height: \d{3}/);
+    expect(bloque).toContain("altoVentana");
     // Mas bajo que el hueco visible de la hoja, o la barra de formato queda bajo el boton de guardar.
-    expect(bloque).toContain("height: 300");
+    expect(bloque).toContain("DESCRIPTION_SHEET_RATIO");
     expect(hoja, "ya no es un TextField multilinea").not.toContain('FIELD_LIMITS["list_item.annotation"]');
   });
 
