@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1537,7 +1538,7 @@ describe('#5: el buscador de la lista, en la cabecera y no flotando', () => {
   it('el unico flotante es el +, y sube con el teclado', () => {
     expect(sin, 'el + sube').toMatch(/bottom: pila\.fabBottom \+ porTeclado/);
     expect(sin, 'y porTeclado sale del teclado, a mano').toMatch(
-      /const porTeclado = teclado > 0 \? teclado \+ theme\.spacing\.md : 0;/,
+      /const porTeclado = Platform\.OS === "ios" && teclado > 0 \? teclado \+ theme\.spacing\.md : 0;/,
     );
   });
 
@@ -1913,7 +1914,7 @@ describe('reordenar y fijar tambien esperan al Guardar', () => {
 
   it('el replay es contra el orden vivo, de uno en uno', () => {
     const hoja = sin('src/components/ui/reorder-sheet.tsx');
-    expect(hoja, 'hay replay').toContain('await onMove(id, i - j);');
+    expect(hoja, 'hay replay').toContain('await onMove(id, i - j, antes);');
     expect(hoja, 'las que se fueron no se fuerzan').toContain(
       '.filter((id) => enVivos.has(id))',
     );
@@ -1988,5 +1989,18 @@ describe('#2: el foco va al primer campo sin pedir un toque', () => {
     // prioridad— y un teclado que sale solo tapa la mitad del panel para nada.
     const panel = sin('src/components/lists/item-edit-sheet.tsx');
     expect(panel, 'el foco es solo al crear').toContain('autoFocus={isNew}');
+  });
+});
+
+describe('la hoja de orden con muchas filas', () => {
+  it('el cuerpo se encoge al limite del panel y el Guardar no sale de la pantalla', () => {
+    const hoja = readFileSync(resolve(__dirname, '../src/components/ui/sheet.tsx'), 'utf8');
+    expect(hoja).toMatch(/estiloCuerpo,\s*\{[^}]*flexShrink: 1/);
+  });
+
+  it('la hoja ensena los pendientes, que es lo que la lista ordena, y traduce el movimiento', () => {
+    const lista = readFileSync(resolve(__dirname, '../src/app/(app)/list/[listId].tsx'), 'utf8');
+    expect(lista).toContain('sorted.filter((item) => !item.completed)');
+    expect(lista).toContain('moverDesdeLaHoja');
   });
 });
