@@ -101,6 +101,9 @@ vi.mock("@/hooks/use-bookmarks", async (importOriginal) => {
   };
 });
 
+// El titulo de la cabecera lo pone el navegador, que aqui no existe: se prueba en su sitio.
+vi.mock("@/hooks/use-screen-title", () => ({ useScreenTitle: () => undefined }));
+
 vi.mock("@/hooks/use-spaces-tree", () => ({
   useSpacesTree: () => ({ spaces: () => estado.espacios }),
 }));
