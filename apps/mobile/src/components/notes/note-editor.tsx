@@ -21,6 +21,8 @@ import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { mentionStyleMap } from "@/lib/journal/mention-style";
 import { installMentionChipStyle } from "@/lib/journal/mention-web-style";
+import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
+import { isTyping } from "@/lib/typing-state";
 import { NOTE_SANITIZATION } from "@/lib/notes/sanitization";
 import { NOTE_BODY_FONT } from "@/theme/tokens";
 import { useTheme } from "@/theme";
@@ -268,7 +270,9 @@ export function NoteEditor({
   const containerRef = useRef<View>(null);
   const keyboardOverlap = useKeyboardOverlap(containerRef, isFocused && !floating);
   const anchor = useSelectionAnchor(containerRef, isFocused && floating);
-  const showToolbar = !readOnly && isFocused;
+  const keyboardHeight = useKeyboardHeight();
+  // La barra existe mientras se escribe: foco y, en un movil, teclado en pantalla. Ver `isTyping`.
+  const showToolbar = !readOnly && isTyping({ focused: isFocused, keyboardHeight, platform: Platform.OS });
   useEffect(() => {
     if (Platform.OS === "web") installMentionChipStyle();
   }, []);

@@ -45,6 +45,7 @@ import { useWorkspaces } from "@/hooks/use-workspaces";
 import { SpaceBand } from "@/components/workspace/space-band";
 import { useScreenShare } from "@/hooks/use-screen-share";
 import { useScreenSpace } from "@/hooks/use-screen-space";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/theme";
 
 type Status = "idle" | "saving" | "saved" | "failed" | "invalid";
@@ -114,6 +115,7 @@ export default function NoteScreen() {
   const { noteId } = useLocalSearchParams<{ noteId: string }>();
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const t = useTranslation();
 
   const id = noteId ?? null;
@@ -488,20 +490,24 @@ export default function NoteScreen() {
         colorTo={espacio?.colorTo}
         wash={espacio?.wash}
       />
-      <TextField
-        value={title}
-        onChangeText={(value) => {
-          setTitle(value);
-          setStatus("saving");
-          autosave.schedule();
-        }}
-        placeholder={t("note.titlePlaceholder")}
-        autoCapitalize="sentences"
-        // 200 for a note, where the old sanitiser cut at 120 and lost eighty
-        // characters without telling anybody.
-        limit={FIELD_LIMITS["note.title"]}
-        onSubmitEditing={() => void autosave.flush()}
-      />
+      {/* Con el margen de la pantalla: sin el, el campo llegaba de borde a borde y el contador
+          ("21 / 200") se cortaba por la derecha. */}
+      <View style={{ paddingHorizontal: theme.spacing.lg }}>
+        <TextField
+          value={title}
+          onChangeText={(value) => {
+            setTitle(value);
+            setStatus("saving");
+            autosave.schedule();
+          }}
+          placeholder={t("note.titlePlaceholder")}
+          autoCapitalize="sentences"
+          // 200 for a note, where the old sanitiser cut at 120 and lost eighty
+          // characters without telling anybody.
+          limit={FIELD_LIMITS["note.title"]}
+          onSubmitEditing={() => void autosave.flush()}
+        />
+      </View>
       <NoteEditor
         editorRef={editorRef}
         defaultValue={editorDocument}
@@ -546,7 +552,10 @@ export default function NoteScreen() {
           alignItems: "center",
           justifyContent: "space-between",
           paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.xs,
+          paddingTop: theme.spacing.xs,
+          // Por encima de la barra de gestos del sistema: pegado al borde, "Eliminar nota" caia
+          // dentro de la zona de gestos y era dificil de pulsar.
+          paddingBottom: Math.max(insets.bottom, theme.spacing.xs),
           gap: theme.spacing.md,
         }}
       >

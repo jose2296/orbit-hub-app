@@ -1251,7 +1251,7 @@ export function ItemEditSheet({
         {page === "description" ? (
           // El mismo editor que una nota: formato, listas, enlaces. Alto de editor y no de
           // campo; la barra de formato aparece con el foco, como en una nota.
-          <View testID="item-description" style={{ height: 360 }}>
+          <View testID="item-description" style={{ height: 300 }}>
             <DescriptionEditor
               initial={descDoc}
               editorRef={descEditorRef}

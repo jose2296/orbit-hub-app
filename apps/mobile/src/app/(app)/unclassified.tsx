@@ -13,6 +13,7 @@ import { SectionHeader } from "@/components/ui/list-row";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { useBookmarks, useUnclassifiedCount } from "@/hooks/use-bookmarks";
+import { useScreenTitle } from "@/hooks/use-screen-title";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { handlersDeBookmark, menuCtxDeBookmark } from "@/lib/menus/bookmark";
@@ -65,6 +66,8 @@ export default function UnclassifiedScreen() {
   const theme = useTheme();
   const t = useTranslation();
   const arbol = useSpacesTree();
+  // Como el resto de pantallas: el titulo en la cabecera. Era la unica con la barra vacia.
+  useScreenTitle(t("place.unclassified"));
 
   const { bookmarks, isLoading } = useBookmarks({ collectionId: "unclassified" });
   // Sin `workspaceId`: el total cruzando espacios, que es lo que el badge del

@@ -8,6 +8,8 @@ import { MentionPickerSheet } from "@/components/mentions/mention-picker-sheet";
 import type { MentionPick } from "@/components/mentions/mention-picker-sheet";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { useJournalEntry, useMentionTargets } from "@/hooks/use-journal";
+import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
+import { isTyping } from "@/lib/typing-state";
 import { lookupIn, writeJournalEntry } from "@/lib/journal/entries";
 import { mentionChipFor, renderMentions } from "@/lib/journal/mentions";
 import { useTranslation } from "@/lib/i18n";
@@ -71,6 +73,18 @@ export function JournalDayPage({
   // "terminar de escribir". Sin esta marca el editor se desmontaria con la hoja abierta y
   // `onPick` se quedaria sin editor al que escribir.
   const pickerAbierto = useRef(false);
+  // Foco del editor, y alto del teclado: "escribiendo" es las dos cosas en un movil (Android da
+  // el foco al primer campo al abrir la pantalla, sin teclado). Ver `isTyping`.
+  const [enfocado, setEnfocado] = useState(false);
+  const alturaTeclado = useKeyboardHeight();
+  const escribiendoDeVerdad = isTyping({
+    focused: enfocado,
+    keyboardHeight: alturaTeclado,
+    platform: Platform.OS,
+  });
+  useEffect(() => {
+    onEditingChange?.(escribiendoDeVerdad);
+  }, [escribiendoDeVerdad, onEditingChange]);
   // The body as it was loaded or last written, to tell a real change from an echo.
   const savedRef = useRef<string>("");
   // Where the picker was asked for. A `@` typed by hand has already started the
@@ -148,6 +162,24 @@ export function JournalDayPage({
     [userId, day],
   );
 
+  // Al cerrarse el teclado (el boton de atras del sistema, por ejemplo) el editor sigue
+  // enfocado y, siendo nativo, seguiria comiendose los toques: se desmonta y el dia vuelve a
+  // descansar como texto, que es donde el swipe funciona.
+  const tecladoVisto = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (alturaTeclado > 0) {
+      tecladoVisto.current = true;
+      return;
+    }
+    if (tecladoVisto.current && escribiendo && !pickerAbierto.current) {
+      tecladoVisto.current = false;
+      void autosave.flush();
+      setEnfocarAlMontar(false);
+      setEscribiendo(false);
+    }
+  }, [alturaTeclado, escribiendo, autosave]);
+
   useEffect(() => {
     registerFlush(() => autosave.flush().then(() => undefined));
     const subscription = AppState.addEventListener("change", (state) => {
@@ -190,12 +222,16 @@ export function JournalDayPage({
   // Reading: the day as it reads, with its chips drawn and pressable. The chips in the
   // editor are not pressable on a phone, so this is where a chip works.
   const entrada = record;
-  const tieneTexto = entrada !== null && entrada.plainText.trim().length > 0;
-  if (Platform.OS !== "web" && !escribiendo && tieneTexto) {
+  // En un movil el editor (un `EditText` nativo) se queda con TODOS los toques de la pagina y
+  // ningun padre puede interceptarlos: con el editor montado no hay swipe entre dias posible. Asi
+  // que el dia descansa siempre como texto (o como su hueco, si esta vacio) y el editor solo se
+  // monta al tocar para escribir.
+  if (Platform.OS !== "web" && !escribiendo) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <JournalDayView
-          document={entrada.document}
+          document={entrada?.document ?? ""}
+          placeholder={t("journal.placeholder")}
           lookup={lookupIn(targets ?? new Map())}
           targets={targets ?? new Map()}
           onEdit={() => {
@@ -216,10 +252,10 @@ export function JournalDayPage({
         autoFocus={enfocarAlMontar}
         onChanged={() => autosave.schedule()}
         onFocusChange={(focused) => {
-          onEditingChange?.(focused);
+          setEnfocado(focused);
           // Terminar de escribir devuelve el dia a su lectura, donde un enlace responde a un
           // toque. Solo en el movil, y no si el foco se fue porque se abrio el selector.
-          if (!focused && Platform.OS !== "web" && !pickerAbierto.current && tieneTexto) {
+          if (!focused && Platform.OS !== "web" && !pickerAbierto.current) {
             void autosave.flush();
             setEnfocarAlMontar(false);
             setEscribiendo(false);

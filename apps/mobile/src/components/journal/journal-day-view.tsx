@@ -4,7 +4,9 @@ import { Linking, Pressable, ScrollView } from "react-native";
 import { EnrichedText } from "react-native-enriched-html";
 import type { OnLinkPressEvent, OnMentionPressEvent } from "react-native-enriched-html";
 
+import { noteDocumentToPlainText } from "@orbit-hub/contracts";
 import { useNoteHtmlStyle } from "@/components/notes/note-editor";
+import { AppText } from "@/components/ui/text";
 import { Sheet, SheetOptions } from "@/components/ui/sheet";
 import { useTranslation } from "@/lib/i18n";
 import { renderMentions } from "@/lib/journal/mentions";
@@ -24,8 +26,11 @@ export function JournalDayView({
   lookup,
   targets,
   onEdit,
+  placeholder,
 }: {
   document: string;
+  /** Lo que se dice en un dia vacio, que es tambien donde se toca para empezar a escribir. */
+  placeholder?: string;
   lookup: MentionLookup;
   targets: Map<string, MentionTarget>;
   /** Left out for a day that is only shown, as the neighbour of the one being read. */
@@ -36,6 +41,7 @@ export function JournalDayView({
   const router = useRouter();
   const { htmlStyle, bodyStyle } = useNoteHtmlStyle();
 
+  const vacio = noteDocumentToPlainText(document).trim().length === 0;
   const html = useMemo(
     () =>
       renderMentions(document, lookup, {
@@ -89,14 +95,20 @@ export function JournalDayView({
         disabled={!onEdit}
         onPress={onTextPress}
       >
-        <EnrichedText
-          htmlStyle={htmlStyle}
-          style={bodyStyle}
-          onMentionPress={onMentionPress}
-          onLinkPress={onLinkPress}
-        >
-          {html}
-        </EnrichedText>
+        {vacio ? (
+          <AppText variant="body" tone="muted">
+            {placeholder ?? ""}
+          </AppText>
+        ) : (
+          <EnrichedText
+            htmlStyle={htmlStyle}
+            style={bodyStyle}
+            onMentionPress={onMentionPress}
+            onLinkPress={onLinkPress}
+          >
+            {html}
+          </EnrichedText>
+        )}
       </Pressable>
       {/* El resto de la pagina, para que tocar debajo del texto tambien escriba. */}
       {onEdit ? <Pressable style={{ flexGrow: 1, minHeight: 160 }} onPress={onEdit} /> : null}
