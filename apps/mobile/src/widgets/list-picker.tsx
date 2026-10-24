@@ -1,5 +1,5 @@
 import type { List } from "@orbit-hub/contracts";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText } from "@/components/ui/text";
@@ -7,6 +7,8 @@ import { Pick } from "@/components/workspace/place-picker";
 import { useSpacesTree } from "@/hooks/use-spaces-tree";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
+
+import { listNotesIn } from "./note-data";
 
 /**
  * Pick a task list the way the app asks "where": the spaces first, a tap on one shows what is
@@ -17,8 +19,10 @@ export function ListPicker({
   onPick,
   emptyLabel,
   allKinds = false,
+  kinds = ["tasks"],
   onPickPlace,
   pickPlaceLabel,
+  onPickNote,
 }: {
   onPick: (
     listId: string,
@@ -27,6 +31,8 @@ export function ListPicker({
   emptyLabel: string;
   /** Offer every kind of list, not only task lists. */
   allKinds?: boolean;
+  /** The kinds of list offered when not every kind is. */
+  kinds?: ReadonlyArray<List["kind"]>;
   /** When given, the space or folder being looked at can be picked itself, not only what is in it. */
   onPickPlace?: (place: {
     type: "workspace" | "folder";
@@ -35,6 +41,8 @@ export function ListPicker({
     workspaceId: string;
   }) => void;
   pickPlaceLabel?: string;
+  /** When given, the notes of each place are offered too. */
+  onPickNote?: (note: { id: string; title: string }) => void;
 }) {
   const theme = useTheme();
   const t = useTranslation();
@@ -47,13 +55,28 @@ export function ListPicker({
     spaceId ?? (spaces.length === 1 ? (spaces[0]?.id ?? null) : null);
   const folders = activeSpace ? tree.foldersOf(activeSpace, folderId) : [];
   const lists = (activeSpace ? tree.listsOf(activeSpace, folderId) : []).filter(
-    (list) => allKinds || list.kind === "tasks",
+    (list) => allKinds || kinds.includes(list.kind),
   );
   const spaceName =
     spaces.find((space) => space.id === activeSpace)?.name ?? "";
   const trail = folderId ? tree.pathOf(folderId) : [];
 
   const currentFolder = trail[trail.length - 1];
+
+  const [notes, setNotes] = useState<Array<{ id: string; title: string }>>([]);
+  useEffect(() => {
+    if (!onPickNote || activeSpace === null) {
+      setNotes([]);
+      return;
+    }
+    let live = true;
+    void listNotesIn(activeSpace, folderId).then((rows) => {
+      if (live) setNotes(rows);
+    });
+    return () => {
+      live = false;
+    };
+  }, [onPickNote, activeSpace, folderId]);
 
   const goUp = () => {
     if (folderId) setFolderId(tree.parentOf(folderId)?.id ?? null);
@@ -141,7 +164,16 @@ export function ListPicker({
               }
             />
           ))}
-          {folders.length === 0 && lists.length === 0 ? (
+          {notes.map((note) => (
+            <Pick
+              key={note.id}
+              icon="document-text-outline"
+              label={note.title}
+              selected={false}
+              onPress={() => onPickNote?.(note)}
+            />
+          ))}
+          {folders.length === 0 && lists.length === 0 && notes.length === 0 ? (
             <View style={{ paddingVertical: theme.spacing.md }}>
               <AppText variant="body" tone="muted">
                 {emptyLabel}

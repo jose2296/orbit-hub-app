@@ -1,17 +1,21 @@
 import { FlexWidget, TextWidget } from "react-native-android-widget";
 
 import type { ShortcutsConfig } from "./config-store";
-import { widgetPalette as color } from "./palette";
+import { darkPalette } from "./palette";
+import type { Palette } from "./palette";
 import type { WidgetStrings } from "./strings";
 
 /** Up to four shortcuts, two by two; each opens its place in the app. */
 export function ShortcutsWidget({
   config,
   t,
+  palette = darkPalette,
 }: {
   config: ShortcutsConfig | null;
   t: WidgetStrings;
+  palette?: Palette;
 }) {
+  const color = palette;
   const items = config?.items ?? [];
   const rows = [items.slice(0, 2), items.slice(2, 4)].filter(
     (row) => row.length > 0,

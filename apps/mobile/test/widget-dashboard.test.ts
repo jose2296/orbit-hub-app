@@ -1,11 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-type Row = { entityId: string; payload: string; pending: string | null; version: number; updatedAt: string; deletedAt: string | null };
+type Row = {
+  entityId: string;
+  payload: string;
+  pending: string | null;
+  version: number;
+  updatedAt: string;
+  deletedAt: string | null;
+};
 const lists: Row[] = [];
 const items = new Map<string, Row[]>();
 const entries: Row[] = [];
+const bookmarks: Row[] = [];
 
-const row = (id: string, payload: Record<string, unknown>, deletedAt: string | null = null): Row => ({
+const row = (
+  id: string,
+  payload: Record<string, unknown>,
+  deletedAt: string | null = null,
+): Row => ({
   entityId: id,
   payload: JSON.stringify(payload),
   pending: null,
@@ -15,9 +27,14 @@ const row = (id: string, payload: Record<string, unknown>, deletedAt: string | n
 });
 
 vi.mock("@/lib/offline", () => ({
-  readRecord: (r: Row) => ({ ...JSON.parse(r.payload), id: r.entityId, deletedAt: r.deletedAt }),
+  readRecord: (r: Row) => ({
+    ...JSON.parse(r.payload),
+    id: r.entityId,
+    deletedAt: r.deletedAt,
+  }),
   getLocalStoreReady: async () => ({
-    listCached: async (entity: string) => (entity === "list" ? lists : entries),
+    listCached: async (entity: string) =>
+      entity === "list" ? lists : entity === "bookmark" ? bookmarks : entries,
     listCachedItems: async (listId: string) => items.get(listId) ?? [],
   }),
 }));
@@ -31,12 +48,24 @@ describe("widget del resumen", () => {
     lists.length = 0;
     items.clear();
     entries.length = 0;
+    bookmarks.length = 0;
   });
 
   it("suma pendientes de las listas de tareas y nombra las que mas tienen", async () => {
-    lists.push(row("a", { title: "A", kind: "tasks" }), row("b", { title: "B", kind: "tasks" }), row("n", { title: "N", kind: "notes" }));
-    items.set("a", [row("1", { completed: false }), row("2", { completed: true })]);
-    items.set("b", [row("3", { completed: false }), row("4", { completed: false }), row("5", { completed: false }, "2026-10-24T08:00:00Z")]);
+    lists.push(
+      row("a", { title: "A", kind: "tasks" }),
+      row("b", { title: "B", kind: "tasks" }),
+      row("n", { title: "N", kind: "notes" }),
+    );
+    items.set("a", [
+      row("1", { completed: false }),
+      row("2", { completed: true }),
+    ]);
+    items.set("b", [
+      row("3", { completed: false }),
+      row("4", { completed: false }),
+      row("5", { completed: false }, "2026-10-24T08:00:00Z"),
+    ]);
     const summary = await loadDashboard(NOW);
     expect(summary.pendingTotal).toBe(3);
     expect(summary.top.map((l) => l.id)).toEqual(["b", "a"]);
@@ -47,5 +76,15 @@ describe("widget del resumen", () => {
     expect((await loadDashboard(NOW)).top).toEqual([]);
     entries.push(row("e", { day: "2026-10-24", plainText: "hola" }));
     expect((await loadDashboard(NOW)).wroteToday).toBe(true);
+  });
+
+  it("cuenta los enlaces sin coleccion y deja fuera los clasificados y los borrados", async () => {
+    bookmarks.push(
+      row("1", { collectionId: null }),
+      row("2", {}),
+      row("3", { collectionId: "c1" }),
+      row("4", { collectionId: null }, "2026-10-24T08:00:00Z"),
+    );
+    expect((await loadDashboard(NOW)).unclassified).toBe(2);
   });
 });

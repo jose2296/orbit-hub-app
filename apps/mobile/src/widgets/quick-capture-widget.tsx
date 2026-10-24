@@ -1,17 +1,21 @@
 import { FlexWidget, TextWidget } from "react-native-android-widget";
 
 import type { CaptureTargets } from "./pinned-list-data";
-import { widgetPalette as color } from "./palette";
+import { darkPalette } from "./palette";
+import type { Palette } from "./palette";
 import type { WidgetStrings } from "./strings";
 
 /** Two buttons that open the app straight on the panel that writes a task or a note. */
 export function QuickCaptureWidget({
   targets,
   t,
+  palette = darkPalette,
 }: {
   targets: CaptureTargets | null;
   t: WidgetStrings;
+  palette?: Palette;
 }) {
+  const color = palette;
   const buttons = [
     targets?.task
       ? {

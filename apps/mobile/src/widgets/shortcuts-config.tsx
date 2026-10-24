@@ -9,6 +9,7 @@ import { ConfigFrame } from "./config-frame";
 import { ListPicker } from "./list-picker";
 import { ShortcutsWidget } from "./shortcuts-widget";
 import { widgetStrings } from "./strings";
+import { bothLooks } from "./widget-views";
 
 export const MAX_SHORTCUTS = 4;
 
@@ -27,7 +28,11 @@ export function ShortcutsConfigScreen({
     try {
       const config: ShortcutsConfig = { items: final };
       await writeWidgetConfig(widgetInfo.widgetId, config);
-      renderWidget(<ShortcutsWidget config={config} t={t} />);
+      renderWidget(
+        bothLooks((palette) => (
+          <ShortcutsWidget config={config} t={t} palette={palette} />
+        )),
+      );
       setResult("ok");
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error));
@@ -43,7 +48,9 @@ export function ShortcutsConfigScreen({
 
   return (
     <ConfigFrame
-      title={failure ?? `${t.shortcutsTitle} (${items.length}/${MAX_SHORTCUTS})`}
+      title={
+        failure ?? `${t.shortcutsTitle} (${items.length}/${MAX_SHORTCUTS})`
+      }
       onClose={() => setResult("cancel")}
       onSkip={items.length > 0 ? () => void finish(items) : undefined}
       skipLabel={t.done}
