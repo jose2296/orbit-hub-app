@@ -412,7 +412,7 @@ export async function fetchRemoteConflicts(): Promise<SyncConflict[]> {
 
 /* ------------------------------------------------------------- read path ---- */
 
-function readRecord<T>(cached: CachedEntity): T {
+export function readRecord<T>(cached: CachedEntity): T {
   const server = JSON.parse(cached.payload) as Record<string, unknown>;
   const pending = cached.pending
     ? (JSON.parse(cached.pending) as Record<string, unknown>)

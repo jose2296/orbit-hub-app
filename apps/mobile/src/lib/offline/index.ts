@@ -13,6 +13,7 @@ export {
   readCachedDashboard,
   readCachedFolders,
   readCachedWorkspaces,
+  readRecord,
 } from './sync-service';
 export type { EnqueueInput, FlushResult, PullResult } from './sync-service';
 export { startSyncEngine, stopSyncEngine, syncNow } from './sync-engine';

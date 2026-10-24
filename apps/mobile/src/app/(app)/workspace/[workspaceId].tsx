@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 
 import type { Collection, Folder, List, Note } from "@orbit-hub/contracts";
@@ -45,7 +45,10 @@ import { useTranslation } from "@/lib/i18n";
 export default function WorkspaceScreen() {
   const t = useTranslation();
   const router = useRouter();
-  const { workspaceId } = useLocalSearchParams<{ workspaceId: string }>();
+  const { workspaceId, create: crearAlAbrir } = useLocalSearchParams<{
+    workspaceId: string;
+    create?: string;
+  }>();
 
   const { workspaces } = useWorkspaces();
   const { folders, isLoading, createFolder, updateFolder, deleteFolder } =
@@ -64,6 +67,18 @@ export default function WorkspaceScreen() {
   const [createOrigin, setCreateOrigin] = useState<SheetOrigin | null>(null);
   const [createStep, setCreateStep] = useState<"what" | "kind" | "details">("what");
   const [createKind, setCreateKind] = useState<CreateKind | null>(null);
+  // The home-screen widget opens the space with `?create=note` to land on the "new note" sheet.
+  // Once per visit: closing the sheet must not bring it back.
+  const creacionAbierta = useRef(false);
+  useEffect(() => {
+    if (crearAlAbrir !== "note" || creacionAbierta.current) return;
+    creacionAbierta.current = true;
+    setCreateFolderId(null);
+    setCreateKind("note");
+    setCreateStep("details");
+    setCreateOrigin(null);
+    setCreateOpen(true);
+  }, [crearAlAbrir]);
   const [title, setTitle] = useState("");
   /*
     Donde va lo que se crea, **y `null` es la raiz del espacio**.

@@ -33,6 +33,78 @@
     "plugins": [
       "expo-router",
       "expo-localization",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Hello",
+              "label": "OrbitHub",
+              "description": "OrbitHub",
+              "minWidth": "110dp",
+              "minHeight": "40dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical"
+            },
+            {
+              "name": "PinnedList",
+              "label": "OrbitHub: lista",
+              "description": "Una lista de tareas fijada en tu pantalla de inicio",
+              "minWidth": "180dp",
+              "minHeight": "180dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 3,
+              "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable"
+            },
+            {
+              "name": "JournalToday",
+              "label": "OrbitHub: diario",
+              "description": "La página de hoy de tu diario",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "Shortcuts",
+              "label": "OrbitHub: atajos",
+              "description": "Hasta cuatro sitios de tu espacio a un toque",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable"
+            },
+            {
+              "name": "Dashboard",
+              "label": "OrbitHub: resumen",
+              "description": "Lo que tienes pendiente hoy",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "QuickCapture",
+              "label": "OrbitHub: captura",
+              "description": "Nueva tarea y nueva nota con un toque",
+              "minWidth": "180dp",
+              "minHeight": "60dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal",
+              "widgetFeatures": "reconfigurable"
+            }
+          ]
+        }
+      ],
       "./plugins/with-upload-signing",
       [
         "expo-splash-screen",
