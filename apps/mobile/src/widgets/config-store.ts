@@ -10,6 +10,14 @@ export interface PinnedListConfig {
   listId: string;
 }
 
+/** Where the quick-capture buttons go; either one may be left out. */
+export interface QuickCaptureConfig {
+  /** The task list that "New task" opens on. */
+  listId?: string;
+  /** The space that "New note" opens on. */
+  workspaceId?: string;
+}
+
 const keyFor = (widgetId: number) => `orbit.widget.${widgetId}`;
 
 export async function readWidgetConfig<T>(widgetId: number): Promise<T | null> {

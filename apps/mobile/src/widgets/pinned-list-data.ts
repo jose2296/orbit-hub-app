@@ -1,4 +1,4 @@
-import type { List, ListItem } from "@orbit-hub/contracts";
+import type { List, ListItem, Workspace } from "@orbit-hub/contracts";
 
 import { getLocalStoreReady, localUpdate, readRecord } from "@/lib/offline";
 import { orderItems } from "@/lib/lists/item-presentation";
@@ -49,4 +49,46 @@ export async function loadPinnedList(listId: string): Promise<PinnedListData | n
 /** Ticks a task from the widget: the same local write plus queued operation the app makes. */
 export async function completeItem(itemId: string): Promise<void> {
   await localUpdate("list_item", itemId, { completed: true });
+}
+
+/** The spaces a "New note" button can be pinned to. */
+export async function listPinnableWorkspaces(): Promise<Array<Pick<Workspace, "id" | "name">>> {
+  const store = await getLocalStoreReady();
+  const rows = await store.listCached("workspace");
+  return rows
+    .map((row) => readRecord<Workspace>(row))
+    .filter((workspace) => workspace.deletedAt == null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(({ id, name }) => ({ id, name }));
+}
+
+export interface CaptureTargets {
+  task: { title: string; uri: string } | null;
+  note: { name: string; uri: string } | null;
+}
+
+/** What the quick-capture buttons open, from the choices made when the widget was set up. */
+export async function loadCaptureTargets(config: {
+  listId?: string;
+  workspaceId?: string;
+}): Promise<CaptureTargets> {
+  const store = await getLocalStoreReady();
+  let task: CaptureTargets["task"] = null;
+  let note: CaptureTargets["note"] = null;
+
+  if (config.listId) {
+    const cached = await store.getCached("list", config.listId);
+    if (cached && !cached.deletedAt) {
+      const list = readRecord<List>(cached);
+      task = { title: list.title, uri: `orbithub:/${routeForList(list)}?new=1` };
+    }
+  }
+  if (config.workspaceId) {
+    const cached = await store.getCached("workspace", config.workspaceId);
+    if (cached && !cached.deletedAt) {
+      const workspace = readRecord<Workspace>(cached);
+      note = { name: workspace.name, uri: `orbithub://workspace/${workspace.id}?create=note` };
+    }
+  }
+  return { task, note };
 }

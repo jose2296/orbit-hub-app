@@ -1,11 +1,12 @@
 import type { WidgetTaskHandlerProps } from "react-native-android-widget";
 
 import { clearWidgetConfig, readWidgetConfig } from "./config-store";
-import type { PinnedListConfig } from "./config-store";
+import type { PinnedListConfig, QuickCaptureConfig } from "./config-store";
 import { HelloWidget } from "./hello-widget";
-import { completeItem, loadPinnedList } from "./pinned-list-data";
+import { completeItem, loadCaptureTargets, loadPinnedList } from "./pinned-list-data";
 import { PinnedListWidget } from "./pinned-list-widget";
 import type { PinnedListView } from "./pinned-list-widget";
+import { QuickCaptureWidget } from "./quick-capture-widget";
 import { widgetStrings } from "./strings";
 
 async function viewOfPinnedList(widgetId: number): Promise<PinnedListView> {
@@ -38,6 +39,21 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps): Promise<
       }
       renderWidget(
         <PinnedListWidget view={await viewOfPinnedList(widgetInfo.widgetId)} t={widgetStrings()} />,
+      );
+      return;
+    }
+
+    case "QuickCapture": {
+      if (widgetAction === "WIDGET_DELETED") {
+        await clearWidgetConfig(widgetInfo.widgetId);
+        return;
+      }
+      const config = await readWidgetConfig<QuickCaptureConfig>(widgetInfo.widgetId);
+      renderWidget(
+        <QuickCaptureWidget
+          targets={config ? await loadCaptureTargets(config) : null}
+          t={widgetStrings()}
+        />,
       );
       return;
     }

@@ -57,6 +57,17 @@
               "targetCellHeight": 3,
               "resizeMode": "horizontal|vertical",
               "widgetFeatures": "reconfigurable"
+            },
+            {
+              "name": "QuickCapture",
+              "label": "OrbitHub: captura",
+              "description": "Nueva tarea y nueva nota con un toque",
+              "minWidth": "180dp",
+              "minHeight": "60dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal",
+              "widgetFeatures": "reconfigurable"
             }
           ]
         }

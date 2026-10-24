@@ -10,7 +10,7 @@ if (Platform.OS === "android") {
     registerWidgetConfigurationScreen,
   } = require("react-native-android-widget");
   const { widgetTaskHandler } = require("./src/widgets/task-handler");
-  const { PinnedListConfigScreen } = require("./src/widgets/pinned-list-config");
+  const { WidgetConfigScreen } = require("./src/widgets/config-screen");
   registerWidgetTaskHandler(widgetTaskHandler);
-  registerWidgetConfigurationScreen(PinnedListConfigScreen);
+  registerWidgetConfigurationScreen(WidgetConfigScreen);
 }

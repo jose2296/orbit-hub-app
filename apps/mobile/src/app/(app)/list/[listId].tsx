@@ -82,7 +82,7 @@ export default function ListScreen() {
   const theme = useTheme();
   const t = useTranslation();
   const router = useRouter();
-  const { listId } = useLocalSearchParams<{ listId: string }>();
+  const { listId, new: abrirNuevo } = useLocalSearchParams<{ listId: string; new?: string }>();
 
   const { lists, setOrderMode, setTagColor, updateList, deleteList, duplicateList } = useLists({});
   const { layout, save } = useDashboard();
@@ -214,6 +214,14 @@ export default function ListScreen() {
   const editingItem = editing
     ? (items.find((row) => row.id === editing.itemId) ?? null)
     : null;
+  // The home-screen widget opens the list with `?new=1` to land straight on the "new task" panel.
+  // Once per visit: closing the panel must not bring it back.
+  const nuevoAbierto = useRef(false);
+  useEffect(() => {
+    if (abrirNuevo !== "1" || nuevoAbierto.current) return;
+    nuevoAbierto.current = true;
+    setEditing({ itemId: "", page: "edit" });
+  }, [abrirNuevo]);
   const [menuOpen, setMenuOpen] = useState(false);
 
   /**

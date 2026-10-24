@@ -8,6 +8,14 @@ export interface WidgetStrings {
   pending_other: string;
   missing: string;
   more: string;
+  newTask: string;
+  newNote: string;
+  taskWhere: string;
+  noteWhere: string;
+  skip: string;
+  back: string;
+  nothingHere: string;
+  setUp: string;
 }
 
 const dictionary: Record<"es" | "en", WidgetStrings> = {
@@ -17,8 +25,16 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     allDone: "Todo hecho",
     pending_one: "1 pendiente",
     pending_other: "pendientes",
-    missing: "La lista ya no esta",
-    more: "mas",
+    missing: "La lista ya no está",
+    more: "más",
+    newTask: "Nueva tarea",
+    newNote: "Nueva nota",
+    taskWhere: "¿En qué lista van las tareas?",
+    noteWhere: "¿En qué espacio van las notas?",
+    skip: "Omitir",
+    back: "Atrás",
+    nothingHere: "No hay listas de tareas aquí",
+    setUp: "Configura el widget",
   },
   en: {
     pickList: "Pick a list",
@@ -28,6 +44,14 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     pending_other: "pending",
     missing: "That list is gone",
     more: "more",
+    newTask: "New task",
+    newNote: "New note",
+    taskWhere: "Which list do tasks go to?",
+    noteWhere: "Which space do notes go to?",
+    skip: "Skip",
+    back: "Back",
+    nothingHere: "No task lists here",
+    setUp: "Set up the widget",
   },
 };
 
