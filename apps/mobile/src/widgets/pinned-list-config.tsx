@@ -23,7 +23,8 @@ export function PinnedListConfigScreen({
     const config: PinnedListConfig = { listId };
     await writeWidgetConfig(widgetInfo.widgetId, config);
     const data = await loadPinnedList(listId);
-    if (data) renderWidget(<PinnedListWidget view={{ state: "ready", data }} t={t} />);
+    if (data)
+      renderWidget(<PinnedListWidget view={{ state: "ready", data }} t={t} />);
     setResult("ok");
   };
 

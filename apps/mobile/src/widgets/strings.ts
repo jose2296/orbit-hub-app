@@ -16,6 +16,11 @@ export interface WidgetStrings {
   back: string;
   nothingHere: string;
   setUp: string;
+  shortcutsTitle: string;
+  pickHere: string;
+  done: string;
+  writeToday: string;
+  emptyDay: string;
 }
 
 const dictionary: Record<"es" | "en", WidgetStrings> = {
@@ -32,6 +37,11 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     taskWhere: "¿En qué lista van las tareas?",
     noteWhere: "¿En qué espacio van las notas?",
     skip: "Omitir",
+    shortcutsTitle: "Elige tus atajos",
+    pickHere: "Elegir este sitio",
+    done: "Listo",
+    writeToday: "Escribir",
+    emptyDay: "Nada escrito hoy todavía",
     back: "Atrás",
     nothingHere: "No hay listas de tareas aquí",
     setUp: "Configura el widget",
@@ -49,6 +59,11 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     taskWhere: "Which list do tasks go to?",
     noteWhere: "Which space do notes go to?",
     skip: "Skip",
+    shortcutsTitle: "Choose your shortcuts",
+    pickHere: "Choose this place",
+    done: "Done",
+    writeToday: "Write",
+    emptyDay: "Nothing written today yet",
     back: "Back",
     nothingHere: "No task lists here",
     setUp: "Set up the widget",

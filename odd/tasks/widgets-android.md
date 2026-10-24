@@ -33,8 +33,8 @@ Ideas aparcadas: habitos (rama `habitos` abierta), contador de Sin clasificar, n
 - [ ] W2b Boards: el widget de lista solo ofrece listas de tareas; un board (columnas) pide su
       propio render (columna elegida) y queda pendiente.
 - [x] W3 Captura rapida: botones "Nueva tarea" y "Nueva nota" que abren la hoja de creacion.
-- [ ] W4 Diario de hoy: texto del dia y boton de escribir.
-- [ ] W5 Atajos: configuracion para elegir hasta N destinos; abren por deep link.
+- [x] W4 Diario de hoy: texto del dia y boton de escribir.
+- [x] W5 Atajos: configuracion para elegir hasta N destinos; abren por deep link.
 - [ ] W6 Dashboard: resumen de hoy.
 - [ ] W7 Regresion en emulador, claro/oscuro, sin conexion, y PR.
 
@@ -43,3 +43,5 @@ Ideas aparcadas: habitos (rama `habitos` abierta), contador de Sin clasificar, n
 - W1 (2026-10-24): libreria 0.24.0, plugin en app.json, entrada apps/mobile/index.ts (main) que registra el manejador solo en Android, widget Hello visible y pintado en el emulador. Ruta: inline (4 archivos pequenos, ya entendido).
 - W2 (2026-10-24): widget PinnedList (reconfigurable) con pantalla de configuracion en su propio root RN, datos desde orbithub.db (headless), marcar = localUpdate + cola, titulo = deep link `orbithub://list/<id>`. Verificado en emulador: se anade, elige lista (Mudanza, 13 pendientes), marcar baja a 12 sin abrir la app, la app muestra "2 done", el titulo abre la lista. Tests: test/widget-pinned-list.test.ts (5). Pendiente para W7: claro/oscuro, sin conexion, refresco tras sync (el widget solo se repinta con eventos propios).
 - W3 (2026-10-24): widget QuickCapture (4x1, reconfigurable): dos botones OPEN_URI. "Nueva tarea" abre la lista elegida con `?new=1` (panel de crear), "Nueva nota" abre el espacio con `?create=note` (hoja de nota). Config en dos pasos saltables. Por peticion del usuario, el selector de lista (tambien el del widget de lista fijada) es el de siempre: tema de la app (`ThemeProvider`/`I18nProvider` en su propio root), espacios -> toque entra -> carpetas -> listas, con "Subir un nivel" (`list-picker.tsx`, `config-frame.tsx`, filas `Pick`). Verificado en emulador: ambos botones abren su panel, el selector baja por niveles. Fallo encontrado y corregido: `?create=note` solo fijaba el tipo y no abria la hoja.
+- W4 (2026-10-24): widget JournalToday (4x2, sin config, refresco cada 30 min): busca la entrada de hoy por `day` en la cache (sin userId, el widget es headless), muestra hasta 8 lineas de `plainText` y un toque abre `orbithub://journal`. Tests: test/widget-journal.test.ts (4). Verificado en emulador: pinta fecha, "+ Escribir" y el estado vacio.
+- W5 (2026-10-24): widget Shortcuts (4x2, reconfigurable): hasta 4 destinos (espacio, carpeta, lista/board) elegidos con el mismo selector por niveles (`onPickPlace` para elegir el espacio/carpeta en el que se esta); guarda `{label, uri}` por widget. Verificado en emulador: espacio + lista se colocan y pintan. Fallo corregido: los botones del pie de la config quedaban bajo la barra de gestos (faltaba paddingBottom). Limites: las notas no son destino (aparcado); la etiqueta no se actualiza si se renombra el destino.

@@ -13,9 +13,24 @@ export function QuickCaptureWidget({
   t: WidgetStrings;
 }) {
   const buttons = [
-    targets?.task ? { label: `+ ${t.newTask}`, caption: targets.task.title, uri: targets.task.uri } : null,
-    targets?.note ? { label: `+ ${t.newNote}`, caption: targets.note.name, uri: targets.note.uri } : null,
-  ].filter((button): button is { label: string; caption: string; uri: string } => button !== null);
+    targets?.task
+      ? {
+          label: `+ ${t.newTask}`,
+          caption: targets.task.title,
+          uri: targets.task.uri,
+        }
+      : null,
+    targets?.note
+      ? {
+          label: `+ ${t.newNote}`,
+          caption: targets.note.name,
+          uri: targets.note.uri,
+        }
+      : null,
+  ].filter(
+    (button): button is { label: string; caption: string; uri: string } =>
+      button !== null,
+  );
 
   return (
     <FlexWidget
@@ -36,7 +51,10 @@ export function QuickCaptureWidget({
           clickAction="OPEN_URI"
           clickActionData={{ uri: "orbithub:///" }}
         >
-          <TextWidget text={t.setUp} style={{ fontSize: 14, color: color.muted }} />
+          <TextWidget
+            text={t.setUp}
+            style={{ fontSize: 14, color: color.muted }}
+          />
         </FlexWidget>
       ) : (
         buttons.map((button) => (

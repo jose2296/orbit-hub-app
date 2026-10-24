@@ -40,7 +40,9 @@ export function QuickCaptureConfigScreen({
 
   const finish = async (final: QuickCaptureConfig) => {
     await writeWidgetConfig(widgetInfo.widgetId, final);
-    renderWidget(<QuickCaptureWidget targets={await loadCaptureTargets(final)} t={t} />);
+    renderWidget(
+      <QuickCaptureWidget targets={await loadCaptureTargets(final)} t={t} />,
+    );
     setResult("ok");
   };
 
@@ -69,7 +71,13 @@ export function QuickCaptureConfigScreen({
   );
 }
 
-function Workspaces({ choices, onPick }: { choices: Choice[]; onPick: (id: string) => void }) {
+function Workspaces({
+  choices,
+  onPick,
+}: {
+  choices: Choice[];
+  onPick: (id: string) => void;
+}) {
   const theme = useTheme();
   return (
     <ScrollView contentContainerStyle={{ gap: theme.spacing.xs }}>

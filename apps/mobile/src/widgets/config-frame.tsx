@@ -26,7 +26,12 @@ export function ConfigFrame({
   return (
     <ThemeProvider>
       <I18nProvider>
-        <Frame title={title} onClose={onClose} onSkip={onSkip} skipLabel={skipLabel}>
+        <Frame
+          title={title}
+          onClose={onClose}
+          onSkip={onSkip}
+          skipLabel={skipLabel}
+        >
           {children}
         </Frame>
       </I18nProvider>
@@ -49,7 +54,9 @@ function Frame({
 }) {
   const theme = useTheme();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.surface, paddingTop: 48 }}>
+    <View
+      style={{ flex: 1, backgroundColor: theme.colors.surface, paddingTop: 48, paddingBottom: 32 }}
+    >
       <View
         style={{
           flexDirection: "row",
@@ -78,9 +85,14 @@ function Frame({
           <Ionicons name="close" size={20} color={theme.colors.text} />
         </Pressable>
       </View>
-      <View style={{ flex: 1, paddingHorizontal: theme.spacing.lg }}>{children}</View>
+      <View style={{ flex: 1, paddingHorizontal: theme.spacing.lg }}>
+        {children}
+      </View>
       {onSkip ? (
-        <Pressable onPress={onSkip} style={{ padding: theme.spacing.lg, alignItems: "center" }}>
+        <Pressable
+          onPress={onSkip}
+          style={{ padding: theme.spacing.lg, alignItems: "center" }}
+        >
           <AppText variant="body" style={{ color: theme.colors.accent }}>
             {skipLabel}
           </AppText>

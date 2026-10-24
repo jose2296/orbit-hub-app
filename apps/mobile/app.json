@@ -59,6 +59,28 @@
               "widgetFeatures": "reconfigurable"
             },
             {
+              "name": "JournalToday",
+              "label": "OrbitHub: diario",
+              "description": "La página de hoy de tu diario",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "Shortcuts",
+              "label": "OrbitHub: atajos",
+              "description": "Hasta cuatro sitios de tu espacio a un toque",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable"
+            },
+            {
               "name": "QuickCapture",
               "label": "OrbitHub: captura",
               "description": "Nueva tarea y nueva nota con un toque",

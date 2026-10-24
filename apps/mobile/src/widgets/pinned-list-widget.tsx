@@ -18,7 +18,13 @@ const frame = {
   padding: 12,
 } as const;
 
-export function PinnedListWidget({ view, t }: { view: PinnedListView; t: WidgetStrings }) {
+export function PinnedListWidget({
+  view,
+  t,
+}: {
+  view: PinnedListView;
+  t: WidgetStrings;
+}) {
   if (view.state !== "ready") {
     return (
       <FlexWidget
@@ -43,7 +49,12 @@ export function PinnedListWidget({ view, t }: { view: PinnedListView; t: WidgetS
   return (
     <FlexWidget style={{ ...frame, flexDirection: "column" }}>
       <FlexWidget
-        style={{ width: "match_parent", flexDirection: "row", alignItems: "center", marginBottom: 6 }}
+        style={{
+          width: "match_parent",
+          flexDirection: "row",
+          alignItems: "center",
+          marginBottom: 6,
+        }}
         clickAction="OPEN_URI"
         clickActionData={{ uri: data.uri }}
       >
@@ -62,8 +73,18 @@ export function PinnedListWidget({ view, t }: { view: PinnedListView; t: WidgetS
       </FlexWidget>
 
       {data.pending.length === 0 ? (
-        <FlexWidget style={{ flex: 1, width: "match_parent", justifyContent: "center", alignItems: "center" }}>
-          <TextWidget text={`✓ ${t.allDone}`} style={{ fontSize: 15, color: color.done }} />
+        <FlexWidget
+          style={{
+            flex: 1,
+            width: "match_parent",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <TextWidget
+            text={`✓ ${t.allDone}`}
+            style={{ fontSize: 15, color: color.done }}
+          />
         </FlexWidget>
       ) : (
         data.pending.map((item) => (
@@ -78,7 +99,10 @@ export function PinnedListWidget({ view, t }: { view: PinnedListView; t: WidgetS
             clickAction="TOGGLE"
             clickActionData={{ itemId: item.id }}
           >
-            <TextWidget text="○" style={{ fontSize: 16, color: color.accent, marginRight: 8 }} />
+            <TextWidget
+              text="○"
+              style={{ fontSize: 16, color: color.accent, marginRight: 8 }}
+            />
             <FlexWidget style={{ flex: 1 }}>
               <TextWidget
                 text={item.title}
@@ -92,7 +116,10 @@ export function PinnedListWidget({ view, t }: { view: PinnedListView; t: WidgetS
       )}
 
       {left > 0 ? (
-        <TextWidget text={`+${left} ${t.more}`} style={{ fontSize: 12, color: color.muted }} />
+        <TextWidget
+          text={`+${left} ${t.more}`}
+          style={{ fontSize: 12, color: color.muted }}
+        />
       ) : null}
     </FlexWidget>
   );

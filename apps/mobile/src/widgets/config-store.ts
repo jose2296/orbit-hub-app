@@ -18,6 +18,11 @@ export interface QuickCaptureConfig {
   workspaceId?: string;
 }
 
+/** The destinations of a shortcuts widget: what to show and where a tap goes. */
+export interface ShortcutsConfig {
+  items: Array<{ label: string; uri: string }>;
+}
+
 const keyFor = (widgetId: number) => `orbit.widget.${widgetId}`;
 
 export async function readWidgetConfig<T>(widgetId: number): Promise<T | null> {
