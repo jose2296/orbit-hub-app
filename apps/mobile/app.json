@@ -46,6 +46,17 @@
               "targetCellWidth": 2,
               "targetCellHeight": 1,
               "resizeMode": "horizontal|vertical"
+            },
+            {
+              "name": "PinnedList",
+              "label": "OrbitHub: lista",
+              "description": "Una lista de tareas fijada en tu pantalla de inicio",
+              "minWidth": "180dp",
+              "minHeight": "180dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 3,
+              "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable"
             }
           ]
         }
