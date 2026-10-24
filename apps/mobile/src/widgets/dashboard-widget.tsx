@@ -1,17 +1,21 @@
 import { FlexWidget, TextWidget } from "react-native-android-widget";
 
 import type { DashboardSummary } from "./dashboard-data";
-import { widgetPalette as color } from "./palette";
+import { darkPalette } from "./palette";
+import type { Palette } from "./palette";
 import type { WidgetStrings } from "./strings";
 
 /** The day at a glance: how much is pending, where, and whether the journal has today's page. */
 export function DashboardWidget({
   summary,
   t,
+  palette = darkPalette,
 }: {
   summary: DashboardSummary;
   t: WidgetStrings;
+  palette?: Palette;
 }) {
+  const color = palette;
   return (
     <FlexWidget
       style={{
@@ -76,6 +80,18 @@ export function DashboardWidget({
           ))
         )}
       </FlexWidget>
+      {summary.unclassified > 0 ? (
+        <FlexWidget
+          style={{ width: "match_parent", marginTop: 6 }}
+          clickAction="OPEN_URI"
+          clickActionData={{ uri: "orbithub://unclassified" }}
+        >
+          <TextWidget
+            text={`${t.unclassified}: ${summary.unclassified}`}
+            style={{ fontSize: 12, color: color.accent }}
+          />
+        </FlexWidget>
+      ) : null}
       <TextWidget
         text={summary.wroteToday ? t.journalDone : t.journalPending}
         style={{

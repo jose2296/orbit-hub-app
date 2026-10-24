@@ -12,6 +12,8 @@ export interface DashboardSummary {
   pendingTotal: number;
   top: Array<{ id: string; title: string; pending: number; uri: string }>;
   wroteToday: boolean;
+  /** Saved links that are in no collection yet. */
+  unclassified: number;
 }
 
 /** The numbers of the day, from the local copy: what is left to do and whether today has an entry. */
@@ -37,6 +39,16 @@ export async function loadDashboard(
     }),
   );
 
+  const unclassified = (await store.listCached("bookmark"))
+    .map((row) =>
+      readRecord<{ collectionId?: string | null; deletedAt?: string | null }>(
+        row,
+      ),
+    )
+    .filter(
+      (bookmark) => bookmark.deletedAt == null && bookmark.collectionId == null,
+    ).length;
+
   const withWork = counted
     .filter((list) => list.pending > 0)
     .sort((a, b) => b.pending - a.pending);
@@ -45,5 +57,6 @@ export async function loadDashboard(
     pendingTotal: withWork.reduce((sum, list) => sum + list.pending, 0),
     top: withWork.slice(0, TOP_LISTS),
     wroteToday: journal.lines.length > 0,
+    unclassified,
   };
 }

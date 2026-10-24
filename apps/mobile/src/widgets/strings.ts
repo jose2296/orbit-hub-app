@@ -16,6 +16,11 @@ export interface WidgetStrings {
   back: string;
   nothingHere: string;
   setUp: string;
+  unclassified: string;
+  pickNote: string;
+  pickNoteHint: string;
+  noteMissing: string;
+  emptyNote: string;
   summaryTitle: string;
   pendingWord: string;
   journalDone: string;
@@ -41,6 +46,11 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     taskWhere: "¿En qué lista van las tareas?",
     noteWhere: "¿En qué espacio van las notas?",
     skip: "Omitir",
+    unclassified: "Sin clasificar",
+    pickNote: "Elige una nota",
+    pickNoteHint: "Toca para configurar el widget",
+    noteMissing: "La nota ya no está",
+    emptyNote: "La nota está vacía",
     summaryTitle: "Hoy",
     pendingWord: "pendientes",
     journalDone: "Diario de hoy escrito",
@@ -67,6 +77,11 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     taskWhere: "Which list do tasks go to?",
     noteWhere: "Which space do notes go to?",
     skip: "Skip",
+    unclassified: "Unsorted",
+    pickNote: "Pick a note",
+    pickNoteHint: "Tap to set up the widget",
+    noteMissing: "The note is gone",
+    emptyNote: "The note is empty",
     summaryTitle: "Today",
     pendingWord: "pending",
     journalDone: "Today's journal written",

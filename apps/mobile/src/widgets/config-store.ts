@@ -10,6 +10,11 @@ export interface PinnedListConfig {
   listId: string;
 }
 
+/** The note a pinned-note widget shows. */
+export interface PinnedNoteConfig {
+  noteId: string;
+}
+
 /** Where the quick-capture buttons go; either one may be left out. */
 export interface QuickCaptureConfig {
   /** The task list that "New task" opens on. */
@@ -34,7 +39,10 @@ export async function readWidgetConfig<T>(widgetId: number): Promise<T | null> {
   }
 }
 
-export async function writeWidgetConfig<T>(widgetId: number, config: T): Promise<void> {
+export async function writeWidgetConfig<T>(
+  widgetId: number,
+  config: T,
+): Promise<void> {
   await SecureStore.setItemAsync(keyFor(widgetId), JSON.stringify(config));
 }
 

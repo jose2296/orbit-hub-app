@@ -5,7 +5,12 @@ import { completeItem } from "./pinned-list-data";
 import { viewOf } from "./widget-views";
 
 /** The widgets that keep a choice per instance, to be forgotten when the instance is removed. */
-const CONFIGURED = new Set(["PinnedList", "QuickCapture", "Shortcuts"]);
+const CONFIGURED = new Set([
+  "PinnedList",
+  "PinnedNote",
+  "QuickCapture",
+  "Shortcuts",
+]);
 
 /**
  * One handler for every widget: Android calls it for each event (added, update, resized, click)

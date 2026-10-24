@@ -14,7 +14,9 @@ export interface JournalToday {
  * Today's page of the journal, from the local copy. The entry is found by its day, not by user:
  * the widget runs headless, with no session, and the cache only holds the signed-in user's rows.
  */
-export async function loadJournalToday(now: Date = new Date()): Promise<JournalToday> {
+export async function loadJournalToday(
+  now: Date = new Date(),
+): Promise<JournalToday> {
   const day = todayKey(now);
   const store = await getLocalStoreReady();
   const rows = await store.listCached("journal_entry");
@@ -23,7 +25,10 @@ export async function loadJournalToday(now: Date = new Date()): Promise<JournalT
   for (const row of rows) {
     if (row.deletedAt !== null) continue;
     try {
-      const server = JSON.parse(row.payload) as { day?: string; plainText?: string };
+      const server = JSON.parse(row.payload) as {
+        day?: string;
+        plainText?: string;
+      };
       const pending = row.pending
         ? (JSON.parse(row.pending) as { day?: string; plainText?: string })
         : {};

@@ -1,7 +1,8 @@
 import { FlexWidget, TextWidget } from "react-native-android-widget";
 
 import type { PinnedListData } from "./pinned-list-data";
-import { widgetPalette as color } from "./palette";
+import { darkPalette } from "./palette";
+import type { Palette } from "./palette";
 import type { WidgetStrings } from "./strings";
 
 /** How the pinned-list widget can look: set up, not set up yet, or its list is gone. */
@@ -10,21 +11,26 @@ export type PinnedListView =
   | { state: "unconfigured" }
   | { state: "missing" };
 
-const frame = {
-  height: "match_parent",
-  width: "match_parent",
-  backgroundColor: color.card,
-  borderRadius: 18,
-  padding: 12,
-} as const;
+const frameOf = (color: Palette) =>
+  ({
+    height: "match_parent",
+    width: "match_parent",
+    backgroundColor: color.card,
+    borderRadius: 18,
+    padding: 12,
+  }) as const;
 
 export function PinnedListWidget({
   view,
   t,
+  palette = darkPalette,
 }: {
   view: PinnedListView;
   t: WidgetStrings;
+  palette?: Palette;
 }) {
+  const color = palette;
+  const frame = frameOf(color);
   if (view.state !== "ready") {
     return (
       <FlexWidget
@@ -72,7 +78,62 @@ export function PinnedListWidget({
         />
       </FlexWidget>
 
-      {data.pending.length === 0 ? (
+      {data.columns ? (
+        data.columns.map((column) => (
+          <FlexWidget
+            key={column.id}
+            style={{
+              width: "match_parent",
+              flexDirection: "column",
+              marginBottom: 6,
+            }}
+            clickAction="OPEN_URI"
+            clickActionData={{ uri: data.uri }}
+          >
+            <FlexWidget
+              style={{
+                width: "match_parent",
+                flexDirection: "row",
+                alignItems: "center",
+              }}
+            >
+              <TextWidget
+                text="●"
+                style={{
+                  fontSize: 12,
+                  color: (column.color as `#${string}` | null) ?? color.accent,
+                  marginRight: 6,
+                }}
+              />
+              <FlexWidget style={{ flex: 1 }}>
+                <TextWidget
+                  text={column.title}
+                  maxLines={1}
+                  truncate="END"
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "bold",
+                    color: color.text,
+                  }}
+                />
+              </FlexWidget>
+              <TextWidget
+                text={String(column.count)}
+                style={{ fontSize: 13, color: color.muted }}
+              />
+            </FlexWidget>
+            {column.tasks.map((title, index) => (
+              <TextWidget
+                key={index}
+                text={title}
+                maxLines={1}
+                truncate="END"
+                style={{ fontSize: 12, color: color.muted, marginLeft: 18 }}
+              />
+            ))}
+          </FlexWidget>
+        ))
+      ) : data.pending.length === 0 ? (
         <FlexWidget
           style={{
             flex: 1,

@@ -44,11 +44,42 @@ describe("widget de lista fijada", () => {
     cached("list", "l1", { title: "Mudanza", kind: "tasks", orderMode: "manual" });
   });
 
-  it("solo ofrece listas de tareas, sin las borradas, ni boards, ni listas de peliculas", () => {
+  it("ofrece listas de tareas y boards, sin las borradas ni las listas de peliculas", () => {
     cached("list", "b1", { title: "Board", kind: "board" });
     cached("list", "m1", { title: "Pelis", kind: "movies" });
     cached("list", "x1", { title: "Borrada", kind: "tasks" }, "2026-10-01T00:00:00.000Z");
-    return expect(listPinnableLists()).resolves.toEqual([{ id: "l1", title: "Mudanza", kind: "tasks" }]);
+    return expect(listPinnableLists()).resolves.toEqual([
+      { id: "b1", title: "Board", kind: "board" },
+      { id: "l1", title: "Mudanza", kind: "tasks" },
+    ]);
+  });
+
+  it("un board se muestra por columnas, con sus pendientes y sin las hechas", async () => {
+    cached("list", "b1", {
+      title: "Sprint",
+      kind: "board",
+      states: [
+        { id: "todo", title: "Por hacer", color: "#FF8800" },
+        { id: "doing", title: "En curso", color: "blue" },
+      ],
+    });
+    const boardItem = (id: string, position: number, stateId: string | null, completed = false) =>
+      cached("list_item", id, { listId: "b1", title: id, position, completed, stateId, createdAt: "2026-10-01T00:00:00Z", tags: [] });
+    boardItem("a", 0, "todo");
+    boardItem("b", 1, null);
+    boardItem("c", 2, "todo");
+    boardItem("d", 3, "doing");
+    boardItem("e", 4, "doing", true);
+    const data = await loadPinnedList("b1");
+    expect(data?.uri).toBe("orbithub://board/b1");
+    expect(data?.columns).toEqual([
+      { id: "todo", title: "Por hacer", color: "#FF8800", count: 3, tasks: ["a", "b"] },
+      { id: "doing", title: "En curso", color: null, count: 1, tasks: ["d"] },
+    ]);
+  });
+
+  it("una lista de tareas no tiene columnas", async () => {
+    expect((await loadPinnedList("l1"))?.columns).toBeNull();
   });
 
   it("muestra los pendientes en el orden de la lista y deja fuera hechos y borrados", async () => {

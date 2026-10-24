@@ -12,6 +12,7 @@ import { ListPicker } from "./list-picker";
 import { listPinnableWorkspaces, loadCaptureTargets } from "./pinned-list-data";
 import { QuickCaptureWidget } from "./quick-capture-widget";
 import { widgetStrings } from "./strings";
+import { bothLooks } from "./widget-views";
 
 interface Choice {
   id: string;
@@ -40,8 +41,11 @@ export function QuickCaptureConfigScreen({
 
   const finish = async (final: QuickCaptureConfig) => {
     await writeWidgetConfig(widgetInfo.widgetId, final);
+    const targets = await loadCaptureTargets(final);
     renderWidget(
-      <QuickCaptureWidget targets={await loadCaptureTargets(final)} t={t} />,
+      bothLooks((palette) => (
+        <QuickCaptureWidget targets={targets} t={t} palette={palette} />
+      )),
     );
     setResult("ok");
   };

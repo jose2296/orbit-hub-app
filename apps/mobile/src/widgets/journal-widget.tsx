@@ -1,7 +1,8 @@
 import { FlexWidget, TextWidget } from "react-native-android-widget";
 
 import type { JournalToday } from "./journal-data";
-import { widgetPalette as color } from "./palette";
+import { darkPalette } from "./palette";
+import type { Palette } from "./palette";
 import type { WidgetStrings } from "./strings";
 
 /** Today's page of the journal: its first lines, and a tap anywhere opens it to write. */
@@ -9,11 +10,14 @@ export function JournalWidget({
   today,
   t,
   dateLabel,
+  palette = darkPalette,
 }: {
   today: JournalToday;
   t: WidgetStrings;
   dateLabel: string;
+  palette?: Palette;
 }) {
+  const color = palette;
   return (
     <FlexWidget
       style={{

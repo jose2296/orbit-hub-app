@@ -55,7 +55,12 @@ function Frame({
   const theme = useTheme();
   return (
     <View
-      style={{ flex: 1, backgroundColor: theme.colors.surface, paddingTop: 48, paddingBottom: 32 }}
+      style={{
+        flex: 1,
+        backgroundColor: theme.colors.surface,
+        paddingTop: 48,
+        paddingBottom: 32,
+      }}
     >
       <View
         style={{

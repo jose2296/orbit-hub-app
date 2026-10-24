@@ -92,6 +92,17 @@
               "updatePeriodMillis": 1800000
             },
             {
+              "name": "PinnedNote",
+              "label": "OrbitHub: nota",
+              "description": "Una nota fijada en tu pantalla de inicio",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 3,
+              "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable"
+            },
+            {
               "name": "QuickCapture",
               "label": "OrbitHub: captura",
               "description": "Nueva tarea y nueva nota con un toque",

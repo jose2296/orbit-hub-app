@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 /** Every widget the app offers, by the name its provider has in `app.json`. */
 const WIDGET_NAMES = [
   "PinnedList",
+  "PinnedNote",
   "QuickCapture",
   "JournalToday",
   "Shortcuts",
