@@ -16,6 +16,10 @@ export interface WidgetStrings {
   back: string;
   nothingHere: string;
   setUp: string;
+  summaryTitle: string;
+  pendingWord: string;
+  journalDone: string;
+  journalPending: string;
   shortcutsTitle: string;
   pickHere: string;
   done: string;
@@ -37,6 +41,10 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     taskWhere: "¿En qué lista van las tareas?",
     noteWhere: "¿En qué espacio van las notas?",
     skip: "Omitir",
+    summaryTitle: "Hoy",
+    pendingWord: "pendientes",
+    journalDone: "Diario de hoy escrito",
+    journalPending: "Diario de hoy sin escribir",
     shortcutsTitle: "Elige tus atajos",
     pickHere: "Elegir este sitio",
     done: "Listo",
@@ -59,6 +67,10 @@ const dictionary: Record<"es" | "en", WidgetStrings> = {
     taskWhere: "Which list do tasks go to?",
     noteWhere: "Which space do notes go to?",
     skip: "Skip",
+    summaryTitle: "Today",
+    pendingWord: "pending",
+    journalDone: "Today's journal written",
+    journalPending: "Today's journal not written yet",
     shortcutsTitle: "Choose your shortcuts",
     pickHere: "Choose this place",
     done: "Done",

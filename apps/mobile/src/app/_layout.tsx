@@ -5,10 +5,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { captureTouch } from '@/lib/touch-origin';
+import { refreshWidgets } from '@/widgets/refresh';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Text } from 'react-native';
 
@@ -21,6 +22,15 @@ import { ThemeProvider, useTheme } from '@/theme';
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  // The home-screen widgets read the local copy, so they are repainted when the app leaves the
+  // foreground: whatever was edited or synced while it was open shows on them.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') void refreshWidgets();
+    });
+    return () => subscription.remove();
+  }, []);
+
   // useTheme() only works below ThemeProvider, so nothing that reads the theme
   // may live in this component.
   return (

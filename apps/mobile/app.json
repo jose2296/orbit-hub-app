@@ -81,6 +81,17 @@
               "widgetFeatures": "reconfigurable"
             },
             {
+              "name": "Dashboard",
+              "label": "OrbitHub: resumen",
+              "description": "Lo que tienes pendiente hoy",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
               "name": "QuickCapture",
               "label": "OrbitHub: captura",
               "description": "Nueva tarea y nueva nota con un toque",

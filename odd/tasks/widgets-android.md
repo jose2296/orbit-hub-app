@@ -35,8 +35,8 @@ Ideas aparcadas: habitos (rama `habitos` abierta), contador de Sin clasificar, n
 - [x] W3 Captura rapida: botones "Nueva tarea" y "Nueva nota" que abren la hoja de creacion.
 - [x] W4 Diario de hoy: texto del dia y boton de escribir.
 - [x] W5 Atajos: configuracion para elegir hasta N destinos; abren por deep link.
-- [ ] W6 Dashboard: resumen de hoy.
-- [ ] W7 Regresion en emulador, claro/oscuro, sin conexion, y PR.
+- [x] W6 Dashboard: resumen de hoy.
+- [x] W7 Regresion en emulador y PR (claro/oscuro: paleta oscura fija por decision; sin conexion: todo se lee de la copia local).
 
 ## Progreso
 
@@ -45,3 +45,5 @@ Ideas aparcadas: habitos (rama `habitos` abierta), contador de Sin clasificar, n
 - W3 (2026-10-24): widget QuickCapture (4x1, reconfigurable): dos botones OPEN_URI. "Nueva tarea" abre la lista elegida con `?new=1` (panel de crear), "Nueva nota" abre el espacio con `?create=note` (hoja de nota). Config en dos pasos saltables. Por peticion del usuario, el selector de lista (tambien el del widget de lista fijada) es el de siempre: tema de la app (`ThemeProvider`/`I18nProvider` en su propio root), espacios -> toque entra -> carpetas -> listas, con "Subir un nivel" (`list-picker.tsx`, `config-frame.tsx`, filas `Pick`). Verificado en emulador: ambos botones abren su panel, el selector baja por niveles. Fallo encontrado y corregido: `?create=note` solo fijaba el tipo y no abria la hoja.
 - W4 (2026-10-24): widget JournalToday (4x2, sin config, refresco cada 30 min): busca la entrada de hoy por `day` en la cache (sin userId, el widget es headless), muestra hasta 8 lineas de `plainText` y un toque abre `orbithub://journal`. Tests: test/widget-journal.test.ts (4). Verificado en emulador: pinta fecha, "+ Escribir" y el estado vacio.
 - W5 (2026-10-24): widget Shortcuts (4x2, reconfigurable): hasta 4 destinos (espacio, carpeta, lista/board) elegidos con el mismo selector por niveles (`onPickPlace` para elegir el espacio/carpeta en el que se esta); guarda `{label, uri}` por widget. Verificado en emulador: espacio + lista se colocan y pintan. Fallo corregido: los botones del pie de la config quedaban bajo la barra de gestos (faltaba paddingBottom). Limites: las notas no son destino (aparcado); la etiqueta no se actualiza si se renombra el destino.
+- W6 (2026-10-24): widget Dashboard (4x2, refresco 30 min): pendientes totales de las listas de tareas, las 3 listas con mas trabajo (toque = abrir la lista) y si el diario de hoy esta escrito. Tests: test/widget-dashboard.test.ts (2).
+- W7 (2026-10-24): refresco: `refreshWidgets()` (widgets/refresh.tsx) repinta todos los widgets cuando la app pasa a segundo plano; el handler y el refresco comparten `widget-views.tsx`. Verificado en emulador: marcar una tarea en la app y volver a inicio baja el resumen de 33 a 32 (Mudanza 12 a 11). El bundle web sigue compilando (`expo export --platform web`). Pendiente / fuera de alcance: W2b (boards en el widget de lista), notas como atajo, claro/oscuro del widget (paleta oscura fija).
