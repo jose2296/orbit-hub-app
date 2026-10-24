@@ -1,4 +1,8 @@
-import { FlexWidget, TextWidget } from "react-native-android-widget";
+import {
+  FlexWidget,
+  ListWidget,
+  TextWidget,
+} from "react-native-android-widget";
 
 import type { JournalToday } from "./journal-data";
 import { darkPalette } from "./palette";
@@ -48,7 +52,12 @@ export function JournalWidget({
         />
       </FlexWidget>
       <FlexWidget
-        style={{ flexDirection: "column", marginTop: 8, width: "match_parent" }}
+        style={{
+          flexDirection: "column",
+          marginTop: 8,
+          width: "match_parent",
+          flex: 1,
+        }}
       >
         {today.lines.length === 0 ? (
           <TextWidget
@@ -56,15 +65,24 @@ export function JournalWidget({
             style={{ fontSize: 14, color: color.muted }}
           />
         ) : (
-          today.lines.map((line, index) => (
-            <TextWidget
-              key={index}
-              text={line}
-              maxLines={2}
-              truncate="END"
-              style={{ fontSize: 14, color: color.text, marginBottom: 4 }}
-            />
-          ))
+          // Scrolls when the day has more lines than fit.
+          <ListWidget style={{ width: "match_parent", height: "match_parent" }}>
+            {today.lines.map((line, index) => (
+              <FlexWidget
+                key={index}
+                style={{ width: "match_parent", paddingVertical: 2 }}
+                clickAction="OPEN_URI"
+                clickActionData={{ uri: today.uri }}
+              >
+                <TextWidget
+                  text={line}
+                  maxLines={3}
+                  truncate="END"
+                  style={{ fontSize: 14, color: color.text }}
+                />
+              </FlexWidget>
+            ))}
+          </ListWidget>
         )}
       </FlexWidget>
     </FlexWidget>

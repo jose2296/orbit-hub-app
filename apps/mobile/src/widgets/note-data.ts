@@ -2,8 +2,8 @@ import type { Note } from "@orbit-hub/contracts";
 
 import { getLocalStoreReady, readRecord } from "@/lib/offline";
 
-/** How many lines of the note a widget keeps: the launcher cuts what does not fit anyway. */
-const MAX_LINES = 14;
+/** How many lines of the note a widget keeps: the list scrolls, so this only bounds the payload. */
+const MAX_LINES = 200;
 
 export interface PinnedNoteData {
   id: string;

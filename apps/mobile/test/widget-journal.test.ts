@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const rows: Array<{ payload: string; pending: string | null; deletedAt: string | null }> = [];
+const rows: Array<{
+  payload: string;
+  pending: string | null;
+  deletedAt: string | null;
+}> = [];
 
 vi.mock("@/lib/offline", () => ({
   getLocalStoreReady: async () => ({ listCached: async () => rows }),
@@ -13,7 +17,13 @@ const entry = (
   day: string,
   plainText: string,
   extra: Partial<(typeof rows)[number]> = {},
-) => rows.push({ payload: JSON.stringify({ day, plainText }), pending: null, deletedAt: null, ...extra });
+) =>
+  rows.push({
+    payload: JSON.stringify({ day, plainText }),
+    pending: null,
+    deletedAt: null,
+    ...extra,
+  });
 
 describe("widget del diario de hoy", () => {
   beforeEach(() => {
@@ -35,15 +45,20 @@ describe("widget del diario de hoy", () => {
   });
 
   it("una edicion pendiente manda sobre la copia del servidor", async () => {
-    entry("2026-10-24", "viejo", { pending: JSON.stringify({ plainText: "nuevo" }) });
+    entry("2026-10-24", "viejo", {
+      pending: JSON.stringify({ plainText: "nuevo" }),
+    });
     expect((await loadJournalToday(NOW)).lines).toEqual(["nuevo"]);
   });
 
-  it("una entrada borrada no cuenta y el widget corta en 8 lineas", async () => {
+  it("una entrada borrada no cuenta y el widget corta en 100 lineas", async () => {
     entry("2026-10-24", "borrada", { deletedAt: "2026-10-24T08:00:00Z" });
     expect((await loadJournalToday(NOW)).lines).toEqual([]);
     rows.length = 0;
-    entry("2026-10-24", Array.from({ length: 12 }, (_, i) => `l${i}`).join("\n"));
-    expect((await loadJournalToday(NOW)).lines).toHaveLength(8);
+    entry(
+      "2026-10-24",
+      Array.from({ length: 130 }, (_, i) => `l${i}`).join("\n"),
+    );
+    expect((await loadJournalToday(NOW)).lines).toHaveLength(100);
   });
 });

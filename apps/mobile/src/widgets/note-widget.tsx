@@ -1,4 +1,8 @@
-import { FlexWidget, TextWidget } from "react-native-android-widget";
+import {
+  FlexWidget,
+  ListWidget,
+  TextWidget,
+} from "react-native-android-widget";
 
 import type { PinnedNoteData } from "./note-data";
 import { darkPalette } from "./palette";
@@ -51,37 +55,43 @@ export function PinnedNoteWidget({
 
   const { data } = view;
   return (
-    <FlexWidget
-      style={{ ...frame, flexDirection: "column" }}
-      clickAction="OPEN_URI"
-      clickActionData={{ uri: data.uri }}
-    >
-      <TextWidget
-        text={data.title}
-        maxLines={1}
-        truncate="END"
-        style={{
-          fontSize: 16,
-          fontWeight: "bold",
-          color: color.text,
-          marginBottom: 6,
-        }}
-      />
+    <FlexWidget style={{ ...frame, flexDirection: "column" }}>
+      <FlexWidget
+        style={{ width: "match_parent", marginBottom: 6 }}
+        clickAction="OPEN_URI"
+        clickActionData={{ uri: data.uri }}
+      >
+        <TextWidget
+          text={data.title}
+          maxLines={1}
+          truncate="END"
+          style={{ fontSize: 16, fontWeight: "bold", color: color.text }}
+        />
+      </FlexWidget>
       {data.lines.length === 0 ? (
         <TextWidget
           text={t.emptyNote}
           style={{ fontSize: 14, color: color.muted }}
         />
       ) : (
-        data.lines.map((line, index) => (
-          <TextWidget
-            key={index}
-            text={line}
-            maxLines={2}
-            truncate="END"
-            style={{ fontSize: 14, color: color.text, marginBottom: 3 }}
-          />
-        ))
+        // Scrolls when the note is longer than the widget.
+        <ListWidget style={{ width: "match_parent", height: "match_parent" }}>
+          {data.lines.map((line, index) => (
+            <FlexWidget
+              key={index}
+              style={{ width: "match_parent", paddingVertical: 2 }}
+              clickAction="OPEN_URI"
+              clickActionData={{ uri: data.uri }}
+            >
+              <TextWidget
+                text={line}
+                maxLines={3}
+                truncate="END"
+                style={{ fontSize: 14, color: color.text }}
+              />
+            </FlexWidget>
+          ))}
+        </ListWidget>
       )}
     </FlexWidget>
   );

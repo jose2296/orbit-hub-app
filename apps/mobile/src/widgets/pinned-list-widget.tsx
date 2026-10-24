@@ -1,4 +1,8 @@
-import { FlexWidget, TextWidget } from "react-native-android-widget";
+import {
+  FlexWidget,
+  ListWidget,
+  TextWidget,
+} from "react-native-android-widget";
 
 import type { PinnedListData } from "./pinned-list-data";
 import { darkPalette } from "./palette";
@@ -51,7 +55,7 @@ export function PinnedListWidget({
   }
 
   const { data } = view;
-  const left = data.pendingTotal - data.pending.length;
+
   return (
     <FlexWidget style={{ ...frame, flexDirection: "column" }}>
       <FlexWidget
@@ -78,62 +82,7 @@ export function PinnedListWidget({
         />
       </FlexWidget>
 
-      {data.columns ? (
-        data.columns.map((column) => (
-          <FlexWidget
-            key={column.id}
-            style={{
-              width: "match_parent",
-              flexDirection: "column",
-              marginBottom: 6,
-            }}
-            clickAction="OPEN_URI"
-            clickActionData={{ uri: data.uri }}
-          >
-            <FlexWidget
-              style={{
-                width: "match_parent",
-                flexDirection: "row",
-                alignItems: "center",
-              }}
-            >
-              <TextWidget
-                text="●"
-                style={{
-                  fontSize: 12,
-                  color: (column.color as `#${string}` | null) ?? color.accent,
-                  marginRight: 6,
-                }}
-              />
-              <FlexWidget style={{ flex: 1 }}>
-                <TextWidget
-                  text={column.title}
-                  maxLines={1}
-                  truncate="END"
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "bold",
-                    color: color.text,
-                  }}
-                />
-              </FlexWidget>
-              <TextWidget
-                text={String(column.count)}
-                style={{ fontSize: 13, color: color.muted }}
-              />
-            </FlexWidget>
-            {column.tasks.map((title, index) => (
-              <TextWidget
-                key={index}
-                text={title}
-                maxLines={1}
-                truncate="END"
-                style={{ fontSize: 12, color: color.muted, marginLeft: 18 }}
-              />
-            ))}
-          </FlexWidget>
-        ))
-      ) : data.pending.length === 0 ? (
+      {data.pending.length === 0 ? (
         <FlexWidget
           style={{
             flex: 1,
@@ -148,40 +97,100 @@ export function PinnedListWidget({
           />
         </FlexWidget>
       ) : (
-        data.pending.map((item) => (
-          <FlexWidget
-            key={item.id}
-            style={{
-              width: "match_parent",
-              flexDirection: "row",
-              alignItems: "center",
-              paddingVertical: 6,
-            }}
-            clickAction="TOGGLE"
-            clickActionData={{ itemId: item.id }}
-          >
-            <TextWidget
-              text="○"
-              style={{ fontSize: 16, color: color.accent, marginRight: 8 }}
-            />
-            <FlexWidget style={{ flex: 1 }}>
-              <TextWidget
-                text={item.title}
-                maxLines={1}
-                truncate="END"
-                style={{ fontSize: 14, color: color.text }}
-              />
-            </FlexWidget>
-          </FlexWidget>
-        ))
+        // A list that scrolls when there is more than fits; each row carries its own tap.
+        <ListWidget style={{ width: "match_parent", height: "match_parent" }}>
+          {data.columns
+            ? data.columns.flatMap((column) => [
+                <FlexWidget
+                  key={column.id}
+                  style={{
+                    width: "match_parent",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingTop: 8,
+                    paddingBottom: 2,
+                  }}
+                  clickAction="OPEN_URI"
+                  clickActionData={{ uri: data.uri }}
+                >
+                  <TextWidget
+                    text="●"
+                    style={{
+                      fontSize: 12,
+                      color:
+                        (column.color as `#${string}` | null) ?? color.accent,
+                      marginRight: 6,
+                    }}
+                  />
+                  <FlexWidget style={{ flex: 1 }}>
+                    <TextWidget
+                      text={column.title}
+                      maxLines={1}
+                      truncate="END"
+                      style={{
+                        fontSize: 14,
+                        fontWeight: "bold",
+                        color: color.text,
+                      }}
+                    />
+                  </FlexWidget>
+                  <TextWidget
+                    text={String(column.count)}
+                    style={{ fontSize: 13, color: color.muted }}
+                  />
+                </FlexWidget>,
+                ...column.tasks.map((task) => (
+                  <FlexWidget
+                    key={task.id}
+                    style={{
+                      width: "match_parent",
+                      paddingVertical: 3,
+                      paddingLeft: 18,
+                    }}
+                    clickAction="OPEN_URI"
+                    clickActionData={{ uri: data.uri }}
+                  >
+                    <TextWidget
+                      text={task.title}
+                      maxLines={1}
+                      truncate="END"
+                      style={{ fontSize: 13, color: color.muted }}
+                    />
+                  </FlexWidget>
+                )),
+              ])
+            : data.pending.map((item) => (
+                <FlexWidget
+                  key={item.id}
+                  style={{
+                    width: "match_parent",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingVertical: 6,
+                  }}
+                  clickAction="TOGGLE"
+                  clickActionData={{ itemId: item.id }}
+                >
+                  <TextWidget
+                    text="○"
+                    style={{
+                      fontSize: 16,
+                      color: color.accent,
+                      marginRight: 8,
+                    }}
+                  />
+                  <FlexWidget style={{ flex: 1 }}>
+                    <TextWidget
+                      text={item.title}
+                      maxLines={1}
+                      truncate="END"
+                      style={{ fontSize: 14, color: color.text }}
+                    />
+                  </FlexWidget>
+                </FlexWidget>
+              ))}
+        </ListWidget>
       )}
-
-      {left > 0 ? (
-        <TextWidget
-          text={`+${left} ${t.more}`}
-          style={{ fontSize: 12, color: color.muted }}
-        />
-      ) : null}
     </FlexWidget>
   );
 }

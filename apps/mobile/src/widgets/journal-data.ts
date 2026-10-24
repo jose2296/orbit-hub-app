@@ -1,8 +1,8 @@
 import { getLocalStoreReady } from "@/lib/offline";
 import { todayKey } from "@/lib/journal/days";
 
-/** How many lines of the day a widget keeps: the launcher cuts what does not fit anyway. */
-const MAX_LINES = 8;
+/** How many lines of the day a widget keeps: the list scrolls, so this only bounds the payload. */
+const MAX_LINES = 100;
 
 export interface JournalToday {
   day: string;

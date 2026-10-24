@@ -5,11 +5,11 @@ import { tasksInState } from "@/lib/lists/board";
 import { orderItems } from "@/lib/lists/item-presentation";
 import { routeForList } from "@/lib/lists/route";
 
-/** How many pending rows a widget keeps: more than fits is cut by the launcher anyway. */
-const MAX_ROWS = 12;
-/** A board shows its first columns, and a couple of tasks under each. */
+/** How many pending rows a widget keeps: the list scrolls, so this only bounds the payload. */
+const MAX_ROWS = 100;
+/** A board shows its first columns and, under each, the tasks that fit a scrolling list. */
 const MAX_COLUMNS = 4;
-const COLUMN_TASKS = 2;
+const COLUMN_TASKS = 25;
 
 /** One column of a board as the widget shows it: its name, its colour and its first tasks. */
 export interface PinnedColumn {
@@ -18,7 +18,7 @@ export interface PinnedColumn {
   /** A `#rrggbb` the person chose, or `null` for the widget's own accent. */
   color: string | null;
   count: number;
-  tasks: string[];
+  tasks: Array<{ id: string; title: string }>;
 }
 
 export interface PinnedListData {
@@ -73,7 +73,9 @@ export async function loadPinnedList(
               ? (state.color as string)
               : null,
             count: inColumn.length,
-            tasks: inColumn.slice(0, COLUMN_TASKS).map((item) => item.title),
+            tasks: inColumn
+              .slice(0, COLUMN_TASKS)
+              .map((item) => ({ id: item.id, title: item.title })),
           };
         })
       : null;
