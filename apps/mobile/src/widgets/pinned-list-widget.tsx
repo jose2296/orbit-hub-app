@@ -160,25 +160,26 @@ export function PinnedListWidget({
                 )),
               ])
             : data.pending.map((item) => (
+                // Only the circle ticks the task. The text carries no action, so a swipe over
+                // it scrolls the list and can never be read as a tap that completes something.
                 <FlexWidget
                   key={item.id}
                   style={{
                     width: "match_parent",
                     flexDirection: "row",
                     alignItems: "center",
-                    paddingVertical: 6,
                   }}
-                  clickAction="TOGGLE"
-                  clickActionData={{ itemId: item.id }}
                 >
-                  <TextWidget
-                    text="○"
-                    style={{
-                      fontSize: 16,
-                      color: color.accent,
-                      marginRight: 8,
-                    }}
-                  />
+                  <FlexWidget
+                    style={{ paddingVertical: 8, paddingRight: 12 }}
+                    clickAction="TOGGLE"
+                    clickActionData={{ itemId: item.id }}
+                  >
+                    <TextWidget
+                      text="○"
+                      style={{ fontSize: 18, color: color.accent }}
+                    />
+                  </FlexWidget>
                   <FlexWidget style={{ flex: 1 }}>
                     <TextWidget
                       text={item.title}
