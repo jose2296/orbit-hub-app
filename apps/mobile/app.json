@@ -33,6 +33,23 @@
     "plugins": [
       "expo-router",
       "expo-localization",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Hello",
+              "label": "OrbitHub",
+              "description": "OrbitHub",
+              "minWidth": "110dp",
+              "minHeight": "40dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical"
+            }
+          ]
+        }
+      ],
       "./plugins/with-upload-signing",
       [
         "expo-splash-screen",
