@@ -175,9 +175,14 @@ export function PinnedListWidget({
                     clickAction="TOGGLE"
                     clickActionData={{ itemId: item.id }}
                   >
-                    <TextWidget
-                      text="○"
-                      style={{ fontSize: 18, color: color.accent }}
+                    <FlexWidget
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 5,
+                        borderWidth: 2,
+                        borderColor: color.accent,
+                      }}
                     />
                   </FlexWidget>
                   <FlexWidget style={{ flex: 1 }}>
