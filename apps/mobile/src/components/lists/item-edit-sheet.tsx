@@ -25,6 +25,7 @@ import { useSheetSucio } from "@/components/ui/sheet-sucio";
 import { AppText } from "@/components/ui/text";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { TextField } from "@/components/ui/text-field";
+import { Segmented } from "@/components/ui/segmented";
 import { descriptionDocumentOf, descriptionIsEmpty } from "@/lib/lists/description";
 import { useListItems } from "@/hooks/use-lists";
 import { pluralKey, useTranslation } from "@/lib/i18n";
@@ -168,6 +169,17 @@ export interface ItemEditSheetProps {
  * wrote the same task, and a panel that said "you have unsaved changes" for that
  * is teaching people to ignore the warning.
  */
+/**
+ * Si la descripcion de una fila es una nota (documento con formato) o texto libre.
+ *
+ * Una fila sin documento pero con texto plano es texto libre; una nueva empieza
+ * como nota, que es lo que ya hacia la hoja.
+ */
+function esNota(item: ListItem | null): boolean {
+  if (!item) return true;
+  return !descriptionIsEmpty(descriptionDocumentOf(item)) || !item.annotation;
+}
+
 function sameLabels(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   const m = new Set(b);
@@ -263,6 +275,8 @@ export function ItemEditSheet({
   // sin tocar nada no ensucia el borrador aunque el editor reformatee el marcado al leerlo.
   const [annotation, setAnnotation] = useState(item?.annotation ?? "");
   const [descDoc, setDescDoc] = useState(item ? descriptionDocumentOf(item) : "");
+  // Nota (con formato) o texto libre (un area de texto plano en `annotation`).
+  const [modoNota, setModoNota] = useState(() => esNota(item));
   const descEditorRef = useRef<EnrichedTextInputInstance | null>(null);
   const [newTag, setNewTag] = useState("");
   /*
@@ -344,6 +358,7 @@ export function ItemEditSheet({
     setTitle(item.title);
     setAnnotation(item.annotation ?? "");
     setDescDoc(descriptionDocumentOf(item));
+    setModoNota(esNota(item));
     setNewTag("");
     // Y los colores del borrador, por el mismo motivo que el resto: el panel se
     // queda montado al cerrarse, y sin esto la siguiente tarea abre con los
@@ -525,6 +540,7 @@ export function ItemEditSheet({
       title.trim() !== (isNew ? "" : base.title.trim()) ||
       annotation.trim() !== (isNew ? "" : (base.annotation ?? "").trim()) ||
       descDoc !== (isNew ? "" : descriptionDocumentOf(item ?? {})) ||
+      modoNota !== (isNew ? true : esNota(item)) ||
       draft.priority !== (isNew ? "none" : base.priority) ||
       // By value and not by reference: the draft holds what was picked and the
       // row holds what it has, and two objects saying the same icon are the same
@@ -782,6 +798,8 @@ export function ItemEditSheet({
    * nada: ni documento vacio ni anotacion.
    */
   const liveDescription = async (): Promise<{ document: string; annotation: string | null }> => {
+    // Texto libre: sin documento, y el texto tal cual, en la anotacion.
+    if (!modoNota) return { document: "", annotation: annotation.trim() || null };
     const doc = descEditorRef.current ? await descEditorRef.current.getHTML() : descDoc;
     if (descriptionIsEmpty(doc)) return { document: "", annotation: null };
     return { document: doc, annotation: noteDocumentToPlainText(doc).trim() || null };
@@ -1270,12 +1288,23 @@ export function ItemEditSheet({
         ) : null}
 
         {page === "description" ? (
-          // El mismo editor que una nota: formato, listas, enlaces. Alto de editor y no de
-          // campo; la barra de formato aparece con el foco, como en una nota.
           <View
             testID="item-description"
-            style={{ height: Math.max(300, altoVentana * DESCRIPTION_SHEET_RATIO - DESCRIPTION_CHROME) }}
+            style={{ gap: theme.spacing.md, height: Math.max(300, altoVentana * DESCRIPTION_SHEET_RATIO - DESCRIPTION_CHROME) }}
           >
+            {/* Nota o texto libre: la descripcion es una cosa u otra, no las dos. */}
+            <Segmented<"nota" | "texto">
+              label={t("itemEdit.descriptionMode")}
+              value={modoNota ? "nota" : "texto"}
+              onChange={(valor) => setModoNota(valor === "nota")}
+              options={[
+                { value: "nota", label: t("itemEdit.descriptionNote") },
+                { value: "texto", label: t("itemEdit.descriptionText") },
+              ]}
+            />
+            {modoNota ? (
+            // El mismo editor que una nota: formato, listas, enlaces. Alto de editor y no de
+            // campo; la barra de formato aparece con el foco, como en una nota.
             <DescriptionEditor
               initial={descDoc}
               editorRef={descEditorRef}
@@ -1288,6 +1317,17 @@ export function ItemEditSheet({
                 })();
               }}
             />
+            ) : (
+              <TextField
+                testID="item-description-text"
+                label={t("itemEdit.descriptionText")}
+                placeholder={t("itemEdit.descriptionTextPlaceholder")}
+                value={annotation}
+                onChangeText={setAnnotation}
+                multiline
+                textAlignVertical="top"
+              />
+            )}
           </View>
         ) : null}
 

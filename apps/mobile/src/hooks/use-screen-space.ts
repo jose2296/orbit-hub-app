@@ -1,7 +1,14 @@
 import { useNavigation } from 'expo-router';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import type { WashVariant } from '@/lib/workspace/wash';
+
+/** Lo que la cabecera pinta de un espacio. */
+type SpacePaint = {
+  color: string | null | undefined;
+  colorTo: string | null | undefined;
+  wash: WashVariant | null | undefined;
+};
 
 /**
  * Puts the space a screen belongs to in the header, which is the one place its
@@ -36,13 +43,20 @@ export function useScreenSpace(
 ) {
   const navigation = useNavigation();
 
-  const publicado = useMemo(
-    () =>
-      space
-        ? { color: space.color, colorTo: space.colorTo, wash: space.wash }
-        : null,
-    [space],
-  );
+  // Mientras el espacio no ha llegado de la cache (`undefined`), la cabecera conserva
+  // el color que ya tenia en vez de pasar por el gris del tema: ese paso era el
+  // parpadeo al cambiar de espacio. `null` sigue significando "no hay espacio".
+  const hay = space !== null && space !== undefined;
+  const color = space?.color ?? null;
+  const colorTo = space?.colorTo ?? null;
+  const wash = space?.wash ?? null;
+  const ultimo = useRef<SpacePaint | null>(null);
+  if (space !== undefined) {
+    ultimo.current = hay ? { color, colorTo, wash } : null;
+  }
+  // Memoizado por valores y no por el objeto: el espacio llega como objeto nuevo en
+  // cada render, y eso relanzaria el `setOptions` de abajo sin parar.
+  const publicado = useMemo(() => ultimo.current, [hay, color, colorTo, wash]);
 
   useEffect(() => {
     // `espacio` is not a navigator option: it is ours, and it is read by
