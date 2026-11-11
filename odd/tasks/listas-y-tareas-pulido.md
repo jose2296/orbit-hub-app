@@ -49,9 +49,7 @@ Estado: `[ ]` pendiente, `[~]` parcial, `[x]` hecho.
 - [~] T12 Cabecera sin parpadeo al cambiar de espacio. (a9ca6df) Se conserva el color mientras carga el espacio. La transicion entre pantallas no esta animada; medir en el emulador.
 - [x] T13 Borrar carpeta con todo lo que hay dentro, avisando. (aba36aa; cascada en servidor con test; copy nuevo)
 - [x] T14 Checkbox: area de toque mayor, respuesta visual, check optimista. (ef2b245; verificado en web)
-- [ ] T15 Etiquetas de tareas: simplificar crear, editar y borrar. Pendiente: hay que decidir donde vive la gestion (ver nota).
-
-Nota T15: hoy hay dos filas de etiquetas dentro de la hoja de la tarea (las de la tarea y las de la lista) con quitar, colorear y anadir en cada una. Propuesta: la hoja de la tarea solo asigna y crea; renombrar, colorear y borrar una etiqueta de la lista va a una pagina propia de etiquetas de la lista. Borrar la etiqueta la quita de todas sus tareas. No esta implementado.
+- [x] T15 Etiquetas de la lista: la tarea asigna y crea; renombrar, colorear y borrar en la pagina "Gestionar etiquetas". Borrar pregunta y quita la etiqueta de todas sus tareas. (f2e13e3; verificado en web: crear, renombrar y borrar)
 
 ## Verificacion por tarea
 
@@ -59,6 +57,8 @@ Cada tarea cierra con su commit Conventional Commit en esta rama, con tests junt
 al comportamiento. Se registra aqui el hash del commit y el resultado de los checks.
 
 ## Progreso y evidencia
+
+- Hallazgo anterior a esta rama (ya estaba en 0.1.30): la hoja de tarea no sembraba su borrador, y guardar el nombre reseteaba prioridad, icono, etiquetas y estado. Corregido en f2e13e3 y verificado en web.
 
 - Verificacion en navegador (Playwright, Chromium headless) contra la API local y Expo web en 8082. Usuario de QA: qa2.listas@example.com (datos de prueba en la base local de PGlite).
 - Tests: API 849/849 (1 todo), movil 1993/1993, typecheck limpio.
