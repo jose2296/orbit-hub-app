@@ -432,7 +432,9 @@ function Tarjeta({
       ]}
     >
       <TaskRow
-        item={item}
+        // Una tarea de una columna Done se dibuja finalizada, aunque su casilla no
+        // este marcada: el tablero no tiene casilla, la columna es el estado.
+        item={state.done ? { ...item, completed: true } : item}
         tagColors={tagColors}
         onEdit={() => onOpenTask(item)}
         onIcon={() => onOpenIcon(item)}
