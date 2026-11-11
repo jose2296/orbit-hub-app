@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 import type { BoardState, ListItem, TagColors } from "@orbit-hub/contracts";
 
@@ -105,6 +107,9 @@ export interface BoardColumnProps {
  * column you are in, and in a wide window the header above the cards says it. On
  * the card it would be a second place saying something the screen already says.
  */
+/** Una tarea de la columna Done se esconde pasados estos dias desde su ultimo cambio. */
+export const DONE_VISIBLE_DAYS = 7;
+
 export function BoardColumn({
   state,
   tasks,
@@ -118,6 +123,22 @@ export function BoardColumn({
 }: BoardColumnProps) {
   const theme = useTheme();
   const t = useTranslation();
+
+  /*
+    En la columna Done solo se ven las de los ultimos 7 dias; las anteriores
+    esperan detras de un boton. `updatedAt` es el momento en que la tarea se movio
+    aqui (o se toco por ultima vez), que es lo que se entiende por "completada
+    hace".
+  */
+  const [verAnteriores, setVerAnteriores] = useState(false);
+  const limite = Date.now() - DONE_VISIBLE_DAYS * 24 * 60 * 60 * 1000;
+  const anteriores = state.done
+    ? tasks.filter((item) => new Date(item.updatedAt).getTime() < limite)
+    : [];
+  const dibujadas =
+    state.done && !verAnteriores
+      ? tasks.filter((item) => new Date(item.updatedAt).getTime() >= limite)
+      : tasks;
 
   /** The header read as one thing, with the count said and not printed. */
   const encabezado = t(pluralKey("lists.itemCount", tasks.length), {
@@ -241,15 +262,25 @@ export function BoardColumn({
       >
         {/* The colour of the state, as the dot the tab strip also draws: two
             shapes of the same size, so the eye matches a column to its tab. */}
-        <View
-          style={[
-            styles.punto,
-            {
-              backgroundColor: stateColorHex(state.color, theme.colors.icon),
-              borderRadius: theme.radius.pill,
-            },
-          ]}
-        />
+        {state.done ? (
+          <Ionicons
+            testID={`board-done-mark-${state.id}`}
+            name="checkmark-circle"
+            size={16}
+            color={stateColorHex(state.color, theme.colors.icon)}
+            accessibilityLabel={t("board.stateDone")}
+          />
+        ) : (
+          <View
+            style={[
+              styles.punto,
+              {
+                backgroundColor: stateColorHex(state.color, theme.colors.icon),
+                borderRadius: theme.radius.pill,
+              },
+            ]}
+          />
+        )}
         {/*
           The name opens the order, **and it is the name that does it and not an
           icon beside it.** The task list opens its reorder sheet from its own
@@ -375,7 +406,7 @@ export function BoardColumn({
             style={styles.centrado}
           />
         ) : (
-          tasks.map((item) => (
+          dibujadas.map((item) => (
             <Tarjeta
               key={item.id}
               item={item}
@@ -387,6 +418,20 @@ export function BoardColumn({
             />
           ))
         )}
+        {anteriores.length > 0 ? (
+          <Button
+            testID={`board-done-older-${state.id}`}
+            variant="ghost"
+            size="sm"
+            icon={verAnteriores ? "chevron-up" : "chevron-down"}
+            label={
+              verAnteriores
+                ? t("board.hideOlderDone")
+                : t("board.showOlderDone", { count: anteriores.length, days: DONE_VISIBLE_DAYS })
+            }
+            onPress={() => setVerAnteriores((actual) => !actual)}
+          />
+        ) : null}
       </ScrollView>
     </View>
   );

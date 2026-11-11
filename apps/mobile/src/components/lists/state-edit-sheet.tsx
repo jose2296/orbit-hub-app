@@ -7,6 +7,7 @@ import { MAX_STATE_TITLE } from "@/lib/lists/board";
 
 import { StateColorStrip } from "@/components/lists/state-color-strip";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, useLastValue } from "@/components/ui/sheet";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
@@ -30,7 +31,7 @@ export interface StateEditSheetProps {
    * panel hands over the two values and the screen builds the array with
    * `editState`, which trims, caps and refuses blanks and no-ops by identity.
    */
-  onSave: (title: string, color: StateColor) => void;
+  onSave: (title: string, color: StateColor, done: boolean) => void;
   onClose: () => void;
 }
 
@@ -56,6 +57,7 @@ export function StateEditSheet({ state: pedido, onSave, onClose }: StateEditShee
 
   const [nombre, setNombre] = useState(columna?.title ?? "");
   const [color, setColor] = useState<StateColor>(columna?.color ?? "neutral");
+  const [hecha, setHecha] = useState(columna?.done ?? false);
 
   /*
     Reopening starts where the column is, **keyed on the column's id and not on
@@ -68,12 +70,13 @@ export function StateEditSheet({ state: pedido, onSave, onClose }: StateEditShee
     if (!abierto) return;
     setNombre(columna?.title ?? "");
     setColor(columna?.color ?? "neutral");
+    setHecha(columna?.done ?? false);
   }, [abierto, idColumna]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!columna) return null;
 
   const titulo = nombre.trim();
-  const cambia = titulo.length > 0 && (titulo !== columna.title || color !== columna.color);
+  const cambia = titulo.length > 0 && (titulo !== columna.title || color !== columna.color || hecha !== (columna.done ?? false));
 
   return (
     <Sheet
@@ -110,6 +113,12 @@ export function StateEditSheet({ state: pedido, onSave, onClose }: StateEditShee
           board will show — and a preview that disagreed with the board would be a
           colour chosen blind.
         */}
+        {/* Una columna Done: sus tareas quedan finalizadas. */}
+        <Checkbox
+          checked={hecha}
+          onToggle={() => setHecha((actual) => !actual)}
+          label={t("board.stateDone")}
+        />
         <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
           <View
             style={{
@@ -131,7 +140,7 @@ export function StateEditSheet({ state: pedido, onSave, onClose }: StateEditShee
           disabled={!cambia}
           onPress={() => {
             if (!cambia) return;
-            onSave(titulo, color);
+            onSave(titulo, color, hecha);
             onClose();
           }}
         />

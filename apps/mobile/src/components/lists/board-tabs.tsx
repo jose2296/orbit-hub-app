@@ -11,6 +11,8 @@ import type { SharedValue } from "react-native-reanimated";
 
 import type { BoardStates } from "@orbit-hub/contracts";
 
+import { Ionicons } from "@expo/vector-icons";
+
 import { AppText } from "@/components/ui/text";
 import { pluralKey, useTranslation } from "@/lib/i18n";
 import { stateColorHex } from "@/lib/lists/board";
@@ -378,9 +380,14 @@ export function BoardTabs({
               {/* The colour of the state, as a dot and not as the name's colour: it is
                 the one thing on the pill that can carry a mid-tone without anybody
                 having to read a word in it. */}
-              <View
-                style={[styles.punto, { backgroundColor: color, borderRadius: theme.radius.pill }]}
-              />
+              {state.done ? (
+                // La columna Done lleva una marca en vez del punto: es la que cierra las tareas.
+                <Ionicons name="checkmark-circle" size={14} color={color} />
+              ) : (
+                <View
+                  style={[styles.punto, { backgroundColor: color, borderRadius: theme.radius.pill }]}
+                />
+              )}
               <AppText
                 variant="callout"
                 numberOfLines={1}
