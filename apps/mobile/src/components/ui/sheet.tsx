@@ -958,9 +958,11 @@ export function Sheet({
           {scrollable ? (
             <ScrollView
               style={styles.cuerpoLleno}
+              // Sin margen lateral aqui: la caja del cuerpo ya lo pone (`MARGEN`).
+              // Ponerlo tambien en este contenido lo duplicaba: 36 puntos en vez de
+              // 18, y el contenido de la hoja quedaba desalineado con su titulo.
               contentContainerStyle={{
                 paddingTop: theme.spacing.sm,
-                paddingHorizontal: MARGEN,
               }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
