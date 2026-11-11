@@ -329,6 +329,70 @@ export class SyncRepository {
       .where(and(inArray(bookmarks.folderId, [...folderIds]), isNull(bookmarks.deletedAt)));
   }
 
+  /**
+   * Borra con la carpeta todo lo que hay dentro: subcarpetas, listas (con sus
+   * elementos), notas, colecciones y enlaces de esas carpetas, y los enlaces de
+   * esas colecciones.
+   *
+   * Un borrado de carpeta es un tombstone, no un DELETE, asi que la cascada de
+   * las FK (`onDelete: cascade`) no se dispara: cada tabla se marca a mano. Cada
+   * fila suma version y `updatedAt`, para que el siguiente pull la traiga.
+   */
+  async tombstoneFolderContents(rootFolderId: string, folderIds: readonly string[]): Promise<void> {
+    if (folderIds.length === 0) return;
+    const db = await this.db();
+    const now = new Date();
+    const dentro = [...folderIds];
+
+    const descendientes = dentro.filter((id) => id !== rootFolderId);
+    if (descendientes.length > 0) {
+      await db
+        .update(folders)
+        .set({ deletedAt: now, version: sql`${folders.version} + 1`, updatedAt: now })
+        .where(and(inArray(folders.id, descendientes), isNull(folders.deletedAt)));
+    }
+
+    const coleccionesRows = await db
+      .select({ id: collections.id })
+      .from(collections)
+      .where(and(inArray(collections.folderId, dentro), isNull(collections.deletedAt)));
+    const coleccionIds = coleccionesRows.map((row) => row.id);
+
+    const listasRows = await db
+      .select({ id: lists.id })
+      .from(lists)
+      .where(and(inArray(lists.folderId, dentro), isNull(lists.deletedAt)));
+    const listaIds = listasRows.map((row) => row.id);
+
+    if (listaIds.length > 0) {
+      await db
+        .update(listItems)
+        .set({ deletedAt: now, version: sql`${listItems.version} + 1`, updatedAt: now })
+        .where(and(inArray(listItems.listId, listaIds), isNull(listItems.deletedAt)));
+    }
+    await db
+      .update(lists)
+      .set({ deletedAt: now, version: sql`${lists.version} + 1`, updatedAt: now })
+      .where(and(inArray(lists.folderId, dentro), isNull(lists.deletedAt)));
+    await db
+      .update(notes)
+      .set({ deletedAt: now, version: sql`${notes.version} + 1`, updatedAt: now })
+      .where(and(inArray(notes.folderId, dentro), isNull(notes.deletedAt)));
+    await db
+      .update(collections)
+      .set({ deletedAt: now, version: sql`${collections.version} + 1`, updatedAt: now })
+      .where(and(inArray(collections.folderId, dentro), isNull(collections.deletedAt)));
+
+    const enlacesDeColeccion =
+      coleccionIds.length > 0
+        ? or(inArray(bookmarks.folderId, dentro), inArray(bookmarks.collectionId, coleccionIds))
+        : inArray(bookmarks.folderId, dentro);
+    await db
+      .update(bookmarks)
+      .set({ deletedAt: now, version: sql`${bookmarks.version} + 1`, updatedAt: now })
+      .where(and(enlacesDeColeccion, isNull(bookmarks.deletedAt)));
+  }
+
   /** One row per user, created on first write. */
   async upsertDashboard(
     userId: string,

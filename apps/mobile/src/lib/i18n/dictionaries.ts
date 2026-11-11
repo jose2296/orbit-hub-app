@@ -417,7 +417,7 @@ const es = {
     "Se elimina la lista y sus {count} elementos. No se puede deshacer.",
   "lists.deleteConfirm": "Eliminar la lista",
   "lists.deleteFolderBody":
-    "Se elimina la carpeta. Las listas que había dentro se quedan, sin carpeta.",
+    "Se elimina la carpeta y todo lo que hay dentro: listas, notas, colecciones y enlaces. Todo se borra para siempre, también en el resto de tus dispositivos.",
   "share.reachFailed": "No he podido preguntar a quien mas le llega esto.",
   "share.reachTitle": "A cuántas personas afecta",
   "share.reachBody":
@@ -1726,7 +1726,7 @@ const en: Record<TranslationKey, string> = {
     "The list and its {count} items are deleted. This cannot be undone.",
   "lists.deleteConfirm": "Delete the list",
   "lists.deleteFolderBody":
-    "The folder is deleted. The lists inside it are kept, with no folder.",
+    "The folder and everything inside it is deleted: lists, notes, collections and links. All of it is gone for good, on every device.",
   "share.reachFailed": "I could not ask who else this reaches.",
   "share.reachTitle": "How many people this affects",
   "share.reachBody":

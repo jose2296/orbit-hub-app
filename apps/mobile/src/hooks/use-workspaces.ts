@@ -1,4 +1,4 @@
-import type { Folder, IconRef, Workspace } from "@orbit-hub/contracts";
+import type { Folder, IconRef, SyncEntity, Workspace } from "@orbit-hub/contracts";
 
 import { DEFAULT_WORKSPACE_COLOR } from "@/lib/workspace/color";
 import { DEFAULT_WASH } from "@/lib/workspace/wash";
@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   enqueueOperation,
-  enqueueOperations,
+
   localUpdate,
   pullIntoCache,
   readCachedFolders,
@@ -331,12 +331,13 @@ export function useFolders(workspaceId: string | undefined) {
   );
 
   /**
-   * Takes a folder out of the way.
+   * Borra una carpeta con todo lo que hay dentro, y lo dice antes la pantalla.
    *
-   * What is inside it is not deleted with it: the lists in a folder are the
-   * work, and losing a folder because it was in the wrong place would throw
-   * away everything in it. They move up to the space, which is where a folder
-   * that is not there would have left them anyway.
+   * Lo que hay dentro se marca borrado en local para que desaparezca ya, y el
+   * servidor lo borra en cascada con la carpeta (ver `tombstoneFolderContents`):
+   * por eso aqui solo se encola el borrado de la carpeta. Subcarpetas, listas con
+   * sus elementos, notas, colecciones y los enlaces de la carpeta y de sus
+   * colecciones.
    */
   const deleteFolder = useCallback(
     async (folder: {
@@ -346,36 +347,63 @@ export function useFolders(workspaceId: string | undefined) {
     }) => {
       const store = await getLocalStoreReady();
       const now = new Date().toISOString();
-      const inside = (await store.listCached("list")).filter(
-        (row) =>
-          !row.deletedAt &&
-          (JSON.parse(row.payload) as { folderId?: string | null }).folderId ===
-            folder.id,
-      );
-      const up = folder.parentId ?? null;
+      const payloadOf = <T,>(row: { payload: string }) => JSON.parse(row.payload) as T;
 
-      if (inside.length > 0) {
+      const folderRows = (await store.listCached("folder")).filter((row) => !row.deletedAt);
+      const dentro = new Set<string>([folder.id]);
+      for (let added = true; added; ) {
+        added = false;
+        for (const row of folderRows) {
+          const parentId = payloadOf<{ parentId: string | null }>(row).parentId;
+          if (parentId && dentro.has(parentId) && !dentro.has(row.entityId)) {
+            dentro.add(row.entityId);
+            added = true;
+          }
+        }
+      }
+
+      const inside = (entity: SyncEntity, field: string, ids: Set<string>) =>
+        store.listCached(entity).then((rows) =>
+          rows.filter(
+            (row) =>
+              !row.deletedAt &&
+              ids.has(String(payloadOf<Record<string, unknown>>(row)[field] ?? "")),
+          ),
+        );
+
+      const listas = await inside("list", "folderId", dentro);
+      const colecciones = await inside("collection", "folderId", dentro);
+      const notas = await inside("note", "folderId", dentro);
+      const enlaces = await inside("bookmark", "folderId", dentro);
+      const listaIds = new Set(listas.map((row) => row.entityId));
+      const coleccionIds = new Set(colecciones.map((row) => row.entityId));
+      const elementos = await inside("list_item", "listId", listaIds);
+      const enlacesDeColeccion = await inside("bookmark", "collectionId", coleccionIds);
+
+      const subcarpetas = folderRows.filter((row) => dentro.has(row.entityId) && row.entityId !== folder.id);
+      const porBorrar = [
+        ...subcarpetas.map((row) => ({ entity: "folder" as const, row })),
+        ...listas.map((row) => ({ entity: "list" as const, row })),
+        ...elementos.map((row) => ({ entity: "list_item" as const, row })),
+        ...notas.map((row) => ({ entity: "note" as const, row })),
+        ...colecciones.map((row) => ({ entity: "collection" as const, row })),
+        ...[...enlaces, ...enlacesDeColeccion].map((row) => ({ entity: "bookmark" as const, row })),
+      ];
+      const vistos = new Set<string>();
+      const unicos = porBorrar.filter(({ entity, row }) => {
+        const clave = `${entity}:${row.entityId}`;
+        if (vistos.has(clave)) return false;
+        vistos.add(clave);
+        return true;
+      });
+
+      if (unicos.length > 0) {
         await store.upsertCached(
-          inside.map((row) => ({
+          unicos.map(({ row }) => ({
             ...row,
             updatedAt: now,
-            payload: JSON.stringify({
-              ...JSON.parse(row.payload),
-              folderId: up,
-              updatedAt: now,
-            }),
-            pending: JSON.stringify({ folderId: up }),
-          })),
-        );
-        await enqueueOperations(
-          inside.map((row) => ({
-            kind: "update" as const,
-            entity: "list" as const,
-            entityId: row.entityId,
-            baseVersion: row.version,
-            payload: { folderId: up },
-            base: JSON.parse(row.payload) as Record<string, unknown>,
-            clientTimestamp: now,
+            deletedAt: now,
+            pending: JSON.stringify({ deletedAt: now }),
           })),
         );
       }
@@ -421,4 +449,3 @@ export function useFolders(workspaceId: string | undefined) {
     reload: load,
   };
 }
-
