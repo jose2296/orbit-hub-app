@@ -43,6 +43,7 @@ export function SwipeRow({
   children,
   inset = 0,
   opaque = true,
+  leftAction,
 }: {
   actions: SwipeAction[];
   children: ReactNode | ((guard: SwipeRowGuard) => ReactNode);
@@ -53,6 +54,12 @@ export function SwipeRow({
    * opaque cards with rounded corners: the square background shows at the corners.
    */
   opaque?: boolean;
+  /**
+   * What a long drag to the **right** does. It is not a button to tap: the row has to
+   * be dragged most of the way before it commits, so finishing something takes a
+   * deliberate gesture and a short, accidental drag does nothing.
+   */
+  leftAction?: SwipeAction;
 }) {
   const theme = useTheme();
   const ref = useRef<Swipeable>(null);
@@ -117,15 +124,48 @@ export function SwipeRow({
     </View>
   );
 
+  const acento = leftAction ? tono(leftAction.tone) : null;
+  const izquierda = () =>
+    leftAction && acento ? (
+      <View
+        style={[
+          styles.izquierda,
+          {
+            backgroundColor: acento.fondo,
+            borderColor: theme.colors.border,
+            borderRadius: theme.radius.lg,
+            marginVertical: inset,
+            marginRight: theme.spacing.xs,
+            paddingLeft: theme.spacing.lg,
+            gap: theme.spacing.sm,
+          },
+        ]}
+      >
+        <Ionicons name={leftAction.icon} size={22} color={acento.texto} />
+        <AppText variant="callout" numberOfLines={1} style={{ color: acento.texto }}>
+          {leftAction.label}
+        </AppText>
+      </View>
+    ) : null;
+
   return (
     <Swipeable
       ref={ref}
       renderRightActions={acciones}
+      renderLeftActions={leftAction ? izquierda : undefined}
+      overshootLeft={false}
+      leftThreshold={LEFT_THRESHOLD}
       overshootRight={false}
       friction={1.5}
       rightThreshold={36}
       dragOffsetFromRightEdge={16}
-      onSwipeableOpen={() => {
+      onSwipeableOpen={(direction) => {
+        if (direction === "left" && leftAction) {
+          // Llego hasta el final: se hace y la fila vuelve sola a su sitio.
+          ref.current?.close();
+          leftAction.onPress();
+          return;
+        }
         abierta.current = true;
       }}
       onSwipeableClose={() => {
@@ -139,7 +179,20 @@ export function SwipeRow({
   );
 }
 
+/**
+ * How far the row must be dragged to the right for it to commit, in points. The panel
+ * behind is wider than this on purpose: it has to be pulled most of the way, not tapped.
+ */
+const LEFT_THRESHOLD = 120;
+const LEFT_PANEL_WIDTH = 160;
+
 const styles = StyleSheet.create({
+  izquierda: {
+    width: LEFT_PANEL_WIDTH,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+  },
   acciones: {
     flexDirection: "row",
     alignItems: "stretch",

@@ -349,18 +349,19 @@ export function TaskRow({
   return (
     <SwipeRow
       inset={4}
+      // Arrastrar la fila hacia la derecha, un buen trozo, la marca como hecha (o pendiente).
+      leftAction={
+        onToggle
+          ? {
+              key: "toggle",
+              label: item.completed ? t("swipe.undone") : t("swipe.done"),
+              icon: (item.completed ? "arrow-undo-outline" : "checkmark") as IconName,
+              tone: "success" as const,
+              onPress: onToggle,
+            }
+          : undefined
+      }
       actions={[
-        ...(onToggle
-          ? [
-              {
-                key: "toggle",
-                label: item.completed ? t("swipe.undone") : t("swipe.done"),
-                icon: (item.completed ? "arrow-undo-outline" : "checkmark") as IconName,
-                tone: "success" as const,
-                onPress: onToggle,
-              },
-            ]
-          : []),
         {
           key: "delete",
           label: t("itemOptions.delete"),
