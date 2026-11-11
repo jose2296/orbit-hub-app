@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRef, type ComponentProps, type ReactNode } from "react";
 import type { GestureResponderEvent } from "react-native";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Animated, Pressable, StyleSheet, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 
 import { useTheme } from "@/theme";
@@ -12,8 +12,8 @@ export interface SwipeAction {
   key: string;
   label: string;
   icon: ComponentProps<typeof Ionicons>["name"];
-  /** `danger` for what cannot be undone, `success` for what finishes something. */
-  tone?: "neutral" | "success" | "danger";
+  /** `danger` for what cannot be undone, `success` for what finishes something, `warning` for what reopens it. */
+  tone?: "neutral" | "success" | "warning" | "danger";
   onPress: () => void;
 }
 
@@ -44,6 +44,7 @@ export function SwipeRow({
   inset = 0,
   opaque = true,
   leftAction,
+  releaseLabel = "",
 }: {
   actions: SwipeAction[];
   children: ReactNode | ((guard: SwipeRowGuard) => ReactNode);
@@ -60,6 +61,8 @@ export function SwipeRow({
    * deliberate gesture and a short, accidental drag does nothing.
    */
   leftAction?: SwipeAction;
+  /** What the panel says once the drag has gone far enough ("Release"). */
+  releaseLabel?: string;
 }) {
   const theme = useTheme();
   const ref = useRef<Swipeable>(null);
@@ -82,10 +85,12 @@ export function SwipeRow({
 
   const tono = (tone: SwipeAction["tone"]) =>
     tone === "danger"
-      ? { fondo: theme.colors.dangerSoft, texto: theme.colors.danger }
+      ? { fondo: theme.colors.dangerSoft, texto: theme.colors.danger, solido: theme.colors.danger }
       : tone === "success"
-        ? { fondo: theme.colors.successSoft, texto: theme.colors.success }
-        : { fondo: theme.colors.surface, texto: theme.colors.text };
+        ? { fondo: theme.colors.successSoft, texto: theme.colors.success, solido: theme.colors.success }
+        : tone === "warning"
+          ? { fondo: theme.colors.warningSoft, texto: theme.colors.warning, solido: theme.colors.warning }
+          : { fondo: theme.colors.surface, texto: theme.colors.text, solido: theme.colors.accent };
 
   const acciones = () => (
     <View
@@ -125,13 +130,33 @@ export function SwipeRow({
   );
 
   const acento = leftAction ? tono(leftAction.tone) : null;
-  const izquierda = () =>
-    leftAction && acento ? (
-      <View
+  /*
+    El panel de la derecha de la fila, **vivo con el dedo**.
+
+    Hasta el umbral es una baldosa suave que dice la accion; en cuanto el arrastre lo
+    cruza se rellena del todo, el icono crece y el texto cambia a "Suelta": ese salto
+    es lo que dice que, si sueltas ahora, se completa, y que antes de el no. Lo
+    mueve `dragX` directamente, sin estado de React, para que siga al dedo cuadro a
+    cuadro.
+  */
+  const izquierda = (_progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+    if (!leftAction || !acento) return null;
+    const cruza = { inputRange: [0, LEFT_THRESHOLD - 1, LEFT_THRESHOLD], extrapolate: "clamp" as const };
+    const fondo = dragX.interpolate({ ...cruza, outputRange: [acento.fondo, acento.fondo, acento.solido] });
+    const icono = dragX.interpolate({ ...cruza, outputRange: [acento.texto, acento.texto, theme.colors.onAccent] });
+    const escala = dragX.interpolate({
+      inputRange: [0, LEFT_THRESHOLD * 0.5, LEFT_THRESHOLD, LEFT_PANEL_WIDTH],
+      outputRange: [0.7, 0.9, 1.2, 1.2],
+      extrapolate: "clamp",
+    });
+    const antes = dragX.interpolate({ ...cruza, outputRange: [1, 1, 0] });
+    const despues = dragX.interpolate({ ...cruza, outputRange: [0, 0, 1] });
+    return (
+      <Animated.View
         style={[
           styles.izquierda,
           {
-            backgroundColor: acento.fondo,
+            backgroundColor: fondo,
             borderColor: theme.colors.border,
             borderRadius: theme.radius.lg,
             marginVertical: inset,
@@ -141,12 +166,24 @@ export function SwipeRow({
           },
         ]}
       >
-        <Ionicons name={leftAction.icon} size={22} color={acento.texto} />
-        <AppText variant="callout" numberOfLines={1} style={{ color: acento.texto }}>
-          {leftAction.label}
-        </AppText>
-      </View>
-    ) : null;
+        <Animated.View style={{ transform: [{ scale: escala }] }}>
+          <AnimatedIonicons name={leftAction.icon} size={22} style={{ color: icono }} />
+        </Animated.View>
+        <View style={styles.etiquetas}>
+          <Animated.View style={[styles.etiqueta, { opacity: antes }]}>
+            <AppText variant="callout" numberOfLines={1} style={{ color: acento.texto }}>
+              {leftAction.label}
+            </AppText>
+          </Animated.View>
+          <Animated.View style={[styles.etiqueta, { opacity: despues }]}>
+            <AppText variant="callout" numberOfLines={1} style={{ color: theme.colors.onAccent }}>
+              {releaseLabel}
+            </AppText>
+          </Animated.View>
+        </View>
+      </Animated.View>
+    );
+  };
 
   return (
     <Swipeable
@@ -156,17 +193,19 @@ export function SwipeRow({
       overshootLeft={false}
       leftThreshold={LEFT_THRESHOLD}
       overshootRight={false}
-      friction={1.5}
+      friction={1}
       rightThreshold={36}
       dragOffsetFromRightEdge={16}
-      onSwipeableOpen={(direction) => {
+      onSwipeableWillOpen={(direction) => {
         if (direction === "left" && leftAction) {
-          // Llego hasta el final: se hace y la fila vuelve sola a su sitio.
+          // Soltado pasado el umbral: se hace ya, sin esperar a que acabe la
+          // animacion, y la fila vuelve sola a su sitio.
           ref.current?.close();
           leftAction.onPress();
-          return;
         }
-        abierta.current = true;
+      }}
+      onSwipeableOpen={(direction) => {
+        if (direction === "right") abierta.current = true;
       }}
       onSwipeableClose={() => {
         abierta.current = false;
@@ -183,10 +222,23 @@ export function SwipeRow({
  * How far the row must be dragged to the right for it to commit, in points. The panel
  * behind is wider than this on purpose: it has to be pulled most of the way, not tapped.
  */
-const LEFT_THRESHOLD = 120;
-const LEFT_PANEL_WIDTH = 160;
+const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
+const LEFT_THRESHOLD = 130;
+const LEFT_PANEL_WIDTH = 170;
 
 const styles = StyleSheet.create({
+  etiquetas: {
+    flex: 1,
+    height: 22,
+  },
+  etiqueta: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+  },
   izquierda: {
     width: LEFT_PANEL_WIDTH,
     flexDirection: "row",

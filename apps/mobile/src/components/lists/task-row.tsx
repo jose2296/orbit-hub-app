@@ -349,6 +349,7 @@ export function TaskRow({
   return (
     <SwipeRow
       inset={4}
+      releaseLabel={t("swipe.release")}
       // Arrastrar la fila hacia la derecha, un buen trozo, la marca como hecha (o pendiente).
       leftAction={
         onToggle
@@ -356,7 +357,7 @@ export function TaskRow({
               key: "toggle",
               label: item.completed ? t("swipe.undone") : t("swipe.done"),
               icon: (item.completed ? "arrow-undo-outline" : "checkmark") as IconName,
-              tone: "success" as const,
+              tone: (item.completed ? "warning" : "success") as "warning" | "success",
               onPress: onToggle,
             }
           : undefined
