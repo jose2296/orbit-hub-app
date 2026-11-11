@@ -43,7 +43,7 @@ Estado: `[ ]` pendiente, `[~]` parcial, `[x]` hecho.
 - [~] T6 Clasificar bookmark: (4144b58) la hoja abre en la carpeta del enlace y muestra sus colecciones; la creacion de coleccion ya no encola un update fallido. El "Error inesperado" NO se ha reproducido en web en cinco variantes. Pendiente: el mensaje exacto en el movil (ahora la hoja muestra el texto real del fallo).
 - [x] T7 Borrar carpeta vacia o con contenido. (aba36aa; verificado en web)
 - [x] T8 Confirmacion al borrar: item (hoja de edicion, opciones y swipe), carpeta, etiqueta, quitar de lista de medios, adjunto de nota y plantilla. El resto de borrados ya pasaba por la pagina de borrado del menu o por su hoja propia.
-- [x] T9 Swipe a la izquierda en tareas: baldosas redondeadas Hecha/Borrar, fondo propio de la fila, y un toque al soltar o con la fila abierta ya no abre la tarea. Verificado en Chromium en modo touch (CDP): abrir, soltar sin abrir la hoja, tocar cierra, Borrar pide confirmacion. Pendiente: otras listas (notas, bookmarks).
+- [x] T9 Swipe a la izquierda en tareas: baldosas redondeadas Hecha/Borrar, fondo propio de la fila, y un toque al soltar o con la fila abierta ya no abre la tarea. Verificado en Chromium en modo touch (CDP): abrir, soltar sin abrir la hoja, tocar cierra, Borrar pide confirmacion. Extendido a las filas de contenido (carpetas, listas, notas, colecciones) y a los enlaces, con el componente compartido SwipeRow y la pulsacion larga abriendo sus opciones.
 - [x] T10 Fila entera pulsable en tareas. (ef2b245; verificado en web)
 - [x] T11 Sheet de opciones con el nombre completo. (ef2b245; verificado)
 - [x] T12 Cabecera sin parpadeo al cambiar de espacio. Medido en touch: A a B y casa a A saltan al color del espacio sin pasar por el gris neutro.

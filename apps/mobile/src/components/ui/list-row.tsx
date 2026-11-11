@@ -65,6 +65,8 @@ export interface ListRowProps {
   subtitle?: string;
   icon?: IconName;
   onPress?: () => void;
+  /** Overrides the long press that reads the whole title (e.g. to open the row's options). */
+  onLongPress?: () => void;
   rightLabel?: string;
   chevron?: boolean;
   destructive?: boolean;
@@ -79,6 +81,7 @@ export function ListRow({
   icon,
   leading,
   onPress,
+  onLongPress,
   rightLabel,
   chevron = false,
   destructive = false,
@@ -164,7 +167,7 @@ export function ListRow({
   return (
     <>
       <Pressable
-        onLongPress={nombre.onLongPress}
+        onLongPress={onLongPress ?? nombre.onLongPress}
         accessibilityRole="button"
         disabled={disabled}
         onPress={onPress}

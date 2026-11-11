@@ -363,7 +363,7 @@ describe('la insignia y la pastilla abren la tarea, y no con un envoltorio', () 
     }).toEqual({ insignias: 1, pastillas: 1, aperturasQueAbren: 2 });
     // La tercera apertura es la de la propia fila, y ya no es `onPress={onEdit}`: pasa
     // por una guarda que ignora el final de un arrastre y cierra la fila abierta.
-    expect(soloLaFila).toMatch(/onPress=\{\(e\) => \{[\s\S]*?onEdit\(\);/);
+    expect(soloLaFila).toContain('guard.press(onEdit)');
     // Y en las dos, por su nombre: el conteo de arriba pasa igual si el `onEdit` se
     // llegara al nombre por segunda vez en lugar de a la insignia.
     expect(aperturas(soloLaFila, 'Badge')[0]).toContain('onPress={onEdit}');
