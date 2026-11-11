@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useFieldChain } from "@/lib/forms/field-chain";
@@ -99,6 +100,7 @@ export function TemplateMenuSheet({
   const cadena = useFieldChain(2);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   const { setSucio } = useSheetSucio();
 
   /*
@@ -326,11 +328,12 @@ export function TemplateMenuSheet({
       icon: "trash-outline",
       tone: "danger",
       disabled: busy,
-      onPress: () => void remove(),
+      onPress: () => setConfirmando(true),
     },
   ];
 
   return (
+    <>
     <Sheet step="menu" visible={pedido !== null} onClose={close} title={template.name} scrollable={false}>
       <SheetOptions options={opciones} />
       {canEditTemplate(template, user?.id) ? null : (
@@ -351,6 +354,20 @@ export function TemplateMenuSheet({
         </AppText>
       )}
     </Sheet>
+    <ConfirmDialog
+      visible={confirmando}
+      title={t("note.template.deleteConfirm")}
+      body={t("note.template.deleteBody")}
+      confirmLabel={t("note.template.delete")}
+      cancelLabel={t("common.cancel")}
+      destructive
+      onConfirm={() => {
+        setConfirmando(false);
+        void remove();
+      }}
+      onCancel={() => setConfirmando(false)}
+    />
+    </>
   );
 }
 

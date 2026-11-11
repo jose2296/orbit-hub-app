@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppText } from "@/components/ui/text";
 import { useTranslation } from "@/lib/i18n";
 import { keyValueStore } from "@/lib/storage/key-value";
@@ -78,6 +79,7 @@ export function NoteAttachments({
   const [items, setItems] = useState<Attachment[]>([]);
   const [failed, setFailed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [aQuitar, setAQuitar] = useState<Attachment | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingEntry[]>([]);
 
@@ -324,7 +326,7 @@ export function NoteAttachments({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("note.attachment.delete", { name: attachment.fileName })}
-            onPress={() => void remove(attachment)}
+            onPress={() => setAQuitar(attachment)}
           >
             <Ionicons name="close" size={15} color={theme.colors.textSubtle} />
           </Pressable>
@@ -336,6 +338,21 @@ export function NoteAttachments({
           {t("note.attachments.empty")}
         </AppText>
       ) : null}
+
+      <ConfirmDialog
+        visible={aQuitar !== null}
+        title={t("note.attachment.deleteTitle", { name: aQuitar?.fileName ?? "" })}
+        body={t("note.attachment.deleteBody")}
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
+        destructive
+        onConfirm={() => {
+          const adjunto = aQuitar;
+          setAQuitar(null);
+          if (adjunto) void remove(adjunto);
+        }}
+        onCancel={() => setAQuitar(null)}
+      />
     </View>
   );
 }

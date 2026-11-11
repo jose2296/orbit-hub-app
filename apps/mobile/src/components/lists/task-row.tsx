@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useRef, type ComponentProps } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 
@@ -110,6 +111,12 @@ export function TaskRow({
 
 
   const deslizable = useRef<Swipeable>(null);
+  // Si la fila esta abierta, un toque la cierra en vez de abrir la tarea. Y un toque
+  // que empezo en un sitio y acabo lejos es el final de un arrastre, no una
+  // pulsacion: en web el navegador manda el `click` al soltar, y era lo que abria la
+  // hoja de edicion al terminar el deslizamiento.
+  const abierta = useRef(false);
+  const inicio = useRef(0);
   // La pista de la fila: la frase se escribe una vez y todos los controles la apuntan.
   const pistaNombre = useA11yHint(t("itemEdit.subtitle"));
 
@@ -118,7 +125,17 @@ export function TaskRow({
       testID={`item-row-${item.id}`}
       accessible={false}
       {...pistaNombre.props}
-      onPress={onEdit}
+      onPressIn={(e) => {
+        inicio.current = e.nativeEvent.pageX;
+      }}
+      onPress={(e) => {
+        if (abierta.current) {
+          deslizable.current?.close();
+          return;
+        }
+        if (Math.abs(e.nativeEvent.pageX - inicio.current) > 10) return;
+        onEdit();
+      }}
       onLongPress={onOptions}
       style={[
         styles.item,
@@ -348,51 +365,88 @@ export function TaskRow({
 
   // Las acciones salen por la derecha al deslizar a la izquierda, como en el correo.
   // Cada una cierra la fila antes de actuar, para que no quede abierta debajo.
-  const acciones = () => (
-    <View style={{ flexDirection: "row" }}>
-      {onToggle ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={item.completed ? t("itemOptions.undone") : t("itemOptions.done")}
-          onPress={() => {
-            deslizable.current?.close();
-            onToggle();
-          }}
-          style={[styles.accion, { backgroundColor: theme.colors.accent }]}
-        >
-          <AppText variant="callout" style={{ color: theme.colors.onAccent }}>
-            {item.completed ? t("itemOptions.undone") : t("itemOptions.done")}
-          </AppText>
-        </Pressable>
-      ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t("itemOptions.delete")}
-        onPress={() => {
-          deslizable.current?.close();
-          onRemove();
-        }}
-        style={[styles.accion, { backgroundColor: theme.colors.danger }]}
+  const baldosa = (
+    color: string,
+    icono: ComponentProps<typeof Ionicons>["name"],
+    etiqueta: string,
+    alPulsar: () => void,
+  ) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={etiqueta}
+      onPress={() => {
+        deslizable.current?.close();
+        alPulsar();
+      }}
+      style={({ pressed }) => [
+        styles.accion,
+        {
+          backgroundColor: color,
+          borderRadius: theme.radius.lg,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <Ionicons name={icono} size={22} color={theme.colors.onAccent} />
+      <AppText
+        variant="caption"
+        numberOfLines={1}
+        style={{ color: theme.colors.onAccent }}
       >
-        <AppText variant="callout" style={{ color: theme.colors.onAccent }}>
-          {t("itemOptions.delete")}
-        </AppText>
-      </Pressable>
+        {etiqueta}
+      </AppText>
+    </Pressable>
+  );
+
+  const acciones = () => (
+    <View style={[styles.acciones, { gap: theme.spacing.sm, paddingLeft: theme.spacing.sm }]}>
+      {onToggle
+        ? baldosa(
+            theme.colors.success,
+            item.completed ? "arrow-undo-outline" : "checkmark",
+            item.completed ? t("swipe.undone") : t("swipe.done"),
+            onToggle,
+          )
+        : null}
+      {baldosa(theme.colors.danger, "trash-outline", t("itemOptions.delete"), onRemove)}
     </View>
   );
 
   return (
-    <Swipeable ref={deslizable} renderRightActions={acciones} overshootRight={false}>
+    <Swipeable
+      ref={deslizable}
+      renderRightActions={acciones}
+      overshootRight={false}
+      friction={1.5}
+      rightThreshold={36}
+      dragOffsetFromRightEdge={16}
+      onSwipeableOpen={() => {
+        abierta.current = true;
+      }}
+      onSwipeableClose={() => {
+        abierta.current = false;
+      }}
+      // El tablero de la fila es el fondo de la pantalla: sin el, al arrastrar se
+      // veria el texto sobre el vacio, cortado por el borde.
+      childrenContainerStyle={{ backgroundColor: theme.colors.background }}
+    >
       {fila}
     </Swipeable>
   );
 }
 
 const styles = StyleSheet.create({
+  acciones: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    // Un respiro arriba y abajo: las baldosas no tocan el borde de la fila contigua.
+    paddingVertical: 4,
+  },
   accion: {
-    width: 84,
+    width: 72,
     alignItems: "center",
     justifyContent: "center",
+    gap: 4,
   },
   item: {
     flexDirection: "row",

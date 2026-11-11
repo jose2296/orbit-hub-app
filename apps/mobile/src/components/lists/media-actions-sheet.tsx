@@ -9,6 +9,7 @@ import { useTranslation } from "@/lib/i18n";
 import { LIST_KIND_ICON, LIST_KIND_LABEL } from "@/lib/lists/kind";
 import { mediaCardOf } from "@/lib/lists/media-card";
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Sheet, SheetOptions, useLastValue } from "@/components/ui/sheet";
 import { useTheme } from "@/theme";
@@ -90,6 +91,7 @@ export function MediaActionsSheet({
   const { toggleCompleted, removeItem, addItemTo } = useListItems(listId);
 
   const [pickingList, setPickingList] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
 
   /**
    * The one list being added to right now.
@@ -251,10 +253,7 @@ export function MediaActionsSheet({
       icon: "trash-outline",
       tone: "danger",
       description: t("mediaActions.removeFromListHint"),
-      onPress: () => {
-        void removeItem(item);
-        onClose();
-      },
+      onPress: () => setConfirmando(true),
     },
   ];
 
@@ -281,15 +280,31 @@ export function MediaActionsSheet({
   ) : null;
 
   return (
-    <Sheet
-      visible={pedido !== null}
-      onClose={onClose}
-      title={item.title}
-      subtitle={t(LIST_KIND_LABEL[listKind])}
-      artwork={arte}
-    >
-      <SheetOptions options={options} />
-    </Sheet>
+    <>
+      <Sheet
+        visible={pedido !== null}
+        onClose={onClose}
+        title={item.title}
+        subtitle={t(LIST_KIND_LABEL[listKind])}
+        artwork={arte}
+      >
+        <SheetOptions options={options} />
+      </Sheet>
+      <ConfirmDialog
+        visible={confirmando}
+        title={t("mediaActions.removeTitle", { name: item.title })}
+        body={t("mediaActions.removeBody")}
+        confirmLabel={t("mediaActions.removeFromList")}
+        cancelLabel={t("common.cancel")}
+        destructive
+        onConfirm={() => {
+          setConfirmando(false);
+          void removeItem(item);
+          onClose();
+        }}
+        onCancel={() => setConfirmando(false)}
+      />
+    </>
   );
 }
 

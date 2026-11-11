@@ -258,6 +258,8 @@ const es = {
   "mediaActions.noOtherListBody":
     "Crea otra lista del mismo tipo para tener el título en las dos.",
   "mediaActions.removeFromList": "Quitar de la lista",
+  "mediaActions.removeTitle": "¿Quitar «{name}» de la lista?",
+  "mediaActions.removeBody": "Se quita de esta lista. No se puede deshacer.",
   "mediaActions.removeFromListHint":
     "Se quita de aquí. No se borra de la lista donde esté.",
   "filters.title": "Filtrar",
@@ -779,6 +781,8 @@ const es = {
   "itemOptions.delete": "Borrar",
   "itemOptions.deleteTitle": "¿Borrar «{name}»?",
   "itemOptions.deleteBody": "El elemento se borra. No se puede deshacer.",
+  "swipe.done": "Hecha",
+  "swipe.undone": "Pendiente",
   "itemEdit.iconSubtitle": "Elige un icono",
   "itemEdit.tagsSubtitle.one": "1 etiqueta",
   "itemEdit.tagsSubtitle.other": "{count} etiquetas",
@@ -883,6 +887,8 @@ const es = {
   "note.attachment.failed": "No se pudo subir: {reason}",
   "note.attachment.download": "Descargar {name}",
   "note.attachment.delete": "Quitar {name}",
+  "note.attachment.deleteTitle": "¿Quitar «{name}»?",
+  "note.attachment.deleteBody": "El archivo se quita de la nota. No se puede deshacer.",
   "note.attachment.refused": "Ese archivo no se puede adjuntar: {reason}",
   "note.attachment.retry": "Reintentar la subida",
   "note.titleLabel": "Título de la nota",
@@ -1610,6 +1616,8 @@ const en: Record<TranslationKey, string> = {
   "mediaActions.noOtherListBody":
     "Create another list of the same kind to have it in both.",
   "mediaActions.removeFromList": "Remove from the list",
+  "mediaActions.removeTitle": "Remove “{name}” from the list?",
+  "mediaActions.removeBody": "It is removed from this list. This cannot be undone.",
   "mediaActions.removeFromListHint":
     "It leaves this list. It is not deleted from wherever else it is.",
   "filters.title": "Filter",
@@ -2103,6 +2111,8 @@ const en: Record<TranslationKey, string> = {
   "itemOptions.delete": "Delete",
   "itemOptions.deleteTitle": "Delete “{name}”?",
   "itemOptions.deleteBody": "The item is deleted. This cannot be undone.",
+  "swipe.done": "Done",
+  "swipe.undone": "Pending",
   "itemEdit.iconSubtitle": "Pick an icon",
   "itemEdit.tagsSubtitle.one": "1 label",
   "itemEdit.tagsSubtitle.other": "{count} labels",
@@ -2207,6 +2217,8 @@ const en: Record<TranslationKey, string> = {
   "note.attachment.failed": "Could not upload: {reason}",
   "note.attachment.download": "Download {name}",
   "note.attachment.delete": "Remove {name}",
+  "note.attachment.deleteTitle": "Remove “{name}”?",
+  "note.attachment.deleteBody": "The file is removed from the note. This cannot be undone.",
   "note.attachment.refused": "That file cannot be attached: {reason}",
   "note.attachment.retry": "Try the upload again",
   "note.titleLabel": "Note title",

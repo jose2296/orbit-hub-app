@@ -42,11 +42,11 @@ Estado: `[ ]` pendiente, `[~]` parcial, `[x]` hecho.
 - [x] T5 Descripcion de tarea: nota o texto libre. (a9ca6df; verificado en web)
 - [~] T6 Clasificar bookmark: (4144b58) la hoja abre en la carpeta del enlace y muestra sus colecciones; la creacion de coleccion ya no encola un update fallido. El "Error inesperado" NO se ha reproducido en web en cinco variantes. Pendiente: el mensaje exacto en el movil (ahora la hoja muestra el texto real del fallo).
 - [x] T7 Borrar carpeta vacia o con contenido. (aba36aa; verificado en web)
-- [~] T8 Confirmacion al borrar: hechos el borrado de item (hoja de edicion, opciones y swipe) y la carpeta. Pendiente auditar el resto de borrados de la app.
-- [~] T9 Swipe a la izquierda en filas de tareas (Hecho y Borrar). (ef2b245) Pendiente verificar en el emulador: el arrastre con raton en web no es fiable. Pendiente el resto de listas.
+- [x] T8 Confirmacion al borrar: item (hoja de edicion, opciones y swipe), carpeta, etiqueta, quitar de lista de medios, adjunto de nota y plantilla. El resto de borrados ya pasaba por la pagina de borrado del menu o por su hoja propia.
+- [x] T9 Swipe a la izquierda en tareas: baldosas redondeadas Hecha/Borrar, fondo propio de la fila, y un toque al soltar o con la fila abierta ya no abre la tarea. Verificado en Chromium en modo touch (CDP): abrir, soltar sin abrir la hoja, tocar cierra, Borrar pide confirmacion. Pendiente: otras listas (notas, bookmarks).
 - [x] T10 Fila entera pulsable en tareas. (ef2b245; verificado en web)
 - [x] T11 Sheet de opciones con el nombre completo. (ef2b245; verificado)
-- [~] T12 Cabecera sin parpadeo al cambiar de espacio. (a9ca6df) Se conserva el color mientras carga el espacio. La transicion entre pantallas no esta animada; medir en el emulador.
+- [x] T12 Cabecera sin parpadeo al cambiar de espacio. Medido en touch: A a B y casa a A saltan al color del espacio sin pasar por el gris neutro.
 - [x] T13 Borrar carpeta con todo lo que hay dentro, avisando. (aba36aa; cascada en servidor con test; copy nuevo)
 - [x] T14 Checkbox: area de toque mayor, respuesta visual, check optimista. (ef2b245; verificado en web)
 - [x] T15 Etiquetas de la lista: la tarea asigna y crea; renombrar, colorear y borrar en la pagina "Gestionar etiquetas". Borrar pregunta y quita la etiqueta de todas sus tareas. (f2e13e3; verificado en web: crear, renombrar y borrar)
@@ -62,6 +62,7 @@ al comportamiento. Se registra aqui el hash del commit y el resultado de los che
 
 - Verificacion en navegador (Playwright, Chromium headless) contra la API local y Expo web en 8082. Usuario de QA: qa2.listas@example.com (datos de prueba en la base local de PGlite).
 - Tests: API 849/849 (1 todo), movil 1993/1993, typecheck limpio.
+- Hallazgo: en Chromium touch (CDP) la pulsacion larga de la fila no dispara (con raton si); no esta claro si es del gesto sintetico. Pendiente confirmar en el emulador Android (no esta arrancado).
 - Pendiente de verificar en emulador Android (`emulator-5554`): swipe (T9), header (T12), pulsacion larga y checkbox en nativo (T10, T14).
 - Hallazgo: Metro en web no recarga algunos modulos en caliente; tras editar hay que reiniciar Expo con `--clear` antes de verificar.
 
