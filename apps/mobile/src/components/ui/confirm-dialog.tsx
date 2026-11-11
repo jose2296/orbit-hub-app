@@ -65,7 +65,7 @@ export function ConfirmDialog({
         style={styles.fondo}
       >
         {/* Stops the tap that opened this from reaching the sheet behind it. */}
-        <Pressable onPress={() => {}} style={styles.caja}>
+        <Pressable onPress={() => {}} style={[styles.caja, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.cabecera}>
             <AppText variant="heading" style={{ color: theme.colors.text }}>
               {title}

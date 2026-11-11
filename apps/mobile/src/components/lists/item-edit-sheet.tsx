@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
-import { Alert, Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
+import { Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
 
 import type {
   BoardStates,
@@ -10,7 +10,7 @@ import type {
   Priority,
   TagColors,
 } from "@orbit-hub/contracts";
-import { derivedTagColor, labelOf, noteDocumentToPlainText } from "@orbit-hub/contracts";
+import { labelOf, noteDocumentToPlainText } from "@orbit-hub/contracts";
 import { stateOf } from "@orbit-hub/contracts";
 
 import { AppIcon } from "@/components/ui/app-icon";
@@ -39,9 +39,6 @@ import { useTheme } from "@/theme";
 
 import { completedMatch } from "@/lib/lists/done-match";
 import { mismoIcono } from "@/lib/icons/icon-change";
-import { ITEM_ICON_COLORS } from "@orbit-hub/contracts";
-import { ICON_COLOR_LABEL } from "@/theme/tokens";
-import type { IconColor } from "@orbit-hub/contracts";
 import { TagChip } from "./tag-chip";
 import { TagColorPicker } from "./tag-color-picker";
 
@@ -49,7 +46,7 @@ import { TagColorPicker } from "./tag-color-picker";
 const DESCRIPTION_SHEET_RATIO = 0.95;
 const DESCRIPTION_CHROME = 230;
 
-type Page = "edit" | "icon" | "tags" | "description";
+type Page = "edit" | "icon" | "tags" | "description" | "etiquetas";
 
 const PRIORITIES: Priority[] = ["none", "low", "medium", "high"];
 
@@ -315,7 +312,10 @@ export function ItemEditSheet({
    * in the map it could be a value of — `tagColors` is keyed by label name, and a
    * key for a name nobody has typed is a colour that no row can ever show.
    */
-  const [pendiente, setPendiente] = useState<string | null>(null);
+  // La gestion de etiquetas de la lista: cual se edita, su nombre nuevo y cual se va a borrar.
+  const [editandoTag, setEditandoTag] = useState<string | null>(null);
+  const [nombreEditado, setNombreEditado] = useState("");
+  const [aBorrarTag, setABorrarTag] = useState<string | null>(null);
 
   /*
    * The pending colour goes when the name goes, and **this is the only place that
@@ -330,7 +330,6 @@ export function ItemEditSheet({
    */
   const nombreNuevo = newTag.trim();
   useEffect(() => {
-    if (nombreNuevo === "") setPendiente(null);
   }, [nombreNuevo]);
 
   // Reopening always starts where the tap asked to start, on a fresh copy of
@@ -359,6 +358,14 @@ export function ItemEditSheet({
     setAnnotation(item.annotation ?? "");
     setDescDoc(descriptionDocumentOf(item));
     setModoNota(esNota(item));
+    setDraft({
+      title: item.title,
+      annotation: item.annotation ?? null,
+      priority: item.priority,
+      icon: item.icon,
+      tags: item.tags,
+      completed: item.completed,
+    });
     setNewTag("");
     // Y los colores del borrador, por el mismo motivo que el resto: el panel se
     // queda montado al cerrarse, y sin esto la siguiente tarea abre con los
@@ -370,7 +377,6 @@ export function ItemEditSheet({
     // picker open, pointing at a label the person had not asked about this time.
     setColorDe(null);
     // And the pending colour, which belongs to the name that was just cleared.
-    setPendiente(null);
   }, [idDelItem, startOn]);
 
   // Creating always starts empty, every time it is opened.
@@ -384,32 +390,26 @@ export function ItemEditSheet({
       // `setNewTag("")` on a field that is already empty changes nothing, so React
       // drops it and the effect on `nombreNuevo` never fires. That is why the
       // pending colour is cleared here as well and not only there.
-      setPendiente(null);
-      setDraft(EMPTY_DRAFT);
+        setDraft(EMPTY_DRAFT);
       setColores({});
     }
   }, [isNew, initialTitle]);
 
   /** What the panel is showing, whether the row exists yet or not. */
-  const shown: Draft = isNew
-    ? { ...draft, title, annotation: annotation || null }
-    : {
-        title: item?.title ?? "",
-        annotation: item?.annotation ?? null,
-        priority: item?.priority ?? "none",
-        completed: item?.completed ?? false,
-        icon: item?.icon ?? null,
-        tags: item?.tags ?? [],
-      };
+  const shown: Draft = { ...draft, title, annotation: annotation || null };
 
   /** The labels already used in this list, so a new row reuses the old ones. */
-  const labels = useMemo(
-    () => tagsByFrequency(items).filter(({ tag }) => !shown.tags.includes(tag)),
-    // The list of labels the row has, as one string: `shown` is rebuilt on every
-    // render, so depending on the array itself would re-filter on every tick of
-    // anything, and the filter is not free with a hundred rows in the list.
-    [items, shown.tags.join("|")],
-  );
+  // Todas las etiquetas de la lista: las que usa alguna tarea y las que solo tienen color.
+  // Tambien las de esta tarea aunque aun no esten guardadas: una etiqueta recien creada
+  // tiene que aparecer marcada en la lista, no desaparecer hasta el Guardar.
+  const etiquetasDeLaLista = useMemo(() => {
+    const porUso = tagsByFrequency(items);
+    const conUso = new Set(porUso.map(({ tag }) => tag));
+    const sueltas = [...shown.tags, ...Object.keys(tagColors)]
+      .filter((tag, indice, todas) => !conUso.has(tag) && todas.indexOf(tag) === indice)
+      .map((tag) => ({ tag, count: 0 }));
+    return [...porUso, ...sueltas];
+  }, [items, tagColors, shown.tags.join("|")]);
 
   /**
    * The done row this new one is about, if any.
@@ -508,9 +508,6 @@ export function ItemEditSheet({
   const [vistaPrevia, setVistaPrevia] = useState<{ tag: string; hex: string } | null>(null);
   const coloresPintados: TagColors = { ...coloresVistos };
   if (vistaPrevia && vistaPrevia.tag === colorDe) coloresPintados[vistaPrevia.tag] = vistaPrevia.hex;
-
-  const colorOf = (tag: string): string =>
-    coloresPintados[tag] ?? derivedTagColor(tag);
 
   const { setSucio } = useSheetSucio();
 
@@ -687,78 +684,68 @@ export function ItemEditSheet({
    * So the tap is still a no-op, but it leaves the name and the colour where they were
    * instead of throwing both away.
    */
+  // Crear una etiqueta: se pone en esta tarea. Su color no se pide aqui: se elige en
+  // la gestion de etiquetas, para no tener que escribir el nombre y el color a la vez.
   const addTag = () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
-    if (shown.tags.includes(trimmed)) return;
-
-    /*
-      El color pendiente va **al borrador**, y no a la lista.
-
-      Antes se escribia aqui por `onTagColor`, y era la otra puerta por la que el
-      panel guardaba solo. Ahora se queda en `colores` y sale con todo lo demas al
-      confirmar — en serie con el resto, que es lo unico que impide que dos
-      escrituras partan del mismo mapa.
-    */
-    const color = pendiente;
     setNewTag("");
-    setPendiente(null);
-
-    save({ tags: [...shown.tags, trimmed] });
-
-    // Optional on purpose: with no colour chosen the label comes out **derived**,
-    // which is a colour like any other and not a missing one, and nothing is written
-    // to `tagColors` for it.
-    if (!color) return;
-    setColores((previos) => ({ ...previos, [trimmed]: color }));
+    save({ tags: shown.tags.includes(trimmed) ? shown.tags : [...shown.tags, trimmed] });
   };
 
-  /*
-   * **Dos acciones y un boton cada una, y por que no son las mismas.**
-   *
-   * Anadir y quitar son cosas distintas y por eso tienen botones distintos: el `+` de
-   * una etiqueta que la tarea **no** tiene, y la papelera de una que **si**. Antes un
-   * solo `toggleTag` hacia las dos cosas y el `+` estaba siempre ahi, tambien en las
-   * etiquetas que ya tenias —donde pulsarlo te quitaba la etiqueta sin avisar—. Eso es
-   * la confusion que se vino a quitar: **un `+` que en unos sitios anade y en otros
-   * quita.**
-   *
-   * La papelera **solo aparece en las etiquetas que la tarea lleva**, y la pastilla
-   * **deja de ser pulsable** en esta fila: pulsa el nombre y no pasa nada. Asi no hay
-   * dos caminos para quitar la misma etiqueta, y el que queda es el que se ve.
-   *
-   * Y quitar **esta tarea y solo esta**: las demas tareas de la lista se quedan con
-   * la etiqueta, y su color sigue siendo el mismo para ellas. Borrar la etiqueta de
-   * toda la lista es otra operacion y no existe —no hay ningun `deleteTag` en el
-   * repo, y anadirlo exigiria quitar el nombre de todas las tareas, que el write de
-   * item todavia no sabe hacer porque omite `tags` cuando el array queda vacio—.
-   */
+  // Las que hay que cambiar en todas las tareas de la lista: el nombre o el borrado.
+  const usosDe = (tag: string) => items.filter((row) => row.tags.includes(tag)).length;
+  const nombreNuevoEditado = nombreEditado.trim();
+  const renombreRepetido =
+    editandoTag !== null &&
+    nombreNuevoEditado !== editandoTag &&
+    etiquetasDeLaLista.some(({ tag }) => tag === nombreNuevoEditado);
+  const renombrePosible =
+    editandoTag !== null &&
+    nombreNuevoEditado.length > 0 &&
+    nombreNuevoEditado !== editandoTag &&
+    !renombreRepetido;
+
+  const abrirEdicion = (tag: string) => {
+    if (editandoTag === tag) {
+      setEditandoTag(null);
+      return;
+    }
+    setEditandoTag(tag);
+    setNombreEditado(tag);
+  };
+
+  // Cambia el nombre en cada tarea que lo lleva; el color pasa con el nombre.
+  const renombrarTag = async (tag: string) => {
+    if (!renombrePosible) return;
+    const nuevo = nombreNuevoEditado;
+    for (const row of items.filter((item) => item.tags.includes(tag))) {
+      await updateItem(row, {
+        tags: [...new Set(row.tags.map((name) => (name === tag ? nuevo : name)))],
+      });
+    }
+    await onTagColor(nuevo, coloresVistos[tag] ?? null);
+    await onTagColor(tag, null);
+    save({ tags: [...new Set(shown.tags.map((name) => (name === tag ? nuevo : name)))] });
+    setEditandoTag(null);
+  };
+
+  // Quita la etiqueta de cada tarea de la lista y borra su color.
+  const borrarEtiqueta = async (tag: string) => {
+    setABorrarTag(null);
+    setEditandoTag(null);
+    for (const row of items.filter((item) => item.tags.includes(tag))) {
+      await updateItem(row, { tags: row.tags.filter((name) => name !== tag) });
+    }
+    await onTagColor(tag, null);
+    save({ tags: shown.tags.filter((name) => name !== tag) });
+  };
+
   const anadirTag = (tag: string) =>
     save({ tags: shown.tags.includes(tag) ? shown.tags : [...shown.tags, tag] });
 
   const quitarTag = (tag: string) =>
     save({ tags: shown.tags.filter((row) => row !== tag) });
-
-  /**
-   * Quitar una etiqueta lo pregunta, y la pregunta **lleva el nombre en el titulo y en
-   * el boton**: `tags.removeConfirm` tiene `{name}` en los dos sitios, y por eso los dos
-   * se llaman con el. El cuerpo va sin nombre a proposito —`tags.removeConfirmBody`—:
-   * es la misma frase para cualquier etiqueta, y repetir el nombre ahi seria la tercera
-   * vez en dos lineas.
-   */
-  const confirmarQuitar = (tag: string) =>
-    Alert.alert(
-      t("tags.removeConfirm", { name: tag }),
-      t("tags.removeConfirmBody"),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("tags.removeConfirm", { name: tag }),
-          style: "destructive",
-          onPress: () => quitarTag(tag),
-        },
-      ],
-    );
 
   /**
    * A tap on one swatch of a label the task already carries: to the draft, and
@@ -843,6 +830,8 @@ export function ItemEditSheet({
       ? t("itemEdit.iconSubtitle")
       : page === "description"
         ? t("itemEdit.descriptionSubtitle")
+      : page === "etiquetas"
+        ? t("tags.manageSubtitle")
       : page === "tags"
         ? t(pluralKey("itemEdit.tagsSubtitle", shown.tags.length), {
             count: shown.tags.length,
@@ -865,7 +854,7 @@ export function ItemEditSheet({
       scrollable
       // La descripcion es un documento y no un campo: la hoja sube casi hasta arriba.
       maxHeightRatio={page === "description" ? DESCRIPTION_SHEET_RATIO : undefined}
-      onBack={page === "edit" ? undefined : () => setPage("edit")}
+      onBack={page === "edit" ? undefined : () => setPage(page === "etiquetas" ? "tags" : "edit")}
       /*
         El Guardar es **el del pie**, y no el boton que estaba aqui abajo. Dos
         botones de confirmar en la misma pantalla son el mismo boton en el sitio
@@ -1344,65 +1333,106 @@ export function ItemEditSheet({
 
         {page === "tags" ? (
           <View style={{ gap: theme.spacing.md }}>
-            {/* The labels this task carries. Each one is a `TagChip` —the same
-                pill the row draws, in the same colour, because the colour is the
-                list's and not this panel's— with the two things you can do to it
-                inside it: take it off, or give it a colour.
-                `alignItems: "center"` stays on this row, and it is **not** what
-                keeps a pill from stretching when the row wraps: every pill carries
-                its own `alignSelf: "flex-start"`, and a child's `align-self` wins
-                over the row's `alignItems`. It stays as the default for whatever
-                else is dropped on this row without an `alignSelf` of its own, and
-                because the list row builds its line of pills the same way. */}
-            <View
-              style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}
-            >
-              {shown.tags.map((tag) => (
-                <Fragment key={tag}>
-                  <TagChip tag={tag} colors={coloresPintados} testID={`tag-pill-hoja-${tag}`}>
-                    {(ink) => (
-                      <>
-                        {/*
-                          **La papelera de esta fila quita sin preguntar, y el motivo
-                          es que aqui no hay ambiguedad.** Esta fila solo lista etiquetas
-                          que la tarea lleva —es su propio contenido—, asi que la `x` es
-                          la unica accion que la pastilla puede tener y no hay nada que
-                          pueda leerse como "anadir". La de la fila de abajo, que esta
-                          entre el `+` y el pencil, si lo pregunta: ahi el boton cambia
-                          de signo segun si la tarea lleva la etiqueta, y un signo que
-                          cambia merece un aviso. Preguntar en las dos seria hacer al
-                          usuario confirmar algo que acaba de ver en pantalla.
-                        */}
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={t("tags.remove", { name: tag })}
-                          hitSlop={8}
-                          onPress={() => quitarTag(tag)}
-                          style={({ pressed }) => [
-                            styles.chipAction,
-                            {
-                              borderRadius: theme.radius.pill,
-                              opacity: pressed ? 0.7 : 1,
-                            },
-                          ]}
-                        >
-                          <Ionicons name="close" size={11} color={ink} />
-                        </Pressable>
-                        <TagColorButton
-                          tag={tag}
-                          color={colorOf(tag)}
-                          open={colorDe === tag}
-                          ink={ink}
-                          hintProps={pistaColor.props}
-                          onPress={() => setColorDe(colorDe === tag ? null : tag)}
-                        />
-                      </>
-                    )}
-                  </TagChip>
-                  {colorDe === tag ? (
-                    <View style={styles.anchoCompleto}>
+            {/* Las etiquetas de la lista. Un toque las pone o las quita de esta tarea:
+                la marca dice si la tarea la lleva. */}
+            {etiquetasDeLaLista.length > 0 ? (
+              <View style={[styles.row, { gap: theme.spacing.xs, flexWrap: "wrap" }]}>
+                {etiquetasDeLaLista.map(({ tag }) => {
+                  const laTiene = shown.tags.includes(tag);
+                  return (
+                    <Pressable
+                      key={tag}
+                      testID={`tag-toggle-${tag}`}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: laTiene }}
+                      accessibilityLabel={tag}
+                      onPress={() => (laTiene ? quitarTag(tag) : anadirTag(tag))}
+                      style={({ pressed }) => [styles.chipAction, { opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <TagChip tag={tag} colors={coloresPintados} testID={`tag-pill-hoja-${tag}`}>
+                        {(ink) =>
+                          laTiene ? <Ionicons name="checkmark" size={12} color={ink} /> : null
+                        }
+                      </TagChip>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <AppText variant="body" tone="muted">
+                {t("tags.noneInList")}
+              </AppText>
+            )}
+
+            <View style={{ gap: theme.spacing.xs }}>
+              <TextField
+                label={t("tags.newLabel")}
+                value={newTag}
+                onChangeText={setNewTag}
+                placeholder={t("tags.newPlaceholder")}
+                autoCapitalize="words"
+                returnKeyType="done"
+                onSubmitEditing={() => void addTag()}
+              />
+              <Button
+                label={t("tags.addNew")}
+                icon="add"
+                variant="secondary"
+                disabled={nombreNuevo.length === 0}
+                onPress={() => void addTag()}
+              />
+            </View>
+
+            <Button
+              label={t("tags.manage")}
+              icon="pricetag-outline"
+              variant="ghost"
+              fullWidth
+              onPress={() => setPage("etiquetas")}
+            />
+            {pistaColor.node}
+          </View>
+        ) : null}
+
+        {page === "etiquetas" ? (
+          <View style={{ gap: theme.spacing.md }}>
+            <AppText variant="caption" tone="muted">
+              {t("tags.manageHint")}
+            </AppText>
+            {etiquetasDeLaLista.map(({ tag, count }) => {
+              const abierta = editandoTag === tag;
+              return (
+                <View key={tag} style={{ gap: theme.spacing.xs }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("tags.editLabel", { name: tag })}
+                    onPress={() => abrirEdicion(tag)}
+                    style={({ pressed }) => [styles.row, { gap: theme.spacing.sm, opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <TagChip tag={tag} colors={coloresPintados}>
+                      {() => null}
+                    </TagChip>
+                    <AppText variant="caption" tone="subtle">
+                      {t(pluralKey("tags.usedBy", count), { count })}
+                    </AppText>
+                  </Pressable>
+                  {abierta ? (
+                    <View style={{ gap: theme.spacing.sm }}>
+                      <TextField
+                        label={t("tags.renameLabel")}
+                        value={nombreEditado}
+                        onChangeText={setNombreEditado}
+                        autoCapitalize="words"
+                        returnKeyType="done"
+                        onSubmitEditing={() => void renombrarTag(tag)}
+                      />
+                      {renombreRepetido ? (
+                        <AppText variant="caption" style={{ color: theme.colors.danger }}>
+                          {t("tags.nameTaken")}
+                        </AppText>
+                      ) : null}
                       <TagColorPicker
-                        tag={tag}
+                        tag={nombreNuevoEditado || tag}
                         value={coloresVistos[tag] ?? null}
                         onChange={(hex) => void pickColor(tag, hex)}
                         onPreviewChange={(hex) =>
@@ -1410,207 +1440,40 @@ export function ItemEditSheet({
                             previa?.tag === tag && previa?.hex === hex ? previa : { tag, hex },
                           )
                         }
-                        onClose={() => setColorDe(null)}
+                        onClose={() => setEditandoTag(null)}
+                      />
+                      <Button
+                        label={t("tags.saveRename")}
+                        disabled={!renombrePosible}
+                        fullWidth
+                        onPress={() => void renombrarTag(tag)}
+                      />
+                      <Button
+                        label={t("tags.deleteLabel")}
+                        icon="trash-outline"
+                        variant="danger"
+                        fullWidth
+                        onPress={() => setABorrarTag(tag)}
                       />
                     </View>
                   ) : null}
-                </Fragment>
-              ))}
-            </View>
-
-            {/* The labels already used in this list, with how many rows use them.
-                A label is per list and not per row: writing "Mercadona" on six
-                rows is one word you type, not six. And it is here, next to the
-                count, where a label can be given a colour *before* any task
-                carries it: a task you are editing cannot offer a label it does
-                not have, so without this row the first colour of a new label
-                would have to wait for a task to use it. */}
-            {labels.length > 0 ? (
-              <View style={{ gap: theme.spacing.xs }}>
-                <AppText variant="caption" tone="subtle">
-                  {t(pluralKey("itemEdit.usedInList", labels.length), {
-                    count: labels.length,
-                  })}
-                </AppText>
-                <View
-                  style={[
-                    styles.row,
-                    { gap: theme.spacing.xs, flexWrap: "wrap" },
-                  ]}
-                >
-                  {labels.map(({ tag, count }) => {
-                    const laTiene = shown.tags.includes(tag);
-                    return (
-                      <Fragment key={tag}>
-                        <TagChip tag={tag} colors={coloresPintados} testID={`tag-pill-hoja-${tag}`}>
-                          {(ink) => (
-                            <>
-                              {/* `TagChip` writes the name, so the count is what is
-                                  left, and it goes first so the buttons stay at
-                                  the end of the pill. And it goes in the pill's own
-                                  colour instead of in a `tone`: a `tone` would pick a
-                                  token del tema, y sobre el tinte de la etiqueta
-                                  ese token no es de este fondo. */}
-                              <AppText variant="caption" style={{ color: ink }}>
-                                {`· ${count}`}
-                              </AppText>
-                              {/*
-                                **Un boton o el otro, nunca los dos y nunca el mismo.**
-                                El `+` es para las etiquetas que esta tarea **no** lleva,
-                                y la papelera para las que **si** —y `laTiene` lo decide
-                                con `shown.tags`, que es la verdad del estado y no una
-                                cuenta aparte. Por eso el `+` que antes estaba siempre,
-                                y que en una etiqueta que ya tenias te quitaba la
-                                etiqueta sin preguntar, ahora solo aparece donde anade.
-                              */}
-                              {laTiene ? (
-                                <Pressable
-                                  accessibilityRole="button"
-                                  accessibilityLabel={t("tags.remove", { name: tag })}
-                                  hitSlop={8}
-                                  onPress={() => confirmarQuitar(tag)}
-                                  style={({ pressed }) => [
-                                    styles.chipAction,
-                                    {
-                                      borderRadius: theme.radius.pill,
-                                      opacity: pressed ? 0.7 : 1,
-                                    },
-                                  ]}
-                                >
-                                  <Ionicons name="remove" size={12} color={ink} />
-                                </Pressable>
-                              ) : (
-                                <Pressable
-                                  accessibilityRole="button"
-                                  accessibilityLabel={t("tags.put", { name: tag })}
-                                  hitSlop={8}
-                                  onPress={() => anadirTag(tag)}
-                                  style={({ pressed }) => [
-                                    styles.chipAction,
-                                    {
-                                      borderRadius: theme.radius.pill,
-                                      opacity: pressed ? 0.7 : 1,
-                                    },
-                                  ]}
-                                >
-                                  <Ionicons name="add" size={12} color={ink} />
-                                </Pressable>
-                              )}
-                              <TagColorButton
-                                tag={tag}
-                                color={colorOf(tag)}
-                                open={colorDe === tag}
-                                ink={ink}
-                                hintProps={pistaColor.props}
-                                onPress={() =>
-                                  setColorDe(colorDe === tag ? null : tag)
-                                }
-                              />
-                            </>
-                          )}
-                        </TagChip>
-                      {colorDe === tag ? (
-                        <View style={styles.anchoCompleto}>
-                          <TagColorPicker
-                            tag={tag}
-                            value={coloresVistos[tag] ?? null}
-                            onChange={(hex) => void pickColor(tag, hex)}
-                            onPreviewChange={(hex) =>
-                              setVistaPrevia((previa) =>
-                                previa?.tag === tag && previa?.hex === hex ? previa : { tag, hex },
-                              )
-                            }
-                            onClose={() => setColorDe(null)}
-                          />
-                        </View>
-                      ) : null}
-                        </Fragment>
-                      );
-                    })}
                 </View>
-              </View>
-            ) : null}
-
-            {/*
-              **El bloque entero de "nueva etiqueta" desaparece mientras se esta
-              editando el color de una que ya existe, y no solo su selector.**
-
-              Estaba siempre montado —`TextField`, selector y boton, sin ninguna
-              condicion alrededor— porque la idea era que el color de una etiqueta
-              que aun no existe se elige **sin** tener que escribir antes el nombre.
-              Esa idea sigue siendo buena y no se toca. Lo que estaba mal es que
-              conviviera con el otro selector: al pulsar "editar" en "Mercadona" se
-              veian **los dos formularios enteros a la vez** —dos tiras de tono, dos
-              cuadrados, dos campos de hex y dos botones de guardar— y no hay forma
-              de saber cual de los dos estas tocando. Son dos controles que se
-              parecen en todo y se distinguen solo por un nombre que hay que leer.
-
-              Asi que **uno de los dos, nunca los dos**, y el que se aparta es el de
-              la nueva: estas eligiendo el color de algo que ya existe, y el campo
-              en blanco con su selector abajo no es informacion, es ruido. Cuando
-              cierras el selector de edicion el bloque vuelve con lo que habias
-              escrito y el color que habias pendiente —`pendiente` no se toca, asi
-              que no se pierde nada—.
-
-              Y esto quita de en medio una segunda cosa: los dos selectores comparten
-              el nombre accesible base, `tags.colorOf` con `{name}`, asi que con los
-              dos montados dos lectores de pantalla anuncian el mismo control dos
-              veces. Con uno, no.
-            */}
-            {colorDe === null ? (
-              <>
-                <TextField
-                  label={t("tags.newLabel")}
-                  value={newTag}
-                  onChangeText={setNewTag}
-                  placeholder={t("tags.newPlaceholder")}
-                  autoCapitalize="words"
-                  returnKeyType="done"
-                  onSubmitEditing={() => void addTag()}
-                />
-
-                {/*
-                  **El mismo selector, siempre abierto, para una etiqueta que aun no
-                  existe.** No detras de un boton, y esa es toda la diferencia con
-                  las otras dos monturas: una etiqueta que ya esta en la tarea tiene
-                  un boton que pulsar y algo donde enseñar el color, y esta no tiene
-                  ni lo uno ni lo otro —no hay nada que pintar y ninguna pastilla de
-                  la que abrir un selector—, asi que un color suyo seria inalcanzable
-                  si esperase a un boton que solo existe cuando la etiqueta ya esta.
-
-                  Asi que este **no escribe nada**: `value` es `pendiente`, estado
-                  local de este panel, y el color solo llega al mapa por `addTag`, en
-                  la misma pulsacion que crea el nombre. Editar el color de
-                  "Mercadona" y elegir el de "Alcampo" se hacen pues ante el mismo
-                  control, y lo que cambia entre los dos es solo *cuando* escribe.
-
-                  **`tag` es el nombre escrito, recortado, y puede ser `undefined`.**
-                  Es de donde los doce botones y la opcion de "volver al deducido"
-                  derivan sus colores, y sin nombre escrito no hay nada de donde
-                  derivar: el selector cae al neutro de su propia funcion, que es
-                  donde se dibuja "aun nadie ha decidido". Escribe un nombre y el
-                  panel lo sigue, para que el color que se elige se juzgue contra
-                  el color que tendria esa etiqueta.
-                */}
-                <TagColorPicker
-                  tag={nombreNuevo || undefined}
-                  value={pendiente}
-                  onChange={setPendiente}
-                />
-
-                <Button
-                  label={t("tags.addNew")}
-                  icon="add"
-                  variant="secondary"
-                  disabled={newTag.trim().length === 0}
-                  onPress={() => void addTag()}
-                />
-              </>
-            ) : null}
-
-            {/* The hidden node every colour button on this page points at. One,
-                because the hint is the same for all of them. */}
-            {pistaColor.node}
+              );
+            })}
+            <ConfirmDialog
+              visible={aBorrarTag !== null}
+              title={t("tags.deleteTitle", { name: aBorrarTag ?? "" })}
+              body={t(pluralKey("tags.deleteBody", usosDe(aBorrarTag ?? "")), {
+                count: usosDe(aBorrarTag ?? ""),
+              })}
+              confirmLabel={t("common.delete")}
+              cancelLabel={t("common.cancel")}
+              destructive
+              onConfirm={() => {
+                if (aBorrarTag) void borrarEtiqueta(aBorrarTag);
+              }}
+              onCancel={() => setABorrarTag(null)}
+            />
           </View>
         ) : null}
 
@@ -1623,113 +1486,6 @@ export function ItemEditSheet({
         */}
       </View>
     </Sheet>
-  );
-}
-
-/**
- * The little palette button inside a pill, which opens the colours of that label.
- *
- * It is here and not written out twice because it is the same control on both
- * rows of labels —the ones this task carries and the ones the list already has—
- * and a copy of it that drifts from the original would give the two rows
- * different `testID`s, which is the sort of thing a browser check then cannot
- * find.
- *
- * The label says three things: which label it is, what colour that label has
- * **now**, and whether its picker is open. The first two are the brief's; the
- * third is here because the state was invisible twice over. `accentSoft` on
- * `surfaceMuted` measures **1.003:1 to 1.073:1** — a tint no eye will see, across
- * every accent and both schemes — and `accessibilityState.selected` does not reach
- * the web: in `react-native-web@0.21.2` only `isDisabled` is read out of
- * `accessibilityState` (`modules/AccessibilityUtil/isDisabled.js`), so no
- * `aria-selected` is ever written. So the border carries it and the words carry
- * it, which is what `sheet.tsx` does with its own trailing control.
- */
-function TagColorButton({
-  tag,
-  color,
-  open,
-  ink,
-  hintProps,
-  onPress,
-}: {
-  tag: string;
-  /** The colour the label is painted in now, chosen or deduced. */
-  color: string;
-  /** Whether this label's colour picker is the open one. */
-  open: boolean;
-  /**
-   * The pill's own text colour, from `TagChip`, for when this button is closed.
-   *
-   * **Open, the ground is not the pill.** With the picker showing, this button's
-   * background is `accentSoft`, and the colour that reads on *that* is
-   * `accentSoftText` — the token pair that exists for it. Closed, the ground is
-   * the label's own tint and the colour is the one the pill just derived for it.
-   * One colour could not serve both: they are different backgrounds, not one
-   * background with two moods.
-   */
-  ink: string;
-  /** The spread of `useA11yHint`, from the sheet: one hint node for all of them. */
-  hintProps: Record<string, string>;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  const t = useTranslation();
-  // The dictionary has a name for each of the twelve and nothing for a hex that
-  // somebody chose, so the hex itself is what gets read out. Nothing today can
-  // write one here — the picker offers the twelve as shortcuts and a hand-written hex
-  // arrives as itself — and saying so is cheaper
-  // than a colour that announces itself as `undefined`.
-  const clave = color as IconColor;
-  const nombre = (ITEM_ICON_COLORS as readonly string[]).includes(clave)
-    ? ICON_COLOR_LABEL[clave]
-    : undefined;
-
-  return (
-    <Pressable
-      testID={`tag-color-button-${tag}`}
-      accessibilityRole="button"
-      accessibilityLabel={t(
-        open ? "tags.choosingColor" : "tags.changeColor",
-        {
-          name: tag,
-          color: nombre ? t(nombre) : color,
-        },
-      )}
-      {...hintProps}
-      accessibilityState={{ selected: open }}
-      hitSlop={8}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.chipAction,
-        {
-          borderRadius: theme.radius.pill,
-          backgroundColor: open ? theme.colors.accentSoft : "transparent",
-          /*
-           * El borde, y no solo el fondo: un boton que cambia de estado sin que se
-           * note no es un boton con estado, y el fondo `accentSoft` es demasiado
-           * parecido a la pastilla para distinguirlo. Ocupa su sitio **siempre**,
-           * para que el boton no crezca ni se mueva al alternar.
-           *
-           * Y es **el color de la pastilla, no el del acento**: el borde se mide
-           * contra el relleno de la pastilla, y ese relleno es el tinte de la
-           * etiqueta —el acento se midio contra el fondo del tema, que esta
-           * pastilla ya no tiene—. Con `ink` el borde llega por construccion, y
-           * con cualquier acento daria el mismo numero porque el tinte no depende
-           * del acento.
-           */
-          borderWidth: 2,
-          borderColor: open ? ink : "transparent",
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}
-    >
-      <Ionicons
-        name="color-palette-outline"
-        size={10}
-        color={open ? theme.colors.accentSoftText : ink}
-      />
-    </Pressable>
   );
 }
 

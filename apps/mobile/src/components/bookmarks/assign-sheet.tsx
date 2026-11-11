@@ -22,6 +22,17 @@ function mensajeDe(problem: unknown, fallback: string): string {
     const message = (problem as { message: unknown }).message;
     if (typeof message === "string") return message;
   }
+  // Un rechazo sin mensaje (un objeto del motor local): se muestra lo que trae, para
+  // saber que fallo, en vez de un "Error inesperado" que no dice nada.
+  if (typeof problem === "object" && problem !== null) {
+    try {
+      const texto = JSON.stringify(problem);
+      if (texto && texto !== "{}") return texto.slice(0, 300);
+    } catch {
+      // Sin forma de leerlo: se queda el mensaje generico.
+    }
+  }
+  if (typeof problem === "number" || typeof problem === "boolean") return String(problem);
   return fallback;
 }
 
