@@ -1036,9 +1036,14 @@ export default function BoardScreen() {
    * operation in the outbox. Same rule as the full editor's `guardar`, one sheet
    * apart.
    */
-  async function guardarColumna(stateId: string, titulo: string, color: StateColor) {
+  async function guardarColumna(
+    stateId: string,
+    titulo: string,
+    color: StateColor,
+    done: boolean,
+  ) {
     if (!list) return;
-    const siguientes = editState(states, stateId, { title: titulo, color });
+    const siguientes = editState(states, stateId, { title: titulo, color, done });
     if (siguientes === states) return;
     await updateList(list, { states: siguientes });
   }
@@ -2280,8 +2285,8 @@ export default function BoardScreen() {
       */}
       <StateEditSheet
         state={editandoColumna ? (states.find((s) => s.id === editandoColumna) ?? null) : null}
-        onSave={(titulo, color) => {
-          if (editandoColumna) void guardarColumna(editandoColumna, titulo, color);
+        onSave={(titulo, color, done) => {
+          if (editandoColumna) void guardarColumna(editandoColumna, titulo, color, done);
         }}
         onClose={() => setEditandoColumna(null)}
       />

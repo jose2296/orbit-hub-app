@@ -367,3 +367,50 @@ si `EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID` está vacía, el botón de Google sale
 deshabilitado con una explicación debajo, y la página parece terminada. Es un
 fallo silencioso por diseño — la feature se ve "desactivada", no rota.
 
+
+## Release automática (GitHub Actions)
+
+`.github/workflows/release-android.yml` hace lo mismo que `npm run release`, pero en un
+runner: cada merge a `main` pasa el CI, compila el AAB firmado y lo sube a **internal
+testing**. Los cambios solo de documentación (`docs/`, `odd/`, `*.md`) no publican nada.
+También se puede lanzar a mano desde *Actions → Release Android → Run workflow*, y ahí se
+elige `internal` o `production` (producción sale al 10%).
+
+**La versión no se commitea.** `versionName` sale del último tag `vX.Y.Z` y del pull request
+mergeado (`feat…` sube el minor, la etiqueta `major` sube el major, cualquier otra cosa el
+patch). `versionCode` es `100 + el número de ejecución` del workflow, que solo crece. Se
+escriben en `app.json` solo durante el build, y el tag `vX.Y.Z` se crea **después** de que la
+subida haya salido bien. Por eso, una vez que el CI publica, **no uses `npm run release` en
+local**: el `versionCode` de tu `app.json` quedaría por debajo del de Play y lo rechazaría.
+
+### Lo que hay que configurar una vez
+
+Secretos (*Settings → Secrets and variables → Actions → Secrets*):
+
+| Secreto | Contenido |
+| --- | --- |
+| `ANDROID_UPLOAD_KEYSTORE_B64` | el `.jks` de subida en base64 |
+| `ANDROID_UPLOAD_STORE_PASSWORD` | contraseña del almacén |
+| `ANDROID_UPLOAD_KEY_ALIAS` | alias de la clave (`orbit-hub-upload`) |
+| `ANDROID_UPLOAD_KEY_PASSWORD` | contraseña de la clave |
+| `PLAY_SERVICE_ACCOUNT_JSON` | el JSON entero de la cuenta de servicio de Play |
+
+Variables (misma pantalla, pestaña *Variables*; son públicas y acaban dentro del bundle):
+`EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_WEB_ORIGIN`, `EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID` y
+`EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB`. Son las mismas que `apps/mobile/.env.release`. Opcionales:
+`EXPO_PUBLIC_GOOGLE_CLIENT_ID` y `EXPO_PUBLIC_GOOGLE_REDIRECT_URI`.
+
+Con `gh`, desde tu máquina (las contraseñas se piden sin hacer eco):
+
+```bash
+base64 -i apps/mobile/keys/orbit-hub-upload.jks | gh secret set ANDROID_UPLOAD_KEYSTORE_B64
+gh secret set ANDROID_UPLOAD_STORE_PASSWORD
+gh secret set ANDROID_UPLOAD_KEY_PASSWORD
+gh secret set ANDROID_UPLOAD_KEY_ALIAS --body orbit-hub-upload
+gh secret set PLAY_SERVICE_ACCOUNT_JSON < ~/keys/play-service-account.json
+gh variable set EXPO_PUBLIC_API_URL --body https://orbithub-api.jrz-labs.com/api/v1
+gh variable set EXPO_PUBLIC_WEB_ORIGIN --body https://orbithub-app.jrz-labs.com
+```
+
+Si falta un secreto, el workflow se para en su primer paso con el nombre de lo que falta,
+antes de compilar nada.

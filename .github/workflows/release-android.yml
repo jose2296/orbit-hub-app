@@ -1,0 +1,219 @@
+name: Release Android
+
+# Every merge to main builds the signed AAB here and uploads it to Google Play (internal testing),
+# so a release no longer depends on one machine. Manual runs: Actions > Release Android > Run workflow.
+# Secrets, variables and rollback: docs/deploy-play.md ("Release automática").
+#
+# Versioning: the next versionName comes from the latest vX.Y.Z tag and the merged pull request
+# (feat = minor, anything else = patch, label `major` = major); versionCode is 100 + the run number.
+# Both are stamped into app.json for the build only. Nothing is committed back to main, and the
+# git tag is created only after the upload succeeded.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "odd/**", "**/*.md"]  # documentation never ships a build
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track to upload to"
+        required: false
+        default: internal
+        type: choice
+        options: [internal, production]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-android
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Build and upload to Google Play
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read  # the merged pull request (title, labels) decides the version bump
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    env:
+      TRACK: ${{ inputs.track || 'internal' }}
+      ANDROID_PACKAGE: com.jrzlabs.orbithub
+      # Public values compiled into the bundle (repository variables, not secrets).
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+      EXPO_PUBLIC_WEB_ORIGIN: ${{ vars.EXPO_PUBLIC_WEB_ORIGIN }}
+      EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID: ${{ vars.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID }}
+      EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB: ${{ vars.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB }}
+      EXPO_PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_CLIENT_ID }}
+      EXPO_PUBLIC_GOOGLE_REDIRECT_URI: ${{ vars.EXPO_PUBLIC_GOOGLE_REDIRECT_URI }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # every tag, to know the latest version
+          persist-credentials: false
+
+      - name: Check the secrets exist
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          missing=""
+          for name in KEYSTORE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD PLAY_JSON; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets (see docs/deploy-play.md):$missing"
+            exit 1
+          fi
+
+      - name: Compute the release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          title=""
+          labels=""
+          if pr="$(gh api "repos/$REPO/commits/$GITHUB_SHA/pulls" --jq '.[0] // empty')" && [ -n "$pr" ]; then
+            title="$(jq -r '.title' <<<"$pr")"
+            labels="$(jq -r '[.labels[].name] | join(",")' <<<"$pr")"
+          else
+            echo "::warning::no pull request found for $GITHUB_SHA: the bump is decided from the commit subject"
+            title="$(git log -1 --format=%s)"
+          fi
+          baseline="$(node -p 'require("./apps/mobile/app.json").expo.version')"
+          node scripts/ci/next-version.mjs \
+            --tags "$(git tag --list 'v[0-9]*' | tr '\n' ' ')" \
+            --head-tags "$(git tag --points-at HEAD 'v[0-9]*' | tr '\n' ' ')" \
+            --baseline "$baseline" --title "$title" --labels "$labels" \
+            --run-number "$RUN_NUMBER" | tee -a "$GITHUB_OUTPUT"
+          echo "Version: \`$(grep -h '^version=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2)\` (title: \`$title\`, labels: \`${labels:-none}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install fastlane
+        run: sudo gem install fastlane --no-document
+
+      - run: npm ci
+
+      - run: npm run build:packages
+
+      - name: Check the public environment
+        run: node scripts/assert-export-env.mjs
+
+      - name: Stamp the version into app.json (build only, never committed)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = "apps/mobile/app.json";
+            const config = JSON.parse(fs.readFileSync(path, "utf8"));
+            config.expo.version = process.env.VERSION;
+            config.expo.android.versionCode = Number(process.env.CODE);
+            fs.writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
+          '
+
+      - name: Write the signing key and the Play credentials
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.jks" \
+            || { echo "::error::ANDROID_UPLOAD_KEYSTORE_B64 is not valid base64"; exit 1; }
+          printf '%s' "$PLAY_JSON" > "$RUNNER_TEMP/play-service-account.json"
+          echo "ORBIT_HUB_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          echo "SUPPLY_JSON_KEY_PATH=$RUNNER_TEMP/play-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Prebuild (android/ is generated, not committed)
+        run: |
+          cd apps/mobile
+          npx expo prebuild --platform android --clean --no-install
+          grep -q "signingConfigs.upload" android/app/build.gradle \
+            || { echo "::error::the upload signing plugin did not apply: the AAB would be signed with the debug key"; exit 1; }
+          grep -q "applicationId '$ANDROID_PACKAGE'" android/app/build.gradle \
+            || { echo "::error::unexpected applicationId"; exit 1; }
+
+      - name: Build the AAB
+        env:
+          ORBIT_HUB_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ORBIT_HUB_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ORBIT_HUB_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          cd apps/mobile/android
+          ./gradlew bundleRelease --no-daemon
+          aab=app/build/outputs/bundle/release/app-release.aab
+          [ -f "$aab" ] || { echo "::error::no AAB at $aab"; exit 1; }
+          [ "$(wc -c < "$aab")" -gt 1000000 ] || { echo "::error::the AAB is suspiciously small"; exit 1; }
+
+      - name: Upload to Google Play
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: |
+          args=(
+            supply
+            --json_key "$SUPPLY_JSON_KEY_PATH"
+            --aab apps/mobile/android/app/build/outputs/bundle/release/app-release.aab
+            --track "$TRACK"
+            --version_name "$VERSION"
+            --version_code "$CODE"
+            --package_name "$ANDROID_PACKAGE"
+            --release_status completed
+            --skip_upload_metadata
+            --skip_upload_changelogs
+            --timeout 600
+          )
+          # supply refuses --rollout on internal; production starts at 10%.
+          if [ "$TRACK" = "production" ]; then args+=(--rollout 0.1); fi
+          fastlane "${args[@]}"
+          echo "Uploaded $VERSION ($CODE) to $TRACK" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the credentials from the runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks" "$RUNNER_TEMP/play-service-account.json"
+
+  tag:
+    name: Tag the released version
+    needs: release
+    # Only after a successful upload that shipped a new version (empty on a re-run of a tagged commit).
+    if: needs.release.result == 'success' && needs.release.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write  # the only job that can write to the repository: it creates one tag through the API
+    steps:
+      - name: Create the git tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          gh api --method POST "repos/$REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" --silent
+          echo "Tagged $TAG at $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
