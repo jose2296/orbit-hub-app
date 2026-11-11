@@ -25,6 +25,14 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: () => {} }),
 }));
 
+// La fila deslizable es un detalle de gestos: el test mira lo que dibuja la fila.
+vi.mock("@/components/ui/swipe-row", () => ({
+  SwipeRow: ({ children }: any) =>
+    typeof children === "function"
+      ? children({ press: (fn: () => void) => fn, pressIn: () => {} })
+      : children,
+}));
+
 vi.mock("react-native", async () => {
   const React = await import("react");
   const View = ({ children, testID }: any) =>
