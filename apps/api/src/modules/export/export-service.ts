@@ -40,6 +40,7 @@ import {
   collectionExportEnvelope,
   itemsToCsv,
   listExportEnvelope,
+  listExportItem,
 } from './export-builders.js';
 
 /**
@@ -614,13 +615,14 @@ export class ExportService {
       .orderBy(asc(listItems.position), asc(listItems.createdAt));
 
     const items = itemRows.map((itemRow) => toItem(itemRow, role));
+    const list = toList(row, role, items.length);
 
     return listExportEnvelope({
       account: { id: accountId, email: accountEmail },
       workspace: workspaceRow,
       folder,
-      list: toList(row, role, items.length),
-      items,
+      list,
+      items: items.map((item) => listExportItem(list, item)),
       exportedAt: new Date().toISOString(),
     });
   }

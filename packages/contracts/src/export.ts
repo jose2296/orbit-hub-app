@@ -83,6 +83,16 @@ export const accountExportSchema = z.object({
 });
 export type AccountExport = z.infer<typeof accountExportSchema>;
 
+/**
+ * Un item de la exportacion de una lista. Lleva el titulo de su estado ademas
+ * del `stateId`: el id solo no le dice nada a quien lee el fichero. `null` en
+ * cualquier lista que no es un tablero, o si la lista no tiene estados.
+ */
+export const listExportItemSchema = listItemSchema.extend({
+  stateTitle: z.string().nullable(),
+});
+export type ListExportItem = z.infer<typeof listExportItemSchema>;
+
 /** Sobre de la exportacion de una sola lista, con su contexto inmediato. */
 export const listExportSchema = z.object({
   format: z.literal('orbit-hub.export'),
@@ -101,7 +111,7 @@ export const listExportSchema = z.object({
     name: z.string(),
   }).nullable(),
   list: listSchema,
-  items: z.array(listItemSchema),
+  items: z.array(listExportItemSchema),
   counts: z.object({
     items: countSchema,
   }),

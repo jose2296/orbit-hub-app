@@ -12,6 +12,7 @@ import {
   type Folder,
   type List,
   type ListExport,
+  type ListExportItem,
   type ListItem,
   type Note,
   type NoteTemplate,
@@ -75,6 +76,15 @@ export function accountExportEnvelope(rows: AccountExportRows): AccountExport {
 }
 
 /**
+ * El item tal como viaja en el JSON de una lista: el suyo mas el titulo de su
+ * estado. Solo un tablero tiene estados; en cualquier otra lista es `null`.
+ */
+export function listExportItem(list: List, item: ListItem): ListExportItem {
+  const stateTitle = list.kind === 'board' ? (stateOf(list.states, item.stateId)?.title ?? null) : null;
+  return { ...item, stateTitle };
+}
+
+/**
  * Sobre JSON de una sola lista, con el contexto minimo para saber de donde sale.
  */
 export function listExportEnvelope(args: {
@@ -82,7 +92,7 @@ export function listExportEnvelope(args: {
   workspace: { id: string; name: string };
   folder: { id: string; name: string } | null;
   list: List;
-  items: ListItem[];
+  items: ListExportItem[];
   exportedAt: string;
 }): ListExport {
   return {
