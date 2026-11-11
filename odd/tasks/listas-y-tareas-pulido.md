@@ -33,23 +33,25 @@ sin migracion.
 
 ## Checklist
 
-Estado: `[ ]` pendiente, `[x]` hecho y verificado.
+Estado: `[ ]` pendiente, `[~]` parcial, `[x]` hecho.
 
-- [x] T1 Export JSON de lista: cada item con su estado resuelto (titulo), no solo `stateId`. Revisar tambien el export CSV y el de cuenta. (bf0a1bb; `listExportItemSchema` + `listExportItem`; tests API 84/84, typecheck limpio. CSV ya resolvia el titulo; export de cuenta sin cambios.)
-- [ ] T2 Tablero: poder marcar un estado como Done (las tareas quedan finalizadas).
-- [ ] T3 Tablero: exportar solo los datos de un estado.
-- [ ] T4 Modal de crear tarea: padding horizontal alineado y reducido.
-- [ ] T5 Tareas: elegir entre descripcion tipo nota o texto libre en textarea.
-- [ ] T6 Clasificar un bookmark en una coleccion: corregir el error.
-- [ ] T7 Borrar carpeta vacia (o con bookmarks sin clasificar): corregir el borrado.
-- [ ] T8 Confirmacion uniforme para cualquier eliminacion (dialogo de confirmacion tipico).
-- [ ] T9 Swipe a la izquierda en filas de listas para abrir acciones (eliminar, etc.).
-- [ ] T10 Toda la fila es pulsable (no solo el nombre), en listas de tareas y en mas sitios.
-- [ ] T11 Sheet de opciones de un item (long press): mostrar el nombre completo.
-- [ ] T12 Movil: transicion de color del header al cambiar de item/carpeta/workspace sin parpadeo.
-- [ ] T13 Borrar carpeta: avisar de su contenido y confirmar; el borrado es permanente y en cascada.
-- [ ] T14 Checkbox de tareas: hit slot mayor, feedback visual y actualizacion optimista.
-- [ ] T15 Etiquetas de tareas: crear, editar y borrar de forma sencilla.
+- [x] T1 Export JSON de lista con el titulo del estado en cada item. (bf0a1bb)
+- [x] T2 Columna Done en el tablero: sus tareas quedan finalizadas. (c455a95; verificado en web)
+- [x] T3 Exportar solo una columna del tablero, JSON o CSV. (7c91847; test de API y menu en la UI; la descarga no se ha probado en navegador)
+- [x] T4 Padding del modal de crear tarea. (5c15ca5; medido: el contenido queda alineado con el titulo)
+- [x] T5 Descripcion de tarea: nota o texto libre. (a9ca6df; verificado en web)
+- [~] T6 Clasificar bookmark: (4144b58) la hoja abre en la carpeta del enlace y muestra sus colecciones; la creacion de coleccion ya no encola un update fallido. El "Error inesperado" NO se ha reproducido en web en cinco variantes. Pendiente: el mensaje exacto en el movil (ahora la hoja muestra el texto real del fallo).
+- [x] T7 Borrar carpeta vacia o con contenido. (aba36aa; verificado en web)
+- [~] T8 Confirmacion al borrar: hechos el borrado de item (hoja de edicion, opciones y swipe) y la carpeta. Pendiente auditar el resto de borrados de la app.
+- [~] T9 Swipe a la izquierda en filas de tareas (Hecho y Borrar). (ef2b245) Pendiente verificar en el emulador: el arrastre con raton en web no es fiable. Pendiente el resto de listas.
+- [x] T10 Fila entera pulsable en tareas. (ef2b245; verificado en web)
+- [x] T11 Sheet de opciones con el nombre completo. (ef2b245; verificado)
+- [~] T12 Cabecera sin parpadeo al cambiar de espacio. (a9ca6df) Se conserva el color mientras carga el espacio. La transicion entre pantallas no esta animada; medir en el emulador.
+- [x] T13 Borrar carpeta con todo lo que hay dentro, avisando. (aba36aa; cascada en servidor con test; copy nuevo)
+- [x] T14 Checkbox: area de toque mayor, respuesta visual, check optimista. (ef2b245; verificado en web)
+- [ ] T15 Etiquetas de tareas: simplificar crear, editar y borrar. Pendiente: hay que decidir donde vive la gestion (ver nota).
+
+Nota T15: hoy hay dos filas de etiquetas dentro de la hoja de la tarea (las de la tarea y las de la lista) con quitar, colorear y anadir en cada una. Propuesta: la hoja de la tarea solo asigna y crea; renombrar, colorear y borrar una etiqueta de la lista va a una pagina propia de etiquetas de la lista. Borrar la etiqueta la quita de todas sus tareas. No esta implementado.
 
 ## Verificacion por tarea
 
@@ -58,19 +60,14 @@ al comportamiento. Se registra aqui el hash del commit y el resultado de los che
 
 ## Progreso y evidencia
 
-- T1 hecho (bf0a1bb).
-- T6 diagnostico parcial, sin reproducir: el servidor (`sync-service.ts`, rama de
-  `collectionId` en update) tiene tests que cubren clasificar; el payload del cliente
-  (`localUpdate` en `lib/offline/sync-service.ts`) solo manda `collectionId`. Causa
-  sin confirmar. Hay que reproducir en web con el error exacto del toast.
-- T7 diagnostico parcial: `deleteFolder` en `hooks/use-workspaces.ts` solo mueve las
-  listas al padre y tombstonea la carpeta. No toca bookmarks, notas ni subcarpetas
-  que apuntan a ella. El servidor (`sync-service.ts`, rama `folder` de delete) no
-  comprueba contenido. Hay que reproducir para ver que falla de verdad.
-- T13 relacionado con T7: las FK de bookmarks, notas y colecciones a carpetas son
-  `onDelete: cascade` (`db/content-schema.ts`), pero el delete del servidor es soft
-  (tombstone), asi que la cascada no ocurre. Decidir el comportamiento antes de tocar.
+- Verificacion en navegador (Playwright, Chromium headless) contra la API local y Expo web en 8082. Usuario de QA: qa2.listas@example.com (datos de prueba en la base local de PGlite).
+- Tests: API 849/849 (1 todo), movil 1993/1993, typecheck limpio.
+- Pendiente de verificar en emulador Android (`emulator-5554`): swipe (T9), header (T12), pulsacion larga y checkbox en nativo (T10, T14).
+- Hallazgo: Metro en web no recarga algunos modulos en caliente; tras editar hay que reiniciar Expo con `--clear` antes de verificar.
 
 ## Siguiente paso
 
-Levantar web y API para reproducir T6 y T7 con el error exacto; luego T2-T5 y T8-T15.
+1. T6: capturar el mensaje exacto del "Error inesperado" en el movil.
+2. T15: implementar la gestion de etiquetas (decision propuesta arriba).
+3. T8/T9: auditar borrados restantes y extender el swipe a notas, bookmarks y colecciones si se quiere.
+4. Verificar T9, T10, T12 y T14 en el emulador Android.
