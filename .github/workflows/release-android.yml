@@ -167,7 +167,8 @@ jobs:
           ORBIT_HUB_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           cd apps/mobile/android
-          ./gradlew bundleRelease --no-daemon
+          # Only the ABIs real phones use: x86/x86_64 are emulator-only and double the native compile time.
+          ./gradlew bundleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
           aab=app/build/outputs/bundle/release/app-release.aab
           [ -f "$aab" ] || { echo "::error::no AAB at $aab"; exit 1; }
           [ "$(wc -c < "$aab")" -gt 1000000 ] || { echo "::error::the AAB is suspiciously small"; exit 1; }
