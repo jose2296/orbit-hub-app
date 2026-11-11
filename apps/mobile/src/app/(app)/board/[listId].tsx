@@ -30,6 +30,7 @@ import { AppText } from "@/components/ui/text";
 import { TextField } from "@/components/ui/text-field";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { useDashboard } from "@/hooks/use-dashboard";
+import { ItemOptionsSheet } from "@/components/lists/item-options-sheet";
 import { useListItems, useLists } from "@/hooks/use-lists";
 import { menuDeLista } from "@/lib/menus/lista";
 import { useScreenSpace } from "@/hooks/use-screen-space";
@@ -162,8 +163,11 @@ export default function BoardScreen() {
     () => workspaces.find((item) => item.id === list?.workspaceId) ?? null,
     [workspaces, list?.workspaceId],
   );
-  const { items, isLoading: isLoadingItems, updateItem } =
+  const { items, isLoading: isLoadingItems, updateItem, removeItem } =
     useListItems(listId);
+  // La tarea cuyas opciones estan abiertas (pulsacion larga de su fila).
+  const [opciones, setOpciones] = useState<string | null>(null);
+  const opcionesItem = opciones ? (items.find((row) => row.id === opciones) ?? null) : null;
 
   /**
    * The columns, **and the order of this array is the order they are drawn in**.
@@ -2011,6 +2015,7 @@ export default function BoardScreen() {
                       onOpenIcon={(item) =>
                         setEditing({ itemId: item.id, page: "icon" })
                       }
+                      onOpenOptions={readOnly ? undefined : (item) => setOpciones(item.id)}
                       /*
                         **The header's two doors, and shut together for a viewer.**
                         The name opens the order sheet and the `···` the column's
@@ -2049,6 +2054,15 @@ export default function BoardScreen() {
         which nothing on this screen reads, and the press would look like it worked
         and change nothing at all.
       */}
+      {readOnly ? null : (
+        <ItemOptionsSheet
+          item={opcionesItem}
+          onClose={() => setOpciones(null)}
+          onEdit={(it) => setEditing({ itemId: it.id, page: "edit" })}
+          onDelete={(it) => void removeItem(it)}
+        />
+      )}
+
       <ItemEditSheet
         item={editingItem}
         listId={listId}

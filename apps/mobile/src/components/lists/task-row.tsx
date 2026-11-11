@@ -1,18 +1,19 @@
+import { useRef } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 
 import type { ListItem, Priority, TagColors } from "@orbit-hub/contracts";
 
 import { Badge } from "@/components/ui/badge";
 import type { IconName } from "@/components/ui/button";
 import { CHECKBOX_BOX_SIZE, Checkbox } from "@/components/ui/checkbox";
-import { useA11yHint } from "@/components/ui/a11y-hint";
 import { AppIcon } from "@/components/ui/app-icon";
 import { TagChip } from "@/components/lists/tag-chip";
 import { AppText } from "@/components/ui/text";
-import { useLongPressText } from "@/hooks/use-long-press-text";
 import { useTranslation } from "@/lib/i18n";
 import { PRIORITY_TONE } from "@/lib/lists/item-presentation";
 import { useTheme } from "@/theme";
+import { useA11yHint } from "@/components/ui/a11y-hint";
 
 /**
  * The glyph each urgency carries in a row, next to the colour.
@@ -54,6 +55,8 @@ export function TaskRow({
   onToggle,
   onEdit,
   onIcon,
+  onOptions,
+  onRemove,
   edgeColor,
 }: {
   item: ListItem;
@@ -78,6 +81,16 @@ export function TaskRow({
   onEdit: () => void;
   onIcon: () => void;
   /**
+   * Abre las opciones del item (editar, marcar, borrar), con su nombre completo.
+   * Es la pulsacion larga de la fila: tocar la fila entera ya abre el item.
+   */
+  onOptions?: () => void;
+  /**
+   * Borrar desde el deslizamiento a la izquierda. Solo las listas lo ofrecen: sin
+   * esta prop la fila no es deslizable. La pantalla pide la confirmacion.
+   */
+  onRemove?: () => void;
+  /**
    * The colour of the state down the left edge, **on a board**.
    *
    * A column of a board is already headed by the name of its state, so the colour
@@ -94,20 +107,19 @@ export function TaskRow({
   const theme = useTheme();
   const t = useTranslation();
 
-  /**
-   * The whole of a name the user wrote, **on this row's own press**.
-   *
-   * A `Pressable` around the name would take the gesture away from the row on a
-   * phone and the row would stop opening the item — a bug the web cannot show,
-   * because a click bubbles there and both fire. See `useLongPressText`.
-   */
-  const nombreLargo = useLongPressText(item.title);
 
+
+  const deslizable = useRef<Swipeable>(null);
+  // La pista de la fila: la frase se escribe una vez y todos los controles la apuntan.
   const pistaNombre = useA11yHint(t("itemEdit.subtitle"));
 
-  return (
-    <View
+  const fila = (
+    <Pressable
       testID={`item-row-${item.id}`}
+      accessible={false}
+      {...pistaNombre.props}
+      onPress={onEdit}
+      onLongPress={onOptions}
       style={[
         styles.item,
         {
@@ -150,11 +162,7 @@ export function TaskRow({
       {/*
         The column, and it has two children that take part in layout: the line of
         the title and the line of the labels. The `gap` is the distance under the
-        title, the row's own `spacing.md` — the other two children,
-        `nombreLargo.sheet` and `pistaNombre.node`, were never counted by it and
-        still are not: the sheet is a `Modal`, which on web is a portal out of this
-        box entirely, and the hint is `position: absolute`, and a child in either
-        of those is not a flex item for `gap` to put anything between. */}
+        title, the row's own `spacing.md`. */}
       <View style={[styles.flex, { gap: theme.spacing.md }]}>
         {/*
           The icon and the name, **on one line**, and that line is the whole fix.
@@ -227,32 +235,19 @@ export function TaskRow({
             </Pressable>
           ) : null}
 
-          {/* The name opens the row. It used to be wired to the delete: one tap
-              and the thing you were reading was gone, with nothing said and
-              nothing to undo.
-
-              It is the press and not the row behind it, so this one box carries both
-              gestures: a tap opens the item, a long one opens the whole name. */}
-          <Pressable
-            onPress={onEdit}
-            onLongPress={nombreLargo.onLongPress}
-            accessibilityRole="button"
-            accessibilityLabel={item.title}
-            {...pistaNombre.props}
-            style={styles.nombre}
+          {/* The name. The whole row is the press now (see the row), so the name
+              is only text: a tap anywhere opens the item, a long press opens its
+              options with the whole name. */}
+          <AppText
+            variant="body"
+            tone={item.completed ? "subtle" : "default"}
+            style={[styles.nombre, item.completed ? styles.strike : undefined]}
+            numberOfLines={2}
           >
-            <AppText
-              variant="body"
-              tone={item.completed ? "subtle" : "default"}
-              style={item.completed ? styles.strike : undefined}
-              numberOfLines={2}
-            >
-              {item.title}
-            </AppText>
-          </Pressable>
+            {item.title}
+          </AppText>
+          {pistaNombre.node}
         </View>
-        {nombreLargo.sheet}
-        {pistaNombre.node}
 
         {/* The urgency and the labels, **on the same line**, and **that is the
             second line of the column** — drawn only when there is a badge or at
@@ -276,10 +271,7 @@ export function TaskRow({
             when you are looking for a shop.
 
             The badge and the pills open the task too, with the same `onEdit`, and
-            they carry the name's own hint (`hintProps`) rather than a sentence of
-            their own: every control of the row opens the same sheet, so that
-            sentence is written once and they all point at it. It is a prop and not
-            a `{...spread}`, because `Badge` and `TagChip` do not accept loose props.
+            they are controls of the row, and the row opens the item the same way.
 
             And it is compact, with a glyph: at this size the colour alone is not
             enough to sort a list by. */}
@@ -343,17 +335,65 @@ export function TaskRow({
                 testID={`tag-pill-fila-${tag}`}
                 style={[styles.metaTag, { paddingHorizontal: theme.spacing.sm }]}
                 onPress={onEdit}
-                hintProps={pistaNombre.props}
+                  hintProps={pistaNombre.props}
               />
             ))}
           </View>
         ) : null}
       </View>
+    </Pressable>
+  );
+
+  if (!onRemove) return fila;
+
+  // Las acciones salen por la derecha al deslizar a la izquierda, como en el correo.
+  // Cada una cierra la fila antes de actuar, para que no quede abierta debajo.
+  const acciones = () => (
+    <View style={{ flexDirection: "row" }}>
+      {onToggle ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={item.completed ? t("itemOptions.undone") : t("itemOptions.done")}
+          onPress={() => {
+            deslizable.current?.close();
+            onToggle();
+          }}
+          style={[styles.accion, { backgroundColor: theme.colors.accent }]}
+        >
+          <AppText variant="callout" style={{ color: theme.colors.onAccent }}>
+            {item.completed ? t("itemOptions.undone") : t("itemOptions.done")}
+          </AppText>
+        </Pressable>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("itemOptions.delete")}
+        onPress={() => {
+          deslizable.current?.close();
+          onRemove();
+        }}
+        style={[styles.accion, { backgroundColor: theme.colors.danger }]}
+      >
+        <AppText variant="callout" style={{ color: theme.colors.onAccent }}>
+          {t("itemOptions.delete")}
+        </AppText>
+      </Pressable>
     </View>
+  );
+
+  return (
+    <Swipeable ref={deslizable} renderRightActions={acciones} overshootRight={false}>
+      {fila}
+    </Swipeable>
   );
 }
 
 const styles = StyleSheet.create({
+  accion: {
+    width: 84,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   item: {
     flexDirection: "row",
   },

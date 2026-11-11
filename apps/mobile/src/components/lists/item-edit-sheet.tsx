@@ -16,6 +16,7 @@ import { stateOf } from "@orbit-hub/contracts";
 import { AppIcon } from "@/components/ui/app-icon";
 import { Badge, tonesFor } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { IconPickerPanel } from "@/components/ui/icon-picker-sheet";
@@ -535,6 +536,9 @@ export function ItemEditSheet({
     );
   }, [isNew, item, title, annotation, descDoc, draft, colores, tagColors]);
 
+  // Borrar pide confirmacion: el elemento no vuelve si se pulsa por error.
+  const [confirmarBorrado, setConfirmarBorrado] = useState(false);
+
   /*
     Los hooks van **antes** del `return null` de mas abajo, y no por estetica.
 
@@ -857,7 +861,6 @@ export function ItemEditSheet({
       <View
         style={{
           gap: theme.spacing.md,
-          paddingHorizontal: theme.spacing.lg,
           paddingBottom: theme.spacing.sm,
         }}
       >
@@ -1241,11 +1244,22 @@ export function ItemEditSheet({
                   icon="trash-outline"
                   variant="danger"
                   fullWidth
-                  onPress={() => {
+                  onPress={() => setConfirmarBorrado(true)}
+                />
+                <ConfirmDialog
+                  visible={confirmarBorrado}
+                  title={t("itemOptions.deleteTitle", { name: item?.title ?? "" })}
+                  body={t("itemOptions.deleteBody")}
+                  confirmLabel={t("common.delete")}
+                  cancelLabel={t("common.cancel")}
+                  destructive
+                  onConfirm={() => {
+                    setConfirmarBorrado(false);
                     onClose();
                     void removeItem(item!);
                     onDeleted?.();
                   }}
+                  onCancel={() => setConfirmarBorrado(false)}
                 />
                 <AppText variant="caption" tone="subtle">
                   {t("confirm.irreversible")}

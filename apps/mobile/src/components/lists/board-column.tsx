@@ -59,6 +59,8 @@ export interface BoardColumnProps {
   onOpenTask: (item: ListItem) => void;
   /** Opens the pictures of the task, which are their own target and not the row. */
   onOpenIcon: (item: ListItem) => void;
+  /** Opens the task options with a long press. Absent in read-only. */
+  onOpenOptions?: (item: ListItem) => void;
   /**
    * Open this column's order sheet, **and absent in read-only.**
    *
@@ -110,6 +112,7 @@ export function BoardColumn({
   tagColors,
   onOpenTask,
   onOpenIcon,
+  onOpenOptions,
   onOpenOrder,
   onOpenMenu,
 }: BoardColumnProps) {
@@ -380,6 +383,7 @@ export function BoardColumn({
               tagColors={tagColors}
               onOpenTask={onOpenTask}
               onOpenIcon={onOpenIcon}
+              onOpenOptions={onOpenOptions}
             />
           ))
         )}
@@ -404,12 +408,15 @@ function Tarjeta({
   tagColors,
   onOpenTask,
   onOpenIcon,
+  onOpenOptions,
 }: {
   item: ListItem;
   state: BoardState;
   tagColors: TagColors;
   onOpenTask: (item: ListItem) => void;
   onOpenIcon: (item: ListItem) => void;
+  /** Opens the task options with a long press. Absent in read-only. */
+  onOpenOptions?: (item: ListItem) => void;
 }) {
   const theme = useTheme();
   return (
@@ -429,6 +436,7 @@ function Tarjeta({
         tagColors={tagColors}
         onEdit={() => onOpenTask(item)}
         onIcon={() => onOpenIcon(item)}
+        onOptions={onOpenOptions ? () => onOpenOptions(item) : undefined}
         edgeColor={stateColorHex(state.color, theme.colors.icon)}
       />
     </View>

@@ -19,6 +19,8 @@ import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { FiltersBody } from "@/components/lists/item-picker";
 import { ListControls } from "@/components/lists/list-controls";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
+import { ItemOptionsSheet } from "@/components/lists/item-options-sheet";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MediaActionsSheet } from "@/components/lists/media-actions-sheet";
 import { TaskRow } from "@/components/lists/task-row";
 import { Screen } from "@/components/ui/screen";
@@ -191,7 +193,13 @@ export default function ListScreen() {
     setShowCompleted,
     toggleCompleted,
     moveItemTo,
+    removeItem,
   } = useListItems(listId);
+  // El item cuyas opciones estan abiertas (pulsacion larga de su fila).
+  const [opciones, setOpciones] = useState<string | null>(null);
+  const opcionesItem = opciones ? (items.find((row) => row.id === opciones) ?? null) : null;
+  // La tarea que el deslizamiento quiere borrar: pide confirmacion antes.
+  const [aBorrar, setABorrar] = useState<ListItem | null>(null);
 
   const [menuFor, setMenuFor] = useState<ListItem | null>(null);
   const [reorderOpen, setReorderOpen] = useState(false);
@@ -622,6 +630,8 @@ export default function ListScreen() {
         // porque te enteras cuando ya no lo querias.
         onEdit={() => setEditing({ itemId: item.id, page: "edit" })}
         onIcon={() => setEditing({ itemId: item.id, page: "icon" })}
+        onOptions={() => setOpciones(item.id)}
+        onRemove={() => setABorrar(item)}
       />
     );
 
@@ -1032,6 +1042,28 @@ export default function ListScreen() {
 
       {crear}
 
+
+      <ConfirmDialog
+        visible={aBorrar !== null}
+        title={t("itemOptions.deleteTitle", { name: aBorrar?.title ?? "" })}
+        body={t("itemOptions.deleteBody")}
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
+        destructive
+        onConfirm={() => {
+          if (aBorrar) void removeItem(aBorrar);
+          setABorrar(null);
+        }}
+        onCancel={() => setABorrar(null)}
+      />
+
+      <ItemOptionsSheet
+        item={opcionesItem}
+        onClose={() => setOpciones(null)}
+        onEdit={(it) => setEditing({ itemId: it.id, page: "edit" })}
+        onToggle={(it) => void toggleCompleted(it)}
+        onDelete={(it) => void removeItem(it)}
+      />
 
       <ItemEditSheet
         item={editingItem}

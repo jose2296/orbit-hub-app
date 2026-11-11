@@ -870,9 +870,11 @@ export function Sheet({
                   {artwork}
                   {title ? (
                     <View style={{ gap: 2, flexShrink: 1 }}>
-                      <AppText variant="heading" numberOfLines={1}>
-                        {title}
-                      </AppText>
+                      {/*
+                        Sin tope de lineas: el titulo del sheet es el nombre de lo que
+                        se toca, y cortado con "..." no se sabe de que item se trata.
+                      */}
+                      <AppText variant="heading">{title}</AppText>
                       {subtitle ? (
                         <AppText variant="caption" tone="muted" numberOfLines={1}>
                           {subtitle}
