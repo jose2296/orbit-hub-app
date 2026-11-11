@@ -58,7 +58,22 @@ export async function createCollectionAction(input: NewCollectionInput): Promise
   const id = Crypto.randomUUID();
   const collection = newCollection({ id, ...input });
 
-  await localUpdate("collection", id, { ...collection });
+  // Se escribe en la cache y no con `localUpdate`: ese encola un `update` antes
+  // del `create`, y el servidor lo rechaza porque la coleccion todavia no existe
+  // ("The record no longer exists"). Con cada coleccion nueva eso dejaba una
+  // operacion fallida en la cola, y el sync mostraba "1 change not uploaded".
+  const store = await getLocalStoreReady();
+  await store.upsertCached([
+    {
+      entity: "collection",
+      entityId: id,
+      version: 0,
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+      payload: JSON.stringify(collection),
+      pending: JSON.stringify(collection),
+    },
+  ]);
   await enqueueOperation({
     kind: "create",
     entity: "collection",

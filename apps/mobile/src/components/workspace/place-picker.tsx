@@ -76,6 +76,10 @@ export function PlacePicker({
   const folders = (
     effectiveWorkspaceId ? tree.foldersOf(effectiveWorkspaceId, folderId) : []
   ).filter((folder) => folder.id !== excludeFolderId);
+  // La carpeta en la que se esta. Sus subcarpetas salen debajo, y ella misma
+  // tambien: sin esto, al elegirla desaparecia de la lista y sus colecciones
+  // aparecian sin que nada dijera de donde venian.
+  const currentFolder = folderId ? (tree.pathOf(folderId).at(-1) ?? null) : null;
   const collections =
     showCollections && effectiveWorkspaceId
       ? tree.collectionsOf(effectiveWorkspaceId, folderId)
@@ -143,6 +147,22 @@ export function PlacePicker({
                   })
                 }
               />
+              {currentFolder ? (
+                <Pick
+                  key={currentFolder.id}
+                  icon="folder-outline"
+                  label={currentFolder.name}
+                  selected
+                  onPress={() =>
+                    onChange({
+                      workspaceId: effectiveWorkspaceId,
+                      folderId: currentFolder.id,
+                      collectionId,
+                      collectionChosen,
+                    })
+                  }
+                />
+              ) : null}
               {folders.map((folder) => (
                 <Pick
                   key={folder.id}

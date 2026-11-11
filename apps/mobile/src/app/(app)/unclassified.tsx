@@ -183,6 +183,8 @@ export default function UnclassifiedScreen() {
                   id: menuAbierto.id,
                   version: menuAbierto.version,
                   workspaceId: menuAbierto.workspaceId,
+                  folderId: menuAbierto.folderId,
+                  collectionId: menuAbierto.collectionId,
                   title: menuAbierto.title,
                   url: menuAbierto.url,
                 })

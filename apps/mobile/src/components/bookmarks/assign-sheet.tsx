@@ -11,12 +11,29 @@ import { createCollectionAction } from "@/lib/collections/actions";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
+/**
+ * El texto que se muestra de un fallo. Un rechazo que no es un `Error` (el API o
+ * la cola lo devuelven como objeto) caia en "Error inesperado" sin decir cual era.
+ */
+function mensajeDe(problem: unknown, fallback: string): string {
+  if (problem instanceof Error) return problem.message;
+  if (typeof problem === "string") return problem;
+  if (typeof problem === "object" && problem !== null && "message" in problem) {
+    const message = (problem as { message: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return fallback;
+}
+
 /** Lo que el triage necesita de un bookmark: a donde pertenece y que mostrar. */
 export interface BookmarkAClasificar {
   id: string;
   version: number;
   /** `null` = sin asignar. */
   workspaceId: string | null;
+  /** Donde esta ahora: la hoja arranca en este sitio, para que sus colecciones salgan. */
+  folderId: string | null;
+  collectionId: string | null;
   title: string;
   url: string;
 }
@@ -65,8 +82,10 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
   useEffect(() => {
     if (!pedido) return;
     setPagina(1);
-    setCarpetaId(null);
-    setColeccionId(null);
+    // Arranca donde esta el enlace: si no, la hoja se abre en "sin carpeta" y las
+    // colecciones de su carpeta no salen hasta elegirla a mano.
+    setCarpetaId(pedido.folderId);
+    setColeccionId(pedido.collectionId);
     // Cada apertura es otro enlace, y el espacio elegido del anterior no es el suyo.
     setEspacioId(pedido.workspaceId);
     setNombre("");
@@ -128,7 +147,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
       onClose();
     } catch (problem) {
       setError(
-        problem instanceof Error ? problem.message : t("errors.unknown"),
+        mensajeDe(problem, t("errors.unknown")),
       );
     } finally {
       setOcupado(false);
@@ -153,7 +172,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
       });
       onClose();
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : t("errors.unknown"));
+      setError(mensajeDe(problem, t("errors.unknown")));
     } finally {
       setOcupado(false);
     }
@@ -185,7 +204,7 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
       onClose();
     } catch (problem) {
       setError(
-        problem instanceof Error ? problem.message : t("errors.unknown"),
+        mensajeDe(problem, t("errors.unknown")),
       );
     } finally {
       setOcupado(false);
@@ -248,7 +267,6 @@ export function AssignSheet({ bookmark: pedido, onClose }: AssignSheetProps) {
       subtitle={
         bookmark.title.length > 0 ? bookmark.title : bookmark.url
       }
-      scrollable={false}
     >
       <View style={{ gap: theme.spacing.md }}>
         <AppText variant="caption" tone="muted">
