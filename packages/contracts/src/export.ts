@@ -35,9 +35,15 @@ export const accountExportQuerySchema = z.object({
 });
 export type AccountExportQuery = z.infer<typeof accountExportQuerySchema>;
 
-/** Parametros de query para exportar una lista. Acepta JSON o CSV. */
+/**
+ * Parametros de query para exportar una lista. Acepta JSON o CSV.
+ *
+ * `stateId` exporta solo una columna de un tablero: las tareas cuyo estado es ese.
+ * Sin el, sale la lista entera.
+ */
 export const listExportQuerySchema = z.object({
   format: exportFormatSchema.default('json'),
+  stateId: z.string().min(1).max(36).optional(),
 });
 export type ListExportQuery = z.infer<typeof listExportQuerySchema>;
 

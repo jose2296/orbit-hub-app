@@ -21,6 +21,9 @@ import { FloatingButton } from "@/components/ui/floating-button";
 import { ItemEditSheet } from "@/components/lists/item-edit-sheet";
 import { EntityMenuSheet } from "@/components/menus/entity-menu-sheet";
 import { ColumnMenuSheet } from "@/components/lists/column-menu-sheet";
+import { ExportResultSheet } from "@/components/export/export-result-sheet";
+import { useExport } from "@/hooks/use-export";
+import type { ExportRequest } from "@/hooks/use-export";
 import { StateEditSheet } from "@/components/lists/state-edit-sheet";
 import { ReorderSheet } from "@/components/ui/reorder-sheet";
 import { StateEditorSheet } from "@/components/lists/state-editor-sheet";
@@ -555,6 +558,10 @@ export default function BoardScreen() {
    * arrays unequal from the start and the comparison would always say yes.
    */
   const [borrador, setBorrador] = useState<BoardStates | null>(null);
+  // Exportar una columna: su hoja de resultado, y el estado de la ultima exportacion.
+  const { error: errorExport, result: resultadoExport, run: correrExport } = useExport();
+  const [mostrandoExport, setMostrandoExport] = useState(false);
+  const ultimaExportacion = useRef<ExportRequest | null>(null);
 
   /**
    * The same two arrays, **readable at the moment the panel closes.**
@@ -2231,7 +2238,37 @@ export default function BoardScreen() {
         onEditOrder={() => {
           if (menuColumna) setOrdenandoColumna(menuColumna);
         }}
+        onExport={(format) => {
+          const columna = states.find((s) => s.id === menuColumna);
+          if (!columna || !list) return;
+          const pedido = {
+            path: `/lists/${listId}/export`,
+            format,
+            title: `${list.title} - ${columna.title}`,
+            fallbackId: listId,
+            stateId: columna.id,
+          };
+          ultimaExportacion.current = pedido;
+          setMostrandoExport(true);
+          void correrExport(pedido);
+        }}
         onClose={() => setMenuColumna(null)}
+      />
+
+      <ExportResultSheet
+        attempt={
+          mostrandoExport
+            ? {
+                result: resultadoExport,
+                error: errorExport,
+                onRetry: () => {
+                  if (ultimaExportacion.current) void correrExport(ultimaExportacion.current);
+                },
+              }
+            : null
+        }
+        title={ultimaExportacion.current?.title}
+        onClose={() => setMostrandoExport(false)}
       />
 
       {/*

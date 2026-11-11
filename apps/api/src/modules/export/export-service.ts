@@ -1,4 +1,4 @@
-import { exportFilename, sanitiseIconRef } from '@orbit-hub/contracts';
+import { exportFilename, sanitiseIconRef, stateOf } from '@orbit-hub/contracts';
 import type {
   Bookmark,
   Collection,
@@ -565,7 +565,7 @@ export class ExportService {
    * que el fichero y la hoja no pueden discrepar, y el nombre del fichero sale
    * siempre del titulo que ya esta cargado aqui.
    */
-  private async listEnvelope(userId: string, listId: string): Promise<ListExport> {
+  private async listEnvelope(userId: string, listId: string, stateId?: string): Promise<ListExport> {
     const db = await this.db();
     // Sin `isNull(deletedAt)`: exportar una lista borrada tiene sentido, es
     // exactamente el dato que alguien querria recuperar.
@@ -614,7 +614,11 @@ export class ExportService {
       .where(eq(listItems.listId, listId))
       .orderBy(asc(listItems.position), asc(listItems.createdAt));
 
-    const items = itemRows.map((itemRow) => toItem(itemRow, role));
+    // Una columna: solo las tareas que estan en ella. Un estado que no existe en la
+    // lista no tiene tareas, asi que sale un fichero vacio y no toda la lista.
+    const items = itemRows
+      .map((itemRow) => toItem(itemRow, role))
+      .filter((item) => stateId === undefined || stateOf(row.states ?? [], item.stateId)?.id === stateId);
     const list = toList(row, role, items.length);
 
     return listExportEnvelope({
@@ -627,8 +631,8 @@ export class ExportService {
     });
   }
 
-  async listJson(userId: string, listId: string): Promise<ExportFile> {
-    const sobre = await this.listEnvelope(userId, listId);
+  async listJson(userId: string, listId: string, stateId?: string): Promise<ExportFile> {
+    const sobre = await this.listEnvelope(userId, listId, stateId);
     return {
       body: JSON.stringify(sobre, null, 2),
       contentType: 'application/json',
@@ -647,8 +651,8 @@ export class ExportService {
    * se construye un CSV. El nombre sale del mismo titulo: una ruta que lo
    * computara sin la lista cargada daria dos nombres para la misma lista.
    */
-  async listCsv(userId: string, listId: string): Promise<ExportFile> {
-    const sobre = await this.listEnvelope(userId, listId);
+  async listCsv(userId: string, listId: string, stateId?: string): Promise<ExportFile> {
+    const sobre = await this.listEnvelope(userId, listId, stateId);
     return {
       body: itemsToCsv({ list: sobre.list, items: sobre.items }),
       contentType: 'text/csv',
