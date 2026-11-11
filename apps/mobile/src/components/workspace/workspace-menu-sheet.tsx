@@ -252,6 +252,7 @@ export function WorkspaceMenuSheet({
                 thing a colour is a property of and this is where you go to
                 change a space. */}
             <WorkspaceColorPicker
+              name={name}
               value={workspace.color}
               valueTo={workspace.colorTo}
               wash={workspace.wash}
@@ -290,7 +291,7 @@ export function WorkspaceMenuSheet({
 
             <View style={{ gap: theme.spacing.sm }}>
               <Button
-                label={t("rename.save")}
+                label={t("workspaceMenu.saveEdit")}
                 disabled={name.trim().length === 0}
                 fullWidth
                 onPress={() => {

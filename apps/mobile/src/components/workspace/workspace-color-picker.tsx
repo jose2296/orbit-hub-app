@@ -36,6 +36,8 @@ export interface WorkspaceColorPickerProps {
   onPickTo: (color: string | null) => void;
   /** Writes the style. A separate call because it is a separate decision. */
   onPickWash: (wash: WashVariant) => void;
+  /** The name of the space, drawn inside the preview. */
+  name?: string;
 }
 
 /**
@@ -89,6 +91,7 @@ export function WorkspaceColorPicker({
   onPick,
   onPickTo,
   onPickWash,
+  name,
 }: WorkspaceColorPickerProps) {
   const theme = useTheme();
   const t = useTranslation();
@@ -208,6 +211,24 @@ export function WorkspaceColorPicker({
   return (
     <View style={{ gap: theme.spacing.md }}>
       {/*
+        La previsualizacion **arriba y grande**, con el nombre del espacio dentro: es
+        lo unico que responde a "¿es el color que queria?", y estaba al final, debajo de
+        todo lo que la mueve. Ahora se ve mientras se elige.
+      */}
+      <SpaceWash
+        colorKey={par.desde}
+        colorToKey={par.hasta}
+        wash={estiloActual}
+        radius={theme.radius.lg}
+        style={styles.previewGrande}
+      >
+        <AppText variant="heading" numberOfLines={1} style={styles.previewNombre}>
+          {name && name.trim().length > 0 ? name.trim() : t("workspaces.colorPreview")}
+        </AppText>
+      </SpaceWash>
+
+      <AppText variant="bodyStrong">{t("workspaces.colorSection")}</AppText>
+      {/*
         The two ways to paint it, and which of the two ends is being edited.
 
         **The switch is above the styles, not below the colours.** A wash has two
@@ -284,49 +305,6 @@ export function WorkspaceColorPicker({
         })}
       </View>
 
-      {/* The two ways, each drawn with the two colours the square has built. */}
-      <View
-        accessibilityRole="radiogroup"
-        accessibilityLabel={t("workspaces.washGroup")}
-        style={[styles.estilos, { gap: theme.spacing.sm }]}
-      >
-        {WASH_VARIANTS.map((estilo) => {
-          const elegido = estilo === estiloActual;
-          return (
-            <Pressable
-              key={estilo}
-              // `radio` and not `button`, because two of these are one choice and
-              // `button` with a `selected` state does not put `aria-selected` in
-              // the DOM: measured, the attribute was `null` on both including the
-              // chosen one, so the row said nothing to anyone asking the page how
-              // it was set.
-              accessibilityRole="radio"
-              accessibilityLabel={t(`workspaces.wash.${estilo}` as never)}
-              {...selectedProps(elegido)}
-              onPress={() => onPickWash(estilo)}
-              style={({ pressed }) => [
-                styles.estilo,
-                {
-                  borderColor: elegido ? theme.colors.accent : theme.colors.border,
-                  opacity: pressed ? 0.8 : 1,
-                },
-              ]}
-            >
-              <SpaceWash
-                colorKey={par.desde}
-                colorToKey={par.hasta}
-                wash={estilo}
-                radius={6}
-                style={styles.estiloMuestra}
-              />
-              <AppText variant="caption" tone="subtle" numberOfLines={1}>
-                {t(`workspaces.wash.${estilo}` as never)}
-              </AppText>
-            </Pressable>
-          );
-        })}
-      </View>
-
       {/*
         The twelve, as washes, and they belong to whichever end the switch is on.
 
@@ -382,66 +360,6 @@ export function WorkspaceColorPicker({
       </View>
 
       {/*
-        The square and the preview **side by side**, and that is the whole layout
-        of this panel. The preview is the only thing on screen that answers "is
-        this the colour I meant?", so it is never below the square, never under a
-        fold and never behind a scroll: whatever else happens on a 430-point
-        screen, the square and its result are both on it.
-      */}
-      <View style={[styles.fila, { gap: theme.spacing.md }]}>
-        {/*
-          The square, shared with the states: the same saturation square and hue
-          strip `ColorSquare` draws, with this end's colour on it. What moves
-          reports live into the preview (`setVista`) and writes only when the finger
-          lifts, so a drag never enqueues anything.
-        */}
-        <ColorSquare
-          color={hexDe(valorDelLado)}
-          onChange={setVista}
-          onCommit={escribir}
-          squareLabel={t("workspaces.colorSquare")}
-          hueLabel={t("workspaces.colorHue")}
-        />
-
-        {/*
-          The preview.
-
-          **It shows both ends**, whichever one the square is on. A preview of one
-          colour when there are two is a picture of half the thing, and the half
-          you are not editing is exactly the half you need to see while you edit
-          this one.
-
-          Its height is **not** left to the text inside it. `flex: 1` on a centred
-          row collapses the column to the height of a line of text, which is not a
-          preview of a card. It is `alignSelf: stretch` and the square's height, so
-          the thing you drag and the thing it does read as a pair.
-        */}
-        <View style={[styles.columnaPreview, { gap: theme.spacing.sm }]}>
-          <SpaceWash
-            colorKey={par.desde}
-            colorToKey={par.hasta}
-            wash={estiloActual}
-            radius={theme.radius.md}
-            style={styles.preview}
-          >
-            <AppText variant="caption" style={styles.previewTexto}>
-              {t("workspaces.colorPreview")}
-            </AppText>
-          </SpaceWash>
-
-{/*
-            Y aqui **ya no hay boton de "usar este color"**.
-
-            Era el que escribia lo que el cuadrado mostraba, y pedia confirmar dos
-            veces lo mismo: mover el dedo al color y pulsar que lo quieres. Ahora
-            escribe el dedo al levantarse —mismo commit, sin el segundo paso— y lo
-            unico que queda en esta columna es la previsualizacion, que es lo que
-            esta columna siempre fue.
-          */}
-        </View>
-      </View>
-
-      {/*
         The ones this space has actually used, and **both ends' in one row**.
 
         The square and the hue strip can reach any colour, and that is the point of
@@ -489,11 +407,87 @@ export function WorkspaceColorPicker({
           </View>
         </View>
       ) : null}
+
+      {/* El cuadrado, con su explicacion al lado: antes era un cuadrado de colores sin titulo. */}
+      <View style={[styles.fila, { gap: theme.spacing.md }]}>
+        <ColorSquare
+          color={hexDe(valorDelLado)}
+          onChange={setVista}
+          onCommit={escribir}
+          squareLabel={t("workspaces.colorSquare")}
+          hueLabel={t("workspaces.colorHue")}
+        />
+        <View style={{ flex: 1, gap: theme.spacing.xs }}>
+          <AppText variant="callout">{t("workspaces.customLabel")}</AppText>
+          <AppText variant="caption" tone="subtle">
+            {t("workspaces.customHint")}
+          </AppText>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
+            <View style={[styles.extremoPunto, { backgroundColor: vista }]} />
+            <AppText variant="caption">{vista}</AppText>
+          </View>
+        </View>
+      </View>
+
+      <AppText variant="bodyStrong">{t("workspaces.directionLabel")}</AppText>
+      {/* The two ways, each drawn with the two colours the square has built. */}
+      <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel={t("workspaces.washGroup")}
+        style={[styles.estilos, { gap: theme.spacing.sm }]}
+      >
+        {WASH_VARIANTS.map((estilo) => {
+          const elegido = estilo === estiloActual;
+          return (
+            <Pressable
+              key={estilo}
+              // `radio` and not `button`, because two of these are one choice and
+              // `button` with a `selected` state does not put `aria-selected` in
+              // the DOM: measured, the attribute was `null` on both including the
+              // chosen one, so the row said nothing to anyone asking the page how
+              // it was set.
+              accessibilityRole="radio"
+              accessibilityLabel={t(`workspaces.wash.${estilo}` as never)}
+              {...selectedProps(elegido)}
+              onPress={() => onPickWash(estilo)}
+              style={({ pressed }) => [
+                styles.estilo,
+                {
+                  borderColor: elegido ? theme.colors.accent : theme.colors.border,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              <SpaceWash
+                colorKey={par.desde}
+                colorToKey={par.hasta}
+                wash={estilo}
+                radius={6}
+                style={styles.estiloMuestra}
+              />
+              <AppText variant="caption" tone="subtle" numberOfLines={1}>
+                {t(`workspaces.wash.${estilo}` as never)}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </View>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  previewGrande: {
+    height: 84,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  previewNombre: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
   extremo: {
     // Two across the 382-point content column with a gap of 8: 187 each, which is
     // room for "Empieza en" plus the dot without the word being cut.

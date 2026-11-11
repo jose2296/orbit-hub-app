@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useTheme } from '@/theme';
@@ -12,6 +13,8 @@ import { AppText } from './text';
  * changes and the indent stays, and nothing says so.
  */
 export const CHECKBOX_BOX_SIZE = 22;
+/** Cuanto se agranda el area de toque alrededor de la caja, en puntos. */
+export const CHECKBOX_HIT_SLOP = { top: 12, bottom: 12, left: 12, right: 12 };
 
 export interface CheckboxProps {
   checked: boolean;
@@ -30,6 +33,7 @@ export function Checkbox({
   testID,
 }: CheckboxProps) {
   const theme = useTheme();
+  const [pulsada, setPulsada] = useState(false);
 
   return (
     <Pressable
@@ -38,26 +42,36 @@ export function Checkbox({
       accessibilityState={{ checked, disabled }}
       disabled={disabled}
       onPress={onToggle}
-      style={({ pressed }) => [styles.row, { opacity: disabled ? 0.5 : pressed ? 0.7 : 1, gap: theme.spacing.sm }]}
+      // El area de toque es mucho mas grande que la caja: en el movil una caja de
+      // 22 puntos no se acierta con el dedo. La caja se ve igual; lo que crece es
+      // lo que responde al toque.
+      hitSlop={CHECKBOX_HIT_SLOP}
+      onPressIn={() => setPulsada(true)}
+      onPressOut={() => setPulsada(false)}
+      style={[styles.row, { opacity: disabled ? 0.5 : 1, gap: theme.spacing.sm }]}
     >
-      <View
-        style={[
-          styles.box,
-          {
-            width: CHECKBOX_BOX_SIZE,
-            height: CHECKBOX_BOX_SIZE,
-            borderRadius: theme.radius.sm,
-            borderColor: checked ? theme.colors.accent : theme.colors.borderStrong,
-            backgroundColor: checked ? theme.colors.accent : 'transparent',
-          },
-        ]}
-      >
-        {checked ? (
-          <AppText variant="caption" style={{ color: theme.colors.onAccent }}>
-            ✓
-          </AppText>
-        ) : null}
-      </View>
+          <View
+            style={[
+              styles.box,
+              {
+                width: CHECKBOX_BOX_SIZE,
+                height: CHECKBOX_BOX_SIZE,
+                borderRadius: theme.radius.sm,
+                borderColor: checked ? theme.colors.accent : theme.colors.borderStrong,
+                backgroundColor: checked ? theme.colors.accent : 'transparent',
+                // Al pulsar la caja se encoge y se marca el borde: se nota que el
+                // toque la ha pillado, antes de que la fila cambie.
+                transform: [{ scale: pulsada ? 0.85 : 1 }],
+                borderWidth: pulsada ? 2.5 : 1.5,
+              },
+            ]}
+          >
+            {checked ? (
+              <AppText variant="caption" style={{ color: theme.colors.onAccent }}>
+                ✓
+              </AppText>
+            ) : null}
+          </View>
       {/* Only when there is a label, and this is not a detail: see `styles.label`. */}
       {label ? (
         <AppText variant="callout" tone="muted" style={styles.label}>

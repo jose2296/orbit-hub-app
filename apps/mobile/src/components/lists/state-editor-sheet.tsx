@@ -33,6 +33,7 @@ import { StateDeleteSheet } from "@/components/lists/state-delete-sheet";
 import { StateColorStrip } from "@/components/lists/state-color-strip";
 import { useA11yHint } from "@/components/ui/a11y-hint";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DRAG_HANDLE_WIDTH } from "@/components/ui/draggable-row";
 import { Sheet, useLastValue } from "@/components/ui/sheet";
 import { TextField } from "@/components/ui/text-field";
@@ -197,6 +198,7 @@ export function StateEditorSheet({
   /** What the page for one column is changing, and nothing is written from it. */
   const [nombre, setNombre] = useState("");
   const [color, setColor] = useState<StateColor>("neutral");
+  const [hecha, setHecha] = useState(false);
 
   /** The name of the column about to be added, and it is not there until it is. */
   const [nombreNuevo, setNombreNuevo] = useState("");
@@ -216,6 +218,7 @@ export function StateEditorSheet({
     setBorrando(null);
     setNombre("");
     setColor("neutral");
+    setHecha(false);
     setNombreNuevo("");
   }, [abierto]);
 
@@ -238,6 +241,7 @@ export function StateEditorSheet({
     const fila = states.find((state) => state.id === idEditando) ?? null;
     setNombre(fila?.title ?? "");
     setColor(fila?.color ?? "neutral");
+    setHecha(fila?.done ?? false);
   }, [idEditando, states]);
 
   /**
@@ -296,7 +300,7 @@ export function StateEditorSheet({
   function guardar() {
     const id = idEditando;
     if (id === null) return;
-    const siguiente = editState(states, id, { title: nombre, color });
+    const siguiente = editState(states, id, { title: nombre, color, done: hecha });
     if (siguiente !== states) onChange(siguiente);
     setEditando(null);
   }
@@ -593,6 +597,13 @@ export function StateEditorSheet({
             </AppText>
             <StateColorStrip color={color} onChange={setColor} />
           </View>
+
+          {/* Una columna Done: sus tareas quedan finalizadas. */}
+          <Checkbox
+            checked={hecha}
+            onToggle={() => setHecha((actual) => !actual)}
+            label={t("board.stateDone")}
+          />
 
           <Button
             testID="state-editor-save"

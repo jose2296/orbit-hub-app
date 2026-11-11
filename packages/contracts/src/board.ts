@@ -67,6 +67,11 @@ export const boardStateSchema = z.object({
    * colour.
    */
   color: z.union([z.enum(ITEM_ICON_COLORS), z.string().regex(/^#[0-9A-Fa-f]{6}$/)]),
+  /**
+   * A column marked as done: the tasks in it are drawn as finished. Old rows, from
+   * before the flag, have none and read as `false`, so it is optional on the wire.
+   */
+  done: z.boolean().optional(),
 });
 export type BoardState = z.infer<typeof boardStateSchema>;
 

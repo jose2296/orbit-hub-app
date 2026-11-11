@@ -9,6 +9,7 @@ import { ContentToolbar } from "@/components/content/content-toolbar";
 import { AppIcon } from "@/components/ui/app-icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ANCHO_RESERVADO, MenuButton } from "@/components/ui/menu-button";
+import { SwipeRow, type SwipeRowGuard } from "@/components/ui/swipe-row";
 import { useLongPressText } from "@/hooks/use-long-press-text";
 import { AppText } from "@/components/ui/text";
 import { LIST_KIND_ICON } from "@/lib/lists/kind";
@@ -356,13 +357,16 @@ function ContentRowView({
         : ((LIST_KIND_ICON[(row.listKind ?? "tasks") as keyof typeof LIST_KIND_ICON] ??
             "list-outline") as keyof typeof Ionicons.glyphMap);
 
-  return (
+  const caja = (guard?: SwipeRowGuard) => (
     <View style={styles.caja}>
       <Pressable
-        onLongPress={nombre.onLongPress}
+        // Pulsar y mantener abre las opciones de la fila, con su nombre completo en la
+        // cabecera de la hoja; sin menu, lee el nombre entero.
+        onLongPress={onMenu ?? nombre.onLongPress}
         accessibilityRole="button"
         accessibilityLabel={row.name}
-        onPress={onOpen}
+        onPressIn={guard?.pressIn}
+        onPress={guard ? guard.press(onOpen) : onOpen}
         style={({ pressed }) => [
           styles.fila,
           {
@@ -425,6 +429,23 @@ function ContentRowView({
       */}
       {onMenu ? <MenuButton label={row.name} onPress={onMenu} /> : null}
     </View>
+  );
+
+  if (!onMenu) return caja();
+  return (
+    <SwipeRow
+      opaque={false}
+      actions={[
+        {
+          key: "options",
+          label: t("swipe.options"),
+          icon: "ellipsis-horizontal",
+          onPress: onMenu,
+        },
+      ]}
+    >
+      {(guard) => caja(guard)}
+    </SwipeRow>
   );
 }
 

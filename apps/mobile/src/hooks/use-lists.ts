@@ -695,6 +695,11 @@ export function useListItems(listId: string | undefined) {
      * be a reason not to let a hit be ticked.
      */
     async (item: { id: string; completed: boolean }) => {
+      // Optimista: la fila cambia en este mismo frame. La cache y el sync van
+      // despues, y si algo falla el siguiente load devuelve el valor real.
+      setItems((prev) =>
+        prev.map((row) => (row.id === item.id ? { ...row, completed: !item.completed } : row)),
+      );
       await localUpdate("list_item", item.id, { completed: !item.completed });
       await load();
     },

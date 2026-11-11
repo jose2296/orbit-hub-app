@@ -153,6 +153,7 @@ export function WorkspaceCreateSheet({
         />
 
         <WorkspaceColorPicker
+          name={name}
           value={color}
           valueTo={colorTo}
           wash={wash}

@@ -70,13 +70,13 @@ listsRouter.get('/:id/items', async (req, res) => {
  */
 listsRouter.get('/:id/export', async (req, res) => {
   const { id } = listParams.parse(req.params);
-  const { format } = listExportQuerySchema.parse(req.query);
+  const { format, stateId } = listExportQuerySchema.parse(req.query);
   const userId = caller(req);
 
   const fichero =
     format === 'csv'
-      ? await exportService.listCsv(userId, id)
-      : await exportService.listJson(userId, id);
+      ? await exportService.listCsv(userId, id, stateId)
+      : await exportService.listJson(userId, id, stateId);
   sendFile(res, 200, fichero);
 });
 

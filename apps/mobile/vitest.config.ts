@@ -17,6 +17,10 @@ export default defineConfig({
       // defines, so a test that touches anything that mints an id dies at import
       // with an error about a global. The stub answers with the platform's own
       // uuid rather than with a constant.
+      // Same reason again, for the swipeable rows.
+      'react-native-gesture-handler': fileURLToPath(
+        new URL('./test/gesture-handler-stub.ts', import.meta.url),
+      ),
       'expo-crypto': fileURLToPath(new URL('./test/expo-crypto-stub.ts', import.meta.url)),
     },
   },

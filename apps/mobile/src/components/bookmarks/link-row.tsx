@@ -4,6 +4,7 @@ import type { Bookmark, BookmarkExtractionState } from "@orbit-hub/contracts";
 
 import { ListRow } from "@/components/ui/list-row";
 import { ANCHO_RESERVADO, MenuButton } from "@/components/ui/menu-button";
+import { SwipeRow, type SwipeRowGuard } from "@/components/ui/swipe-row";
 import { useTranslation } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n";
 import { hostDe, tituloDeBookmark } from "@/lib/menus/bookmark";
@@ -74,7 +75,7 @@ export function LinkRow({ bookmark, onPress, onMenu, testID, lugar }: LinkRowPro
     .filter((parte) => parte.length > 0)
     .join(" · ");
 
-  return (
+  const fila = (guard?: SwipeRowGuard) => (
     <View
       testID={testID}
       style={{
@@ -132,7 +133,8 @@ export function LinkRow({ bookmark, onPress, onMenu, testID, lugar }: LinkRowPro
           encima. No hay typecheck que lo note.
         */
         style={{ flex: 1 }}
-        onPress={onPress}
+        onLongPress={onMenu}
+        onPress={guard ? guard.press(onPress) : onPress}
       />
       {/*
         Al lado de la fila y no dentro: un `Pressable` dentro del de la fila es
@@ -145,6 +147,16 @@ export function LinkRow({ bookmark, onPress, onMenu, testID, lugar }: LinkRowPro
       */}
       <MenuButton label={titulo} onPress={onMenu} />
     </View>
+  );
+
+  return (
+    <SwipeRow
+      actions={[
+        { key: "options", label: t("swipe.options"), icon: "ellipsis-horizontal", onPress: onMenu },
+      ]}
+    >
+      {(guard) => fila(guard)}
+    </SwipeRow>
   );
 }
 

@@ -16,6 +16,8 @@ export interface ColumnMenuSheetProps {
   onEditState: () => void;
   /** Open the order sheet (this column's tasks) for this column. */
   onEditOrder: () => void;
+  /** Exporta solo las tareas de esta columna, en el formato que se elige. */
+  onExport: (format: "json" | "csv") => void;
   onClose: () => void;
 }
 
@@ -36,6 +38,7 @@ export function ColumnMenuSheet({
   state: pedido,
   onEditState,
   onEditOrder,
+  onExport,
   onClose,
 }: ColumnMenuSheetProps) {
   const t = useTranslation();
@@ -65,6 +68,24 @@ export function ColumnMenuSheet({
       icon: "reorder-two-outline",
       onPress: () => {
         onEditOrder();
+        onClose();
+      },
+    },
+    {
+      key: "export-json",
+      label: t("board.exportColumn.json"),
+      icon: "download-outline",
+      onPress: () => {
+        onExport("json");
+        onClose();
+      },
+    },
+    {
+      key: "export-csv",
+      label: t("board.exportColumn.csv"),
+      icon: "download-outline",
+      onPress: () => {
+        onExport("csv");
         onClose();
       },
     },

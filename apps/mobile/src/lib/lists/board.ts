@@ -324,7 +324,7 @@ export function moveState(
 export function editState(
   states: BoardStates,
   stateId: string,
-  patch: { title?: string; color?: StateColor },
+  patch: { title?: string; color?: StateColor; done?: boolean },
 ): BoardStates {
   const index = states.findIndex((state) => state.id === stateId);
   const current = states[index];
@@ -337,12 +337,15 @@ export function editState(
   if (title.length === 0) return states;
 
   const color = colorOf(patch.color, current.color);
-  if (title === current.title && color === current.color) return states;
+  const done = patch.done ?? current.done ?? false;
+  if (title === current.title && color === current.color && done === (current.done ?? false)) {
+    return states;
+  }
 
   const next = [...states];
   // By value for the edited one only: the columns that did not change are the very
   // objects the caller had, so nothing can rename them by accident.
-  next[index] = { id: current.id, title, color };
+  next[index] = { id: current.id, title, color, done };
   return next;
 }
 

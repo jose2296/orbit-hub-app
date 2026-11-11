@@ -105,6 +105,8 @@ export interface ExportRequest {
   format: ExportFormat;
   title: string;
   fallbackId: string;
+  /** Solo una columna de un tablero: las tareas de ese estado. */
+  stateId?: string;
 }
 
 /**
@@ -131,7 +133,7 @@ export async function deliverExport(args: ExportRequest): Promise<ExportResult> 
   });
 
   const pending = await apiRaw(args.path, {
-    query: { format: args.format },
+    query: { format: args.format, ...(args.stateId ? { stateId: args.stateId } : {}) },
     timeoutMs: EXPORT_TIMEOUT_MS,
   });
 

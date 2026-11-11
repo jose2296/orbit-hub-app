@@ -870,9 +870,11 @@ export function Sheet({
                   {artwork}
                   {title ? (
                     <View style={{ gap: 2, flexShrink: 1 }}>
-                      <AppText variant="heading" numberOfLines={1}>
-                        {title}
-                      </AppText>
+                      {/*
+                        Sin tope de lineas: el titulo del sheet es el nombre de lo que
+                        se toca, y cortado con "..." no se sabe de que item se trata.
+                      */}
+                      <AppText variant="heading">{title}</AppText>
                       {subtitle ? (
                         <AppText variant="caption" tone="muted" numberOfLines={1}>
                           {subtitle}
@@ -956,9 +958,11 @@ export function Sheet({
           {scrollable ? (
             <ScrollView
               style={styles.cuerpoLleno}
+              // Sin margen lateral aqui: la caja del cuerpo ya lo pone (`MARGEN`).
+              // Ponerlo tambien en este contenido lo duplicaba: 36 puntos en vez de
+              // 18, y el contenido de la hoja quedaba desalineado con su titulo.
               contentContainerStyle={{
                 paddingTop: theme.spacing.sm,
-                paddingHorizontal: MARGEN,
               }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"

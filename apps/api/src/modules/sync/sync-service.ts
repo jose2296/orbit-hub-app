@@ -1365,6 +1365,13 @@ export class SyncService {
       const row = await syncRepository.updateEntity(entity, operation.entityId, {}, {
         tombstone: true,
       });
+      // Una carpeta se borra con todo lo que hay dentro, no se vacia: el cliente
+      // avisa antes con el recuento. Sin esto, sus listas y enlaces quedan vivos
+      // apuntando a una carpeta que ya no existe.
+      if (entity === 'folder') {
+        const dentro = await syncRepository.carpetaYDescendientes(operation.entityId);
+        await syncRepository.tombstoneFolderContents(operation.entityId, dentro);
+      }
       return { status: 'applied', version: row.version };
     }
 

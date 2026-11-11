@@ -35,9 +35,15 @@ export const accountExportQuerySchema = z.object({
 });
 export type AccountExportQuery = z.infer<typeof accountExportQuerySchema>;
 
-/** Parametros de query para exportar una lista. Acepta JSON o CSV. */
+/**
+ * Parametros de query para exportar una lista. Acepta JSON o CSV.
+ *
+ * `stateId` exporta solo una columna de un tablero: las tareas cuyo estado es ese.
+ * Sin el, sale la lista entera.
+ */
 export const listExportQuerySchema = z.object({
   format: exportFormatSchema.default('json'),
+  stateId: z.string().min(1).max(36).optional(),
 });
 export type ListExportQuery = z.infer<typeof listExportQuerySchema>;
 
@@ -83,6 +89,16 @@ export const accountExportSchema = z.object({
 });
 export type AccountExport = z.infer<typeof accountExportSchema>;
 
+/**
+ * Un item de la exportacion de una lista. Lleva el titulo de su estado ademas
+ * del `stateId`: el id solo no le dice nada a quien lee el fichero. `null` en
+ * cualquier lista que no es un tablero, o si la lista no tiene estados.
+ */
+export const listExportItemSchema = listItemSchema.extend({
+  stateTitle: z.string().nullable(),
+});
+export type ListExportItem = z.infer<typeof listExportItemSchema>;
+
 /** Sobre de la exportacion de una sola lista, con su contexto inmediato. */
 export const listExportSchema = z.object({
   format: z.literal('orbit-hub.export'),
@@ -101,7 +117,7 @@ export const listExportSchema = z.object({
     name: z.string(),
   }).nullable(),
   list: listSchema,
-  items: z.array(listItemSchema),
+  items: z.array(listExportItemSchema),
   counts: z.object({
     items: countSchema,
   }),

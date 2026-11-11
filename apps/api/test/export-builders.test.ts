@@ -25,6 +25,7 @@ import {
   csvStateCell,
   itemsToCsv,
   listExportEnvelope,
+  listExportItem,
   metadataCell,
   type AccountExportRows,
 } from '../src/modules/export/export-builders.js';
@@ -421,7 +422,7 @@ describe('listExportEnvelope', () => {
       workspace: { id: 'w1', name: 'Personal' },
       folder: { id: 'f1', name: 'Carpeta' },
       list: list(),
-      items: [item(), item({ id: 'i2' })],
+      items: [listExportItem(list(), item()), listExportItem(list(), item({ id: 'i2' }))],
       exportedAt: '2026-01-01T00:00:00.000Z',
     });
 
@@ -609,6 +610,34 @@ describe('bookmarksToCsv', () => {
 
     expect(csv).toContain('Tortilla');
     expect(parseCsvRecords(csv)).toHaveLength(2);
+  });
+});
+
+describe('listExportItem', () => {
+  const board = list({
+    kind: 'board',
+    states: [
+      { id: 's1', title: 'Pendiente', color: 'gray' },
+      { id: 's2', title: 'Done', color: 'green' },
+    ],
+  });
+
+  it('pone el titulo del estado de la tarea en un tablero', () => {
+    expect(listExportItem(board, item({ stateId: 's2' })).stateTitle).toBe('Done');
+  });
+
+  it('usa el primer estado cuando la tarea no tiene estado propio', () => {
+    expect(listExportItem(board, item({ stateId: null })).stateTitle).toBe('Pendiente');
+  });
+
+  it('deja el titulo a null en una lista que no es tablero', () => {
+    expect(listExportItem(list(), item({ stateId: null })).stateTitle).toBeNull();
+  });
+
+  it('conserva el stateId original junto al titulo', () => {
+    const exported = listExportItem(board, item({ stateId: 's2' }));
+    expect(exported.stateId).toBe('s2');
+    expect(exported.id).toBe('i1');
   });
 });
 

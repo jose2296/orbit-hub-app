@@ -58,14 +58,15 @@ export function ConfirmDialog({
       onRequestClose={onCancel}
       statusBarTranslucent
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={cancelLabel}
-        onPress={onCancel}
-        style={styles.fondo}
-      >
+      {/* El fondo no es un `button`: lleva dos botones dentro y en la web un <button>
+          dentro de otro es HTML invalido (y un error de hidratacion). Cerrar con
+          Escape/atras ya lo hace `onRequestClose`. */}
+      <Pressable accessible={false} onPress={onCancel} style={styles.fondo}>
         {/* Stops the tap that opened this from reaching the sheet behind it. */}
-        <Pressable onPress={() => {}} style={styles.caja}>
+        <View
+          onStartShouldSetResponder={() => true}
+          style={[styles.caja, { backgroundColor: theme.colors.surface }]}
+        >
           <View style={styles.cabecera}>
             <AppText variant="heading" style={{ color: theme.colors.text }}>
               {title}
@@ -105,7 +106,7 @@ export function ConfirmDialog({
               style={{ flex: 1 }}
             />
           </View>
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );
