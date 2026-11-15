@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Platform, Pressable, StyleSheet, View } from "react-native";
 
 import type { ListItem, ListOrderMode } from "@orbit-hub/contracts";
@@ -592,6 +592,29 @@ export default function ListScreen() {
     );
   }
 
+  /*
+    Stable callbacks and a stable colour map for the rows.
+
+    A row is memoised (`ListTaskRow`), and it only stays still if what it receives does:
+    a fresh closure or a fresh `{}` per render re-mounts every visible row, each with its
+    own swipeable, whenever anything on this screen changes (a sheet opening, a sync).
+    The setters are stable already; `toggleCompleted` is read through a ref.
+  */
+  const tagColors = useMemo(() => list?.tagColors ?? {}, [list?.tagColors]);
+  const toggleRef = useRef(toggleCompleted);
+  toggleRef.current = toggleCompleted;
+  const alternarFila = useCallback((item: ListItem) => void toggleRef.current(item), []);
+  const editarFila = useCallback(
+    (item: ListItem) => setEditing({ itemId: item.id, page: "edit" }),
+    [],
+  );
+  const iconoFila = useCallback(
+    (item: ListItem) => setEditing({ itemId: item.id, page: "icon" }),
+    [],
+  );
+  const opcionesFila = useCallback((item: ListItem) => setOpciones(item.id), []);
+  const borrarFila = useCallback((item: ListItem) => setABorrar(item), []);
+
   /**
    * One row of the flat list.
    *
@@ -616,22 +639,14 @@ export default function ListScreen() {
 
     const { item } = entry;
     const row = (
-      <TaskRow
+      <ListTaskRow
         item={item}
-        // The map of the list this row is being read out of, exactly as the
-        // sheet below it gets it. `?? {}` for the same reason it has it there: a
-        // list whose colours have not arrived yet draws its pills in the derived
-        // colour, which is what every other device computes for the same name.
-        tagColors={list?.tagColors ?? {}}
-        onToggle={() => void toggleCompleted(item)}
-        // Un toque abre el elemento. Antes el nombre era un boton que BORRABA,
-        // sin confirmar y sin vuelta atras: la forma mas mala de perder trabajo
-        // que puede tener una lista, y peor que una funcionalidad que falte,
-        // porque te enteras cuando ya no lo querias.
-        onEdit={() => setEditing({ itemId: item.id, page: "edit" })}
-        onIcon={() => setEditing({ itemId: item.id, page: "icon" })}
-        onOptions={() => setOpciones(item.id)}
-        onRemove={() => setABorrar(item)}
+        tagColors={tagColors}
+        onToggle={alternarFila}
+        onEdit={editarFila}
+        onIcon={iconoFila}
+        onOptions={opcionesFila}
+        onRemove={borrarFila}
       />
     );
 
@@ -950,6 +965,7 @@ export default function ListScreen() {
           // smoothness when you scroll (20 screen-jumps in 427 ms, 2 frames
           // dropped). The number is in docs/roadmap.md with the rest.
           windowSize={5}
+          removeClippedSubviews={Platform.OS === "android"}
           maxToRenderPerBatch={10}
           updateCellsBatchingPeriod={60}
           keyboardShouldPersistTaps="handled"
@@ -1105,6 +1121,43 @@ type ListEntry =
   { kind: "row"; item: ListItem; index: number } | { kind: "completedHeading" };
 
 const COMPLETED_HEADING_KEY = "completed-heading";
+
+/**
+ * One task row that only re-renders when its own item (or the colours) change.
+ *
+ * The callbacks arrive stable and take the item, so the closures that bind it live
+ * here, inside the memo, instead of being recreated by the screen for every row on
+ * every render.
+ */
+const ListTaskRow = memo(function ListTaskRow({
+  item,
+  tagColors,
+  onToggle,
+  onEdit,
+  onIcon,
+  onOptions,
+  onRemove,
+}: {
+  item: ListItem;
+  tagColors: Record<string, string>;
+  onToggle: (item: ListItem) => void;
+  onEdit: (item: ListItem) => void;
+  onIcon: (item: ListItem) => void;
+  onOptions: (item: ListItem) => void;
+  onRemove: (item: ListItem) => void;
+}) {
+  return (
+    <TaskRow
+      item={item}
+      tagColors={tagColors}
+      onToggle={() => onToggle(item)}
+      onEdit={() => onEdit(item)}
+      onIcon={() => onIcon(item)}
+      onOptions={() => onOptions(item)}
+      onRemove={() => onRemove(item)}
+    />
+  );
+});
 
 function entryKey(entry: ListEntry): string {
   return entry.kind === "row" ? entry.item.id : COMPLETED_HEADING_KEY;
