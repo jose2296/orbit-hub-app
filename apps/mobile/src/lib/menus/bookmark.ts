@@ -1,5 +1,8 @@
+import { Linking } from "react-native";
+
 import type { Bookmark } from "@orbit-hub/contracts";
 
+import { safeLinkTarget } from "@/lib/bookmarks/safe-link";
 import { deleteBookmarkAction, updateBookmarkAction } from "@/lib/bookmarks/actions";
 import type { MenuContext } from "@/lib/menus/registry";
 
@@ -59,7 +62,7 @@ export function menuCtxDeBookmark(bookmark: Bookmark | null): MenuContext | null
     // se ofrece en vez de ofrecerse y fallar al tocarla. `access` lo declara el
     // registro para este kind pero la hoja todavia no monta esa pagina, asi que
     // `puedeOfrecerse` la filtra; cuando llegue, no hay nada que cambiar aca.
-    caps: {},
+    caps: { openOriginal: safeLinkTarget(bookmark.url) !== null },
   };
 }
 
@@ -78,7 +81,12 @@ export function handlersDeBookmark(
 ): MenuHandlers {
   if (!bookmark) return {};
 
+  const destino = safeLinkTarget(bookmark.url);
+
   return {
+    ...(destino
+      ? { abrirOriginal: () => Linking.openURL(destino).then(() => undefined) }
+      : {}),
     rename: (title) =>
       updateBookmarkAction({ id: bookmark.id, baseVersion: bookmark.version, title }),
     borrar: () => deleteBookmarkAction(bookmark.id),

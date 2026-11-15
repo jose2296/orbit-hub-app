@@ -67,7 +67,7 @@ export function SwipeRow({
   const theme = useTheme();
   const ref = useRef<Swipeable>(null);
   const abierta = useRef(false);
-  const inicio = useRef(0);
+  const inicio = useRef<number | null>(null);
 
   const guard: SwipeRowGuard = {
     pressIn: (e) => {
@@ -78,7 +78,13 @@ export function SwipeRow({
         ref.current?.close();
         return;
       }
-      if (e && Math.abs(e.nativeEvent.pageX - inicio.current) > 10) return;
+      // Without a recorded start (a row that forgot `onPressIn`) there is nothing to
+      // compare: a tap must open, never silently do nothing.
+      if (e && inicio.current !== null && Math.abs(e.nativeEvent.pageX - inicio.current) > 10) {
+        inicio.current = null;
+        return;
+      }
+      inicio.current = null;
       alPulsar();
     },
   };

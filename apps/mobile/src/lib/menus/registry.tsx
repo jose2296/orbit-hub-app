@@ -81,7 +81,8 @@ export type MenuCap =
   | "saveAsTemplate"
   | "createInside"
   | "panel"
-  | "export";
+  | "export"
+  | "openOriginal";
 
 /**
  * El handler de una accion que corre **en la hoja**, sin cambiar de pagina.
@@ -104,7 +105,8 @@ export type MenuHandlerName =
   | "alternarPin"
   | "editarEstados"
   | "guardarComoPlantilla"
-  | "clasificar";
+  | "clasificar"
+  | "abrirOriginal";
 
 export interface MenuEntity {
   id: string;
@@ -371,6 +373,18 @@ export const ACCIONES: Record<string, MenuAccion> = {
     destino: { tipo: "hoja", handler: "clasificar" },
   },
 
+  /*
+    Open the saved page in the browser. Offered only when the call site says the URL is
+    a safe http(s) one (`caps.openOriginal`): a row that cannot open is worse than no row.
+  */
+  openOriginal: {
+    id: "openOriginal",
+    labelKey: "bookmarks.reader.openOriginal",
+    icon: "open-outline",
+    disponible: (ctx) => ctx.caps.openOriginal === true,
+    destino: { tipo: "hoja", handler: "abrirOriginal" },
+  },
+
   access: {
     id: "access",
     labelKey: "menus.access",
@@ -517,7 +531,7 @@ export const ORDEN_POR_KIND: Record<MenuKind, string[]> = {
   // declararla aca para un kind que el contrato no admitiria pintaria una fila
   // grisada para siempre — y el guard de `menu-registry.test.ts` lo comprueba.
   collection: ["rename", "share", "access", "export", "move", "delete"],
-  bookmark: ["rename", "classify", "share", "access", "move", "delete"],
+  bookmark: ["openOriginal", "rename", "classify", "share", "access", "move", "delete"],
 };
 
 /** La clave de i18n de una accion, resuelta para un contexto concreto. */

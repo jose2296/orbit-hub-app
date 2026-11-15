@@ -134,6 +134,7 @@ export function LinkRow({ bookmark, onPress, onMenu, testID, lugar }: LinkRowPro
         */
         style={{ flex: 1 }}
         onLongPress={onMenu}
+        onPressIn={guard?.pressIn}
         onPress={guard ? guard.press(onPress) : onPress}
       />
       {/*

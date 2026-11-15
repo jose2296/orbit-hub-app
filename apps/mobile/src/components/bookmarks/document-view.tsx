@@ -3,6 +3,7 @@ import { Image, Linking, Text, View } from "react-native";
 
 import { noteDocumentSchema } from "@orbit-hub/contracts";
 
+import { safeLinkTarget } from "@/lib/bookmarks/safe-link";
 import { AppText } from "@/components/ui/text";
 import type { TextVariant } from "@/components/ui/text";
 import { useTheme } from "@/theme";
@@ -35,14 +36,7 @@ export type ViewBlock =
 
 // Solo estos dos esquemas salen del lector. Todo lo demas (`javascript:`,
 // relativo, sin esquema, vacio) es un texto mas: un tap nunca ejecuta codigo.
-export function safeLinkTarget(href: string | undefined): string | null {
-  if (href === undefined) return null;
-  const limpio = href.trim();
-  if (limpio.length === 0) return null;
-  const esquema = limpio.toLowerCase();
-  if (esquema.startsWith("http://") || esquema.startsWith("https://")) return limpio;
-  return null;
-}
+export { safeLinkTarget };
 
 // Lo que pasa al tocar un enlace, separado para poder probarlo sin montar
 // nada: si no hay destino seguro, no se llama a `open` y no pasa nada.

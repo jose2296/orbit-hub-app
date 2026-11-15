@@ -49,7 +49,7 @@ function conId(c: MenuContext, id: string): MenuAccion | undefined {
 describe("el registro dice que acciones existen", () => {
   it("cada kind declara su propio conjunto, y ninguno es vacio", () => {
     for (const kind of KINDS) {
-      const acciones = accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true }));
+      const acciones = accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true, openOriginal: true }));
       expect(acciones.length, `${kind} se quedo sin menu`).toBeGreaterThan(0);
     }
   });
@@ -58,7 +58,7 @@ describe("el registro dice que acciones existen", () => {
     for (const kind of KINDS) {
       const declarados = ORDEN_POR_KIND[kind];
       expect(declarados.length, `${kind} declara una lista vacia`).toBeGreaterThan(0);
-      expect(accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true })).map((a) => a.id)).toEqual(declarados);
+      expect(accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true, openOriginal: true })).map((a) => a.id)).toEqual(declarados);
     }
   });
 
@@ -72,7 +72,7 @@ describe("el registro dice que acciones existen", () => {
 
   it("el orden de salida es el orden declarado", () => {
     for (const kind of KINDS) {
-      const acciones = accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true }));
+      const acciones = accionesPara(ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true, openOriginal: true }));
       expect(acciones.map((a) => a.id)).toEqual(ORDEN_POR_KIND[kind]);
       for (let i = 1; i < acciones.length; i += 1) {
         const antes = ORDEN_POR_KIND[kind].indexOf(acciones[i - 1]!.id);
@@ -178,7 +178,7 @@ describe("el icono no es la misma accion en todas partes", () => {
 describe("el copy de cada accion existe, en los dos idiomas", () => {
   it("para todo kind y toda accion, la clave resuelta existe en es y en en", () => {
     for (const kind of KINDS) {
-      const c = ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true });
+      const c = ctx(kind, {}, { editStates: true, saveAsTemplate: true, createInside: true, panel: true, export: true, openOriginal: true });
       for (const accion of accionesPara(c)) {
         const k = clave(accion, c);
         expect(dictionaries.es[k as keyof typeof dictionaries.es], `${kind}/${accion.id} falta en es`).toBeTruthy();

@@ -5,7 +5,8 @@ import { Image, Linking, Pressable, View } from "react-native";
 
 import type { Bookmark } from "@orbit-hub/contracts";
 
-import { DocumentView, safeLinkTarget } from "@/components/bookmarks/document-view";
+import { DocumentView } from "@/components/bookmarks/document-view";
+import { safeLinkTarget } from "@/lib/bookmarks/safe-link";
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { Screen } from "@/components/ui/screen";
