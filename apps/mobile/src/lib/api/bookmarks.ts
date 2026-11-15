@@ -46,3 +46,19 @@ export async function extractWithRetry(
 export function triggerExtract(bookmarkId: string): void {
   void extractWithRetry(bookmarkId).catch(() => {});
 }
+
+/**
+ * The full text of a saved page, or null if it cannot be had right now.
+ *
+ * The list endpoint (and so the local cache) drops `document` because it weighs up to
+ * 512 KB; the reader asks for it here when its cached row came without one. Never
+ * throws: offline the reader keeps showing what it has.
+ */
+export async function fetchBookmarkDocument(bookmarkId: string): Promise<string | null> {
+  try {
+    const row = await api.get<{ document?: unknown }>(`/bookmarks/${bookmarkId}`);
+    return typeof row.document === "string" && row.document.length > 0 ? row.document : null;
+  } catch {
+    return null;
+  }
+}

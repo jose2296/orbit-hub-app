@@ -255,6 +255,7 @@ describe("ninguna pagina declarada y no escrita se pierde en silencio", () => {
       "createInside",
       "editStates",
       "export",
+      "openOriginal",
       "panel",
       "saveAsTemplate",
     ]);

@@ -1,17 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Linking, Pressable, View } from "react-native";
 
 import type { Bookmark } from "@orbit-hub/contracts";
 
-import { DocumentView, safeLinkTarget } from "@/components/bookmarks/document-view";
+import { DocumentView } from "@/components/bookmarks/document-view";
+import { safeLinkTarget } from "@/lib/bookmarks/safe-link";
 import { Button } from "@/components/ui/button";
 import { useHeaderAction } from "@/components/ui/header-action";
 import { Screen } from "@/components/ui/screen";
 import { AppText } from "@/components/ui/text";
 import { useBookmark } from "@/hooks/use-bookmarks";
-import { triggerExtract } from "@/lib/api/bookmarks";
+import { fetchBookmarkDocument, triggerExtract } from "@/lib/api/bookmarks";
 import { useTranslation } from "@/lib/i18n";
 import { useTheme } from "@/theme";
 
@@ -96,6 +97,17 @@ export default function BookmarkReaderScreen() {
     // nada que la pantalla pueda arreglar, y un toast lo diria dos veces.
     void Linking.openURL(destinoSeguro).catch(() => {});
   }, [destinoSeguro]);
+
+  // A ready page whose cached row has no text (the list drops it): ask once for the
+  // full document so reading mode works without waiting for a sync. Best effort.
+  const [documentoRemoto, setDocumentoRemoto] = useState<string | null>(null);
+  const pedidos = useRef(new Set<string>());
+  useEffect(() => {
+    if (!bookmark || bookmark.extractionState !== "ready" || bookmark.document.length > 0) return;
+    if (pedidos.current.has(bookmark.id)) return;
+    pedidos.current.add(bookmark.id);
+    void fetchBookmarkDocument(bookmark.id).then(setDocumentoRemoto);
+  }, [bookmark]);
 
   const reintentar = useCallback(() => {
     if (!bookmark) return;
@@ -196,8 +208,8 @@ export default function BookmarkReaderScreen() {
               {lineaMeta}
             </AppText>
           ) : null}
-          {fila.document.length > 0 ? (
-            <DocumentView document={fila.document} />
+          {(fila.document.length > 0 ? fila.document : documentoRemoto) ? (
+            <DocumentView document={fila.document.length > 0 ? fila.document : (documentoRemoto as string)} />
           ) : (
             <AppText variant="caption" tone="muted">
               {t("bookmarks.reader.waitingText")}

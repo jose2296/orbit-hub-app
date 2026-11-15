@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import type { ViewStyle } from "react-native";
+import type { GestureResponderEvent, ViewStyle } from "react-native";
 
 import { useTheme } from "@/theme";
 
@@ -65,6 +65,8 @@ export interface ListRowProps {
   subtitle?: string;
   icon?: IconName;
   onPress?: () => void;
+  /** Where a touch began: a swipeable row needs it to tell a tap from the end of a drag. */
+  onPressIn?: (e: GestureResponderEvent) => void;
   /** Overrides the long press that reads the whole title (e.g. to open the row's options). */
   onLongPress?: () => void;
   rightLabel?: string;
@@ -81,6 +83,7 @@ export function ListRow({
   icon,
   leading,
   onPress,
+  onPressIn,
   onLongPress,
   rightLabel,
   chevron = false,
@@ -170,6 +173,7 @@ export function ListRow({
         onLongPress={onLongPress ?? nombre.onLongPress}
         accessibilityRole="button"
         disabled={disabled}
+        onPressIn={onPressIn}
         onPress={onPress}
         style={({ pressed }) => [
           styles.row,

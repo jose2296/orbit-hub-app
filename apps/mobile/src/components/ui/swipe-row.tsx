@@ -67,7 +67,7 @@ export function SwipeRow({
   const theme = useTheme();
   const ref = useRef<Swipeable>(null);
   const abierta = useRef(false);
-  const inicio = useRef(0);
+  const inicio = useRef<number | null>(null);
 
   const guard: SwipeRowGuard = {
     pressIn: (e) => {
@@ -78,7 +78,13 @@ export function SwipeRow({
         ref.current?.close();
         return;
       }
-      if (e && Math.abs(e.nativeEvent.pageX - inicio.current) > 10) return;
+      // Without a recorded start (a row that forgot `onPressIn`) there is nothing to
+      // compare: a tap must open, never silently do nothing.
+      if (e && inicio.current !== null && Math.abs(e.nativeEvent.pageX - inicio.current) > 10) {
+        inicio.current = null;
+        return;
+      }
+      inicio.current = null;
       alPulsar();
     },
   };
@@ -142,8 +148,6 @@ export function SwipeRow({
   const izquierda = (_progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
     if (!leftAction || !acento) return null;
     const cruza = { inputRange: [0, LEFT_THRESHOLD - 1, LEFT_THRESHOLD], extrapolate: "clamp" as const };
-    const fondo = dragX.interpolate({ ...cruza, outputRange: [acento.fondo, acento.fondo, acento.solido] });
-    const icono = dragX.interpolate({ ...cruza, outputRange: [acento.texto, acento.texto, theme.colors.onAccent] });
     const escala = dragX.interpolate({
       inputRange: [0, LEFT_THRESHOLD * 0.5, LEFT_THRESHOLD, LEFT_PANEL_WIDTH],
       outputRange: [0.7, 0.9, 1.2, 1.2],
@@ -156,7 +160,8 @@ export function SwipeRow({
         style={[
           styles.izquierda,
           {
-            backgroundColor: fondo,
+            backgroundColor: acento.fondo,
+            overflow: "hidden",
             borderColor: theme.colors.border,
             borderRadius: theme.radius.lg,
             marginVertical: inset,
@@ -166,8 +171,22 @@ export function SwipeRow({
           },
         ]}
       >
+        {/*
+          The "release" state is a solid layer faded in over the soft one, and the icon a
+          second glyph faded in over the first. Opacity is the same on every platform;
+          interpolating colour strings was not (Android flickered through many colours).
+        */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.capa, { backgroundColor: acento.solido, opacity: despues }]}
+        />
         <Animated.View style={{ transform: [{ scale: escala }] }}>
-          <AnimatedIonicons name={leftAction.icon} size={22} style={{ color: icono }} />
+          <Animated.View style={{ opacity: antes }}>
+            <Ionicons name={leftAction.icon} size={22} color={acento.texto} />
+          </Animated.View>
+          <Animated.View style={[styles.superpuesto, { opacity: despues }]}>
+            <Ionicons name={leftAction.icon} size={22} color={theme.colors.onAccent} />
+          </Animated.View>
         </Animated.View>
         <View style={styles.etiquetas}>
           <Animated.View style={[styles.etiqueta, { opacity: antes }]}>
@@ -195,7 +214,8 @@ export function SwipeRow({
       overshootRight={false}
       friction={1}
       rightThreshold={36}
-      dragOffsetFromRightEdge={16}
+      dragOffsetFromRightEdge={24}
+      dragOffsetFromLeftEdge={24}
       onSwipeableWillOpen={(direction) => {
         if (direction === "left" && leftAction) {
           // Soltado pasado el umbral: se hace ya, sin esperar a que acabe la
@@ -222,7 +242,6 @@ export function SwipeRow({
  * How far the row must be dragged to the right for it to commit, in points. The panel
  * behind is wider than this on purpose: it has to be pulled most of the way, not tapped.
  */
-const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
 const LEFT_THRESHOLD = 130;
 const LEFT_PANEL_WIDTH = 170;
 
@@ -231,6 +250,8 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 22,
   },
+  capa: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
+  superpuesto: { position: "absolute", left: 0, top: 0 },
   etiqueta: {
     position: "absolute",
     left: 0,
